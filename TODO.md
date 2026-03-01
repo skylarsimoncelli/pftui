@@ -69,3 +69,16 @@
   - **Move architecture/technical notes** (component diagram, data flow, price routing, etc.) to `docs/ARCHITECTURE.md` and link from the README
   - Keep the README lean — link to docs for deep dives, don't inline everything
   - Files: `docs/README.md`, new `docs/KEYBINDINGS.md`, new `docs/ARCHITECTURE.md`
+
+## P0 — Visual & UX Brainstorm (Owner Request)
+
+- [ ] **Brainstorm visual/UX improvements** — Spend this run reviewing the entire codebase and UI, then brainstorm and add new TODO items that will make pftui even more visually impressive, aesthetic, high-tech, intuitive, and polished. Think: Bloomberg Terminal meets cyberpunk. Consider:
+  - Animations and transitions (smooth scrolling, fade effects, pulse effects on data changes)
+  - Color and gradient enhancements (more dynamic use of gradients, glow effects, neon accents)
+  - Data density improvements (more info per pixel without clutter)
+  - Micro-interactions (visual feedback on every keypress, hover effects, selection highlights)
+  - Status indicators and live data visualization (heartbeat pulses, streaming tickers, activity indicators)
+  - Layout polish (spacing, alignment, borders, separators, shadow effects)
+  - Typography and text rendering (Unicode box drawing, custom separators, styled headers)
+  - Any "wow factor" ideas that would make someone say "this is the coolest terminal app I've ever seen"
+  - Add each idea as a separate TODO item with priority, description, and file references
