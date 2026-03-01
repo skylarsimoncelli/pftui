@@ -99,3 +99,12 @@
 - [ ] **Setup wizard fuzzy finder** — The asset symbol entry in the setup wizard should have fuzzy autocomplete. As the user types, show matching symbols/names from the asset_names map (and any custom symbols). Use a ranked fuzzy match (not just prefix). Show results inline below the input. Files: `src/commands/setup.rs`, `src/models/asset_names.rs` (search_names already exists — wire it into interactive input).
 - [ ] **Setup wizard: configurable primary fiat currency** — Full mode should let the user choose their primary fiat currency (EUR, GBP, JPY, etc.) instead of hardcoding USD. Default to USD if not specified. Store in `config.toml`. All portfolio values, gains, and display formatting should respect the chosen currency. Files: `src/config.rs`, `src/commands/setup.rs`, `src/tui/widgets/header.rs`, `src/models/position.rs`.
 - [ ] **Fix BTC price fetching** — BTC price fails to load for at least one user. Debug: check CoinGecko→Yahoo fallback chain, verify `BTC-USD` symbol resolves, check rate limiting / API errors. Add better error logging to identify where the fetch fails. Files: `src/price/coingecko.rs`, `src/price/yahoo.rs`, `src/price/mod.rs`.
+
+## P0 — Performance Fix (Owner Request)
+
+- [ ] **Switch to on-demand chart history fetching** — Currently fetches 5Y of daily data for every asset upfront (wasteful, slow startup, rate limiting risk). Change to:
+  - Default initial fetch: 3M (90 days) — covers the most common view
+  - On timeframe switch: if requested range exceeds cached data, fetch the delta and merge (merge_history_into already exists)
+  - Cache for session: once 1Y data is fetched for an asset, don't re-fetch if user switches back to 3M then 1Y
+  - This reduces startup API calls, avoids CoinGecko rate limiting, and saves bandwidth
+  - Files: `src/price/mod.rs` (request_all_history, request_history_for_symbol), `src/app.rs` (trigger fetch on timeframe change if needed)
