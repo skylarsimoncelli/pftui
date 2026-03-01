@@ -37,7 +37,11 @@ pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>
         if let Some(dt) = ts {
             let date = dt.format("%Y-%m-%d").to_string();
             if let Ok(close) = Decimal::try_from(q.close) {
-                records.push(HistoryRecord { date, close });
+                records.push(HistoryRecord {
+                    date,
+                    close,
+                    volume: Some(q.volume),
+                });
             }
         }
     }

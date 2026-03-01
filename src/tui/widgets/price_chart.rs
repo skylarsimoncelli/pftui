@@ -11,6 +11,9 @@ use crate::tui::theme;
 
 const BRAILLE_ROWS: usize = 4;
 
+/// Block characters for volume bars (8 levels of fill)
+const VOLUME_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
 /// Slice history records to only the last `days` entries.
 /// Records are assumed to be in chronological order (oldest first).
 fn slice_history(records: &[HistoryRecord], days: u32) -> &[HistoryRecord] {
@@ -202,7 +205,11 @@ fn render_single_chart(
         None
     };
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, t);
+    // Extract volume data
+    let volumes: Vec<Option<u64>> = records.iter().map(|r| r.volume).collect();
+    let has_volume = volumes.iter().any(|v| v.is_some());
+
+    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, t);
 }
 
 /// Render a ratio chart (numerator / denominator)
@@ -258,7 +265,8 @@ fn render_ratio_chart(
         None
     };
 
-    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, t);
+    // No volume for ratio charts
+    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, t);
 }
 
 /// Compact single chart for multi-panel (no stats line, just braille)
@@ -361,6 +369,7 @@ fn compute_ratio(
                 Some(HistoryRecord {
                     date: nr.date.clone(),
                     close: nr.close / *den_close,
+                    volume: None,
                 })
             } else {
                 None
@@ -369,13 +378,14 @@ fn compute_ratio(
         .collect()
 }
 
-/// Full braille chart with stats line (price, gain%, H/L)
+/// Full braille chart with optional volume bars and stats line (price, gain%, H/L)
 fn render_braille_chart(
     frame: &mut Frame,
     area: Rect,
     records: &[HistoryRecord],
     current_price: Option<Decimal>,
     gain_pct: Option<Decimal>,
+    volumes: Option<&[Option<u64>]>,
     t: &theme::Theme,
 ) {
     if area.width < 4 || area.height < 4 {
@@ -387,7 +397,10 @@ fn render_braille_chart(
         .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
         .collect();
 
-    let chart_height = area.height.saturating_sub(3) as usize;
+    // Reserve rows: 1 separator + 1 stats + 1 volume (if available)
+    let has_vol = volumes.is_some();
+    let reserved_rows: u16 = if has_vol { 4 } else { 3 };
+    let chart_height = area.height.saturating_sub(reserved_rows) as usize;
     let chart_width = area.width as usize;
 
     if chart_height == 0 || chart_width == 0 {
@@ -451,6 +464,11 @@ fn render_braille_chart(
         lines.push(Line::from(spans));
     }
 
+    // Volume bars (1 row of block characters)
+    if let Some(vols) = volumes {
+        lines.push(build_volume_line(vols, chart_width, t));
+    }
+
     // Separator
     lines.push(Line::from(Span::styled(
         "─".repeat(area.width as usize),
@@ -489,6 +507,59 @@ fn render_braille_chart(
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
+}
+
+/// Build a single line of volume bars using block characters.
+/// Resamples volume data to fit the chart width, then maps each column
+/// to one of 8 block levels (▁▂▃▄▅▆▇█) based on relative volume.
+fn build_volume_line<'a>(
+    volumes: &[Option<u64>],
+    chart_width: usize,
+    t: &theme::Theme,
+) -> Line<'a> {
+    let vol_f64: Vec<f64> = volumes
+        .iter()
+        .map(|v| v.unwrap_or(0) as f64)
+        .collect();
+
+    let resampled = resample(&vol_f64, chart_width);
+    let max_vol = resampled.iter().cloned().fold(0.0_f64, f64::max);
+
+    // Muted color for volume bars — blend toward surface
+    let vol_color = muted_color(t.text_muted, t.surface_1);
+
+    let spans: Vec<Span> = resampled
+        .iter()
+        .map(|&v| {
+            if max_vol <= 0.0 || v <= 0.0 {
+                Span::styled(" ", Style::default())
+            } else {
+                let level = ((v / max_vol) * 7.0).round() as usize;
+                let ch = VOLUME_BLOCKS[level.min(7)];
+                Span::styled(
+                    String::from(ch),
+                    Style::default().fg(vol_color),
+                )
+            }
+        })
+        .collect();
+
+    Line::from(spans)
+}
+
+/// Blend two colors to produce a muted intermediate shade
+fn muted_color(text: Color, surface: Color) -> Color {
+    match (text, surface) {
+        (Color::Rgb(tr, tg, tb), Color::Rgb(sr, sg, sb)) => {
+            // 60% text, 40% surface for a muted but visible tone
+            Color::Rgb(
+                ((tr as u16 * 6 + sr as u16 * 4) / 10) as u8,
+                ((tg as u16 * 6 + sg as u16 * 4) / 10) as u8,
+                ((tb as u16 * 6 + sb as u16 * 4) / 10) as u8,
+            )
+        }
+        _ => text,
+    }
 }
 
 /// Compact braille chart for multi-panel (1-line stats)
@@ -683,5 +754,86 @@ fn format_compact_short(f: f64) -> String {
         format!("{:.0}", f)
     } else {
         format!("{:.3}", f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_volume_blocks_levels() {
+        assert_eq!(VOLUME_BLOCKS.len(), 8);
+        assert_eq!(VOLUME_BLOCKS[0], '▁');
+        assert_eq!(VOLUME_BLOCKS[7], '█');
+    }
+
+    #[test]
+    fn test_build_volume_line_all_zero() {
+        let volumes: Vec<Option<u64>> = vec![None, None, None, None, None];
+        let t = theme::midnight();
+        let line = build_volume_line(&volumes, 5, &t);
+        // All spaces when no volume data
+        for span in line.spans.iter() {
+            assert_eq!(span.content.as_ref(), " ");
+        }
+    }
+
+    #[test]
+    fn test_build_volume_line_scaling() {
+        let volumes: Vec<Option<u64>> = vec![
+            Some(100),
+            Some(500),
+            Some(1000),
+            Some(750),
+            Some(250),
+        ];
+        let t = theme::midnight();
+        let line = build_volume_line(&volumes, 5, &t);
+        // Max volume (1000) should be █ (level 7), min non-zero should be ▁ (level 0-1)
+        assert_eq!(line.spans.len(), 5);
+        assert_eq!(line.spans[2].content.as_ref(), "█"); // 1000/1000 = max
+    }
+
+    #[test]
+    fn test_build_volume_line_resamples() {
+        let volumes: Vec<Option<u64>> = vec![Some(100), Some(500)];
+        let t = theme::midnight();
+        let line = build_volume_line(&volumes, 10, &t);
+        // Should produce 10 spans from 2 data points
+        assert_eq!(line.spans.len(), 10);
+    }
+
+    #[test]
+    fn test_compute_ratio_has_no_volume() {
+        let num = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(500_000) },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: Some(600_000) },
+        ];
+        let den = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: Some(300_000) },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: Some(400_000) },
+        ];
+        let result = compute_ratio(&num, &den);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].close, dec!(2));
+        assert!(result[0].volume.is_none());
+        assert!(result[1].volume.is_none());
+    }
+
+    #[test]
+    fn test_muted_color_blends() {
+        let text = Color::Rgb(200, 200, 200);
+        let surface = Color::Rgb(20, 20, 20);
+        let result = muted_color(text, surface);
+        // 200*0.6 + 20*0.4 = 120 + 8 = 128
+        assert_eq!(result, Color::Rgb(128, 128, 128));
+    }
+
+    #[test]
+    fn test_muted_color_non_rgb_passthrough() {
+        let result = muted_color(Color::White, Color::Black);
+        assert_eq!(result, Color::White);
     }
 }

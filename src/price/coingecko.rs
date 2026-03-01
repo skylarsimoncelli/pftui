@@ -132,17 +132,30 @@ pub async fn fetch_history(ticker: &str, days: u32) -> Result<Vec<HistoryRecord>
     #[derive(serde::Deserialize)]
     struct MarketChart {
         prices: Vec<(f64, f64)>, // [timestamp_ms, price]
+        #[serde(default)]
+        total_volumes: Vec<(f64, f64)>, // [timestamp_ms, volume]
     }
 
     let data: MarketChart = resp.json().await?;
-    let mut records = Vec::new();
 
+    // Build a volume lookup by date
+    let mut volume_by_date: HashMap<String, u64> = HashMap::new();
+    for (ts_ms, vol) in &data.total_volumes {
+        let ts_secs = (*ts_ms / 1000.0) as i64;
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs, 0) {
+            let date = dt.format("%Y-%m-%d").to_string();
+            volume_by_date.insert(date, *vol as u64);
+        }
+    }
+
+    let mut records = Vec::new();
     for (ts_ms, price) in &data.prices {
         let ts_secs = (*ts_ms / 1000.0) as i64;
         if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs, 0) {
             let date = dt.format("%Y-%m-%d").to_string();
             if let Ok(close) = Decimal::try_from(*price) {
-                records.push(HistoryRecord { date, close });
+                let volume = volume_by_date.get(&date).copied();
+                records.push(HistoryRecord { date, close, volume });
             }
         }
     }

@@ -14,4 +14,7 @@ pub struct PriceQuote {
 pub struct HistoryRecord {
     pub date: String,
     pub close: Decimal,
+    /// Daily trading volume (None if unavailable, e.g. ratio charts)
+    #[serde(default)]
+    pub volume: Option<u64>,
 }
