@@ -17,6 +17,15 @@
 ---
 
 
+### 2026-03-01 — Add responsive layout for narrow terminals
+
+- What: added responsive layout that adapts to terminal width. Below 100 columns, the sidebar (allocation bars, portfolio sparkline, price chart panel) is hidden and positions use the full terminal width. Header abbreviates tab names ("Econ"→"Ec", "Watch"→"Wl") and hides the clock and theme indicator. Status bar shows only essential hints (Help, Search) instead of the full hint bar. Added `terminal_width` field to App (default 120, updated from `crossterm::terminal::size()` on startup and resize). Replaced `set_terminal_height` with `set_terminal_size(w, h)`. Exported `COMPACT_WIDTH` constant (100) from `ui.rs` so header and status bar can reference the same threshold.
+- Why: the app assumed wide terminals (100+ columns). On narrow terminals, the 57/43 split made both panels too small to be useful — positions got truncated and the sidebar was unreadable. Hiding the sidebar on narrow terminals gives positions room to display properly. This is the first P2 polish item from the backlog.
+- Files: `src/app.rs` (terminal_width field, set_terminal_size method, removed set_terminal_height, 5 responsive tests), `src/tui/mod.rs` (set width on startup and resize), `src/tui/ui.rs` (COMPACT_WIDTH const, conditional sidebar hiding, 1 test), `src/tui/widgets/header.rs` (compact mode: abbreviate tabs, hide clock/theme), `src/tui/widgets/status_bar.rs` (compact mode: essential hints only), `docs/README.md` (responsive layout section, updated layout diagram)
+- Tests: added 5 tests — terminal_width_default, terminal_height_default, set_terminal_size_updates_both, set_terminal_size_narrow, set_terminal_size_wide. Added 1 test — compact_width_threshold_is_100. Total: 114 tests passing.
+- TODO: Add responsive layout (P2)
+
+
 ### 2026-03-01 — Add Watchlist view (tab 5) with CLI commands
 
 - What: added a Watchlist view accessible via the `5` key. Users can track assets without holding them in their portfolio. New DB table `watchlist (id, symbol, category, added_at)` with unique constraint on symbol. CLI commands: `pftui watch <SYMBOL>` (auto-detects category or accepts `--category`) and `pftui unwatch <SYMBOL>`. TUI displays a table with symbol, name, category (color-coded), live price, and daily change % with gain-aware coloring. Empty state shows usage instructions. Symbols stored uppercase, all operations case-insensitive. Full vim navigation (j/k, gg/G, Ctrl+d/Ctrl+u) works. Header shows `[5]Watch` tab. Help overlay updated with `5` keybinding. Prices and 30-day history fetched on tab activation. Watchlist reloads from DB on each tab switch so CLI-added symbols appear immediately.

@@ -7,12 +7,14 @@ use rust_decimal_macros::dec;
 use crate::app::{is_privacy_view, App, ViewMode};
 use crate::config::PortfolioMode;
 use crate::tui::theme;
+use crate::tui::ui::COMPACT_WIDTH;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let now = chrono::Utc::now().format("%H:%M UTC");
     let privacy = is_privacy_view(app);
     let pct_mode = app.portfolio_mode == PortfolioMode::Percentage;
     let t = &app.theme;
+    let compact = app.terminal_width < COMPACT_WIDTH;
 
     let pos_style = if matches!(app.view_mode, ViewMode::Positions) {
         Style::default().fg(t.text_primary).bold().underlined()
@@ -57,7 +59,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     };
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[4]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled("Econ", econ_style));
+    spans.push(Span::styled(if compact { "Ec" } else { "Econ" }, econ_style));
 
     // Watchlist tab — always visible
     let watch_style = if matches!(app.view_mode, ViewMode::Watchlist) {
@@ -67,7 +69,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     };
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled("Watch", watch_style));
+    spans.push(Span::styled(if compact { "Wl" } else { "Watch" }, watch_style));
 
     if !privacy {
         let total = app.total_value;
@@ -111,17 +113,20 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("[% view]", Style::default().fg(t.text_muted)));
     }
 
-    spans.push(Span::styled(" | ", Style::default().fg(t.text_muted)));
-    spans.push(Span::styled(
-        format!("{}", now),
-        Style::default().fg(t.text_muted),
-    ));
+    // In compact mode, hide the clock and theme name to save space
+    if !compact {
+        spans.push(Span::styled(" | ", Style::default().fg(t.text_muted)));
+        spans.push(Span::styled(
+            format!("{}", now),
+            Style::default().fg(t.text_muted),
+        ));
 
-    // Theme indicator
-    spans.push(Span::styled(
-        format!("  {}", app.theme_name),
-        Style::default().fg(t.text_muted),
-    ));
+        // Theme indicator
+        spans.push(Span::styled(
+            format!("  {}", app.theme_name),
+            Style::default().fg(t.text_muted),
+        ));
+    }
 
     let line = Line::from(spans);
 

@@ -185,6 +185,7 @@ pub struct App {
     pub watchlist_entries: Vec<db_watchlist::WatchlistEntry>,
     pub g_pending: bool,
     pub terminal_height: u16,
+    pub terminal_width: u16,
 
     // Search
     pub search_mode: bool,
@@ -257,6 +258,7 @@ impl App {
             watchlist_entries: Vec::new(),
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
+            terminal_width: 120, // sensible default, updated on resize
             search_mode: false,
             search_query: String::new(),
             sort_field: SortField::Allocation,
@@ -1267,7 +1269,8 @@ impl App {
         }
     }
 
-    pub fn set_terminal_height(&mut self, h: u16) {
+    pub fn set_terminal_size(&mut self, w: u16, h: u16) {
+        self.terminal_width = w;
         self.terminal_height = h;
     }
 
@@ -2213,5 +2216,57 @@ mod timeframe_tests {
 
         app.handle_key(key('l'));
         assert_eq!(app.chart_timeframe, original);
+    }
+}
+
+#[cfg(test)]
+mod responsive_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
+    }
+
+    #[test]
+    fn test_terminal_width_default() {
+        let app = make_app();
+        assert_eq!(app.terminal_width, 120);
+    }
+
+    #[test]
+    fn test_terminal_height_default() {
+        let app = make_app();
+        assert_eq!(app.terminal_height, 24);
+    }
+
+    #[test]
+    fn test_set_terminal_size_updates_both() {
+        let mut app = make_app();
+        app.set_terminal_size(80, 40);
+        assert_eq!(app.terminal_width, 80);
+        assert_eq!(app.terminal_height, 40);
+    }
+
+    #[test]
+    fn test_set_terminal_size_narrow() {
+        let mut app = make_app();
+        app.set_terminal_size(60, 20);
+        assert_eq!(app.terminal_width, 60);
+        assert!(app.terminal_width < crate::tui::ui::COMPACT_WIDTH);
+    }
+
+    #[test]
+    fn test_set_terminal_size_wide() {
+        let mut app = make_app();
+        app.set_terminal_size(160, 50);
+        assert_eq!(app.terminal_width, 160);
+        assert!(app.terminal_width >= crate::tui::ui::COMPACT_WIDTH);
     }
 }

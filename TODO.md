@@ -33,7 +33,7 @@
 
 ## P2 — Visual Polish
 
-- [ ] **Add responsive layout** — Detect terminal size in ui.rs. Below 100 columns: hide sidebar, show positions full-width. Below 60 columns: simplify header, reduce column count. Above 160 columns: wider sidebar. Files: `src/tui/ui.rs`, `src/tui/widgets/header.rs`.
+- [x] **Add responsive layout** — Detect terminal size in ui.rs. Below 100 columns: hide sidebar, show positions full-width. Below 60 columns: simplify header, reduce column count. Above 160 columns: wider sidebar. Files: `src/tui/ui.rs`, `src/tui/widgets/header.rs`.
 - [ ] **Add position detail popup** — When pressing Enter on a position, instead of just opening the chart in sidebar, show a full-screen popup with: name, symbol, category, quantity, avg cost, current price, gain, gain%, allocation%, 90d chart, and buy/sell history for that symbol. Esc closes. Files: new `src/tui/views/position_detail.rs`, `src/app.rs`.
 - [ ] **Improve allocation bars** — Add percentage labels inside bars (when bar is wide enough). Add total portfolio value below the allocation widget. Add subtle animation when allocations change. Files: `src/tui/widgets/allocation_bars.rs`.
 - [ ] **Add 52-week high/low indicators** — Show distance from 52-week high/low in positions table as a tiny visual bar or percentage. Requires fetching 365-day history (can reuse price_history). Files: `src/models/position.rs` (add high/low fields), `src/tui/views/positions.rs`.

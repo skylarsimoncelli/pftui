@@ -29,7 +29,7 @@ pub fn run(app: &mut App) -> Result<()> {
 
     // Set initial terminal height for half-page scroll
     if let Ok(size) = crossterm::terminal::size() {
-        app.set_terminal_height(size.1);
+        app.set_terminal_size(size.0, size.1);
     }
 
     let result = run_loop(&mut terminal, app, &events);
@@ -63,8 +63,8 @@ fn run_loop(
             event::Event::Tick => {
                 app.tick();
             }
-            event::Event::Resize(_, h) => {
-                app.set_terminal_height(h);
+            event::Event::Resize(w, h) => {
+                app.set_terminal_size(w, h);
             }
         }
 

@@ -6,9 +6,11 @@ use ratatui::{
 use crate::app::App;
 use crate::config::PortfolioMode;
 use crate::tui::theme;
+use crate::tui::ui::COMPACT_WIDTH;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
+    let compact = app.terminal_width < COMPACT_WIDTH;
 
     // Pulsing live indicator
     let dot_color = if app.prices_live {
@@ -63,34 +65,46 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let sep = Span::styled(" | ", Style::default().fg(t.text_muted));
 
-    let mut spans = vec![
-        Span::styled(" [?]", Style::default().fg(t.key_hint)),
-        Span::styled("Help", Style::default().fg(t.text_secondary)),
-        sep.clone(),
-        Span::styled("[Enter]", Style::default().fg(t.key_hint)),
-        Span::styled("Chart", Style::default().fg(t.text_secondary)),
-        sep.clone(),
-        Span::styled("[r]", Style::default().fg(t.key_hint)),
-        Span::styled("Refresh", Style::default().fg(t.text_secondary)),
-        sep.clone(),
-        Span::styled("[/]", Style::default().fg(t.key_hint)),
-        Span::styled("Search", Style::default().fg(t.text_secondary)),
-        sep.clone(),
-        Span::styled("[f]", Style::default().fg(t.key_hint)),
-        Span::styled("Filter", Style::default().fg(t.text_secondary)),
-        Span::styled(filter_text, Style::default().fg(t.text_secondary)),
-        Span::styled(search_filter_text, Style::default().fg(t.text_accent)),
-    ];
+    let mut spans: Vec<Span> = Vec::new();
 
-    if app.portfolio_mode == PortfolioMode::Full {
+    if compact {
+        // Compact: show only essential hints
+        spans.push(Span::styled(" [?]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
         spans.push(sep.clone());
-        spans.push(Span::styled("[p]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Privacy", Style::default().fg(t.text_secondary)));
-    }
+        spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Search", Style::default().fg(t.text_secondary)));
+        spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
+        spans.push(Span::styled(search_filter_text, Style::default().fg(t.text_accent)));
+    } else {
+        // Full: show all hints
+        spans.push(Span::styled(" [?]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
+        spans.push(sep.clone());
+        spans.push(Span::styled("[Enter]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Chart", Style::default().fg(t.text_secondary)));
+        spans.push(sep.clone());
+        spans.push(Span::styled("[r]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Refresh", Style::default().fg(t.text_secondary)));
+        spans.push(sep.clone());
+        spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Search", Style::default().fg(t.text_secondary)));
+        spans.push(sep.clone());
+        spans.push(Span::styled("[f]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Filter", Style::default().fg(t.text_secondary)));
+        spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
+        spans.push(Span::styled(search_filter_text, Style::default().fg(t.text_accent)));
 
-    spans.push(sep);
-    spans.push(Span::styled("[t]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled("Theme", Style::default().fg(t.text_secondary)));
+        if app.portfolio_mode == PortfolioMode::Full {
+            spans.push(sep.clone());
+            spans.push(Span::styled("[p]", Style::default().fg(t.key_hint)));
+            spans.push(Span::styled("Privacy", Style::default().fg(t.text_secondary)));
+        }
+
+        spans.push(sep);
+        spans.push(Span::styled("[t]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Theme", Style::default().fg(t.text_secondary)));
+    }
 
     spans.push(Span::raw("  "));
     spans.extend(live_indicator);

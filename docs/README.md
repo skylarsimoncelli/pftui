@@ -70,6 +70,12 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 - **Privacy view toggle** (`p`): hides quantities and gains in-session, shows only prices and allocations
 - Header, positions table, sidebar, and sort keys all adapt to privacy state
 
+
+### Responsive Layout
+- Adapts to terminal width automatically
+- Below 100 columns: sidebar hidden, positions use full width, header and status bar condensed
+- At 100+ columns: standard two-panel layout with sidebar/chart panel
+- Layout updates instantly on terminal resize
 ### CLI
 - Interactive setup wizard with symbol autocomplete and multi-match disambiguation
 - `add-tx` (interactive or flag-driven), `remove-tx`, `list-tx`
@@ -135,6 +141,10 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 
 ### Layout
 
+The layout adapts to terminal width for usability on different screen sizes.
+
+**Standard layout (≥100 columns):**
+
 ```
 ┌──────────────────────────────────────┐
 │ Header (logo, tabs, value, clock)    │  2 rows
@@ -148,6 +158,25 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 │ Status bar (hints, live indicator)   │  2 rows
 └──────────────────────────────────────┘
 ```
+
+**Compact layout (<100 columns):**
+
+```
+┌──────────────────────────────────────┐
+│ Header (logo, tabs, value)           │  2 rows
+├──────────────────────────────────────┤
+│                                      │
+│ Positions/Txns/Mkts (full width)     │
+│                                      │
+├──────────────────────────────────────┤
+│ Status bar (essential hints only)    │  2 rows
+└──────────────────────────────────────┘
+```
+
+In compact mode:
+- Sidebar (allocation bars, sparkline, price chart) is hidden; positions use full width
+- Header abbreviates tab names and hides clock/theme indicator
+- Status bar shows only essential hints (Help, Search)
 
 ## Technology
 
