@@ -52,3 +52,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/price/mod.rs`, `src/tui/widgets/price_chart.rs`
 - Tests: added 2 tests for `yahoo_crypto_symbol` (suffix append + no double-suffix). Total: 24 tests passing.
 - TODO: Fix CoinGecko→Yahoo fallback double-suffix (P0), Show "Loading..." on blank mini ratio panels (P0)
+
+### 2026-03-01 — Fix chart timeframe selection (all timeframes now work)
+
+- What: fixed the P0 bug where only 3M chart timeframe loaded data reliably. Root cause: `request_all_history()` only fetched `chart_timeframe.days()` (default 90) from APIs, and incoming history data replaced the in-memory cache entirely — so switching to 6M/1Y/5Y either had insufficient data or lost existing longer-range data from DB cache. Three fixes: (1) all initial history fetches now request 5Y (1825 days) so every timeframe has data to slice from; (2) `request_history_for_symbol()` also uses 5Y; (3) new `merge_history_into()` free function merges incoming records with existing in-memory data using a BTreeMap (union of dates, newer prices win for overlaps), preventing shorter re-fetches from discarding cached data.
+- Why: 1W, 1M, 6M, 1Y, 5Y timeframes showed empty charts or failed to load. Only 3M worked because it matched the default fetch size. This was a major UX regression.
+- Files: `src/app.rs`
+- Tests: added 4 tests for `merge_history_into` (empty map, preserves older data, adds new dates, existing empty vec). Total: 218 tests passing.
+- TODO: Fix chart timeframe selection (P0)
