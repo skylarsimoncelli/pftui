@@ -5,7 +5,7 @@
 
 ## P0 — Bugs & Regressions
 
-- [ ] **Fix sequential history fetching** — `PriceService::run_loop` processes `FetchHistory` commands one at a time. When a chart needs 4-5 symbols, they fetch sequentially (4-5 HTTP round-trips in series). Use `tokio::join!` or `JoinSet` to fetch all history concurrently within a single `FetchHistory` batch command. Files: `src/price/mod.rs`. Test: verify concurrent fetch completes faster (or at minimum, restructure to batch).
+- [~] **Fix sequential history fetching** — `PriceService::run_loop` processes `FetchHistory` commands one at a time. When a chart needs 4-5 symbols, they fetch sequentially (4-5 HTTP round-trips in series). Use `tokio::join!` or `JoinSet` to fetch all history concurrently within a single `FetchHistory` batch command. Files: `src/price/mod.rs`. Test: verify concurrent fetch completes faster (or at minimum, restructure to batch).
 - [x] **Fix CoinGecko→Yahoo fallback double-suffix** — In `fetch_history`, when category is Crypto and CoinGecko fails, Yahoo fallback does `format!("{}-USD", symbol)`. But chart variant symbols like `BTC-USD` already have the suffix → becomes `BTC-USD-USD`. Guard: if symbol already ends with `-USD`, don't append. Files: `src/price/mod.rs`. Test: add test for suffix logic.
 - [x] **Show "Loading..." on blank mini ratio panels** — In `price_chart.rs`, `render_mini_ratio` silently returns when `compute_ratio` produces < 2 points, leaving a blank panel. Should show "Loading {label}..." like `render_mini_chart` does. Files: `src/tui/widgets/price_chart.rs`.
 - [x] **Fix clippy warnings** — There are 8 dead code warnings (unused fields, unused functions). Either use them or remove them. Run `cargo clippy` and resolve all warnings. Files: various.
