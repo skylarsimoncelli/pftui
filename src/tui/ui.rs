@@ -92,9 +92,25 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
             views::positions::render(frame, h_chunks[0], app);
         }
 
-        // Right pane: always show asset price chart
+        // Right pane: asset header (always visible) + price chart
         if app.selected_position().is_some() {
-            widgets::price_chart::render(frame, h_chunks[1], app);
+            let header_h = widgets::asset_header::height();
+            if h_chunks[1].height > header_h + 6 {
+                // Enough room for both header and chart
+                let right_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(header_h),  // asset info header
+                        Constraint::Min(4),            // price chart
+                    ])
+                    .split(h_chunks[1]);
+
+                widgets::asset_header::render(frame, right_chunks[0], app);
+                widgets::price_chart::render(frame, right_chunks[1], app);
+            } else {
+                // Too short: just show chart
+                widgets::price_chart::render(frame, h_chunks[1], app);
+            }
         }
     }
 }
