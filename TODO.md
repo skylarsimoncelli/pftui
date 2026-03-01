@@ -16,7 +16,7 @@
 - [x] **Add Ctrl+d / Ctrl+u half-page scroll** — Ctrl+d moves cursor down by half the visible height, Ctrl+u moves up. Need to know the visible row count (pass terminal height to App or compute from layout). Files: `src/app.rs`, `src/tui/ui.rs` (may need to store visible_rows on App). Test: test scroll bounds.
 - [x] **Add / search filter** — Pressing `/` enters a search mode: a text input appears in the status bar, typing filters positions/transactions by symbol or name substring (case-insensitive). `Esc` clears search and exits search mode. `Enter` confirms filter. Files: `src/app.rs` (new search_mode, search_query fields), `src/tui/widgets/status_bar.rs` (render input), positions/transactions views (apply filter). Test: test filter logic.
 - [x] **Add Esc to close detail panel** (already implemented) — `Esc` already closes help overlay, but when detail (chart) panel is open and help is not, `Esc` should close the chart panel too. Currently only `Enter` toggles it. Files: `src/app.rs` (handle_key Esc branch). Test: verify Esc closes detail.
-- [x] **Improve help overlay** — Group keybindings by context (Navigation, Sorting, Views, Charts, Other). Show vim motions prominently. Add brief descriptions. Make it a scrollable panel if content exceeds terminal height. Files: `src/tui/views/help.rs`.
+
 
 ## P1 — Chart & Data Enhancements
 
@@ -58,7 +58,7 @@
 
 ## P0 — README Rewrite (Owner Request)
 
-- [ ] **Rewrite README.md** — The README should be an engaging, fun overview of pftui and how to install it. It should sell the tool, not document internals. Specifically:
+- [x] **Rewrite README.md** — The README should be an engaging, fun overview of pftui and how to install it. It should sell the tool, not document internals. Specifically:
   - Make it punchy and visually appealing — hook readers immediately
   - Focus on: what it is, why it's cool, screenshots/examples, installation, quick start
   - **Move the full keybinding reference** to `docs/KEYBINDINGS.md` and link it from the README

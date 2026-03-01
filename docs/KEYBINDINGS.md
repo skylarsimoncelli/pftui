@@ -1,0 +1,59 @@
+# Keybindings
+
+Full keybinding reference for pftui. Press `?` in the TUI for an interactive version.
+
+## Navigation
+
+| Key | Action |
+|---|---|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `gg` | Jump to top |
+| `G` | Jump to bottom |
+| `Ctrl+d` | Scroll down half page |
+| `Ctrl+u` | Scroll up half page |
+| `Enter` | Open position detail popup (press again for chart) |
+| `Esc` | Close popup / chart / help overlay |
+| `/` | Search / filter by symbol or name |
+| `q` / `Ctrl+C` | Quit |
+
+## Views
+
+| Key | View |
+|---|---|
+| `1` | Positions — your portfolio holdings |
+| `2` | Transactions — buy/sell history (full mode only) |
+| `3` | Markets — major indices, commodities, crypto, forex |
+| `4` | Economy — treasury yields, currencies, macro indicators |
+| `5` | Watchlist — tracked assets you don't hold |
+
+## Charts
+
+| Key | Action |
+|---|---|
+| `J` / `K` | Cycle chart variant (price, ratio, all) |
+| `h` / `l` | Cycle chart timeframe: 1W, 1M, 3M, 6M, 1Y, 5Y |
+
+Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and volume bars below the price chart. Ratio charts show relative performance (e.g., BTC/SPX, AAPL/QQQ).
+
+## Sorting
+
+| Key | Sort By |
+|---|---|
+| `a` | Allocation % (descending) |
+| `%` | Gain % (descending) |
+| `$` | Total gain (descending) |
+| `n` | Name (ascending) |
+| `c` | Category (ascending) |
+| `d` | Date (descending, transactions view) |
+| `Tab` | Toggle sort direction |
+
+## Actions
+
+| Key | Action |
+|---|---|
+| `f` | Cycle category filter (All → Equity → Crypto → …) |
+| `r` | Force price refresh |
+| `p` | Toggle privacy view (full mode only) |
+| `t` | Cycle color theme |
+| `?` | Toggle help overlay |

@@ -17,6 +17,14 @@
 ---
 
 
+### 2026-03-01 — Rewrite README, extract Architecture and Keybindings docs
+
+- What: rewrote `docs/README.md` from a dense technical reference into an engaging, punchy project overview that sells the tool — focused on features, quick start, and visual appeal. Extracted the full keybinding reference (navigation, views, charts, sorting, actions) into a new `docs/KEYBINDINGS.md`. Extracted all architecture content (component diagram, data flow, price routing, layout diagrams, chart system, database schema, configuration, technology table, file map) into a new `docs/ARCHITECTURE.md`. README now links to both docs for deep dives instead of inlining everything. README covers: why pftui, quick start, usage, views overview, charts, themes, essential keybindings (with link to full reference), and a brief architecture summary (with link to full docs).
+- Why: the README was a 500-line technical reference document that buried the lede. Nobody scrolls through database schemas to decide if they want to try a tool. The new README hooks readers immediately, shows what makes pftui special, and gets them to `cargo build` in seconds. Technical details are preserved and properly organized in dedicated docs.
+- Files: `docs/README.md` (full rewrite), new `docs/KEYBINDINGS.md`, new `docs/ARCHITECTURE.md`
+- Tests: no code changes, all 194 tests still passing
+- TODO: Rewrite README.md (P0)
+
 ### 2026-03-01 — Increase test coverage across 4 modules
 
 - What: added comprehensive test suites to 4 previously untested modules: `config.rs` (8 tests — default values, TOML roundtrip serialization, deserialization with missing fields, empty TOML defaults, PortfolioMode serialization, is_percentage_mode, config_path), `asset_names.rs` (14 tests — resolve_name known/unknown, infer_category for all 6 asset categories plus case insensitivity, search_names by ticker prefix, name prefix, exact match priority, no match, case insensitivity), `theme.rs` (21 tests — lerp_color at 0/0.5/1/clamping/non-RGB fallback, gradient_3 at 0/0.25/0.5/1, pulse_intensity range check, gain_intensity_color positive/negative/zero/saturation, all themes load by name, unknown theme fallback, next_theme cycling/wrapping, category_color all variants), `price_chart.rs` (10 new tests — compute_ratio basic/missing dates/zero denominator/empty inputs, resample identity/upscale/downscale/empty/zero target/single value).
