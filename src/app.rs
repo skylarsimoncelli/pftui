@@ -226,6 +226,10 @@ pub struct App {
     pub price_flash_ticks: HashMap<String, u64>,
     pub last_value_update_tick: u64,
 
+    // Price error display
+    pub last_price_error: Option<String>,
+    pub last_price_error_tick: u64,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -316,6 +320,8 @@ impl App {
             tick_count: 0,
             price_flash_ticks: HashMap::new(),
             last_value_update_tick: 0,
+            last_price_error: None,
+            last_price_error_tick: 0,
             db_path,
         }
     }
@@ -919,7 +925,10 @@ impl App {
                         self.last_refresh = Some(Instant::now());
                         updated = true;
                     }
-                    Some(PriceUpdate::Error(_)) => {}
+                    Some(PriceUpdate::Error(msg)) => {
+                        self.last_price_error = Some(msg);
+                        self.last_price_error_tick = self.tick_count;
+                    }
                     None => break,
                 }
             }

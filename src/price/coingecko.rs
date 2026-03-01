@@ -62,6 +62,40 @@ pub fn ticker_to_coingecko_id(ticker: &str) -> Option<&'static str> {
     }
 }
 
+/// Build a reqwest client with a proper User-Agent header.
+/// CoinGecko may reject or rate-limit requests without one.
+fn build_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent("pftui/1.0 (https://github.com/skylarsimoncelli/pftui)")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(Into::into)
+}
+
+/// Send a GET request with retry on 429 rate limit.
+async fn get_with_retry(client: &reqwest::Client, url: &str) -> Result<reqwest::Response> {
+    let resp = client.get(url).send().await?;
+
+    if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        // Wait 2 seconds and retry once on rate limit
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let retry_resp = client.get(url).send().await?;
+        if !retry_resp.status().is_success() {
+            bail!(
+                "CoinGecko rate limited (429), retry failed with status {}",
+                retry_resp.status()
+            );
+        }
+        return Ok(retry_resp);
+    }
+
+    if !resp.status().is_success() {
+        bail!("CoinGecko API returned status {}", resp.status());
+    }
+
+    Ok(resp)
+}
+
 pub async fn fetch_prices(tickers: &[String]) -> Result<Vec<PriceQuote>> {
     // Map tickers to CoinGecko IDs
     let mut id_to_ticker: HashMap<String, String> = HashMap::new();
@@ -80,18 +114,21 @@ pub async fn fetch_prices(tickers: &[String]) -> Result<Vec<PriceQuote>> {
 
     let ids_param = ids.join(",");
     let url = format!(
-        "https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd",
+        "https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true",
         ids_param
     );
 
-    let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await?;
-
-    if !resp.status().is_success() {
-        bail!("CoinGecko API returned status {}", resp.status());
-    }
+    let client = build_client()?;
+    let resp = get_with_retry(&client, &url).await?;
 
     let data: HashMap<String, HashMap<String, f64>> = resp.json().await?;
+    parse_price_response(data, &id_to_ticker)
+}
+
+fn parse_price_response(
+    data: HashMap<String, HashMap<String, f64>>,
+    id_to_ticker: &HashMap<String, String>,
+) -> Result<Vec<PriceQuote>> {
     let now = chrono::Utc::now().to_rfc3339();
     let mut quotes = Vec::new();
 
@@ -122,12 +159,8 @@ pub async fn fetch_history(ticker: &str, days: u32) -> Result<Vec<HistoryRecord>
         id, days
     );
 
-    let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await?;
-
-    if !resp.status().is_success() {
-        bail!("CoinGecko history API returned status {}", resp.status());
-    }
+    let client = build_client()?;
+    let resp = get_with_retry(&client, &url).await?;
 
     #[derive(serde::Deserialize)]
     struct MarketChart {
@@ -169,4 +202,82 @@ pub async fn fetch_history(ticker: &str, days: u32) -> Result<Vec<HistoryRecord>
     result.sort_by(|a, b| a.date.cmp(&b.date));
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ticker_to_id_known_coins() {
+        assert_eq!(ticker_to_coingecko_id("BTC"), Some("bitcoin"));
+        assert_eq!(ticker_to_coingecko_id("btc"), Some("bitcoin"));
+        assert_eq!(ticker_to_coingecko_id("ETH"), Some("ethereum"));
+        assert_eq!(ticker_to_coingecko_id("SOL"), Some("solana"));
+    }
+
+    #[test]
+    fn ticker_to_id_unknown_returns_none() {
+        assert_eq!(ticker_to_coingecko_id("AAPL"), None);
+        assert_eq!(ticker_to_coingecko_id("UNKNOWN"), None);
+    }
+
+    #[test]
+    fn ticker_to_id_aliases() {
+        // MATIC and POL both map to matic-network
+        assert_eq!(ticker_to_coingecko_id("MATIC"), Some("matic-network"));
+        assert_eq!(ticker_to_coingecko_id("POL"), Some("matic-network"));
+        // RENDER and RNDR both map to render-token
+        assert_eq!(ticker_to_coingecko_id("RENDER"), Some("render-token"));
+        assert_eq!(ticker_to_coingecko_id("RNDR"), Some("render-token"));
+    }
+
+    #[test]
+    fn parse_price_response_extracts_quotes() {
+        let mut data = HashMap::new();
+        let mut btc_prices = HashMap::new();
+        btc_prices.insert("usd".to_string(), 50000.0);
+        data.insert("bitcoin".to_string(), btc_prices);
+
+        let mut id_to_ticker = HashMap::new();
+        id_to_ticker.insert("bitcoin".to_string(), "BTC".to_string());
+
+        let quotes = parse_price_response(data, &id_to_ticker).unwrap();
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].symbol, "BTC");
+        assert_eq!(quotes[0].source, "coingecko");
+        assert_eq!(quotes[0].currency, "USD");
+    }
+
+    #[test]
+    fn parse_price_response_skips_missing_ticker() {
+        let mut data = HashMap::new();
+        let mut unknown_prices = HashMap::new();
+        unknown_prices.insert("usd".to_string(), 100.0);
+        data.insert("unknown-coin".to_string(), unknown_prices);
+
+        let id_to_ticker = HashMap::new(); // no mappings
+        let quotes = parse_price_response(data, &id_to_ticker).unwrap();
+        assert!(quotes.is_empty());
+    }
+
+    #[test]
+    fn parse_price_response_skips_missing_usd() {
+        let mut data = HashMap::new();
+        let mut btc_prices = HashMap::new();
+        btc_prices.insert("eur".to_string(), 45000.0); // no "usd" key
+        data.insert("bitcoin".to_string(), btc_prices);
+
+        let mut id_to_ticker = HashMap::new();
+        id_to_ticker.insert("bitcoin".to_string(), "BTC".to_string());
+
+        let quotes = parse_price_response(data, &id_to_ticker).unwrap();
+        assert!(quotes.is_empty());
+    }
+
+    #[test]
+    fn build_client_succeeds() {
+        let client = build_client();
+        assert!(client.is_ok());
+    }
 }

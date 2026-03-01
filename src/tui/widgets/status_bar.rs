@@ -106,6 +106,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("Theme", Style::default().fg(t.text_secondary)));
     }
 
+    // Show recent price error (fades after ~5 seconds = 300 ticks at 60fps)
+    if let Some(ref err) = app.last_price_error {
+        let age = app.tick_count.saturating_sub(app.last_price_error_tick);
+        if age < 300 {
+            spans.push(Span::styled(" ⚠ ", Style::default().fg(t.stale_yellow)));
+            // Truncate long error messages for the status bar
+            let display_err = if err.len() > 50 { &err[..50] } else { err.as_str() };
+            spans.push(Span::styled(display_err, Style::default().fg(t.stale_yellow)));
+        }
+    }
+
     spans.push(Span::raw("  "));
     spans.extend(live_indicator);
 

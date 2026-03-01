@@ -149,28 +149,46 @@ impl PriceService {
             }
         }
 
-        // Fetch CoinGecko prices (batched), fall back to Yahoo
+        // Fetch CoinGecko prices (batched), fall back to Yahoo per-symbol
         if !crypto_symbols.is_empty() {
-            match coingecko::fetch_prices(&crypto_symbols).await {
+            let cg_result = coingecko::fetch_prices(&crypto_symbols).await;
+            let mut cg_ok = false;
+
+            match &cg_result {
                 Ok(quotes) if !quotes.is_empty() => {
+                    // CoinGecko batch succeeded — send all quotes
                     for quote in quotes {
-                        let _ = update_tx.send(PriceUpdate::Quote(quote));
+                        let _ = update_tx.send(PriceUpdate::Quote(quote.clone()));
                     }
+                    cg_ok = true;
                 }
-                _ => {
-                    // Fallback: fetch each crypto via Yahoo (SYM-USD)
-                    for sym in &crypto_symbols {
-                        let yahoo_sym = yahoo_crypto_symbol(sym);
-                        match yahoo::fetch_price(&yahoo_sym).await {
-                            Ok(mut quote) => {
-                                quote.symbol = sym.clone(); // map back to original symbol
-                                let _ = update_tx.send(PriceUpdate::Quote(quote));
-                            }
-                            Err(e) => {
-                                let _ = update_tx.send(PriceUpdate::Error(
-                                    format!("Yahoo crypto {}: {}", sym, e),
-                                ));
-                            }
+                Ok(_) => {
+                    // CoinGecko returned empty response
+                    let _ = update_tx.send(PriceUpdate::Error(
+                        "CoinGecko returned empty price data, falling back to Yahoo".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    // CoinGecko failed — report why
+                    let _ = update_tx.send(PriceUpdate::Error(
+                        format!("CoinGecko batch failed: {}, falling back to Yahoo", e),
+                    ));
+                }
+            }
+
+            if !cg_ok {
+                // Fallback: fetch each crypto via Yahoo (SYM-USD)
+                for sym in &crypto_symbols {
+                    let yahoo_sym = yahoo_crypto_symbol(sym);
+                    match yahoo::fetch_price(&yahoo_sym).await {
+                        Ok(mut quote) => {
+                            quote.symbol = sym.clone(); // map back to original symbol
+                            let _ = update_tx.send(PriceUpdate::Quote(quote));
+                        }
+                        Err(_e) => {
+                            let _ = update_tx.send(PriceUpdate::Error(
+                                format!("{}: price fetch failed (CoinGecko + Yahoo)", sym),
+                            ));
                         }
                     }
                 }
