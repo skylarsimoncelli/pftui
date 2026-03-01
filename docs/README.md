@@ -197,6 +197,7 @@ pftui export json              # Export positions as JSON
 | `2` | Transactions view (full mode only) |
 | `Enter` | Open price chart for selected position |
 | `Esc` | Close chart / help overlay |
+| `/` | Search / filter by name |
 | `q` / `Ctrl+C` | Quit |
 
 ### Sorting
