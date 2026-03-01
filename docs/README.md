@@ -21,6 +21,15 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 - Full j/k/gg/G/Ctrl+d/Ctrl+u navigation
 - Auto-fetches data on tab activation and at startup
 
+### Economy Dashboard
+- Dedicated Economy tab (`4`) with macro economic indicators
+- 14 economic symbols across 4 groups: Yields (2Y, 5Y, 10Y, 30Y), Currency (DXY, EUR, GBP, JPY, CNY), Commodities (Gold, Oil, Copper, NatGas), Volatility (VIX)
+- Treasury yields formatted as percentages (e.g. 4.325%)
+- Visual group separators between sections
+- Live values and daily change % with gain-aware color coding
+- Full j/k/gg/G/Ctrl+d/Ctrl+u navigation
+- Auto-fetches data on tab activation and at startup
+
 ### Market Data
 - Live spot prices via Yahoo Finance and CoinGecko
 - Auto-refresh on configurable interval (default: 60s)
@@ -205,6 +214,7 @@ pftui export json              # Export positions as JSON
 | `1` | Positions view |
 | `2` | Transactions view (full mode only) |
 | `3` | Markets overview |
+| `4` | Economy dashboard |
 | `Enter` | Open price chart for selected position |
 | `Esc` | Close chart / help overlay |
 | `/` | Search / filter by name |
@@ -400,6 +410,7 @@ pftui/
         │   ├── positions.rs  # Positions table (full + privacy)
         │   ├── transactions.rs # Transactions table
         │   ├── markets.rs    # Markets overview tab
+        │   ├── economy.rs    # Economy dashboard tab
         │   └── help.rs       # Help overlay popup
         └── widgets/
             ├── mod.rs

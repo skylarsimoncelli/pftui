@@ -17,6 +17,14 @@
 ---
 
 
+### 2026-03-01 — Add Economy dashboard view (tab 4)
+
+- What: added a new Economy view accessible via the `4` key. Displays a macro dashboard with 14 economic indicators across 4 groups: Treasury Yields (2Y, 5Y, 10Y, 30Y via ^IRX, ^FVX, ^TNX, ^TYX), Currency (DXY, EUR, GBP, JPY, CNY), Commodities (Gold, Oil, Copper, NatGas), and Volatility (VIX). Each row shows symbol, name, group (color-coded), live value, and daily change % with gain-aware coloring. Yields are formatted with % suffix (e.g. "4.325%") while currencies/commodities use standard price formatting. Visual group separators (blank rows) divide sections. Prices and 30-day history fetched at startup and on tab activation. Full vim navigation (j/k, gg/G, Ctrl+d/Ctrl+u) works. Header shows `[4]Econ` tab. Also fixed Markets tab being incorrectly nested inside `if !pct_mode` block in header — now always visible. Help overlay updated with `4` keybinding.
+- Why: the Markets tab shows broad market instruments but lacks macro economic context. Treasury yields, the dollar index, and commodity prices are essential for understanding the economic environment — interest rate expectations, inflation signals, currency strength. This is the second new view tab from the VISION roadmap.
+- Files: new `src/tui/views/economy.rs` (EconomyItem struct, EconomyGroup enum, economy_symbols list, render function, format_value, compute_change_pct, category_for_group, 9 tests), `src/app.rs` (ViewMode::Economy, economy_selected_index, key 4 handler, request_economy_data method, Economy arms in all 6 navigation methods), `src/tui/views/mod.rs` (economy module), `src/tui/ui.rs` (Economy render dispatch), `src/tui/widgets/header.rs` (Economy tab display, fixed Markets tab brace nesting), `src/tui/views/help.rs` (key 4 entry), `docs/README.md` (Economy features, keybinding, file map)
+- Tests: added 9 tests — economy_symbols_has_expected_count, economy_symbols_has_all_groups, economy_symbols_yahoo_symbols_unique, economy_symbols_yields_first, format_value_yields_shows_percent, format_value_currency_large, format_value_commodity_large, format_value_currency_small, category_for_group_mapping. Total: 94 tests passing.
+- TODO: Add Economy view (tab 4) (P1)
+
 ### 2026-03-01 — Add Markets overview view (tab 3)
 
 - What: added a new Markets view accessible via the `3` key. Displays a table of 18 major market symbols across 5 categories: indices (SPX, NDX, DJI, RUT, VIX), commodities (Gold, Silver, Oil, NatGas), crypto (BTC, ETH, SOL), forex (DXY, EUR, GBP, JPY), and bonds (10Y, 2Y Treasury). Each row shows symbol, name, category (color-coded), live price, and daily change % with gain-aware coloring. Prices and 30-day history are fetched at startup and on tab activation for change % calculation. Full vim navigation (j/k, gg/G, Ctrl+d/Ctrl+u) works in the Markets view. Header shows `[3]Mkt` tab with active/inactive styling. Help overlay updated with `3` keybinding.

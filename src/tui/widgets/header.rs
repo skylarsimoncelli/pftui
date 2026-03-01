@@ -37,6 +37,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::raw(" "));
         spans.push(Span::styled("[2]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Tx", tx_style));
+    }
 
     // Markets tab — always visible
     let mkt_style = if matches!(app.view_mode, ViewMode::Markets) {
@@ -47,7 +48,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[3]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled("Mkt", mkt_style));
-    }
+
+    // Economy tab — always visible
+    let econ_style = if matches!(app.view_mode, ViewMode::Economy) {
+        Style::default().fg(t.text_primary).bold().underlined()
+    } else {
+        Style::default().fg(t.text_muted)
+    };
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled("[4]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled("Econ", econ_style));
 
     if !privacy {
         let total = app.total_value;

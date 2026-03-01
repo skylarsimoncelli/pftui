@@ -17,12 +17,14 @@ use crate::models::transaction::Transaction;
 use crate::price::{PriceCommand, PriceService, PriceUpdate};
 use crate::tui::theme::{self, Theme};
 use crate::tui::views::markets;
+use crate::tui::views::economy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Positions,
     Transactions,
     Markets,
+    Economy,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartTimeframe {
@@ -175,6 +177,7 @@ pub struct App {
     pub selected_index: usize,
     pub tx_selected_index: usize,
     pub markets_selected_index: usize,
+    pub economy_selected_index: usize,
     pub g_pending: bool,
     pub terminal_height: u16,
 
@@ -244,6 +247,7 @@ impl App {
             selected_index: 0,
             tx_selected_index: 0,
             markets_selected_index: 0,
+            economy_selected_index: 0,
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             search_mode: false,
@@ -287,6 +291,7 @@ impl App {
         self.request_all_history(&service);
         self.price_service = Some(service);
         self.request_market_data();
+        self.request_economy_data();
     }
 
     fn load_data(&mut self) {
@@ -396,6 +401,25 @@ impl App {
                 let batch: Vec<(String, AssetCategory, u32)> = symbols
                     .into_iter()
                     .map(|(sym, cat)| (sym, cat, 30)) // 30 days for change % calc
+                    .collect();
+                service.send_command(PriceCommand::FetchHistoryBatch(batch));
+            }
+        }
+    }
+
+    /// Fetch spot prices and short history for all economy dashboard symbols.
+    fn request_economy_data(&self) {
+        if let Some(ref service) = self.price_service {
+            let items = economy::economy_symbols();
+            let symbols: Vec<(String, AssetCategory)> = items
+                .iter()
+                .map(|item| (item.yahoo_symbol.clone(), economy::category_for_group(item.group)))
+                .collect();
+            if !symbols.is_empty() {
+                service.send_command(PriceCommand::FetchAll(symbols.clone()));
+                let batch: Vec<(String, AssetCategory, u32)> = symbols
+                    .into_iter()
+                    .map(|(sym, cat)| (sym, cat, 30))
                     .collect();
                 service.send_command(PriceCommand::FetchHistoryBatch(batch));
             }
@@ -948,6 +972,11 @@ impl App {
                 self.detail_open = false;
                 self.request_market_data();
             }
+            KeyCode::Char('4') => {
+                self.view_mode = ViewMode::Economy;
+                self.detail_open = false;
+                self.request_economy_data();
+            }
 
             // Privacy toggle
             KeyCode::Char('p') => {
@@ -1104,6 +1133,13 @@ impl App {
                         (self.markets_selected_index + 1).min(count - 1);
                 }
             }
+            ViewMode::Economy => {
+                let count = economy::economy_symbols().len();
+                if count > 0 {
+                    self.economy_selected_index =
+                        (self.economy_selected_index + 1).min(count - 1);
+                }
+            }
         }
     }
 
@@ -1118,6 +1154,9 @@ impl App {
             ViewMode::Markets => {
                 self.markets_selected_index = self.markets_selected_index.saturating_sub(1);
             }
+            ViewMode::Economy => {
+                self.economy_selected_index = self.economy_selected_index.saturating_sub(1);
+            }
         }
     }
 
@@ -1131,6 +1170,9 @@ impl App {
             }
             ViewMode::Markets => {
                 self.markets_selected_index = 0;
+            }
+            ViewMode::Economy => {
+                self.economy_selected_index = 0;
             }
         }
     }
@@ -1151,6 +1193,12 @@ impl App {
                 let count = markets::market_symbols().len();
                 if count > 0 {
                     self.markets_selected_index = count - 1;
+                }
+            }
+            ViewMode::Economy => {
+                let count = economy::economy_symbols().len();
+                if count > 0 {
+                    self.economy_selected_index = count - 1;
                 }
             }
         }
@@ -1188,6 +1236,13 @@ impl App {
                         (self.markets_selected_index + step).min(count - 1);
                 }
             }
+            ViewMode::Economy => {
+                let count = economy::economy_symbols().len();
+                if count > 0 {
+                    self.economy_selected_index =
+                        (self.economy_selected_index + step).min(count - 1);
+                }
+            }
         }
     }
 
@@ -1202,6 +1257,9 @@ impl App {
             }
             ViewMode::Markets => {
                 self.markets_selected_index = self.markets_selected_index.saturating_sub(step);
+            }
+            ViewMode::Economy => {
+                self.economy_selected_index = self.economy_selected_index.saturating_sub(step);
             }
         }
     }
