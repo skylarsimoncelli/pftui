@@ -67,6 +67,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("1", "Positions view", kc, tc));
     lines.push(key_line("2", "Transactions view", kc, tc));
+    lines.push(key_line("3", "Markets overview", kc, tc));
     lines.push(key_line("Enter", "Open price chart", kc, tc));
     lines.push(key_line("Esc", "Close chart / help", kc, tc));
     lines.push(key_line("?", "Toggle this help", kc, tc));

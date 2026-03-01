@@ -32,6 +32,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 views::transactions::render(frame, chunks[1], app);
             }
         }
+        ViewMode::Markets => views::markets::render(frame, chunks[1], app),
     }
 
     widgets::status_bar::render(frame, chunks[2], app);

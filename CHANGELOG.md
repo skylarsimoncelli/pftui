@@ -17,6 +17,14 @@
 ---
 
 
+### 2026-03-01 — Add Markets overview view (tab 3)
+
+- What: added a new Markets view accessible via the `3` key. Displays a table of 18 major market symbols across 5 categories: indices (SPX, NDX, DJI, RUT, VIX), commodities (Gold, Silver, Oil, NatGas), crypto (BTC, ETH, SOL), forex (DXY, EUR, GBP, JPY), and bonds (10Y, 2Y Treasury). Each row shows symbol, name, category (color-coded), live price, and daily change % with gain-aware coloring. Prices and 30-day history are fetched at startup and on tab activation for change % calculation. Full vim navigation (j/k, gg/G, Ctrl+d/Ctrl+u) works in the Markets view. Header shows `[3]Mkt` tab with active/inactive styling. Help overlay updated with `3` keybinding.
+- Why: the app had no way to view broad market data beyond your own portfolio. A Markets tab is essential for context — seeing how indices, commodities, crypto, and forex are performing alongside your positions. This is the first of the new view tabs from the VISION roadmap.
+- Files: new `src/tui/views/markets.rs` (MarketItem struct, market_symbols list, render function, format_price, compute_change_pct, 8 tests), `src/app.rs` (ViewMode::Markets, markets_selected_index, key 3 handler, request_market_data method, Markets arms in all 6 navigation methods), `src/tui/views/mod.rs` (markets module), `src/tui/ui.rs` (Markets render dispatch), `src/tui/widgets/header.rs` (Markets tab display), `src/tui/views/help.rs` (key 3 entry), `docs/README.md` (Markets features, keybinding, file map)
+- Tests: added 8 tests — market_symbols_has_expected_count, market_symbols_has_all_categories, market_symbols_yahoo_symbols_unique, market_symbols_spx_is_first, format_price_large, format_price_medium, format_price_ones, format_price_small. Total: 85 tests passing.
+- TODO: Add Markets view (tab 3) (P1)
+
 ### 2026-03-01 — Add SMA(20) and SMA(50) moving average overlays
 
 - What: added Simple Moving Average (SMA) computation and braille overlay rendering on single-symbol price charts. SMA(20) renders as a thin braille dot line in `text_accent` color, SMA(50) in `border_accent` color. Added `compute_sma()` function using a sliding window sum for O(n) computation. Added `braille_bits()` (refactored from `braille_char`) and `braille_dot_bits()` helper for single-dot overlay rendering. SMA dots are composited with price area bits using bitwise OR, with color priority: price gradient dominates when both are present, SMA color shows through in empty cells. SMA legend ("─SMA20 ─SMA50") appended to the stats line below the chart. SMAs only appear on single-symbol full charts — not on ratio charts, mini panels, or "All" multi-panel views where they are not meaningful. NaN values in SMA (the leading `period-1` entries) are preserved through resampling so the line starts only where valid data exists.

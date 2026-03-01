@@ -14,6 +14,13 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 - 90-day portfolio value sparkline (braille dot-matrix)
 - CSV and JSON export
 
+### Markets Overview
+- Dedicated Markets tab (`3`) with major indices, commodities, crypto, forex, and bonds
+- 18 market symbols: SPX, NDX, DJI, RUT, VIX, Gold, Silver, Oil, NatGas, BTC, ETH, SOL, DXY, EUR, GBP, JPY, 10Y, 2Y
+- Live prices and daily change % with gain-aware color coding
+- Full j/k/gg/G/Ctrl+d/Ctrl+u navigation
+- Auto-fetches data on tab activation and at startup
+
 ### Market Data
 - Live spot prices via Yahoo Finance and CoinGecko
 - Auto-refresh on configurable interval (default: 60s)
@@ -114,7 +121,7 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 │ Header (logo, tabs, value, clock)    │  2 rows
 ├───────────────────────┬──────────────┤
 │                       │ Sidebar      │
-│ Positions / Txns      │  alloc bars  │  57% / 43%
+│ Positions/Txns/Mkts   │  alloc bars  │  57% / 43%
 │                       │  sparkline   │
 │                       │   — or —     │
 │                       │ Price chart  │
@@ -197,6 +204,7 @@ pftui export json              # Export positions as JSON
 | `Ctrl+u` | Scroll up half page |
 | `1` | Positions view |
 | `2` | Transactions view (full mode only) |
+| `3` | Markets overview |
 | `Enter` | Open price chart for selected position |
 | `Esc` | Close chart / help overlay |
 | `/` | Search / filter by name |
@@ -391,6 +399,7 @@ pftui/
         │   ├── mod.rs
         │   ├── positions.rs  # Positions table (full + privacy)
         │   ├── transactions.rs # Transactions table
+        │   ├── markets.rs    # Markets overview tab
         │   └── help.rs       # Help overlay popup
         └── widgets/
             ├── mod.rs

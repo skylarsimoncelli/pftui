@@ -16,11 +16,13 @@ use crate::models::price::{HistoryRecord, PriceQuote};
 use crate::models::transaction::Transaction;
 use crate::price::{PriceCommand, PriceService, PriceUpdate};
 use crate::tui::theme::{self, Theme};
+use crate::tui::views::markets;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Positions,
     Transactions,
+    Markets,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartTimeframe {
@@ -172,6 +174,7 @@ pub struct App {
     // Navigation
     pub selected_index: usize,
     pub tx_selected_index: usize,
+    pub markets_selected_index: usize,
     pub g_pending: bool,
     pub terminal_height: u16,
 
@@ -240,6 +243,7 @@ impl App {
             display_transactions: Vec::new(),
             selected_index: 0,
             tx_selected_index: 0,
+            markets_selected_index: 0,
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             search_mode: false,
@@ -282,6 +286,7 @@ impl App {
         self.request_price_fetch(&service);
         self.request_all_history(&service);
         self.price_service = Some(service);
+        self.request_market_data();
     }
 
     fn load_data(&mut self) {
@@ -375,6 +380,25 @@ impl App {
                 category,
                 self.chart_timeframe.days(),
             ));
+        }
+    }
+
+    /// Fetch spot prices and short history for all market overview symbols.
+    fn request_market_data(&self) {
+        if let Some(ref service) = self.price_service {
+            let items = markets::market_symbols();
+            let symbols: Vec<(String, AssetCategory)> = items
+                .iter()
+                .map(|item| (item.yahoo_symbol.clone(), item.category))
+                .collect();
+            if !symbols.is_empty() {
+                service.send_command(PriceCommand::FetchAll(symbols.clone()));
+                let batch: Vec<(String, AssetCategory, u32)> = symbols
+                    .into_iter()
+                    .map(|(sym, cat)| (sym, cat, 30)) // 30 days for change % calc
+                    .collect();
+                service.send_command(PriceCommand::FetchHistoryBatch(batch));
+            }
         }
     }
 
@@ -919,6 +943,11 @@ impl App {
                     self.detail_open = false;
                 }
             }
+            KeyCode::Char('3') => {
+                self.view_mode = ViewMode::Markets;
+                self.detail_open = false;
+                self.request_market_data();
+            }
 
             // Privacy toggle
             KeyCode::Char('p') => {
@@ -1068,6 +1097,13 @@ impl App {
                         (self.tx_selected_index + 1).min(self.display_transactions.len() - 1);
                 }
             }
+            ViewMode::Markets => {
+                let count = markets::market_symbols().len();
+                if count > 0 {
+                    self.markets_selected_index =
+                        (self.markets_selected_index + 1).min(count - 1);
+                }
+            }
         }
     }
 
@@ -1079,6 +1115,9 @@ impl App {
             ViewMode::Transactions => {
                 self.tx_selected_index = self.tx_selected_index.saturating_sub(1);
             }
+            ViewMode::Markets => {
+                self.markets_selected_index = self.markets_selected_index.saturating_sub(1);
+            }
         }
     }
 
@@ -1089,6 +1128,9 @@ impl App {
             }
             ViewMode::Transactions => {
                 self.tx_selected_index = 0;
+            }
+            ViewMode::Markets => {
+                self.markets_selected_index = 0;
             }
         }
     }
@@ -1103,6 +1145,12 @@ impl App {
             ViewMode::Transactions => {
                 if !self.display_transactions.is_empty() {
                     self.tx_selected_index = self.display_transactions.len() - 1;
+                }
+            }
+            ViewMode::Markets => {
+                let count = markets::market_symbols().len();
+                if count > 0 {
+                    self.markets_selected_index = count - 1;
                 }
             }
         }
@@ -1133,6 +1181,13 @@ impl App {
                         (self.tx_selected_index + step).min(self.display_transactions.len() - 1);
                 }
             }
+            ViewMode::Markets => {
+                let count = markets::market_symbols().len();
+                if count > 0 {
+                    self.markets_selected_index =
+                        (self.markets_selected_index + step).min(count - 1);
+                }
+            }
         }
     }
 
@@ -1144,6 +1199,9 @@ impl App {
             }
             ViewMode::Transactions => {
                 self.tx_selected_index = self.tx_selected_index.saturating_sub(step);
+            }
+            ViewMode::Markets => {
+                self.markets_selected_index = self.markets_selected_index.saturating_sub(step);
             }
         }
     }

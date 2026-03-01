@@ -27,7 +27,7 @@
 
 ## P1 — New Views
 
-- [ ] **Add Markets view (tab 3)** — A broad market overview tab showing major indices (SPX, NDX, DJI, RUT), commodities (Gold, Oil, Silver), crypto (BTC, ETH), and forex (DXY, EUR, GBP, JPY). Display as a table: Symbol, Name, Price, Change, Change%. Fetch prices on view activation. Files: new `src/tui/views/markets.rs`, `src/app.rs` (ViewMode::Markets, key `3`), `src/tui/ui.rs` (render dispatch). Test: test market symbol list generation.
+- [x] **Add Markets view (tab 3)** — A broad market overview tab showing major indices (SPX, NDX, DJI, RUT), commodities (Gold, Oil, Silver), crypto (BTC, ETH), and forex (DXY, EUR, GBP, JPY). Display as a table: Symbol, Name, Price, Change, Change%. Fetch prices on view activation. Files: new `src/tui/views/markets.rs`, `src/app.rs` (ViewMode::Markets, key `3`), `src/tui/ui.rs` (render dispatch). Test: test market symbol list generation.
 - [ ] **Add Economy view (tab 4)** — Macro dashboard showing treasury yields (2Y, 5Y, 10Y, 30Y via Yahoo ^TNX etc.), DXY, and key indicators. Start simple: table of economic symbols with current values. Can expand to yield curve chart later. Files: new `src/tui/views/economy.rs`, `src/app.rs` (ViewMode::Economy, key `4`). Test: test economy symbol mapping.
 - [ ] **Add Watchlist view (tab 5)** — Track assets without holding them. New DB table `watchlist (symbol, category, added_at)`. CLI: `pftui watch <symbol>`, `pftui unwatch <symbol>`. TUI: same chart access as positions. Files: new `src/db/watchlist.rs`, new `src/tui/views/watchlist.rs`, `src/cli.rs`, `src/app.rs`. Test: test watchlist CRUD.
 
