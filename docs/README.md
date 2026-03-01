@@ -65,6 +65,15 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 - Pulse animations (live indicator, price flash)
 - Theme persists to config on change
 
+### Position Detail
+- Press Enter on any position to open a full-screen detail popup
+- Shows: symbol, name, category, current price, quantity, avg cost, cost basis, value, gain, gain%, allocation%
+- Displays up to 10 most recent buy/sell transactions for the position
+- Respects privacy mode (hides quantity, cost, gain, and transactions)
+- Press Enter again from popup to open the chart in the sidebar
+- Esc closes the popup
+- Theme-aware with gain-colored performance metrics and category badges
+
 ### Privacy
 - **Percentage mode**: stores only allocation percentages, no monetary data exists in DB
 - **Privacy view toggle** (`p`): hides quantities and gains in-session, shows only prices and allocations
@@ -258,7 +267,7 @@ pftui unwatch AAPL             # Remove from watchlist
 | `3` | Markets overview |
 | `4` | Economy dashboard |
 | `5` | Watchlist |
-| `Enter` | Open price chart for selected position |
+| `Enter` | Open position detail popup (press again for chart) |
 | `Esc` | Close chart / help overlay |
 | `/` | Search / filter by name |
 | `q` / `Ctrl+C` | Quit |
@@ -461,6 +470,7 @@ pftui/
         ├── views/
         │   ├── mod.rs
         │   ├── positions.rs  # Positions table (full + privacy)
+        │   ├── position_detail.rs # Position detail popup
         │   ├── transactions.rs # Transactions table
         │   ├── markets.rs    # Markets overview tab
         │   ├── economy.rs    # Economy dashboard tab

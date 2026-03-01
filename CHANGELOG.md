@@ -17,6 +17,17 @@
 ---
 
 
+### 2026-03-01 — Add position detail popup
+
+- What: added a full-screen position detail popup that appears when pressing Enter on a position. Shows comprehensive info: symbol, name, category, current price, quantity, avg cost, cost basis, current value, gain, gain%, allocation%, and the most recent 10 buy/sell transactions for that symbol (sorted newest first). Respects privacy mode — hides quantity, cost, gain, and transaction history when privacy is active. Uses theme colors throughout including gain-aware coloring for performance metrics and category-colored badge. Transaction rows show BUY (green) / SELL (red) with date, quantity, and price. Popup is centered, 64 columns wide, and auto-sizes to content. Enter from popup transitions to the chart view in the sidebar. Esc closes the popup. Help overlay updated (Enter shows "Position detail / chart"). Status bar hint updated from "Chart" to "Detail". Added PositionExt trait with name_or_symbol() helper. Popup closes automatically when switching views (tabs 2-5).
+- Why: pressing Enter only opened the price chart in the sidebar, which showed one dimension of data. A detail popup gives a comprehensive view of a position at a glance — price info, cost basis analysis, gain/loss metrics, and full transaction history — without leaving the positions view. This is the first P2 visual polish item from the TODO.
+- Files: new `src/tui/views/position_detail.rs` (render function, build_detail_lines, format helpers, PositionExt trait, 10 tests), `src/app.rs` (detail_popup_open field, updated Enter handler with 3-state flow, Esc handler for popup, popup close on view switch), `src/tui/ui.rs` (position_detail popup render dispatch), `src/tui/views/mod.rs` (position_detail module), `src/tui/views/help.rs` (Enter keybinding text), `src/tui/widgets/status_bar.rs` (Enter hint text), `TODO.md`
+- Tests: added 10 tests — detail_lines_contain_symbol, detail_lines_contain_price_info, detail_lines_contain_gain_info, detail_lines_privacy_hides_values, detail_lines_contain_category, detail_lines_show_transactions, detail_lines_privacy_hides_transactions, format_money_large, format_money_medium, format_money_small. Total: 124 tests passing.
+- TODO: Add position detail popup (P2)
+
+
+
+
 ### 2026-03-01 — Add responsive layout for narrow terminals
 
 - What: added responsive layout that adapts to terminal width. Below 100 columns, the sidebar (allocation bars, portfolio sparkline, price chart panel) is hidden and positions use the full terminal width. Header abbreviates tab names ("Econ"→"Ec", "Watch"→"Wl") and hides the clock and theme indicator. Status bar shows only essential hints (Help, Search) instead of the full hint bar. Added `terminal_width` field to App (default 120, updated from `crossterm::terminal::size()` on startup and resize). Replaced `set_terminal_height` with `set_terminal_size(w, h)`. Exported `COMPACT_WIDTH` constant (100) from `ui.rs` so header and status bar can reference the same threshold.

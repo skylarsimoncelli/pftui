@@ -42,6 +42,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     widgets::status_bar::render(frame, chunks[2], app);
 
+    if app.detail_popup_open && matches!(app.view_mode, ViewMode::Positions) {
+        views::position_detail::render(frame, size, app);
+    }
+
     if app.show_help {
         views::help::render(frame, size, app);
     }

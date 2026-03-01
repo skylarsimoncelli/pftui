@@ -156,6 +156,7 @@ pub struct App {
     pub show_help: bool,
     pub help_scroll: usize,
     pub detail_open: bool,
+    pub detail_popup_open: bool,
 
     // Mode
     pub portfolio_mode: PortfolioMode,
@@ -239,6 +240,7 @@ impl App {
             show_help: false,
             help_scroll: 0,
             detail_open: false,
+            detail_popup_open: false,
             portfolio_mode: config.portfolio_mode,
             show_percentages_only: config.portfolio_mode == PortfolioMode::Percentage,
             transactions: Vec::new(),
@@ -935,6 +937,10 @@ impl App {
                 }
                 return;
             }
+            KeyCode::Esc if self.detail_popup_open => {
+                self.detail_popup_open = false;
+                return;
+            }
             KeyCode::Esc if self.show_help => {
                 self.show_help = false;
                 return;
@@ -1007,21 +1013,25 @@ impl App {
                 if self.portfolio_mode != PortfolioMode::Percentage {
                     self.view_mode = ViewMode::Transactions;
                     self.detail_open = false;
+                    self.detail_popup_open = false;
                 }
             }
             KeyCode::Char('3') => {
                 self.view_mode = ViewMode::Markets;
                 self.detail_open = false;
+                self.detail_popup_open = false;
                 self.request_market_data();
             }
             KeyCode::Char('4') => {
                 self.view_mode = ViewMode::Economy;
                 self.detail_open = false;
+                self.detail_popup_open = false;
                 self.request_economy_data();
             }
             KeyCode::Char('5') => {
                 self.view_mode = ViewMode::Watchlist;
                 self.detail_open = false;
+                self.detail_popup_open = false;
                 self.load_watchlist();
                 self.request_watchlist_data();
             }
@@ -1036,9 +1046,22 @@ impl App {
             // Detail view toggle
             KeyCode::Enter if matches!(self.view_mode, ViewMode::Positions) => {
                 if let Some(pos) = self.selected_position().cloned() {
-                    self.detail_open = !self.detail_open;
-                    self.chart_index = 0;
-                    if self.detail_open {
+                    if self.detail_popup_open {
+                        // From popup: close popup, open chart in sidebar
+                        self.detail_popup_open = false;
+                        self.detail_open = true;
+                        self.chart_index = 0;
+                        let fetch_syms = Self::chart_fetch_symbols(&pos);
+                        for (sym, cat) in &fetch_syms {
+                            self.request_history_for_symbol(sym, *cat);
+                        }
+                    } else if self.detail_open {
+                        // Chart is open: close it
+                        self.detail_open = false;
+                    } else {
+                        // Nothing open: show detail popup
+                        self.detail_popup_open = true;
+                        self.chart_index = 0;
                         let fetch_syms = Self::chart_fetch_symbols(&pos);
                         for (sym, cat) in &fetch_syms {
                             self.request_history_for_symbol(sym, *cat);
