@@ -41,6 +41,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("Navigate up/down", Style::default().fg(t.text_primary)),
         ]),
         Line::from(vec![
+            Span::styled("gg          ", Style::default().fg(t.key_hint)),
+            Span::styled("Jump to top", Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
+            Span::styled("G           ", Style::default().fg(t.key_hint)),
+            Span::styled("Jump to bottom", Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
             Span::styled("Enter       ", Style::default().fg(t.key_hint)),
             Span::styled("Toggle price chart", Style::default().fg(t.text_primary)),
         ]),
@@ -63,11 +71,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("Sort by allocation %", Style::default().fg(t.text_primary)),
         ]),
         Line::from(vec![
-            Span::styled("g           ", Style::default().fg(t.key_hint)),
+            Span::styled("%           ", Style::default().fg(t.key_hint)),
             Span::styled("Sort by gain %", Style::default().fg(t.text_primary)),
         ]),
         Line::from(vec![
-            Span::styled("G           ", Style::default().fg(t.key_hint)),
+            Span::styled("$           ", Style::default().fg(t.key_hint)),
             Span::styled("Sort by total gain", Style::default().fg(t.text_primary)),
         ]),
         Line::from(vec![

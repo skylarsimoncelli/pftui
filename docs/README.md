@@ -189,6 +189,8 @@ pftui export json              # Export positions as JSON
 |---|---|
 | `j` / `Down` | Move down |
 | `k` / `Up` | Move up |
+| `gg` | Jump to top |
+| `G` | Jump to bottom |
 | `1` | Positions view |
 | `2` | Transactions view (full mode only) |
 | `Enter` | Open price chart for selected position |
@@ -200,8 +202,8 @@ pftui export json              # Export positions as JSON
 | Key | Sort By |
 |---|---|
 | `a` | Allocation % (descending) |
-| `g` | Gain % (descending) |
-| `G` | Total gain (descending) |
+| `%` | Gain % (descending) |
+| `$` | Total gain (descending) |
 | `n` | Name (ascending) |
 | `c` | Category (ascending) |
 | `d` | Date (descending, transactions view) |

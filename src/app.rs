@@ -115,6 +115,7 @@ pub struct App {
     // Navigation
     pub selected_index: usize,
     pub tx_selected_index: usize,
+    pub g_pending: bool,
 
     // Sorting
     pub sort_field: SortField,
@@ -175,6 +176,7 @@ impl App {
             display_transactions: Vec::new(),
             selected_index: 0,
             tx_selected_index: 0,
+            g_pending: false,
             sort_field: SortField::Allocation,
             sort_ascending: false,
             category_filter: None,
@@ -663,6 +665,22 @@ impl App {
             return;
         }
 
+        // Handle gg vim motion (two-key sequence)
+        if self.g_pending {
+            self.g_pending = false;
+            if key.code == KeyCode::Char('g') {
+                self.jump_to_top();
+                return;
+            }
+            // g was pressed but followed by something other than g — fall through
+        }
+
+        // Set g_pending when g is pressed (first of potential gg sequence)
+        if key.code == KeyCode::Char('g') {
+            self.g_pending = true;
+            return;
+        }
+
         match key.code {
             // View switching
             KeyCode::Char('1') => {
@@ -729,7 +747,7 @@ impl App {
                 self.sort_ascending = false;
                 self.recompute();
             }
-            KeyCode::Char('g') => {
+            KeyCode::Char('%') => {
                 if !is_privacy_view(self) {
                     self.sort_field = SortField::GainPct;
                     self.sort_ascending = false;
@@ -737,6 +755,9 @@ impl App {
                 }
             }
             KeyCode::Char('G') => {
+                self.jump_to_bottom();
+            }
+            KeyCode::Char('$') => {
                 if !is_privacy_view(self) {
                     self.sort_field = SortField::TotalGain;
                     self.sort_ascending = false;
@@ -808,6 +829,32 @@ impl App {
             }
             ViewMode::Transactions => {
                 self.tx_selected_index = self.tx_selected_index.saturating_sub(1);
+            }
+        }
+    }
+
+    fn jump_to_top(&mut self) {
+        match self.view_mode {
+            ViewMode::Positions => {
+                self.selected_index = 0;
+            }
+            ViewMode::Transactions => {
+                self.tx_selected_index = 0;
+            }
+        }
+    }
+
+    fn jump_to_bottom(&mut self) {
+        match self.view_mode {
+            ViewMode::Positions => {
+                if !self.display_positions.is_empty() {
+                    self.selected_index = self.display_positions.len() - 1;
+                }
+            }
+            ViewMode::Transactions => {
+                if !self.display_transactions.is_empty() {
+                    self.tx_selected_index = self.display_transactions.len() - 1;
+                }
             }
         }
     }
@@ -1029,5 +1076,143 @@ mod tests {
             "Non-USD cash chart fetch should include DX-Y.NYB for ratio");
         assert!(syms.iter().any(|(s, _)| s == "EURUSD=X"),
             "Non-USD cash chart fetch should include the forex pair");
+    }
+}
+
+#[cfg(test)]
+mod vim_motion_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use rust_decimal_macros::dec;
+    use std::path::PathBuf;
+
+    fn make_test_app(num_positions: usize) -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
+
+        // Populate display_positions with dummy data
+        for i in 0..num_positions {
+            app.display_positions.push(Position {
+                symbol: format!("SYM{}", i),
+                name: format!("Symbol {}", i),
+                category: AssetCategory::Equity,
+                quantity: dec!(1),
+                avg_cost: dec!(100),
+                total_cost: dec!(100),
+                currency: "USD".to_string(),
+                current_price: Some(dec!(110)),
+                current_value: Some(dec!(110)),
+                gain: Some(dec!(10)),
+                gain_pct: Some(dec!(10)),
+                allocation_pct: Some(Decimal::from(100u64 / num_positions as u64)),
+            });
+        }
+        app
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+
+    #[test]
+    fn test_gg_jumps_to_top() {
+        let mut app = make_test_app(10);
+        app.selected_index = 5;
+
+        // Press g once (sets pending)
+        app.handle_key(key('g'));
+        assert!(app.g_pending);
+        assert_eq!(app.selected_index, 5); // hasn't moved yet
+
+        // Press g again (gg motion)
+        app.handle_key(key('g'));
+        assert!(!app.g_pending);
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_g_pending_cleared_by_other_key() {
+        let mut app = make_test_app(10);
+        app.selected_index = 5;
+
+        // Press g (sets pending)
+        app.handle_key(key('g'));
+        assert!(app.g_pending);
+
+        // Press j (clears pending, moves down)
+        app.handle_key(key('j'));
+        assert!(!app.g_pending);
+        assert_eq!(app.selected_index, 6);
+    }
+
+    #[test]
+    fn test_shift_g_jumps_to_bottom() {
+        let mut app = make_test_app(10);
+        app.selected_index = 0;
+
+        app.handle_key(key('G'));
+        assert_eq!(app.selected_index, 9);
+    }
+
+    #[test]
+    fn test_gg_from_bottom() {
+        let mut app = make_test_app(10);
+        app.selected_index = 9;
+
+        app.handle_key(key('g'));
+        app.handle_key(key('g'));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_g_jumps_on_empty_list() {
+        let mut app = make_test_app(0);
+
+        // G on empty list should not panic
+        app.handle_key(key('G'));
+        assert_eq!(app.selected_index, 0);
+
+        // gg on empty list should not panic
+        app.handle_key(key('g'));
+        app.handle_key(key('g'));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_gg_in_transactions_view() {
+        let mut app = make_test_app(5);
+        app.view_mode = ViewMode::Transactions;
+
+        // Add some display transactions
+        for i in 0..5 {
+            app.display_transactions.push(Transaction {
+                id: i as i64,
+                symbol: format!("TX{}", i),
+                category: AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: dec!(1),
+                price_per: dec!(100),
+                currency: "USD".to_string(),
+                date: "2025-01-01".to_string(),
+                notes: None,
+                created_at: "2025-01-01".to_string(),
+            });
+        }
+        app.tx_selected_index = 3;
+
+        // gg should jump tx index to 0
+        app.handle_key(key('g'));
+        app.handle_key(key('g'));
+        assert_eq!(app.tx_selected_index, 0);
+
+        // G should jump tx index to last
+        app.handle_key(key('G'));
+        assert_eq!(app.tx_selected_index, 4);
     }
 }
