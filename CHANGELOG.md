@@ -92,3 +92,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/price/coingecko.rs` (User-Agent, retry, timeout, refactored into helpers), `src/price/mod.rs` (explicit error reporting on CoinGecko failure), `src/app.rs` (store+display price errors), `src/tui/widgets/status_bar.rs` (error indicator)
 - Tests: added 7 tests for CoinGecko module (ticker mapping, aliases, response parsing, client construction). Total: 242 tests passing.
 - TODO: Fix BTC price fetching (P0)
+
+### 2026-03-01 — Add day gain/loss to header
+
+- What: added daily portfolio change display to the header bar. Shows today's dollar gain/loss with a directional arrow (▲/▼) next to the total gain percentage, e.g. "$45.2k +1.3% ▲$580 today". Computed by comparing each position's current live price to the most recent historical close price (previous trading day). Correctly handles the case where today's date already has a history record by using the second-to-last entry. Skips cash positions (always $1). Hidden in privacy/percentage mode.
+- Why: the daily portfolio change is the single most-checked number in any portfolio app. Previously users had to mentally compute it from individual position changes. Now it's immediately visible in the header at a glance.
+- Files: `src/app.rs` (new `daily_portfolio_change` field + `compute_daily_change()` method), `src/tui/widgets/header.rs` (display logic + `format_compact_signed()` helper)
+- Tests: added 7 tests for daily change computation (no history, with prev close, negative change, multiple positions, cash skip, percentage mode, today record handling) + 5 tests for format_compact_signed helper. Total: 254 tests passing.
+- TODO: Add day gain/loss to header (P1)

@@ -230,6 +230,9 @@ pub struct App {
     pub last_price_error: Option<String>,
     pub last_price_error_tick: u64,
 
+    // Daily portfolio change (sum of (current_price - prev_close) * quantity)
+    pub daily_portfolio_change: Option<Decimal>,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -322,6 +325,7 @@ impl App {
             last_value_update_tick: 0,
             last_price_error: None,
             last_price_error_tick: 0,
+            daily_portfolio_change: None,
             db_path,
         }
     }
@@ -725,6 +729,56 @@ impl App {
             }
         }
         self.portfolio_value_history = history;
+        self.compute_daily_change();
+    }
+
+    /// Compute daily portfolio change by comparing each position's current price
+    /// to its most recent historical close (previous trading day).
+    fn compute_daily_change(&mut self) {
+        if self.portfolio_mode == PortfolioMode::Percentage {
+            self.daily_portfolio_change = None;
+            return;
+        }
+
+        let mut total_change = dec!(0);
+        let mut has_data = false;
+
+        for pos in &self.positions {
+            // Cash doesn't change in value
+            if pos.category == AssetCategory::Cash {
+                continue;
+            }
+
+            let current_price = match pos.current_price {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // Find the most recent historical close for this symbol
+            if let Some(records) = self.price_history.get(&pos.symbol) {
+                if records.is_empty() {
+                    continue;
+                }
+                // Records are sorted by date. The last record is the most recent.
+                // If the last record IS today's price, use the second-to-last.
+                let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+                let prev_close = if records.len() >= 2 && records.last().map(|r| r.date.as_str()) == Some(today.as_str()) {
+                    // Last record is today — use the one before it
+                    records[records.len() - 2].close
+                } else if let Some(last) = records.last() {
+                    // Last record is a previous day — use it
+                    last.close
+                } else {
+                    continue;
+                };
+
+                let price_change = current_price - prev_close;
+                total_change += price_change * pos.quantity;
+                has_data = true;
+            }
+        }
+
+        self.daily_portfolio_change = if has_data { Some(total_change) } else { None };
     }
 
     pub fn selected_position(&self) -> Option<&Position> {
@@ -2504,5 +2558,132 @@ mod on_demand_history_tests {
         // Requesting exactly 180 should be a no-op
         app.request_history_if_needed("BTC", AssetCategory::Crypto, 180);
         assert_eq!(app.fetched_history_days.get("BTC"), Some(&180));
+    }
+}
+
+#[cfg(test)]
+mod daily_change_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
+    }
+
+    fn make_position(symbol: &str, qty: Decimal, price: Option<Decimal>, category: AssetCategory) -> Position {
+        Position {
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            category,
+            quantity: qty,
+            avg_cost: dec!(100),
+            total_cost: qty * dec!(100),
+            currency: "USD".to_string(),
+            current_price: price,
+            current_value: price.map(|p| p * qty),
+            gain: price.map(|p| p * qty - qty * dec!(100)),
+            gain_pct: None,
+            allocation_pct: None,
+        }
+    }
+
+    #[test]
+    fn test_daily_change_no_history() {
+        let mut app = make_app();
+        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity)];
+        app.compute_daily_change();
+        assert_eq!(app.daily_portfolio_change, None);
+    }
+
+    #[test]
+    fn test_daily_change_with_prev_close() {
+        let mut app = make_app();
+        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity)];
+        // Add history with a previous day close of 150
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(148), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.compute_daily_change();
+        // (155 - 150) * 10 = 50
+        assert_eq!(app.daily_portfolio_change, Some(dec!(50)));
+    }
+
+    #[test]
+    fn test_daily_change_negative() {
+        let mut app = make_app();
+        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(145)), AssetCategory::Equity)];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.compute_daily_change();
+        // (145 - 150) * 10 = -50
+        assert_eq!(app.daily_portfolio_change, Some(dec!(-50)));
+    }
+
+    #[test]
+    fn test_daily_change_multiple_positions() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity),
+            make_position("GOOG", dec!(5), Some(dec!(2800)), AssetCategory::Equity),
+        ];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.price_history.insert("GOOG".to_string(), vec![
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(2750), volume: None },
+        ]);
+        app.compute_daily_change();
+        // AAPL: (155-150)*10 = 50, GOOG: (2800-2750)*5 = 250. Total = 300
+        assert_eq!(app.daily_portfolio_change, Some(dec!(300)));
+    }
+
+    #[test]
+    fn test_daily_change_skips_cash() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("USD", dec!(10000), Some(dec!(1)), AssetCategory::Cash),
+            make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity),
+        ];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.compute_daily_change();
+        // Only AAPL: (155-150)*10 = 50 (cash excluded)
+        assert_eq!(app.daily_portfolio_change, Some(dec!(50)));
+    }
+
+    #[test]
+    fn test_daily_change_percentage_mode_returns_none() {
+        let mut app = make_app();
+        app.portfolio_mode = PortfolioMode::Percentage;
+        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity)];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.compute_daily_change();
+        assert_eq!(app.daily_portfolio_change, None);
+    }
+
+    #[test]
+    fn test_daily_change_today_record_uses_prev() {
+        let mut app = make_app();
+        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(160)), AssetCategory::Equity)];
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: today, close: dec!(158), volume: None },
+        ]);
+        app.compute_daily_change();
+        // Should use 2026-02-28 close (150), not today's record
+        // (160 - 150) * 10 = 100
+        assert_eq!(app.daily_portfolio_change, Some(dec!(100)));
     }
 }

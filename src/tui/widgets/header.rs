@@ -185,6 +185,29 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(format!("{}  ", value_str), value_style));
         spans.push(Span::styled(gain_str, Style::default().fg(gain_color)));
+
+        // Daily portfolio change
+        if let Some(day_change) = app.daily_portfolio_change {
+            let day_arrow = if day_change > dec!(0) {
+                "▲"
+            } else if day_change < dec!(0) {
+                "▼"
+            } else {
+                "―"
+            };
+            let day_color = if day_change > dec!(0) {
+                t.gain_green
+            } else if day_change < dec!(0) {
+                t.loss_red
+            } else {
+                t.neutral
+            };
+            let day_str = format_compact_signed(day_change);
+            spans.push(Span::styled(
+                format!("  {}{} today", day_arrow, day_str),
+                Style::default().fg(day_color),
+            ));
+        }
     } else {
         spans.push(Span::raw("  "));
         spans.push(Span::styled("[% view]", Style::default().fg(t.text_muted)));
@@ -235,6 +258,19 @@ fn format_compact(v: rust_decimal::Decimal) -> String {
         format!("${:.1}k", f / 1_000.0)
     } else {
         format!("${:.0}", f)
+    }
+}
+
+fn format_compact_signed(v: rust_decimal::Decimal) -> String {
+    let f: f64 = v.to_string().parse().unwrap_or(0.0);
+    let sign = if f >= 0.0 { "+" } else { "-" };
+    let abs = f.abs();
+    if abs >= 1_000_000.0 {
+        format!("{}${:.1}M", sign, abs / 1_000_000.0)
+    } else if abs >= 1_000.0 {
+        format!("{}${:.1}k", sign, abs / 1_000.0)
+    } else {
+        format!("{}${:.0}", sign, abs)
     }
 }
 
@@ -313,3 +349,28 @@ mod tests {
         assert!(is_us_market_open_at(dt));
     }
 }
+
+    #[test]
+    fn test_format_compact_signed_positive() {
+        assert_eq!(format_compact_signed(rust_decimal_macros::dec!(1500)), "+$1.5k");
+    }
+
+    #[test]
+    fn test_format_compact_signed_negative() {
+        assert_eq!(format_compact_signed(rust_decimal_macros::dec!(-2300)), "-$2.3k");
+    }
+
+    #[test]
+    fn test_format_compact_signed_small_positive() {
+        assert_eq!(format_compact_signed(rust_decimal_macros::dec!(42)), "+$42");
+    }
+
+    #[test]
+    fn test_format_compact_signed_million() {
+        assert_eq!(format_compact_signed(rust_decimal_macros::dec!(1500000)), "+$1.5M");
+    }
+
+    #[test]
+    fn test_format_compact_signed_negative_million() {
+        assert_eq!(format_compact_signed(rust_decimal_macros::dec!(-1200000)), "-$1.2M");
+    }
