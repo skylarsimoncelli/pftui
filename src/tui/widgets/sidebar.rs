@@ -18,7 +18,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             .map(|p| p.category)
             .collect::<std::collections::HashSet<_>>()
             .len();
-        let alloc_height = (cat_count as u16 + 2).max(4);
+        // +2 for border, +1 for total value line
+        let has_total = app.total_value > dec!(0);
+        let extra = if has_total { 1 } else { 0 };
+        let alloc_height = (cat_count as u16 + 2 + extra).max(4);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)

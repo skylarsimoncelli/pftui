@@ -17,6 +17,15 @@
 ---
 
 
+### 2026-03-01 — Improve allocation bars with inline labels and total value
+
+- What: enhanced the allocation bars widget with two improvements. (1) Percentage labels are now rendered inside the filled portion of bars when the bar is wide enough (>= 5 cells) — e.g. a 42% equity bar shows "42%" overlaid in bold black text on the colored bar background, making it instantly readable without scanning to the right-side label. When bars are too narrow, they render as before (solid fill). (2) Total portfolio value is displayed below the allocation bars as "Total: $XX.XK" using compact formatting ($2.50M, $456.7K, $12,345, $999.00). The total value line respects privacy mode — hidden when percentage mode is active or privacy view is toggled. Updated sidebar layout to allocate an extra row for the total value line when present. Refactored `fractional_bar()` into `fractional_bar_with_label()` with centered label placement and width-preserving rendering.
+- Why: the allocation bars showed percentages only in the right-side label column, wasting the visual space of the bar itself. Bloomberg-style inline labels make allocation magnitudes immediately scannable. The total value display provides essential portfolio context (the one number every user wants to see at a glance) without taking up a separate widget.
+- Files: `src/tui/widgets/allocation_bars.rs` (inline labels, total value line, format_compact_value, fractional_bar_with_label, 9 tests), `src/tui/widgets/sidebar.rs` (extra row allocation for total value)
+- Tests: added 9 tests — format_compact_value_millions, format_compact_value_hundred_thousands, format_compact_value_thousands, format_compact_value_small, fractional_bar_label_shown_when_wide, fractional_bar_label_hidden_when_narrow, fractional_bar_zero_width, fractional_bar_full_width, fractional_bar_preserves_total_width. Total: 133 tests passing.
+- TODO: Improve allocation bars (P2)
+
+
 ### 2026-03-01 — Add position detail popup
 
 - What: added a full-screen position detail popup that appears when pressing Enter on a position. Shows comprehensive info: symbol, name, category, current price, quantity, avg cost, cost basis, current value, gain, gain%, allocation%, and the most recent 10 buy/sell transactions for that symbol (sorted newest first). Respects privacy mode — hides quantity, cost, gain, and transaction history when privacy is active. Uses theme colors throughout including gain-aware coloring for performance metrics and category-colored badge. Transaction rows show BUY (green) / SELL (red) with date, quantity, and price. Popup is centered, 64 columns wide, and auto-sizes to content. Enter from popup transitions to the chart view in the sidebar. Esc closes the popup. Help overlay updated (Enter shows "Position detail / chart"). Status bar hint updated from "Chart" to "Detail". Added PositionExt trait with name_or_symbol() helper. Popup closes automatically when switching views (tabs 2-5).
