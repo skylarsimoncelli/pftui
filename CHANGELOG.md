@@ -84,3 +84,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: new `src/tui/widgets/asset_header.rs`, `src/tui/widgets/mod.rs` (register module), `src/tui/ui.rs` (right pane layout split)
 - Tests: added 12 tests for format helpers (format_price, format_money, format_qty) and height constant. Total: 235 tests passing.
 - TODO: Make asset detail info permanent in right pane header (P0)
+
+### 2026-03-01 — Fix BTC/crypto price fetching reliability
+
+- What: fixed crypto price fetching by adding proper User-Agent headers to all CoinGecko API requests (missing headers likely caused silent rejections), adding 429 rate-limit retry with 2s backoff, and adding 15s request timeouts. Refactored CoinGecko module with `build_client()` and `get_with_retry()` helpers for consistent HTTP behavior. Separated error paths in the batch price fetcher: CoinGecko empty responses and API failures now produce distinct error messages before falling back to Yahoo. Price errors are no longer silently swallowed — they're stored on `App.last_price_error` and displayed in the status bar with a ⚠ indicator that fades after ~5 seconds.
+- Why: BTC price failed to load for at least one user. Root cause was likely CoinGecko rejecting requests without User-Agent headers, combined with zero error visibility (all `PriceUpdate::Error` messages were silently discarded). Users had no way to know why prices failed or which fallback path was taken.
+- Files: `src/price/coingecko.rs` (User-Agent, retry, timeout, refactored into helpers), `src/price/mod.rs` (explicit error reporting on CoinGecko failure), `src/app.rs` (store+display price errors), `src/tui/widgets/status_bar.rs` (error indicator)
+- Tests: added 7 tests for CoinGecko module (ticker mapping, aliases, response parsing, client construction). Total: 242 tests passing.
+- TODO: Fix BTC price fetching (P0)
