@@ -228,6 +228,38 @@ pub struct App {
 }
 
 /// Returns true when the UI should hide value-sensitive data.
+/// Merge incoming history records with existing in-memory data.
+/// Keeps the union of dates, preferring newer (incoming) prices for
+/// overlapping dates. This prevents shorter-range re-fetches from
+/// discarding longer-range data already loaded from the DB cache.
+fn merge_history_into(
+    history: &mut HashMap<String, Vec<HistoryRecord>>,
+    symbol: String,
+    new_records: Vec<HistoryRecord>,
+) {
+    use std::collections::BTreeMap;
+    if let Some(existing) = history.get(&symbol) {
+        if existing.is_empty() {
+            history.insert(symbol, new_records);
+            return;
+        }
+        // Build a map from the existing records (date -> record)
+        let mut by_date: BTreeMap<String, HistoryRecord> = existing
+            .iter()
+            .map(|r| (r.date.clone(), r.clone()))
+            .collect();
+        // Overwrite/insert with new records (newer data wins)
+        for r in new_records {
+            by_date.insert(r.date.clone(), r);
+        }
+        // BTreeMap is sorted by key (date string in YYYY-MM-DD format)
+        let merged: Vec<HistoryRecord> = by_date.into_values().collect();
+        history.insert(symbol, merged);
+    } else {
+        history.insert(symbol, new_records);
+    }
+}
+
 pub fn is_privacy_view(app: &App) -> bool {
     app.portfolio_mode == PortfolioMode::Percentage || app.show_percentages_only
 }
@@ -372,11 +404,15 @@ impl App {
         let mut seen = std::collections::HashSet::new();
         let mut batch = Vec::new();
 
+        // Fetch maximum history (5Y) for all symbols so every timeframe
+        // can be sliced from the in-memory cache without re-fetching.
+        let max_days = ChartTimeframe::FiveYears.days();
+
         // Collect portfolio symbols
         let symbols = self.get_symbols();
         for (symbol, category) in &symbols {
             if seen.insert(symbol.clone()) {
-                batch.push((symbol.clone(), *category, self.chart_timeframe.days()));
+                batch.push((symbol.clone(), *category, max_days));
             }
         }
 
@@ -385,7 +421,7 @@ impl App {
         for pos in &self.positions {
             for (sym, cat) in Self::chart_fetch_symbols(pos) {
                 if seen.insert(sym.clone()) {
-                    batch.push((sym, cat, self.chart_timeframe.days()));
+                    batch.push((sym, cat, max_days));
                 }
             }
         }
@@ -401,7 +437,7 @@ impl App {
             service.send_command(PriceCommand::FetchHistory(
                 symbol.to_string(),
                 category,
-                self.chart_timeframe.days(),
+                ChartTimeframe::FiveYears.days(),
             ));
         }
     }
@@ -834,7 +870,7 @@ impl App {
                     }
                     Some(PriceUpdate::History(symbol, records)) => {
                         self.cache_history(&symbol, &records);
-                        self.price_history.insert(symbol, records);
+                        merge_history_into(&mut self.price_history, symbol, records);
                         history_updated = true;
                     }
                     Some(PriceUpdate::FetchComplete) => {
@@ -1659,6 +1695,74 @@ mod tests {
             "Non-USD cash chart fetch should include DX-Y.NYB for ratio");
         assert!(syms.iter().any(|(s, _)| s == "EURUSD=X"),
             "Non-USD cash chart fetch should include the forex pair");
+    }
+
+    #[test]
+    fn test_merge_history_into_empty_map() {
+        use crate::models::price::HistoryRecord;
+        let mut history = HashMap::new();
+        let records = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None },
+        ];
+        merge_history_into(&mut history, "AAPL".to_string(), records);
+        assert_eq!(history.get("AAPL").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_merge_history_into_preserves_older_data() {
+        use crate::models::price::HistoryRecord;
+        let mut history = HashMap::new();
+        // Existing: 3 months of data
+        history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-02-01".into(), close: dec!(110), volume: None },
+            HistoryRecord { date: "2025-03-01".into(), close: dec!(120), volume: None },
+        ]);
+        // New fetch returns only last month (shorter range)
+        let new_records = vec![
+            HistoryRecord { date: "2025-03-01".into(), close: dec!(125), volume: None },
+        ];
+        merge_history_into(&mut history, "AAPL".to_string(), new_records);
+        let merged = history.get("AAPL").unwrap();
+        // Should have all 3 dates (Jan, Feb preserved; Mar updated)
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].date, "2025-01-01");
+        assert_eq!(merged[0].close, dec!(100)); // preserved
+        assert_eq!(merged[2].date, "2025-03-01");
+        assert_eq!(merged[2].close, dec!(125)); // updated
+    }
+
+    #[test]
+    fn test_merge_history_into_adds_new_dates() {
+        use crate::models::price::HistoryRecord;
+        let mut history = HashMap::new();
+        history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+        ]);
+        let new_records = vec![
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None },
+        ];
+        merge_history_into(&mut history, "AAPL".to_string(), new_records);
+        let merged = history.get("AAPL").unwrap();
+        assert_eq!(merged.len(), 3);
+        // Should be sorted by date (BTreeMap guarantees this)
+        assert_eq!(merged[0].date, "2025-01-01");
+        assert_eq!(merged[1].date, "2025-01-02");
+        assert_eq!(merged[2].date, "2025-01-03");
+    }
+
+    #[test]
+    fn test_merge_history_into_existing_empty() {
+        use crate::models::price::HistoryRecord;
+        let mut history = HashMap::new();
+        history.insert("AAPL".to_string(), Vec::new());
+        let new_records = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+        ];
+        merge_history_into(&mut history, "AAPL".to_string(), new_records);
+        assert_eq!(history.get("AAPL").unwrap().len(), 1);
     }
 }
 
