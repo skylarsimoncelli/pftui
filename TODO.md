@@ -13,7 +13,7 @@
 ## P1 — Header & Status Bar Enhancements
 
 - [ ] **Add day gain/loss to header** — Show today's portfolio change alongside total gain: "$45.2k +1.3% ▲$580 today". Compute from sum of (position.quantity × position.day_change_amount). The "today" figure is the most-checked number in any portfolio app. Files: `src/tui/widgets/header.rs` (add today gain span), `src/app.rs` (compute daily portfolio change from position day changes). Test: test daily change computation.
-- [ ] **Add market status indicator to header** — Show "◉ OPEN" (green) or "◎ CLOSED" (muted) based on current UTC time vs US market hours (9:30-16:00 ET, weekdays). Simple timezone offset check, no external dependency. Renders after the clock in the header. Files: `src/tui/widgets/header.rs`. Test: test market open/closed detection for various UTC times.
+- [x] **Add market status indicator to header** — Show "◉ OPEN" (green) or "◎ CLOSED" (muted) based on current UTC time vs US market hours (9:30-16:00 ET, weekdays). Simple timezone offset check, no external dependency. Renders after the clock in the header. Files: `src/tui/widgets/header.rs`. Test: test market open/closed detection for various UTC times.
 - [ ] **Add breadcrumb trail to status bar** — When in chart view, show the navigation path: "Positions › AAPL › 3M Chart › AAPL/SPX". When in detail popup: "Positions › AAPL › Detail". Replaces the generic hint bar text with context-aware breadcrumbs. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (expose chart variant label). Test: test breadcrumb string generation for each navigation state.
 
 ## P1 — Positions Table Visual Density
