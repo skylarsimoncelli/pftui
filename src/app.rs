@@ -600,7 +600,7 @@ impl App {
                 ChartVariant::single("BTC-USD", "BTC/USD", AssetCategory::Equity),
             ]
         } else {
-            // Regular equity/fund/forex/commodity: just its own chart
+            // Equity, Fund, non-BTC Crypto, non-Gold Commodity, Forex
             let yahoo_sym = if is_crypto {
                 format!("{}-USD", sym)
             } else {
@@ -616,13 +616,74 @@ impl App {
             } else {
                 format!("{} ({})", pos.name, pos.symbol)
             };
-            return vec![ChartVariant {
-                label,
-                kind: ChartKind::Single {
-                    symbol: yahoo_sym,
-                    category: cat,
-                },
-            }];
+
+            let is_equity = pos.category == AssetCategory::Equity;
+            let is_fund = pos.category == AssetCategory::Fund;
+
+            if is_equity || is_fund || is_crypto || is_commodity {
+                let mut variants = vec![
+                    ChartVariant {
+                        label: label.clone(),
+                        kind: ChartKind::Single {
+                            symbol: yahoo_sym.clone(),
+                            category: cat,
+                        },
+                    },
+                ];
+
+                // Don't add ratio against yourself (e.g., ^GSPC/SPX or QQQ/QQQ)
+                let is_spx = matches!(sym.as_str(), "^GSPC" | "SPY" | "VOO" | "IVV" | "SPX");
+                let is_qqq = matches!(sym.as_str(), "^IXIC" | "QQQ" | "TQQQ" | "QQQM" | "NDX");
+
+                if is_crypto {
+                    // Non-BTC crypto: {SYM}/BTC and {SYM}/SPX
+                    variants.push(ChartVariant::ratio(
+                        &format!("{}/BTC", pos.symbol),
+                        &yahoo_sym,
+                        AssetCategory::Equity,
+                        "BTC-USD",
+                        AssetCategory::Equity,
+                    ));
+                    variants.push(ChartVariant::ratio(
+                        &format!("{}/SPX", pos.symbol),
+                        &yahoo_sym,
+                        AssetCategory::Equity,
+                        "^GSPC",
+                        AssetCategory::Equity,
+                    ));
+                } else {
+                    // Equity, Fund, non-Gold Commodity: {SYM}/SPX and {SYM}/QQQ
+                    if !is_spx {
+                        variants.push(ChartVariant::ratio(
+                            &format!("{}/SPX", pos.symbol),
+                            &yahoo_sym,
+                            cat,
+                            "^GSPC",
+                            AssetCategory::Equity,
+                        ));
+                    }
+                    if !is_qqq {
+                        variants.push(ChartVariant::ratio(
+                            &format!("{}/QQQ", pos.symbol),
+                            &yahoo_sym,
+                            cat,
+                            "QQQ",
+                            AssetCategory::Equity,
+                        ));
+                    }
+                }
+
+                variants
+            } else {
+                // Forex or other: just a single chart, no ratios
+                return vec![ChartVariant {
+                    label,
+                    kind: ChartKind::Single {
+                        symbol: yahoo_sym,
+                        category: cat,
+                    },
+                }];
+            }
         };
 
         // Prepend "All" as index 0
@@ -1256,31 +1317,111 @@ mod tests {
     }
 
     #[test]
-    fn test_regular_equity_single_chart() {
+    fn test_regular_equity_has_ratio_variants() {
         let pos = make_position("AAPL", AssetCategory::Equity);
         let variants = App::chart_variants_for_position(&pos);
 
-        // Regular equities get a single chart, no "All" prepended
-        assert_eq!(variants.len(), 1);
-        match &variants[0].kind {
+        // Equities get All + single + /SPX + /QQQ = 4 variants
+        assert_eq!(variants.len(), 4);
+        assert_eq!(variants[0].label, "All");
+        assert!(matches!(variants[0].kind, ChartKind::All));
+
+        // Single chart
+        match &variants[1].kind {
             ChartKind::Single { symbol, .. } => assert_eq!(symbol, "AAPL"),
             _ => panic!("Expected Single chart for equity"),
+        }
+
+        // {SYM}/SPX ratio
+        assert_eq!(variants[2].label, "AAPL/SPX");
+        match &variants[2].kind {
+            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+                assert_eq!(num_symbol, "AAPL");
+                assert_eq!(den_symbol, "^GSPC");
+            }
+            _ => panic!("Expected Ratio chart for AAPL/SPX"),
+        }
+
+        // {SYM}/QQQ ratio
+        assert_eq!(variants[3].label, "AAPL/QQQ");
+        match &variants[3].kind {
+            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+                assert_eq!(num_symbol, "AAPL");
+                assert_eq!(den_symbol, "QQQ");
+            }
+            _ => panic!("Expected Ratio chart for AAPL/QQQ"),
         }
     }
 
     #[test]
-    fn test_crypto_non_btc_single_chart() {
+    fn test_spy_skips_spx_ratio() {
+        // SPY is an S&P 500 ETF — skip SPY/SPX ratio (would be ~1.0)
+        let pos = make_position("SPY", AssetCategory::Equity);
+        let variants = App::chart_variants_for_position(&pos);
+
+        let labels = variant_labels(&variants);
+        assert!(!labels.contains(&"SPY/SPX".to_string()), "SPY should not have SPY/SPX ratio");
+        assert!(labels.contains(&"SPY/QQQ".to_string()), "SPY should have SPY/QQQ ratio");
+    }
+
+    #[test]
+    fn test_qqq_skips_qqq_ratio() {
+        // QQQ should skip QQQ/QQQ ratio
+        let pos = make_position("QQQ", AssetCategory::Equity);
+        let variants = App::chart_variants_for_position(&pos);
+
+        let labels = variant_labels(&variants);
+        assert!(labels.contains(&"QQQ/SPX".to_string()), "QQQ should have QQQ/SPX ratio");
+        assert!(!labels.contains(&"QQQ/QQQ".to_string()), "QQQ should not have QQQ/QQQ ratio");
+    }
+
+    #[test]
+    fn test_fund_has_ratio_variants() {
+        let pos = make_position("VTI", AssetCategory::Fund);
+        let variants = App::chart_variants_for_position(&pos);
+
+        assert_eq!(variants.len(), 4); // All + single + /SPX + /QQQ
+        assert_eq!(variants[0].label, "All");
+        assert_eq!(variants[2].label, "VTI/SPX");
+        assert_eq!(variants[3].label, "VTI/QQQ");
+    }
+
+    #[test]
+    fn test_crypto_non_btc_has_ratio_variants() {
         let pos = make_position("ETH", AssetCategory::Crypto);
         let variants = App::chart_variants_for_position(&pos);
 
-        // Non-BTC crypto gets single chart with -USD suffix
-        assert_eq!(variants.len(), 1);
-        match &variants[0].kind {
+        // Non-BTC crypto gets All + single + /BTC + /SPX = 4 variants
+        assert_eq!(variants.len(), 4);
+        assert_eq!(variants[0].label, "All");
+
+        // Single chart with -USD suffix
+        match &variants[1].kind {
             ChartKind::Single { symbol, category } => {
                 assert_eq!(symbol, "ETH-USD");
                 assert_eq!(*category, AssetCategory::Equity); // routed to Yahoo
             }
             _ => panic!("Expected Single chart for crypto"),
+        }
+
+        // {SYM}/BTC ratio
+        assert_eq!(variants[2].label, "ETH/BTC");
+        match &variants[2].kind {
+            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+                assert_eq!(num_symbol, "ETH-USD");
+                assert_eq!(den_symbol, "BTC-USD");
+            }
+            _ => panic!("Expected Ratio chart for ETH/BTC"),
+        }
+
+        // {SYM}/SPX ratio
+        assert_eq!(variants[3].label, "ETH/SPX");
+        match &variants[3].kind {
+            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+                assert_eq!(num_symbol, "ETH-USD");
+                assert_eq!(den_symbol, "^GSPC");
+            }
+            _ => panic!("Expected Ratio chart for ETH/SPX"),
         }
     }
 

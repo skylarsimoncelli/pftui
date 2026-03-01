@@ -255,7 +255,11 @@ Each theme defines 28 color slots: surfaces (4 levels), borders (4 types), text 
 | **Gold** | All, Gold/USD, Gold/BTC, Gold/SPX, Gold/QQQ |
 | **USD Cash** | All, Dollar Index (DXY), USD/Gold, BTC/USD |
 | **Other Cash** | All, {CCY}/USD, {CCY}/DXY, Gold, BTC |
-| **Other** | Single price chart |
+| **Equity** | All, {SYM}/USD, {SYM}/SPX, {SYM}/QQQ |
+| **Fund** | All, {SYM}/USD, {SYM}/SPX, {SYM}/QQQ |
+| **Crypto (non-BTC)** | All, {SYM}/USD, {SYM}/BTC, {SYM}/SPX |
+| **Commodity (non-Gold)** | All, {SYM}/USD, {SYM}/SPX, {SYM}/QQQ |
+| **Forex** | Single price chart |
 
 ### Rendering
 

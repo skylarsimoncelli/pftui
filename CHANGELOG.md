@@ -18,6 +18,15 @@
 
 ## Log
 
+### 2026-03-01 — Add equity, fund, crypto, and commodity chart ratio variants
+
+- What: expanded chart variants for equities, funds, non-BTC crypto, and non-gold commodities. Equities and funds now get All + {SYM}/USD + {SYM}/SPX + {SYM}/QQQ (4 variants, cyclable with J/K). Non-BTC crypto gets All + {SYM}/USD + {SYM}/BTC + {SYM}/SPX. Non-gold commodities get All + {SYM}/USD + {SYM}/SPX + {SYM}/QQQ. Smart deduplication: SPY/VOO skip the SPX ratio (would be ~1.0), QQQ/TQQQ skip the QQQ ratio. Forex retains single chart (no meaningful index ratio). Comparison symbols (^GSPC, QQQ, BTC-USD) are pre-fetched at startup via existing batch fetch infrastructure.
+- Why: equities and other non-special assets only had a single price chart with no way to compare performance against benchmarks. Ratio charts (e.g., AAPL/SPX) show whether a stock is outperforming or underperforming the market — essential for portfolio analysis. This brings feature parity with BTC and Gold which already had rich variant sets.
+- Files: `src/app.rs` (chart_variants_for_position else-branch rewrite, 4 new tests + 2 updated tests), `docs/README.md` (variants by asset table)
+- Tests: updated `test_regular_equity_has_ratio_variants`, `test_crypto_non_btc_has_ratio_variants`. Added `test_spy_skips_spx_ratio`, `test_qqq_skips_qqq_ratio`, `test_fund_has_ratio_variants`. Total: 60 tests passing.
+- TODO: Add equity chart variants (P1)
+
+
 ### 2026-03-01 — Add chart timeframe selection (1W–5Y)
 
 - What: added `ChartTimeframe` enum with 6 timeframes (1W, 1M, 3M, 6M, 1Y, 5Y). Default is 3M (preserving existing behavior). When a chart detail panel is open, `h` cycles to shorter timeframe, `l` cycles to longer (vim left/right convention). Timeframe label shown in chart title bar. Chart navigation hint updated to show "h/l" alongside "J/K". All chart render functions (`render_single_chart`, `render_ratio_chart`, `render_single_mini`, `render_ratio_mini`) now slice history data to the selected timeframe via `slice_history()` helper. Cache loads up to 5Y of data so timeframe switching is instant for cached data; new data is fetched on demand when switching to a longer timeframe. Help overlay updated with `h / l` keybinding.
