@@ -55,3 +55,13 @@
 - [ ] **Custom keybinding config** — User-configurable keybindings in config.toml
 - [ ] **Sector heatmap** — Treemap-style sector/industry performance view
 - [ ] **Options chains** — Options display if a free data source exists
+
+## P0 — README Rewrite (Owner Request)
+
+- [ ] **Rewrite README.md** — The README should be an engaging, fun overview of pftui and how to install it. It should sell the tool, not document internals. Specifically:
+  - Make it punchy and visually appealing — hook readers immediately
+  - Focus on: what it is, why it's cool, screenshots/examples, installation, quick start
+  - **Move the full keybinding reference** to `docs/KEYBINDINGS.md` and link it from the README
+  - **Move architecture/technical notes** (component diagram, data flow, price routing, etc.) to `docs/ARCHITECTURE.md` and link from the README
+  - Keep the README lean — link to docs for deep dives, don't inline everything
+  - Files: `docs/README.md`, new `docs/KEYBINDINGS.md`, new `docs/ARCHITECTURE.md`
