@@ -17,6 +17,14 @@
 ---
 
 
+### 2026-03-01 — Add daily change % column to positions table
+
+- What: added a Day% column to both the full and privacy positions tables, showing each position's daily price change as a percentage. Computed from the last two entries in the price history (same approach used by Markets, Economy, and Watchlist views). Column sits between Price and Gain% in the full table, and between Price and Alloc% in the privacy table. Uses gain-intensity coloring (green gradient for gains, red for losses) via `theme::gain_intensity_color`. Added `compute_change_pct()` public function for reuse. Added `format_change_pct()` helper. Privacy-safe — shows only percentage change, no absolute dollar values. Updated help overlay with Day% column note. Updated README positions view description.
+- Why: daily change % is one of the most essential portfolio metrics — it tells you immediately how each position performed today. The app showed total gain % but not the day's move, which is what most users check first. Markets, Economy, and Watchlist views all had daily change; positions was the only view missing it.
+- Files: `src/tui/views/positions.rs` (compute_change_pct, format_change_pct, Day% column in full + privacy tables, 10 tests), `src/tui/views/help.rs` (Day% note), `docs/README.md` (positions description)
+- Tests: added 10 tests — compute_change_pct_basic, compute_change_pct_negative, compute_change_pct_no_change, compute_change_pct_uses_last_two_entries, compute_change_pct_single_record, compute_change_pct_no_history, compute_change_pct_zero_prev_close, format_change_pct_positive, format_change_pct_negative, format_change_pct_none. Total: 204 tests passing.
+- TODO: Add daily change % column to positions (P2)
+
 ### 2026-03-01 — Rewrite README, extract Architecture and Keybindings docs
 
 - What: rewrote `docs/README.md` from a dense technical reference into an engaging, punchy project overview that sells the tool — focused on features, quick start, and visual appeal. Extracted the full keybinding reference (navigation, views, charts, sorting, actions) into a new `docs/KEYBINDINGS.md`. Extracted all architecture content (component diagram, data flow, price routing, layout diagrams, chart system, database schema, configuration, technology table, file map) into a new `docs/ARCHITECTURE.md`. README now links to both docs for deep dives instead of inlining everything. README covers: why pftui, quick start, usage, views overview, charts, themes, essential keybindings (with link to full reference), and a brief architecture summary (with link to full docs).

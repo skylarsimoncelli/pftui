@@ -89,6 +89,10 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
         Style::default().fg(sc),
     )));
     lines.push(Line::from(Span::styled(
+        "  Day% column: daily price change percentage",
+        Style::default().fg(sc),
+    )));
+    lines.push(Line::from(Span::styled(
         "  52W column: range bar + distance from 52-week high",
         Style::default().fg(sc),
     )));

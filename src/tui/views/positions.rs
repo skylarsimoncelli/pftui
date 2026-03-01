@@ -139,6 +139,27 @@ pub fn build_52w_spans<'a>(theme: &'a theme::Theme, range: &Range52W) -> Vec<Spa
     spans
 }
 
+/// Compute daily change % from price history: (latest - previous) / previous * 100.
+/// Uses the last two entries in the history for the given symbol.
+pub fn compute_change_pct(app: &App, symbol: &str) -> Option<Decimal> {
+    let history = app.price_history.get(symbol)?;
+    if history.len() < 2 {
+        return None;
+    }
+    let latest = &history[history.len() - 1];
+    let prev = &history[history.len() - 2];
+    if prev.close == dec!(0) {
+        return None;
+    }
+    Some((latest.close - prev.close) / prev.close * dec!(100))
+}
+
+fn format_change_pct(change: Option<Decimal>) -> String {
+    change
+        .map(|v| format!("{:+.1}%", v))
+        .unwrap_or_else(|| "---".to_string())
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if is_privacy_view(app) {
         render_privacy_table(frame, area, app);
@@ -155,6 +176,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Asset"),
         Cell::from("Qty"),
         Cell::from("Price"),
+        Cell::from("Day%"),
         Cell::from("Gain%"),
         Cell::from("Alloc%"),
         Cell::from("52W"),
@@ -227,11 +249,22 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 None => vec![Span::styled("---", Style::default().fg(t.text_muted))],
             };
 
+            // Daily change %
+            let day_change = compute_change_pct(app, &pos.symbol);
+            let day_change_f: f64 = day_change
+                .unwrap_or(dec!(0))
+                .to_string()
+                .parse()
+                .unwrap_or(0.0);
+            let day_change_color = theme::gain_intensity_color(t, day_change_f);
+
             Row::new(vec![
                 Cell::from(asset_line).style(Style::default().fg(cat_color)),
                 Cell::from(format_qty(pos.quantity))
                     .style(Style::default().fg(t.text_primary)),
                 Cell::from(format_price_opt(pos.current_price)).style(price_style),
+                Cell::from(format_change_pct(day_change))
+                    .style(Style::default().fg(day_change_color)),
                 Cell::from(format_gain_pct(pos.gain_pct))
                     .style(Style::default().fg(gain_color)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
@@ -244,9 +277,10 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let widths = [
-        Constraint::Min(16),
+        Constraint::Min(14),
         Constraint::Length(8),
         Constraint::Length(10),
+        Constraint::Length(7),
         Constraint::Length(8),
         Constraint::Length(7),
         Constraint::Length(11),
@@ -263,6 +297,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     let header = Row::new(vec![
         Cell::from("Asset"),
         Cell::from("Price"),
+        Cell::from("Day%"),
         Cell::from("Alloc%"),
         Cell::from("52W"),
         Cell::from("Trend"),
@@ -321,10 +356,21 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                 None => vec![Span::styled("---", Style::default().fg(t.text_muted))],
             };
 
+            // Daily change % (privacy-safe — percentage only, no absolute values)
+            let day_change = compute_change_pct(app, &pos.symbol);
+            let day_change_f: f64 = day_change
+                .unwrap_or(dec!(0))
+                .to_string()
+                .parse()
+                .unwrap_or(0.0);
+            let day_change_color = theme::gain_intensity_color(t, day_change_f);
+
             Row::new(vec![
                 Cell::from(asset_line).style(Style::default().fg(cat_color)),
                 Cell::from(format_price_opt(pos.current_price))
                     .style(Style::default().fg(t.text_primary)),
+                Cell::from(format_change_pct(day_change))
+                    .style(Style::default().fg(day_change_color)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
                 Cell::from(Line::from(range_spans)),
@@ -335,8 +381,9 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let widths = [
-        Constraint::Min(20),
+        Constraint::Min(18),
         Constraint::Length(12),
+        Constraint::Length(7),
         Constraint::Length(8),
         Constraint::Length(11),
         Constraint::Length(8),
@@ -597,5 +644,96 @@ mod tests {
         let r = result.unwrap();
         // High should be from the last 365 records (119), not the old 500
         assert_eq!(r.high, dec!(119));
+    }
+
+    // --- compute_change_pct tests ---
+
+    fn make_test_app_with_history(symbol: &str, prices: &[&str]) -> crate::app::App {
+        let config = crate::config::Config::default();
+        let mut app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_change_pct.db"));
+        let records: Vec<HistoryRecord> = prices
+            .iter()
+            .enumerate()
+            .map(|(i, p)| HistoryRecord {
+                date: format!("2025-01-{:02}", i + 1),
+                close: p.parse().unwrap_or_default(),
+                volume: None,
+            })
+            .collect();
+        app.price_history.insert(symbol.to_string(), records);
+        app
+    }
+
+    #[test]
+    fn compute_change_pct_basic() {
+        let app = make_test_app_with_history("AAPL", &["100", "110"]);
+        let result = compute_change_pct(&app, "AAPL");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), dec!(10)); // +10%
+    }
+
+    #[test]
+    fn compute_change_pct_negative() {
+        let app = make_test_app_with_history("AAPL", &["100", "90"]);
+        let result = compute_change_pct(&app, "AAPL");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), dec!(-10)); // -10%
+    }
+
+    #[test]
+    fn compute_change_pct_no_change() {
+        let app = make_test_app_with_history("AAPL", &["100", "100"]);
+        let result = compute_change_pct(&app, "AAPL");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), dec!(0));
+    }
+
+    #[test]
+    fn compute_change_pct_uses_last_two_entries() {
+        // Should use 200 -> 220, not any earlier entries
+        let app = make_test_app_with_history("AAPL", &["100", "150", "200", "220"]);
+        let result = compute_change_pct(&app, "AAPL");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), dec!(10)); // (220-200)/200 * 100 = 10%
+    }
+
+    #[test]
+    fn compute_change_pct_single_record() {
+        let app = make_test_app_with_history("AAPL", &["100"]);
+        let result = compute_change_pct(&app, "AAPL");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compute_change_pct_no_history() {
+        let config = crate::config::Config::default();
+        let app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_no_hist.db"));
+        let result = compute_change_pct(&app, "AAPL");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compute_change_pct_zero_prev_close() {
+        let app = make_test_app_with_history("AAPL", &["0", "100"]);
+        let result = compute_change_pct(&app, "AAPL");
+        assert!(result.is_none()); // Division by zero guarded
+    }
+
+    #[test]
+    fn format_change_pct_positive() {
+        let result = format_change_pct(Some(dec!(3.5)));
+        assert_eq!(result, "+3.5%");
+    }
+
+    #[test]
+    fn format_change_pct_negative() {
+        let result = format_change_pct(Some(dec!(-2.1)));
+        assert_eq!(result, "-2.1%");
+    }
+
+    #[test]
+    fn format_change_pct_none() {
+        let result = format_change_pct(None);
+        assert_eq!(result, "---");
     }
 }

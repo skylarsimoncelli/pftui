@@ -50,7 +50,7 @@ pftui unwatch AAPL             # Remove from watchlist
 
 | Key | View | What it shows |
 |---|---|---|
-| `1` | **Positions** | Holdings with live prices, gain %, allocation %, 52-week range, sparkline trends |
+| `1` | **Positions** | Holdings with live prices, daily change %, gain %, allocation %, 52-week range, sparkline trends |
 | `2` | **Transactions** | Buy/sell history with date, quantity, price |
 | `3` | **Markets** | 18 major symbols — SPX, NDX, BTC, Gold, DXY, 10Y yield, and more |
 | `4` | **Economy** | 14 macro indicators — treasury yields, currencies, commodities, VIX |

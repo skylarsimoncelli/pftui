@@ -38,6 +38,10 @@
 - [x] **Improve allocation bars** — Add percentage labels inside bars (when bar is wide enough). Add total portfolio value below the allocation widget. Add subtle animation when allocations change. Files: `src/tui/widgets/allocation_bars.rs`.
 - [x] **Add 52-week high/low indicators** — Show distance from 52-week high/low in positions table as a tiny visual bar or percentage. Requires fetching 365-day history (can reuse price_history). Files: `src/models/position.rs` (add high/low fields), `src/tui/views/positions.rs`.
 
+## P2 — Positions Table Enhancements
+
+- [x] **Add daily change % column to positions** — Show how each position moved today as a Day% column between Price and Gain%. Compute from last two price history entries (same pattern as Markets/Economy/Watchlist views). Gain-aware coloring (green/red). Privacy-safe (percentage only). Files: `src/tui/views/positions.rs`. Test: test compute_change_pct logic.
+
 ## P2 — Data & Infrastructure
 
 - [ ] **Add news feed integration** — Fetch financial news from a free RSS/API source (e.g., Yahoo Finance RSS, Finnhub free tier). Display as a scrollable list: timestamp, headline, source. Per-asset filtering. Files: new `src/news/` module, new `src/tui/views/news.rs`. Research: find best free news API that works without API key.
