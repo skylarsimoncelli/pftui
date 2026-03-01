@@ -22,6 +22,62 @@ pub enum ViewMode {
     Positions,
     Transactions,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartTimeframe {
+    OneWeek,
+    OneMonth,
+    ThreeMonths,
+    SixMonths,
+    OneYear,
+    FiveYears,
+}
+
+impl ChartTimeframe {
+    pub fn days(self) -> u32 {
+        match self {
+            ChartTimeframe::OneWeek => 7,
+            ChartTimeframe::OneMonth => 30,
+            ChartTimeframe::ThreeMonths => 90,
+            ChartTimeframe::SixMonths => 180,
+            ChartTimeframe::OneYear => 365,
+            ChartTimeframe::FiveYears => 1825,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ChartTimeframe::OneWeek => "1W",
+            ChartTimeframe::OneMonth => "1M",
+            ChartTimeframe::ThreeMonths => "3M",
+            ChartTimeframe::SixMonths => "6M",
+            ChartTimeframe::OneYear => "1Y",
+            ChartTimeframe::FiveYears => "5Y",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            ChartTimeframe::OneWeek => ChartTimeframe::OneMonth,
+            ChartTimeframe::OneMonth => ChartTimeframe::ThreeMonths,
+            ChartTimeframe::ThreeMonths => ChartTimeframe::SixMonths,
+            ChartTimeframe::SixMonths => ChartTimeframe::OneYear,
+            ChartTimeframe::OneYear => ChartTimeframe::FiveYears,
+            ChartTimeframe::FiveYears => ChartTimeframe::OneWeek,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            ChartTimeframe::OneWeek => ChartTimeframe::FiveYears,
+            ChartTimeframe::OneMonth => ChartTimeframe::OneWeek,
+            ChartTimeframe::ThreeMonths => ChartTimeframe::OneMonth,
+            ChartTimeframe::SixMonths => ChartTimeframe::ThreeMonths,
+            ChartTimeframe::OneYear => ChartTimeframe::SixMonths,
+            ChartTimeframe::FiveYears => ChartTimeframe::OneYear,
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortField {
@@ -147,6 +203,7 @@ pub struct App {
 
     // Chart
     pub chart_index: usize, // which chart variant to show for current position
+    pub chart_timeframe: ChartTimeframe,
 
     // Animation
     pub tick_count: u64,
@@ -200,6 +257,7 @@ impl App {
             theme: theme::theme_by_name(&config.theme),
             theme_name: config.theme.clone(),
             chart_index: 0,
+            chart_timeframe: ChartTimeframe::ThreeMonths,
             tick_count: 0,
             price_flash_ticks: HashMap::new(),
             last_value_update_tick: 0,
@@ -251,7 +309,7 @@ impl App {
 
     fn load_cached_history(&mut self) {
         if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(all) = price_history::get_all_symbols_history(&conn, 90) {
+            if let Ok(all) = price_history::get_all_symbols_history(&conn, ChartTimeframe::FiveYears.days()) {
                 for (symbol, records) in all {
                     self.price_history.insert(symbol, records);
                 }
@@ -290,7 +348,7 @@ impl App {
         let symbols = self.get_symbols();
         for (symbol, category) in &symbols {
             if seen.insert(symbol.clone()) {
-                batch.push((symbol.clone(), *category, 90));
+                batch.push((symbol.clone(), *category, self.chart_timeframe.days()));
             }
         }
 
@@ -299,7 +357,7 @@ impl App {
         for pos in &self.positions {
             for (sym, cat) in Self::chart_fetch_symbols(pos) {
                 if seen.insert(sym.clone()) {
-                    batch.push((sym, cat, 90));
+                    batch.push((sym, cat, self.chart_timeframe.days()));
                 }
             }
         }
@@ -315,8 +373,19 @@ impl App {
             service.send_command(PriceCommand::FetchHistory(
                 symbol.to_string(),
                 category,
-                90,
+                self.chart_timeframe.days(),
             ));
+        }
+    }
+
+    /// Re-fetch history for the currently selected position's chart symbols
+    /// using the current timeframe. Called when timeframe changes via h/l.
+    fn refetch_chart_history(&mut self) {
+        if let Some(pos) = self.selected_position().cloned() {
+            let fetch_syms = Self::chart_fetch_symbols(&pos);
+            for (sym, cat) in &fetch_syms {
+                self.request_history_for_symbol(sym, *cat);
+            }
         }
     }
 
@@ -832,6 +901,16 @@ impl App {
                     }
                 }
             }
+            // Timeframe cycling with h/l (when detail open)
+            KeyCode::Char('h') | KeyCode::Left if self.detail_open => {
+                self.chart_timeframe = self.chart_timeframe.prev();
+                self.refetch_chart_history();
+            }
+            KeyCode::Char('l') | KeyCode::Right if self.detail_open => {
+                self.chart_timeframe = self.chart_timeframe.next();
+                self.refetch_chart_history();
+            }
+
 
             // Navigation
             KeyCode::Char('j') | KeyCode::Down => self.move_down(),
@@ -1670,5 +1749,140 @@ mod search_tests {
         app.handle_key(key('q'));
         assert!(!app.should_quit);
         assert_eq!(app.search_query, "q");
+    }
+}
+
+#[cfg(test)]
+mod timeframe_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use rust_decimal_macros::dec;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_timeframe_days() {
+        assert_eq!(ChartTimeframe::OneWeek.days(), 7);
+        assert_eq!(ChartTimeframe::OneMonth.days(), 30);
+        assert_eq!(ChartTimeframe::ThreeMonths.days(), 90);
+        assert_eq!(ChartTimeframe::SixMonths.days(), 180);
+        assert_eq!(ChartTimeframe::OneYear.days(), 365);
+        assert_eq!(ChartTimeframe::FiveYears.days(), 1825);
+    }
+
+    #[test]
+    fn test_timeframe_labels() {
+        assert_eq!(ChartTimeframe::OneWeek.label(), "1W");
+        assert_eq!(ChartTimeframe::OneMonth.label(), "1M");
+        assert_eq!(ChartTimeframe::ThreeMonths.label(), "3M");
+        assert_eq!(ChartTimeframe::SixMonths.label(), "6M");
+        assert_eq!(ChartTimeframe::OneYear.label(), "1Y");
+        assert_eq!(ChartTimeframe::FiveYears.label(), "5Y");
+    }
+
+    #[test]
+    fn test_timeframe_next_cycles() {
+        let tf = ChartTimeframe::OneWeek;
+        let tf = tf.next(); // 1M
+        assert_eq!(tf, ChartTimeframe::OneMonth);
+        let tf = tf.next(); // 3M
+        assert_eq!(tf, ChartTimeframe::ThreeMonths);
+        let tf = tf.next(); // 6M
+        assert_eq!(tf, ChartTimeframe::SixMonths);
+        let tf = tf.next(); // 1Y
+        assert_eq!(tf, ChartTimeframe::OneYear);
+        let tf = tf.next(); // 5Y
+        assert_eq!(tf, ChartTimeframe::FiveYears);
+        let tf = tf.next(); // wraps to 1W
+        assert_eq!(tf, ChartTimeframe::OneWeek);
+    }
+
+    #[test]
+    fn test_timeframe_prev_cycles() {
+        let tf = ChartTimeframe::OneWeek;
+        let tf = tf.prev(); // wraps to 5Y
+        assert_eq!(tf, ChartTimeframe::FiveYears);
+        let tf = tf.prev(); // 1Y
+        assert_eq!(tf, ChartTimeframe::OneYear);
+        let tf = tf.prev(); // 6M
+        assert_eq!(tf, ChartTimeframe::SixMonths);
+    }
+
+    #[test]
+    fn test_default_timeframe_is_three_months() {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
+        assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
+    }
+
+    fn make_tf_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
+        app.display_positions.push(Position {
+            symbol: "AAPL".to_string(),
+            name: "Apple Inc".to_string(),
+            category: AssetCategory::Equity,
+            quantity: dec!(10),
+            avg_cost: dec!(150),
+            total_cost: dec!(1500),
+            currency: "USD".to_string(),
+            current_price: Some(dec!(175)),
+            current_value: Some(dec!(1750)),
+            gain: Some(dec!(250)),
+            gain_pct: Some(dec!(16.67)),
+            allocation_pct: Some(dec!(100)),
+        });
+        app.detail_open = true;
+        app
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_l_cycles_timeframe_forward_when_detail_open() {
+        let mut app = make_tf_app();
+        assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
+
+        app.handle_key(key('l'));
+        assert_eq!(app.chart_timeframe, ChartTimeframe::SixMonths);
+
+        app.handle_key(key('l'));
+        assert_eq!(app.chart_timeframe, ChartTimeframe::OneYear);
+    }
+
+    #[test]
+    fn test_h_cycles_timeframe_backward_when_detail_open() {
+        let mut app = make_tf_app();
+        assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
+
+        app.handle_key(key('h'));
+        assert_eq!(app.chart_timeframe, ChartTimeframe::OneMonth);
+
+        app.handle_key(key('h'));
+        assert_eq!(app.chart_timeframe, ChartTimeframe::OneWeek);
+    }
+
+    #[test]
+    fn test_h_l_no_effect_when_detail_closed() {
+        let mut app = make_tf_app();
+        app.detail_open = false;
+        let original = app.chart_timeframe;
+
+        app.handle_key(key('h'));
+        assert_eq!(app.chart_timeframe, original);
+
+        app.handle_key(key('l'));
+        assert_eq!(app.chart_timeframe, original);
     }
 }

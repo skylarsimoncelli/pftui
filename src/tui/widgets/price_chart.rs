@@ -11,6 +11,17 @@ use crate::tui::theme;
 
 const BRAILLE_ROWS: usize = 4;
 
+/// Slice history records to only the last `days` entries.
+/// Records are assumed to be in chronological order (oldest first).
+fn slice_history(records: &[HistoryRecord], days: u32) -> &[HistoryRecord] {
+    let n = days as usize;
+    if records.len() > n {
+        &records[records.len() - n..]
+    } else {
+        records
+    }
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
 
@@ -29,11 +40,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Navigation hint
     let nav_hint = if variant_count > 1 {
-        format!(" [{}/{}] J/K ", idx + 1, variant_count)
+        format!(" [{}/{}] J/K  h/l ", idx + 1, variant_count)
     } else {
-        String::new()
+        " h/l ".to_string()
     };
-    let title = format!(" {} 90d ", variant.label);
+    let title = format!(" {} {} ", variant.label, app.chart_timeframe.label());
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -158,10 +169,22 @@ fn render_single_chart(
     app: &App,
 ) {
     let t = &app.theme;
+    let tf_days = app.chart_timeframe.days();
 
     let records = match app.price_history.get(symbol) {
-        Some(r) if r.len() >= 2 => r,
-        _ => {
+        Some(r) => {
+            let sliced = slice_history(r, tf_days);
+            if sliced.len() < 2 {
+                let msg = Paragraph::new(Span::styled(
+                    format!("Loading {}...", symbol),
+                    Style::default().fg(t.text_muted),
+                ));
+                frame.render_widget(msg, area);
+                return;
+            }
+            sliced
+        }
+        None => {
             let msg = Paragraph::new(Span::styled(
                 format!("Loading {}...", symbol),
                 Style::default().fg(t.text_muted),
@@ -192,9 +215,10 @@ fn render_ratio_chart(
     app: &App,
 ) {
     let t = &app.theme;
+    let tf_days = app.chart_timeframe.days();
 
     let num_records = match app.price_history.get(num_symbol) {
-        Some(r) if r.len() >= 2 => r,
+        Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
             let msg = Paragraph::new(Span::styled(
                 format!("Loading {}...", num_symbol),
@@ -205,7 +229,7 @@ fn render_ratio_chart(
         }
     };
     let den_records = match app.price_history.get(den_symbol) {
-        Some(r) if r.len() >= 2 => r,
+        Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
             let msg = Paragraph::new(Span::styled(
                 format!("Loading {}...", den_symbol),
@@ -245,8 +269,9 @@ fn render_single_mini(
     app: &App,
 ) {
     let t = &app.theme;
+    let tf_days = app.chart_timeframe.days();
     let records = match app.price_history.get(symbol) {
-        Some(r) if r.len() >= 2 => r,
+        Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
             let msg = Paragraph::new(Span::styled(
                 "...",
@@ -277,8 +302,9 @@ fn render_ratio_mini(
     app: &App,
 ) {
     let t = &app.theme;
+    let tf_days = app.chart_timeframe.days();
     let num_records = match app.price_history.get(num_symbol) {
-        Some(r) if r.len() >= 2 => r,
+        Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
             let msg = Paragraph::new(Span::styled("...", Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
@@ -286,7 +312,7 @@ fn render_ratio_mini(
         }
     };
     let den_records = match app.price_history.get(den_symbol) {
-        Some(r) if r.len() >= 2 => r,
+        Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
             let msg = Paragraph::new(Span::styled("...", Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);

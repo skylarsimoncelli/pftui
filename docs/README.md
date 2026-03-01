@@ -24,7 +24,7 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 
 ### Charts
 - Unicode braille dot-matrix rendering (2x4 dots per cell = high resolution)
-- Per-position price charts with 90-day history
+- Per-position price charts with selectable timeframe (1W, 1M, 3M, 6M, 1Y, 5Y)
 - Ratio charts: BTC/SPX, BTC/Gold, Gold/SPX, and more
 - Multi-panel "All" view stacking multiple charts vertically
 - Gain-aware gradient coloring (green gradient for gains, red for losses)
@@ -221,6 +221,7 @@ pftui export json              # Export positions as JSON
 | `p` | Toggle privacy view (full mode only) |
 | `t` | Cycle color theme |
 | `J` / `K` | Cycle chart variant (when chart open) |
+| `h` / `l` | Cycle chart timeframe: 1W, 1M, 3M, 6M, 1Y, 5Y (when chart open) |
 | `?` | Toggle help overlay |
 
 ## Themes
@@ -242,7 +243,7 @@ Each theme defines 28 color slots: surfaces (4 levels), borders (4 types), text 
 
 ### Chart Types
 
-- **Single**: one asset's 90-day price history
+- **Single**: one asset's price history (timeframe selectable with h/l)
 - **Ratio**: numerator ÷ denominator (e.g., BTC/SPX, Gold/BTC)
 - **All**: multi-panel stacked view of all variants for the selected asset
 
