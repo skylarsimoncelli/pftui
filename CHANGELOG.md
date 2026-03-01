@@ -76,3 +76,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/tui/ui.rs` (layout restructure with dynamic overview height), `src/app.rs` (simplified Enter handler, view-mode-based chart keybindings, auto-fetch on selection change), `src/tui/views/positions.rs` (border color logic)
 - Tests: updated 3 tests (renamed to reflect view-mode guards, test for non-Positions view). Total: 223 tests passing.
 - TODO: Fix layout: allocation bars belong in left pane (P0), Fix layout: portfolio chart on left, asset chart on right (P0)
+
+### 2026-03-01 — Add permanent asset detail header in right pane
+
+- What: created new `asset_header` widget that renders a compact, always-visible info panel above the price chart in the right pane. Shows: category-colored dot, symbol (bold), name, current price with currency, gain/loss percentage with directional arrow (▲/▼), dollar gain/loss, quantity, current value, and allocation percentage. Respects privacy mode (hides quantity, value, and gain in percentage-only mode). Right pane layout now splits into a 5-row header + remaining chart area, with graceful fallback to chart-only when terminal height is insufficient (< header + 6 rows).
+- Why: the asset overview info was only accessible via the Enter popup, forcing users to toggle a popup to see basic position data. Now the most-checked info (price, gain, value) is always visible alongside the chart, matching the Bloomberg-style density the app targets.
+- Files: new `src/tui/widgets/asset_header.rs`, `src/tui/widgets/mod.rs` (register module), `src/tui/ui.rs` (right pane layout split)
+- Tests: added 12 tests for format helpers (format_price, format_money, format_qty) and height constant. Total: 235 tests passing.
+- TODO: Make asset detail info permanent in right pane header (P0)
