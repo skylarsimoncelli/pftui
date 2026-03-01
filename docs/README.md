@@ -29,6 +29,7 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 - Multi-panel "All" view stacking multiple charts vertically
 - Gain-aware gradient coloring (green gradient for gains, red for losses)
 - `J`/`K` cycling through chart variants per asset
+- Volume bars below price charts using block characters (▁▂▃▄▅▆▇█), theme-aware muted coloring
 
 ### Themes
 - 6 built-in themes: Midnight (default), Catppuccin Mocha, Nord, Dracula, Solarized Dark, Gruvbox
@@ -267,6 +268,8 @@ All charts use Unicode braille characters (U+2800–U+28FF). Each terminal cell 
 
 Gradient direction is gain-aware: positive gains color bottom-to-top green, negative gains color bottom-to-top red.
 
+Volume bars appear below single-symbol price charts as a row of Unicode block characters (▁▂▃▄▅▆▇█). Each character represents relative volume for that time slice, scaled to the maximum volume in the visible range. Volume coloring uses a muted blend of the theme's text and surface colors.
+
 ## Database
 
 SQLite database at `~/Library/Application Support/pftui/pftui.db` (macOS). WAL journal mode, foreign keys enabled.
@@ -305,6 +308,7 @@ SQLite database at `~/Library/Application Support/pftui/pftui.db` (macOS). WAL j
 | symbol | TEXT | ticker |
 | date | TEXT | YYYY-MM-DD |
 | close | TEXT | Decimal string |
+| volume | TEXT | nullable, trading volume |
 | source | TEXT | yahoo, coingecko |
 
 **portfolio_allocations** — percentage mode allocations (unique symbol)

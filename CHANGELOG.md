@@ -16,6 +16,14 @@
 
 ---
 
+
+### 2026-03-01 — Add volume bars below price charts
+
+- What: added volume data to the price history pipeline and rendered volume bars below braille price charts. Added `volume: Option<u64>` to `HistoryRecord`. DB migration adds `volume` column to `price_history` table. Yahoo Finance history now captures volume from OHLCV data. CoinGecko history now parses `total_volumes` from market_chart endpoint. Volume bars render as a single row of block characters (▁▂▃▄▅▆▇█) between the braille chart and the stats line, using muted theme-aware coloring (60/40 blend of text_muted and surface). Volume is shown only on single-symbol charts (not ratio or "All" multi-panel views, where volume is not meaningful). DB upsert uses COALESCE to preserve existing volume when new data has None.
+- Why: volume is one of the most important technical indicators — high volume on a price move confirms the move, low volume suggests weakness. Without volume display, charts were missing critical context. Yahoo already returns volume data; it just was not being captured or displayed.
+- Files: `src/models/price.rs` (volume field), `src/db/schema.rs` (migration), `src/db/price_history.rs` (store/load volume), `src/price/yahoo.rs` (parse volume), `src/price/coingecko.rs` (parse total_volumes), `src/tui/widgets/price_chart.rs` (volume bar rendering, muted_color helper, build_volume_line)
+- Tests: added 8 tests — volume_blocks_levels, build_volume_line_all_zero, build_volume_line_scaling, build_volume_line_resamples, compute_ratio_has_no_volume, muted_color_blends, muted_color_non_rgb_passthrough, upsert_preserves_volume_when_null. Total: 68 tests passing.
+- TODO: Add volume bars below price chart (P1)
 ## Log
 
 ### 2026-03-01 — Add equity, fund, crypto, and commodity chart ratio variants
