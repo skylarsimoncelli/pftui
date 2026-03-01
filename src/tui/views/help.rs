@@ -88,6 +88,10 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
         "  SMA 20/50 overlays on single-symbol charts",
         Style::default().fg(sc),
     )));
+    lines.push(Line::from(Span::styled(
+        "  52W column: range bar + distance from 52-week high",
+        Style::default().fg(sc),
+    )));
     lines.push(Line::from(""));
 
     // ── Sorting ──

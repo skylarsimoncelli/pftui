@@ -7,9 +7,137 @@ use rust_decimal_macros::dec;
 
 use crate::app::{is_privacy_view, App};
 use crate::config::PortfolioMode;
+use crate::models::price::HistoryRecord;
 use crate::tui::theme;
 
 const SPARKLINE_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+/// 52-week high/low range result.
+#[allow(dead_code)]
+pub struct Range52W {
+    pub high: Decimal,
+    pub low: Decimal,
+    /// Position of current price within the range as 0.0..=1.0
+    pub position: f64,
+    /// Percentage distance from 52-week high (negative = below high)
+    pub from_high_pct: f64,
+}
+
+/// Compute 52-week high and low from price history records.
+/// Returns None if fewer than 2 records or current_price is None.
+pub fn compute_52w_range(
+    records: &[HistoryRecord],
+    current_price: Option<Decimal>,
+) -> Option<Range52W> {
+    if records.len() < 2 {
+        return None;
+    }
+    let current = current_price?;
+
+    // Take last 365 days of records (they should already be sorted by date)
+    let start = if records.len() > 365 {
+        records.len() - 365
+    } else {
+        0
+    };
+    let slice = &records[start..];
+
+    let mut high = slice[0].close;
+    let mut low = slice[0].close;
+    for r in slice.iter().skip(1) {
+        if r.close > high {
+            high = r.close;
+        }
+        if r.close < low {
+            low = r.close;
+        }
+    }
+
+    // Include current price in high/low
+    if current > high {
+        high = current;
+    }
+    if current < low {
+        low = current;
+    }
+
+    let range = high - low;
+    let position = if range > dec!(0) {
+        let pos_str = ((current - low) / range).to_string();
+        pos_str.parse::<f64>().unwrap_or(0.5)
+    } else {
+        0.5
+    };
+
+    let from_high_pct = if high > dec!(0) {
+        let pct_str = (((current - high) / high) * dec!(100)).to_string();
+        pct_str.parse::<f64>().unwrap_or(0.0)
+    } else {
+        0.0
+    };
+
+    Some(Range52W {
+        high,
+        low,
+        position,
+        from_high_pct,
+    })
+}
+
+/// Build a visual range bar showing current price position within 52-week range.
+/// Returns spans like: `━━━●━━━ -5%`
+/// Bar width is 6 chars, then from-high percentage.
+pub fn build_52w_spans<'a>(theme: &'a theme::Theme, range: &Range52W) -> Vec<Span<'a>> {
+    const BAR_WIDTH: usize = 6;
+
+    // Compute dot position within bar (0..BAR_WIDTH-1)
+    let dot_pos = ((range.position * (BAR_WIDTH - 1) as f64).round() as usize).min(BAR_WIDTH - 1);
+
+    // Color: green near high, red near low, gradient in between
+    let pos_f32 = range.position as f32;
+    let dot_color = theme::gradient_3(
+        theme.loss_red,
+        theme.neutral,
+        theme.gain_green,
+        pos_f32,
+    );
+
+    let mut spans = Vec::new();
+
+    // Build bar characters
+    for i in 0..BAR_WIDTH {
+        if i == dot_pos {
+            spans.push(Span::styled(
+                "●",
+                Style::default().fg(dot_color).bold(),
+            ));
+        } else {
+            spans.push(Span::styled(
+                "━",
+                Style::default().fg(theme.text_muted),
+            ));
+        }
+    }
+
+    // From-high percentage
+    let pct_text = if range.from_high_pct.abs() < 0.05 {
+        " ATH".to_string()
+    } else {
+        format!("{:+.0}%", range.from_high_pct)
+    };
+
+    let pct_color = if range.from_high_pct.abs() < 0.05 {
+        theme.gain_green
+    } else if range.from_high_pct > -10.0 {
+        theme.text_secondary
+    } else {
+        theme.loss_red
+    };
+
+    spans.push(Span::styled(pct_text, Style::default().fg(pct_color)));
+
+    spans
+}
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if is_privacy_view(app) {
@@ -29,6 +157,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Price"),
         Cell::from("Gain%"),
         Cell::from("Alloc%"),
+        Cell::from("52W"),
         Cell::from("Trend"),
     ])
     .style(Style::default().fg(t.text_secondary).bold())
@@ -85,6 +214,19 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 7,
             );
 
+            // 52-week range
+            let range_52w = compute_52w_range(
+                app.price_history
+                    .get(&pos.symbol)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]),
+                pos.current_price,
+            );
+            let range_spans = match &range_52w {
+                Some(r) => build_52w_spans(t, r),
+                None => vec![Span::styled("---", Style::default().fg(t.text_muted))],
+            };
+
             Row::new(vec![
                 Cell::from(asset_line).style(Style::default().fg(cat_color)),
                 Cell::from(format_qty(pos.quantity))
@@ -94,6 +236,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                     .style(Style::default().fg(gain_color)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
+                Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
             ])
             .style(style)
@@ -102,10 +245,11 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
 
     let widths = [
         Constraint::Min(16),
-        Constraint::Length(10),
+        Constraint::Length(8),
         Constraint::Length(10),
         Constraint::Length(8),
         Constraint::Length(7),
+        Constraint::Length(11),
         Constraint::Length(8),
     ];
 
@@ -120,6 +264,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Asset"),
         Cell::from("Price"),
         Cell::from("Alloc%"),
+        Cell::from("52W"),
         Cell::from("Trend"),
     ])
     .style(Style::default().fg(t.text_secondary).bold())
@@ -163,12 +308,26 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                 7,
             );
 
+            // 52-week range (safe for privacy — shows price-relative data, not values)
+            let range_52w = compute_52w_range(
+                app.price_history
+                    .get(&pos.symbol)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]),
+                pos.current_price,
+            );
+            let range_spans = match &range_52w {
+                Some(r) => build_52w_spans(t, r),
+                None => vec![Span::styled("---", Style::default().fg(t.text_muted))],
+            };
+
             Row::new(vec![
                 Cell::from(asset_line).style(Style::default().fg(cat_color)),
                 Cell::from(format_price_opt(pos.current_price))
                     .style(Style::default().fg(t.text_primary)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
+                Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
             ])
             .style(style)
@@ -179,6 +338,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Min(20),
         Constraint::Length(12),
         Constraint::Length(8),
+        Constraint::Length(11),
         Constraint::Length(8),
     ];
 
@@ -322,4 +482,120 @@ fn format_gain_pct(g: Option<Decimal>) -> String {
 fn format_alloc_pct(a: Option<Decimal>) -> String {
     a.map(|v| format!("{:.1}%", v))
         .unwrap_or_else(|| "---".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn make_history(prices: &[&str]) -> Vec<HistoryRecord> {
+        prices
+            .iter()
+            .enumerate()
+            .map(|(i, p)| HistoryRecord {
+                date: format!("2025-{:02}-{:02}", (i / 28) + 1, (i % 28) + 1),
+                close: p.parse().unwrap_or_default(),
+                volume: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn compute_52w_range_basic() {
+        let history = make_history(&["100", "120", "80", "110"]);
+        let result = compute_52w_range(&history, Some(dec!(110)));
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.high, dec!(120));
+        assert_eq!(r.low, dec!(80));
+        // position: (110 - 80) / (120 - 80) = 30/40 = 0.75
+        assert!((r.position - 0.75).abs() < 0.01);
+        // from_high: (110 - 120) / 120 * 100 = -8.33%
+        assert!((r.from_high_pct - (-8.33)).abs() < 0.1);
+    }
+
+    #[test]
+    fn compute_52w_range_at_high() {
+        let history = make_history(&["90", "100", "95"]);
+        let result = compute_52w_range(&history, Some(dec!(105)));
+        assert!(result.is_some());
+        let r = result.unwrap();
+        // Current price exceeds history high — becomes new high
+        assert_eq!(r.high, dec!(105));
+        assert_eq!(r.low, dec!(90));
+        assert!((r.position - 1.0).abs() < 0.01);
+        assert!((r.from_high_pct - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn compute_52w_range_at_low() {
+        let history = make_history(&["100", "110", "95"]);
+        let result = compute_52w_range(&history, Some(dec!(85)));
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.high, dec!(110));
+        assert_eq!(r.low, dec!(85));
+        assert!((r.position - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn compute_52w_range_no_records() {
+        let result = compute_52w_range(&[], Some(dec!(100)));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compute_52w_range_single_record() {
+        let history = make_history(&["100"]);
+        let result = compute_52w_range(&history, Some(dec!(100)));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compute_52w_range_no_price() {
+        let history = make_history(&["100", "110", "95"]);
+        let result = compute_52w_range(&history, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compute_52w_range_flat_price() {
+        let history = make_history(&["100", "100", "100"]);
+        let result = compute_52w_range(&history, Some(dec!(100)));
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.high, dec!(100));
+        assert_eq!(r.low, dec!(100));
+        assert!((r.position - 0.5).abs() < 0.01); // defaults to middle
+        assert!((r.from_high_pct - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn compute_52w_range_limits_to_365_records() {
+        // Create 400 records with old high that should be excluded
+        let mut prices: Vec<String> = Vec::new();
+        // First 35 records: very high price (should be outside 365-day window)
+        for _ in 0..35 {
+            prices.push("500".to_string());
+        }
+        // Last 365 records: normal range
+        for i in 0..365 {
+            prices.push(format!("{}", 100 + (i % 20)));
+        }
+        let history: Vec<HistoryRecord> = prices
+            .iter()
+            .enumerate()
+            .map(|(i, p)| HistoryRecord {
+                date: format!("2024-{:02}-{:02}", (i / 28) + 1, (i % 28) + 1),
+                close: p.parse().unwrap_or_default(),
+                volume: None,
+            })
+            .collect();
+        let result = compute_52w_range(&history, Some(dec!(110)));
+        assert!(result.is_some());
+        let r = result.unwrap();
+        // High should be from the last 365 records (119), not the old 500
+        assert_eq!(r.high, dec!(119));
+    }
 }

@@ -10,6 +10,7 @@ use crate::config::PortfolioMode;
 use crate::models::position::Position;
 use crate::models::transaction::TxType;
 use crate::tui::theme;
+use crate::tui::views::positions::compute_52w_range;
 
 /// Renders a full-screen popup with detailed info about the selected position.
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
@@ -190,6 +191,44 @@ pub fn build_detail_lines<'a>(pos: &Position, app: &'a App, privacy: bool) -> Ve
             Span::styled(
                 format!(" {:.1}%", alloc),
                 Style::default().fg(t.text_primary),
+            ),
+        ]));
+    }
+
+    // 52-week range
+    if let Some(range) = compute_52w_range(
+        app.price_history
+            .get(&pos.symbol)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]),
+        pos.current_price,
+    ) {
+        let high_str = format_price(range.high);
+        let low_str = format_price(range.low);
+        lines.push(Line::from(vec![
+            Span::styled("  52W Range ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                format!(" {} — {}", low_str, high_str),
+                Style::default().fg(t.text_primary),
+            ),
+        ]));
+        let pct_text = if range.from_high_pct.abs() < 0.05 {
+            "At 52W high".to_string()
+        } else {
+            format!("{:+.1}% from high", range.from_high_pct)
+        };
+        let pct_color = if range.from_high_pct.abs() < 0.05 {
+            t.gain_green
+        } else if range.from_high_pct > -10.0 {
+            t.text_secondary
+        } else {
+            t.loss_red
+        };
+        lines.push(Line::from(vec![
+            Span::styled("            ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                format!(" {}", pct_text),
+                Style::default().fg(pct_color),
             ),
         ]));
     }

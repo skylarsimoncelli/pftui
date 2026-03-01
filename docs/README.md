@@ -9,7 +9,8 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 ### Portfolio Tracking
 - Full portfolio mode with buy/sell transactions and FIFO cost basis
 - Percentage-only mode for privacy-first users (no monetary values stored)
-- Positions table with quantity, price, gain %, allocation %, and inline sparkline trends
+- Positions table with quantity, price, gain %, allocation %, 52-week range indicator, and inline sparkline trends
+- 52-week high/low range bar showing current price position within the annual range, with distance-from-high percentage
 - Category-grouped allocation bar chart (horizontal, fractional Unicode bars)
 - 90-day portfolio value sparkline (braille dot-matrix)
 - CSV and JSON export

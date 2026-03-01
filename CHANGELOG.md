@@ -17,6 +17,15 @@
 ---
 
 
+### 2026-03-01 — Add 52-week high/low range indicators
+
+- What: added a 52-week range indicator column to the positions table (both full and privacy modes). Each position shows a visual range bar (`━━━●━━━`) with a colored dot indicating where the current price sits between the 52-week low and high, plus a percentage distance from the 52-week high (e.g. `-12%`, or `ATH` when at the high). The dot color uses a red→neutral→green gradient based on position within range. Also added 52-week range info to the position detail popup (Enter), showing the numeric low—high range and distance from high with color coding (green at high, neutral near high, red when >10% below). The `compute_52w_range()` function takes price history records and limits analysis to the most recent 365 entries, includes the current live price in high/low calculations, and handles edge cases (flat prices, no data, new highs/lows). Reduced Qty column from 10→8 chars to accommodate the new 52W column (11 chars). Column header is `52W`.
+- Why: 52-week high/low is one of the most commonly referenced metrics for any asset — it tells you instantly whether something is near its peak, at a bottom, or somewhere in between. The visual range bar makes this scannable across an entire portfolio at a glance, and the from-high percentage quantifies the distance. Together with gain% and sparkline trend, this gives three different temporal perspectives on each position.
+- Files: `src/tui/views/positions.rs` (Range52W struct, compute_52w_range function, build_52w_spans function, 52W column in full and privacy tables, 8 tests), `src/tui/views/position_detail.rs` (52W range in Performance section), `src/tui/views/help.rs` (52W help note), `docs/README.md` (52W feature bullets)
+- Tests: added 8 tests — compute_52w_range_basic, compute_52w_range_at_high, compute_52w_range_at_low, compute_52w_range_no_records, compute_52w_range_single_record, compute_52w_range_no_price, compute_52w_range_flat_price, compute_52w_range_limits_to_365_records. Total: 141 tests passing.
+- TODO: Add 52-week high/low indicators (P2)
+
+
 ### 2026-03-01 — Improve allocation bars with inline labels and total value
 
 - What: enhanced the allocation bars widget with two improvements. (1) Percentage labels are now rendered inside the filled portion of bars when the bar is wide enough (>= 5 cells) — e.g. a 42% equity bar shows "42%" overlaid in bold black text on the colored bar background, making it instantly readable without scanning to the right-side label. When bars are too narrow, they render as before (solid fill). (2) Total portfolio value is displayed below the allocation bars as "Total: $XX.XK" using compact formatting ($2.50M, $456.7K, $12,345, $999.00). The total value line respects privacy mode — hidden when percentage mode is active or privacy view is toggled. Updated sidebar layout to allocate an extra row for the total value line when present. Refactored `fractional_bar()` into `fractional_bar_with_label()` with centered label placement and width-preserving rendering.
