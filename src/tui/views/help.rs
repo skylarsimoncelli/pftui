@@ -68,6 +68,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("Esc         ", Style::default().fg(t.key_hint)),
             Span::styled("Close chart / help", Style::default().fg(t.text_primary)),
         ]),
+        Line::from(vec![
+            Span::styled("/           ", Style::default().fg(t.key_hint)),
+            Span::styled("Search / filter by name", Style::default().fg(t.text_primary)),
+        ]),
         Line::from(""),
         Line::from(Span::styled(
             "Sorting (Positions)",

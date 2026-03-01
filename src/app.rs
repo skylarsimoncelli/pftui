@@ -118,6 +118,10 @@ pub struct App {
     pub g_pending: bool,
     pub terminal_height: u16,
 
+    // Search
+    pub search_mode: bool,
+    pub search_query: String,
+
     // Sorting
     pub sort_field: SortField,
     pub sort_ascending: bool,
@@ -179,6 +183,8 @@ impl App {
             tx_selected_index: 0,
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
+            search_mode: false,
+            search_query: String::new(),
             sort_field: SortField::Allocation,
             sort_ascending: false,
             category_filter: None,
@@ -328,7 +334,7 @@ impl App {
     }
 
     fn apply_filter_and_sort(&mut self) {
-        // Filter positions
+        // Filter positions by category
         let mut positions: Vec<Position> = match self.category_filter {
             Some(cat) => self
                 .positions
@@ -338,6 +344,15 @@ impl App {
                 .collect(),
             None => self.positions.clone(),
         };
+
+        // Filter positions by search query
+        if !self.search_query.is_empty() {
+            let query = self.search_query.to_lowercase();
+            positions.retain(|p| {
+                p.symbol.to_lowercase().contains(&query)
+                    || p.name.to_lowercase().contains(&query)
+            });
+        }
 
         // Sort positions
         match self.sort_field {
@@ -372,6 +387,13 @@ impl App {
         // Sort transactions (only relevant in full mode)
         if self.portfolio_mode == PortfolioMode::Full {
             let mut txs = self.transactions.clone();
+
+            // Filter transactions by search query
+            if !self.search_query.is_empty() {
+                let query = self.search_query.to_lowercase();
+                txs.retain(|tx| tx.symbol.to_lowercase().contains(&query));
+            }
+
             if matches!(self.sort_field, SortField::Date) {
                 txs.sort_by(|a, b| a.date.cmp(&b.date));
                 if !self.sort_ascending {
@@ -644,6 +666,36 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Search mode input handling (must be checked before global keys
+        // so that typing e.g. 'q' doesn't quit while searching)
+        if self.search_mode {
+            match key.code {
+                KeyCode::Esc => {
+                    self.search_mode = false;
+                    self.search_query.clear();
+                    self.apply_filter_and_sort();
+                }
+                KeyCode::Enter => {
+                    // Confirm search — exit search mode but keep filter active
+                    self.search_mode = false;
+                }
+                KeyCode::Backspace => {
+                    self.search_query.pop();
+                    self.selected_index = 0;
+                    self.tx_selected_index = 0;
+                    self.apply_filter_and_sort();
+                }
+                KeyCode::Char(c) => {
+                    self.search_query.push(c);
+                    self.selected_index = 0;
+                    self.tx_selected_index = 0;
+                    self.apply_filter_and_sort();
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Global keys
         match key.code {
             KeyCode::Char('q') => {
@@ -803,6 +855,13 @@ impl App {
             // Filter
             KeyCode::Char('f') => {
                 self.cycle_filter();
+            }
+
+            // Search
+            KeyCode::Char('/') => {
+                self.search_mode = true;
+                self.search_query.clear();
+                self.apply_filter_and_sort();
             }
 
             // Refresh
@@ -1362,5 +1421,218 @@ mod vim_motion_tests {
 
         app.handle_key(ctrl_key('u'));
         assert_eq!(app.tx_selected_index, 0);
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use rust_decimal_macros::dec;
+    use std::path::PathBuf;
+
+    fn make_search_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
+
+        // Add positions with various names/symbols
+        app.positions = vec![
+            Position {
+                symbol: "AAPL".to_string(),
+                name: "Apple Inc".to_string(),
+                category: AssetCategory::Equity,
+                quantity: dec!(10),
+                avg_cost: dec!(150),
+                total_cost: dec!(1500),
+                currency: "USD".to_string(),
+                current_price: Some(dec!(175)),
+                current_value: Some(dec!(1750)),
+                gain: Some(dec!(250)),
+                gain_pct: Some(dec!(16.67)),
+                allocation_pct: Some(dec!(25)),
+            },
+            Position {
+                symbol: "BTC".to_string(),
+                name: "Bitcoin".to_string(),
+                category: AssetCategory::Crypto,
+                quantity: dec!(1),
+                avg_cost: dec!(30000),
+                total_cost: dec!(30000),
+                currency: "USD".to_string(),
+                current_price: Some(dec!(50000)),
+                current_value: Some(dec!(50000)),
+                gain: Some(dec!(20000)),
+                gain_pct: Some(dec!(66.67)),
+                allocation_pct: Some(dec!(50)),
+            },
+            Position {
+                symbol: "GOOGL".to_string(),
+                name: "Alphabet Inc".to_string(),
+                category: AssetCategory::Equity,
+                quantity: dec!(5),
+                avg_cost: dec!(100),
+                total_cost: dec!(500),
+                currency: "USD".to_string(),
+                current_price: Some(dec!(140)),
+                current_value: Some(dec!(700)),
+                gain: Some(dec!(200)),
+                gain_pct: Some(dec!(40)),
+                allocation_pct: Some(dec!(25)),
+            },
+        ];
+        // Set display_positions directly (no DB, so recompute would clear them)
+        app.display_positions = app.positions.clone();
+        app
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn esc_key() -> KeyEvent {
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+    }
+
+    fn enter_key() -> KeyEvent {
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    fn backspace_key() -> KeyEvent {
+        KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_slash_enters_search_mode() {
+        let mut app = make_search_app();
+        assert!(!app.search_mode);
+
+        app.handle_key(key('/'));
+        assert!(app.search_mode);
+        assert!(app.search_query.is_empty());
+    }
+
+    #[test]
+    fn test_search_filters_by_symbol() {
+        let mut app = make_search_app();
+        assert_eq!(app.display_positions.len(), 3);
+
+        // Enter search mode and type "BTC"
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+
+        assert_eq!(app.display_positions.len(), 1);
+        assert_eq!(app.display_positions[0].symbol, "BTC");
+    }
+
+    #[test]
+    fn test_search_filters_by_name_case_insensitive() {
+        let mut app = make_search_app();
+
+        // Search by name substring
+        app.handle_key(key('/'));
+        app.handle_key(key('a'));
+        app.handle_key(key('p'));
+        app.handle_key(key('p'));
+        app.handle_key(key('l'));
+        app.handle_key(key('e'));
+
+        assert_eq!(app.display_positions.len(), 1);
+        assert_eq!(app.display_positions[0].symbol, "AAPL");
+    }
+
+    #[test]
+    fn test_search_esc_clears_and_exits() {
+        let mut app = make_search_app();
+
+        // Enter search, type something
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        assert_eq!(app.display_positions.len(), 1);
+
+        // Esc should clear search and show all positions
+        app.handle_key(esc_key());
+        assert!(!app.search_mode);
+        assert!(app.search_query.is_empty());
+        assert_eq!(app.display_positions.len(), 3);
+    }
+
+    #[test]
+    fn test_search_enter_confirms_filter() {
+        let mut app = make_search_app();
+
+        // Enter search, type, confirm
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+        app.handle_key(enter_key());
+
+        // Search mode exits but filter stays
+        assert!(!app.search_mode);
+        assert_eq!(app.search_query, "btc");
+        assert_eq!(app.display_positions.len(), 1);
+    }
+
+    #[test]
+    fn test_search_backspace_removes_char() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+        assert_eq!(app.display_positions.len(), 1);
+
+        // Backspace to widen the filter
+        app.handle_key(backspace_key());
+        assert_eq!(app.search_query, "bt");
+
+        app.handle_key(backspace_key());
+        app.handle_key(backspace_key());
+        assert!(app.search_query.is_empty());
+        assert_eq!(app.display_positions.len(), 3);
+    }
+
+    #[test]
+    fn test_search_no_match_shows_empty() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        app.handle_key(key('x'));
+        app.handle_key(key('y'));
+        app.handle_key(key('z'));
+
+        assert_eq!(app.display_positions.len(), 0);
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_search_resets_selection_index() {
+        let mut app = make_search_app();
+        app.selected_index = 2;
+
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        // Typing should reset index to 0
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_search_blocks_normal_keys() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        // Typing 'q' in search mode should NOT quit
+        app.handle_key(key('q'));
+        assert!(!app.should_quit);
+        assert_eq!(app.search_query, "q");
     }
 }
