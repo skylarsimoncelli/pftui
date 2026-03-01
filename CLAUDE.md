@@ -26,7 +26,7 @@ This repo is improved by automated hourly cron runs. Each run should:
 
 ## Git
 
-- **Author:** Skylar Simoncelli <skylar@skylar.email>
+- **Author:** skylarsimoncelli <skylar.simoncelli@icloud.com>
 - Always set both `--author` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars
 - No Co-Authored-By lines — repo doesn't allow co-authors
 - Never merge branches or PRs
