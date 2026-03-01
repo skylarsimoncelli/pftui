@@ -102,7 +102,7 @@
 
 ## P0 — Performance Fix (Owner Request)
 
-- [ ] **Switch to on-demand chart history fetching** — Currently fetches 5Y of daily data for every asset upfront (wasteful, slow startup, rate limiting risk). Change to:
+- [~] **Switch to on-demand chart history fetching** — Currently fetches 5Y of daily data for every asset upfront (wasteful, slow startup, rate limiting risk). Change to:
   - Default initial fetch: 3M (90 days) — covers the most common view
   - On timeframe switch: if requested range exceeds cached data, fetch the delta and merge (merge_history_into already exists)
   - Cache for session: once 1Y data is fetched for an asset, don't re-fetch if user switches back to 3M then 1Y
