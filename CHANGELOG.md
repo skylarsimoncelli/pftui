@@ -60,3 +60,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/app.rs`
 - Tests: added 4 tests for `merge_history_into` (empty map, preserves older data, adds new dates, existing empty vec). Total: 218 tests passing.
 - TODO: Fix chart timeframe selection (P0)
+
+### 2026-03-01 — Switch to on-demand chart history fetching
+
+- What: changed initial history fetch from 5Y (1825 days) for every asset to 3M (90 days). Added per-symbol fetch tracking (`fetched_history_days` HashMap) so longer timeframes are only fetched from APIs when the user actually switches to them (6M, 1Y, 5Y). DB cache still loads all available data from previous sessions, providing immediate display for longer timeframes without fresh API calls. New `request_history_if_needed()` method checks whether we've already fetched sufficient data before issuing an API request, preventing redundant network calls.
+- Why: fetching 5Y of daily data for every asset on every startup was wasteful — slow startup, excessive API calls, risk of CoinGecko rate limiting. Most users only view 3M charts. Now startup is faster, API usage is minimal, and longer ranges are fetched on-demand when needed.
+- Files: `src/app.rs`
+- Tests: added 5 tests for on-demand fetch tracking (empty initial state, tracks days, skips when sufficient, upgrades when more needed, exact match skips). Total: 223 tests passing.
+- TODO: Switch to on-demand chart history fetching (P0)

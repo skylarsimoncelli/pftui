@@ -218,6 +218,9 @@ pub struct App {
     pub chart_index: usize, // which chart variant to show for current position
     pub chart_timeframe: ChartTimeframe,
 
+    // History fetch tracking: max days fetched per symbol (to avoid re-fetching)
+    fetched_history_days: HashMap<String, u32>,
+
     // Animation
     pub tick_count: u64,
     pub price_flash_ticks: HashMap<String, u64>,
@@ -309,6 +312,7 @@ impl App {
             theme_name: config.theme.clone(),
             chart_index: 0,
             chart_timeframe: ChartTimeframe::ThreeMonths,
+            fetched_history_days: HashMap::new(),
             tick_count: 0,
             price_flash_ticks: HashMap::new(),
             last_value_update_tick: 0,
@@ -400,19 +404,24 @@ impl App {
         }
     }
 
-    fn request_all_history(&self, service: &PriceService) {
+    fn request_all_history(&mut self, service: &PriceService) {
         let mut seen = std::collections::HashSet::new();
         let mut batch = Vec::new();
 
-        // Fetch maximum history (5Y) for all symbols so every timeframe
-        // can be sliced from the in-memory cache without re-fetching.
-        let max_days = ChartTimeframe::FiveYears.days();
+        // On-demand strategy: only fetch 3M (90 days) at startup.
+        // Longer timeframes are fetched on-demand when the user switches.
+        // The DB cache may already have more data from previous sessions.
+        let initial_days = ChartTimeframe::ThreeMonths.days();
 
         // Collect portfolio symbols
         let symbols = self.get_symbols();
         for (symbol, category) in &symbols {
             if seen.insert(symbol.clone()) {
-                batch.push((symbol.clone(), *category, max_days));
+                batch.push((symbol.clone(), *category, initial_days));
+                self.fetched_history_days
+                    .entry(symbol.clone())
+                    .and_modify(|d| *d = (*d).max(initial_days))
+                    .or_insert(initial_days);
             }
         }
 
@@ -421,7 +430,11 @@ impl App {
         for pos in &self.positions {
             for (sym, cat) in Self::chart_fetch_symbols(pos) {
                 if seen.insert(sym.clone()) {
-                    batch.push((sym, cat, max_days));
+                    batch.push((sym.clone(), cat, initial_days));
+                    self.fetched_history_days
+                        .entry(sym.clone())
+                        .and_modify(|d| *d = (*d).max(initial_days))
+                        .or_insert(initial_days);
                 }
             }
         }
@@ -432,12 +445,27 @@ impl App {
         }
     }
 
-    fn request_history_for_symbol(&self, symbol: &str, category: AssetCategory) {
+    /// Request history for a single symbol, but only if we haven't already
+    /// fetched at least `needed_days` worth of data for it this session.
+    fn request_history_for_symbol(&mut self, symbol: &str, category: AssetCategory) {
+        let needed_days = self.chart_timeframe.days();
+        self.request_history_if_needed(symbol, category, needed_days);
+    }
+
+    /// Fetch history for a symbol only if the cached fetch is shorter than needed.
+    fn request_history_if_needed(&mut self, symbol: &str, category: AssetCategory, needed_days: u32) {
+        let already_fetched = self.fetched_history_days.get(symbol).copied().unwrap_or(0);
+        if already_fetched >= needed_days {
+            return; // already have enough data
+        }
+        // Track that we're fetching this range
+        self.fetched_history_days.insert(symbol.to_string(), needed_days);
+        // Extract service ref and send command (avoid borrow conflict)
         if let Some(ref service) = self.price_service {
             service.send_command(PriceCommand::FetchHistory(
                 symbol.to_string(),
                 category,
-                ChartTimeframe::FiveYears.days(),
+                needed_days,
             ));
         }
     }
@@ -508,11 +536,14 @@ impl App {
 
     /// Re-fetch history for the currently selected position's chart symbols
     /// using the current timeframe. Called when timeframe changes via h/l.
+    /// Re-fetch chart history for the selected position if the current
+    /// timeframe needs more data than we've already fetched.
     fn refetch_chart_history(&mut self) {
         if let Some(pos) = self.selected_position().cloned() {
+            let needed_days = self.chart_timeframe.days();
             let fetch_syms = Self::chart_fetch_symbols(&pos);
             for (sym, cat) in &fetch_syms {
-                self.request_history_for_symbol(sym, *cat);
+                self.request_history_if_needed(sym, *cat, needed_days);
             }
         }
     }
@@ -2395,5 +2426,65 @@ mod responsive_tests {
         app.set_terminal_size(160, 50);
         assert_eq!(app.terminal_width, 160);
         assert!(app.terminal_width >= crate::tui::ui::COMPACT_WIDTH);
+    }
+}
+
+#[cfg(test)]
+mod on_demand_history_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
+    }
+
+    #[test]
+    fn test_fetched_history_days_starts_empty() {
+        let app = make_app();
+        assert!(app.fetched_history_days.is_empty());
+    }
+
+    #[test]
+    fn test_request_history_if_needed_tracks_days() {
+        let mut app = make_app();
+        // No price service, so command won't send, but tracking should still work
+        app.request_history_if_needed("AAPL", AssetCategory::Equity, 90);
+        assert_eq!(app.fetched_history_days.get("AAPL"), Some(&90));
+    }
+
+    #[test]
+    fn test_request_history_if_needed_skips_when_already_fetched() {
+        let mut app = make_app();
+        // Pre-populate as if we already fetched 365 days
+        app.fetched_history_days.insert("AAPL".to_string(), 365);
+        // Requesting 90 days should be a no-op (already have more)
+        app.request_history_if_needed("AAPL", AssetCategory::Equity, 90);
+        // Should still be 365, not downgraded to 90
+        assert_eq!(app.fetched_history_days.get("AAPL"), Some(&365));
+    }
+
+    #[test]
+    fn test_request_history_if_needed_upgrades_when_more_needed() {
+        let mut app = make_app();
+        // Pre-populate as if we fetched 90 days
+        app.fetched_history_days.insert("AAPL".to_string(), 90);
+        // Requesting 365 days should upgrade the tracked amount
+        app.request_history_if_needed("AAPL", AssetCategory::Equity, 365);
+        assert_eq!(app.fetched_history_days.get("AAPL"), Some(&365));
+    }
+
+    #[test]
+    fn test_request_history_if_needed_exact_match_skips() {
+        let mut app = make_app();
+        app.fetched_history_days.insert("BTC".to_string(), 180);
+        // Requesting exactly 180 should be a no-op
+        app.request_history_if_needed("BTC", AssetCategory::Crypto, 180);
+        assert_eq!(app.fetched_history_days.get("BTC"), Some(&180));
     }
 }
