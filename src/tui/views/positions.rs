@@ -413,7 +413,7 @@ fn render_table(
         " Positions "
     };
 
-    let border_color = if app.detail_open {
+    let border_color = if app.selected_position().is_some() && app.terminal_width >= crate::tui::ui::COMPACT_WIDTH {
         t.border_inactive
     } else {
         t.border_active

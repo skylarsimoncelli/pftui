@@ -447,6 +447,7 @@ impl App {
 
     /// Request history for a single symbol, but only if we haven't already
     /// fetched at least `needed_days` worth of data for it this session.
+    #[allow(dead_code)]
     fn request_history_for_symbol(&mut self, symbol: &str, category: AssetCategory) {
         let needed_days = self.chart_timeframe.days();
         self.request_history_if_needed(symbol, category, needed_days);
@@ -545,6 +546,15 @@ impl App {
             for (sym, cat) in &fetch_syms {
                 self.request_history_if_needed(sym, *cat, needed_days);
             }
+        }
+    }
+
+    /// Called when the selected position changes to auto-fetch chart data.
+    /// Resets chart index and ensures history data is available for the new asset.
+    fn on_position_selection_changed(&mut self) {
+        if matches!(self.view_mode, ViewMode::Positions) {
+            self.chart_index = 0;
+            self.refetch_chart_history();
         }
     }
 
@@ -1012,10 +1022,6 @@ impl App {
                 self.show_help = false;
                 return;
             }
-            KeyCode::Esc if self.detail_open => {
-                self.detail_open = false;
-                return;
-            }
             _ => {}
         }
 
@@ -1110,35 +1116,15 @@ impl App {
                 }
             }
 
-            // Detail view toggle
+            // Detail popup toggle (chart is always visible in right pane)
             KeyCode::Enter if matches!(self.view_mode, ViewMode::Positions) => {
-                if let Some(pos) = self.selected_position().cloned() {
-                    if self.detail_popup_open {
-                        // From popup: close popup, open chart in sidebar
-                        self.detail_popup_open = false;
-                        self.detail_open = true;
-                        self.chart_index = 0;
-                        let fetch_syms = Self::chart_fetch_symbols(&pos);
-                        for (sym, cat) in &fetch_syms {
-                            self.request_history_for_symbol(sym, *cat);
-                        }
-                    } else if self.detail_open {
-                        // Chart is open: close it
-                        self.detail_open = false;
-                    } else {
-                        // Nothing open: show detail popup
-                        self.detail_popup_open = true;
-                        self.chart_index = 0;
-                        let fetch_syms = Self::chart_fetch_symbols(&pos);
-                        for (sym, cat) in &fetch_syms {
-                            self.request_history_for_symbol(sym, *cat);
-                        }
-                    }
+                if self.selected_position().is_some() {
+                    self.detail_popup_open = !self.detail_popup_open;
                 }
             }
 
             // Chart variant cycling with J/K (when detail open)
-            KeyCode::Char('K') if self.detail_open => {
+            KeyCode::Char('K') if matches!(self.view_mode, ViewMode::Positions) => {
                 if let Some(pos) = self.selected_position() {
                     let count = Self::chart_variants_for_position(pos).len();
                     if count > 1 {
@@ -1150,7 +1136,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('J') if self.detail_open => {
+            KeyCode::Char('J') if matches!(self.view_mode, ViewMode::Positions) => {
                 if let Some(pos) = self.selected_position() {
                     let count = Self::chart_variants_for_position(pos).len();
                     if count > 1 {
@@ -1159,11 +1145,11 @@ impl App {
                 }
             }
             // Timeframe cycling with h/l (when detail open)
-            KeyCode::Char('h') | KeyCode::Left if self.detail_open => {
+            KeyCode::Char('h') | KeyCode::Left if matches!(self.view_mode, ViewMode::Positions) => {
                 self.chart_timeframe = self.chart_timeframe.prev();
                 self.refetch_chart_history();
             }
-            KeyCode::Char('l') | KeyCode::Right if self.detail_open => {
+            KeyCode::Char('l') | KeyCode::Right if matches!(self.view_mode, ViewMode::Positions) => {
                 self.chart_timeframe = self.chart_timeframe.next();
                 self.refetch_chart_history();
             }
@@ -1251,6 +1237,7 @@ impl App {
     }
 
     fn move_down(&mut self) {
+        let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
@@ -1285,9 +1272,13 @@ impl App {
                 }
             }
         }
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
+            self.on_position_selection_changed();
+        }
     }
 
     fn move_up(&mut self) {
+        let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
                 self.selected_index = self.selected_index.saturating_sub(1);
@@ -1305,9 +1296,13 @@ impl App {
                 self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(1);
             }
         }
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
+            self.on_position_selection_changed();
+        }
     }
 
     fn jump_to_top(&mut self) {
+        let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
                 self.selected_index = 0;
@@ -1325,9 +1320,13 @@ impl App {
                 self.watchlist_selected_index = 0;
             }
         }
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
+            self.on_position_selection_changed();
+        }
     }
 
     fn jump_to_bottom(&mut self) {
+        let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
                 if !self.display_positions.is_empty() {
@@ -1357,6 +1356,9 @@ impl App {
                 }
             }
         }
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
+            self.on_position_selection_changed();
+        }
     }
 
     pub fn set_terminal_size(&mut self, w: u16, h: u16) {
@@ -1371,6 +1373,7 @@ impl App {
     }
 
     fn scroll_down_half_page(&mut self) {
+        let old_pos_idx = self.selected_index;
         let step = self.half_page();
         match self.view_mode {
             ViewMode::Positions => {
@@ -1406,9 +1409,13 @@ impl App {
                 }
             }
         }
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
+            self.on_position_selection_changed();
+        }
     }
 
     fn scroll_up_half_page(&mut self) {
+        let old_pos_idx = self.selected_index;
         let step = self.half_page();
         match self.view_mode {
             ViewMode::Positions => {
@@ -1426,6 +1433,9 @@ impl App {
             ViewMode::Watchlist => {
                 self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(step);
             }
+        }
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
+            self.on_position_selection_changed();
         }
     }
 
@@ -2331,7 +2341,6 @@ mod timeframe_tests {
             gain_pct: Some(dec!(16.67)),
             allocation_pct: Some(dec!(100)),
         });
-        app.detail_open = true;
         app
     }
 
@@ -2340,7 +2349,7 @@ mod timeframe_tests {
     }
 
     #[test]
-    fn test_l_cycles_timeframe_forward_when_detail_open() {
+    fn test_l_cycles_timeframe_forward_in_positions_view() {
         let mut app = make_tf_app();
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
 
@@ -2352,7 +2361,7 @@ mod timeframe_tests {
     }
 
     #[test]
-    fn test_h_cycles_timeframe_backward_when_detail_open() {
+    fn test_h_cycles_timeframe_backward_in_positions_view() {
         let mut app = make_tf_app();
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
 
@@ -2364,9 +2373,9 @@ mod timeframe_tests {
     }
 
     #[test]
-    fn test_h_l_no_effect_when_detail_closed() {
+    fn test_h_l_no_effect_when_not_positions_view() {
         let mut app = make_tf_app();
-        app.detail_open = false;
+        app.view_mode = ViewMode::Markets;
         let original = app.chart_timeframe;
 
         app.handle_key(key('h'));

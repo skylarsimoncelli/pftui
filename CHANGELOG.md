@@ -68,3 +68,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/app.rs`
 - Tests: added 5 tests for on-demand fetch tracking (empty initial state, tracks days, skips when sufficient, upgrades when more needed, exact match skips). Total: 223 tests passing.
 - TODO: Switch to on-demand chart history fetching (P0)
+
+### 2026-03-01 — Restructure layout: left=portfolio overview, right=asset chart
+
+- What: restructured the Positions view layout to establish clear L/R pane separation. Left pane (57%) now shows the positions table (top) with portfolio overview below it (allocation bars + sparkline). Right pane (43%) now always shows the per-asset price chart for the selected position — no longer hidden behind Enter toggle. Chart navigation keybindings (J/K for chart variant, h/l for timeframe) now work immediately in Positions view without needing to "open" the detail view first. Enter now simply toggles the detail popup overlay. Position navigation (j/k, gg, G, Ctrl-d/u) auto-fetches chart data for the newly selected asset.
+- Why: the old layout put allocation bars and portfolio sparkline in the right pane as a "sidebar", and the asset chart only appeared after pressing Enter. This meant the most important real-time data (per-asset chart) was hidden by default, and portfolio overview widgets competed for space with the asset detail. The new layout matches the intended Bloomberg-style information density: portfolio overview on the left, selected asset detail always visible on the right.
+- Files: `src/tui/ui.rs` (layout restructure with dynamic overview height), `src/app.rs` (simplified Enter handler, view-mode-based chart keybindings, auto-fetch on selection change), `src/tui/views/positions.rs` (border color logic)
+- Tests: updated 3 tests (renamed to reflect view-mode guards, test for non-Positions view). Total: 223 tests passing.
+- TODO: Fix layout: allocation bars belong in left pane (P0), Fix layout: portfolio chart on left, asset chart on right (P0)

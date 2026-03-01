@@ -8,6 +8,9 @@ use crate::tui::widgets;
 /// Width threshold below which the sidebar is hidden and positions get full width.
 pub const COMPACT_WIDTH: u16 = 100;
 
+/// Minimum height for the portfolio overview panel (allocation bars + sparkline).
+const MIN_OVERVIEW_HEIGHT: u16 = 10;
+
 pub fn render(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
 
@@ -55,10 +58,12 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
     let width = app.terminal_width;
 
     if width < COMPACT_WIDTH {
-        // Compact: positions get full width, no sidebar/chart panel
+        // Compact: positions get full width, no right pane
         views::positions::render(frame, area, app);
     } else {
-        // Standard: positions + sidebar/chart in 57/43 split
+        // Standard two-column layout:
+        //   Left (57%):  positions table (top) + portfolio overview (bottom)
+        //   Right (43%): asset price chart (always visible)
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -67,14 +72,56 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
             ])
             .split(area);
 
-        views::positions::render(frame, h_chunks[0], app);
+        // Left pane: positions table + portfolio overview (allocation bars + sparkline)
+        let left_height = h_chunks[0].height;
+        if left_height > MIN_OVERVIEW_HEIGHT + 5 {
+            // Enough room: split left pane vertically
+            let overview_height = compute_overview_height(app, left_height);
+            let left_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(5),                       // positions table
+                    Constraint::Length(overview_height),       // portfolio overview
+                ])
+                .split(h_chunks[0]);
 
-        if app.detail_open {
-            widgets::price_chart::render(frame, h_chunks[1], app);
+            views::positions::render(frame, left_chunks[0], app);
+            widgets::sidebar::render(frame, left_chunks[1], app);
         } else {
-            widgets::sidebar::render(frame, h_chunks[1], app);
+            // Too short: positions table only
+            views::positions::render(frame, h_chunks[0], app);
+        }
+
+        // Right pane: always show asset price chart
+        if app.selected_position().is_some() {
+            widgets::price_chart::render(frame, h_chunks[1], app);
         }
     }
+}
+
+/// Compute the ideal height for the portfolio overview panel.
+/// Based on the number of asset categories + sparkline space.
+fn compute_overview_height(app: &App, max_height: u16) -> u16 {
+    use rust_decimal_macros::dec;
+
+    let cat_count = app
+        .positions
+        .iter()
+        .filter(|p| p.allocation_pct.is_some_and(|a| a > dec!(0)))
+        .map(|p| p.category)
+        .collect::<std::collections::HashSet<_>>()
+        .len() as u16;
+
+    // Allocation bars: cat_count + 2 (border) + 1 (total value line)
+    let alloc_height = (cat_count + 3).max(4);
+    // Sparkline: minimum 8 rows for meaningful chart
+    let sparkline_height = 8u16;
+    // Total: allocation + sparkline
+    let ideal = alloc_height + sparkline_height;
+
+    // Cap at 40% of available height to leave room for positions
+    let cap = (max_height * 2) / 5;
+    ideal.min(cap).max(MIN_OVERVIEW_HEIGHT)
 }
 
 #[cfg(test)]
