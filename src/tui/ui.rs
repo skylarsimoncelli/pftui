@@ -5,7 +5,7 @@ use crate::app::{App, ViewMode};
 use crate::tui::views;
 use crate::tui::widgets;
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
 
     // Fill entire background with deepest surface

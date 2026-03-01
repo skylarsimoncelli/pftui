@@ -91,6 +91,7 @@ pub struct App {
     pub should_quit: bool,
     pub view_mode: ViewMode,
     pub show_help: bool,
+    pub help_scroll: usize,
     pub detail_open: bool,
 
     // Mode
@@ -167,6 +168,7 @@ impl App {
             should_quit: false,
             view_mode: ViewMode::Positions,
             show_help: false,
+            help_scroll: 0,
             detail_open: false,
             portfolio_mode: config.portfolio_mode,
             show_percentages_only: config.portfolio_mode == PortfolioMode::Percentage,
@@ -708,6 +710,9 @@ impl App {
             }
             KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
+                if self.show_help {
+                    self.help_scroll = 0;
+                }
                 return;
             }
             KeyCode::Esc if self.show_help => {
@@ -722,6 +727,37 @@ impl App {
         }
 
         if self.show_help {
+            match key.code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.help_scroll = self.help_scroll.saturating_add(1);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.help_scroll = self.help_scroll.saturating_sub(1);
+                }
+                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.help_scroll = self.help_scroll.saturating_add(self.half_page());
+                }
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.help_scroll = self.help_scroll.saturating_sub(self.half_page());
+                }
+                KeyCode::Char('G') => {
+                    // Scrolled to max — render function will clamp
+                    self.help_scroll = usize::MAX;
+                }
+                _ => {
+                    // gg detection within help
+                    if key.code == KeyCode::Char('g') {
+                        if self.g_pending {
+                            self.help_scroll = 0;
+                            self.g_pending = false;
+                        } else {
+                            self.g_pending = true;
+                        }
+                    } else {
+                        self.g_pending = false;
+                    }
+                }
+            }
             return;
         }
 

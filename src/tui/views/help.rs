@@ -5,152 +5,248 @@ use ratatui::{
 
 use crate::app::App;
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+/// Build a separator line styled with the theme's subtle border color.
+fn sep_line(color: Color, width: usize) -> Line<'static> {
+    Line::from(Span::styled(
+        "─".repeat(width),
+        Style::default().fg(color),
+    ))
+}
+
+/// Build a section header line.
+fn section_header(title: &str, color: Color) -> Line<'static> {
+    Line::from(Span::styled(
+        title.to_string(),
+        Style::default().bold().fg(color),
+    ))
+}
+
+/// Build a keybinding line: left-aligned key, right-aligned description.
+fn key_line(key: &str, desc: &str, key_color: Color, text_color: Color) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("  {key:<14}"), Style::default().fg(key_color)),
+        Span::styled(desc.to_string(), Style::default().fg(text_color)),
+    ])
+}
+
+/// Build the full help text content as a list of Lines.
+pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
+    let t = &app.theme;
+    let sep_w = 48;
+    let kc = t.key_hint;
+    let tc = t.text_primary;
+    let sc = t.text_secondary;
+    let ac = t.text_accent;
+    let bc = t.border_subtle;
+
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(64);
+
+    // ── Title ──
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  ◆ ", Style::default().fg(ac)),
+        Span::styled("pftui", Style::default().bold().fg(ac)),
+        Span::styled(" — Keybindings", Style::default().fg(sc)),
+    ]));
+    lines.push(Line::from(""));
+
+    // ── Navigation ──
+    lines.push(section_header("  Navigation", ac));
+    lines.push(sep_line(bc, sep_w));
+    lines.push(key_line("j / ↓", "Move down", kc, tc));
+    lines.push(key_line("k / ↑", "Move up", kc, tc));
+    lines.push(key_line("gg", "Jump to top", kc, tc));
+    lines.push(key_line("G", "Jump to bottom", kc, tc));
+    lines.push(key_line("Ctrl+d", "Scroll down half page", kc, tc));
+    lines.push(key_line("Ctrl+u", "Scroll up half page", kc, tc));
+    lines.push(key_line("/", "Search / filter by name", kc, tc));
+    lines.push(Line::from(""));
+
+    // ── Views ──
+    lines.push(section_header("  Views", ac));
+    lines.push(sep_line(bc, sep_w));
+    lines.push(key_line("1", "Positions view", kc, tc));
+    lines.push(key_line("2", "Transactions view", kc, tc));
+    lines.push(key_line("Enter", "Open price chart", kc, tc));
+    lines.push(key_line("Esc", "Close chart / help", kc, tc));
+    lines.push(key_line("?", "Toggle this help", kc, tc));
+    lines.push(Line::from(""));
+
+    // ── Charts ──
+    lines.push(section_header("  Charts", ac));
+    lines.push(sep_line(bc, sep_w));
+    lines.push(key_line("J / K", "Cycle chart variant", kc, tc));
+    lines.push(Line::from(Span::styled(
+        "  Variants: Single, Ratio (BTC/SPX …), All",
+        Style::default().fg(sc),
+    )));
+    lines.push(Line::from(""));
+
+    // ── Sorting ──
+    lines.push(section_header("  Sorting", ac));
+    lines.push(sep_line(bc, sep_w));
+    lines.push(key_line("a", "Sort by allocation %", kc, tc));
+    lines.push(key_line("%", "Sort by gain %", kc, tc));
+    lines.push(key_line("$", "Sort by total gain", kc, tc));
+    lines.push(key_line("n", "Sort by name", kc, tc));
+    lines.push(key_line("c", "Sort by category", kc, tc));
+    lines.push(key_line("d", "Sort by date (transactions)", kc, tc));
+    lines.push(key_line("Tab", "Toggle ascending / descending", kc, tc));
+    lines.push(Line::from(""));
+
+    // ── Actions ──
+    lines.push(section_header("  Actions", ac));
+    lines.push(sep_line(bc, sep_w));
+    lines.push(key_line("f", "Cycle category filter", kc, tc));
+    lines.push(key_line("r", "Force refresh prices", kc, tc));
+    lines.push(key_line("p", "Toggle privacy view", kc, tc));
+    lines.push(key_line("t", "Cycle color theme", kc, tc));
+    lines.push(key_line("q / Ctrl+C", "Quit", kc, tc));
+    lines.push(Line::from(""));
+
+    // ── Footer ──
+    lines.push(Line::from(Span::styled(
+        "  j/k to scroll · Esc to close",
+        Style::default().fg(t.text_muted),
+    )));
+    lines.push(Line::from(""));
+
+    lines
+}
+
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = &app.theme;
 
-    let sep_line = Line::from(Span::styled(
-        "─".repeat(48),
-        Style::default().fg(t.border_subtle),
-    ));
+    let help_lines = build_help_lines(app);
+    let total_lines = help_lines.len();
 
-    let help_text = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "Keybindings",
-            Style::default().bold().fg(t.text_accent),
-        )),
-        sep_line.clone(),
-        Line::from(vec![
-            Span::styled("q / Ctrl+C  ", Style::default().fg(t.key_hint)),
-            Span::styled("Quit", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("?           ", Style::default().fg(t.key_hint)),
-            Span::styled("Toggle this help", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("1           ", Style::default().fg(t.key_hint)),
-            Span::styled("Positions view", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("2           ", Style::default().fg(t.key_hint)),
-            Span::styled("Transactions view", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("j/\u{2193}  k/\u{2191}    ", Style::default().fg(t.key_hint)),
-            Span::styled("Navigate up/down", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("gg          ", Style::default().fg(t.key_hint)),
-            Span::styled("Jump to top", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("G           ", Style::default().fg(t.key_hint)),
-            Span::styled("Jump to bottom", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("Ctrl+d      ", Style::default().fg(t.key_hint)),
-            Span::styled("Scroll down half page", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("Ctrl+u      ", Style::default().fg(t.key_hint)),
-            Span::styled("Scroll up half page", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("Enter       ", Style::default().fg(t.key_hint)),
-            Span::styled("Toggle price chart", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("J/K         ", Style::default().fg(t.key_hint)),
-            Span::styled("Cycle chart variant", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("Esc         ", Style::default().fg(t.key_hint)),
-            Span::styled("Close chart / help", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("/           ", Style::default().fg(t.key_hint)),
-            Span::styled("Search / filter by name", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Sorting (Positions)",
-            Style::default().bold().fg(t.text_accent),
-        )),
-        sep_line.clone(),
-        Line::from(vec![
-            Span::styled("a           ", Style::default().fg(t.key_hint)),
-            Span::styled("Sort by allocation %", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("%           ", Style::default().fg(t.key_hint)),
-            Span::styled("Sort by gain %", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("$           ", Style::default().fg(t.key_hint)),
-            Span::styled("Sort by total gain", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("n           ", Style::default().fg(t.key_hint)),
-            Span::styled("Sort by name", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("c           ", Style::default().fg(t.key_hint)),
-            Span::styled("Sort by category", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("Tab         ", Style::default().fg(t.key_hint)),
-            Span::styled("Toggle ascending/descending", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Other",
-            Style::default().bold().fg(t.text_accent),
-        )),
-        sep_line,
-        Line::from(vec![
-            Span::styled("d           ", Style::default().fg(t.key_hint)),
-            Span::styled("Sort by date (tx view)", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("f           ", Style::default().fg(t.key_hint)),
-            Span::styled("Cycle category filter", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("r           ", Style::default().fg(t.key_hint)),
-            Span::styled("Force refresh prices", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("p           ", Style::default().fg(t.key_hint)),
-            Span::styled("Toggle privacy view (full mode)", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(vec![
-            Span::styled("t           ", Style::default().fg(t.key_hint)),
-            Span::styled("Cycle color theme", Style::default().fg(t.text_primary)),
-        ]),
-        Line::from(""),
-    ];
-
-    // Center the help overlay
+    // Popup sizing
     let width = 55u16.min(area.width.saturating_sub(4));
-    let height = (help_text.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let height = (total_lines as u16 + 2).min(area.height.saturating_sub(2));
+    let visible_lines = height.saturating_sub(2) as usize; // subtract border rows
+
+    // Clamp scroll
+    let max_scroll = total_lines.saturating_sub(visible_lines);
+    if app.help_scroll > max_scroll {
+        app.help_scroll = max_scroll;
+    }
+
+    // Apply scroll offset
+    let scrolled_lines: Vec<Line> = help_lines
+        .into_iter()
+        .skip(app.help_scroll)
+        .take(visible_lines)
+        .collect();
+
+    // Center the popup
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect::new(x, y, width, height);
 
     frame.render_widget(Clear, popup_area);
 
-    let help = Paragraph::new(help_text).block(
+    // Scroll indicator in title
+    let scroll_indicator = if max_scroll > 0 {
+        let pct = if max_scroll > 0 {
+            (app.help_scroll * 100) / max_scroll
+        } else {
+            0
+        };
+        format!(" ◆ Help [{pct}%] ")
+    } else {
+        " ◆ Help ".to_string()
+    };
+
+    let help = Paragraph::new(scrolled_lines).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(t.border_accent))
             .style(Style::default().bg(t.surface_2))
             .title(Span::styled(
-                " \u{25C6} Help ",
+                scroll_indicator,
                 Style::default().fg(t.text_accent).bold(),
             )),
     );
 
     frame.render_widget(help, popup_area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn test_app() -> App {
+        let config = Config::default();
+        let db_path = std::path::PathBuf::from(":memory:");
+        App::new(&config, db_path)
+    }
+
+    #[test]
+    fn help_lines_have_all_sections() {
+        let app = test_app();
+        let lines = build_help_lines(&app);
+        let text: String = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Navigation"), "missing Navigation section");
+        assert!(text.contains("Views"), "missing Views section");
+        assert!(text.contains("Charts"), "missing Charts section");
+        assert!(text.contains("Sorting"), "missing Sorting section");
+        assert!(text.contains("Actions"), "missing Actions section");
+    }
+
+    #[test]
+    fn help_lines_contain_vim_motions() {
+        let app = test_app();
+        let lines = build_help_lines(&app);
+        let text: String = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("gg"), "missing gg keybinding");
+        assert!(text.contains("Ctrl+d"), "missing Ctrl+d keybinding");
+        assert!(text.contains("Ctrl+u"), "missing Ctrl+u keybinding");
+        assert!(text.contains("/"), "missing / keybinding");
+    }
+
+    #[test]
+    fn help_lines_contain_scroll_hint() {
+        let app = test_app();
+        let lines = build_help_lines(&app);
+        let text: String = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("j/k to scroll"),
+            "missing scroll hint in footer"
+        );
+    }
+
+    #[test]
+    fn help_scroll_defaults_to_zero() {
+        let app = test_app();
+        assert_eq!(app.help_scroll, 0);
+    }
 }
