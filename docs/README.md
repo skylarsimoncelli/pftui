@@ -191,6 +191,8 @@ pftui export json              # Export positions as JSON
 | `k` / `Up` | Move up |
 | `gg` | Jump to top |
 | `G` | Jump to bottom |
+| `Ctrl+d` | Scroll down half page |
+| `Ctrl+u` | Scroll up half page |
 | `1` | Positions view |
 | `2` | Transactions view (full mode only) |
 | `Enter` | Open price chart for selected position |

@@ -27,6 +27,11 @@ pub fn run(app: &mut App) -> Result<()> {
 
     let events = EventHandler::new(16); // ~60fps
 
+    // Set initial terminal height for half-page scroll
+    if let Ok(size) = crossterm::terminal::size() {
+        app.set_terminal_height(size.1);
+    }
+
     let result = run_loop(&mut terminal, app, &events);
 
     // Restore terminal
@@ -58,7 +63,9 @@ fn run_loop(
             event::Event::Tick => {
                 app.tick();
             }
-            event::Event::Resize(_, _) => {}
+            event::Event::Resize(_, h) => {
+                app.set_terminal_height(h);
+            }
         }
 
         if app.should_quit {

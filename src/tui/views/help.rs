@@ -49,6 +49,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("Jump to bottom", Style::default().fg(t.text_primary)),
         ]),
         Line::from(vec![
+            Span::styled("Ctrl+d      ", Style::default().fg(t.key_hint)),
+            Span::styled("Scroll down half page", Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
+            Span::styled("Ctrl+u      ", Style::default().fg(t.key_hint)),
+            Span::styled("Scroll up half page", Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
             Span::styled("Enter       ", Style::default().fg(t.key_hint)),
             Span::styled("Toggle price chart", Style::default().fg(t.text_primary)),
         ]),

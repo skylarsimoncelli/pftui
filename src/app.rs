@@ -116,6 +116,7 @@ pub struct App {
     pub selected_index: usize,
     pub tx_selected_index: usize,
     pub g_pending: bool,
+    pub terminal_height: u16,
 
     // Sorting
     pub sort_field: SortField,
@@ -177,6 +178,7 @@ impl App {
             selected_index: 0,
             tx_selected_index: 0,
             g_pending: false,
+            terminal_height: 24, // sensible default, updated on resize
             sort_field: SortField::Allocation,
             sort_ascending: false,
             category_filter: None,
@@ -746,6 +748,12 @@ impl App {
             // Navigation
             KeyCode::Char('j') | KeyCode::Down => self.move_down(),
             KeyCode::Char('k') | KeyCode::Up => self.move_up(),
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.scroll_down_half_page();
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.scroll_up_half_page();
+            }
 
             // Sorting
             KeyCode::Char('a') => {
@@ -861,6 +869,46 @@ impl App {
                 if !self.display_transactions.is_empty() {
                     self.tx_selected_index = self.display_transactions.len() - 1;
                 }
+            }
+        }
+    }
+
+    pub fn set_terminal_height(&mut self, h: u16) {
+        self.terminal_height = h;
+    }
+
+    /// Half-page size: (terminal_height - 4 for header/status) / 2, minimum 1
+    fn half_page(&self) -> usize {
+        let content_rows = self.terminal_height.saturating_sub(4) as usize;
+        (content_rows / 2).max(1)
+    }
+
+    fn scroll_down_half_page(&mut self) {
+        let step = self.half_page();
+        match self.view_mode {
+            ViewMode::Positions => {
+                if !self.display_positions.is_empty() {
+                    self.selected_index =
+                        (self.selected_index + step).min(self.display_positions.len() - 1);
+                }
+            }
+            ViewMode::Transactions => {
+                if !self.display_transactions.is_empty() {
+                    self.tx_selected_index =
+                        (self.tx_selected_index + step).min(self.display_transactions.len() - 1);
+                }
+            }
+        }
+    }
+
+    fn scroll_up_half_page(&mut self) {
+        let step = self.half_page();
+        match self.view_mode {
+            ViewMode::Positions => {
+                self.selected_index = self.selected_index.saturating_sub(step);
+            }
+            ViewMode::Transactions => {
+                self.tx_selected_index = self.tx_selected_index.saturating_sub(step);
             }
         }
     }
@@ -1220,5 +1268,99 @@ mod vim_motion_tests {
         // G should jump tx index to last
         app.handle_key(key('G'));
         assert_eq!(app.tx_selected_index, 4);
+    }
+
+    fn ctrl_key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn test_ctrl_d_scrolls_down_half_page() {
+        let mut app = make_test_app(30);
+        app.terminal_height = 24; // content area = 24 - 4 = 20, half = 10
+        app.selected_index = 0;
+
+        app.handle_key(ctrl_key('d'));
+        assert_eq!(app.selected_index, 10);
+
+        // Second Ctrl+d goes to 20
+        app.handle_key(ctrl_key('d'));
+        assert_eq!(app.selected_index, 20);
+
+        // Third Ctrl+d clamps to end (29)
+        app.handle_key(ctrl_key('d'));
+        assert_eq!(app.selected_index, 29);
+    }
+
+    #[test]
+    fn test_ctrl_u_scrolls_up_half_page() {
+        let mut app = make_test_app(30);
+        app.terminal_height = 24;
+        app.selected_index = 25;
+
+        app.handle_key(ctrl_key('u'));
+        assert_eq!(app.selected_index, 15);
+
+        app.handle_key(ctrl_key('u'));
+        assert_eq!(app.selected_index, 5);
+
+        // Clamps to 0
+        app.handle_key(ctrl_key('u'));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_half_page_on_empty_list() {
+        let mut app = make_test_app(0);
+        app.terminal_height = 24;
+
+        // Should not panic on empty list
+        app.handle_key(ctrl_key('d'));
+        assert_eq!(app.selected_index, 0);
+
+        app.handle_key(ctrl_key('u'));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_half_page_small_terminal() {
+        let mut app = make_test_app(10);
+        app.terminal_height = 6; // content = 6 - 4 = 2, half = 1
+        app.selected_index = 0;
+
+        app.handle_key(ctrl_key('d'));
+        assert_eq!(app.selected_index, 1);
+
+        app.handle_key(ctrl_key('u'));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_ctrl_d_in_transactions_view() {
+        let mut app = make_test_app(0);
+        app.view_mode = ViewMode::Transactions;
+        app.terminal_height = 24;
+
+        for i in 0..20 {
+            app.display_transactions.push(Transaction {
+                id: i as i64,
+                symbol: format!("TX{}", i),
+                category: AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: dec!(1),
+                price_per: dec!(100),
+                currency: "USD".to_string(),
+                date: "2025-01-01".to_string(),
+                notes: None,
+                created_at: "2025-01-01".to_string(),
+            });
+        }
+        app.tx_selected_index = 0;
+
+        app.handle_key(ctrl_key('d'));
+        assert_eq!(app.tx_selected_index, 10);
+
+        app.handle_key(ctrl_key('u'));
+        assert_eq!(app.tx_selected_index, 0);
     }
 }
