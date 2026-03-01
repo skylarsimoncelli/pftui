@@ -22,6 +22,17 @@ pub enum PriceUpdate {
     FetchComplete,
 }
 
+
+/// Format a crypto symbol for Yahoo Finance (append -USD if not already present)
+fn yahoo_crypto_symbol(symbol: &str) -> String {
+    let upper = symbol.to_uppercase();
+    if upper.ends_with("-USD") {
+        upper
+    } else {
+        format!("{}-USD", upper)
+    }
+}
+
 pub struct PriceService {
     cmd_tx: mpsc::Sender<PriceCommand>,
     update_rx: mpsc::Receiver<PriceUpdate>,
@@ -118,7 +129,7 @@ impl PriceService {
                 _ => {
                     // Fallback: fetch each crypto via Yahoo (SYM-USD)
                     for sym in &crypto_symbols {
-                        let yahoo_sym = format!("{}-USD", sym.to_uppercase());
+                        let yahoo_sym = yahoo_crypto_symbol(sym);
                         match yahoo::fetch_price(&yahoo_sym).await {
                             Ok(mut quote) => {
                                 quote.symbol = sym.clone(); // map back to original symbol
@@ -148,7 +159,7 @@ impl PriceService {
                 match coingecko::fetch_history(symbol, days).await {
                     Ok(records) if !records.is_empty() => Ok(records),
                     _ => {
-                        let yahoo_sym = format!("{}-USD", symbol.to_uppercase());
+                        let yahoo_sym = yahoo_crypto_symbol(symbol);
                         yahoo::fetch_history(&yahoo_sym, days).await
                     }
                 }
@@ -180,5 +191,24 @@ impl PriceService {
     pub fn shutdown(self) {
         let _ = self.cmd_tx.send(PriceCommand::Shutdown);
         let _ = self.rt_handle.join();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn yahoo_crypto_symbol_appends_usd_suffix() {
+        assert_eq!(yahoo_crypto_symbol("BTC"), "BTC-USD");
+        assert_eq!(yahoo_crypto_symbol("eth"), "ETH-USD");
+        assert_eq!(yahoo_crypto_symbol("Sol"), "SOL-USD");
+    }
+
+    #[test]
+    fn yahoo_crypto_symbol_no_double_suffix() {
+        assert_eq!(yahoo_crypto_symbol("BTC-USD"), "BTC-USD");
+        assert_eq!(yahoo_crypto_symbol("btc-usd"), "BTC-USD");
+        assert_eq!(yahoo_crypto_symbol("ETH-USD"), "ETH-USD");
     }
 }

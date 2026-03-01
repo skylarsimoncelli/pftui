@@ -296,6 +296,11 @@ fn render_ratio_mini(
 
     let ratio_records = compute_ratio(num_records, den_records);
     if ratio_records.len() < 2 {
+        let msg = Paragraph::new(Span::styled(
+            format!("Loading {}/{}...", num_symbol, den_symbol),
+            Style::default().fg(t.text_muted),
+        ));
+        frame.render_widget(msg, area);
         return;
     }
 
