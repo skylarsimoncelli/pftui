@@ -17,6 +17,15 @@
 ---
 
 
+### 2026-03-01 — Visual/UX brainstorm: 20+ new TODO items
+
+- What: reviewed the entire codebase (11k+ lines across 40 source files) and brainstormed 20+ new visual/UX improvement ideas, each scoped to ~1 hour. Added them as well-structured TODO items across 8 new categories: Animations & Live Feel (4 items — price flash arrows, scrolling ticker tape, pulsing active border, row highlight animation), Header & Status Bar Enhancements (3 items — daily portfolio change, market open/closed indicator, breadcrumb navigation), Positions Table Visual Density (3 items — inline mini-sparklines, category dots, gain magnitude bars), Chart Visual Enhancements (3 items — crosshair cursor, area fill gradient, Bollinger Bands), Layout & Visual Polish (4 items — double-line borders, popup shadows, category dividers, ultra-wide 3-column layout), Sidebar & Sparkline Enhancements (2 items — sparkline period selector, allocation change arrows), Micro-Interactions & Feedback (3 items — keystroke echo, sort animation, loading skeletons), Theme & Color Enhancements (2 items — theme toast notification, dynamic header tinting). Every item includes specific file references, implementation approach, and test strategy.
+- Why: owner requested a brainstorm run to generate ideas that make pftui more visually impressive, aesthetic, high-tech, and polished — "Bloomberg Terminal meets cyberpunk." The existing TODO was running low on unclaimed visual/UX items. These 20+ items provide a deep backlog of polish work for future automated runs, each independently implementable in a single session.
+- Files: `TODO.md`
+- Tests: no code changes, all 204 tests still passing
+- TODO: Brainstorm visual/UX improvements (P0)
+
+
 ### 2026-03-01 — Add daily change % column to positions table
 
 - What: added a Day% column to both the full and privacy positions tables, showing each position's daily price change as a percentage. Computed from the last two entries in the price history (same approach used by Markets, Economy, and Watchlist views). Column sits between Price and Gain% in the full table, and between Price and Alloc% in the privacy table. Uses gain-intensity coloring (green gradient for gains, red for losses) via `theme::gain_intensity_color`. Added `compute_change_pct()` public function for reuse. Added `format_change_pct()` helper. Privacy-safe — shows only percentage change, no absolute dollar values. Updated help overlay with Day% column note. Updated README positions view description.

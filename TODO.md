@@ -31,6 +31,25 @@
 - [x] **Add Economy view (tab 4)** — Macro dashboard showing treasury yields (2Y, 5Y, 10Y, 30Y via Yahoo ^TNX etc.), DXY, and key indicators. Start simple: table of economic symbols with current values. Can expand to yield curve chart later. Files: new `src/tui/views/economy.rs`, `src/app.rs` (ViewMode::Economy, key `4`). Test: test economy symbol mapping.
 - [x] **Add Watchlist view (tab 5)** — Track assets without holding them. New DB table `watchlist (symbol, category, added_at)`. CLI: `pftui watch <symbol>`, `pftui unwatch <symbol>`. TUI: same chart access as positions. Files: new `src/db/watchlist.rs`, new `src/tui/views/watchlist.rs`, `src/cli.rs`, `src/app.rs`. Test: test watchlist CRUD.
 
+## P1 — Animations & Live Feel
+
+- [ ] **Add price flash with directional arrows** — When a price updates, show a brief ▲/▼ arrow next to the price that fades after ~1s. Currently we flash the price cell bg, but adding a directional indicator makes the update scannable without reading the number. Use `price_flash_ticks` map (already exists) and extend to store direction (up/down/same). Files: `src/tui/views/positions.rs`, `src/app.rs`. Test: verify flash direction stored on update.
+- [ ] **Add scrolling ticker tape in header** — Horizontal marquee-style ticker showing top movers from Markets view data: "SPX +1.2% │ BTC -3.4% │ GOLD +0.5%" scrolling left. Renders in the header row using the space after the portfolio value. Uses `app.tick_count` to advance position by 1 char every ~6 ticks (~10 chars/sec). Only active on Positions view to avoid clutter. Files: `src/tui/widgets/header.rs`, `src/app.rs` (market data already available). Test: test ticker text generation and wrap-around.
+- [ ] **Add pulsing border on active panel** — Instead of static `border_active` color, pulse the focused panel's border using `pulse_color()` (already exists in theme.rs). Subtle 2-second sine wave between `border_inactive` and `border_active` intensity. Gives the app a "breathing" feel. Only when prices are live (dead/stale = static border). Files: `src/tui/views/positions.rs` (render_table block), `src/tui/widgets/price_chart.rs` (chart block). Test: verify pulse applied only when prices_live.
+- [ ] **Add row highlight animation on selection change** — When j/k moves selection, briefly flash the entire new row brighter (lerp from `surface_3` toward `border_accent` then fade back over ~15 ticks). Track `last_selection_change_tick` on App. Files: `src/tui/views/positions.rs` (row_bg calculation), `src/app.rs` (track tick on selection change). Test: test flash decay timing.
+
+## P1 — Header & Status Bar Enhancements
+
+- [ ] **Add day gain/loss to header** — Show today's portfolio change alongside total gain: "$45.2k +1.3% ▲$580 today". Compute from sum of (position.quantity × position.day_change_amount). The "today" figure is the most-checked number in any portfolio app. Files: `src/tui/widgets/header.rs` (add today gain span), `src/app.rs` (compute daily portfolio change from position day changes). Test: test daily change computation.
+- [ ] **Add market status indicator to header** — Show "◉ OPEN" (green) or "◎ CLOSED" (muted) based on current UTC time vs US market hours (9:30-16:00 ET, weekdays). Simple timezone offset check, no external dependency. Renders after the clock in the header. Files: `src/tui/widgets/header.rs`. Test: test market open/closed detection for various UTC times.
+- [ ] **Add breadcrumb trail to status bar** — When in chart view, show the navigation path: "Positions › AAPL › 3M Chart › AAPL/SPX". When in detail popup: "Positions › AAPL › Detail". Replaces the generic hint bar text with context-aware breadcrumbs. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (expose chart variant label). Test: test breadcrumb string generation for each navigation state.
+
+## P1 — Positions Table Visual Density
+
+- [ ] **Add inline mini-sparkline in price column** — Render a 3-char sparkline (▁▃▇) directly after the price number in the Price column, using the last 3 hours of data (or last 3 history points). Gives instant trend context without looking at the separate Trend column. Files: `src/tui/views/positions.rs` (price cell rendering). Test: verify sparkline renders with various history lengths.
+- [ ] **Add color-coded category dot before asset name** — Replace the plain text category label approach with a small colored dot (●) in the asset's category color at the start of the Asset column. More scannable than the current approach of coloring the entire row. The `▎` selection marker already uses this column — put the dot after the marker. Files: `src/tui/views/positions.rs` (asset_line construction). Test: verify dot color matches category.
+- [ ] **Add gain/loss magnitude bar in Gain% column** — Render the gain% number with a tiny proportional bar behind it: green fill for gains, red for losses, scaled to ±20%. Like a micro horizontal bar chart in each cell. Uses EIGHTH_BLOCKS for sub-character resolution. Files: `src/tui/views/positions.rs` (gain cell rendering). Test: test bar width calculation for various percentages.
+
 ## P2 — Visual Polish
 
 - [x] **Add responsive layout** — Detect terminal size in ui.rs. Below 100 columns: hide sidebar, show positions full-width. Below 60 columns: simplify header, reduce column count. Above 160 columns: wider sidebar. Files: `src/tui/ui.rs`, `src/tui/widgets/header.rs`.
@@ -41,6 +60,35 @@
 ## P2 — Positions Table Enhancements
 
 - [x] **Add daily change % column to positions** — Show how each position moved today as a Day% column between Price and Gain%. Compute from last two price history entries (same pattern as Markets/Economy/Watchlist views). Gain-aware coloring (green/red). Privacy-safe (percentage only). Files: `src/tui/views/positions.rs`. Test: test compute_change_pct logic.
+
+## P2 — Chart Visual Enhancements
+
+- [ ] **Add crosshair cursor on charts** — When chart detail is open, pressing `c` enables a crosshair mode: j/k moves a vertical line across the chart, showing the date and price at that point in a tooltip overlay. Renders as a vertical column of `│` characters in `text_accent` color with a data label. Files: `src/tui/widgets/price_chart.rs` (crosshair rendering), `src/app.rs` (crosshair_mode, crosshair_x fields, c keybinding). Test: test crosshair bounds clamping.
+- [ ] **Add chart area fill with gradient** — Instead of just braille dots for the line, fill the area below the line with a fading gradient using BLOCK characters at very low intensity (10-20% alpha via dark versions of chart colors). Creates a "filled area chart" effect common in financial dashboards. Files: `src/tui/widgets/price_chart.rs` (render_braille_chart area fill pass). Test: verify fill doesn't exceed chart line position.
+- [ ] **Add Bollinger Bands overlay** — Compute 20-period SMA ± 2 standard deviations. Render as faint dotted braille lines above and below the SMA(20). When price touches a band, highlight the touch point. Shows volatility and overbought/oversold conditions. Files: `src/tui/widgets/price_chart.rs` (compute_bollinger, overlay rendering). Test: test band computation with known data.
+
+## P2 — Layout & Visual Polish
+
+- [ ] **Add Unicode box-drawing panel separators** — Replace the default ratatui `Rounded` border type with custom double-line top (═══) and single-line sides (│). Use `╔═══╗` style for the active panel and `┌───┐` for inactive. Gives a more premium, Bloomberg-like feel. Files: `src/tui/views/positions.rs`, `src/tui/widgets/price_chart.rs`, `src/tui/widgets/allocation_bars.rs`, `src/tui/widgets/portfolio_sparkline.rs`. Test: visual verification only.
+- [ ] **Add shadow effect on popups** — When the detail popup or help overlay renders, draw a 1-cell shadow on the right and bottom edges using `surface_0` with slight offset. Creates a floating/elevated look. Files: `src/tui/views/position_detail.rs`, `src/tui/views/help.rs`. Test: verify shadow doesn't exceed terminal bounds.
+- [ ] **Add section divider lines between position groups** — When sorted by category, insert thin separator lines (─── Crypto ───) between position groups. Uses `border_subtle` color. Only appears when sort field is Category. Files: `src/tui/views/positions.rs`. Test: test divider insertion logic.
+- [ ] **Add ultra-wide layout (160+ columns)** — When terminal is very wide, show a third column: market context panel with major indices and the portfolio sparkline below the positions table, with sidebar remaining as the chart panel. Three-column layout: 45% positions / 25% market context / 30% chart. Files: `src/tui/ui.rs` (new layout branch), new `src/tui/widgets/market_context.rs`. Test: test layout thresholds.
+
+## P2 — Sidebar & Sparkline Enhancements
+
+- [ ] **Add portfolio sparkline period selector** — The sparkline is hardcoded to 90d. Allow cycling with `[`/`]` keys (when sidebar is focused) through 1W, 1M, 3M, 6M, 1Y. Show period label in the sparkline panel title. Reuse the `ChartTimeframe` enum. Files: `src/tui/widgets/portfolio_sparkline.rs` (accept timeframe), `src/app.rs` (sparkline_timeframe field, `[`/`]` keybindings). Test: test timeframe cycling.
+- [ ] **Add allocation change indicators** — Show ▲/▼ arrows next to allocation percentages when they've changed since the previous day (based on price movements shifting allocation weights). Helps identify rebalancing needs. Files: `src/tui/widgets/allocation_bars.rs`, `src/app.rs` (store previous day allocations for comparison). Test: test change detection logic.
+
+## P2 — Micro-Interactions & Feedback
+
+- [ ] **Add keystroke echo in status bar** — Briefly flash the last pressed key in the status bar corner: shows "k" for 0.3s when you press k, "gg" for the two-key sequence, "Ctrl+d" etc. Helps users learn keybindings and confirms input was received. Render in `text_muted` with quick fade. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (last_key_display, last_key_tick). Test: test key echo text generation.
+- [ ] **Add sort indicator animation** — When user changes sort order (s/n/c/% etc.), briefly animate the sort arrow (▲/▼) by flashing it in `text_accent` then fading to normal. Confirms the sort happened. Track `last_sort_change_tick` on App. Files: `src/tui/views/positions.rs` (sort indicator styling), `src/app.rs`. Test: test flash timing.
+- [ ] **Add loading skeleton for empty states** — When a view is loading data, show shimmer/skeleton placeholder rows instead of "Waiting for data...". Render 5-6 rows of `░░░░░░` block characters in `text_muted` with a wave animation (phase offset per row). Makes loading feel fast and intentional. Files: `src/tui/views/positions.rs`, `src/tui/views/markets.rs`, `src/tui/views/economy.rs`. Test: verify skeleton row count matches expected.
+
+## P2 — Theme & Color Enhancements
+
+- [ ] **Add theme preview on cycle** — When pressing `t`, show a brief (1.5s) toast notification in the status bar: "◆ Midnight" (with theme name in that theme's accent color). Currently the theme just changes with no feedback about which theme you're on unless you look at the header. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (theme_toast_tick). Test: test toast display timing.
+- [ ] **Add dynamic header accent based on portfolio performance** — Tint the header border/accent color slightly green when portfolio is up today, slightly red when down. Subtle (5-10% blend) so it doesn't clash with theme, but gives an instant ambient mood indicator. Files: `src/tui/widgets/header.rs`. Test: test color blending for positive/negative days.
 
 ## P2 — Data & Infrastructure
 
@@ -72,13 +120,4 @@
 
 ## P0 — Visual & UX Brainstorm (Owner Request)
 
-- [ ] **Brainstorm visual/UX improvements** — Spend this run reviewing the entire codebase and UI, then brainstorm and add new TODO items that will make pftui even more visually impressive, aesthetic, high-tech, intuitive, and polished. Think: Bloomberg Terminal meets cyberpunk. Consider:
-  - Animations and transitions (smooth scrolling, fade effects, pulse effects on data changes)
-  - Color and gradient enhancements (more dynamic use of gradients, glow effects, neon accents)
-  - Data density improvements (more info per pixel without clutter)
-  - Micro-interactions (visual feedback on every keypress, hover effects, selection highlights)
-  - Status indicators and live data visualization (heartbeat pulses, streaming tickers, activity indicators)
-  - Layout polish (spacing, alignment, borders, separators, shadow effects)
-  - Typography and text rendering (Unicode box drawing, custom separators, styled headers)
-  - Any "wow factor" ideas that would make someone say "this is the coolest terminal app I've ever seen"
-  - Add each idea as a separate TODO item with priority, description, and file references
+- [x] **Brainstorm visual/UX improvements** — Reviewed entire codebase and UI. Added 20+ new TODO items across P1 and P2 covering animations, data density, micro-interactions, layout polish, and "wow factor" features. See new sections: Animations & Live Feel, Header & Status Bar Enhancements, Positions Table Visual Density, Chart Visual Enhancements, Layout & Visual Polish, Sidebar & Sparkline Enhancements, Micro-Interactions & Feedback, Theme & Color Enhancements.
