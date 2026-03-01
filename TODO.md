@@ -69,7 +69,9 @@
 - [ ] **Options chains** — Options display if a free data source exists
 
 
-## P4 — Distribution & CI
+## P4 — Distribution & CI (Best Effort)
+
+> Best effort — skip any that are complex or require external accounts/repos. Focus on what can be done from this repo alone first.
 
 - [ ] **Set up GitHub Actions CI** — Workflow for: `cargo test`, `cargo clippy`, `cargo build --release` on push/PR. Matrix: ubuntu-latest, macos-latest. Cache cargo registry + target dir. Files: new `.github/workflows/ci.yml`.
 - [ ] **GitHub Releases with prebuilt binaries** — CI workflow that triggers on git tag (`v*`). Builds release binaries for linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64. Uploads as GitHub Release assets with checksums. Files: new `.github/workflows/release.yml`.
