@@ -42,7 +42,7 @@
 
 - [ ] **Add news feed integration** — Fetch financial news from a free RSS/API source (e.g., Yahoo Finance RSS, Finnhub free tier). Display as a scrollable list: timestamp, headline, source. Per-asset filtering. Files: new `src/news/` module, new `src/tui/views/news.rs`. Research: find best free news API that works without API key.
 - [ ] **Add FRED economic data** — FRED API (free with API key) for treasury yields, CPI, unemployment, Fed funds rate. Store in new DB table. Cache aggressively (economic data updates daily at most). Files: new `src/data/fred.rs`, `src/db/economic_cache.rs`.
-- [ ] **Increase test coverage** — Add tests for: `config.rs` (load/save/defaults), `asset_names.rs` (infer_category, search_names), `theme.rs` (lerp_color, gradient_3, gain_intensity_color), `price_chart.rs` (compute_ratio, resample). Files: respective test modules.
+- [x] **Increase test coverage** — Add tests for: `config.rs` (load/save/defaults), `asset_names.rs` (infer_category, search_names), `theme.rs` (lerp_color, gradient_3, gain_intensity_color), `price_chart.rs` (compute_ratio, resample). Files: respective test modules.
 - [ ] **Add candlestick chart variant** — OHLC candlestick rendering using braille/block characters. Green body for close > open, red for close < open. Wicks as thin lines. Requires OHLC data in HistoryRecord. Files: `src/models/price.rs`, `src/price/yahoo.rs`, `src/tui/widgets/price_chart.rs`.
 
 ## P3 — Future

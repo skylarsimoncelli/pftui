@@ -17,6 +17,15 @@
 ---
 
 
+### 2026-03-01 — Increase test coverage across 4 modules
+
+- What: added comprehensive test suites to 4 previously untested modules: `config.rs` (8 tests — default values, TOML roundtrip serialization, deserialization with missing fields, empty TOML defaults, PortfolioMode serialization, is_percentage_mode, config_path), `asset_names.rs` (14 tests — resolve_name known/unknown, infer_category for all 6 asset categories plus case insensitivity, search_names by ticker prefix, name prefix, exact match priority, no match, case insensitivity), `theme.rs` (21 tests — lerp_color at 0/0.5/1/clamping/non-RGB fallback, gradient_3 at 0/0.25/0.5/1, pulse_intensity range check, gain_intensity_color positive/negative/zero/saturation, all themes load by name, unknown theme fallback, next_theme cycling/wrapping, category_color all variants), `price_chart.rs` (10 new tests — compute_ratio basic/missing dates/zero denominator/empty inputs, resample identity/upscale/downscale/empty/zero target/single value).
+- Why: these 4 modules had zero test coverage despite containing core business logic (config parsing, asset classification, color math, chart data computation). Adding tests catches regressions in financial data categorization, theme color interpolation, chart ratio computation, and config serialization — all areas where silent breakage would be hard to notice.
+- Files: `src/config.rs` (8 tests), `src/models/asset_names.rs` (14 tests), `src/tui/theme.rs` (21 tests), `src/tui/widgets/price_chart.rs` (10 new tests)
+- Tests: added 53 new tests. Total: 194 tests passing.
+- TODO: Increase test coverage (P2)
+
+
 ### 2026-03-01 — Add 52-week high/low range indicators
 
 - What: added a 52-week range indicator column to the positions table (both full and privacy modes). Each position shows a visual range bar (`━━━●━━━`) with a colored dot indicating where the current price sits between the 52-week low and high, plus a percentage distance from the 52-week high (e.g. `-12%`, or `ATH` when at the high). The dot color uses a red→neutral→green gradient based on position within range. Also added 52-week range info to the position detail popup (Enter), showing the numeric low—high range and distance from high with color coding (green at high, neutral near high, red when >10% below). The `compute_52w_range()` function takes price history records and limits analysis to the most recent 365 entries, includes the current live price in high/low calculations, and handles edge cases (flat prices, no data, new highs/lows). Reduced Qty column from 10→8 chars to accommodate the new 52W column (11 chars). Column header is `52W`.

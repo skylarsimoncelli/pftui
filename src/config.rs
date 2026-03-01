@@ -80,3 +80,83 @@ pub fn save_config(config: &Config) -> Result<()> {
     std::fs::write(&path, content)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_expected_values() {
+        let config = Config::default();
+        assert_eq!(config.base_currency, "USD");
+        assert_eq!(config.refresh_interval, 60);
+        assert_eq!(config.portfolio_mode, PortfolioMode::Full);
+        assert_eq!(config.theme, "midnight");
+    }
+
+    #[test]
+    fn is_percentage_mode_full() {
+        let config = Config::default();
+        assert!(!config.is_percentage_mode());
+    }
+
+    #[test]
+    fn is_percentage_mode_percentage() {
+        let mut config = Config::default();
+        config.portfolio_mode = PortfolioMode::Percentage;
+        assert!(config.is_percentage_mode());
+    }
+
+    #[test]
+    fn config_roundtrip_toml() {
+        let config = Config {
+            base_currency: "EUR".to_string(),
+            refresh_interval: 30,
+            portfolio_mode: PortfolioMode::Percentage,
+            theme: "nord".to_string(),
+        };
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let loaded: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(loaded.base_currency, "EUR");
+        assert_eq!(loaded.refresh_interval, 30);
+        assert_eq!(loaded.portfolio_mode, PortfolioMode::Percentage);
+        assert_eq!(loaded.theme, "nord");
+    }
+
+    #[test]
+    fn config_deserialize_missing_fields_uses_defaults() {
+        let toml_str = r#"base_currency = "GBP""#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.base_currency, "GBP");
+        assert_eq!(config.refresh_interval, 60);
+        assert_eq!(config.portfolio_mode, PortfolioMode::Full);
+        assert_eq!(config.theme, "midnight");
+    }
+
+    #[test]
+    fn config_deserialize_empty_uses_all_defaults() {
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(config.base_currency, "USD");
+        assert_eq!(config.refresh_interval, 60);
+        assert_eq!(config.portfolio_mode, PortfolioMode::Full);
+        assert_eq!(config.theme, "midnight");
+    }
+
+    #[test]
+    fn portfolio_mode_serialization() {
+        assert_eq!(
+            serde_json::to_string(&PortfolioMode::Full).unwrap(),
+            "\"full\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PortfolioMode::Percentage).unwrap(),
+            "\"percentage\""
+        );
+    }
+
+    #[test]
+    fn config_path_ends_with_pftui() {
+        let path = config_path();
+        assert!(path.ends_with("pftui/config.toml"));
+    }
+}

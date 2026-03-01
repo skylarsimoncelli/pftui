@@ -206,3 +206,106 @@ pub fn infer_category(symbol: &str) -> AssetCategory {
 
     AssetCategory::Equity
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_name_known_symbol() {
+        assert_eq!(resolve_name("BTC"), "Bitcoin");
+        assert_eq!(resolve_name("AAPL"), "Apple");
+        assert_eq!(resolve_name("GC=F"), "Gold");
+    }
+
+    #[test]
+    fn resolve_name_unknown_symbol() {
+        assert_eq!(resolve_name("ZZZZZ"), "");
+    }
+
+    #[test]
+    fn infer_category_cash() {
+        assert_eq!(infer_category("USD"), AssetCategory::Cash);
+        assert_eq!(infer_category("GBP"), AssetCategory::Cash);
+        assert_eq!(infer_category("EUR"), AssetCategory::Cash);
+        assert_eq!(infer_category("JPY"), AssetCategory::Cash);
+    }
+
+    #[test]
+    fn infer_category_commodity() {
+        assert_eq!(infer_category("GC=F"), AssetCategory::Commodity);
+        assert_eq!(infer_category("CL=F"), AssetCategory::Commodity);
+        assert_eq!(infer_category("UX1!"), AssetCategory::Commodity);
+    }
+
+    #[test]
+    fn infer_category_forex() {
+        assert_eq!(infer_category("USDGBP=X"), AssetCategory::Forex);
+        assert_eq!(infer_category("USDJPY=X"), AssetCategory::Forex);
+    }
+
+    #[test]
+    fn infer_category_crypto() {
+        assert_eq!(infer_category("BTC"), AssetCategory::Crypto);
+        assert_eq!(infer_category("ETH"), AssetCategory::Crypto);
+        assert_eq!(infer_category("SOL"), AssetCategory::Crypto);
+    }
+
+    #[test]
+    fn infer_category_fund() {
+        assert_eq!(infer_category("SPY"), AssetCategory::Fund);
+        assert_eq!(infer_category("QQQ"), AssetCategory::Fund);
+        assert_eq!(infer_category("VTI"), AssetCategory::Fund);
+    }
+
+    #[test]
+    fn infer_category_equity_default() {
+        assert_eq!(infer_category("AAPL"), AssetCategory::Equity);
+        assert_eq!(infer_category("MSFT"), AssetCategory::Equity);
+        assert_eq!(infer_category("TSLA"), AssetCategory::Equity);
+    }
+
+    #[test]
+    fn infer_category_case_insensitive() {
+        assert_eq!(infer_category("usd"), AssetCategory::Cash);
+        assert_eq!(infer_category("btc"), AssetCategory::Crypto);
+        assert_eq!(infer_category("gc=f"), AssetCategory::Commodity);
+    }
+
+    #[test]
+    fn search_names_by_ticker_prefix() {
+        let results = search_names("AA");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"AAPL"));
+        assert!(tickers.contains(&"AAVE"));
+    }
+
+    #[test]
+    fn search_names_by_name_prefix() {
+        let results = search_names("Bit");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"BTC"));
+        assert!(tickers.contains(&"BCH"));
+    }
+
+    #[test]
+    fn search_names_exact_match_first() {
+        let results = search_names("BTC");
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, "BTC");
+    }
+
+    #[test]
+    fn search_names_no_match() {
+        let results = search_names("ZZZZZ");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_names_case_insensitive() {
+        let results_upper = search_names("AAPL");
+        let results_lower = search_names("aapl");
+        assert!(!results_upper.is_empty());
+        assert_eq!(results_upper.len(), results_lower.len());
+    }
+}

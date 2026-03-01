@@ -1078,4 +1078,119 @@ mod tests {
         let bits = braille_dot_bits(None, None, 0, BRAILLE_ROWS);
         assert_eq!(bits, 0);
     }
+
+    #[test]
+    fn test_compute_ratio_basic() {
+        let num = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(150), volume: None },
+        ];
+        let den = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(75), volume: None },
+        ];
+        let result = compute_ratio(&num, &den);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].close, dec!(2));
+        assert_eq!(result[1].close, dec!(2));
+        assert_eq!(result[2].close, dec!(2));
+    }
+
+    #[test]
+    fn test_compute_ratio_skips_missing_dates() {
+        let num = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(300), volume: None },
+        ];
+        let den = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None },
+            // no 2025-01-02
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(100), volume: None },
+        ];
+        let result = compute_ratio(&num, &den);
+        assert_eq!(result.len(), 2); // only matching dates
+        assert_eq!(result[0].date, "2025-01-01");
+        assert_eq!(result[1].date, "2025-01-03");
+    }
+
+    #[test]
+    fn test_compute_ratio_skips_zero_denominator() {
+        let num = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+        ];
+        let den = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(0), volume: None },
+        ];
+        let result = compute_ratio(&num, &den);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_compute_ratio_empty_inputs() {
+        let empty: Vec<HistoryRecord> = vec![];
+        let non_empty = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+        ];
+        assert!(compute_ratio(&empty, &non_empty).is_empty());
+        assert!(compute_ratio(&non_empty, &empty).is_empty());
+        assert!(compute_ratio(&empty, &empty).is_empty());
+    }
+
+    #[test]
+    fn test_resample_identity() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let result = resample(&values, 5);
+        assert_eq!(result, values);
+    }
+
+    #[test]
+    fn test_resample_upscale() {
+        let values = vec![0.0, 10.0];
+        let result = resample(&values, 5);
+        assert_eq!(result.len(), 5);
+        // Maps i/target_len across source range: 0.0, 2.0, 4.0, 6.0, 8.0
+        assert!((result[0] - 0.0).abs() < 1e-10);
+        assert!((result[1] - 2.0).abs() < 1e-10);
+        assert!((result[2] - 4.0).abs() < 1e-10);
+        assert!((result[3] - 6.0).abs() < 1e-10);
+        assert!((result[4] - 8.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_resample_downscale() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let result = resample(&values, 3);
+        assert_eq!(result.len(), 3);
+        // Maps i/3 across 0..9: src_idx = 0.0, 3.0, 6.0 → values 1.0, 4.0, 7.0
+        assert!((result[0] - 1.0).abs() < 1e-10);
+        assert!((result[1] - 4.0).abs() < 1e-10);
+        assert!((result[2] - 7.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_resample_empty_input() {
+        let result = resample(&[], 5);
+        assert_eq!(result.len(), 5);
+        assert!(result.iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn test_resample_zero_target() {
+        let values = vec![1.0, 2.0, 3.0];
+        let result = resample(&values, 0);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_resample_single_value() {
+        let values = vec![42.0];
+        let result = resample(&values, 5);
+        assert_eq!(result.len(), 5);
+        // All should be 42.0 (interpolating between same point)
+        assert!(result.iter().all(|&v| (v - 42.0).abs() < 1e-10));
+    }
+
 }

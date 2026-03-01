@@ -378,3 +378,176 @@ pub fn gain_intensity_color(theme: &Theme, gain_pct: f64) -> Color {
         theme.neutral
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lerp_color_at_zero() {
+        let a = Color::Rgb(0, 0, 0);
+        let b = Color::Rgb(255, 255, 255);
+        assert_eq!(lerp_color(a, b, 0.0), Color::Rgb(0, 0, 0));
+    }
+
+    #[test]
+    fn lerp_color_at_one() {
+        let a = Color::Rgb(0, 0, 0);
+        let b = Color::Rgb(255, 255, 255);
+        assert_eq!(lerp_color(a, b, 1.0), Color::Rgb(255, 255, 255));
+    }
+
+    #[test]
+    fn lerp_color_at_half() {
+        let a = Color::Rgb(0, 0, 0);
+        let b = Color::Rgb(200, 100, 50);
+        let result = lerp_color(a, b, 0.5);
+        assert_eq!(result, Color::Rgb(100, 50, 25));
+    }
+
+    #[test]
+    fn lerp_color_clamps_above_one() {
+        let a = Color::Rgb(0, 0, 0);
+        let b = Color::Rgb(255, 255, 255);
+        assert_eq!(lerp_color(a, b, 2.0), Color::Rgb(255, 255, 255));
+    }
+
+    #[test]
+    fn lerp_color_clamps_below_zero() {
+        let a = Color::Rgb(0, 0, 0);
+        let b = Color::Rgb(255, 255, 255);
+        assert_eq!(lerp_color(a, b, -1.0), Color::Rgb(0, 0, 0));
+    }
+
+    #[test]
+    fn lerp_color_non_rgb_below_half() {
+        let a = Color::Red;
+        let b = Color::Blue;
+        assert_eq!(lerp_color(a, b, 0.3), Color::Red);
+    }
+
+    #[test]
+    fn lerp_color_non_rgb_above_half() {
+        let a = Color::Red;
+        let b = Color::Blue;
+        assert_eq!(lerp_color(a, b, 0.7), Color::Blue);
+    }
+
+    #[test]
+    fn gradient_3_at_zero() {
+        let low = Color::Rgb(255, 0, 0);
+        let mid = Color::Rgb(255, 255, 0);
+        let high = Color::Rgb(0, 255, 0);
+        assert_eq!(gradient_3(low, mid, high, 0.0), Color::Rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn gradient_3_at_half() {
+        let low = Color::Rgb(255, 0, 0);
+        let mid = Color::Rgb(255, 255, 0);
+        let high = Color::Rgb(0, 255, 0);
+        assert_eq!(gradient_3(low, mid, high, 0.5), Color::Rgb(255, 255, 0));
+    }
+
+    #[test]
+    fn gradient_3_at_one() {
+        let low = Color::Rgb(255, 0, 0);
+        let mid = Color::Rgb(255, 255, 0);
+        let high = Color::Rgb(0, 255, 0);
+        assert_eq!(gradient_3(low, mid, high, 1.0), Color::Rgb(0, 255, 0));
+    }
+
+    #[test]
+    fn gradient_3_at_quarter() {
+        let low = Color::Rgb(0, 0, 0);
+        let mid = Color::Rgb(200, 200, 200);
+        let high = Color::Rgb(200, 200, 200);
+        // at 0.25, we're halfway between low and mid
+        let result = gradient_3(low, mid, high, 0.25);
+        assert_eq!(result, Color::Rgb(100, 100, 100));
+    }
+
+    #[test]
+    fn pulse_intensity_range() {
+        for tick in 0..PULSE_PERIOD {
+            let val = pulse_intensity(tick, PULSE_PERIOD);
+            assert!(val >= 0.29 && val <= 1.01, "pulse_intensity({tick}) = {val}");
+        }
+    }
+
+    #[test]
+    fn gain_intensity_color_positive() {
+        let theme = midnight();
+        let color = gain_intensity_color(&theme, 10.0);
+        // Should be between muted green and theme.gain_green
+        match color {
+            Color::Rgb(_, g, _) => assert!(g > 100, "green channel should be significant"),
+            _ => panic!("expected Rgb color"),
+        }
+    }
+
+    #[test]
+    fn gain_intensity_color_negative() {
+        let theme = midnight();
+        let color = gain_intensity_color(&theme, -10.0);
+        // Should be between muted red and theme.loss_red
+        match color {
+            Color::Rgb(r, _, _) => assert!(r > 100, "red channel should be significant"),
+            _ => panic!("expected Rgb color"),
+        }
+    }
+
+    #[test]
+    fn gain_intensity_color_zero() {
+        let theme = midnight();
+        let color = gain_intensity_color(&theme, 0.0);
+        assert_eq!(color, theme.neutral);
+    }
+
+    #[test]
+    fn gain_intensity_color_saturates_at_20pct() {
+        let theme = midnight();
+        let at_20 = gain_intensity_color(&theme, 20.0);
+        let at_50 = gain_intensity_color(&theme, 50.0);
+        // Both should be the same (saturated at 20%)
+        assert_eq!(at_20, at_50);
+    }
+
+    #[test]
+    fn all_themes_load_by_name() {
+        for name in THEME_NAMES {
+            let theme = theme_by_name(name);
+            assert_eq!(theme.name, *name);
+        }
+    }
+
+    #[test]
+    fn unknown_theme_returns_midnight() {
+        let theme = theme_by_name("nonexistent");
+        assert_eq!(theme.name, "midnight");
+    }
+
+    #[test]
+    fn next_theme_cycles() {
+        assert_eq!(next_theme_name("midnight"), "catppuccin");
+        assert_eq!(next_theme_name("gruvbox"), "midnight"); // wraps around
+    }
+
+    #[test]
+    fn next_theme_unknown_starts_at_catppuccin() {
+        // Unknown name → index 0 → next is index 1
+        assert_eq!(next_theme_name("unknown"), "catppuccin");
+    }
+
+    #[test]
+    fn category_color_covers_all_categories() {
+        let theme = midnight();
+        // Just verify it returns something for each category without panicking
+        let _ = theme.category_color(AssetCategory::Equity);
+        let _ = theme.category_color(AssetCategory::Crypto);
+        let _ = theme.category_color(AssetCategory::Forex);
+        let _ = theme.category_color(AssetCategory::Commodity);
+        let _ = theme.category_color(AssetCategory::Fund);
+        let _ = theme.category_color(AssetCategory::Cash);
+    }
+}
