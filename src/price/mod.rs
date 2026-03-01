@@ -10,6 +10,7 @@ use crate::models::price::{HistoryRecord, PriceQuote};
 pub enum PriceCommand {
     FetchAll(Vec<(String, AssetCategory)>),
     FetchHistory(String, AssetCategory, u32),
+    FetchHistoryBatch(Vec<(String, AssetCategory, u32)>),
     Shutdown,
 }
 
@@ -31,6 +32,33 @@ fn yahoo_crypto_symbol(symbol: &str) -> String {
     } else {
         format!("{}-USD", upper)
     }
+}
+
+/// Fetch history for a single symbol (used by both single and batch paths)
+async fn fetch_history_single(
+    symbol: &str,
+    category: AssetCategory,
+    days: u32,
+) -> (String, Result<Vec<HistoryRecord>, String>) {
+    let result = match category {
+        AssetCategory::Crypto => {
+            // Try CoinGecko first, fall back to Yahoo (BTC-USD format)
+            match coingecko::fetch_history(symbol, days).await {
+                Ok(records) if !records.is_empty() => Ok(records),
+                _ => {
+                    let yahoo_sym = yahoo_crypto_symbol(symbol);
+                    yahoo::fetch_history(&yahoo_sym, days)
+                        .await
+                        .map_err(|e| e.to_string())
+                }
+            }
+        }
+        AssetCategory::Cash => Ok(Vec::new()),
+        _ => yahoo::fetch_history(symbol, days)
+            .await
+            .map_err(|e| e.to_string()),
+    };
+    (symbol.to_string(), result)
 }
 
 pub struct PriceService {
@@ -75,6 +103,9 @@ impl PriceService {
                 }
                 Ok(PriceCommand::FetchHistory(symbol, category, days)) => {
                     Self::fetch_history(&symbol, category, days, &update_tx).await;
+                }
+                Ok(PriceCommand::FetchHistoryBatch(batch)) => {
+                    Self::fetch_history_batch(batch, &update_tx).await;
                 }
                 Ok(PriceCommand::Shutdown) | Err(_) => break,
             }
@@ -153,30 +184,46 @@ impl PriceService {
         days: u32,
         update_tx: &mpsc::Sender<PriceUpdate>,
     ) {
-        let result = match category {
-            AssetCategory::Crypto => {
-                // Try CoinGecko first, fall back to Yahoo (BTC-USD format)
-                match coingecko::fetch_history(symbol, days).await {
-                    Ok(records) if !records.is_empty() => Ok(records),
-                    _ => {
-                        let yahoo_sym = yahoo_crypto_symbol(symbol);
-                        yahoo::fetch_history(&yahoo_sym, days).await
-                    }
-                }
-            }
-            AssetCategory::Cash => Ok(Vec::new()),
-            _ => yahoo::fetch_history(symbol, days).await,
-        };
+        let (sym, result) = fetch_history_single(symbol, category, days).await;
         match result {
             Ok(records) if !records.is_empty() => {
-                let _ = update_tx.send(PriceUpdate::History(symbol.to_string(), records));
+                let _ = update_tx.send(PriceUpdate::History(sym, records));
             }
             Err(e) => {
                 let _ = update_tx.send(PriceUpdate::Error(
-                    format!("History {}: {}", symbol, e),
+                    format!("History {}: {}", sym, e),
                 ));
             }
             _ => {}
+        }
+    }
+
+    async fn fetch_history_batch(
+        batch: Vec<(String, AssetCategory, u32)>,
+        update_tx: &mpsc::Sender<PriceUpdate>,
+    ) {
+        let mut set = tokio::task::JoinSet::new();
+
+        for (symbol, category, days) in batch {
+            set.spawn(async move {
+                fetch_history_single(&symbol, category, days).await
+            });
+        }
+
+        while let Some(result) = set.join_next().await {
+            if let Ok((sym, fetch_result)) = result {
+                match fetch_result {
+                    Ok(records) if !records.is_empty() => {
+                        let _ = update_tx.send(PriceUpdate::History(sym, records));
+                    }
+                    Err(e) => {
+                        let _ = update_tx.send(PriceUpdate::Error(
+                            format!("History {}: {}", sym, e),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -210,5 +257,24 @@ mod tests {
         assert_eq!(yahoo_crypto_symbol("BTC-USD"), "BTC-USD");
         assert_eq!(yahoo_crypto_symbol("btc-usd"), "BTC-USD");
         assert_eq!(yahoo_crypto_symbol("ETH-USD"), "ETH-USD");
+    }
+
+    #[test]
+    fn fetch_history_batch_command_variant_exists() {
+        // Verify the batch command can be constructed
+        let batch = vec![
+            ("AAPL".to_string(), AssetCategory::Equity, 90),
+            ("BTC".to_string(), AssetCategory::Crypto, 90),
+            ("GC=F".to_string(), AssetCategory::Commodity, 90),
+        ];
+        let cmd = PriceCommand::FetchHistoryBatch(batch);
+        // Pattern match to verify variant structure
+        if let PriceCommand::FetchHistoryBatch(items) = cmd {
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0].0, "AAPL");
+            assert_eq!(items[1].2, 90);
+        } else {
+            panic!("Expected FetchHistoryBatch variant");
+        }
     }
 }

@@ -274,23 +274,29 @@ impl App {
 
     fn request_all_history(&self, service: &PriceService) {
         let mut seen = std::collections::HashSet::new();
+        let mut batch = Vec::new();
 
-        // Fetch history for portfolio symbols
+        // Collect portfolio symbols
         let symbols = self.get_symbols();
         for (symbol, category) in &symbols {
             if seen.insert(symbol.clone()) {
-                service.send_command(PriceCommand::FetchHistory(symbol.clone(), *category, 90));
+                batch.push((symbol.clone(), *category, 90));
             }
         }
 
-        // Also fetch history for chart comparison symbols (indices, benchmarks)
+        // Collect chart comparison symbols (indices, benchmarks)
         // so charts are ready when the user opens the detail panel
         for pos in &self.positions {
             for (sym, cat) in Self::chart_fetch_symbols(pos) {
                 if seen.insert(sym.clone()) {
-                    service.send_command(PriceCommand::FetchHistory(sym, cat, 90));
+                    batch.push((sym, cat, 90));
                 }
             }
+        }
+
+        // Send as a single batch for concurrent fetching
+        if !batch.is_empty() {
+            service.send_command(PriceCommand::FetchHistoryBatch(batch));
         }
     }
 
