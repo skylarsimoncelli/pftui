@@ -30,6 +30,7 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 - Gain-aware gradient coloring (green gradient for gains, red for losses)
 - `J`/`K` cycling through chart variants per asset
 - Volume bars below price charts using block characters (▁▂▃▄▅▆▇█), theme-aware muted coloring
+- SMA(20) and SMA(50) moving average overlays on single-symbol price charts, using theme accent colors
 
 ### Themes
 - 6 built-in themes: Midnight (default), Catppuccin Mocha, Nord, Dracula, Solarized Dark, Gruvbox
@@ -269,6 +270,8 @@ All charts use Unicode braille characters (U+2800–U+28FF). Each terminal cell 
 Gradient direction is gain-aware: positive gains color bottom-to-top green, negative gains color bottom-to-top red.
 
 Volume bars appear below single-symbol price charts as a row of Unicode block characters (▁▂▃▄▅▆▇█). Each character represents relative volume for that time slice, scaled to the maximum volume in the visible range. Volume coloring uses a muted blend of the theme's text and surface colors.
+
+SMA(20) and SMA(50) moving average lines are overlaid on single-symbol price charts as thin braille dot lines. SMA(20) uses the theme's accent color and SMA(50) uses the border accent color, making them visually distinct from the price area fill. SMAs are not shown on ratio charts or multi-panel "All" views. A legend in the stats line identifies which line is which.
 
 ## Database
 

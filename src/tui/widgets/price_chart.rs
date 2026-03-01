@@ -14,6 +14,10 @@ const BRAILLE_ROWS: usize = 4;
 /// Block characters for volume bars (8 levels of fill)
 const VOLUME_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
+// SMA periods to overlay on price charts
+const SMA_SHORT_PERIOD: usize = 20;
+const SMA_LONG_PERIOD: usize = 50;
+
 /// Slice history records to only the last `days` entries.
 /// Records are assumed to be in chronological order (oldest first).
 fn slice_history(records: &[HistoryRecord], days: u32) -> &[HistoryRecord] {
@@ -209,7 +213,22 @@ fn render_single_chart(
     let volumes: Vec<Option<u64>> = records.iter().map(|r| r.volume).collect();
     let has_volume = volumes.iter().any(|v| v.is_some());
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, t);
+    // Compute SMA overlays from raw close prices
+    let raw_values: Vec<f64> = records
+        .iter()
+        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        .collect();
+    let mut sma_overlays: Vec<(Vec<Option<f64>>, Color)> = Vec::new();
+    let sma20 = compute_sma(&raw_values, SMA_SHORT_PERIOD);
+    if sma20.iter().any(|v| v.is_some()) {
+        sma_overlays.push((sma20, t.text_accent));
+    }
+    let sma50 = compute_sma(&raw_values, SMA_LONG_PERIOD);
+    if sma50.iter().any(|v| v.is_some()) {
+        sma_overlays.push((sma50, t.border_accent));
+    }
+
+    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, t);
 }
 
 /// Render a ratio chart (numerator / denominator)
@@ -266,7 +285,7 @@ fn render_ratio_chart(
     };
 
     // No volume for ratio charts
-    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, t);
+    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], t);
 }
 
 /// Compact single chart for multi-panel (no stats line, just braille)
@@ -378,7 +397,31 @@ fn compute_ratio(
         .collect()
 }
 
+/// Compute Simple Moving Average for a slice of f64 values.
+/// Returns a Vec of the same length as input, where the first `period-1` entries
+/// are None (not enough data) and the rest are Some(average).
+pub fn compute_sma(values: &[f64], period: usize) -> Vec<Option<f64>> {
+    if period == 0 || values.is_empty() {
+        return vec![None; values.len()];
+    }
+    let mut result = Vec::with_capacity(values.len());
+    let mut window_sum = 0.0;
+    for (i, &v) in values.iter().enumerate() {
+        window_sum += v;
+        if i >= period {
+            window_sum -= values[i - period];
+        }
+        if i + 1 >= period {
+            result.push(Some(window_sum / period as f64));
+        } else {
+            result.push(None);
+        }
+    }
+    result
+}
+
 /// Full braille chart with optional volume bars and stats line (price, gain%, H/L)
+#[allow(clippy::too_many_arguments)]
 fn render_braille_chart(
     frame: &mut Frame,
     area: Rect,
@@ -386,6 +429,7 @@ fn render_braille_chart(
     current_price: Option<Decimal>,
     gain_pct: Option<Decimal>,
     volumes: Option<&[Option<u64>]>,
+    sma_overlays: &[(Vec<Option<f64>>, Color)],
     t: &theme::Theme,
 ) {
     if area.width < 4 || area.height < 4 {
@@ -415,14 +459,37 @@ fn render_braille_chart(
     let range = max_val - min_val;
     let dot_rows = chart_height * BRAILLE_ROWS;
 
-    let normalized: Vec<usize> = resampled
+    let normalize_val = |v: f64| -> usize {
+        if range > 0.0 {
+            (((v - min_val) / range) * (dot_rows.saturating_sub(1)) as f64).round() as usize
+        } else {
+            dot_rows / 2
+        }
+    };
+
+    let normalized: Vec<usize> = resampled.iter().map(|v| normalize_val(*v)).collect();
+
+    // Resample and normalize SMA overlays to match the chart grid
+    let sma_normalized: Vec<(Vec<Option<usize>>, Color)> = sma_overlays
         .iter()
-        .map(|v| {
-            if range > 0.0 {
-                (((v - min_val) / range) * (dot_rows.saturating_sub(1)) as f64).round() as usize
-            } else {
-                dot_rows / 2
-            }
+        .map(|(sma_raw, color)| {
+            // Convert Option<f64> to f64 for resampling, preserving None positions
+            let sma_f64: Vec<f64> = sma_raw
+                .iter()
+                .map(|v| v.unwrap_or(f64::NAN))
+                .collect();
+            let resampled_sma = resample(&sma_f64, sample_count);
+            let norm: Vec<Option<usize>> = resampled_sma
+                .iter()
+                .map(|v| {
+                    if v.is_nan() {
+                        None
+                    } else {
+                        Some(normalize_val(*v))
+                    }
+                })
+                .collect();
+            (norm, *color)
         })
         .collect();
 
@@ -445,10 +512,37 @@ fn render_braille_chart(
             let idx1 = idx0 + 1;
             let v0 = normalized.get(idx0).copied().unwrap_or(0);
             let v1 = normalized.get(idx1).copied().unwrap_or(0);
-            let ch = braille_char(v0, v1, row, BRAILLE_ROWS);
+
+            // Compute price braille bits
+            let price_bits = braille_bits(v0, v1, row, BRAILLE_ROWS);
+
+            // Compute SMA overlay bits and determine overlay color
+            let mut sma_bits: u8 = 0;
+            let mut sma_color: Option<Color> = None;
+            for (sma_norm, color) in &sma_normalized {
+                let sv0 = sma_norm.get(idx0).and_then(|v| *v);
+                let sv1 = sma_norm.get(idx1).and_then(|v| *v);
+                let bits = braille_dot_bits(sv0, sv1, row, BRAILLE_ROWS);
+                if bits != 0 {
+                    sma_bits |= bits;
+                    sma_color = Some(*color);
+                }
+            }
+
+            let combined_bits = price_bits | sma_bits;
+            let ch = char::from_u32(0x2800 + combined_bits as u32).unwrap_or(' ');
+
+            // Use SMA color if only SMA dots are present, gradient if only price,
+            // or gradient if both (price dominates visually)
+            let cell_color = if price_bits == 0 && sma_bits != 0 {
+                sma_color.unwrap_or(row_color)
+            } else {
+                row_color
+            };
+
             spans.push(Span::styled(
                 String::from(ch),
-                Style::default().fg(row_color),
+                Style::default().fg(cell_color),
             ));
         }
 
@@ -487,7 +581,7 @@ fn render_braille_chart(
         t.neutral
     };
 
-    lines.push(Line::from(vec![
+    let mut stats_spans = vec![
         Span::styled(price_str, Style::default().fg(t.text_primary).bold()),
         Span::raw(" "),
         Span::styled(
@@ -503,7 +597,30 @@ fn render_braille_chart(
             ),
             Style::default().fg(t.text_muted),
         ),
-    ]));
+    ];
+
+    // Add SMA legend labels
+    if !sma_overlays.is_empty() {
+        stats_spans.push(Span::raw("  "));
+        for (i, (sma_raw, color)) in sma_overlays.iter().enumerate() {
+            // Determine SMA period from data (count non-None leading entries)
+            let period = sma_raw.iter().take_while(|v| v.is_none()).count() + 1;
+            let label = if period <= SMA_SHORT_PERIOD + 1 {
+                format!("SMA{}", SMA_SHORT_PERIOD)
+            } else {
+                format!("SMA{}", SMA_LONG_PERIOD)
+            };
+            stats_spans.push(Span::styled(
+                format!("─{}", label),
+                Style::default().fg(*color),
+            ));
+            if i < sma_overlays.len() - 1 {
+                stats_spans.push(Span::raw(" "));
+            }
+        }
+    }
+
+    lines.push(Line::from(stats_spans));
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
@@ -703,7 +820,8 @@ fn resample(values: &[f64], target_len: usize) -> Vec<f64> {
     result
 }
 
-fn braille_char(v0: usize, v1: usize, row: usize, dots_per_row: usize) -> char {
+/// Compute braille bit pattern for filled-area price line (fills from bottom to value)
+fn braille_bits(v0: usize, v1: usize, row: usize, dots_per_row: usize) -> u8 {
     let row_base = row * dots_per_row;
     let mut bits: u8 = 0;
 
@@ -723,7 +841,48 @@ fn braille_char(v0: usize, v1: usize, row: usize, dots_per_row: usize) -> char {
         }
     }
 
+    bits
+}
+
+fn braille_char(v0: usize, v1: usize, row: usize, dots_per_row: usize) -> char {
+    let bits = braille_bits(v0, v1, row, dots_per_row);
     char::from_u32(0x2800 + bits as u32).unwrap_or(' ')
+}
+
+/// Compute braille bit pattern for a single-dot overlay line (SMA).
+/// Unlike braille_bits which fills from bottom, this only lights the dot
+/// at exactly the SMA value position — producing a thin line overlay.
+fn braille_dot_bits(
+    sv0: Option<usize>,
+    sv1: Option<usize>,
+    row: usize,
+    dots_per_row: usize,
+) -> u8 {
+    let row_base = row * dots_per_row;
+    let row_top = row_base + dots_per_row;
+    let mut bits: u8 = 0;
+
+    let col0_bits = [0u8, 1, 2, 6];
+    if let Some(v) = sv0 {
+        if v >= row_base && v < row_top {
+            let dot_idx = (dots_per_row - 1) - (v - row_base);
+            if dot_idx < col0_bits.len() {
+                bits |= 1 << col0_bits[dot_idx];
+            }
+        }
+    }
+
+    let col1_bits = [3u8, 4, 5, 7];
+    if let Some(v) = sv1 {
+        if v >= row_base && v < row_top {
+            let dot_idx = (dots_per_row - 1) - (v - row_base);
+            if dot_idx < col1_bits.len() {
+                bits |= 1 << col1_bits[dot_idx];
+            }
+        }
+    }
+
+    bits
 }
 
 fn format_price(v: Decimal) -> String {
@@ -835,5 +994,88 @@ mod tests {
     fn test_muted_color_non_rgb_passthrough() {
         let result = muted_color(Color::White, Color::Black);
         assert_eq!(result, Color::White);
+    }
+
+    #[test]
+    fn test_compute_sma_basic() {
+        let values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let sma = compute_sma(&values, 3);
+        assert_eq!(sma.len(), 5);
+        // First 2 are None (need 3 values for period 3)
+        assert!(sma[0].is_none());
+        assert!(sma[1].is_none());
+        // SMA(3) at index 2: (10+20+30)/3 = 20.0
+        assert!((sma[2].unwrap() - 20.0).abs() < 1e-10);
+        // SMA(3) at index 3: (20+30+40)/3 = 30.0
+        assert!((sma[3].unwrap() - 30.0).abs() < 1e-10);
+        // SMA(3) at index 4: (30+40+50)/3 = 40.0
+        assert!((sma[4].unwrap() - 40.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_compute_sma_period_1() {
+        let values = vec![5.0, 10.0, 15.0];
+        let sma = compute_sma(&values, 1);
+        // SMA(1) = the value itself
+        assert!((sma[0].unwrap() - 5.0).abs() < 1e-10);
+        assert!((sma[1].unwrap() - 10.0).abs() < 1e-10);
+        assert!((sma[2].unwrap() - 15.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_compute_sma_period_zero() {
+        let values = vec![1.0, 2.0, 3.0];
+        let sma = compute_sma(&values, 0);
+        assert_eq!(sma.len(), 3);
+        assert!(sma.iter().all(|v| v.is_none()));
+    }
+
+    #[test]
+    fn test_compute_sma_empty_input() {
+        let values: Vec<f64> = vec![];
+        let sma = compute_sma(&values, 5);
+        assert!(sma.is_empty());
+    }
+
+    #[test]
+    fn test_compute_sma_period_larger_than_data() {
+        let values = vec![1.0, 2.0, 3.0];
+        let sma = compute_sma(&values, 5);
+        assert_eq!(sma.len(), 3);
+        // All None since we never have 5 data points
+        assert!(sma.iter().all(|v| v.is_none()));
+    }
+
+    #[test]
+    fn test_braille_dot_bits_single_dot() {
+        // A dot at position 2 in row 0 (rows span positions 0-3)
+        // dot_idx = 3 - (2 - 0) = 1 -> col0_bits[1] = bit 1
+        let bits = braille_dot_bits(Some(2), None, 0, BRAILLE_ROWS);
+        assert_ne!(bits, 0);
+    }
+
+    #[test]
+    fn test_braille_dot_bits_no_dot_outside_row() {
+        // Dot at position 5, row 0 spans 0-3 → should be empty
+        let bits = braille_dot_bits(Some(5), None, 0, BRAILLE_ROWS);
+        assert_eq!(bits, 0);
+    }
+
+    #[test]
+    fn test_braille_dot_bits_both_columns() {
+        // Dots in both columns at position 1, row 0
+        let bits = braille_dot_bits(Some(1), Some(1), 0, BRAILLE_ROWS);
+        // Both columns should have a dot → non-zero bits from both col0 and col1
+        assert_ne!(bits, 0);
+        // Verify it has bits from both columns
+        let col0_only = braille_dot_bits(Some(1), None, 0, BRAILLE_ROWS);
+        let col1_only = braille_dot_bits(None, Some(1), 0, BRAILLE_ROWS);
+        assert_eq!(bits, col0_only | col1_only);
+    }
+
+    #[test]
+    fn test_braille_dot_bits_none_is_empty() {
+        let bits = braille_dot_bits(None, None, 0, BRAILLE_ROWS);
+        assert_eq!(bits, 0);
     }
 }

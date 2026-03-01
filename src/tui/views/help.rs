@@ -81,6 +81,10 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
         "  Variants: Single, Ratio (BTC/SPX …), All",
         Style::default().fg(sc),
     )));
+    lines.push(Line::from(Span::styled(
+        "  SMA 20/50 overlays on single-symbol charts",
+        Style::default().fg(sc),
+    )));
     lines.push(Line::from(""));
 
     // ── Sorting ──

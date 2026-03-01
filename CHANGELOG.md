@@ -17,6 +17,14 @@
 ---
 
 
+### 2026-03-01 — Add SMA(20) and SMA(50) moving average overlays
+
+- What: added Simple Moving Average (SMA) computation and braille overlay rendering on single-symbol price charts. SMA(20) renders as a thin braille dot line in `text_accent` color, SMA(50) in `border_accent` color. Added `compute_sma()` function using a sliding window sum for O(n) computation. Added `braille_bits()` (refactored from `braille_char`) and `braille_dot_bits()` helper for single-dot overlay rendering. SMA dots are composited with price area bits using bitwise OR, with color priority: price gradient dominates when both are present, SMA color shows through in empty cells. SMA legend ("─SMA20 ─SMA50") appended to the stats line below the chart. SMAs only appear on single-symbol full charts — not on ratio charts, mini panels, or "All" multi-panel views where they are not meaningful. NaN values in SMA (the leading `period-1` entries) are preserved through resampling so the line starts only where valid data exists.
+- Why: Moving averages are foundational technical analysis indicators. SMA(20) shows short-term trend, SMA(50) shows medium-term trend. Crossovers between the two (golden cross / death cross) are widely-used trading signals. Without SMAs, charts showed only raw price action with no trend context.
+- Files: `src/tui/widgets/price_chart.rs` (compute_sma, braille_bits, braille_dot_bits, SMA overlay in render_braille_chart, SMA legend in stats line, 9 new tests), `src/tui/views/help.rs` (SMA note in Charts section), `docs/README.md` (SMA feature bullet + rendering docs)
+- Tests: added 9 tests — compute_sma_basic, compute_sma_period_1, compute_sma_period_zero, compute_sma_empty_input, compute_sma_period_larger_than_data, braille_dot_bits_single_dot, braille_dot_bits_no_dot_outside_row, braille_dot_bits_both_columns, braille_dot_bits_none_is_empty. Total: 77 tests passing.
+- TODO: Add moving average overlays (P1)
+
 ### 2026-03-01 — Add volume bars below price charts
 
 - What: added volume data to the price history pipeline and rendered volume bars below braille price charts. Added `volume: Option<u64>` to `HistoryRecord`. DB migration adds `volume` column to `price_history` table. Yahoo Finance history now captures volume from OHLCV data. CoinGecko history now parses `total_volumes` from market_chart endpoint. Volume bars render as a single row of block characters (▁▂▃▄▅▆▇█) between the braille chart and the stats line, using muted theme-aware coloring (60/40 blend of text_muted and surface). Volume is shown only on single-symbol charts (not ratio or "All" multi-panel views, where volume is not meaningful). DB upsert uses COALESCE to preserve existing volume when new data has None.
