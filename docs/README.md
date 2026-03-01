@@ -30,6 +30,16 @@ Bloomberg Terminal aesthetics. btop-level polish. Live market data, braille char
 - Full j/k/gg/G/Ctrl+d/Ctrl+u navigation
 - Auto-fetches data on tab activation and at startup
 
+### Watchlist
+- Dedicated Watchlist tab (`5`) to track assets without holding them
+- Add/remove symbols via CLI: `pftui watch <SYMBOL>`, `pftui unwatch <SYMBOL>`
+- Auto-detects asset category (equity, crypto, commodity, etc.) or specify with `--category`
+- Live prices and daily change % with gain-aware color coding
+- Full j/k/gg/G/Ctrl+d/Ctrl+u navigation
+- Empty state shows usage instructions
+- Symbols stored in SQLite `watchlist` table, persisted across sessions
+- Case-insensitive symbol handling (stored uppercase)
+
 ### Market Data
 - Live spot prices via Yahoo Finance and CoinGecko
 - Auto-refresh on configurable interval (default: 60s)
@@ -197,6 +207,9 @@ pftui list-tx                  # List all transactions
 pftui summary                  # Print portfolio summary
 pftui export csv               # Export positions as CSV
 pftui export json              # Export positions as JSON
+pftui watch AAPL               # Add AAPL to watchlist
+pftui watch BTC --category crypto  # Add with explicit category
+pftui unwatch AAPL             # Remove from watchlist
 ```
 
 ## Keybindings
@@ -215,6 +228,7 @@ pftui export json              # Export positions as JSON
 | `2` | Transactions view (full mode only) |
 | `3` | Markets overview |
 | `4` | Economy dashboard |
+| `5` | Watchlist |
 | `Enter` | Open price chart for selected position |
 | `Esc` | Close chart / help overlay |
 | `/` | Search / filter by name |
@@ -342,6 +356,15 @@ SQLite database at `~/Library/Application Support/pftui/pftui.db` (macOS). WAL j
 | allocation_pct | TEXT | Decimal string |
 | created_at | TEXT | auto datetime |
 
+**watchlist** — tracked symbols not in portfolio (PK: symbol unique)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | autoincrement |
+| symbol | TEXT | unique, stored uppercase |
+| category | TEXT | asset category |
+| added_at | TEXT | auto datetime |
+
 ## Configuration
 
 Config file: `~/Library/Application Support/pftui/config.toml`
@@ -386,7 +409,8 @@ pftui/
     │   ├── transactions.rs   # Transaction CRUD
     │   ├── price_cache.rs    # Spot price cache CRUD
     │   ├── price_history.rs  # Daily history CRUD
-    │   └── allocations.rs    # Percentage mode CRUD
+    │   ├── allocations.rs    # Percentage mode CRUD
+    │   └── watchlist.rs       # Watchlist CRUD
     ├── models/
     │   ├── mod.rs
     │   ├── position.rs       # Position struct, compute functions
@@ -411,6 +435,7 @@ pftui/
         │   ├── transactions.rs # Transactions table
         │   ├── markets.rs    # Markets overview tab
         │   ├── economy.rs    # Economy dashboard tab
+        │   ├── watchlist.rs  # Watchlist tab
         │   └── help.rs       # Help overlay popup
         └── widgets/
             ├── mod.rs

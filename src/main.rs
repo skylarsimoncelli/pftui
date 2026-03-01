@@ -82,5 +82,29 @@ fn main() -> Result<()> {
             }
             commands::remove_tx::run(&conn, id)
         }
+
+        Some(Command::Watch { symbol, category }) => {
+            use crate::models::asset_names::infer_category;
+            let cat = match category {
+                Some(c) => c.parse().unwrap_or_else(|_| infer_category(&symbol)),
+                None => infer_category(&symbol),
+            };
+            let upper = symbol.to_uppercase();
+            db::watchlist::add_to_watchlist(&conn, &upper, cat)?;
+            let name = crate::models::asset_names::resolve_name(&upper);
+            let display = if name.is_empty() { upper.clone() } else { name };
+            println!("Added {} ({}) to watchlist as {}", upper, display, cat);
+            Ok(())
+        }
+
+        Some(Command::Unwatch { symbol }) => {
+            let upper = symbol.to_uppercase();
+            if db::watchlist::remove_from_watchlist(&conn, &upper)? {
+                println!("Removed {} from watchlist", upper);
+            } else {
+                println!("{} was not in the watchlist", upper);
+            }
+            Ok(())
+        }
     }
 }

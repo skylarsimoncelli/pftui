@@ -3,6 +3,7 @@ pub mod price_cache;
 pub mod price_history;
 pub mod schema;
 pub mod transactions;
+pub mod watchlist;
 
 use anyhow::Result;
 use rusqlite::Connection;

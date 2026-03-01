@@ -17,7 +17,9 @@ use crate::models::transaction::Transaction;
 use crate::price::{PriceCommand, PriceService, PriceUpdate};
 use crate::tui::theme::{self, Theme};
 use crate::tui::views::markets;
+use crate::db::watchlist as db_watchlist;
 use crate::tui::views::economy;
+use crate::tui::views::watchlist as watchlist_view;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -25,6 +27,7 @@ pub enum ViewMode {
     Transactions,
     Markets,
     Economy,
+    Watchlist,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartTimeframe {
@@ -178,6 +181,8 @@ pub struct App {
     pub tx_selected_index: usize,
     pub markets_selected_index: usize,
     pub economy_selected_index: usize,
+    pub watchlist_selected_index: usize,
+    pub watchlist_entries: Vec<db_watchlist::WatchlistEntry>,
     pub g_pending: bool,
     pub terminal_height: u16,
 
@@ -248,6 +253,8 @@ impl App {
             tx_selected_index: 0,
             markets_selected_index: 0,
             economy_selected_index: 0,
+            watchlist_selected_index: 0,
+            watchlist_entries: Vec::new(),
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             search_mode: false,
@@ -277,6 +284,7 @@ impl App {
         self.load_data();
         self.load_cached_prices();
         self.load_cached_history();
+        self.load_watchlist();
         self.recompute();
 
         // Start price service
@@ -327,6 +335,12 @@ impl App {
         }
         if self.portfolio_mode == PortfolioMode::Full {
             self.compute_portfolio_value_history();
+        }
+    }
+
+    fn load_watchlist(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            self.watchlist_entries = db_watchlist::list_watchlist(&conn).unwrap_or_default();
         }
     }
 
@@ -414,6 +428,32 @@ impl App {
             let symbols: Vec<(String, AssetCategory)> = items
                 .iter()
                 .map(|item| (item.yahoo_symbol.clone(), economy::category_for_group(item.group)))
+                .collect();
+            if !symbols.is_empty() {
+                service.send_command(PriceCommand::FetchAll(symbols.clone()));
+                let batch: Vec<(String, AssetCategory, u32)> = symbols
+                    .into_iter()
+                    .map(|(sym, cat)| (sym, cat, 30))
+                    .collect();
+                service.send_command(PriceCommand::FetchHistoryBatch(batch));
+            }
+        }
+    }
+
+    /// Fetch spot prices and short history for all watchlist symbols.
+    fn request_watchlist_data(&self) {
+        if let Some(ref service) = self.price_service {
+            if self.watchlist_entries.is_empty() {
+                return;
+            }
+            let symbols: Vec<(String, AssetCategory)> = self
+                .watchlist_entries
+                .iter()
+                .map(|e| {
+                    let cat: AssetCategory = e.category.parse().unwrap_or(AssetCategory::Equity);
+                    let yahoo = watchlist_view::yahoo_symbol_for(&e.symbol, cat);
+                    (yahoo, cat)
+                })
                 .collect();
             if !symbols.is_empty() {
                 service.send_command(PriceCommand::FetchAll(symbols.clone()));
@@ -977,6 +1017,12 @@ impl App {
                 self.detail_open = false;
                 self.request_economy_data();
             }
+            KeyCode::Char('5') => {
+                self.view_mode = ViewMode::Watchlist;
+                self.detail_open = false;
+                self.load_watchlist();
+                self.request_watchlist_data();
+            }
 
             // Privacy toggle
             KeyCode::Char('p') => {
@@ -1140,6 +1186,12 @@ impl App {
                         (self.economy_selected_index + 1).min(count - 1);
                 }
             }
+            ViewMode::Watchlist => {
+                if !self.watchlist_entries.is_empty() {
+                    self.watchlist_selected_index =
+                        (self.watchlist_selected_index + 1).min(self.watchlist_entries.len() - 1);
+                }
+            }
         }
     }
 
@@ -1157,6 +1209,9 @@ impl App {
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(1);
             }
+            ViewMode::Watchlist => {
+                self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(1);
+            }
         }
     }
 
@@ -1173,6 +1228,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = 0;
+            }
+            ViewMode::Watchlist => {
+                self.watchlist_selected_index = 0;
             }
         }
     }
@@ -1199,6 +1257,11 @@ impl App {
                 let count = economy::economy_symbols().len();
                 if count > 0 {
                     self.economy_selected_index = count - 1;
+                }
+            }
+            ViewMode::Watchlist => {
+                if !self.watchlist_entries.is_empty() {
+                    self.watchlist_selected_index = self.watchlist_entries.len() - 1;
                 }
             }
         }
@@ -1243,6 +1306,12 @@ impl App {
                         (self.economy_selected_index + step).min(count - 1);
                 }
             }
+            ViewMode::Watchlist => {
+                if !self.watchlist_entries.is_empty() {
+                    self.watchlist_selected_index =
+                        (self.watchlist_selected_index + step).min(self.watchlist_entries.len() - 1);
+                }
+            }
         }
     }
 
@@ -1260,6 +1329,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(step);
+            }
+            ViewMode::Watchlist => {
+                self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(step);
             }
         }
     }

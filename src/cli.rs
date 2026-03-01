@@ -49,6 +49,21 @@ pub enum Command {
 
     /// Run the portfolio setup wizard
     Setup,
+
+    /// Add a symbol to the watchlist
+    Watch {
+        /// Symbol to watch (e.g. AAPL, BTC, GC=F)
+        symbol: String,
+        /// Asset category (equity, crypto, forex, cash, commodity, fund). Auto-detected if omitted.
+        #[arg(long)]
+        category: Option<String>,
+    },
+
+    /// Remove a symbol from the watchlist
+    Unwatch {
+        /// Symbol to unwatch
+        symbol: String,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

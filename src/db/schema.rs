@@ -41,6 +41,13 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             allocation_pct TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL UNIQUE,
+            category TEXT NOT NULL,
+            added_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 
