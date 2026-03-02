@@ -22,8 +22,6 @@
 ## P1 — CLI Enhancements (Feedback)
 
 - [ ] **[Feedback] Add `pftui watchlist` CLI command** — Display watched symbols with current prices in headless mode. The TUI `watch` command exists but there's no CLI equivalent. Files: new `src/commands/watchlist_cli.rs`, `src/cli.rs`.
-- [ ] **[Feedback] Add `--notes` flag to `list-tx`** — Show transaction notes in list-tx output. Notes are stored but never displayed. Files: `src/commands/list_tx.rs`.
-- [ ] **[Feedback] Round CSV export allocation percentages** — CSV export shows 27 decimal places on allocation%. Round to 2 decimal places. Files: `src/commands/export.rs` or wherever CSV allocation rendering happens.
 - [ ] **[Feedback] Add `pftui set-cash` command** — Dedicated command for managing cash positions instead of requiring manual buy transactions at $1.00. `pftui set-cash USD 45000` or `pftui set-cash GBP 67400`. Files: new `src/commands/set_cash.rs`, `src/cli.rs`.
 - [ ] **[Feedback] Native multi-currency with live FX conversion** — Store non-USD currencies in their native denomination (e.g., GBP as GBP, not as USD equivalent). Convert to primary currency using live FX rates in summary/TUI. Show FX rate and flag currency risk. This is a larger effort — may need to split into sub-tasks. Files: `src/models/position.rs`, `src/price/mod.rs` (FX rate fetching), `src/commands/summary.rs`, `src/tui/widgets/header.rs`.
 - [ ] **[Feedback] Add `pftui brief` markdown summary command** — Output a markdown-formatted portfolio summary suitable for inclusion in daily briefs and agent consumption. Shows: total value, allocation by category, top movers, P&L. Files: new `src/commands/brief.rs`, `src/cli.rs`.

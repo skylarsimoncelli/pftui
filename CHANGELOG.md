@@ -334,3 +334,11 @@
 - Files: `src/cli.rs` (SummaryPeriod enum with days_back/label methods, --period arg on Summary), `src/commands/summary.rs` (6 new render functions for period variants, CategoryPctPeriodGroup/SymbolPriceData structs, 4 new tests), `src/db/price_history.rs` (get_price_at_date, get_prices_at_date, 5 new tests), `src/main.rs` (pass period arg), `docs/README.md` (usage examples)
 - Tests: added 9 tests — get_price_at_date_exact, get_price_at_date_falls_back, get_price_at_date_no_data, get_prices_at_date_multiple, period_days_back, period_label, summary_with_period_no_history, summary_with_period_and_history, summary_with_period_and_group_by. Total: 302 tests passing.
 - TODO: Add `--period` flag to `pftui summary` (P0)
+
+### 2026-03-02 — Round CSV export decimals, add --notes to list-tx
+
+- What: (1) CSV export now rounds all decimal fields (allocation_pct, gain_pct, gain, current_value, current_price, avg_cost, total_cost) to 2 decimal places using `Decimal::round_dp(2)`. Added `round2()` helper function with 5 unit tests. Both full and percentage mode CSV exports are fixed. (2) Added `--notes` flag to `list-tx` command. When passed, an extra "Notes" column is displayed showing transaction notes (previously stored but never shown in CLI output).
+- Why: (1) Feedback bug — CSV export showed up to 27 decimal places on allocation percentages, making output unreadable and breaking downstream parsing. (2) Feedback request — transaction notes are stored in the DB but `list-tx` never displayed them, making the notes field effectively useless from the CLI.
+- Files: `src/commands/export.rs` (round2 helper, rounded all CSV decimal fields, 5 new tests), `src/commands/list_tx.rs` (accept show_notes bool, conditional Notes column rendering), `src/cli.rs` (ListTx now has `--notes` flag), `src/main.rs` (pass notes arg through)
+- Tests: added 5 tests — round2_basic, round2_rounds_up, round2_whole_number, round2_small, round2_negative. Total: 307 tests passing.
+- TODO: Round CSV export allocation percentages (P1), Add --notes flag to list-tx (P1)
