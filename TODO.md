@@ -53,7 +53,7 @@
 
 ## P2 — Sidebar & Sparkline Enhancements
 
-- [ ] **Add allocation change indicators** — Show ▲/▼ arrows next to allocation percentages when they've changed since the previous day (based on price movements shifting allocation weights). Helps identify rebalancing needs. Files: `src/tui/widgets/allocation_bars.rs`, `src/app.rs` (store previous day allocations for comparison). Test: test change detection logic.
+
 
 ## P2 — Micro-Interactions & Feedback
 

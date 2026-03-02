@@ -518,3 +518,11 @@
 - Files: `src/app.rs` (added `last_sort_change_tick` field, set on all sort key handlers), `src/tui/theme.rs` (added `SORT_FLASH_DURATION` constant), `src/tui/views/positions.rs` (flash logic in `render_table`, 4 new style tests)
 - Tests: 9 new tests (5 in app.rs: starts at zero, updates on name/tab/category/allocation sort; 4 in positions.rs: bold during flash, normal after duration, color starts at primary, color ends at accent). Total: 520 tests passing.
 - TODO: Add sort indicator animation (P2)
+
+### 2026-03-02 — Add allocation change indicators (▲/▼) in sidebar
+
+- What: the allocation bars sidebar now shows ▲/▼ arrows next to category allocation percentages when they've shifted since the previous day. For example, if Crypto was 48% yesterday and is 50% today, it shows `50% ▲2.0`. Change is computed from price history — uses the second-to-last close price per symbol to estimate yesterday's allocation weights. Indicators only appear when the shift is >= 0.1 percentage points, avoiding noise from rounding. Colored green (▲ increase) or red (▼ decrease) using theme colors.
+- Why: P2 sidebar enhancement — helps identify rebalancing needs and shows how price movements are shifting portfolio allocation weights day-to-day. Previously allocation bars were static snapshots with no sense of direction.
+- Files: `src/app.rs` (added `prev_day_cat_allocations` field, `compute_prev_day_cat_allocations()` method called from `recompute()`, 5 new tests), `src/tui/widgets/allocation_bars.rs` (added `allocation_change()` and `allocation_change_span()` functions, integrated into render loop)
+- Tests: 5 new tests (no history → empty, second-to-last close usage, single record insufficient, cash priced at 1.0, multi-category aggregation). Total: 525 tests passing.
+- TODO: Add allocation change indicators (P2)
