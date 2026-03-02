@@ -13,11 +13,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Build binaries for all targets ──
+  # ── Tests ──
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+      - run: cargo clippy --all-targets -- -D warnings
+
+  # ── Build binaries ──
   build:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    needs: [test]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -26,6 +39,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: pftui-aarch64-linux
+            cross: true
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact: pftui-x86_64-macos
@@ -41,23 +55,25 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # Cross-compilation support for aarch64-linux
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+      # Use cross for aarch64-linux (handles OpenSSL and linker)
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Build release binary
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: ${{ !matrix.cross }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package binary
+        shell: bash
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/pftui dist/${{ matrix.artifact }}
-          cd dist && sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
-        shell: bash
+          cd dist && sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256 || shasum -a 256 ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -65,18 +81,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/
 
-  # ── Run tests before publishing ──
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
-      - run: cargo clippy --all-targets -- -D warnings
-
-  # ── Build .deb package ──
+  # ── Build .deb ──
   deb:
     name: Build .deb
     runs-on: ubuntu-latest
@@ -93,7 +98,7 @@ jobs:
           name: deb-package
           path: target/debian/*.deb
 
-  # ── Build .rpm package ──
+  # ── Build .rpm ──
   rpm:
     name: Build .rpm
     runs-on: ubuntu-latest
@@ -115,7 +120,8 @@ jobs:
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, test, deb, rpm]
+    needs: [build, deb, rpm]
+    if: always() && needs.build.result != 'cancelled'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -125,12 +131,12 @@ jobs:
       - name: Collect release files
         run: |
           mkdir -p release
-          cp artifacts/pftui-x86_64-linux/* release/
-          cp artifacts/pftui-aarch64-linux/* release/
-          cp artifacts/pftui-x86_64-macos/* release/
-          cp artifacts/pftui-aarch64-macos/* release/
-          cp artifacts/deb-package/*.deb release/
-          cp artifacts/rpm-package/*.rpm release/ || true
+          for dir in artifacts/pftui-*; do
+            cp "$dir"/* release/ 2>/dev/null || true
+          done
+          cp artifacts/deb-package/*.deb release/ 2>/dev/null || true
+          cp artifacts/rpm-package/*.rpm release/ 2>/dev/null || true
+          ls -la release/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -140,7 +146,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Publish to crates.io ──
+  # ── crates.io ──
   crates-io:
     name: Publish to crates.io
     runs-on: ubuntu-latest
@@ -153,12 +159,13 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  # ── Update Homebrew tap ──
+  # ── Homebrew ──
   homebrew:
     name: Update Homebrew
     runs-on: ubuntu-latest
     needs: [github-release]
     continue-on-error: true
+    if: always() && needs.github-release.result == 'success'
     steps:
       - name: Update Homebrew formula
         uses: dawidd6/action-homebrew-bump-formula@v4

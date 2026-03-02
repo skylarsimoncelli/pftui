@@ -39,3 +39,9 @@ dirs = "6"
 csv = "1"
 anyhow = "1"
 time = "0.3"
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/pftui", dest = "/usr/bin/pftui", mode = "755" },
+    { source = "docs/README.md", dest = "/usr/share/doc/pftui/README", mode = "644" },
+]
