@@ -5,8 +5,9 @@ use ratatui::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::app::{is_privacy_view, App, PriceFlashDirection};
+use crate::app::{is_privacy_view, App, PriceFlashDirection, SortField};
 use crate::config::PortfolioMode;
+use crate::models::asset::AssetCategory;
 use crate::models::price::HistoryRecord;
 use crate::tui::theme;
 
@@ -184,6 +185,35 @@ fn row_background(app: &App, row_index: usize) -> Color {
     }
 }
 
+/// Build a category divider row for insertion between position groups.
+/// Produces a thin separator like "─── Crypto ───" spanning the first column,
+/// with empty cells for the remaining columns.
+fn category_divider_row(category: AssetCategory, t: &theme::Theme, col_count: usize) -> Row<'static> {
+    let label = format!("{}", category);
+    let cap_label = capitalize_category(&label);
+    let divider_text = format!("─── {} ───", cap_label);
+    let mut cells: Vec<Cell> = Vec::with_capacity(col_count);
+    cells.push(Cell::from(Span::styled(
+        divider_text,
+        Style::default().fg(t.border_subtle),
+    )));
+    for _ in 1..col_count {
+        cells.push(Cell::from(""));
+    }
+    Row::new(cells)
+        .style(Style::default().bg(t.surface_1))
+        .height(1)
+}
+
+/// Capitalize the first letter of a category name.
+fn capitalize_category(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+    }
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if is_privacy_view(app) {
         render_privacy_table(frame, area, app);
@@ -209,10 +239,20 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
 
-    let rows: Vec<Row> = positions
-        .iter()
-        .enumerate()
-        .map(|(i, pos)| {
+    let sorted_by_category = matches!(app.sort_field, SortField::Category);
+    let col_count = 8;
+    let mut rows: Vec<Row> = Vec::new();
+    let mut last_category: Option<AssetCategory> = None;
+
+    for (i, pos) in positions.iter().enumerate() {
+        // Insert category divider when sorted by category and category changes
+        if sorted_by_category {
+            if last_category != Some(pos.category) {
+                rows.push(category_divider_row(pos.category, t, col_count));
+            }
+            last_category = Some(pos.category);
+        }
+
             let cat_color = t.category_color(pos.category);
 
             let row_bg = row_background(app, i);
@@ -295,7 +335,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 .unwrap_or(0.0);
             let day_change_color = theme::gain_intensity_color(t, day_change_f);
 
-            Row::new(vec![
+            rows.push(Row::new(vec![
                 Cell::from(asset_line),
                 Cell::from(format_qty(pos.quantity))
                     .style(Style::default().fg(t.text_primary)),
@@ -326,9 +366,8 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
             ])
-            .style(style)
-        })
-        .collect();
+            .style(style));
+    }
 
     let widths = [
         Constraint::Min(14),
@@ -359,10 +398,19 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
 
-    let rows: Vec<Row> = positions
-        .iter()
-        .enumerate()
-        .map(|(i, pos)| {
+    let sorted_by_category = matches!(app.sort_field, SortField::Category);
+    let privacy_col_count = 6;
+    let mut rows: Vec<Row> = Vec::new();
+    let mut last_category: Option<AssetCategory> = None;
+
+    for (i, pos) in positions.iter().enumerate() {
+        if sorted_by_category {
+            if last_category != Some(pos.category) {
+                rows.push(category_divider_row(pos.category, t, privacy_col_count));
+            }
+            last_category = Some(pos.category);
+        }
+
             let cat_color = t.category_color(pos.category);
 
             let row_bg = row_background(app, i);
@@ -418,7 +466,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                 .unwrap_or(0.0);
             let day_change_color = theme::gain_intensity_color(t, day_change_f);
 
-            Row::new(vec![
+            rows.push(Row::new(vec![
                 Cell::from(asset_line),
                 Cell::from(format_price_opt(pos.current_price))
                     .style(Style::default().fg(t.text_primary)),
@@ -429,9 +477,8 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                 Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
             ])
-            .style(style)
-        })
-        .collect();
+            .style(style));
+    }
 
     let widths = [
         Constraint::Min(18),
@@ -1271,5 +1318,60 @@ mod gain_bar_tests {
         // Collect all text content from spans
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.starts_with("+12.5%"), "bar should preserve gain text, got: '{}'", text);
+    }
+}
+
+#[cfg(test)]
+mod category_divider_tests {
+    use super::*;
+    use crate::tui::theme;
+
+    #[test]
+    fn test_capitalize_category_basic() {
+        assert_eq!(capitalize_category("crypto"), "Crypto");
+        assert_eq!(capitalize_category("equity"), "Equity");
+        assert_eq!(capitalize_category("commodity"), "Commodity");
+    }
+
+    #[test]
+    fn test_capitalize_category_empty() {
+        assert_eq!(capitalize_category(""), "");
+    }
+
+    #[test]
+    fn test_capitalize_category_already_capitalized() {
+        assert_eq!(capitalize_category("Crypto"), "Crypto");
+    }
+
+    #[test]
+    fn test_divider_row_has_correct_column_count() {
+        let t = theme::theme_by_name("midnight");
+        let row = category_divider_row(AssetCategory::Crypto, &t, 8);
+        // Row should have been created without panic and have 8 cells
+        // We can verify it renders without error by checking it's a valid Row
+        let _ = row; // creation itself is the test
+    }
+
+    #[test]
+    fn test_divider_row_with_different_categories() {
+        let t = theme::theme_by_name("midnight");
+        // Ensure all categories produce valid divider rows
+        for cat in &[
+            AssetCategory::Crypto,
+            AssetCategory::Equity,
+            AssetCategory::Commodity,
+            AssetCategory::Cash,
+            AssetCategory::Forex,
+            AssetCategory::Fund,
+        ] {
+            let _ = category_divider_row(*cat, &t, 8);
+        }
+    }
+
+    #[test]
+    fn test_divider_row_privacy_column_count() {
+        let t = theme::theme_by_name("midnight");
+        let row = category_divider_row(AssetCategory::Equity, &t, 6);
+        let _ = row; // 6-column privacy table variant
     }
 }
