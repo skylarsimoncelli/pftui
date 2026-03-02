@@ -51,11 +51,11 @@ fn main() -> Result<()> {
         Some(Command::Summary { group_by, period }) => commands::summary::run(&conn, &config, group_by.as_ref(), period.as_ref()),
         Some(Command::Export { format }) => commands::export::run(&conn, &format, &config),
 
-        Some(Command::ListTx) => {
+        Some(Command::ListTx { notes }) => {
             if config.is_percentage_mode() {
                 bail!("list-tx is not available in percentage mode (no transactions).\nRun `pftui setup` to switch to full mode.");
             }
-            commands::list_tx::run(&conn)
+            commands::list_tx::run(&conn, notes)
         }
 
         Some(Command::AddTx {

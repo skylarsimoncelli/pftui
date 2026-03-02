@@ -11,6 +11,11 @@ use crate::db::price_cache::get_all_cached_prices;
 use crate::db::transactions::list_transactions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 
+/// Round a Decimal to 2 decimal places for human-readable CSV output.
+fn round2(d: Decimal) -> String {
+    d.round_dp(2).to_string()
+}
+
 pub fn run(conn: &Connection, format: &ExportFormat, config: &Config) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
     let prices: HashMap<String, Decimal> = cached
@@ -55,13 +60,13 @@ fn export_full(
                     &pos.symbol,
                     &pos.category.to_string(),
                     &pos.quantity.to_string(),
-                    &pos.avg_cost.to_string(),
-                    &pos.total_cost.to_string(),
-                    &pos.current_price.map(|p| p.to_string()).unwrap_or_default(),
-                    &pos.current_value.map(|v| v.to_string()).unwrap_or_default(),
-                    &pos.gain.map(|g| g.to_string()).unwrap_or_default(),
-                    &pos.gain_pct.map(|g| g.to_string()).unwrap_or_default(),
-                    &pos.allocation_pct.map(|a| a.to_string()).unwrap_or_default(),
+                    &pos.avg_cost.round_dp(2).to_string(),
+                    &pos.total_cost.round_dp(2).to_string(),
+                    &pos.current_price.map(round2).unwrap_or_default(),
+                    &pos.current_value.map(round2).unwrap_or_default(),
+                    &pos.gain.map(round2).unwrap_or_default(),
+                    &pos.gain_pct.map(round2).unwrap_or_default(),
+                    &pos.allocation_pct.map(round2).unwrap_or_default(),
                 ])?;
             }
             wtr.flush()?;
@@ -98,12 +103,43 @@ fn export_percentage(
                 wtr.write_record([
                     &pos.symbol,
                     &pos.category.to_string(),
-                    &pos.current_price.map(|p| p.to_string()).unwrap_or_default(),
-                    &pos.allocation_pct.map(|a| a.to_string()).unwrap_or_default(),
+                    &pos.current_price.map(round2).unwrap_or_default(),
+                    &pos.allocation_pct.map(round2).unwrap_or_default(),
                 ])?;
             }
             wtr.flush()?;
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn round2_basic() {
+        assert_eq!(round2(dec!(33.333333333333333333333333333)), "33.33");
+    }
+
+    #[test]
+    fn round2_rounds_up() {
+        assert_eq!(round2(dec!(49.999)), "50.00");
+    }
+
+    #[test]
+    fn round2_whole_number() {
+        assert_eq!(round2(dec!(100)), "100");
+    }
+
+    #[test]
+    fn round2_small() {
+        assert_eq!(round2(dec!(0.006)), "0.01");
+    }
+
+    #[test]
+    fn round2_negative() {
+        assert_eq!(round2(dec!(-12.3456)), "-12.35");
+    }
 }

@@ -27,7 +27,11 @@ pub enum Command {
     },
 
     /// List all transactions
-    ListTx,
+    ListTx {
+        /// Show transaction notes column
+        #[arg(long)]
+        notes: bool,
+    },
 
     /// Add a transaction
     AddTx {
