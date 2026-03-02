@@ -140,29 +140,85 @@ pub fn resolve_name(symbol: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Search for assets by prefix match on ticker or name (case-insensitive).
-/// Returns (ticker, display_name) pairs.
-pub fn search_names(query: &str) -> Vec<(&'static str, &'static str)> {
-    let query_upper = query.to_uppercase();
-    let query_lower = query.to_lowercase();
+/// Compute a fuzzy match score for `query` against a candidate string.
+/// Returns 0 if no match. Higher = better match.
+fn fuzzy_score(query: &str, candidate: &str) -> u32 {
+    let q = query.to_lowercase();
+    let c = candidate.to_lowercase();
 
-    let mut results: Vec<(&str, &str)> = NAMES
+    // Exact match
+    if q == c {
+        return 100;
+    }
+
+    // Prefix match
+    if c.starts_with(&q) {
+        return 80;
+    }
+
+    // Word-start match: query matches the start of any word in candidate
+    // e.g., "depot" matches "Home Depot", "j" matches "Johnson & J"
+    for word in c.split(|ch: char| !ch.is_alphanumeric()) {
+        if !word.is_empty() && word.starts_with(&q) {
+            return 65;
+        }
+    }
+
+    // Substring match
+    if c.contains(&q) {
+        return 50;
+    }
+
+    // Subsequence match: all query chars appear in order in candidate
+    // e.g., "btc" in "bitcoin cash" (b...t...c)
+    if q.len() >= 2 {
+        let mut q_iter = q.chars();
+        let mut current = q_iter.next();
+        for ch in c.chars() {
+            if let Some(qch) = current {
+                if ch == qch {
+                    current = q_iter.next();
+                }
+            } else {
+                break;
+            }
+        }
+        if current.is_none() {
+            // Score based on how tight the match is (shorter candidate = better)
+            let len_ratio = (q.len() * 20) / c.len();
+            return 10 + len_ratio as u32;
+        }
+    }
+
+    0
+}
+
+/// Search for assets by fuzzy match on ticker or name (case-insensitive).
+/// Matches via: exact, prefix, word-start, substring, and subsequence.
+/// Results ranked by match quality. Returns (ticker, display_name) pairs.
+pub fn search_names(query: &str) -> Vec<(&'static str, &'static str)> {
+    if query.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let mut scored: Vec<(u32, &'static str, &'static str)> = NAMES
         .iter()
-        .filter(|(ticker, name)| {
-            ticker.to_uppercase().starts_with(&query_upper)
-                || name.to_lowercase().starts_with(&query_lower)
+        .filter_map(|(ticker, name)| {
+            let ticker_score = fuzzy_score(query, ticker);
+            let name_score = fuzzy_score(query, name);
+            let best = ticker_score.max(name_score);
+            if best > 0 {
+                Some((best, *ticker, *name))
+            } else {
+                None
+            }
         })
-        .map(|(k, v)| (*k, *v))
         .collect();
 
-    // Sort: exact ticker matches first, then alphabetically
-    results.sort_by(|(a_tick, _), (b_tick, _)| {
-        let a_exact = a_tick.to_uppercase() == query_upper;
-        let b_exact = b_tick.to_uppercase() == query_upper;
-        b_exact.cmp(&a_exact).then_with(|| a_tick.cmp(b_tick))
-    });
+    // Sort by score descending, then alphabetically by ticker
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
 
-    results
+    scored.into_iter().map(|(_, t, n)| (t, n)).collect()
 }
 
 use crate::models::asset::AssetCategory;
@@ -307,5 +363,98 @@ mod tests {
         let results_lower = search_names("aapl");
         assert!(!results_upper.is_empty());
         assert_eq!(results_upper.len(), results_lower.len());
+    }
+
+    #[test]
+    fn search_names_substring_match() {
+        // "old" should match "Gold" and "Gold ETF" via substring on name
+        let results = search_names("old");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"GC=F")); // Gold
+        assert!(tickers.contains(&"GLD"));  // Gold ETF
+    }
+
+    #[test]
+    fn search_names_word_start_match() {
+        // "depot" matches "Home Depot" via word-start
+        let results = search_names("depot");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"HD"));
+    }
+
+    #[test]
+    fn search_names_subsequence_match() {
+        // "nflx" doesn't prefix-match "Netflix" but subsequence matches
+        // Actually NFLX is a ticker so it prefix-matches. Use a different example.
+        // "slna" subsequence matches "Solana" (s-l-n-a in s-o-l-a-n-a)
+        let results = search_names("slna");
+        let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
+        assert!(tickers.contains(&"SOL"));
+    }
+
+    #[test]
+    fn search_names_empty_query() {
+        let results = search_names("");
+        assert!(results.is_empty());
+        let results = search_names("   ");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_names_ranking_exact_over_prefix() {
+        // "ETH" exact ticker should rank above "EIGEN" (prefix on name "EigenLayer" = no,
+        // but "ETH" exact = 100 vs others)
+        let results = search_names("ETH");
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, "ETH");
+    }
+
+    #[test]
+    fn search_names_ranking_prefix_over_substring() {
+        // "Gold" prefix-matches the name "Gold" (GC=F) and "Gold ETF" (GLD)
+        // Both are prefix score 80. "Palladium" contains no "Gold".
+        let results = search_names("Gold");
+        assert!(results.len() >= 2);
+        // First results should be the prefix matches
+        let top2: Vec<&str> = results.iter().take(2).map(|(t, _)| *t).collect();
+        assert!(top2.contains(&"GC=F") || top2.contains(&"GLD"));
+    }
+
+    #[test]
+    fn fuzzy_score_exact() {
+        assert_eq!(fuzzy_score("btc", "BTC"), 100);
+        assert_eq!(fuzzy_score("Bitcoin", "bitcoin"), 100);
+    }
+
+    #[test]
+    fn fuzzy_score_prefix() {
+        assert_eq!(fuzzy_score("bit", "Bitcoin"), 80);
+        assert_eq!(fuzzy_score("AA", "AAPL"), 80);
+    }
+
+    #[test]
+    fn fuzzy_score_word_start() {
+        assert_eq!(fuzzy_score("depot", "Home Depot"), 65);
+    }
+
+    #[test]
+    fn fuzzy_score_substring() {
+        assert_eq!(fuzzy_score("old", "Gold"), 50);
+        // "inu" matches word-start of "Inu" in "Shiba Inu" → 65
+        assert_eq!(fuzzy_score("inu", "Shiba Inu"), 65);
+        // True substring: "hib" is mid-word in "Shiba"
+        assert_eq!(fuzzy_score("hib", "Shiba Inu"), 50);
+    }
+
+    #[test]
+    fn fuzzy_score_subsequence() {
+        let score = fuzzy_score("slna", "Solana");
+        assert!(score > 0 && score < 50, "subsequence score should be 10-30, got {}", score);
+    }
+
+    #[test]
+    fn fuzzy_score_no_match() {
+        assert_eq!(fuzzy_score("xyz", "Bitcoin"), 0);
+        assert_eq!(fuzzy_score("zzz", "Apple"), 0);
     }
 }
