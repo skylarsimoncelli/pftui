@@ -108,3 +108,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/app.rs` (new `PriceFlashDirection` enum, direction detection in tick handler), `src/tui/views/positions.rs` (directional arrow rendering, column width bump)
 - Tests: added 5 tests for flash direction logic (up, down, same, no previous price, storage). Total: 259 tests passing.
 - TODO: Add price flash with directional arrows (P1)
+
+### 2026-03-02 — Add scrolling ticker tape in header
+
+- What: added a horizontally scrolling marquee-style ticker tape as a second line in the header, showing live market data with directional arrows and color-coded change percentages. Displays all 18 market symbols (SPX, NDX, DJI, RUT, VIX, Gold, Silver, Oil, NatGas, BTC, ETH, SOL, DXY, EUR, GBP, JPY, 10Y, 2Y) with their daily change. Scrolls left at ~10 chars/sec using `tick_count / 6` for smooth animation. Only active on Positions view in non-compact mode (≥100 columns). Header height is now dynamic: 3 rows when ticker is active, 2 otherwise. Shows "waiting for market data…" placeholder until prices load.
+- Why: gives the app a Bloomberg Terminal-like live data feel. The scrolling ticker makes market movements scannable at a glance without switching to the Markets tab. The directional arrows (▲/▼) and color-coding (green/red) provide instant visual context.
+- Files: `src/tui/widgets/header.rs` (ticker entry building, styled span windowing with modular scroll, `header_height()` function), `src/tui/ui.rs` (dynamic header height via `header_height()`)
+- Tests: added 8 tests for ticker text format, negative format, scroll divisor constant, separator constant, header height (positions/compact/other views), and empty-data behavior. Total: 267 tests passing.
+- TODO: Add scrolling ticker tape in header (P1)
