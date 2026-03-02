@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-02 — Add `pftui import` command for restoring JSON snapshots
+
+- What: new `pftui import <path> [--mode replace|merge]` command. Imports data from JSON snapshot files produced by `pftui export json`. Two modes: `replace` (default) wipes existing transactions, allocations, and watchlist then inserts from snapshot; `merge` adds new entries without deleting, skipping duplicates. Validates before importing: portfolio mode match, non-empty symbols, positive quantities, non-negative prices, YYYY-MM-DD dates, 0-100 allocation pcts. All inserts run in a single SQLite transaction for atomicity.
+- Why: completes the export/import roundtrip. Users can back up, restore, and migrate portfolios between machines. Merge mode enables combining data from multiple sources.
+- Files: new `src/commands/import.rs` (717 lines), `src/cli.rs` (Import variant + ImportModeArg enum), `src/main.rs` (dispatch), `src/commands/mod.rs`
+- Tests: 15 new tests — replace/merge for transactions, allocations, and watchlist; duplicate skip on merge; validation rejection for mode mismatch, empty symbol, negative quantity, invalid date, invalid allocation pct; empty snapshot; invalid JSON; file not found; full export→import roundtrip. Total: 471 tests passing.
+- TODO: Add `pftui import` command (P1)
+
 ## Format
 
 ```

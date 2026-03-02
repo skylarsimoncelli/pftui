@@ -97,7 +97,7 @@
 
 ## P1 — Import/Export (Owner Request)
 
-- [ ] **Add `pftui import` command** — Import data from a JSON snapshot file (as produced by `pftui export json`). `pftui import <path> [--merge|--replace]`. `--replace` wipes and rebuilds (default), `--merge` adds new entries without deleting existing. Validate schema before writing. Prompt for confirmation on `--replace`. The JSON format is: `{ "config": {...}, "transactions": [...], "allocations": [...], "watchlist": [...], "positions": [...] }`. Files: new `src/commands/import.rs`, `src/cli.rs`.
+- [x] **Add `pftui import` command** — DONE (2026-03-02). `pftui import <path> [--mode replace|merge]`. Replace wipes and rebuilds (default), merge adds new entries without deleting. Validates mode match, symbols, quantities, dates, allocation pcts. Full export→import roundtrip tested. 15 new tests. See CHANGELOG.
 
 ## P1 — Mock Mode (Owner Request)
 
