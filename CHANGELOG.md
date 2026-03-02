@@ -406,3 +406,11 @@
 - Files: `src/tui/views/positions.rs` (mini sparkline construction in full table, price cell spans, column width, 5 new tests)
 - Tests: added 5 tests — test_mini_sparkline_three_points, test_mini_sparkline_uses_last_three_of_many, test_mini_sparkline_fewer_than_three_records, test_mini_sparkline_empty_history, test_mini_sparkline_flat_prices. Total: 372 tests passing.
 - TODO: Add inline mini-sparkline in price column (P1)
+
+### 2026-03-02 — Add theme toast notification on cycle
+
+- What: when pressing `t` to cycle themes, a brief toast now appears in the status bar showing "◆ Midnight" (or the new theme name) in the theme's accent color. The toast lasts ~1.5s (90 ticks at 60fps) with a smooth two-phase fade: full accent brightness for the first half, then gradually fading to muted via `lerp_color()`. Toast is suppressed on initial state (tick 0) to prevent flashing on app launch. Added `capitalize_first()` helper for display-friendly theme names.
+- Why: P2 theme enhancement — previously pressing `t` cycled the theme with no feedback about which theme you landed on. Now there's a clear, stylish confirmation that fades naturally.
+- Files: `src/tui/theme.rs` (new `THEME_TOAST_DURATION` constant), `src/app.rs` (new `theme_toast_tick` field, set in `cycle_theme()`), `src/tui/widgets/status_bar.rs` (toast rendering with fade logic, `capitalize_first()` helper, 7 tests)
+- Tests: added 7 tests — test_capitalize_first_basic, test_capitalize_first_empty, test_capitalize_first_already_capitalized, test_capitalize_first_single_char, test_theme_toast_timing, test_theme_toast_not_shown_on_init, test_theme_toast_fade_phases. Total: 393 tests passing.
+- TODO: Add theme preview on cycle (P2)

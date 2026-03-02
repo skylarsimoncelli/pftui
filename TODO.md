@@ -6,11 +6,6 @@
 ## P1 — Header & Status Bar Enhancements
 
 
-## P1 — Positions Table Visual Density
-
-- [ ] **Add gain/loss magnitude bar in Gain% column** — Render the gain% number with a tiny proportional bar behind it: green fill for gains, red for losses, scaled to ±20%. Like a micro horizontal bar chart in each cell. Uses EIGHTH_BLOCKS for sub-character resolution. Files: `src/tui/views/positions.rs` (gain cell rendering). Test: test bar width calculation for various percentages.
-
-
 ## P1 — CLI Enhancements (Feedback)
 
 - [ ] **[Feedback] Add `pftui watchlist` CLI command** — Display watched symbols with current prices in headless mode. The TUI `watch` command exists but there's no CLI equivalent. Files: new `src/commands/watchlist_cli.rs`, `src/cli.rs`.
@@ -43,7 +38,6 @@
 
 ## P2 — Theme & Color Enhancements
 
-- [ ] **Add theme preview on cycle** — When pressing `t`, show a brief (1.5s) toast notification in the status bar: "◆ Midnight" (with theme name in that theme's accent color). Currently the theme just changes with no feedback about which theme you're on unless you look at the header. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (theme_toast_tick). Test: test toast display timing.
 - [ ] **Add dynamic header accent based on portfolio performance** — Tint the header border/accent color slightly green when portfolio is up today, slightly red when down. Subtle (5-10% blend) so it doesn't clash with theme, but gives an instant ambient mood indicator. Files: `src/tui/widgets/header.rs`. Test: test color blending for positive/negative days.
 
 ## P2 — Data & Infrastructure
