@@ -22,6 +22,17 @@
 - [ ] **Add color-coded category dot before asset name** — Replace the plain text category label approach with a small colored dot (●) in the asset's category color at the start of the Asset column. More scannable than the current approach of coloring the entire row. The `▎` selection marker already uses this column — put the dot after the marker. Files: `src/tui/views/positions.rs` (asset_line construction). Test: verify dot color matches category.
 - [ ] **Add gain/loss magnitude bar in Gain% column** — Render the gain% number with a tiny proportional bar behind it: green fill for gains, red for losses, scaled to ±20%. Like a micro horizontal bar chart in each cell. Uses EIGHTH_BLOCKS for sub-character resolution. Files: `src/tui/views/positions.rs` (gain cell rendering). Test: test bar width calculation for various percentages.
 
+
+## P1 — CLI Enhancements (Feedback)
+
+- [ ] **[Feedback] Add `pftui watchlist` CLI command** — Display watched symbols with current prices in headless mode. The TUI `watch` command exists but there's no CLI equivalent. Files: new `src/commands/watchlist_cli.rs`, `src/cli.rs`.
+- [ ] **[Feedback] Add `--notes` flag to `list-tx`** — Show transaction notes in list-tx output. Notes are stored but never displayed. Files: `src/commands/list_tx.rs`.
+- [ ] **[Feedback] Round CSV export allocation percentages** — CSV export shows 27 decimal places on allocation%. Round to 2 decimal places. Files: `src/commands/export.rs` or wherever CSV allocation rendering happens.
+- [ ] **[Feedback] Add `pftui set-cash` command** — Dedicated command for managing cash positions instead of requiring manual buy transactions at $1.00. `pftui set-cash USD 45000` or `pftui set-cash GBP 67400`. Files: new `src/commands/set_cash.rs`, `src/cli.rs`.
+- [ ] **[Feedback] Native multi-currency with live FX conversion** — Store non-USD currencies in their native denomination (e.g., GBP as GBP, not as USD equivalent). Convert to primary currency using live FX rates in summary/TUI. Show FX rate and flag currency risk. This is a larger effort — may need to split into sub-tasks. Files: `src/models/position.rs`, `src/price/mod.rs` (FX rate fetching), `src/commands/summary.rs`, `src/tui/widgets/header.rs`.
+- [ ] **[Feedback] Add `pftui brief` markdown summary command** — Output a markdown-formatted portfolio summary suitable for inclusion in daily briefs and agent consumption. Shows: total value, allocation by category, top movers, P&L. Files: new `src/commands/brief.rs`, `src/cli.rs`.
+- [ ] **[Feedback] Add `pftui snapshot` / `pftui render` command** — Dump the TUI view as ANSI text to stdout, enabling agents to review the visual layout without running interactively. Files: new `src/commands/snapshot.rs`, `src/cli.rs` (use ratatui's `TestBackend` or similar to render to string).
+
 ## P2 — Chart Visual Enhancements
 
 - [ ] **Add crosshair cursor on charts** — When chart detail is open, pressing `c` enables a crosshair mode: j/k moves a vertical line across the chart, showing the date and price at that point in a tooltip overlay. Renders as a vertical column of `│` characters in `text_accent` color with a data label. Files: `src/tui/widgets/price_chart.rs` (crosshair rendering), `src/app.rs` (crosshair_mode, crosshair_x fields, c keybinding). Test: test crosshair bounds clamping.
@@ -57,13 +68,20 @@
 - [ ] **Add FRED economic data** — FRED API (free with API key) for treasury yields, CPI, unemployment, Fed funds rate. Store in new DB table. Cache aggressively (economic data updates daily at most). Files: new `src/data/fred.rs`, `src/db/economic_cache.rs`.
 - [ ] **Add candlestick chart variant** — OHLC candlestick rendering using braille/block characters. Green body for close > open, red for close < open. Wicks as thin lines. Requires OHLC data in HistoryRecord. Files: `src/models/price.rs`, `src/price/yahoo.rs`, `src/tui/widgets/price_chart.rs`.
 
+
+## P2 — Scenario & Analytics (Feedback)
+
+- [ ] **[Feedback] Add `--what-if` flag to summary** — `pftui summary --what-if GC=F:5500,BTC:55000` to model hypothetical price scenarios. Compute portfolio value and allocation under hypothetical prices. Transformative for scenario planning. Files: `src/commands/summary.rs` (parse what-if pairs, override cached prices for computation).
+- [ ] **[Feedback] Add historical price snapshots** — `pftui history --date 2026-02-28` to show portfolio value and positions as of a past date using cached price history. Files: new `src/commands/history.rs`, `src/cli.rs`, `src/db/price_history.rs`.
+- [ ] **[Feedback] Add daily/weekly change tracking** — `pftui performance --since 2026-02-24` or `pftui summary --period 1d` to show portfolio change over arbitrary periods. Files: `src/commands/summary.rs` or new `src/commands/performance.rs`.
+
 ## P3 — Future
 
 - [ ] **Portfolio analytics** — Sharpe ratio, max drawdown, volatility metrics, benchmark comparison
 - [ ] **Dividend tracking** — Track dividend payments, show yield, ex-dates
 - [ ] **Correlation matrix** — Visual correlation grid between portfolio positions
 - [ ] **Multi-portfolio support** — Multiple named portfolios with switching
-- [ ] **Price alerts** — Configurable threshold alerts with terminal notification
+- [ ] **[Feedback] Price alerts** — Configurable threshold alerts with terminal notification. Feedback requests: `pftui alert GC=F above 5500` or `pftui alert GBPUSD below 1.30`. Both CLI and TUI integration. Bumped from P3 per tester request.
 - [ ] **Custom keybinding config** — User-configurable keybindings in config.toml
 - [ ] **Sector heatmap** — Treemap-style sector/industry performance view
 - [ ] **Options chains** — Options display if a free data source exists
@@ -93,6 +111,13 @@
 - [x] **Fix layout: portfolio chart on left, asset chart on right** — Portfolio-level chart (sparkline/value over time) should be in the left pane. Per-asset price chart should be in the right pane. Establish clear L/R separation: left = portfolio overview, right = selected asset detail. Files: `src/tui/ui.rs`.
 - [x] **Make asset detail info permanent in right pane header** — The asset overview popup that appears when cycling through charts should be permanently displayed at the top of the right pane (not a popup). Show: symbol, name, price, gain/loss, quantity, allocation% — always visible above the asset chart. Files: `src/tui/ui.rs`, `src/tui/widgets/price_chart.rs`, possibly new `src/tui/widgets/asset_header.rs`.
 - [ ] **Add easy position modification** — There's no easy way to modify existing positions from the TUI. Add keybinding (e.g., `a` to add transaction, `d` to delete transaction for selected asset) that opens an inline form or spawns the CLI flow. Files: `src/app.rs`, possibly new `src/tui/views/edit_position.rs`.
+
+## P0 — CLI & Headless Gaps (Feedback)
+
+- [ ] **[Feedback] Add `pftui refresh` headless price command** — Fetch and cache current prices for all held symbols without launching the TUI. This is the #1 blocker for both beta testers — without it, the tool is a transaction ledger rather than a live portfolio tracker for agents/scripts/cron. Reuse the existing `fetch_all_prices()` logic from `src/price/mod.rs` but run it in a CLI context (no App/TUI setup). Write results to the price cache DB. Output a summary: "Refreshed 6 symbols: BTC $84,200, GC=F $5,278..." Files: new `src/commands/refresh.rs`, `src/cli.rs`, `src/price/mod.rs` (extract fetch logic from App dependency).
+- [ ] **[Feedback] Add `pftui value` / `pftui worth` command** — Show total portfolio value with all current prices in a single CLI line. Depends on headless price refresh. Output: "Portfolio: $128,450.23 (+2.1% / +$2,640.50 today)". Files: new `src/commands/value.rs`, `src/cli.rs`.
+- [ ] **[Feedback] Add `--period` flag to `pftui summary`** — Support `--period today/1w/1m/3m` for daily/weekly/monthly P&L in headless summary output. Currently only total gain from cost basis is shown. Files: `src/commands/summary.rs` (add period arg, compute P&L from cached price history).
+- [ ] **[Feedback] Add `--group-by category` flag to `pftui summary`** — Show allocation grouped by asset class: "Metals 33%, Crypto 18%, Cash 49%". Uses existing category data from positions. Files: `src/commands/summary.rs`.
 
 ## P0 — Setup & Pricing Bugs (Owner Report)
 
@@ -169,3 +194,25 @@
 - [ ] **Publish to AUR** — Needs: 1) Create AUR account at https://aur.archlinux.org 2) Generate SSH key pair 3) Add `AUR_SSH_KEY` as GitHub repo secret 4) Create AUR package `pftui-bin` 5) Add AUR publish step to release workflow. Files: `.github/workflows/release.yml`.
 - [ ] **Publish to Scoop** — Needs Windows binary first. Add `x86_64-pc-windows-msvc` target to release workflow build matrix, then submit manifest to scoop-extras bucket or host own bucket. Files: `scoop/pftui.json`, `.github/workflows/release.yml`.
 - [ ] **Windows build support** — Add `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` to release build matrix (runs-on: windows-latest). Cross-platform terminal support via crossterm should work. Files: `.github/workflows/release.yml`. Test: verify TUI renders on Windows Terminal.
+
+## Feedback Summary
+
+**Last reviewed:** 2026-03-02
+
+| Tester | Usefulness | Overall | Trend |
+|--------|-----------|---------|-------|
+| Sentinel Main (Interactive Review) | 25% | 40% | — (first entry) |
+| Evening Eventuality Planner | 20% | 38% | — (first entry) |
+| Portfolio Analyst | — | — | No data yet |
+
+**Lowest scorer:** Evening Eventuality Planner (20% usefulness, 38% overall) — entirely headless workflow, blocked by lack of CLI price refresh.
+
+**Top 3 priorities based on feedback:**
+1. **`pftui refresh` — headless price command** (P0) — Both testers' #1 request. Without it, 4 of 6 positions show N/A outside the TUI. This single feature transforms the tool from a ledger to a live portfolio tracker.
+2. **Period-based P&L (`--period` flag)** (P0) — Both testers need daily/weekly/monthly change, not just total gain from cost basis. Critical for daily briefings and monitoring routines.
+3. **Category-grouped summary (`--group-by`)** (P0) — Both testers want "Metals 33%, Crypto 18%, Cash 49%" style output. Currently allocation percentages are meaningless when positions lack prices.
+
+**Notes:**
+- All scores are initial baselines — no trends yet. Third tester (Portfolio Analyst) has not submitted feedback.
+- The overwhelming signal: **CLI/headless capabilities are the critical gap**. The TUI is well-regarded architecturally, but both testers run headless workflows and get minimal value without CLI price refresh.
+- Multi-currency (GBP stored as USD) is a shared pain point but lower priority than price refresh.
