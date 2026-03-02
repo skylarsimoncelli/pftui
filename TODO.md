@@ -216,3 +216,19 @@
 - All scores are initial baselines — no trends yet. Third tester (Portfolio Analyst) has not submitted feedback.
 - The overwhelming signal: **CLI/headless capabilities are the critical gap**. The TUI is well-regarded architecturally, but both testers run headless workflows and get minimal value without CLI price refresh.
 - Multi-currency (GBP stored as USD) is a shared pain point but lower priority than price refresh.
+
+## P1 — Mouse Support (Owner Request)
+
+- [ ] **Add mouse click support** — Like htop. All UI elements that look clickable should be clickable. Specifically:
+  - Click on a position row to select it
+  - Click on tab labels (1-5) to switch views
+  - Click on chart to open/focus it
+  - Click on sort column headers to sort by that column
+  - Click on allocation bars to select that position
+  - Click on help overlay items
+  - Scroll wheel for scrolling (j/k equivalent)
+  - Click on theme/privacy indicators to toggle
+  - Right-click context menu (stretch goal)
+  - crossterm already supports mouse events via `EnableMouseCapture` — just need to wire up hit-testing for each clickable region
+  - Store rendered region rects per frame for hit-testing
+  - Files: `src/app.rs` (handle_mouse, hit regions), `src/tui/ui.rs` (track rendered rects), all view files (register clickable regions)
