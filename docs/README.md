@@ -18,15 +18,48 @@ Think Bloomberg Terminal meets btop.
 - **Financially precise** — `rust_decimal` everywhere. No floating point. No rounding errors. Decimal strings in SQLite.
 - **Single binary** — Rust + bundled SQLite. No runtime dependencies. No API keys required.
 
-## Quick Start
+## Installation
 
+### Homebrew (macOS & Linux)
+```bash
+brew tap skylarsimoncelli/pftui
+brew install pftui
+```
+
+### Cargo (Rust)
+```bash
+cargo install pftui
+```
+
+### Docker
+```bash
+docker run -it ghcr.io/skylarsimoncelli/pftui:latest
+```
+
+### Debian/Ubuntu (.deb)
+Download from [releases](https://github.com/skylarsimoncelli/pftui/releases/latest):
+```bash
+sudo dpkg -i pftui_*_amd64.deb
+```
+
+### Fedora/RHEL (.rpm)
+```bash
+sudo rpm -i pftui-*.x86_64.rpm
+```
+
+### From Source
 ```bash
 git clone https://github.com/skylarsimoncelli/pftui.git
 cd pftui
 cargo build --release
-
-# Launch (runs setup wizard on first run)
 ./target/release/pftui
+```
+
+## Quick Start
+
+```bash
+# Launch (runs setup wizard on first run)
+pftui
 ```
 
 The setup wizard walks you through adding your positions — with symbol autocomplete and category auto-detection. Choose **Full mode** (buy/sell transactions with cost basis tracking) or **Percentage mode** (allocation percentages only, no monetary data stored).
