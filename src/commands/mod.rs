@@ -5,6 +5,7 @@ pub mod refresh;
 pub mod export;
 pub mod list_tx;
 pub mod remove_tx;
+pub mod set_cash;
 pub mod setup;
 pub mod summary;
 pub mod value;

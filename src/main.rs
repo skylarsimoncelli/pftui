@@ -112,6 +112,13 @@ fn main() -> Result<()> {
         Some(Command::Brief) => commands::brief::run(&conn, &config),
         Some(Command::Watchlist) => commands::watchlist_cli::run(&conn),
 
+        Some(Command::SetCash { symbol, amount }) => {
+            if config.is_percentage_mode() {
+                bail!("set-cash is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
+            }
+            commands::set_cash::run(&conn, &symbol, &amount)
+        }
+
         Some(Command::Import { path, mode }) => {
             let import_mode = match mode {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,

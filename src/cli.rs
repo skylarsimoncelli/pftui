@@ -92,6 +92,14 @@ pub enum Command {
     /// Display watchlist symbols with current cached prices
     Watchlist,
 
+    /// Set a cash position to an exact amount (replaces existing transactions for that currency)
+    SetCash {
+        /// Currency symbol (e.g. USD, GBP, EUR)
+        symbol: String,
+        /// Amount to set (e.g. 45000, 12500.50). Use 0 to clear.
+        amount: String,
+    },
+
     /// Import data from a JSON snapshot file (as produced by `pftui export json`)
     Import {
         /// Path to the JSON snapshot file
