@@ -133,3 +133,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: new `src/commands/refresh.rs`, `src/commands/mod.rs` (register module), `src/cli.rs` (add `Refresh` subcommand), `src/main.rs` (wire handler)
 - Tests: added 10 unit tests for symbol collection (empty DB, from transactions, deduplication with watchlist, percentage mode), price formatting (large/medium/small/very small), and yahoo crypto symbol formatting. Total: 277 tests passing.
 - TODO: Add `pftui refresh` headless price command (P0)
+
+### 2026-03-02 — Add `--group-by category` flag to `pftui summary`
+
+- What: added `--group-by category` flag to the `pftui summary` command. When used, groups positions by asset class (Equity, Crypto, Commodity, Cash, Fund, Forex) and displays per-category value, cost, gain%, and allocation%. Each category line is followed by its constituent symbols. Groups are sorted by value descending. Works in both full mode (shows value/cost/gain/alloc) and percentage mode (shows alloc% per category). Added `SummaryGroupBy` enum to CLI with clap `ValueEnum` derive for extensibility.
+- Why: this was the #3 most-requested feature from beta testers. Both testers wanted quick category-level allocation breakdowns ("Commodity 41%, Crypto 33%, Cash 26%") for portfolio monitoring and daily briefings. Previously, category allocation could only be inferred by mentally summing individual position allocations.
+- Files: `src/cli.rs` (new `SummaryGroupBy` enum, `--group-by` arg on Summary), `src/commands/summary.rs` (category grouping logic, grouped output for full and percentage modes), `src/main.rs` (pass group_by to summary::run)
+- Tests: added 6 tests for category grouping (single category, multiple same, mixed categories, no price, format_category, empty positions). Total: 283 tests passing.
+- TODO: [Feedback] Add `--group-by category` flag to `pftui summary` (P0)
