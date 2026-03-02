@@ -319,6 +319,9 @@ pub struct App {
     // Daily portfolio change (sum of (current_price - prev_close) * quantity)
     pub daily_portfolio_change: Option<Decimal>,
 
+    // Previous day category allocations (for ▲/▼ change indicators)
+    pub prev_day_cat_allocations: HashMap<AssetCategory, Decimal>,
+
     // Keystroke echo
     pub last_key_display: String,
     pub last_key_tick: u64,
@@ -437,6 +440,7 @@ impl App {
             last_price_error: None,
             last_price_error_tick: 0,
             daily_portfolio_change: None,
+            prev_day_cat_allocations: HashMap::new(),
             last_key_display: String::new(),
             last_key_tick: 0,
             last_selection_change_tick: 0,
@@ -708,6 +712,7 @@ impl App {
         }
         self.apply_filter_and_sort();
         self.compute_totals();
+        self.compute_prev_day_cat_allocations();
         self.last_value_update_tick = self.tick_count;
     }
 
@@ -810,6 +815,48 @@ impl App {
             .filter_map(|p| p.current_value)
             .sum();
         self.total_cost = self.positions.iter().map(|p| p.total_cost).sum();
+    }
+
+    /// Compute previous-day category allocation percentages from price history.
+    /// Uses the second-to-last close price for each symbol (the most recent
+    /// "previous" close) to estimate what allocations looked like yesterday.
+    fn compute_prev_day_cat_allocations(&mut self) {
+        let mut prev_prices: HashMap<String, Decimal> = HashMap::new();
+        for (symbol, records) in &self.price_history {
+            // records are chronological; second-to-last is "previous day"
+            if records.len() >= 2 {
+                prev_prices.insert(symbol.clone(), records[records.len() - 2].close);
+            }
+        }
+
+        if prev_prices.is_empty() {
+            self.prev_day_cat_allocations.clear();
+            return;
+        }
+
+        // Compute previous-day values per position, aggregate by category
+        let mut cat_values: HashMap<AssetCategory, Decimal> = HashMap::new();
+        let mut total = dec!(0);
+        for pos in &self.positions {
+            let prev_price = if pos.category == AssetCategory::Cash {
+                Some(dec!(1))
+            } else {
+                prev_prices.get(&pos.symbol).copied()
+            };
+            if let Some(pp) = prev_price {
+                let val = pp * pos.quantity;
+                *cat_values.entry(pos.category).or_insert(dec!(0)) += val;
+                total += val;
+            }
+        }
+
+        self.prev_day_cat_allocations.clear();
+        if total > dec!(0) {
+            for (cat, val) in &cat_values {
+                self.prev_day_cat_allocations
+                    .insert(*cat, (*val / total) * dec!(100));
+            }
+        }
     }
 
     pub fn compute_portfolio_value_history(&mut self) {
@@ -4106,5 +4153,142 @@ mod sort_flash_tests {
         app.handle_key(key('a')); // sort by allocation
         assert_eq!(app.last_sort_change_tick, 200);
         assert_eq!(app.sort_field, SortField::Allocation);
+    }
+}
+
+#[cfg(test)]
+mod prev_day_alloc_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
+    }
+
+    fn make_position(symbol: &str, qty: Decimal, price: Option<Decimal>, category: AssetCategory) -> Position {
+        Position {
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            category,
+            quantity: qty,
+            avg_cost: dec!(100),
+            total_cost: qty * dec!(100),
+            currency: "USD".to_string(),
+            current_price: price,
+            current_value: price.map(|p| p * qty),
+            gain: None,
+            gain_pct: None,
+            allocation_pct: None,
+        }
+    }
+
+    #[test]
+    fn test_prev_day_empty_without_history() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity),
+        ];
+        app.compute_prev_day_cat_allocations();
+        assert!(app.prev_day_cat_allocations.is_empty());
+    }
+
+    #[test]
+    fn test_prev_day_uses_second_to_last_close() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity),
+            make_position("BTC", dec!(1), Some(dec!(60000)), AssetCategory::Crypto),
+        ];
+        // AAPL: prev close 140, BTC: prev close 50000
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.price_history.insert("BTC".to_string(), vec![
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(50000), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(60000), volume: None },
+        ]);
+        app.compute_prev_day_cat_allocations();
+
+        // Prev day: AAPL = 10*140 = 1400, BTC = 1*50000 = 50000, total = 51400
+        // Equity: 1400/51400 * 100 ≈ 2.72%
+        // Crypto: 50000/51400 * 100 ≈ 97.28%
+        let equity_alloc = app.prev_day_cat_allocations.get(&AssetCategory::Equity).unwrap();
+        let crypto_alloc = app.prev_day_cat_allocations.get(&AssetCategory::Crypto).unwrap();
+        assert!(*equity_alloc > dec!(2) && *equity_alloc < dec!(3));
+        assert!(*crypto_alloc > dec!(97) && *crypto_alloc < dec!(98));
+    }
+
+    #[test]
+    fn test_prev_day_single_record_insufficient() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity),
+        ];
+        // Only 1 record — no "previous" day
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.compute_prev_day_cat_allocations();
+        assert!(app.prev_day_cat_allocations.is_empty());
+    }
+
+    #[test]
+    fn test_prev_day_cash_always_priced_at_one() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), Some(dec!(100)), AssetCategory::Equity),
+            make_position("USD", dec!(1000), Some(dec!(1)), AssetCategory::Cash),
+        ];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(100), volume: None },
+        ]);
+        // No price_history for USD/Cash — should still use price 1.0
+        app.compute_prev_day_cat_allocations();
+
+        // Prev day: AAPL = 10*100 = 1000, USD = 1000*1 = 1000, total = 2000
+        // Each should be 50%
+        let equity = app.prev_day_cat_allocations.get(&AssetCategory::Equity).unwrap();
+        let cash = app.prev_day_cat_allocations.get(&AssetCategory::Cash).unwrap();
+        assert_eq!(*equity, dec!(50));
+        assert_eq!(*cash, dec!(50));
+    }
+
+    #[test]
+    fn test_prev_day_aggregates_by_category() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity),
+            make_position("GOOG", dec!(5), Some(dec!(200)), AssetCategory::Equity),
+            make_position("BTC", dec!(1), Some(dec!(50000)), AssetCategory::Crypto),
+        ];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+        ]);
+        app.price_history.insert("GOOG".to_string(), vec![
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(190), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(200), volume: None },
+        ]);
+        app.price_history.insert("BTC".to_string(), vec![
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(48000), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(50000), volume: None },
+        ]);
+        app.compute_prev_day_cat_allocations();
+
+        // Prev day: AAPL = 10*140 = 1400, GOOG = 5*190 = 950, BTC = 1*48000 = 48000
+        // Equity total = 2350, total = 50350
+        // Equity: 2350/50350 ≈ 4.67%, Crypto: 48000/50350 ≈ 95.33%
+        let equity = app.prev_day_cat_allocations.get(&AssetCategory::Equity).unwrap();
+        let crypto = app.prev_day_cat_allocations.get(&AssetCategory::Crypto).unwrap();
+        assert!(*equity > dec!(4) && *equity < dec!(5));
+        assert!(*crypto > dec!(95) && *crypto < dec!(96));
     }
 }

@@ -49,11 +49,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let ratio = pct / 100.0;
         let bar_spans = fractional_bar_with_label(bar_width, ratio, *pct, cat_color, t.surface_1);
 
+        // Compute allocation change indicator vs previous day
+        let change_indicator = allocation_change_span(*cat, *pct, app, t);
+
         let mut spans = bar_spans;
         spans.push(Span::styled(
             format!(" {} {:>4.0}%", label, pct),
             Style::default().fg(cat_color),
         ));
+        spans.push(change_indicator);
 
         lines.push(Line::from(spans));
     }
@@ -87,6 +91,49 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let widget = Paragraph::new(lines).block(block);
     frame.render_widget(widget, area);
+}
+
+/// Compute the allocation change direction and magnitude.
+/// Returns `Some((diff, is_up))` if the change is significant (>= 0.1pp),
+/// or `None` if no previous data or change is negligible.
+fn allocation_change(
+    cat: AssetCategory,
+    current_pct: f64,
+    app: &App,
+) -> Option<f64> {
+    let prev_dec = app.prev_day_cat_allocations.get(&cat)?;
+    let prev: f64 = prev_dec.to_string().parse().unwrap_or(0.0);
+    let diff = current_pct - prev;
+    if diff.abs() < 0.1 {
+        None
+    } else {
+        Some(diff)
+    }
+}
+
+/// Build a ▲/▼ change indicator span for a category's allocation percentage.
+/// Compares current allocation to the previous day's allocation stored in `app.prev_day_cat_allocations`.
+/// Returns a styled span with the arrow and percentage-point change, or an empty span if no data.
+fn allocation_change_span<'a>(
+    cat: AssetCategory,
+    current_pct: f64,
+    app: &App,
+    t: &crate::tui::theme::Theme,
+) -> Span<'a> {
+    match allocation_change(cat, current_pct, app) {
+        Some(diff) => {
+            let (arrow, color) = if diff > 0.0 {
+                ("▲", t.gain_green)
+            } else {
+                ("▼", t.loss_red)
+            };
+            Span::styled(
+                format!("{}{:.1}", arrow, diff.abs()),
+                Style::default().fg(color),
+            )
+        }
+        None => Span::raw(""),
+    }
 }
 
 /// Format a portfolio value compactly: $1.23M, $456.7K, $12,345
