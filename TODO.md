@@ -144,7 +144,7 @@
 
 ## P0 — CI & Release Pipeline (Owner Request)
 
-- [~] **Create GitHub Actions CI workflow** — `.github/workflows/ci.yml` that runs on push/PR: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`. Matrix: `ubuntu-latest`, `macos-latest`. Cache `~/.cargo/registry` and `target/`. Files: `.github/workflows/ci.yml`.
+- [x] **Create GitHub Actions CI workflow** — `.github/workflows/ci.yml` that runs on push/PR: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`. Matrix: `ubuntu-latest`, `macos-latest`. Cache `~/.cargo/registry` and `target/`. Files: `.github/workflows/ci.yml`.
 - [ ] **Create GitHub Actions release workflow** — `.github/workflows/release.yml` triggered on `v*` tags. Single workflow handles ALL publishing:
   1. Run full test suite
   2. Cross-compile release binaries for: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`
@@ -160,5 +160,5 @@
   - Use `cross` or `cargo-zigbuild` for cross-compilation. Use `softprops/action-gh-release` for GitHub Release creation.
   - Each publish step should be independent — if one fails, others still run (`continue-on-error` per step)
   - Files: `.github/workflows/release.yml`
-- [ ] **Prepare Cargo.toml for publishing** — Add required crates.io metadata: `description`, `license` (MIT), `repository`, `homepage`, `readme`, `keywords` (portfolio, tui, terminal, finance, stock), `categories` (command-line-utilities, finance). Files: `Cargo.toml`.
+- [x] **Prepare Cargo.toml for publishing** — Add required crates.io metadata: `description`, `license` (MIT), `repository`, `homepage`, `readme`, `keywords` (portfolio, tui, terminal, finance, stock), `categories` (command-line-utilities, finance). Files: `Cargo.toml`.
 - [ ] **Create Homebrew tap repo** — Create `skylarsimoncelli/homebrew-tap` with `Formula/pftui.rb`. Formula downloads the GitHub Release binary for macOS. The release workflow auto-updates this on new tags. Files: separate repo, referenced by release workflow.

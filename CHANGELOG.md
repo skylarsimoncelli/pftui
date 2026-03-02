@@ -116,3 +116,12 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/tui/widgets/header.rs` (ticker entry building, styled span windowing with modular scroll, `header_height()` function), `src/tui/ui.rs` (dynamic header height via `header_height()`)
 - Tests: added 8 tests for ticker text format, negative format, scroll divisor constant, separator constant, header height (positions/compact/other views), and empty-data behavior. Total: 267 tests passing.
 - TODO: Add scrolling ticker tape in header (P1)
+
+### 2026-03-02 — Add GitHub Actions CI workflow
+
+- What: created `.github/workflows/ci.yml` — first CI pipeline for the project. Runs on every push to master and on PRs. Matrix tests on both `ubuntu-latest` and `macos-latest`. Pipeline steps: `cargo clippy --all-targets -- -D warnings` (zero-warning policy), `cargo test` (all tests must pass), `cargo build --release` (verify release build). Caches `~/.cargo/registry`, `~/.cargo/git`, and `target/` directory keyed on `Cargo.lock` hash for fast subsequent runs.
+- Why: CI is the foundation for the entire release pipeline. Without it, broken code can be pushed to master undetected. This unblocks the release workflow, crates.io publishing, Homebrew formula, and all other distribution tasks.
+- Also: marked "Prepare Cargo.toml for publishing" as complete — all required crates.io metadata (`description`, `license`, `repository`, `homepage`, `readme`, `keywords`, `categories`, `[package.metadata.deb]`, `[package.metadata.generate-rpm]`) was already present in Cargo.toml.
+- Files: `.github/workflows/ci.yml` (new)
+- Tests: 267 passing, 0 clippy warnings.
+- TODO: Create GitHub Actions CI workflow (P0), Prepare Cargo.toml for publishing (P0)
