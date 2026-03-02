@@ -502,3 +502,11 @@
 - Files: `src/tui/widgets/header.rs` (border color computation in `render()`, added `lerp_color` import, 4 new tests)
 - Tests: 4 new tests (positive tint, negative tint, zero change unchanged, no data unchanged). Total: 505 tests passing.
 - TODO: Add dynamic header accent based on portfolio performance (P2)
+
+### 2026-03-02 — Add section divider lines between position groups
+
+- What: when positions are sorted by Category (`c` keybinding), thin divider lines like `─── Crypto ───` are inserted between each category group in the positions table. Dividers appear in both full and privacy/percentage table modes. Category names are capitalized in the divider label. Uses theme's `border_subtle` color for a clean, unobtrusive look. Only shown when sort field is Category — no dividers for other sort modes.
+- Why: P2 visual enhancement — makes it easier to visually scan grouped positions. When sorting by category, users can instantly see where one group ends and the next begins without reading the category dot colors.
+- Files: `src/tui/views/positions.rs` (added `category_divider_row()`, `capitalize_category()`, interleaved dividers in both `render_full_table` and `render_privacy_table`, 6 new tests)
+- Tests: 6 new tests (capitalize basic/empty/already-capitalized, divider row column count, all categories, privacy column count). Total: 511 tests passing.
+- TODO: Add section divider lines between position groups (P2)
