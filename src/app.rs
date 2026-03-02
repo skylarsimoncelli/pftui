@@ -798,6 +798,51 @@ impl App {
         self.display_positions.get(self.selected_index)
     }
 
+    /// Returns a context-aware breadcrumb string for the status bar.
+    /// Shows the navigation path based on current view, selection, and chart state.
+    /// Examples: "Positions › AAPL › 3M Chart › AAPL/SPX", "Positions › AAPL › Detail"
+    pub fn breadcrumb(&self) -> String {
+        let view_label = match self.view_mode {
+            ViewMode::Positions => "Positions",
+            ViewMode::Transactions => "Transactions",
+            ViewMode::Markets => "Markets",
+            ViewMode::Economy => "Economy",
+            ViewMode::Watchlist => "Watchlist",
+        };
+
+        // Only positions view has deeper navigation context
+        if self.view_mode != ViewMode::Positions {
+            return view_label.to_string();
+        }
+
+        let pos = match self.selected_position() {
+            Some(p) => p,
+            None => return view_label.to_string(),
+        };
+
+        let sym = &pos.symbol;
+
+        // Detail popup takes precedence
+        if self.detail_popup_open {
+            return format!("{view_label} › {sym} › Detail");
+        }
+
+        // Show chart variant info when a specific chart is selected (not "All" at index 0)
+        let variants = Self::chart_variants_for_position(pos);
+        if self.chart_index > 0 {
+            if let Some(variant) = variants.get(self.chart_index) {
+                return format!(
+                    "{view_label} › {sym} › {} › {}",
+                    self.chart_timeframe.label(),
+                    variant.label
+                );
+            }
+        }
+
+        // Default: just view + selected symbol
+        format!("{view_label} › {sym}")
+    }
+
     /// Returns chart variants for a position.
     /// Index 0 is always "All" (multi-panel). Index 1+ are individual charts.
     pub fn chart_variants_for_position(pos: &Position) -> Vec<ChartVariant> {
@@ -2905,5 +2950,118 @@ mod keystroke_echo_tests {
         // Number keys
         app.record_keystroke(&key('1'));
         assert_eq!(app.last_key_display, "1");
+    }
+}
+
+#[cfg(test)]
+mod breadcrumb_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn make_app() -> App {
+        let config = Config::default();
+        App::new(&config, std::path::PathBuf::from(":memory:"))
+    }
+
+    fn make_position(symbol: &str, category: AssetCategory) -> Position {
+        Position {
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            category,
+            quantity: dec!(1),
+            avg_cost: dec!(100),
+            total_cost: dec!(100),
+            currency: "USD".to_string(),
+            current_price: Some(dec!(110)),
+            current_value: Some(dec!(110)),
+            gain: Some(dec!(10)),
+            gain_pct: Some(dec!(10)),
+            allocation_pct: Some(dec!(100)),
+        }
+    }
+
+    #[test]
+    fn test_breadcrumb_positions_no_selection() {
+        let app = make_app();
+        assert_eq!(app.breadcrumb(), "Positions");
+    }
+
+    #[test]
+    fn test_breadcrumb_positions_with_selection() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL", AssetCategory::Equity)];
+        app.selected_index = 0;
+        assert_eq!(app.breadcrumb(), "Positions › AAPL");
+    }
+
+    #[test]
+    fn test_breadcrumb_detail_popup() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("BTC", AssetCategory::Crypto)];
+        app.selected_index = 0;
+        app.detail_popup_open = true;
+        assert_eq!(app.breadcrumb(), "Positions › BTC › Detail");
+    }
+
+    #[test]
+    fn test_breadcrumb_chart_variant() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL", AssetCategory::Equity)];
+        app.selected_index = 0;
+        app.chart_index = 1; // First individual chart (index 0 = All)
+        app.chart_timeframe = ChartTimeframe::ThreeMonths;
+        let crumb = app.breadcrumb();
+        // Should contain view, symbol, timeframe, and variant label
+        assert!(crumb.starts_with("Positions › AAPL › 3M › "), "got: {crumb}");
+    }
+
+    #[test]
+    fn test_breadcrumb_transactions_view() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Transactions;
+        assert_eq!(app.breadcrumb(), "Transactions");
+    }
+
+    #[test]
+    fn test_breadcrumb_markets_view() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Markets;
+        assert_eq!(app.breadcrumb(), "Markets");
+    }
+
+    #[test]
+    fn test_breadcrumb_economy_view() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Economy;
+        assert_eq!(app.breadcrumb(), "Economy");
+    }
+
+    #[test]
+    fn test_breadcrumb_watchlist_view() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Watchlist;
+        assert_eq!(app.breadcrumb(), "Watchlist");
+    }
+
+    #[test]
+    fn test_breadcrumb_detail_overrides_chart() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("GLD", AssetCategory::Commodity)];
+        app.selected_index = 0;
+        app.chart_index = 2;
+        app.detail_popup_open = true;
+        // Detail popup takes precedence over chart context
+        assert_eq!(app.breadcrumb(), "Positions › GLD › Detail");
+    }
+
+    #[test]
+    fn test_breadcrumb_chart_timeframe_label() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("SPY", AssetCategory::Equity)];
+        app.selected_index = 0;
+        app.chart_index = 1;
+        app.chart_timeframe = ChartTimeframe::OneYear;
+        let crumb = app.breadcrumb();
+        assert!(crumb.contains("1Y"), "got: {crumb}");
     }
 }

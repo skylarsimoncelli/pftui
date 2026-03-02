@@ -67,9 +67,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let mut spans: Vec<Span> = Vec::new();
 
+    // Breadcrumb trail — shows navigation context
+    let breadcrumb = app.breadcrumb();
+    spans.push(Span::styled(
+        format!(" {breadcrumb}"),
+        Style::default().fg(t.text_accent).bold(),
+    ));
+    spans.push(Span::styled(" │ ", Style::default().fg(t.border_subtle)));
+
     if compact {
         // Compact: show only essential hints
-        spans.push(Span::styled(" [?]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("[?]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
         spans.push(sep.clone());
         spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
@@ -78,7 +86,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled(search_filter_text, Style::default().fg(t.text_accent)));
     } else {
         // Full: show all hints
-        spans.push(Span::styled(" [?]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("[?]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
         spans.push(sep.clone());
         spans.push(Span::styled("[Enter]", Style::default().fg(t.key_hint)));
