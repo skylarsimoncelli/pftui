@@ -6,6 +6,34 @@
 ## P1 — Header & Status Bar Enhancements
 
 
+## P1 — Regime Intelligence (Sentinel Proposed)
+
+- [ ] **Top Movers section on homepage** — Group assets by category (crypto, equity, commodity, forex) and rank by daily/weekly % change. Display as a compact panel:
+  ```
+  🔥 TOP MOVERS
+  Crypto    BTC +3.5%   ETH +2.1%   SOL -4.2%
+  Equity    PLTR +7.8%  NFLX +13%   NVDA -4.2%
+  Commodity Gold +2.5%  Oil +7.3%   Silver +0.6%
+  Forex     GBP -0.8%  EUR -0.3%   JPY +0.4%
+  ```
+  Toggleable 1D/1W/1M. Uses existing price data. Files: new `src/tui/widgets/top_movers.rs`, integrate into `src/tui/views/positions.rs` or new homepage layout.
+
+- [ ] **Risk-On/Risk-Off Regime Health Bar** — Composite regime score from 9 cross-asset signals (all freely available via Yahoo Finance): VIX level, VIX 5D direction, 10Y yield direction, 2Y-10Y spread, DXY direction, Gold vs S&P 5D ratio, BTC/SPX correlation, HY credit spread (HYG/LQD ratio), Copper/Gold ratio. Each signal +1 (risk-on) or -1 (risk-off). Display as a gauge:
+  ```
+  ⚡ REGIME: RISK-OFF ████████░░ -6/9
+     VIX 23.7↑  10Y 3.98↓  DXY 97.9↑  Cu/Au↓  Gold>SPX
+  ```
+  Show individual signal breakdown below the bar. Files: new `src/regime/mod.rs` (signal computation), new `src/tui/widgets/regime_bar.rs`, integrate into homepage. Needs: rolling 5D/30D price data for direction and correlation calculations.
+
+- [ ] **Regime Asset Suggestions** — Based on regime score, show assets that historically perform well/poorly in current regime. NOT "buy this" — framed as regime context:
+  ```
+  📡 REGIME ASSETS
+  Strong in current regime: Gold, Silver, Treasuries, USD, Utilities
+  Weak in current regime: Growth stocks, Crypto, High-yield, Copper
+  Transitioning: Oil (geopolitical override), Uranium (structural)
+  ```
+  Portfolio-aware: flag if user's holdings are well/poorly positioned for current regime ("Your portfolio is 33% metals — well positioned for risk-off"). Files: new `src/regime/suggestions.rs`, new `src/tui/widgets/regime_assets.rs`. Depends on regime score from health bar.
+
 ## P1 — CLI Enhancements (Feedback)
 
 - [ ] **[Feedback] Add `pftui set-cash` command** — Dedicated command for managing cash positions instead of requiring manual buy transactions at $1.00. `pftui set-cash USD 45000` or `pftui set-cash GBP 67400`. Files: new `src/commands/set_cash.rs`, `src/cli.rs`.
