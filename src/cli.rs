@@ -91,6 +91,16 @@ pub enum Command {
 
     /// Display watchlist symbols with current cached prices
     Watchlist,
+
+    /// Import data from a JSON snapshot file (as produced by `pftui export json`)
+    Import {
+        /// Path to the JSON snapshot file
+        path: String,
+
+        /// Import mode: replace wipes existing data, merge adds without deleting
+        #[arg(long, value_enum, default_value = "replace")]
+        mode: ImportModeArg,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -102,6 +112,14 @@ pub enum ExportFormat {
 #[derive(Clone, ValueEnum)]
 pub enum SummaryGroupBy {
     Category,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum ImportModeArg {
+    /// Wipe existing data and rebuild from snapshot (default)
+    Replace,
+    /// Add new entries without deleting existing data
+    Merge,
 }
 
 /// Time period for P&L calculation.

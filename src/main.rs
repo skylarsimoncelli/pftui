@@ -111,5 +111,13 @@ fn main() -> Result<()> {
         Some(Command::Value) => commands::value::run(&conn, &config),
         Some(Command::Brief) => commands::brief::run(&conn, &config),
         Some(Command::Watchlist) => commands::watchlist_cli::run(&conn),
+
+        Some(Command::Import { path, mode }) => {
+            let import_mode = match mode {
+                cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,
+                cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
+            };
+            commands::import::run(&conn, &config, &path, import_mode)
+        }
     }
 }
