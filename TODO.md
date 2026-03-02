@@ -69,7 +69,6 @@
 
 - [ ] **[Feedback] Add `--what-if` flag to summary** — `pftui summary --what-if GC=F:5500,BTC:55000` to model hypothetical price scenarios. Compute portfolio value and allocation under hypothetical prices. Transformative for scenario planning. Files: `src/commands/summary.rs` (parse what-if pairs, override cached prices for computation).
 - [ ] **[Feedback] Add historical price snapshots** — `pftui history --date 2026-02-28` to show portfolio value and positions as of a past date using cached price history. Files: new `src/commands/history.rs`, `src/cli.rs`, `src/db/price_history.rs`.
-- [ ] **[Feedback] Add daily/weekly change tracking** — `pftui performance --since 2026-02-24` or `pftui summary --period 1d` to show portfolio change over arbitrary periods. Files: `src/commands/summary.rs` or new `src/commands/performance.rs`.
 
 ## P3 — Future
 
@@ -106,7 +105,6 @@
 
 ## P0 — CLI & Headless Gaps (Feedback)
 
-- [ ] **[Feedback] Add `--period` flag to `pftui summary`** — Support `--period today/1w/1m/3m` for daily/weekly/monthly P&L in headless summary output. Currently only total gain from cost basis is shown. Files: `src/commands/summary.rs` (add period arg, compute P&L from cached price history).
 
 ## P0 — Setup & Pricing Bugs (Owner Report)
 
@@ -173,7 +171,7 @@
 
 **Top 3 priorities based on feedback:**
 1. **`pftui refresh` — headless price command** (P0) — Both testers' #1 request. Without it, 4 of 6 positions show N/A outside the TUI. This single feature transforms the tool from a ledger to a live portfolio tracker.
-2. **Period-based P&L (`--period` flag)** (P0) — Both testers need daily/weekly/monthly change, not just total gain from cost basis. Critical for daily briefings and monitoring routines.
+2. ~~**Period-based P&L (`--period` flag)**~~ (P0, DONE) — Both testers need daily/weekly/monthly change, not just total gain from cost basis. Critical for daily briefings and monitoring routines.
 3. **Category-grouped summary (`--group-by`)** (P0) — Both testers want "Metals 33%, Crypto 18%, Cash 49%" style output. Currently allocation percentages are meaningless when positions lack prices.
 
 **Notes:**

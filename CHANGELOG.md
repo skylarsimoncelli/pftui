@@ -325,3 +325,12 @@
 - Files: new `src/commands/value.rs` (run, run_full, run_percentage, format_with_commas, 10 tests), `src/commands/mod.rs`, `src/cli.rs` (Value variant), `src/main.rs` (dispatch)
 - Tests: added 10 tests — format_with_commas (6 variants: basic, small, large, negative, zero, no-decimals), value_empty_db, value_with_positions_no_prices, value_with_positions_and_prices, value_percentage_mode_no_prices. Total: 293 tests passing.
 - TODO: Add `pftui value` / `pftui worth` command (P0)
+
+
+### 2026-03-02 — Add `--period` flag to `pftui summary`
+
+- What: implemented `--period` flag for the `summary` command, supporting 5 periods: `today` (alias `1d`), `1w`, `1m`, `3m`, `1y`. Computes P&L by comparing current cached prices against historical prices at the start of the chosen period. Works in all output modes: default table, `--group-by category`, and percentage mode. Added `get_price_at_date` and `get_prices_at_date` helper functions to the `price_history` DB module that find the closest price on or before a given date. Also updated `docs/README.md` to document the new `summary --period` flag, and added missing `refresh` and `value` commands to the CLI usage section.
+- Why: #2 feedback priority from testers — both requested daily/weekly/monthly P&L instead of only total gain from cost basis. Critical for daily briefings and agent-driven monitoring routines. Example: `pftui summary --period 1w` shows per-position weekly change%, or `pftui summary --group-by category --period 1m` shows monthly P&L by category.
+- Files: `src/cli.rs` (SummaryPeriod enum with days_back/label methods, --period arg on Summary), `src/commands/summary.rs` (6 new render functions for period variants, CategoryPctPeriodGroup/SymbolPriceData structs, 4 new tests), `src/db/price_history.rs` (get_price_at_date, get_prices_at_date, 5 new tests), `src/main.rs` (pass period arg), `docs/README.md` (usage examples)
+- Tests: added 9 tests — get_price_at_date_exact, get_price_at_date_falls_back, get_price_at_date_no_data, get_prices_at_date_multiple, period_days_back, period_label, summary_with_period_no_history, summary_with_period_and_history, summary_with_period_and_group_by. Total: 302 tests passing.
+- TODO: Add `--period` flag to `pftui summary` (P0)
