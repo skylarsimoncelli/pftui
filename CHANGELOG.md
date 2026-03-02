@@ -414,3 +414,11 @@
 - Files: `src/tui/theme.rs` (new `THEME_TOAST_DURATION` constant), `src/app.rs` (new `theme_toast_tick` field, set in `cycle_theme()`), `src/tui/widgets/status_bar.rs` (toast rendering with fade logic, `capitalize_first()` helper, 7 tests)
 - Tests: added 7 tests — test_capitalize_first_basic, test_capitalize_first_empty, test_capitalize_first_already_capitalized, test_capitalize_first_single_char, test_theme_toast_timing, test_theme_toast_not_shown_on_init, test_theme_toast_fade_phases. Total: 393 tests passing.
 - TODO: Add theme preview on cycle (P2)
+
+### 2026-03-02 — Fix chart ratio variants for USD, GBP, and all commodities
+
+- What: fixed three chart ratio bugs reported by owner. (1) USD position showed a BTC/USD single chart — replaced with USD/BTC ratio (DXY divided by BTC-USD), correctly showing the dollar's value in BTC terms. (2) Non-USD cash positions (GBP, EUR, etc.) showed Gold and BTC as standalone single charts — replaced with proper {CURRENCY}/Gold and {CURRENCY}/BTC ratio charts (e.g. GBP/Gold = GBPUSD=X / GC=F). (3) Silver and other non-Gold commodities (SLV, COPX, URA, USO) were missing a /BTC ratio variant — Gold had Gold/BTC but no other commodity did. All commodities now get {SYM}/BTC alongside their existing /SPX and /QQQ ratios.
+- Why: P0 bug fix — chart ratios should always show SELECTED_ASSET/BENCHMARK. The old code was showing inverted or raw benchmark charts instead of computing the actual ratio, making the data misleading.
+- Files: `src/app.rs` (chart_variants_for_position: USD branch, non-USD cash branch, commodity branch in else block)
+- Tests: added 2 new tests (test_commodity_non_gold_has_btc_ratio, test_equity_has_no_btc_ratio), updated 3 existing tests (test_usd_cash_variants, test_non_usd_cash_variants_ratio_dxy, test_gbp_cash_variants). Total: 395 tests passing.
+- TODO: Fix USD chart ratio (P0), Fix GBP chart ratio (P0), Fix silver/commodities missing BTC ratio (P0)
