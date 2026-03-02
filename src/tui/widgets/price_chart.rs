@@ -189,8 +189,13 @@ fn render_single_chart(
         Some(r) => {
             let sliced = slice_history(r, tf_days);
             if sliced.len() < 2 {
+                let msg_text = if app.history_attempted.contains(symbol) {
+                    format!("No chart data available for {}", symbol)
+                } else {
+                    format!("Loading {}...", symbol)
+                };
                 let msg = Paragraph::new(Span::styled(
-                    format!("Loading {}...", symbol),
+                    msg_text,
                     Style::default().fg(t.text_muted),
                 ));
                 frame.render_widget(msg, area);
@@ -199,8 +204,13 @@ fn render_single_chart(
             sliced
         }
         None => {
+            let msg_text = if app.history_attempted.contains(symbol) {
+                format!("No chart data available for {}", symbol)
+            } else {
+                format!("Loading {}...", symbol)
+            };
             let msg = Paragraph::new(Span::styled(
-                format!("Loading {}...", symbol),
+                msg_text,
                 Style::default().fg(t.text_muted),
             ));
             frame.render_widget(msg, area);
@@ -253,8 +263,13 @@ fn render_ratio_chart(
     let num_records = match app.price_history.get(num_symbol) {
         Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
+            let msg_text = if app.history_attempted.contains(num_symbol) {
+                format!("No chart data available for {}", num_symbol)
+            } else {
+                format!("Loading {}...", num_symbol)
+            };
             let msg = Paragraph::new(Span::styled(
-                format!("Loading {}...", num_symbol),
+                msg_text,
                 Style::default().fg(t.text_muted),
             ));
             frame.render_widget(msg, area);
@@ -264,8 +279,13 @@ fn render_ratio_chart(
     let den_records = match app.price_history.get(den_symbol) {
         Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
+            let msg_text = if app.history_attempted.contains(den_symbol) {
+                format!("No chart data available for {}", den_symbol)
+            } else {
+                format!("Loading {}...", den_symbol)
+            };
             let msg = Paragraph::new(Span::styled(
-                format!("Loading {}...", den_symbol),
+                msg_text,
                 Style::default().fg(t.text_muted),
             ));
             frame.render_widget(msg, area);
@@ -307,8 +327,13 @@ fn render_single_mini(
     let records = match app.price_history.get(symbol) {
         Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
+            let msg_text = if app.history_attempted.contains(symbol) {
+                "No data"
+            } else {
+                "..."
+            };
             let msg = Paragraph::new(Span::styled(
-                "...",
+                msg_text,
                 Style::default().fg(t.text_muted),
             ));
             frame.render_widget(msg, area);
@@ -340,7 +365,8 @@ fn render_ratio_mini(
     let num_records = match app.price_history.get(num_symbol) {
         Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
-            let msg = Paragraph::new(Span::styled("...", Style::default().fg(t.text_muted)));
+            let msg_text = if app.history_attempted.contains(num_symbol) { "No data" } else { "..." };
+            let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
         }
@@ -348,7 +374,8 @@ fn render_ratio_mini(
     let den_records = match app.price_history.get(den_symbol) {
         Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
-            let msg = Paragraph::new(Span::styled("...", Style::default().fg(t.text_muted)));
+            let msg_text = if app.history_attempted.contains(den_symbol) { "No data" } else { "..." };
+            let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
         }

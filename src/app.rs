@@ -228,6 +228,9 @@ pub struct App {
     // History fetch tracking: max days fetched per symbol (to avoid re-fetching)
     fetched_history_days: HashMap<String, u32>,
 
+    // Track symbols where history fetch was attempted (to distinguish "loading" from "no data")
+    pub history_attempted: std::collections::HashSet<String>,
+
     // Animation
     pub tick_count: u64,
     pub price_flash_ticks: HashMap<String, (u64, PriceFlashDirection)>,
@@ -337,6 +340,7 @@ impl App {
             chart_index: 0,
             chart_timeframe: ChartTimeframe::ThreeMonths,
             fetched_history_days: HashMap::new(),
+            history_attempted: std::collections::HashSet::new(),
             tick_count: 0,
             price_flash_ticks: HashMap::new(),
             last_value_update_tick: 0,
@@ -472,6 +476,9 @@ impl App {
 
         // Send as a single batch for concurrent fetching
         if !batch.is_empty() {
+            for (sym, _, _) in &batch {
+                self.history_attempted.insert(sym.clone());
+            }
             service.send_command(PriceCommand::FetchHistoryBatch(batch));
         }
     }
@@ -492,6 +499,7 @@ impl App {
         }
         // Track that we're fetching this range
         self.fetched_history_days.insert(symbol.to_string(), needed_days);
+        self.history_attempted.insert(symbol.to_string());
         // Extract service ref and send command (avoid borrow conflict)
         if let Some(ref service) = self.price_service {
             service.send_command(PriceCommand::FetchHistory(
