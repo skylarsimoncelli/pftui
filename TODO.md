@@ -117,7 +117,7 @@
 - [x] **[Feedback] Add `pftui refresh` headless price command** — Fetch and cache current prices for all held symbols without launching the TUI. This is the #1 blocker for both beta testers — without it, the tool is a transaction ledger rather than a live portfolio tracker for agents/scripts/cron. Reuse the existing `fetch_all_prices()` logic from `src/price/mod.rs` but run it in a CLI context (no App/TUI setup). Write results to the price cache DB. Output a summary: "Refreshed 6 symbols: BTC $84,200, GC=F $5,278..." Files: new `src/commands/refresh.rs`, `src/cli.rs`, `src/price/mod.rs` (extract fetch logic from App dependency).
 - [ ] **[Feedback] Add `pftui value` / `pftui worth` command** — Show total portfolio value with all current prices in a single CLI line. Depends on headless price refresh. Output: "Portfolio: $128,450.23 (+2.1% / +$2,640.50 today)". Files: new `src/commands/value.rs`, `src/cli.rs`.
 - [ ] **[Feedback] Add `--period` flag to `pftui summary`** — Support `--period today/1w/1m/3m` for daily/weekly/monthly P&L in headless summary output. Currently only total gain from cost basis is shown. Files: `src/commands/summary.rs` (add period arg, compute P&L from cached price history).
-- [ ] **[Feedback] Add `--group-by category` flag to `pftui summary`** — Show allocation grouped by asset class: "Metals 33%, Crypto 18%, Cash 49%". Uses existing category data from positions. Files: `src/commands/summary.rs`.
+- [~] **[Feedback] Add `--group-by category` flag to `pftui summary`** — Show allocation grouped by asset class: "Metals 33%, Crypto 18%, Cash 49%". Uses existing category data from positions. Files: `src/commands/summary.rs`.
 
 ## P0 — Setup & Pricing Bugs (Owner Report)
 

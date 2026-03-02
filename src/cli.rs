@@ -10,7 +10,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Portfolio summary to stdout
-    Summary,
+    Summary {
+        /// Group output by a field (e.g. "category")
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+    },
 
     /// Export portfolio data
     Export {
@@ -73,4 +77,9 @@ pub enum Command {
 pub enum ExportFormat {
     Csv,
     Json,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum SummaryGroupBy {
+    Category,
 }
