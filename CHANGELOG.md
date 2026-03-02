@@ -438,3 +438,11 @@
 - Files: `src/tui/widgets/portfolio_sparkline.rs` (full rewrite: multi-timeframe gains, dynamic title, `compute_timeframe_gains()`, `build_gain_lines()`, `format_compact_change()`, 16 tests), `src/tui/widgets/sidebar.rs` (increased sparkline min height), `src/tui/ui.rs` (increased MIN_OVERVIEW_HEIGHT and sparkline allocation)
 - Tests: added 16 tests (timeframe gain computation for empty/short/1d/multi/negative, compact formatting for change/value/short, braille char, resample). Total: 416 tests passing.
 - TODO: Fix main portfolio chart (P0)
+
+### 2026-03-02 — Add inline transaction form and delete confirmation from TUI
+
+- What: added two new keybindings for managing transactions directly from the TUI positions view. `A` (Shift+a) opens an inline add-transaction form in the status bar area, pre-filled with the selected position's symbol and today's date. The form has 4 fields: Type (Buy/Sell toggle), Quantity, Price per unit, and Date (YYYY-MM-DD). Tab/Enter advances between fields, Esc cancels, and Enter on the Date field submits. Validates that quantity > 0, price > 0, and date matches YYYY-MM-DD format. `X` (Shift+x) shows a delete confirmation prompt for all transactions of the selected position, with `y` to confirm and any other key to cancel. Both keybindings only appear in Positions view with Full portfolio mode.
+- Why: P0 feature — previously the only way to add or remove transactions was editing the config file or using the CLI. This was the biggest UX gap in the TUI, making portfolio management cumbersome. Now users can add buys/sells and remove positions without leaving the TUI.
+- Files: `src/app.rs` (TxFormField enum, TxFormState struct, DeleteConfirmState struct, form/delete handlers, keybindings, 20 tests), `src/tui/widgets/status_bar.rs` (form + delete confirmation rendering), `src/tui/views/help.rs` (updated help with A/X keybindings)
+- Tests: added 20 new tests (field cycling, form state defaults, open/cancel/advance, type toggle, digit input, backspace, form-eats-keys, validation errors, delete confirm cancel, mode guards). Total: 436 tests passing.
+- TODO: Add easy position modification (P0)

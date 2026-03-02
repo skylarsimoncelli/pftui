@@ -83,7 +83,7 @@
 
 ## P0 — Bugs & Layout Fixes (Owner Report)
 
-- [ ] **Add easy position modification** — There's no easy way to modify existing positions from the TUI. Add keybinding (e.g., `a` to add transaction, `d` to delete transaction for selected asset) that opens an inline form or spawns the CLI flow. Files: `src/app.rs`, possibly new `src/tui/views/edit_position.rs`.
+- [x] **Add easy position modification** — DONE (2026-03-02). Added `A` (add transaction inline form) and `X` (delete position with confirmation) from TUI. See CHANGELOG.
 
 ## P0 — CLI & Headless Gaps (Feedback)
 
