@@ -100,3 +100,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `src/app.rs` (new `daily_portfolio_change` field + `compute_daily_change()` method), `src/tui/widgets/header.rs` (display logic + `format_compact_signed()` helper)
 - Tests: added 7 tests for daily change computation (no history, with prev close, negative change, multiple positions, cash skip, percentage mode, today record handling) + 5 tests for format_compact_signed helper. Total: 254 tests passing.
 - TODO: Add day gain/loss to header (P1)
+
+### 2026-03-02 — Add price flash with directional arrows
+
+- What: extended the price flash animation to show directional arrows (▲/▼) when prices update. Flash background color is now direction-aware: green (`gain_green`) when price goes up, red (`loss_red`) when price goes down, accent color when unchanged. The `price_flash_ticks` map now stores `(tick, PriceFlashDirection)` tuples instead of just ticks, enabling the positions table to render contextual arrows during the ~0.7s flash window. Widened the Price column from 10 to 12 characters to accommodate the arrow indicator without truncating prices.
+- Why: the existing price flash only changed the cell background to the accent color, giving no indication of whether the price moved up or down. Users had to read the actual number to understand the direction. Now the flash itself communicates direction at a glance — green ▲ for increases, red ▼ for decreases — making price updates scannable without reading the numbers.
+- Files: `src/app.rs` (new `PriceFlashDirection` enum, direction detection in tick handler), `src/tui/views/positions.rs` (directional arrow rendering, column width bump)
+- Tests: added 5 tests for flash direction logic (up, down, same, no previous price, storage). Total: 259 tests passing.
+- TODO: Add price flash with directional arrows (P1)
