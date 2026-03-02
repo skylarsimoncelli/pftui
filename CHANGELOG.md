@@ -446,3 +446,11 @@
 - Files: `src/app.rs` (TxFormField enum, TxFormState struct, DeleteConfirmState struct, form/delete handlers, keybindings, 20 tests), `src/tui/widgets/status_bar.rs` (form + delete confirmation rendering), `src/tui/views/help.rs` (updated help with A/X keybindings)
 - Tests: added 20 new tests (field cycling, form state defaults, open/cancel/advance, type toggle, digit input, backspace, form-eats-keys, validation errors, delete confirm cancel, mode guards). Total: 436 tests passing.
 - TODO: Add easy position modification (P0)
+
+### 2026-03-02 — Add `pftui watchlist` CLI command
+
+- What: added a new `pftui watchlist` CLI subcommand that displays all watched symbols with their current cached prices in a formatted table. Output includes symbol, resolved name, category, price (with comma-separated thousands and adaptive decimal places), and a relative timestamp showing when the price was last fetched (e.g. "3h ago", "2d ago"). Symbols are sorted alphabetically. Shows "N/A" for symbols without cached prices and suggests running `pftui refresh`.
+- Why: P1 feedback item — the TUI `watch` command existed but there was no CLI equivalent. Headless/agent workflows need to query watchlist prices without launching the TUI.
+- Files: new `src/commands/watchlist_cli.rs`, `src/commands/mod.rs`, `src/cli.rs` (Watchlist variant), `src/main.rs` (dispatch)
+- Tests: added 13 new tests (price formatting for large/medium/small/zero/very-large values, relative timestamp formatting for recent/minutes/hours/days/invalid, empty DB, entries without prices, entries with prices). Total: 449 tests passing.
+- TODO: Add `pftui watchlist` CLI command (P1)
