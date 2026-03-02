@@ -64,6 +64,9 @@ pub enum Command {
         /// Symbol to unwatch
         symbol: String,
     },
+
+    /// Fetch and cache current prices for all held symbols without launching the TUI
+    Refresh,
 }
 
 #[derive(Clone, ValueEnum)]

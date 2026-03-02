@@ -106,5 +106,7 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+
+        Some(Command::Refresh) => commands::refresh::run(&conn, &config),
     }
 }
