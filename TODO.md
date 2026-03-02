@@ -194,3 +194,10 @@
   - Each theme should have strong visual identity — a user should instantly know which theme they're on
   - Test all 28 color slots per theme across all views to ensure nothing looks flat or broken
   - Files: `src/tui/theme.rs`, `src/tui/views/help.rs` (theme preview)
+
+## P0 — Chart Ratio Bugs (Owner Report)
+
+- [ ] **Fix USD chart ratio — shows BTCUSD, should be USDBTC** — When viewing USD position chart, the BTC ratio variant shows BTC/USD (price of BTC in USD). It should show USD/BTC (value of USD in BTC terms, i.e. inverted). The ratio should always be {SELECTED_ASSET}/{BENCHMARK}. Files: `src/app.rs` (chart_variants_for_position), `src/tui/widgets/price_chart.rs` (compute_ratio).
+- [ ] **Fix GBP chart ratio — shows BTCUSD, should be GBPBTC** — Same issue as USD. GBP ratio chart against BTC should be GBP/BTC, not BTC/USD. Check all forex/currency ratio variant generation. Files: `src/app.rs` (chart_variants_for_position).
+- [ ] **Fix silver and all commodities missing BTC ratio chart** — Gold correctly shows Gold/BTC ratio variant, but Silver and other commodities don't. All commodities should have a /BTC ratio variant like Gold does. Files: `src/app.rs` (chart_variants_for_position — check commodity branch).
+- [ ] **Fix Sprott Uranium (U.UN) chart — no data** — U.UN shows no chart data. This is likely a Yahoo Finance ticker issue (Toronto exchange suffix). If the ticker can't be resolved, gracefully show "No chart data available for U.UN" instead of a blank/broken chart. Don't crash or show misleading empty axes. Files: `src/price/yahoo.rs`, `src/tui/widgets/price_chart.rs` (empty state handling).
