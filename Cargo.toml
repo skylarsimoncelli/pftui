@@ -2,6 +2,24 @@
 name = "pftui"
 version = "0.1.0"
 edition = "2021"
+description = "A beautiful terminal portfolio tracker with real-time prices, charts, and market data"
+license = "MIT"
+repository = "https://github.com/skylarsimoncelli/pftui"
+homepage = "https://github.com/skylarsimoncelli/pftui"
+readme = "docs/README.md"
+keywords = ["portfolio", "tui", "terminal", "finance", "stock"]
+categories = ["command-line-utilities"]
+
+[package.metadata.deb]
+maintainer = "Skylar Simoncelli <skylar.simoncelli@icloud.com>"
+copyright = "2026, Skylar Simoncelli"
+depends = "$auto"
+section = "utility"
+priority = "optional"
+assets = [
+    ["target/release/pftui", "usr/bin/", "755"],
+    ["docs/README.md", "usr/share/doc/pftui/README", "644"],
+]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
