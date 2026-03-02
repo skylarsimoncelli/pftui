@@ -883,7 +883,7 @@ impl App {
             vec![
                 ChartVariant::single("DX-Y.NYB", "Dollar Index (DXY)", AssetCategory::Forex),
                 ChartVariant::ratio("USD/Gold", "DX-Y.NYB", AssetCategory::Forex, "GC=F", AssetCategory::Commodity),
-                ChartVariant::single("BTC-USD", "BTC/USD", AssetCategory::Equity),
+                ChartVariant::ratio("USD/BTC", "DX-Y.NYB", AssetCategory::Forex, "BTC-USD", AssetCategory::Equity),
             ]
         } else if is_cash {
             let pair = format!("{}USD=X", sym);
@@ -892,8 +892,8 @@ impl App {
             vec![
                 ChartVariant::single(&pair, &pair_label, AssetCategory::Forex),
                 ChartVariant::ratio(&ratio_label, &pair, AssetCategory::Forex, "DX-Y.NYB", AssetCategory::Forex),
-                ChartVariant::single("GC=F", "Gold/USD", AssetCategory::Commodity),
-                ChartVariant::single("BTC-USD", "BTC/USD", AssetCategory::Equity),
+                ChartVariant::ratio(&format!("{}/Gold", sym), &pair, AssetCategory::Forex, "GC=F", AssetCategory::Commodity),
+                ChartVariant::ratio(&format!("{}/BTC", sym), &pair, AssetCategory::Forex, "BTC-USD", AssetCategory::Equity),
             ]
         } else {
             // Equity, Fund, non-BTC Crypto, non-Gold Commodity, Forex
@@ -948,7 +948,7 @@ impl App {
                         AssetCategory::Equity,
                     ));
                 } else {
-                    // Equity, Fund, non-Gold Commodity: {SYM}/SPX and {SYM}/QQQ
+                    // Equity, Fund, non-Gold Commodity: {SYM}/SPX, {SYM}/QQQ, and for commodities {SYM}/BTC
                     if !is_spx {
                         variants.push(ChartVariant::ratio(
                             &format!("{}/SPX", pos.symbol),
@@ -964,6 +964,15 @@ impl App {
                             &yahoo_sym,
                             cat,
                             "QQQ",
+                            AssetCategory::Equity,
+                        ));
+                    }
+                    if is_commodity {
+                        variants.push(ChartVariant::ratio(
+                            &format!("{}/BTC", pos.symbol),
+                            &yahoo_sym,
+                            cat,
+                            "BTC-USD",
                             AssetCategory::Equity,
                         ));
                     }
@@ -1724,14 +1733,25 @@ mod tests {
         let pos = make_position("USD", AssetCategory::Cash);
         let variants = App::chart_variants_for_position(&pos);
 
-        assert_eq!(variants.len(), 4); // All + 3 individuals
+        assert_eq!(variants.len(), 4); // All + DXY single + USD/Gold ratio + USD/BTC ratio
         assert_eq!(variants[0].label, "All");
         assert_eq!(variants[1].label, "Dollar Index (DXY)");
+        assert_eq!(variants[2].label, "USD/Gold");
+        assert_eq!(variants[3].label, "USD/BTC");
 
         // DXY should be single chart for USD
         match &variants[1].kind {
             ChartKind::Single { symbol, .. } => assert_eq!(symbol, "DX-Y.NYB"),
             _ => panic!("Expected Single chart for DXY"),
+        }
+
+        // USD/BTC should be a ratio (DXY / BTC-USD), not a single BTC chart
+        match &variants[3].kind {
+            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+                assert_eq!(num_symbol, "DX-Y.NYB");
+                assert_eq!(den_symbol, "BTC-USD");
+            }
+            _ => panic!("Expected Ratio chart for USD/BTC"),
         }
     }
 
@@ -1740,10 +1760,12 @@ mod tests {
         let pos = make_position("EUR", AssetCategory::Cash);
         let variants = App::chart_variants_for_position(&pos);
 
-        assert_eq!(variants.len(), 5); // All + 4 individuals
+        assert_eq!(variants.len(), 5); // All + EUR/USD + EUR/DXY + EUR/Gold + EUR/BTC
         assert_eq!(variants[0].label, "All");
         assert_eq!(variants[1].label, "EUR/USD");
         assert_eq!(variants[2].label, "EUR/DXY");
+        assert_eq!(variants[3].label, "EUR/Gold");
+        assert_eq!(variants[4].label, "EUR/BTC");
 
         // EUR/DXY should be a ratio (EURUSD=X / DX-Y.NYB), not a single DXY chart
         match &variants[2].kind {
@@ -1758,6 +1780,32 @@ mod tests {
             _ => panic!("Expected Ratio chart for EUR/DXY"),
         }
 
+        // EUR/Gold should be a ratio (EURUSD=X / GC=F)
+        match &variants[3].kind {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
+                assert_eq!(num_symbol, "EURUSD=X");
+                assert_eq!(den_symbol, "GC=F");
+            }
+            _ => panic!("Expected Ratio chart for EUR/Gold"),
+        }
+
+        // EUR/BTC should be a ratio (EURUSD=X / BTC-USD)
+        match &variants[4].kind {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
+                assert_eq!(num_symbol, "EURUSD=X");
+                assert_eq!(den_symbol, "BTC-USD");
+            }
+            _ => panic!("Expected Ratio chart for EUR/BTC"),
+        }
+
         // Should NOT contain DXY as a standalone single chart
         let singles = variant_symbols(&variants);
         assert!(!singles.contains(&"DX-Y.NYB".to_string()),
@@ -1770,13 +1818,25 @@ mod tests {
         let variants = App::chart_variants_for_position(&pos);
 
         let labels = variant_labels(&variants);
+        assert_eq!(labels[0], "All");
         assert_eq!(labels[1], "GBP/USD");
         assert_eq!(labels[2], "GBP/DXY");
+        assert_eq!(labels[3], "GBP/Gold");
+        assert_eq!(labels[4], "GBP/BTC");
 
         // Verify GBP/USD pair symbol is correct
         match &variants[1].kind {
             ChartKind::Single { symbol, .. } => assert_eq!(symbol, "GBPUSD=X"),
             _ => panic!("Expected Single chart for GBP/USD"),
+        }
+
+        // GBP/BTC should be a ratio (GBPUSD=X / BTC-USD)
+        match &variants[4].kind {
+            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+                assert_eq!(num_symbol, "GBPUSD=X");
+                assert_eq!(den_symbol, "BTC-USD");
+            }
+            _ => panic!("Expected Ratio chart for GBP/BTC"),
         }
     }
 
@@ -1887,6 +1947,38 @@ mod tests {
             }
             _ => panic!("Expected Ratio chart for ETH/SPX"),
         }
+    }
+
+    #[test]
+    fn test_commodity_non_gold_has_btc_ratio() {
+        // Silver and other non-Gold commodities should have a /BTC ratio variant
+        let pos = make_position("SLV", AssetCategory::Commodity);
+        let variants = App::chart_variants_for_position(&pos);
+
+        let labels = variant_labels(&variants);
+        assert!(labels.contains(&"SLV/SPX".to_string()), "Silver should have SLV/SPX ratio");
+        assert!(labels.contains(&"SLV/QQQ".to_string()), "Silver should have SLV/QQQ ratio");
+        assert!(labels.contains(&"SLV/BTC".to_string()), "Silver should have SLV/BTC ratio");
+
+        // Verify SLV/BTC is actually a ratio with correct symbols
+        let btc_variant = variants.iter().find(|v| v.label == "SLV/BTC").unwrap();
+        match &btc_variant.kind {
+            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+                assert_eq!(num_symbol, "SLV");
+                assert_eq!(den_symbol, "BTC-USD");
+            }
+            _ => panic!("Expected Ratio chart for SLV/BTC"),
+        }
+    }
+
+    #[test]
+    fn test_equity_has_no_btc_ratio() {
+        // Equities should NOT have a /BTC ratio (only commodities get it)
+        let pos = make_position("AAPL", AssetCategory::Equity);
+        let variants = App::chart_variants_for_position(&pos);
+
+        let labels = variant_labels(&variants);
+        assert!(!labels.contains(&"AAPL/BTC".to_string()), "Equities should not have /BTC ratio");
     }
 
     #[test]
