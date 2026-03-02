@@ -38,15 +38,22 @@ cargo install pftui
 docker run -it ghcr.io/skylarsimoncelli/pftui:latest
 ```
 
-### Debian/Ubuntu (.deb)
-Download from [releases](https://github.com/skylarsimoncelli/pftui/releases/latest):
+### Debian/Ubuntu (apt)
 ```bash
-sudo dpkg -i pftui_*_amd64.deb
+echo "deb [trusted=yes] https://skylarsimoncelli.github.io/pftui/apt stable main" | sudo tee /etc/apt/sources.list.d/pftui.list
+sudo apt update && sudo apt install pftui
 ```
 
-### Fedora/RHEL (.rpm)
+### Fedora/RHEL (yum/dnf)
 ```bash
-sudo rpm -i pftui-*.x86_64.rpm
+sudo tee /etc/yum.repos.d/pftui.repo << 'EOF'
+[pftui]
+name=pftui
+baseurl=https://skylarsimoncelli.github.io/pftui/rpm
+enabled=1
+gpgcheck=0
+EOF
+sudo dnf install pftui
 ```
 
 ### From Source
