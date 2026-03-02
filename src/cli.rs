@@ -84,6 +84,9 @@ pub enum Command {
     Brief,
     /// Show total portfolio value with gain/loss (uses cached prices)
     Value,
+
+    /// Display watchlist symbols with current cached prices
+    Watchlist,
 }
 
 #[derive(Clone, ValueEnum)]

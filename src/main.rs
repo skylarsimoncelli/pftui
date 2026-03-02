@@ -110,5 +110,6 @@ fn main() -> Result<()> {
         Some(Command::Refresh) => commands::refresh::run(&conn, &config),
         Some(Command::Value) => commands::value::run(&conn, &config),
         Some(Command::Brief) => commands::brief::run(&conn, &config),
+        Some(Command::Watchlist) => commands::watchlist_cli::run(&conn),
     }
 }
