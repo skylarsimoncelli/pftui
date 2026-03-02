@@ -316,3 +316,12 @@
 - Tests: added `fetch_history_batch_command_variant_exists` test. Total: 31 tests passing.
 - TODO: Fix sequential history fetching (P0)
 
+
+
+### 2026-03-02 — Add `pftui value` CLI command
+
+- What: implemented `pftui value` (aliased in CLI as `value`). Outputs a single compact line with total portfolio value, gain/loss amount and percentage, plus a category allocation breakdown. Supports both full mode (transaction-based with cost basis) and percentage mode (allocation-based). Numbers are comma-formatted for readability. Respects `base_currency` config setting for non-USD portfolios. Warns when positions are missing cached prices.
+- Why: #1 feedback request from testers — headless CLI access to portfolio value without launching the TUI. Enables integration with daily briefings, scripts, and agent workflows. Example output: `Portfolio: $368,613.28 (+4,513.53 / +1.2%)` with `Cash 49%, Commodity 33%, Crypto 18%` breakdown.
+- Files: new `src/commands/value.rs` (run, run_full, run_percentage, format_with_commas, 10 tests), `src/commands/mod.rs`, `src/cli.rs` (Value variant), `src/main.rs` (dispatch)
+- Tests: added 10 tests — format_with_commas (6 variants: basic, small, large, negative, zero, no-decimals), value_empty_db, value_with_positions_no_prices, value_with_positions_and_prices, value_percentage_mode_no_prices. Total: 293 tests passing.
+- TODO: Add `pftui value` / `pftui worth` command (P0)

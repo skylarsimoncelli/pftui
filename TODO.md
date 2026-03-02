@@ -106,7 +106,6 @@
 
 ## P0 — CLI & Headless Gaps (Feedback)
 
-- [ ] **[Feedback] Add `pftui value` / `pftui worth` command** — Show total portfolio value with all current prices in a single CLI line. Depends on headless price refresh. Output: "Portfolio: $128,450.23 (+2.1% / +$2,640.50 today)". Files: new `src/commands/value.rs`, `src/cli.rs`.
 - [ ] **[Feedback] Add `--period` flag to `pftui summary`** — Support `--period today/1w/1m/3m` for daily/weekly/monthly P&L in headless summary output. Currently only total gain from cost basis is shown. Files: `src/commands/summary.rs` (add period arg, compute P&L from cached price history).
 
 ## P0 — Setup & Pricing Bugs (Owner Report)
