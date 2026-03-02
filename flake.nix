@@ -13,7 +13,6 @@
       in {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "pftui";
-          version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           meta = with pkgs.lib; {
