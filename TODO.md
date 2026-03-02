@@ -57,7 +57,6 @@
 
 ## P2 — Micro-Interactions & Feedback
 
-- [ ] **Add sort indicator animation** — When user changes sort order (s/n/c/% etc.), briefly animate the sort arrow (▲/▼) by flashing it in `text_accent` then fading to normal. Confirms the sort happened. Track `last_sort_change_tick` on App. Files: `src/tui/views/positions.rs` (sort indicator styling), `src/app.rs`. Test: test flash timing.
 - [ ] **Add loading skeleton for empty states** — When a view is loading data, show shimmer/skeleton placeholder rows instead of "Waiting for data...". Render 5-6 rows of `░░░░░░` block characters in `text_muted` with a wave animation (phase offset per row). Makes loading feel fast and intentional. Files: `src/tui/views/positions.rs`, `src/tui/views/markets.rs`, `src/tui/views/economy.rs`. Test: verify skeleton row count matches expected.
 
 ## P2 — Theme & Color Enhancements

@@ -510,3 +510,11 @@
 - Files: `src/tui/views/positions.rs` (added `category_divider_row()`, `capitalize_category()`, interleaved dividers in both `render_full_table` and `render_privacy_table`, 6 new tests)
 - Tests: 6 new tests (capitalize basic/empty/already-capitalized, divider row column count, all categories, privacy column count). Total: 511 tests passing.
 - TODO: Add section divider lines between position groups (P2)
+
+### 2026-03-02 — Add sort indicator flash animation
+
+- What: when the user changes sort order via any sort keybinding (`a`, `n`, `c`, `%`, `$`, `d`, `Tab`), the sort indicator in the positions table title (e.g. `[alloc%▼]`) briefly flashes from `text_primary` to `text_accent` with bold styling, fading over ~0.5s (30 ticks at 60fps). Provides immediate visual confirmation that the sort changed. Uses `lerp_color` for smooth color transition. The `last_sort_change_tick` guard ensures the flash only triggers on actual sort actions, not on initial render.
+- Why: P2 micro-interaction enhancement — confirms sort actions visually. Without this, changing sort is silent and users must scan the indicator text to verify. The flash draws the eye to the indicator and makes the action feel responsive.
+- Files: `src/app.rs` (added `last_sort_change_tick` field, set on all sort key handlers), `src/tui/theme.rs` (added `SORT_FLASH_DURATION` constant), `src/tui/views/positions.rs` (flash logic in `render_table`, 4 new style tests)
+- Tests: 9 new tests (5 in app.rs: starts at zero, updates on name/tab/category/allocation sort; 4 in positions.rs: bold during flash, normal after duration, color starts at primary, color ends at accent). Total: 520 tests passing.
+- TODO: Add sort indicator animation (P2)
