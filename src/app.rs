@@ -22,6 +22,13 @@ use crate::tui::views::economy;
 use crate::tui::views::watchlist as watchlist_view;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PriceFlashDirection {
+    Up,
+    Down,
+    Same,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Positions,
     Transactions,
@@ -223,7 +230,7 @@ pub struct App {
 
     // Animation
     pub tick_count: u64,
-    pub price_flash_ticks: HashMap<String, u64>,
+    pub price_flash_ticks: HashMap<String, (u64, PriceFlashDirection)>,
     pub last_value_update_tick: u64,
 
     // Price error display
@@ -963,8 +970,13 @@ impl App {
             loop {
                 match service.try_recv() {
                     Some(PriceUpdate::Quote(quote)) => {
+                        let direction = match self.prices.get(&quote.symbol) {
+                            Some(&old_price) if quote.price > old_price => PriceFlashDirection::Up,
+                            Some(&old_price) if quote.price < old_price => PriceFlashDirection::Down,
+                            _ => PriceFlashDirection::Same,
+                        };
                         self.price_flash_ticks
-                            .insert(quote.symbol.clone(), self.tick_count);
+                            .insert(quote.symbol.clone(), (self.tick_count, direction));
                         self.prices.insert(quote.symbol.clone(), quote.price);
                         self.cache_price(&quote);
                         updated = true;
@@ -2685,5 +2697,76 @@ mod daily_change_tests {
         // Should use 2026-02-28 close (150), not today's record
         // (160 - 150) * 10 = 100
         assert_eq!(app.daily_portfolio_change, Some(dec!(100)));
+    }
+}
+
+#[cfg(test)]
+mod flash_direction_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_flash_direction_up_when_price_increases() {
+        let mut prices: HashMap<String, Decimal> = HashMap::new();
+        prices.insert("AAPL".to_string(), dec!(150));
+
+        let new_price = dec!(155);
+        let direction = match prices.get("AAPL") {
+            Some(&old_price) if new_price > old_price => PriceFlashDirection::Up,
+            Some(&old_price) if new_price < old_price => PriceFlashDirection::Down,
+            _ => PriceFlashDirection::Same,
+        };
+        assert_eq!(direction, PriceFlashDirection::Up);
+    }
+
+    #[test]
+    fn test_flash_direction_down_when_price_decreases() {
+        let mut prices: HashMap<String, Decimal> = HashMap::new();
+        prices.insert("AAPL".to_string(), dec!(150));
+
+        let new_price = dec!(145);
+        let direction = match prices.get("AAPL") {
+            Some(&old_price) if new_price > old_price => PriceFlashDirection::Up,
+            Some(&old_price) if new_price < old_price => PriceFlashDirection::Down,
+            _ => PriceFlashDirection::Same,
+        };
+        assert_eq!(direction, PriceFlashDirection::Down);
+    }
+
+    #[test]
+    fn test_flash_direction_same_when_price_unchanged() {
+        let mut prices: HashMap<String, Decimal> = HashMap::new();
+        prices.insert("AAPL".to_string(), dec!(150));
+
+        let new_price = dec!(150);
+        let direction = match prices.get("AAPL") {
+            Some(&old_price) if new_price > old_price => PriceFlashDirection::Up,
+            Some(&old_price) if new_price < old_price => PriceFlashDirection::Down,
+            _ => PriceFlashDirection::Same,
+        };
+        assert_eq!(direction, PriceFlashDirection::Same);
+    }
+
+    #[test]
+    fn test_flash_direction_same_when_no_previous_price() {
+        let prices: HashMap<String, Decimal> = HashMap::new();
+
+        let new_price = dec!(150);
+        let direction = match prices.get("AAPL") {
+            Some(&old_price) if new_price > old_price => PriceFlashDirection::Up,
+            Some(&old_price) if new_price < old_price => PriceFlashDirection::Down,
+            _ => PriceFlashDirection::Same,
+        };
+        assert_eq!(direction, PriceFlashDirection::Same);
+    }
+
+    #[test]
+    fn test_flash_stores_tick_and_direction() {
+        let mut flash_map: HashMap<String, (u64, PriceFlashDirection)> = HashMap::new();
+        flash_map.insert("BTC".to_string(), (100, PriceFlashDirection::Up));
+
+        let (tick, dir) = flash_map.get("BTC").unwrap();
+        assert_eq!(*tick, 100);
+        assert_eq!(*dir, PriceFlashDirection::Up);
     }
 }

@@ -5,7 +5,7 @@ use ratatui::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::app::{is_privacy_view, App};
+use crate::app::{is_privacy_view, App, PriceFlashDirection};
 use crate::config::PortfolioMode;
 use crate::models::price::HistoryRecord;
 use crate::tui::theme;
@@ -217,14 +217,22 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             let asset_line =
                 Line::from(vec![marker, Span::raw(" "), Span::raw(asset_text)]);
 
-            // Price flash
-            let price_style = match app.price_flash_ticks.get(&pos.symbol) {
-                Some(&flash_tick)
+            // Price flash with direction
+            let (price_style, flash_direction) = match app.price_flash_ticks.get(&pos.symbol) {
+                Some(&(flash_tick, direction))
                     if app.tick_count.saturating_sub(flash_tick) < theme::FLASH_DURATION =>
                 {
-                    Style::default().fg(t.surface_0).bg(t.text_accent).bold()
+                    let bg = match direction {
+                        PriceFlashDirection::Up => t.gain_green,
+                        PriceFlashDirection::Down => t.loss_red,
+                        PriceFlashDirection::Same => t.text_accent,
+                    };
+                    (
+                        Style::default().fg(t.surface_0).bg(bg).bold(),
+                        Some(direction),
+                    )
                 }
-                _ => Style::default().fg(t.text_primary),
+                _ => (Style::default().fg(t.text_primary), None),
             };
 
             let sparkline_spans = build_sparkline_spans(
@@ -262,7 +270,20 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 Cell::from(asset_line).style(Style::default().fg(cat_color)),
                 Cell::from(format_qty(pos.quantity))
                     .style(Style::default().fg(t.text_primary)),
-                Cell::from(format_price_opt(pos.current_price)).style(price_style),
+                Cell::from(Line::from({
+                    let price_text = format_price_opt(pos.current_price);
+                    match flash_direction {
+                        Some(PriceFlashDirection::Up) => vec![
+                            Span::styled(price_text, price_style),
+                            Span::styled(" ▲", price_style),
+                        ],
+                        Some(PriceFlashDirection::Down) => vec![
+                            Span::styled(price_text, price_style),
+                            Span::styled(" ▼", price_style),
+                        ],
+                        _ => vec![Span::styled(price_text, price_style)],
+                    }
+                })),
                 Cell::from(format_change_pct(day_change))
                     .style(Style::default().fg(day_change_color)),
                 Cell::from(format_gain_pct(pos.gain_pct))
@@ -279,7 +300,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     let widths = [
         Constraint::Min(14),
         Constraint::Length(8),
-        Constraint::Length(10),
+        Constraint::Length(12),
         Constraint::Length(7),
         Constraint::Length(8),
         Constraint::Length(7),
