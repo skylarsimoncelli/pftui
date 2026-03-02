@@ -434,11 +434,8 @@ fn render_table(
         " Positions "
     };
 
-    let border_color = if app.selected_position().is_some() && app.terminal_width >= crate::tui::ui::COMPACT_WIDTH {
-        t.border_inactive
-    } else {
-        t.border_active
-    };
+    let is_active_panel = !(app.selected_position().is_some() && app.terminal_width >= crate::tui::ui::COMPACT_WIDTH);
+    let border_color = positions_border_color(is_active_panel, app.prices_live, t.border_active, t.border_inactive, app.tick_count);
 
     let table = Table::new(rows, widths)
         .header(header)
@@ -550,6 +547,26 @@ fn format_gain_pct(g: Option<Decimal>) -> String {
 fn format_alloc_pct(a: Option<Decimal>) -> String {
     a.map(|v| format!("{:.1}%", v))
         .unwrap_or_else(|| "---".to_string())
+}
+
+/// Compute the border color for the positions table panel.
+/// When the table is the active (focused) panel and prices are live, the border
+/// gently pulses between border_active and border_inactive. When active but stale,
+/// it stays solid border_active. When inactive (chart has focus), border_inactive.
+fn positions_border_color(
+    is_active_panel: bool,
+    prices_live: bool,
+    border_active: Color,
+    border_inactive: Color,
+    tick_count: u64,
+) -> Color {
+    if is_active_panel && prices_live {
+        theme::pulse_color(border_active, border_inactive, tick_count, theme::PULSE_PERIOD_BORDER)
+    } else if is_active_panel {
+        border_active
+    } else {
+        border_inactive
+    }
 }
 
 #[cfg(test)]
@@ -756,5 +773,54 @@ mod tests {
     fn format_change_pct_none() {
         let result = format_change_pct(None);
         assert_eq!(result, "---");
+    }
+
+    #[test]
+    fn test_positions_border_pulse_when_active_and_live() {
+        let active = Color::Rgb(100, 200, 255);
+        let inactive = Color::Rgb(50, 50, 50);
+        // tick 0: phase=0.0, intensity=0.65 (midpoint)
+        // tick 30: phase=0.25, intensity=1.0 (peak — full active)
+        // tick 90: phase=0.75, intensity=0.3 (trough — near inactive)
+        let c0 = positions_border_color(true, true, active, inactive, 0);
+        let c30 = positions_border_color(true, true, active, inactive, 30);
+        let c90 = positions_border_color(true, true, active, inactive, 90);
+        // Peak vs trough must differ
+        assert_ne!(c30, c90, "pulse peak and trough should differ");
+        // Midpoint should differ from peak
+        assert_ne!(c0, c30, "pulse midpoint and peak should differ");
+        // Peak (tick 30) should be closest to active color
+        if let (Color::Rgb(r30, _, _), Color::Rgb(ra, _, _)) = (c30, active) {
+            assert_eq!(r30, ra, "at peak intensity, color should equal active");
+        }
+        // Trough (tick 90) should be closer to inactive
+        if let (Color::Rgb(r90, _, _), Color::Rgb(ri, _, _), Color::Rgb(ra, _, _)) = (c90, inactive, active) {
+            assert!(r90 >= ri && r90 <= ra, "trough color should be between inactive and active");
+            assert!(r90 < ra, "trough should be less than full active");
+        }
+    }
+
+    #[test]
+    fn test_positions_border_static_when_active_and_stale() {
+        let active = Color::Rgb(100, 200, 255);
+        let inactive = Color::Rgb(50, 50, 50);
+        // When prices are not live, border should be solid active regardless of tick
+        let c0 = positions_border_color(true, false, active, inactive, 0);
+        let c50 = positions_border_color(true, false, active, inactive, 50);
+        let c99 = positions_border_color(true, false, active, inactive, 99);
+        assert_eq!(c0, active);
+        assert_eq!(c50, active);
+        assert_eq!(c99, active);
+    }
+
+    #[test]
+    fn test_positions_border_inactive_when_not_active() {
+        let active = Color::Rgb(100, 200, 255);
+        let inactive = Color::Rgb(50, 50, 50);
+        // When not the active panel, always inactive — regardless of prices_live or tick
+        assert_eq!(positions_border_color(false, true, active, inactive, 0), inactive);
+        assert_eq!(positions_border_color(false, true, active, inactive, 60), inactive);
+        assert_eq!(positions_border_color(false, false, active, inactive, 0), inactive);
+        assert_eq!(positions_border_color(false, false, active, inactive, 99), inactive);
     }
 }

@@ -53,10 +53,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     };
     let title = format!(" {} {} ", variant.label, app.chart_timeframe.label());
 
+    let chart_border_color = if app.prices_live {
+        // Pulse active chart border when prices are live — subtle breathing effect
+        theme::pulse_color(t.border_active, t.border_inactive, app.tick_count, theme::PULSE_PERIOD_BORDER)
+    } else {
+        t.border_active
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(t.border_active))
+        .border_style(Style::default().fg(chart_border_color))
         .style(Style::default().bg(t.surface_1))
         .title(Span::styled(
             title,

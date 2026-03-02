@@ -5,6 +5,7 @@ use crate::models::asset::AssetCategory;
 // ---- Animation constants ----
 pub const PULSE_PERIOD: u64 = 90; // ~1.4s at 60fps
 pub const FLASH_DURATION: u64 = 45; // ~0.7s at 60fps
+pub const PULSE_PERIOD_BORDER: u64 = 120; // 2s at 60fps — subtle breathing for active panel borders
 
 // ---- Theme struct ----
 
@@ -473,6 +474,26 @@ mod tests {
             let val = pulse_intensity(tick, PULSE_PERIOD);
             assert!((0.29..=1.01).contains(&val), "pulse_intensity({tick}) = {val}");
         }
+    }
+
+    #[test]
+    fn pulse_intensity_border_period_range() {
+        // PULSE_PERIOD_BORDER (2s at 60fps) should also stay in valid range
+        for tick in 0..PULSE_PERIOD_BORDER {
+            let val = pulse_intensity(tick, PULSE_PERIOD_BORDER);
+            assert!((0.29..=1.01).contains(&val), "pulse_intensity({tick}, BORDER) = {val}");
+        }
+    }
+
+    #[test]
+    fn pulse_border_period_produces_variation() {
+        // Border pulse should produce distinct colors at quarter-phase points
+        let c1 = pulse_color(Color::Rgb(100, 200, 255), Color::Rgb(50, 50, 50), 0, PULSE_PERIOD_BORDER);
+        let c2 = pulse_color(Color::Rgb(100, 200, 255), Color::Rgb(50, 50, 50), PULSE_PERIOD_BORDER / 4, PULSE_PERIOD_BORDER);
+        let c3 = pulse_color(Color::Rgb(100, 200, 255), Color::Rgb(50, 50, 50), PULSE_PERIOD_BORDER / 2, PULSE_PERIOD_BORDER);
+        // Quarter-phase (tick 30) should be near peak, half-phase (tick 60) should be near trough
+        assert_ne!(c1, c2, "pulse should vary at quarter period");
+        assert_ne!(c2, c3, "pulse should vary at half period");
     }
 
     #[test]
