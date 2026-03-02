@@ -182,7 +182,7 @@ jobs:
           tag: ${{ github.ref_name }}
 
 
-  # ── APT/YUM Repository ──
+  # ── APT/YUM Repository (GitHub Pages) ──
   package-repo:
     name: Update Package Repository
     runs-on: ubuntu-latest
@@ -190,24 +190,12 @@ jobs:
     continue-on-error: true
     if: always() && needs.github-release.result == 'success'
     permissions:
-      contents: write
       pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          fetch-depth: 0
-        continue-on-error: true
-
-      - name: Initialize gh-pages if needed
-        run: |
-          if [ ! -f index.html ]; then
-            git checkout --orphan gh-pages || true
-            git rm -rf . 2>/dev/null || true
-            echo "<html><body><h1>pftui packages</h1></body></html>" > index.html
-            mkdir -p apt rpm
-          fi
-
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -217,9 +205,9 @@ jobs:
       - name: Build APT repository
         run: |
           sudo apt-get update && sudo apt-get install -y dpkg-dev
-          mkdir -p apt/pool apt/dists/stable/main/binary-amd64
-          cp artifacts/deb-package/*.deb apt/pool/ 2>/dev/null || true
-          cd apt
+          mkdir -p site/apt/pool site/apt/dists/stable/main/binary-amd64
+          cp artifacts/deb-package/*.deb site/apt/pool/ 2>/dev/null || true
+          cd site/apt
           dpkg-scanpackages pool /dev/null | gzip -9c > dists/stable/main/binary-amd64/Packages.gz
           dpkg-scanpackages pool /dev/null > dists/stable/main/binary-amd64/Packages
           cat > dists/stable/Release << RELEASE
@@ -231,21 +219,36 @@ jobs:
           Components: main
           Description: pftui package repository
           RELEASE
-          cd ..
+          cd ../..
 
       - name: Build RPM repository
         run: |
           sudo apt-get install -y createrepo-c
-          mkdir -p rpm/packages
-          cp artifacts/rpm-package/*.rpm rpm/packages/ 2>/dev/null || true
-          cd rpm && createrepo_c . && cd ..
+          mkdir -p site/rpm/packages
+          cp artifacts/rpm-package/*.rpm site/rpm/packages/ 2>/dev/null || true
+          cd site/rpm && createrepo_c . && cd ../..
 
-      - name: Commit and push
+      - name: Build index page
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || (git commit -m "packages: update for ${{ github.ref_name }}" && git push origin gh-pages)
+          cat > site/index.html << 'HTML'
+          <!DOCTYPE html><html><head><title>pftui packages</title></head>
+          <body><h1>pftui</h1><p>Package repository for <a href="https://github.com/skylarsimoncelli/pftui">pftui</a>.</p>
+          <h2>APT (Debian/Ubuntu)</h2>
+          <pre>echo "deb [trusted=yes] https://skylarsimoncelli.github.io/pftui/apt stable main" | sudo tee /etc/apt/sources.list.d/pftui.list
+          sudo apt update && sudo apt install pftui</pre>
+          <h2>YUM/DNF (Fedora/RHEL)</h2>
+          <pre>sudo dnf config-manager --add-repo https://skylarsimoncelli.github.io/pftui/rpm
+          sudo dnf install pftui</pre></body></html>
+          HTML
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
 
   # ── Docker ──
   docker:
