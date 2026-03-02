@@ -229,8 +229,13 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             } else {
                 format!("{} {}", pos.name, pos.symbol)
             };
-            let asset_line =
-                Line::from(vec![marker, Span::raw(" "), Span::raw(asset_text)]);
+            let cat_dot = Span::styled("●", Style::default().fg(cat_color));
+            let asset_line = Line::from(vec![
+                marker,
+                cat_dot,
+                Span::raw(" "),
+                Span::styled(asset_text, Style::default().fg(t.text_primary)),
+            ]);
 
             // Price flash with direction
             let (price_style, flash_direction) = match app.price_flash_ticks.get(&pos.symbol) {
@@ -282,7 +287,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             let day_change_color = theme::gain_intensity_color(t, day_change_f);
 
             Row::new(vec![
-                Cell::from(asset_line).style(Style::default().fg(cat_color)),
+                Cell::from(asset_line),
                 Cell::from(format_qty(pos.quantity))
                     .style(Style::default().fg(t.text_primary)),
                 Cell::from(Line::from({
@@ -361,8 +366,13 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
             } else {
                 format!("{} {}", pos.name, pos.symbol)
             };
-            let asset_line =
-                Line::from(vec![marker, Span::raw(" "), Span::raw(asset_text)]);
+            let cat_dot = Span::styled("●", Style::default().fg(cat_color));
+            let asset_line = Line::from(vec![
+                marker,
+                cat_dot,
+                Span::raw(" "),
+                Span::styled(asset_text, Style::default().fg(t.text_primary)),
+            ]);
 
             let sparkline_spans = build_sparkline_spans(
                 t,
@@ -396,7 +406,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
             let day_change_color = theme::gain_intensity_color(t, day_change_f);
 
             Row::new(vec![
-                Cell::from(asset_line).style(Style::default().fg(cat_color)),
+                Cell::from(asset_line),
                 Cell::from(format_price_opt(pos.current_price))
                     .style(Style::default().fg(t.text_primary)),
                 Cell::from(format_change_pct(day_change))
@@ -898,5 +908,61 @@ mod selection_flash_tests {
         let app = make_app_with_selection(1, 1000, 100);
         let bg = row_background(&app, 1);
         assert_eq!(bg, app.theme.surface_3, "well past flash duration, should be surface_3");
+    }
+}
+
+#[cfg(test)]
+mod category_dot_tests {
+    use super::*;
+    use crate::models::asset::AssetCategory;
+    use crate::tui::theme;
+
+    #[test]
+    fn test_category_dot_uses_category_color() {
+        let t = theme::theme_by_name("midnight");
+        for cat in AssetCategory::all() {
+            let expected_color = t.category_color(*cat);
+            let dot = Span::styled("●", Style::default().fg(expected_color));
+            assert_eq!(dot.content, "●");
+            if let Some(fg) = dot.style.fg {
+                assert_eq!(fg, expected_color, "dot color should match category_color for {:?}", cat);
+            }
+        }
+    }
+
+    #[test]
+    fn test_category_dot_is_single_char() {
+        // The dot character ● should be exactly 1 Unicode char
+        assert_eq!("●".chars().count(), 1);
+        // And 3 bytes in UTF-8 (won't break column alignment)
+        assert_eq!("●".len(), 3);
+    }
+
+    #[test]
+    fn test_asset_line_structure_with_dot() {
+        // Verify the asset line has the expected span structure:
+        // [marker, dot, space, asset_text]
+        let t = theme::theme_by_name("midnight");
+        let cat_color = t.category_color(AssetCategory::Crypto);
+
+        let marker = Span::styled("▎", Style::default().fg(t.border_active));
+        let cat_dot = Span::styled("●", Style::default().fg(cat_color));
+        let asset_text = "Bitcoin BTC".to_string();
+        let asset_line = Line::from(vec![
+            marker,
+            cat_dot,
+            Span::raw(" "),
+            Span::styled(asset_text.clone(), Style::default().fg(t.text_primary)),
+        ]);
+
+        assert_eq!(asset_line.spans.len(), 4, "asset line should have 4 spans: marker, dot, space, text");
+        assert_eq!(asset_line.spans[0].content, "▎");
+        assert_eq!(asset_line.spans[1].content, "●");
+        assert_eq!(asset_line.spans[2].content, " ");
+        assert_eq!(asset_line.spans[3].content, asset_text);
+        // Dot should be in category color
+        assert_eq!(asset_line.spans[1].style.fg, Some(cat_color));
+        // Text should be in text_primary
+        assert_eq!(asset_line.spans[3].style.fg, Some(t.text_primary));
     }
 }
