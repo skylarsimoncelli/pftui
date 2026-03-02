@@ -9,7 +9,6 @@
 ## P1 — Positions Table Visual Density
 
 - [ ] **Add inline mini-sparkline in price column** — Render a 3-char sparkline (▁▃▇) directly after the price number in the Price column, using the last 3 hours of data (or last 3 history points). Gives instant trend context without looking at the separate Trend column. Files: `src/tui/views/positions.rs` (price cell rendering). Test: verify sparkline renders with various history lengths.
-- [ ] **Add color-coded category dot before asset name** — Replace the plain text category label approach with a small colored dot (●) in the asset's category color at the start of the Asset column. More scannable than the current approach of coloring the entire row. The `▎` selection marker already uses this column — put the dot after the marker. Files: `src/tui/views/positions.rs` (asset_line construction). Test: verify dot color matches category.
 - [ ] **Add gain/loss magnitude bar in Gain% column** — Render the gain% number with a tiny proportional bar behind it: green fill for gains, red for losses, scaled to ±20%. Like a micro horizontal bar chart in each cell. Uses EIGHTH_BLOCKS for sub-character resolution. Files: `src/tui/views/positions.rs` (gain cell rendering). Test: test bar width calculation for various percentages.
 
 

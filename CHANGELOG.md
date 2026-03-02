@@ -390,3 +390,11 @@
 - Files: `src/app.rs` (new `last_selection_change_tick` field, set in `on_position_selection_changed`), `src/tui/theme.rs` (new `SELECTION_FLASH_DURATION` constant), `src/tui/views/positions.rs` (new `row_background()` helper, 6 tests)
 - Tests: added 6 tests — test_flash_at_start_returns_accent_color, test_flash_decays_to_surface_3, test_flash_midpoint_is_between_accent_and_surface, test_non_selected_rows_unaffected_by_flash, test_no_flash_on_initial_state, test_flash_well_past_duration. Total: 364 tests passing.
 - TODO: Add row highlight animation on selection change (P1)
+
+### 2026-03-02 — Add color-coded category dot before asset name
+
+- What: replaced cell-level category coloring with a discrete colored dot (●) before each asset name in the positions table. The dot renders in the asset's category color (equity, crypto, commodity, forex, fund, cash) between the selection marker (▎) and the asset name. Asset text now uses `text_primary` instead of the category color for better readability. The dot provides instant visual category scanning — much more scannable than coloring the entire row text.
+- Why: P1 visual density — makes categories immediately identifiable at a glance without sacrificing text readability. Each category has its own distinct color from the theme, so users can instantly spot crypto vs commodity vs equity positions.
+- Files: `src/tui/views/positions.rs` (asset_line construction in both full and privacy tables, removed cell-level cat_color styling, 3 new tests)
+- Tests: added 3 tests — test_category_dot_uses_category_color, test_category_dot_is_single_char, test_asset_line_structure_with_dot. Total: 367 tests passing.
+- TODO: Add color-coded category dot before asset name (P1)
