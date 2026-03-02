@@ -479,3 +479,10 @@
 - Files: `src/commands/export.rs` (full rewrite: snapshot types, file output, JSON/CSV), `src/cli.rs` (added `--output` arg to Export), `src/main.rs` (pass output arg)
 - Tests: added 6 new tests (config_export_from_config, json_snapshot_serializes, json_snapshot_with_data, export_json_full_db_snapshot, export_csv_to_file, get_writer_stdout). Total: 456 tests passing.
 - TODO: Enhance `pftui export` to full database snapshot (P1)
+
+### 2026-03-02 — Add `pftui set-cash` command
+
+- What: added a dedicated `pftui set-cash <SYMBOL> <AMOUNT>` command for managing cash positions. Instead of the cumbersome `pftui add-tx --symbol USD --category cash --tx-type buy --quantity 45000 --price 1.00`, users can now run `pftui set-cash USD 45000`. The command replaces all existing transactions for that currency with a single buy at price 1.00. Setting amount to 0 clears the position entirely. Validates input (rejects negative amounts, handles decimals), warns on unrecognized currency codes, and is blocked in percentage mode.
+- Why: P1 CLI feedback item — both testers flagged that managing cash positions via `add-tx` was unintuitive. Cash is conceptually "I have X dollars" not "I bought X dollars at $1 each". This command matches that mental model.
+- Files: new `src/commands/set_cash.rs` (run, delete_all_for_symbol, KNOWN_CASH list, 10 tests), `src/commands/mod.rs`, `src/cli.rs` (SetCash variant), `src/main.rs` (dispatch + percentage mode guard)
+- Tests: added 10 new tests (create position, replace existing, clear with zero, clear nonexistent, uppercase normalization, decimal amounts, negative rejection, invalid amount, multiple currencies, isolation from non-cash symbols). Total: 496 tests passing.
