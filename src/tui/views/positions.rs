@@ -12,6 +12,9 @@ use crate::tui::theme;
 
 const SPARKLINE_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
+/// Left-side eighth blocks for sub-character bar resolution (1/8 to 8/8 fill).
+const EIGHTH_BLOCKS: &[char] = &['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+
 /// 52-week high/low range result.
 #[allow(dead_code)]
 pub struct Range52W {
@@ -210,9 +213,6 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         .iter()
         .enumerate()
         .map(|(i, pos)| {
-            let gain_pct = pos.gain_pct.unwrap_or(dec!(0));
-            let gain_f: f64 = gain_pct.to_string().parse().unwrap_or(0.0);
-            let gain_color = theme::gain_intensity_color(t, gain_f);
             let cat_color = t.category_color(pos.category);
 
             let row_bg = row_background(app, i);
@@ -320,8 +320,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 })),
                 Cell::from(format_change_pct(day_change))
                     .style(Style::default().fg(day_change_color)),
-                Cell::from(format_gain_pct(pos.gain_pct))
-                    .style(Style::default().fg(gain_color)),
+                Cell::from(build_gain_bar_spans(t, pos.gain_pct, 8)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
                 Cell::from(Line::from(range_spans)),
@@ -540,6 +539,101 @@ fn build_sparkline_spans<'a>(
             )
         })
         .collect()
+}
+
+/// Compute the bar fill width in eighth-units for a gain/loss magnitude bar.
+/// Returns (full_chars, eighth_remainder) where the bar fills `full_chars` full
+/// cells plus `eighth_remainder` eighths (0..7) of the next cell.
+/// `gain_pct` is the raw gain percentage (absolute value used), `max_pct` is the
+/// scale max (e.g. 20.0), and `col_width` is the total column width in characters.
+pub fn gain_bar_width(gain_pct: f64, max_pct: f64, col_width: usize) -> (usize, usize) {
+    if max_pct <= 0.0 || col_width == 0 {
+        return (0, 0);
+    }
+    let ratio = (gain_pct.abs() / max_pct).min(1.0);
+    let total_eighths = (ratio * col_width as f64 * 8.0).round() as usize;
+    let full_chars = total_eighths / 8;
+    let remainder = total_eighths % 8;
+    // Clamp full_chars to col_width
+    if full_chars >= col_width {
+        (col_width, 0)
+    } else {
+        (full_chars, remainder)
+    }
+}
+
+/// Build spans for the gain% cell with a proportional magnitude bar behind it.
+/// The bar fills from left to right, green for gains, red for losses, scaled to ±20%.
+/// Uses background coloring on text characters for the solid portion and an
+/// eighth-block character at the bar edge for sub-character precision.
+fn build_gain_bar_spans<'a>(
+    theme: &'a theme::Theme,
+    gain_pct: Option<Decimal>,
+    col_width: usize,
+) -> Line<'a> {
+    let gain_text = format_gain_pct(gain_pct);
+
+    let gain_f: f64 = gain_pct
+        .unwrap_or(dec!(0))
+        .to_string()
+        .parse()
+        .unwrap_or(0.0);
+
+    // No bar for zero gain or missing data
+    if gain_pct.is_none() || gain_f == 0.0 {
+        let fg = if gain_pct.is_none() {
+            theme.text_muted
+        } else {
+            theme.neutral
+        };
+        return Line::from(Span::styled(gain_text, Style::default().fg(fg)));
+    }
+
+    let text_fg = theme::gain_intensity_color(theme, gain_f);
+    let bar_color = if gain_f > 0.0 {
+        // Dim green for bar background
+        theme::lerp_color(theme.surface_1, theme.gain_green, 0.3)
+    } else {
+        // Dim red for bar background
+        theme::lerp_color(theme.surface_1, theme.loss_red, 0.3)
+    };
+
+    let (full_chars, eighth_rem) = gain_bar_width(gain_f, 20.0, col_width);
+    let text_chars: Vec<char> = gain_text.chars().collect();
+
+    let mut spans: Vec<Span<'a>> = Vec::new();
+
+    for col in 0..col_width {
+        let text_ch = text_chars.get(col).copied();
+
+        if col < full_chars {
+            // Fully covered by bar — text char (or space) on colored background
+            let ch = text_ch.unwrap_or(' ').to_string();
+            spans.push(Span::styled(ch, Style::default().fg(text_fg).bg(bar_color)));
+        } else if col == full_chars && eighth_rem > 0 {
+            if let Some(c) = text_ch {
+                // Text char sits in the fractional cell — use bar bg (approximate)
+                spans.push(Span::styled(
+                    c.to_string(),
+                    Style::default().fg(text_fg).bg(bar_color),
+                ));
+            } else {
+                // No text here — render an eighth-block character for precise edge
+                // eighth_rem is 1..7, index into EIGHTH_BLOCKS (0-indexed, so rem-1)
+                let block = EIGHTH_BLOCKS[eighth_rem.saturating_sub(1).min(7)];
+                spans.push(Span::styled(
+                    block.to_string(),
+                    Style::default().fg(bar_color),
+                ));
+            }
+        } else if let Some(c) = text_ch {
+            // Beyond bar — plain text
+            spans.push(Span::styled(c.to_string(), Style::default().fg(text_fg)));
+        }
+        // Don't emit trailing spaces — ratatui handles cell padding
+    }
+
+    Line::from(spans)
 }
 
 fn format_price_opt(price: Option<Decimal>) -> String {
@@ -1042,5 +1136,140 @@ mod category_dot_tests {
         assert_eq!(asset_line.spans[1].style.fg, Some(cat_color));
         // Text should be in text_primary
         assert_eq!(asset_line.spans[3].style.fg, Some(t.text_primary));
+    }
+}
+
+#[cfg(test)]
+mod gain_bar_tests {
+    use super::*;
+    use crate::tui::theme;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_gain_bar_width_zero_gain() {
+        let (full, rem) = gain_bar_width(0.0, 20.0, 8);
+        assert_eq!(full, 0);
+        assert_eq!(rem, 0);
+    }
+
+    #[test]
+    fn test_gain_bar_width_max_gain() {
+        // 20% gain at scale 20% on 8-char column = full width
+        let (full, rem) = gain_bar_width(20.0, 20.0, 8);
+        assert_eq!(full, 8);
+        assert_eq!(rem, 0);
+    }
+
+    #[test]
+    fn test_gain_bar_width_half_gain() {
+        // 10% gain at scale 20% on 8-char column = 4 full chars
+        let (full, rem) = gain_bar_width(10.0, 20.0, 8);
+        assert_eq!(full, 4);
+        assert_eq!(rem, 0);
+    }
+
+    #[test]
+    fn test_gain_bar_width_negative_uses_abs() {
+        // Negative gain should use absolute value
+        let (full_pos, rem_pos) = gain_bar_width(10.0, 20.0, 8);
+        let (full_neg, rem_neg) = gain_bar_width(-10.0, 20.0, 8);
+        assert_eq!(full_pos, full_neg);
+        assert_eq!(rem_pos, rem_neg);
+    }
+
+    #[test]
+    fn test_gain_bar_width_capped_beyond_max() {
+        // 50% gain at scale 20% should cap at full width
+        let (full, rem) = gain_bar_width(50.0, 20.0, 8);
+        assert_eq!(full, 8);
+        assert_eq!(rem, 0);
+    }
+
+    #[test]
+    fn test_gain_bar_width_fractional() {
+        // 5% gain at scale 20% on 8-char column = 2.0 chars = 2 full, 0 remainder
+        let (full, rem) = gain_bar_width(5.0, 20.0, 8);
+        assert_eq!(full, 2);
+        assert_eq!(rem, 0);
+
+        // 3% gain at scale 20% on 8-char column = 1.2 chars
+        // 1.2 * 8 eighths = 9.6 ≈ 10 eighths = 1 full + 2 remainder
+        let (full, rem) = gain_bar_width(3.0, 20.0, 8);
+        assert_eq!(full, 1);
+        assert_eq!(rem, 2);
+    }
+
+    #[test]
+    fn test_gain_bar_width_zero_col_width() {
+        let (full, rem) = gain_bar_width(10.0, 20.0, 0);
+        assert_eq!(full, 0);
+        assert_eq!(rem, 0);
+    }
+
+    #[test]
+    fn test_gain_bar_width_zero_max_pct() {
+        let (full, rem) = gain_bar_width(10.0, 0.0, 8);
+        assert_eq!(full, 0);
+        assert_eq!(rem, 0);
+    }
+
+    #[test]
+    fn test_gain_bar_spans_none() {
+        let t = theme::theme_by_name("midnight");
+        let line = build_gain_bar_spans(&t, None, 8);
+        // Should render "---" with muted color, no bar
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(line.spans[0].content, "---");
+        assert_eq!(line.spans[0].style.fg, Some(t.text_muted));
+        assert_eq!(line.spans[0].style.bg, None);
+    }
+
+    #[test]
+    fn test_gain_bar_spans_zero() {
+        let t = theme::theme_by_name("midnight");
+        let line = build_gain_bar_spans(&t, Some(dec!(0)), 8);
+        // Should render "+0.0%" with neutral color, no bar
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(line.spans[0].style.fg, Some(t.neutral));
+        assert_eq!(line.spans[0].style.bg, None);
+    }
+
+    #[test]
+    fn test_gain_bar_spans_positive_has_bg() {
+        let t = theme::theme_by_name("midnight");
+        let line = build_gain_bar_spans(&t, Some(dec!(10)), 8);
+        // +10.0% at scale 20% = 4 chars of bar
+        // The first chars should have a bg color set
+        let chars_with_bg = line.spans.iter().filter(|s| s.style.bg.is_some()).count();
+        assert!(chars_with_bg > 0, "positive gain should have spans with bar background");
+    }
+
+    #[test]
+    fn test_gain_bar_spans_negative_has_bg() {
+        let t = theme::theme_by_name("midnight");
+        let line = build_gain_bar_spans(&t, Some(dec!(-15)), 8);
+        // -15.0% at scale 20% = 6 chars of bar
+        let chars_with_bg = line.spans.iter().filter(|s| s.style.bg.is_some()).count();
+        assert!(chars_with_bg > 0, "negative gain should have spans with bar background");
+    }
+
+    #[test]
+    fn test_gain_bar_larger_loss_has_more_bg() {
+        let t = theme::theme_by_name("midnight");
+        let small = build_gain_bar_spans(&t, Some(dec!(-5)), 8);
+        let large = build_gain_bar_spans(&t, Some(dec!(-15)), 8);
+        let small_bg = small.spans.iter().filter(|s| s.style.bg.is_some()).count();
+        let large_bg = large.spans.iter().filter(|s| s.style.bg.is_some()).count();
+        assert!(large_bg > small_bg,
+            "larger loss should have more bar coverage: {} vs {}", large_bg, small_bg);
+    }
+
+    #[test]
+    fn test_gain_bar_text_content_preserved() {
+        let t = theme::theme_by_name("midnight");
+        let line = build_gain_bar_spans(&t, Some(dec!(12.5)), 8);
+        // Collect all text content from spans
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.starts_with("+12.5%"), "bar should preserve gain text, got: '{}'", text);
     }
 }
