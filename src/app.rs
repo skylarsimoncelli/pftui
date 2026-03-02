@@ -244,6 +244,9 @@ pub struct App {
     pub last_key_display: String,
     pub last_key_tick: u64,
 
+    // Row highlight flash on selection change
+    pub last_selection_change_tick: u64,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -339,6 +342,7 @@ impl App {
             daily_portfolio_change: None,
             last_key_display: String::new(),
             last_key_tick: 0,
+            last_selection_change_tick: 0,
             db_path,
         }
     }
@@ -577,6 +581,7 @@ impl App {
     fn on_position_selection_changed(&mut self) {
         if matches!(self.view_mode, ViewMode::Positions) {
             self.chart_index = 0;
+            self.last_selection_change_tick = self.tick_count;
             self.refetch_chart_history();
         }
     }

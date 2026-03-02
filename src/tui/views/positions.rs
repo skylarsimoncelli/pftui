@@ -160,6 +160,27 @@ fn format_change_pct(change: Option<Decimal>) -> String {
         .unwrap_or_else(|| "---".to_string())
 }
 
+/// Compute the background color for a row in the positions table.
+/// Selected rows flash briefly on selection change, lerping from
+/// `border_accent` back to `surface_3` over SELECTION_FLASH_DURATION ticks.
+fn row_background(app: &App, row_index: usize) -> Color {
+    let t = &app.theme;
+    if row_index == app.selected_index {
+        let elapsed = app.tick_count.saturating_sub(app.last_selection_change_tick);
+        if elapsed < theme::SELECTION_FLASH_DURATION && app.last_selection_change_tick > 0 {
+            // Lerp from border_accent (flash) toward surface_3 (steady)
+            let progress = elapsed as f32 / theme::SELECTION_FLASH_DURATION as f32;
+            theme::lerp_color(t.border_accent, t.surface_3, progress)
+        } else {
+            t.surface_3
+        }
+    } else if row_index.is_multiple_of(2) {
+        t.surface_1
+    } else {
+        t.surface_1_alt
+    }
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if is_privacy_view(app) {
         render_privacy_table(frame, area, app);
@@ -194,13 +215,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             let gain_color = theme::gain_intensity_color(t, gain_f);
             let cat_color = t.category_color(pos.category);
 
-            let row_bg = if i == app.selected_index {
-                t.surface_3
-            } else if i % 2 == 0 {
-                t.surface_1
-            } else {
-                t.surface_1_alt
-            };
+            let row_bg = row_background(app, i);
 
             let style = Style::default().bg(row_bg);
 
@@ -332,13 +347,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
         .map(|(i, pos)| {
             let cat_color = t.category_color(pos.category);
 
-            let row_bg = if i == app.selected_index {
-                t.surface_3
-            } else if i % 2 == 0 {
-                t.surface_1
-            } else {
-                t.surface_1_alt
-            };
+            let row_bg = row_background(app, i);
 
             let style = Style::default().bg(row_bg);
 
@@ -822,5 +831,72 @@ mod tests {
         assert_eq!(positions_border_color(false, true, active, inactive, 60), inactive);
         assert_eq!(positions_border_color(false, false, active, inactive, 0), inactive);
         assert_eq!(positions_border_color(false, false, active, inactive, 99), inactive);
+    }
+}
+
+#[cfg(test)]
+mod selection_flash_tests {
+    use super::*;
+
+    fn make_app_with_selection(selected: usize, tick_count: u64, last_change_tick: u64) -> crate::app::App {
+        let config = crate::config::Config::default();
+        let mut app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_sel_flash.db"));
+        app.selected_index = selected;
+        app.tick_count = tick_count;
+        app.last_selection_change_tick = last_change_tick;
+        app
+    }
+
+    #[test]
+    fn test_flash_at_start_returns_accent_color() {
+        // Immediately after selection change (elapsed=0), color should be border_accent
+        let app = make_app_with_selection(2, 100, 100);
+        let bg = row_background(&app, 2);
+        assert_eq!(bg, app.theme.border_accent, "at elapsed=0, selected row should be border_accent");
+    }
+
+    #[test]
+    fn test_flash_decays_to_surface_3() {
+        // After SELECTION_FLASH_DURATION ticks, color should be surface_3
+        let app = make_app_with_selection(2, 100 + theme::SELECTION_FLASH_DURATION, 100);
+        let bg = row_background(&app, 2);
+        assert_eq!(bg, app.theme.surface_3, "after flash duration, selected row should be surface_3");
+    }
+
+    #[test]
+    fn test_flash_midpoint_is_between_accent_and_surface() {
+        // At halfway through the flash, color should be between border_accent and surface_3
+        let midpoint = theme::SELECTION_FLASH_DURATION / 2;
+        let app = make_app_with_selection(2, 100 + midpoint, 100);
+        let bg = row_background(&app, 2);
+        // Should differ from both endpoints
+        assert_ne!(bg, app.theme.border_accent, "midpoint should not be full accent");
+        assert_ne!(bg, app.theme.surface_3, "midpoint should not be full surface_3");
+    }
+
+    #[test]
+    fn test_non_selected_rows_unaffected_by_flash() {
+        // Non-selected rows should be surface_1 or surface_1_alt regardless of flash state
+        let app = make_app_with_selection(2, 100, 100);
+        let bg_even = row_background(&app, 0);
+        let bg_odd = row_background(&app, 1);
+        assert_eq!(bg_even, app.theme.surface_1, "even non-selected row should be surface_1");
+        assert_eq!(bg_odd, app.theme.surface_1_alt, "odd non-selected row should be surface_1_alt");
+    }
+
+    #[test]
+    fn test_no_flash_on_initial_state() {
+        // When last_selection_change_tick is 0 (initial state), no flash even if elapsed is small
+        let app = make_app_with_selection(0, 5, 0);
+        let bg = row_background(&app, 0);
+        assert_eq!(bg, app.theme.surface_3, "initial state should not trigger flash");
+    }
+
+    #[test]
+    fn test_flash_well_past_duration() {
+        // Long after the flash, color should be solid surface_3
+        let app = make_app_with_selection(1, 1000, 100);
+        let bg = row_background(&app, 1);
+        assert_eq!(bg, app.theme.surface_3, "well past flash duration, should be surface_3");
     }
 }
