@@ -56,6 +56,11 @@ EOF
 sudo dnf install pftui
 ```
 
+### Nix
+```bash
+nix run github:skylarsimoncelli/pftui
+```
+
 ### From Source
 ```bash
 git clone https://github.com/skylarsimoncelli/pftui.git

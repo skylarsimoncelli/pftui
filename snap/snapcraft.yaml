@@ -1,0 +1,25 @@
+name: pftui
+version: '0.1.0'
+summary: Terminal portfolio tracker with real-time prices and charts
+description: |
+  A maximalist terminal dashboard for tracking your investments — equities,
+  crypto, forex, commodities, funds — with live market data, braille charts,
+  SMA overlays, and vim-native keybindings. Built in Rust.
+base: core22
+grade: stable
+confinement: strict
+
+parts:
+  pftui:
+    plugin: rust
+    source: .
+    build-packages:
+      - pkg-config
+      - libssl-dev
+
+apps:
+  pftui:
+    command: bin/pftui
+    plugs:
+      - network
+      - home

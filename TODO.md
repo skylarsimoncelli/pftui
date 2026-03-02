@@ -162,3 +162,10 @@
   - Files: `.github/workflows/release.yml`
 - [x] **Prepare Cargo.toml for publishing** — Add required crates.io metadata: `description`, `license` (MIT), `repository`, `homepage`, `readme`, `keywords` (portfolio, tui, terminal, finance, stock), `categories` (command-line-utilities, finance). Files: `Cargo.toml`.
 - [x] **Create Homebrew tap repo** — Create `skylarsimoncelli/homebrew-tap` with `Formula/pftui.rb`. Formula downloads the GitHub Release binary for macOS. The release workflow auto-updates this on new tags. Files: separate repo, referenced by release workflow.
+
+## P2 — Remaining Package Managers (Need Owner Action)
+
+- [ ] **Publish to Snapcraft** — snapcraft.yaml is in repo. Needs: 1) Create Snapcraft account at https://snapcraft.io 2) `snapcraft login` and export token 3) Add `SNAPCRAFT_TOKEN` as GitHub repo secret 4) Add snap publish step to release workflow. Files: `snap/snapcraft.yaml`, `.github/workflows/release.yml`.
+- [ ] **Publish to AUR** — Needs: 1) Create AUR account at https://aur.archlinux.org 2) Generate SSH key pair 3) Add `AUR_SSH_KEY` as GitHub repo secret 4) Create AUR package `pftui-bin` 5) Add AUR publish step to release workflow. Files: `.github/workflows/release.yml`.
+- [ ] **Publish to Scoop** — Needs Windows binary first. Add `x86_64-pc-windows-msvc` target to release workflow build matrix, then submit manifest to scoop-extras bucket or host own bucket. Files: `scoop/pftui.json`, `.github/workflows/release.yml`.
+- [ ] **Windows build support** — Add `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` to release build matrix (runs-on: windows-latest). Cross-platform terminal support via crossterm should work. Files: `.github/workflows/release.yml`. Test: verify TUI renders on Windows Terminal.
