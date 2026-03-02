@@ -333,6 +333,9 @@ pub struct App {
     pub tx_form: Option<TxFormState>,
     pub delete_confirm: Option<DeleteConfirmState>,
 
+    // Portfolio sparkline timeframe
+    pub sparkline_timeframe: ChartTimeframe,
+
     // Crosshair cursor on charts
     pub crosshair_mode: bool,
     pub crosshair_x: usize, // column index within chart width
@@ -437,6 +440,7 @@ impl App {
             theme_toast_tick: 0,
             tx_form: None,
             delete_confirm: None,
+            sparkline_timeframe: ChartTimeframe::ThreeMonths,
             crosshair_mode: false,
             crosshair_x: 0,
             db_path,
@@ -1516,6 +1520,14 @@ impl App {
             // Theme cycle
             KeyCode::Char('t') => {
                 self.cycle_theme();
+            }
+
+            // Portfolio sparkline timeframe cycling
+            KeyCode::Char(']') => {
+                self.sparkline_timeframe = self.sparkline_timeframe.next();
+            }
+            KeyCode::Char('[') => {
+                self.sparkline_timeframe = self.sparkline_timeframe.prev();
             }
 
             // Add transaction (Shift+A) — opens inline form for selected position
@@ -3965,5 +3977,37 @@ mod tx_form_tests {
         assert_eq!(TxFormField::Quantity.label(), "Qty");
         assert_eq!(TxFormField::PricePer.label(), "Price");
         assert_eq!(TxFormField::Date.label(), "Date");
+    }
+
+    #[test]
+    fn test_sparkline_timeframe_default() {
+        let app = make_app();
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::ThreeMonths));
+    }
+
+    #[test]
+    fn test_sparkline_timeframe_cycle_forward() {
+        let mut app = make_app();
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::ThreeMonths));
+        app.handle_key(key(']'));
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::SixMonths));
+        app.handle_key(key(']'));
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::OneYear));
+        app.handle_key(key(']'));
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::FiveYears));
+        app.handle_key(key(']'));
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::OneWeek));
+    }
+
+    #[test]
+    fn test_sparkline_timeframe_cycle_backward() {
+        let mut app = make_app();
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::ThreeMonths));
+        app.handle_key(key('['));
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::OneMonth));
+        app.handle_key(key('['));
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::OneWeek));
+        app.handle_key(key('['));
+        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::FiveYears));
     }
 }

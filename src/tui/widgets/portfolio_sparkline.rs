@@ -10,23 +10,41 @@ use crate::tui::theme;
 
 const BRAILLE_ROWS: usize = 4;
 
-/// Timeframe periods for gain/loss display (label, approximate days back).
-const TIMEFRAME_PERIODS: &[(&str, usize)] = &[
+/// All available timeframe periods for gain/loss display (label, approximate days back).
+const ALL_TIMEFRAME_PERIODS: &[(&str, usize)] = &[
     ("1D", 1),
     ("1W", 7),
     ("1M", 30),
     ("3M", 90),
+    ("6M", 180),
+    ("1Y", 365),
 ];
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
-    let history = &app.portfolio_value_history;
+    let timeframe_days = app.sparkline_timeframe.days() as usize;
 
-    // Dynamic title: show current portfolio value if available
-    let title = if let Some((_, latest)) = history.last() {
-        format!(" Portfolio  {} ", format_compact_value(*latest))
+    // Filter history to the selected sparkline timeframe
+    let full_history = &app.portfolio_value_history;
+    let history: &[(String, Decimal)] = if full_history.len() > timeframe_days {
+        &full_history[full_history.len() - timeframe_days..]
     } else {
-        " Portfolio ".to_string()
+        full_history
+    };
+
+    // Only show gain/loss periods that fit within the selected timeframe
+    let timeframe_periods: Vec<(&str, usize)> = ALL_TIMEFRAME_PERIODS
+        .iter()
+        .filter(|(_, days)| *days < timeframe_days)
+        .copied()
+        .collect();
+
+    // Dynamic title: show timeframe label and current portfolio value if available
+    let tf_label = app.sparkline_timeframe.label();
+    let title = if let Some((_, latest)) = history.last() {
+        format!(" Portfolio {}  {} ", tf_label, format_compact_value(*latest))
+    } else {
+        format!(" Portfolio {} ", tf_label)
     };
 
     let block = Block::default()
@@ -57,7 +75,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     // Compute timeframe gains for display below the chart
-    let timeframe_gains = compute_timeframe_gains(history);
+    let timeframe_gains = compute_timeframe_gains(history, &timeframe_periods);
     // Reserve lines: 1 separator + gain rows (up to 2 lines for timeframes)
     let gain_lines = build_gain_lines(&timeframe_gains, inner.width as usize, t);
     let reserved_lines = 1 + gain_lines.len(); // separator + gain display
@@ -166,15 +184,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Represents a computed gain for a specific timeframe.
-struct TimeframeGain {
-    label: &'static str,
+struct TimeframeGain<'a> {
+    label: &'a str,
     change: Decimal,
     pct: Decimal,
 }
 
 /// Compute gains for each timeframe period by looking back N entries in history.
 /// Each entry is roughly one trading day.
-fn compute_timeframe_gains(history: &[(String, Decimal)]) -> Vec<TimeframeGain> {
+fn compute_timeframe_gains<'a>(history: &[(String, Decimal)], periods: &[(&'a str, usize)]) -> Vec<TimeframeGain<'a>> {
     if history.is_empty() {
         return Vec::new();
     }
@@ -183,7 +201,7 @@ fn compute_timeframe_gains(history: &[(String, Decimal)]) -> Vec<TimeframeGain> 
     let len = history.len();
     let mut gains = Vec::new();
 
-    for &(label, days_back) in TIMEFRAME_PERIODS {
+    for &(label, days_back) in periods {
         if len <= days_back {
             continue;
         }
@@ -201,7 +219,7 @@ fn compute_timeframe_gains(history: &[(String, Decimal)]) -> Vec<TimeframeGain> 
 
 /// Build styled gain/loss lines that fit within the given width.
 /// Tries to fit all timeframes on one line; wraps to two if needed.
-fn build_gain_lines<'a>(gains: &[TimeframeGain], width: usize, t: &crate::tui::theme::Theme) -> Vec<Line<'a>> {
+fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tui::theme::Theme) -> Vec<Line<'a>> {
     if gains.is_empty() {
         return vec![Line::from(Span::styled(
             "No period data yet",
@@ -416,17 +434,20 @@ mod tests {
         assert_eq!(format_compact_change(dec!(2500000)), "$+2.5M");
     }
 
+    /// Default periods for 3M sparkline timeframe (1D, 1W, 1M fit within 90 days).
+    const TEST_PERIODS_3M: &[(&str, usize)] = &[("1D", 1), ("1W", 7), ("1M", 30)];
+
     #[test]
     fn test_compute_timeframe_gains_empty() {
         let history: Vec<(String, Decimal)> = Vec::new();
-        assert!(compute_timeframe_gains(&history).is_empty());
+        assert!(compute_timeframe_gains(&history, TEST_PERIODS_3M).is_empty());
     }
 
     #[test]
     fn test_compute_timeframe_gains_too_short() {
         // Only 1 entry — not enough for any timeframe
         let history = vec![("2026-03-02".to_string(), dec!(1000))];
-        assert!(compute_timeframe_gains(&history).is_empty());
+        assert!(compute_timeframe_gains(&history, TEST_PERIODS_3M).is_empty());
     }
 
     #[test]
@@ -436,7 +457,7 @@ mod tests {
             ("2026-03-01".to_string(), dec!(1000)),
             ("2026-03-02".to_string(), dec!(1050)),
         ];
-        let gains = compute_timeframe_gains(&history);
+        let gains = compute_timeframe_gains(&history, TEST_PERIODS_3M);
         assert_eq!(gains.len(), 1);
         assert_eq!(gains[0].label, "1D");
         assert_eq!(gains[0].change, dec!(50));
@@ -451,7 +472,7 @@ mod tests {
             let val = dec!(10000) + Decimal::from(i) * dec!(100);
             history.push((format!("2026-02-{:02}", i + 1), val));
         }
-        let gains = compute_timeframe_gains(&history);
+        let gains = compute_timeframe_gains(&history, TEST_PERIODS_3M);
         assert_eq!(gains.len(), 3); // 1D, 1W, 1M
         assert_eq!(gains[0].label, "1D");
         assert_eq!(gains[1].label, "1W");
@@ -464,9 +485,40 @@ mod tests {
             ("2026-03-01".to_string(), dec!(1000)),
             ("2026-03-02".to_string(), dec!(900)),
         ];
-        let gains = compute_timeframe_gains(&history);
+        let gains = compute_timeframe_gains(&history, TEST_PERIODS_3M);
         assert_eq!(gains[0].change, dec!(-100));
         assert_eq!(gains[0].pct, dec!(-10));
+    }
+
+    #[test]
+    fn test_compute_timeframe_gains_with_larger_periods() {
+        // Test that 6M and 1Y periods work when there's enough data
+        let periods_1y: &[(&str, usize)] = &[
+            ("1D", 1), ("1W", 7), ("1M", 30), ("3M", 90), ("6M", 180),
+        ];
+        let mut history = Vec::new();
+        for i in 0..200 {
+            let val = dec!(10000) + Decimal::from(i) * dec!(50);
+            history.push((format!("day-{:04}", i), val));
+        }
+        let gains = compute_timeframe_gains(&history, periods_1y);
+        assert_eq!(gains.len(), 5); // All 5 periods fit
+        assert_eq!(gains[0].label, "1D");
+        assert_eq!(gains[4].label, "6M");
+    }
+
+    #[test]
+    fn test_compute_timeframe_gains_1w_periods_only() {
+        // With 1W timeframe, only 1D period should be shown
+        let periods_1w: &[(&str, usize)] = &[("1D", 1)];
+        let history = vec![
+            ("2026-02-25".to_string(), dec!(1000)),
+            ("2026-02-26".to_string(), dec!(1010)),
+            ("2026-02-27".to_string(), dec!(1020)),
+        ];
+        let gains = compute_timeframe_gains(&history, periods_1w);
+        assert_eq!(gains.len(), 1);
+        assert_eq!(gains[0].label, "1D");
     }
 
     #[test]
