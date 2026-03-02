@@ -10,9 +10,24 @@ use crate::tui::theme;
 
 const BRAILLE_ROWS: usize = 4;
 
+/// Timeframe periods for gain/loss display (label, approximate days back).
+const TIMEFRAME_PERIODS: &[(&str, usize)] = &[
+    ("1D", 1),
+    ("1W", 7),
+    ("1M", 30),
+    ("3M", 90),
+];
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let history = &app.portfolio_value_history;
+
+    // Dynamic title: show current portfolio value if available
+    let title = if let Some((_, latest)) = history.last() {
+        format!(" Portfolio  {} ", format_compact_value(*latest))
+    } else {
+        " Portfolio ".to_string()
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -20,7 +35,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .border_style(Style::default().fg(t.border_inactive))
         .style(Style::default().bg(t.surface_1))
         .title(Span::styled(
-            " Portfolio 90d ",
+            title,
             Style::default().fg(t.text_primary).bold(),
         ));
 
@@ -41,10 +56,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .map(|(_, v)| v.to_string().parse::<f64>().unwrap_or(0.0))
         .collect();
 
-    let chart_height = inner.height.saturating_sub(3) as usize; // reserve 3: separator + summary + blank
+    // Compute timeframe gains for display below the chart
+    let timeframe_gains = compute_timeframe_gains(history);
+    // Reserve lines: 1 separator + gain rows (up to 2 lines for timeframes)
+    let gain_lines = build_gain_lines(&timeframe_gains, inner.width as usize, t);
+    let reserved_lines = 1 + gain_lines.len(); // separator + gain display
+
+    let chart_height = inner.height.saturating_sub(reserved_lines as u16) as usize;
     let chart_width = inner.width as usize;
 
     if chart_height == 0 || chart_width == 0 {
+        // Not enough space for chart, just show gains
+        let mut lines = Vec::new();
+        lines.extend(gain_lines);
+        let paragraph = Paragraph::new(lines);
+        frame.render_widget(paragraph, inner);
         return;
     }
 
@@ -131,38 +157,130 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         Style::default().fg(t.border_subtle),
     )));
 
-    // Summary line
-    let latest = history.last().map(|(_, v)| *v).unwrap_or(dec!(0));
-    let first = history.first().map(|(_, v)| *v).unwrap_or(dec!(0));
-    let change_pct = if first > dec!(0) {
-        ((latest - first) / first) * dec!(100)
-    } else {
-        dec!(0)
-    };
-    let change_color = if change_pct > dec!(0) {
-        t.gain_green
-    } else if change_pct < dec!(0) {
-        t.loss_red
-    } else {
-        t.neutral
-    };
-
-    let summary = Line::from(vec![
-        Span::styled(
-            format_compact_value(latest),
-            Style::default().fg(t.text_primary).bold(),
-        ),
-        Span::raw(" "),
-        Span::styled(
-            format!("{:+.1}%", change_pct),
-            Style::default().fg(change_color),
-        ),
-    ]);
-    lines.push(summary);
+    // Timeframe gain/loss lines
+    lines.extend(gain_lines);
 
     let chart_area = Rect::new(inner.x, inner.y, inner.width, inner.height);
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, chart_area);
+}
+
+/// Represents a computed gain for a specific timeframe.
+struct TimeframeGain {
+    label: &'static str,
+    change: Decimal,
+    pct: Decimal,
+}
+
+/// Compute gains for each timeframe period by looking back N entries in history.
+/// Each entry is roughly one trading day.
+fn compute_timeframe_gains(history: &[(String, Decimal)]) -> Vec<TimeframeGain> {
+    if history.is_empty() {
+        return Vec::new();
+    }
+
+    let latest = history.last().map(|(_, v)| *v).unwrap_or(dec!(0));
+    let len = history.len();
+    let mut gains = Vec::new();
+
+    for &(label, days_back) in TIMEFRAME_PERIODS {
+        if len <= days_back {
+            continue;
+        }
+        let idx = len.saturating_sub(days_back + 1);
+        let past_value = history[idx].1;
+        if past_value > dec!(0) {
+            let change = latest - past_value;
+            let pct = (change / past_value) * dec!(100);
+            gains.push(TimeframeGain { label, change, pct });
+        }
+    }
+
+    gains
+}
+
+/// Build styled gain/loss lines that fit within the given width.
+/// Tries to fit all timeframes on one line; wraps to two if needed.
+fn build_gain_lines<'a>(gains: &[TimeframeGain], width: usize, t: &crate::tui::theme::Theme) -> Vec<Line<'a>> {
+    if gains.is_empty() {
+        return vec![Line::from(Span::styled(
+            "No period data yet",
+            Style::default().fg(t.text_muted),
+        ))];
+    }
+
+    let mut items: Vec<Vec<Span<'a>>> = Vec::new();
+    for g in gains {
+        let change_color = if g.pct > dec!(0) {
+            t.gain_green
+        } else if g.pct < dec!(0) {
+            t.loss_red
+        } else {
+            t.neutral
+        };
+
+        let arrow = if g.pct > dec!(0) { "▲" } else if g.pct < dec!(0) { "▼" } else { "─" };
+        let change_str = format_compact_change(g.change);
+        let pct_str = format!("{:+.1}%", g.pct);
+
+        items.push(vec![
+            Span::styled(
+                format!("{} ", g.label),
+                Style::default().fg(t.text_secondary),
+            ),
+            Span::styled(
+                format!("{}{} ", arrow, change_str),
+                Style::default().fg(change_color),
+            ),
+            Span::styled(
+                pct_str,
+                Style::default().fg(change_color).dim(),
+            ),
+        ]);
+    }
+
+    // Try to fit all on one line with " │ " separators
+    let mut single_line_spans: Vec<Span<'a>> = Vec::new();
+    let mut single_line_width: usize = 0;
+
+    for (i, item_spans) in items.iter().enumerate() {
+        if i > 0 {
+            single_line_spans.push(Span::styled(" │ ", Style::default().fg(t.border_subtle)));
+            single_line_width += 3;
+        }
+        for s in item_spans {
+            single_line_width += s.width();
+            single_line_spans.push(s.clone());
+        }
+    }
+
+    if single_line_width <= width {
+        return vec![Line::from(single_line_spans)];
+    }
+
+    // Wrap to two lines: split roughly in half
+    let mid = items.len() / 2;
+    let mut line1_spans: Vec<Span<'a>> = Vec::new();
+    for (i, item_spans) in items[..mid].iter().enumerate() {
+        if i > 0 {
+            line1_spans.push(Span::styled(" │ ", Style::default().fg(t.border_subtle)));
+        }
+        for s in item_spans {
+            line1_spans.push(s.clone());
+        }
+    }
+
+    let mut line2_spans: Vec<Span<'a>> = Vec::new();
+    for (i, item_spans) in items[mid..].iter().enumerate() {
+        if i > 0 {
+            line2_spans.push(Span::styled(" │ ", Style::default().fg(t.border_subtle)));
+        }
+        for s in item_spans {
+            line2_spans.push(s.clone());
+        }
+    }
+
+    vec![Line::from(line1_spans), Line::from(line2_spans)]
 }
 
 fn resample(values: &[f64], target_len: usize) -> Vec<f64> {
@@ -217,6 +335,17 @@ fn format_compact_value(v: Decimal) -> String {
     }
 }
 
+fn format_compact_change(v: Decimal) -> String {
+    let f: f64 = v.to_string().parse().unwrap_or(0.0);
+    if f.abs() >= 1_000_000.0 {
+        format!("${:+.1}M", f / 1_000_000.0)
+    } else if f.abs() >= 1_000.0 {
+        format!("${:+.1}k", f / 1_000.0)
+    } else {
+        format!("${:+.0}", f)
+    }
+}
+
 fn format_compact_short(f: f64) -> String {
     if f.abs() >= 1_000_000.0 {
         format!("{:.1}M", f / 1_000_000.0)
@@ -224,5 +353,134 @@ fn format_compact_short(f: f64) -> String {
         format!("{:.0}k", f / 1_000.0)
     } else {
         format!("{:.0}", f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resample_identity() {
+        let vals = vec![1.0, 2.0, 3.0];
+        assert_eq!(resample(&vals, 3), vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_resample_empty() {
+        let vals: Vec<f64> = vec![];
+        assert_eq!(resample(&vals, 4), vec![0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_resample_upsample() {
+        let vals = vec![0.0, 10.0];
+        let result = resample(&vals, 5);
+        assert_eq!(result.len(), 5);
+        assert!((result[0] - 0.0).abs() < 0.01);
+        // result[4] = lerp at src_idx = (4/5)*1 = 0.8, so 8.0
+        assert!((result[4] - 8.0).abs() < 0.01);
+        // Values should be monotonically increasing
+        for i in 1..result.len() {
+            assert!(result[i] >= result[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_format_compact_value_thousands() {
+        assert_eq!(format_compact_value(dec!(5432)), "$5.4k");
+    }
+
+    #[test]
+    fn test_format_compact_value_millions() {
+        assert_eq!(format_compact_value(dec!(1234567)), "$1.2M");
+    }
+
+    #[test]
+    fn test_format_compact_value_small() {
+        assert_eq!(format_compact_value(dec!(42)), "$42");
+    }
+
+    #[test]
+    fn test_format_compact_change_positive() {
+        assert_eq!(format_compact_change(dec!(1500)), "$+1.5k");
+    }
+
+    #[test]
+    fn test_format_compact_change_negative() {
+        assert_eq!(format_compact_change(dec!(-250)), "$-250");
+    }
+
+    #[test]
+    fn test_format_compact_change_millions() {
+        assert_eq!(format_compact_change(dec!(2500000)), "$+2.5M");
+    }
+
+    #[test]
+    fn test_compute_timeframe_gains_empty() {
+        let history: Vec<(String, Decimal)> = Vec::new();
+        assert!(compute_timeframe_gains(&history).is_empty());
+    }
+
+    #[test]
+    fn test_compute_timeframe_gains_too_short() {
+        // Only 1 entry — not enough for any timeframe
+        let history = vec![("2026-03-02".to_string(), dec!(1000))];
+        assert!(compute_timeframe_gains(&history).is_empty());
+    }
+
+    #[test]
+    fn test_compute_timeframe_gains_1d() {
+        // 2 entries: enough for 1D
+        let history = vec![
+            ("2026-03-01".to_string(), dec!(1000)),
+            ("2026-03-02".to_string(), dec!(1050)),
+        ];
+        let gains = compute_timeframe_gains(&history);
+        assert_eq!(gains.len(), 1);
+        assert_eq!(gains[0].label, "1D");
+        assert_eq!(gains[0].change, dec!(50));
+        assert_eq!(gains[0].pct, dec!(5));
+    }
+
+    #[test]
+    fn test_compute_timeframe_gains_multiple_periods() {
+        // 31 entries: enough for 1D, 1W, 1M
+        let mut history = Vec::new();
+        for i in 0..31 {
+            let val = dec!(10000) + Decimal::from(i) * dec!(100);
+            history.push((format!("2026-02-{:02}", i + 1), val));
+        }
+        let gains = compute_timeframe_gains(&history);
+        assert_eq!(gains.len(), 3); // 1D, 1W, 1M
+        assert_eq!(gains[0].label, "1D");
+        assert_eq!(gains[1].label, "1W");
+        assert_eq!(gains[2].label, "1M");
+    }
+
+    #[test]
+    fn test_compute_timeframe_gains_negative() {
+        let history = vec![
+            ("2026-03-01".to_string(), dec!(1000)),
+            ("2026-03-02".to_string(), dec!(900)),
+        ];
+        let gains = compute_timeframe_gains(&history);
+        assert_eq!(gains[0].change, dec!(-100));
+        assert_eq!(gains[0].pct, dec!(-10));
+    }
+
+    #[test]
+    fn test_braille_char_empty_row() {
+        // When both values are 0 and row is 1 (above row 0), should produce blank braille
+        let ch = braille_char(0, 0, 1, BRAILLE_ROWS);
+        // Row 1 base = 4, checking y positions 7,6,5,4 - none should have dots since values are 0
+        assert_eq!(ch, '\u{2800}'); // empty braille
+    }
+
+    #[test]
+    fn test_format_compact_short() {
+        assert_eq!(format_compact_short(1500.0), "2k"); // rounds
+        assert_eq!(format_compact_short(500.0), "500");
+        assert_eq!(format_compact_short(2_500_000.0), "2.5M");
     }
 }

@@ -9,7 +9,7 @@ use crate::tui::widgets;
 pub const COMPACT_WIDTH: u16 = 100;
 
 /// Minimum height for the portfolio overview panel (allocation bars + sparkline).
-const MIN_OVERVIEW_HEIGHT: u16 = 10;
+const MIN_OVERVIEW_HEIGHT: u16 = 14;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
@@ -130,8 +130,8 @@ fn compute_overview_height(app: &App, max_height: u16) -> u16 {
 
     // Allocation bars: cat_count + 2 (border) + 1 (total value line)
     let alloc_height = (cat_count + 3).max(4);
-    // Sparkline: minimum 8 rows for meaningful chart
-    let sparkline_height = 8u16;
+    // Sparkline: minimum 12 rows for meaningful chart + timeframe gains
+    let sparkline_height = 12u16;
     // Total: allocation + sparkline
     let ideal = alloc_height + sparkline_height;
 
