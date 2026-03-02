@@ -326,6 +326,9 @@ pub struct App {
     // Row highlight flash on selection change
     pub last_selection_change_tick: u64,
 
+    // Sort indicator flash on sort change
+    pub last_sort_change_tick: u64,
+
     // Theme toast on cycle
     pub theme_toast_tick: u64,
 
@@ -437,6 +440,7 @@ impl App {
             last_key_display: String::new(),
             last_key_tick: 0,
             last_selection_change_tick: 0,
+            last_sort_change_tick: 0,
             theme_toast_tick: 0,
             tx_form: None,
             delete_confirm: None,
@@ -1459,12 +1463,14 @@ impl App {
             KeyCode::Char('a') => {
                 self.sort_field = SortField::Allocation;
                 self.sort_ascending = false;
+                self.last_sort_change_tick = self.tick_count;
                 self.recompute();
             }
             KeyCode::Char('%') => {
                 if !is_privacy_view(self) {
                     self.sort_field = SortField::GainPct;
                     self.sort_ascending = false;
+                    self.last_sort_change_tick = self.tick_count;
                     self.recompute();
                 }
             }
@@ -1475,28 +1481,33 @@ impl App {
                 if !is_privacy_view(self) {
                     self.sort_field = SortField::TotalGain;
                     self.sort_ascending = false;
+                    self.last_sort_change_tick = self.tick_count;
                     self.recompute();
                 }
             }
             KeyCode::Char('n') => {
                 self.sort_field = SortField::Name;
                 self.sort_ascending = true;
+                self.last_sort_change_tick = self.tick_count;
                 self.recompute();
             }
             KeyCode::Char('c') => {
                 self.sort_field = SortField::Category;
                 self.sort_ascending = true;
+                self.last_sort_change_tick = self.tick_count;
                 self.recompute();
             }
             KeyCode::Char('d') => {
                 if self.portfolio_mode != PortfolioMode::Percentage {
                     self.sort_field = SortField::Date;
                     self.sort_ascending = false;
+                    self.last_sort_change_tick = self.tick_count;
                     self.recompute();
                 }
             }
             KeyCode::Tab => {
                 self.sort_ascending = !self.sort_ascending;
+                self.last_sort_change_tick = self.tick_count;
                 self.recompute();
             }
 
@@ -4009,5 +4020,91 @@ mod tx_form_tests {
         assert!(matches!(app.sparkline_timeframe, ChartTimeframe::OneWeek));
         app.handle_key(key('['));
         assert!(matches!(app.sparkline_timeframe, ChartTimeframe::FiveYears));
+    }
+}
+
+#[cfg(test)]
+mod sort_flash_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use rust_decimal_macros::dec;
+    use std::path::PathBuf;
+
+    fn make_test_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
+        for i in 0..3 {
+            app.display_positions.push(crate::models::position::Position {
+                symbol: format!("SYM{}", i),
+                name: format!("Symbol {}", i),
+                category: crate::models::asset::AssetCategory::Equity,
+                quantity: dec!(1),
+                avg_cost: dec!(100),
+                total_cost: dec!(100),
+                currency: "USD".to_string(),
+                current_price: Some(dec!(110)),
+                current_value: Some(dec!(110)),
+                gain: Some(dec!(10)),
+                gain_pct: Some(dec!(10)),
+                allocation_pct: Some(dec!(33)),
+            });
+        }
+        app
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn tab_key() -> KeyEvent {
+        KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_sort_flash_starts_at_zero() {
+        let app = make_test_app();
+        assert_eq!(app.last_sort_change_tick, 0);
+    }
+
+    #[test]
+    fn test_sort_flash_updates_on_sort_change() {
+        let mut app = make_test_app();
+        app.tick_count = 50;
+        app.handle_key(key('n')); // sort by name
+        assert_eq!(app.last_sort_change_tick, 50);
+        assert_eq!(app.sort_field, SortField::Name);
+    }
+
+    #[test]
+    fn test_sort_flash_updates_on_tab_toggle() {
+        let mut app = make_test_app();
+        let was_ascending = app.sort_ascending;
+        app.tick_count = 100;
+        app.handle_key(tab_key()); // toggle sort direction
+        assert_eq!(app.last_sort_change_tick, 100);
+        assert_ne!(app.sort_ascending, was_ascending);
+    }
+
+    #[test]
+    fn test_sort_flash_updates_on_category_sort() {
+        let mut app = make_test_app();
+        app.tick_count = 75;
+        app.handle_key(key('c')); // sort by category
+        assert_eq!(app.last_sort_change_tick, 75);
+        assert_eq!(app.sort_field, SortField::Category);
+    }
+
+    #[test]
+    fn test_sort_flash_updates_on_allocation_sort() {
+        let mut app = make_test_app();
+        app.tick_count = 200;
+        app.handle_key(key('a')); // sort by allocation
+        assert_eq!(app.last_sort_change_tick, 200);
+        assert_eq!(app.sort_field, SortField::Allocation);
     }
 }

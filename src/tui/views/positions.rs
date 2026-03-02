@@ -505,6 +505,16 @@ fn render_table(
     let arrow = if app.sort_ascending { "▲" } else { "▼" };
     let sort_indicator = format!(" [{}{}] ", app.sort_field_label(), arrow);
 
+    // Flash sort indicator when sort changes — bright accent fading to normal
+    let sort_elapsed = app.tick_count.saturating_sub(app.last_sort_change_tick);
+    let sort_style = if sort_elapsed < theme::SORT_FLASH_DURATION && app.last_sort_change_tick > 0 {
+        let progress = sort_elapsed as f32 / theme::SORT_FLASH_DURATION as f32;
+        let flash_color = theme::lerp_color(t.text_primary, t.text_accent, progress);
+        Style::default().fg(flash_color).bold()
+    } else {
+        Style::default().fg(t.text_accent)
+    };
+
     let title = if app.portfolio_mode == PortfolioMode::Percentage {
         " Positions (%) "
     } else if app.show_percentages_only {
@@ -529,7 +539,7 @@ fn render_table(
                 .title(
                     Line::from(Span::styled(
                         sort_indicator,
-                        Style::default().fg(t.text_accent),
+                        sort_style,
                     ))
                     .alignment(Alignment::Right),
                 ),
@@ -1373,5 +1383,56 @@ mod category_divider_tests {
         let t = theme::theme_by_name("midnight");
         let row = category_divider_row(AssetCategory::Equity, &t, 6);
         let _ = row; // 6-column privacy table variant
+    }
+}
+
+#[cfg(test)]
+mod sort_flash_style_tests {
+    use super::*;
+    use crate::tui::theme;
+
+    #[test]
+    fn test_sort_flash_is_bold_during_flash() {
+        let t = theme::theme_by_name("midnight");
+        let tick_count: u64 = 100;
+        let last_sort_change_tick: u64 = 95; // 5 ticks ago
+        let elapsed = tick_count.saturating_sub(last_sort_change_tick);
+
+        assert!(elapsed < theme::SORT_FLASH_DURATION);
+        let progress = elapsed as f32 / theme::SORT_FLASH_DURATION as f32;
+        let flash_color = theme::lerp_color(t.text_primary, t.text_accent, progress);
+        let style = Style::default().fg(flash_color).bold();
+
+        // During flash: style should be bold
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn test_sort_flash_normal_after_duration() {
+        let t = theme::theme_by_name("midnight");
+        let tick_count: u64 = 200;
+        let last_sort_change_tick: u64 = 100; // 100 ticks ago
+        let elapsed = tick_count.saturating_sub(last_sort_change_tick);
+
+        assert!(elapsed >= theme::SORT_FLASH_DURATION);
+        // After flash: should use normal text_accent, no bold
+        let style = Style::default().fg(t.text_accent);
+        assert!(!style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn test_sort_flash_color_starts_at_primary() {
+        let t = theme::theme_by_name("midnight");
+        // At progress=0 (just changed), color should be near text_primary
+        let color = theme::lerp_color(t.text_primary, t.text_accent, 0.0);
+        assert_eq!(color, t.text_primary);
+    }
+
+    #[test]
+    fn test_sort_flash_color_ends_at_accent() {
+        let t = theme::theme_by_name("midnight");
+        // At progress=1.0, color should be text_accent
+        let color = theme::lerp_color(t.text_primary, t.text_accent, 1.0);
+        assert_eq!(color, t.text_accent);
     }
 }
