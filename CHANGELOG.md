@@ -422,3 +422,11 @@
 - Files: `src/app.rs` (chart_variants_for_position: USD branch, non-USD cash branch, commodity branch in else block)
 - Tests: added 2 new tests (test_commodity_non_gold_has_btc_ratio, test_equity_has_no_btc_ratio), updated 3 existing tests (test_usd_cash_variants, test_non_usd_cash_variants_ratio_dxy, test_gbp_cash_variants). Total: 395 tests passing.
 - TODO: Fix USD chart ratio (P0), Fix GBP chart ratio (P0), Fix silver/commodities missing BTC ratio (P0)
+
+### 2026-03-02 — Fix Sprott Uranium (U.UN) chart and improve empty state handling
+
+- What: fixed U.UN showing no chart data by adding Yahoo Finance symbol normalization for Toronto Stock Exchange trust units. TSX tickers with `.UN` suffix (e.g. `U.UN`) are now converted to Yahoo's format (`U-UN.TO`). Also added proper empty state handling: charts now distinguish between "still loading" and "fetch attempted but no data available." Previously, failed fetches showed "Loading..." indefinitely; now they show "No chart data available for {SYM}" (or "No data" in mini panels).
+- Why: P0 bug fix — U.UN is Sprott Physical Uranium Trust on the TSX. Yahoo Finance doesn't recognize the `.UN` dot notation; it uses `{PREFIX}-UN.TO` format. Without normalization, both price and history fetches silently failed, leaving the chart in a permanent loading state.
+- Files: `src/price/yahoo.rs` (new `normalize_yahoo_symbol()` function, applied in `fetch_price` and `fetch_history`), `src/app.rs` (new `history_attempted: HashSet<String>` field, populated on batch send and individual fetch), `src/tui/widgets/price_chart.rs` (updated all 6 chart render functions to show "No chart data" vs "Loading..." based on `history_attempted`)
+- Tests: added 5 new tests (test_normalize_tsx_trust_unit, test_normalize_tsx_trust_unit_multi_char_prefix, test_normalize_regular_symbol_unchanged, test_normalize_already_to_suffix_unchanged, test_normalize_preserves_original_for_non_tsx). Total: 400 tests passing.
+- TODO: Fix Sprott Uranium (U.UN) chart — no data (P0)

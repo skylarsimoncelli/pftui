@@ -198,7 +198,7 @@
 ## P0 — Chart Ratio Bugs (Owner Report)
 
 
-- [ ] **Fix Sprott Uranium (U.UN) chart — no data** — U.UN shows no chart data. This is likely a Yahoo Finance ticker issue (Toronto exchange suffix). If the ticker can't be resolved, gracefully show "No chart data available for U.UN" instead of a blank/broken chart. Don't crash or show misleading empty axes. Files: `src/price/yahoo.rs`, `src/tui/widgets/price_chart.rs` (empty state handling).
+
 
 ## P0 — Portfolio Chart Broken (Owner Report)
 
