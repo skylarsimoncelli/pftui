@@ -6,7 +6,7 @@
 ## P1 — Animations & Live Feel
 
 - [x] **Add price flash with directional arrows** — When a price updates, show a brief ▲/▼ arrow next to the price that fades after ~1s. Currently we flash the price cell bg, but adding a directional indicator makes the update scannable without reading the number. Use `price_flash_ticks` map (already exists) and extend to store direction (up/down/same). Files: `src/tui/views/positions.rs`, `src/app.rs`. Test: verify flash direction stored on update.
-- [ ] **Add scrolling ticker tape in header** — Horizontal marquee-style ticker showing top movers from Markets view data: "SPX +1.2% │ BTC -3.4% │ GOLD +0.5%" scrolling left. Renders in the header row using the space after the portfolio value. Uses `app.tick_count` to advance position by 1 char every ~6 ticks (~10 chars/sec). Only active on Positions view to avoid clutter. Files: `src/tui/widgets/header.rs`, `src/app.rs` (market data already available). Test: test ticker text generation and wrap-around.
+- [~] **Add scrolling ticker tape in header** — Horizontal marquee-style ticker showing top movers from Markets view data: "SPX +1.2% │ BTC -3.4% │ GOLD +0.5%" scrolling left. Renders in the header row using the space after the portfolio value. Uses `app.tick_count` to advance position by 1 char every ~6 ticks (~10 chars/sec). Only active on Positions view to avoid clutter. Files: `src/tui/widgets/header.rs`, `src/app.rs` (market data already available). Test: test ticker text generation and wrap-around.
 - [ ] **Add pulsing border on active panel** — Instead of static `border_active` color, pulse the focused panel's border using `pulse_color()` (already exists in theme.rs). Subtle 2-second sine wave between `border_inactive` and `border_active` intensity. Gives the app a "breathing" feel. Only when prices are live (dead/stale = static border). Files: `src/tui/views/positions.rs` (render_table block), `src/tui/widgets/price_chart.rs` (chart block). Test: verify pulse applied only when prices_live.
 - [ ] **Add row highlight animation on selection change** — When j/k moves selection, briefly flash the entire new row brighter (lerp from `surface_3` toward `border_accent` then fade back over ~15 ticks). Track `last_selection_change_tick` on App. Files: `src/tui/views/positions.rs` (row_bg calculation), `src/app.rs` (track tick on selection change). Test: test flash decay timing.
 
@@ -69,9 +69,9 @@
 - [ ] **Options chains** — Options display if a free data source exists
 
 
-## P4 — Distribution & CI (Best Effort)
+## P1 — Distribution & CI (Owner Priority)
 
-> Best effort — skip any that are complex or require external accounts/repos. Focus on what can be done from this repo alone first.
+> Name "pftui" is unclaimed on ALL major package managers. Prioritize crates.io and Homebrew first (covers 90% of terminal users), then expand.
 
 - [ ] **Set up GitHub Actions CI** — Workflow for: `cargo test`, `cargo clippy`, `cargo build --release` on push/PR. Matrix: ubuntu-latest, macos-latest. Cache cargo registry + target dir. Files: new `.github/workflows/ci.yml`.
 - [ ] **GitHub Releases with prebuilt binaries** — CI workflow that triggers on git tag (`v*`). Builds release binaries for linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64. Uploads as GitHub Release assets with checksums. Files: new `.github/workflows/release.yml`.
