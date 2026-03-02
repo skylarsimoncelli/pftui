@@ -3,10 +3,6 @@
 > Pick the highest-priority unclaimed item. Remove it from this file when done.
 > Each item is scoped to ~1 hour. If it's bigger, split it. Update CHANGELOG.md when done.
 
-## P1 — Animations & Live Feel
-
-- [ ] **Add row highlight animation on selection change** — When j/k moves selection, briefly flash the entire new row brighter (lerp from `surface_3` toward `border_accent` then fade back over ~15 ticks). Track `last_selection_change_tick` on App. Files: `src/tui/views/positions.rs` (row_bg calculation), `src/app.rs` (track tick on selection change). Test: test flash decay timing.
-
 ## P1 — Header & Status Bar Enhancements
 
 

@@ -382,3 +382,11 @@
 - Files: `src/tui/theme.rs` (new `PULSE_PERIOD_BORDER` constant, 2 tests), `src/tui/views/positions.rs` (extracted `positions_border_color()` helper, pulse logic, 3 tests), `src/tui/widgets/price_chart.rs` (chart border pulse), `src/tui/widgets/asset_header.rs` (header border pulse)
 - Tests: added 5 tests — test_positions_border_pulse_when_active_and_live, test_positions_border_static_when_active_and_stale, test_positions_border_inactive_when_not_active, pulse_intensity_border_period_range, pulse_border_period_produces_variation. Total: 358 tests passing.
 - TODO: Add pulsing border on active panel (P1)
+
+### 2026-03-02 — Add row highlight flash on selection change
+
+- What: when j/k moves the selection in the positions table, the newly selected row briefly flashes from `border_accent` color and smoothly fades back to `surface_3` over ~0.25s (15 ticks at 60fps). The flash uses `lerp_color()` for smooth decay. Non-selected rows are completely unaffected. Flash is suppressed on initial state (tick 0) to prevent a flash when the app first opens.
+- Why: P1 animation — gives immediate, satisfying visual feedback when navigating the positions list. The brief color flash draws the eye to the new selection, making navigation feel responsive and polished. Complements the existing pulsing border and keystroke echo animations.
+- Files: `src/app.rs` (new `last_selection_change_tick` field, set in `on_position_selection_changed`), `src/tui/theme.rs` (new `SELECTION_FLASH_DURATION` constant), `src/tui/views/positions.rs` (new `row_background()` helper, 6 tests)
+- Tests: added 6 tests — test_flash_at_start_returns_accent_color, test_flash_decays_to_surface_3, test_flash_midpoint_is_between_accent_and_surface, test_non_selected_rows_unaffected_by_flash, test_no_flash_on_initial_state, test_flash_well_past_duration. Total: 364 tests passing.
+- TODO: Add row highlight animation on selection change (P1)
