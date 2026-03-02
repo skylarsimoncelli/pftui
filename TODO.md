@@ -62,7 +62,7 @@
 
 ## P2 — Theme & Color Enhancements
 
-- [ ] **Add dynamic header accent based on portfolio performance** — Tint the header border/accent color slightly green when portfolio is up today, slightly red when down. Subtle (5-10% blend) so it doesn't clash with theme, but gives an instant ambient mood indicator. Files: `src/tui/widgets/header.rs`. Test: test color blending for positive/negative days.
+
 
 ## P2 — Data & Infrastructure
 

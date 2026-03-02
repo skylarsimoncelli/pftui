@@ -494,3 +494,11 @@
 - Files: `src/app.rs` (sparkline_timeframe field, `[`/`]` keybindings, 3 tests), `src/tui/widgets/portfolio_sparkline.rs` (timeframe filtering, dynamic period selection, title label, 2 tests), `src/tui/views/help.rs` (keybinding documentation)
 - Tests: 5 new tests (default timeframe, forward cycling, backward cycling, larger periods, 1W-only periods). Total: 501 tests passing.
 - TODO: Add portfolio sparkline period selector (P2)
+
+### 2026-03-02 — Add dynamic header border tint based on portfolio performance
+
+- What: the header's bottom border now subtly tints toward green when the portfolio is up for the day, or toward red when it's down. Uses a 15% `lerp_color` blend from `border_subtle` toward `gain_green` or `loss_red`. Falls back to the neutral `border_subtle` when there's no daily change data (e.g. no price history yet, or zero change). Works across all themes since it uses each theme's own color values.
+- Why: P2 theme/color enhancement — provides an ambient mood indicator. Users can instantly sense portfolio direction from the header border without reading numbers. The blend is subtle enough (15%) to avoid clashing with any theme.
+- Files: `src/tui/widgets/header.rs` (border color computation in `render()`, added `lerp_color` import, 4 new tests)
+- Tests: 4 new tests (positive tint, negative tint, zero change unchanged, no data unchanged). Total: 505 tests passing.
+- TODO: Add dynamic header accent based on portfolio performance (P2)
