@@ -125,3 +125,11 @@ _Older entries archived in CHANGELOG-archive.md_
 - Files: `.github/workflows/ci.yml` (new)
 - Tests: 267 passing, 0 clippy warnings.
 - TODO: Create GitHub Actions CI workflow (P0), Prepare Cargo.toml for publishing (P0)
+
+### 2026-03-02 — Add `pftui refresh` headless price command
+
+- What: added a new `pftui refresh` CLI subcommand that fetches and caches current prices for all portfolio symbols without launching the TUI. Collects symbols from transactions (full mode) or allocations (percentage mode) plus watchlist entries, deduplicates across sources, fetches via Yahoo Finance (equities/commodities/forex) and CoinGecko with Yahoo fallback (crypto), writes results to the price_cache DB table, and prints a summary with symbol, price, and source for each fetched price. Handles cash positions statically (always $1). Supports non-USD base currencies by fetching the forex rate.
+- Why: this was the #1 requested feature from both beta testers. Without headless price refresh, pftui is a transaction ledger rather than a live portfolio tracker — `pftui summary` shows N/A for all prices unless the TUI has been launched recently. Now agents, scripts, and cron jobs can keep prices fresh: `pftui refresh && pftui summary`.
+- Files: new `src/commands/refresh.rs`, `src/commands/mod.rs` (register module), `src/cli.rs` (add `Refresh` subcommand), `src/main.rs` (wire handler)
+- Tests: added 10 unit tests for symbol collection (empty DB, from transactions, deduplication with watchlist, percentage mode), price formatting (large/medium/small/very small), and yahoo crypto symbol formatting. Total: 277 tests passing.
+- TODO: Add `pftui refresh` headless price command (P0)
