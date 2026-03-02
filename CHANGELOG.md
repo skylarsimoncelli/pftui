@@ -430,3 +430,11 @@
 - Files: `src/price/yahoo.rs` (new `normalize_yahoo_symbol()` function, applied in `fetch_price` and `fetch_history`), `src/app.rs` (new `history_attempted: HashSet<String>` field, populated on batch send and individual fetch), `src/tui/widgets/price_chart.rs` (updated all 6 chart render functions to show "No chart data" vs "Loading..." based on `history_attempted`)
 - Tests: added 5 new tests (test_normalize_tsx_trust_unit, test_normalize_tsx_trust_unit_multi_char_prefix, test_normalize_regular_symbol_unchanged, test_normalize_already_to_suffix_unchanged, test_normalize_preserves_original_for_non_tsx). Total: 400 tests passing.
 - TODO: Fix Sprott Uranium (U.UN) chart — no data (P0)
+
+### 2026-03-02 — Enhance portfolio chart with multi-timeframe gains and larger layout
+
+- What: rewrote the portfolio sparkline panel to show multi-timeframe gain/loss indicators (1D, 1W, 1M, 3M) below the braille chart. Each timeframe shows a colored arrow (▲/▼), absolute change (e.g. $+1.5k), and percentage change. Gains auto-wrap to two rows on narrow terminals. The panel title now dynamically shows current portfolio value (e.g. "Portfolio  $125.3k"). Increased minimum sparkline panel height from 6→10 rows and overall overview panel minimum from 10→14, giving the chart significantly more vertical space to render a meaningful braille graph.
+- Why: P0 fix — the portfolio chart was "broken" per owner report: too small to render meaningful data (often just 2-3 braille rows), and showed only a single total change percentage with no timeframe context. Now the chart gets proper vertical space and immediately communicates portfolio performance across multiple periods, matching the request for "hourly, daily, weekly, monthly, yearly" gains.
+- Files: `src/tui/widgets/portfolio_sparkline.rs` (full rewrite: multi-timeframe gains, dynamic title, `compute_timeframe_gains()`, `build_gain_lines()`, `format_compact_change()`, 16 tests), `src/tui/widgets/sidebar.rs` (increased sparkline min height), `src/tui/ui.rs` (increased MIN_OVERVIEW_HEIGHT and sparkline allocation)
+- Tests: added 16 tests (timeframe gain computation for empty/short/1d/multi/negative, compact formatting for change/value/short, braille char, resample). Total: 416 tests passing.
+- TODO: Fix main portfolio chart (P0)

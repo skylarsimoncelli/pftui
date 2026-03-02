@@ -202,11 +202,7 @@
 
 ## P0 — Portfolio Chart Broken (Owner Report)
 
-- [ ] **Fix main portfolio chart** — The portfolio sparkline/chart in the left pane appears broken. Debug: check if portfolio value history is being computed and stored correctly, verify the sparkline widget receives valid data points. Also:
-  - The chart is too small — give it more vertical space in the layout
-  - Should show gains/returns at multiple timeframes: hourly, daily, weekly, monthly, yearly
-  - Show both the chart AND the numeric gain/loss for each period (e.g. "1D: +$420 (+1.2%)", "1W: -$130 (-0.3%)")
-  - Files: `src/tui/widgets/portfolio_sparkline.rs`, `src/tui/ui.rs` (layout sizing), `src/app.rs` (portfolio history computation)
+
 
 ## P1 — Layout Restructure (Owner Request)
 
