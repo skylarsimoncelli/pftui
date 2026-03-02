@@ -21,7 +21,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // header
+            Constraint::Length(widgets::header::header_height(app)),  // header (dynamic: 3 with ticker, 2 without)
             Constraint::Min(5),    // main content
             Constraint::Length(2), // status bar
         ])
