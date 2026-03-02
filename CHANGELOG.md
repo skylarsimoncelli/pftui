@@ -366,3 +366,11 @@
 - Files: `src/app.rs` (new `record_keystroke()` method, `last_key_display`/`last_key_tick` fields, call in `handle_key`, 8 new tests), `src/tui/widgets/status_bar.rs` (render keystroke echo with fade)
 - Tests: added 8 tests — test_record_regular_key, test_record_ctrl_key, test_record_shift_g, test_record_gg_sequence, test_record_enter_key, test_record_esc_key, test_record_arrow_keys, test_key_echo_text_generation. Total: 343 tests passing.
 - TODO: Keystroke echo in status bar (P2)
+
+### 2026-03-02 — Add breadcrumb trail to status bar
+
+- What: added a context-aware breadcrumb trail at the left side of the status bar. Shows the current navigation path based on view mode, selected position, chart variant, and detail popup state. Examples: "Positions › AAPL", "Positions › AAPL › 3M › AAPL/SPX", "Positions › BTC › Detail", "Markets", "Economy". Breadcrumb is styled with `text_accent` color in bold, separated from key hints by a `│` divider in `border_subtle` color.
+- Why: P1 status bar enhancement — the generic key hint bar gave no context about where you are in the app. The breadcrumb instantly communicates the current view, selected asset, active chart variant, and timeframe without requiring the user to look at multiple parts of the screen.
+- Files: `src/app.rs` (new `breadcrumb()` method with 10 tests), `src/tui/widgets/status_bar.rs` (render breadcrumb before key hints)
+- Tests: added 10 tests — test_breadcrumb_positions_no_selection, test_breadcrumb_positions_with_selection, test_breadcrumb_detail_popup, test_breadcrumb_chart_variant, test_breadcrumb_transactions_view, test_breadcrumb_markets_view, test_breadcrumb_economy_view, test_breadcrumb_watchlist_view, test_breadcrumb_detail_overrides_chart, test_breadcrumb_chart_timeframe_label. Total: 353 tests passing.
+- TODO: Add breadcrumb trail to status bar (P1)

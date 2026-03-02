@@ -10,7 +10,6 @@
 
 ## P1 — Header & Status Bar Enhancements
 
-- [ ] **Add breadcrumb trail to status bar** — When in chart view, show the navigation path: "Positions › AAPL › 3M Chart › AAPL/SPX". When in detail popup: "Positions › AAPL › Detail". Replaces the generic hint bar text with context-aware breadcrumbs. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (expose chart variant label). Test: test breadcrumb string generation for each navigation state.
 
 ## P1 — Positions Table Visual Density
 
