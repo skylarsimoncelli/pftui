@@ -97,8 +97,7 @@
 
 ## P1 — Import/Export (Owner Request)
 
-- [ ] **Add `pftui export` command** — Dump the full database (positions, transactions, watchlist, config) to a JSON or CSV file. Default: JSON (preserves types). `pftui export [--format json|csv] [--output <path>]`. If no output path, print to stdout. JSON should be a complete snapshot: `{ "positions": [...], "transactions": [...], "watchlist": [...], "config": {...} }`. Files: new `src/commands/export.rs`, `src/cli.rs`, `src/db/mod.rs` (query helpers).
-- [ ] **Add `pftui import` command** — Import data from a JSON or CSV file, overwriting the current DB. `pftui import <path> [--format json|csv] [--merge|--replace]`. `--replace` wipes and rebuilds (default), `--merge` adds new entries without deleting existing. Validate schema before writing. Prompt for confirmation on `--replace`. Files: new `src/commands/import.rs`, `src/cli.rs`.
+- [ ] **Add `pftui import` command** — Import data from a JSON snapshot file (as produced by `pftui export json`). `pftui import <path> [--merge|--replace]`. `--replace` wipes and rebuilds (default), `--merge` adds new entries without deleting existing. Validate schema before writing. Prompt for confirmation on `--replace`. The JSON format is: `{ "config": {...}, "transactions": [...], "allocations": [...], "watchlist": [...], "positions": [...] }`. Files: new `src/commands/import.rs`, `src/cli.rs`.
 
 ## P1 — Mock Mode (Owner Request)
 

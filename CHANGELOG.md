@@ -454,3 +454,11 @@
 - Files: new `src/commands/watchlist_cli.rs`, `src/commands/mod.rs`, `src/cli.rs` (Watchlist variant), `src/main.rs` (dispatch)
 - Tests: added 13 new tests (price formatting for large/medium/small/zero/very-large values, relative timestamp formatting for recent/minutes/hours/days/invalid, empty DB, entries without prices, entries with prices). Total: 449 tests passing.
 - TODO: Add `pftui watchlist` CLI command (P1)
+
+### 2026-03-02 — Enhance export to full database snapshot with --output flag
+
+- What: enhanced the `pftui export` command. JSON export now produces a complete portfolio snapshot including config, transactions, allocations, watchlist entries, and computed positions — a full backup/restore format. CSV export now includes `name` and `currency` columns. Both formats support a new `--output <path>` (`-o`) flag to write to a file instead of stdout. Added structured types (FullSnapshot, ConfigExport, WatchlistExport) for clean JSON serialization.
+- Why: P1 feature (Import/Export, Owner Request) — the existing export only dumped computed position data. A full snapshot enables backup, migration, and the upcoming `pftui import` command to restore from it. File output support makes it practical for scripts and cron jobs.
+- Files: `src/commands/export.rs` (full rewrite: snapshot types, file output, JSON/CSV), `src/cli.rs` (added `--output` arg to Export), `src/main.rs` (pass output arg)
+- Tests: added 6 new tests (config_export_from_config, json_snapshot_serializes, json_snapshot_with_data, export_json_full_db_snapshot, export_csv_to_file, get_writer_stdout). Total: 456 tests passing.
+- TODO: Enhance `pftui export` to full database snapshot (P1)
