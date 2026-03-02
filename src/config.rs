@@ -102,8 +102,7 @@ mod tests {
 
     #[test]
     fn is_percentage_mode_percentage() {
-        let mut config = Config::default();
-        config.portfolio_mode = PortfolioMode::Percentage;
+        let config = Config { portfolio_mode: PortfolioMode::Percentage, ..Default::default() };
         assert!(config.is_percentage_mode());
     }
 

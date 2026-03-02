@@ -471,7 +471,7 @@ mod tests {
     fn pulse_intensity_range() {
         for tick in 0..PULSE_PERIOD {
             let val = pulse_intensity(tick, PULSE_PERIOD);
-            assert!(val >= 0.29 && val <= 1.01, "pulse_intensity({tick}) = {val}");
+            assert!((0.29..=1.01).contains(&val), "pulse_intensity({tick}) = {val}");
         }
     }
 
