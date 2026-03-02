@@ -8,7 +8,6 @@
 
 ## P1 — Positions Table Visual Density
 
-- [ ] **Add inline mini-sparkline in price column** — Render a 3-char sparkline (▁▃▇) directly after the price number in the Price column, using the last 3 hours of data (or last 3 history points). Gives instant trend context without looking at the separate Trend column. Files: `src/tui/views/positions.rs` (price cell rendering). Test: verify sparkline renders with various history lengths.
 - [ ] **Add gain/loss magnitude bar in Gain% column** — Render the gain% number with a tiny proportional bar behind it: green fill for gains, red for losses, scaled to ±20%. Like a micro horizontal bar chart in each cell. Uses EIGHTH_BLOCKS for sub-character resolution. Files: `src/tui/views/positions.rs` (gain cell rendering). Test: test bar width calculation for various percentages.
 
 

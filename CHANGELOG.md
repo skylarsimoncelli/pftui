@@ -398,3 +398,11 @@
 - Files: `src/tui/views/positions.rs` (asset_line construction in both full and privacy tables, removed cell-level cat_color styling, 3 new tests)
 - Tests: added 3 tests — test_category_dot_uses_category_color, test_category_dot_is_single_char, test_asset_line_structure_with_dot. Total: 367 tests passing.
 - TODO: Add color-coded category dot before asset name (P1)
+
+### 2026-03-02 — Add inline mini-sparkline in price column
+
+- What: added a 3-char sparkline (▁▃▇) directly after the price number in the Price column, using the last 3 history data points. Reuses the existing `build_sparkline_spans()` with `count=3`. Gives instant trend context without needing the separate Trend column. Price column widened from 12 to 16 chars. During a price flash (▲/▼), the mini sparkline still appears after the flash indicator. When no history is available, the price renders without a sparkline (graceful degradation).
+- Why: P1 visual density — the price column was just a number. Now it immediately communicates direction with a tiny trend indicator right next to the price, making the positions table more information-dense at a glance.
+- Files: `src/tui/views/positions.rs` (mini sparkline construction in full table, price cell spans, column width, 5 new tests)
+- Tests: added 5 tests — test_mini_sparkline_three_points, test_mini_sparkline_uses_last_three_of_many, test_mini_sparkline_fewer_than_three_records, test_mini_sparkline_empty_history, test_mini_sparkline_flat_prices. Total: 372 tests passing.
+- TODO: Add inline mini-sparkline in price column (P1)
