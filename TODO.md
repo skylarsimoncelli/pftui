@@ -108,3 +108,36 @@
   - Cache for session: once 1Y data is fetched for an asset, don't re-fetch if user switches back to 3M then 1Y
   - This reduces startup API calls, avoids CoinGecko rate limiting, and saves bandwidth
   - Files: `src/price/mod.rs` (request_all_history, request_history_for_symbol), `src/app.rs` (trigger fetch on timeframe change if needed)
+
+## P1 — Import/Export (Owner Request)
+
+- [ ] **Add `pftui export` command** — Dump the full database (positions, transactions, watchlist, config) to a JSON or CSV file. Default: JSON (preserves types). `pftui export [--format json|csv] [--output <path>]`. If no output path, print to stdout. JSON should be a complete snapshot: `{ "positions": [...], "transactions": [...], "watchlist": [...], "config": {...} }`. Files: new `src/commands/export.rs`, `src/cli.rs`, `src/db/mod.rs` (query helpers).
+- [ ] **Add `pftui import` command** — Import data from a JSON or CSV file, overwriting the current DB. `pftui import <path> [--format json|csv] [--merge|--replace]`. `--replace` wipes and rebuilds (default), `--merge` adds new entries without deleting existing. Validate schema before writing. Prompt for confirmation on `--replace`. Files: new `src/commands/import.rs`, `src/cli.rs`.
+
+## P1 — Mock Mode (Owner Request)
+
+- [ ] **Add `pftui mock` command** — Opens pftui with a realistic mock portfolio from a bundled mock DB. `pftui mock` copies a pre-built SQLite DB to a temp location and launches the TUI against it. The mock portfolio should be diverse and realistic:
+  - **Commodities:** GLD (Gold), SLV (Silver), COPX (Copper), URA (Uranium), USO (Oil)
+  - **Indices/ETFs:** SPY (S&P 500), QQQ (Nasdaq), IWM (Russell 2000)
+  - **Crypto:** BTC, ETH, SOL
+  - **Forex/Cash:** USD, JPY (via CurrencyShares or similar)
+  - **Bonds:** TLT (20Y Treasury), SHY (Short-term)
+  - Realistic quantities and cost bases (e.g. 10 SPY @ $420, 0.5 BTC @ $28000, 100 GLD @ $180)
+  - Multiple transactions per asset (buys at different dates/prices for realism)
+  - Store as `mock/portfolio.db` in the repo (or `mock/portfolio.json` and build DB on first run)
+  - Files: new `src/commands/mock.rs`, new `mock/portfolio.json`, `src/cli.rs`
+
+## P2 — Web Interface (Owner Request)
+
+- [ ] **Add `pftui web` subcommand** — Spins up a web server serving the portfolio UI in a browser. Subcommands:
+  - `pftui web start [--bind <addr>] [--port <port>] [--password <pass>]` — Start server. Default: `127.0.0.1:8080`. Pass `--bind 0.0.0.0` for external access. Optional `--password` enables HTTP basic auth.
+  - `pftui web stop` — Stop the running server (write PID file for management)
+  - `pftui web status` — Show if running, bound address, port
+  - The web UI should share as much logic as possible with the TUI — extract portfolio data computation, sorting, filtering, chart data generation into a shared `core` layer that both TUI and web consume. The web frontend renders the same data, NOT a copy of the TUI rendering code.
+  - Tech stack suggestion: `axum` or `warp` for HTTP server, serve a lightweight JS frontend (or HTMX) that calls REST API endpoints backed by the shared core. Keep dependencies minimal.
+  - Files: new `src/web/` module (server.rs, routes.rs, static/), refactor shared logic into `src/core/` if not already separated, `src/cli.rs`
+  - This is a bigger effort — break into sub-tasks if needed:
+    1. [ ] Extract shared core logic from TUI-specific rendering
+    2. [ ] Build REST API (positions, transactions, watchlist, chart data, portfolio summary)
+    3. [ ] Build minimal web frontend
+    4. [ ] Add auth, bind options, PID management
