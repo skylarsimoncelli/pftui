@@ -93,6 +93,7 @@ pftui export csv               # Export as CSV
 pftui export json              # Export as JSON
 pftui refresh                   # Fetch live prices (headless)
 pftui value                     # Quick portfolio value + gain
+pftui brief                     # Markdown portfolio brief (for agents/scripts)
 pftui watch AAPL               # Add to watchlist
 pftui unwatch AAPL             # Remove from watchlist
 ```

@@ -80,6 +80,8 @@ pub enum Command {
     /// Fetch and cache current prices for all held symbols without launching the TUI
     Refresh,
 
+    /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
+    Brief,
     /// Show total portfolio value with gain/loss (uses cached prices)
     Value,
 }
