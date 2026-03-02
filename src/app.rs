@@ -8,12 +8,12 @@ use rusqlite::Connection;
 
 use crate::config::{self, Config, PortfolioMode};
 use crate::db::{allocations, price_cache, price_history};
-use crate::db::transactions::{get_unique_symbols, list_transactions};
+use crate::db::transactions::{self, get_unique_symbols, insert_transaction, list_transactions};
 use crate::models::allocation::Allocation;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::models::price::{HistoryRecord, PriceQuote};
-use crate::models::transaction::Transaction;
+use crate::models::transaction::{NewTransaction, Transaction, TxType};
 use crate::price::{PriceCommand, PriceService, PriceUpdate};
 use crate::tui::theme::{self, Theme};
 use crate::tui::views::markets;
@@ -157,6 +157,82 @@ impl ChartVariant {
     }
 }
 
+/// Which field is active in the add-transaction form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxFormField {
+    TxType,
+    Quantity,
+    PricePer,
+    Date,
+}
+
+impl TxFormField {
+    pub fn next(self) -> Self {
+        match self {
+            TxFormField::TxType => TxFormField::Quantity,
+            TxFormField::Quantity => TxFormField::PricePer,
+            TxFormField::PricePer => TxFormField::Date,
+            TxFormField::Date => TxFormField::Date, // last field — Enter submits
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            TxFormField::TxType => TxFormField::TxType,
+            TxFormField::Quantity => TxFormField::TxType,
+            TxFormField::PricePer => TxFormField::Quantity,
+            TxFormField::Date => TxFormField::PricePer,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn label(self) -> &'static str {
+        match self {
+            TxFormField::TxType => "Type",
+            TxFormField::Quantity => "Qty",
+            TxFormField::PricePer => "Price",
+            TxFormField::Date => "Date",
+        }
+    }
+}
+
+/// State for the inline add-transaction form.
+#[derive(Debug, Clone)]
+pub struct TxFormState {
+    pub symbol: String,
+    pub category: AssetCategory,
+    pub active_field: TxFormField,
+    pub tx_type: TxType,
+    pub quantity_input: String,
+    pub price_input: String,
+    pub date_input: String,
+    pub error: Option<String>,
+}
+
+impl TxFormState {
+    pub fn new(symbol: String, category: AssetCategory) -> Self {
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        TxFormState {
+            symbol,
+            category,
+            active_field: TxFormField::TxType,
+            tx_type: TxType::Buy,
+            quantity_input: String::new(),
+            price_input: String::new(),
+            date_input: today,
+            error: None,
+        }
+    }
+}
+
+/// State for delete-transaction confirmation.
+#[derive(Debug, Clone)]
+pub struct DeleteConfirmState {
+    pub symbol: String,
+    pub tx_count: usize,
+    pub tx_ids: Vec<i64>,
+}
+
 pub struct App {
     pub should_quit: bool,
     pub view_mode: ViewMode,
@@ -252,6 +328,10 @@ pub struct App {
 
     // Theme toast on cycle
     pub theme_toast_tick: u64,
+
+    // Transaction form (inline add/delete)
+    pub tx_form: Option<TxFormState>,
+    pub delete_confirm: Option<DeleteConfirmState>,
 
     // DB
     db_path: std::path::PathBuf,
@@ -351,6 +431,8 @@ impl App {
             last_key_tick: 0,
             last_selection_change_tick: 0,
             theme_toast_tick: 0,
+            tx_form: None,
+            delete_confirm: None,
             db_path,
         }
     }
@@ -1148,6 +1230,27 @@ impl App {
             }
             return;
         }
+
+        // Delete confirmation mode
+        if self.delete_confirm.is_some() {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.confirm_delete();
+                }
+                _ => {
+                    // Any other key cancels
+                    self.delete_confirm = None;
+                }
+            }
+            return;
+        }
+
+        // Add-transaction form mode
+        if self.tx_form.is_some() {
+            self.handle_tx_form_key(key);
+            return;
+        }
+
         // Record keystroke for status bar echo
         self.record_keystroke(&key);
 
@@ -1384,6 +1487,20 @@ impl App {
             // Theme cycle
             KeyCode::Char('t') => {
                 self.cycle_theme();
+            }
+
+            // Add transaction (Shift+A) — opens inline form for selected position
+            KeyCode::Char('A') if matches!(self.view_mode, ViewMode::Positions) => {
+                if self.portfolio_mode == PortfolioMode::Full {
+                    self.open_tx_form();
+                }
+            }
+
+            // Delete position transactions (Shift+X) — confirmation prompt
+            KeyCode::Char('X') if matches!(self.view_mode, ViewMode::Positions) => {
+                if self.portfolio_mode == PortfolioMode::Full {
+                    self.open_delete_confirm();
+                }
             }
 
             _ => {}
@@ -1666,6 +1783,194 @@ impl App {
         self.last_key_display = display;
         self.last_key_tick = self.tick_count;
     }
+    // ── Transaction form methods ──
+
+    /// Open the add-transaction form for the currently selected position.
+    fn open_tx_form(&mut self) {
+        if let Some(pos) = self.selected_position().cloned() {
+            self.tx_form = Some(TxFormState::new(pos.symbol, pos.category));
+        }
+    }
+
+    /// Open delete confirmation for the currently selected position.
+    fn open_delete_confirm(&mut self) {
+        if let Some(pos) = self.selected_position().cloned() {
+            let tx_ids: Vec<i64> = self
+                .transactions
+                .iter()
+                .filter(|tx| tx.symbol == pos.symbol)
+                .map(|tx| tx.id)
+                .collect();
+            if tx_ids.is_empty() {
+                return;
+            }
+            self.delete_confirm = Some(DeleteConfirmState {
+                symbol: pos.symbol,
+                tx_count: tx_ids.len(),
+                tx_ids,
+            });
+        }
+    }
+
+    /// Handle a key event while the add-transaction form is open.
+    fn handle_tx_form_key(&mut self, key: KeyEvent) {
+        // Safety: caller checks tx_form.is_some()
+        let form = match self.tx_form.as_mut() {
+            Some(f) => f,
+            None => return,
+        };
+
+        // Clear previous error on any keystroke
+        form.error = None;
+
+        match key.code {
+            KeyCode::Esc => {
+                self.tx_form = None;
+            }
+            KeyCode::Tab => {
+                form.active_field = form.active_field.next();
+            }
+            KeyCode::BackTab => {
+                form.active_field = form.active_field.prev();
+            }
+            KeyCode::Enter => {
+                if form.active_field == TxFormField::Date {
+                    // Submit the form
+                    self.submit_tx_form();
+                } else {
+                    form.active_field = form.active_field.next();
+                }
+            }
+            KeyCode::Backspace => {
+                match form.active_field {
+                    TxFormField::TxType => {} // toggle, no backspace
+                    TxFormField::Quantity => { form.quantity_input.pop(); }
+                    TxFormField::PricePer => { form.price_input.pop(); }
+                    TxFormField::Date => { form.date_input.pop(); }
+                }
+            }
+            KeyCode::Char(c) => {
+                match form.active_field {
+                    TxFormField::TxType => {
+                        // Any key toggles between Buy/Sell
+                        form.tx_type = match form.tx_type {
+                            TxType::Buy => TxType::Sell,
+                            TxType::Sell => TxType::Buy,
+                        };
+                    }
+                    TxFormField::Quantity => {
+                        // Accept digits and decimal point
+                        if c.is_ascii_digit() || c == '.' {
+                            form.quantity_input.push(c);
+                        }
+                    }
+                    TxFormField::PricePer => {
+                        if c.is_ascii_digit() || c == '.' {
+                            form.price_input.push(c);
+                        }
+                    }
+                    TxFormField::Date => {
+                        // Accept digits and hyphens for YYYY-MM-DD
+                        if c.is_ascii_digit() || c == '-' {
+                            form.date_input.push(c);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Validate and submit the transaction form.
+    fn submit_tx_form(&mut self) {
+        let form = match self.tx_form.as_ref() {
+            Some(f) => f,
+            None => return,
+        };
+
+        // Validate quantity
+        let quantity: Decimal = match form.quantity_input.parse() {
+            Ok(q) if q > dec!(0) => q,
+            _ => {
+                if let Some(f) = self.tx_form.as_mut() {
+                    f.error = Some("Invalid quantity".to_string());
+                    f.active_field = TxFormField::Quantity;
+                }
+                return;
+            }
+        };
+
+        // Validate price
+        let price_per: Decimal = match form.price_input.parse() {
+            Ok(p) if p > dec!(0) => p,
+            _ => {
+                if let Some(f) = self.tx_form.as_mut() {
+                    f.error = Some("Invalid price".to_string());
+                    f.active_field = TxFormField::PricePer;
+                }
+                return;
+            }
+        };
+
+        // Validate date format (basic: YYYY-MM-DD length check)
+        if form.date_input.len() != 10 || form.date_input.chars().filter(|c| *c == '-').count() != 2 {
+            if let Some(f) = self.tx_form.as_mut() {
+                f.error = Some("Date must be YYYY-MM-DD".to_string());
+                f.active_field = TxFormField::Date;
+            }
+            return;
+        }
+
+        let new_tx = NewTransaction {
+            symbol: form.symbol.clone(),
+            category: form.category,
+            tx_type: form.tx_type,
+            quantity,
+            price_per,
+            currency: self.base_currency.clone(),
+            date: form.date_input.clone(),
+            notes: None,
+        };
+
+        // Insert into DB
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            match insert_transaction(&conn, &new_tx) {
+                Ok(_) => {
+                    self.tx_form = None;
+                    self.load_data();
+                    self.recompute();
+                }
+                Err(e) => {
+                    if let Some(f) = self.tx_form.as_mut() {
+                        f.error = Some(format!("DB error: {e}"));
+                    }
+                }
+            }
+        } else if let Some(f) = self.tx_form.as_mut() {
+            f.error = Some("Cannot open database".to_string());
+        }
+    }
+
+    /// Execute the confirmed delete of all transactions for a position.
+    fn confirm_delete(&mut self) {
+        let state = match self.delete_confirm.take() {
+            Some(s) => s,
+            None => return,
+        };
+
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            for id in &state.tx_ids {
+                let _ = transactions::delete_transaction(&conn, *id);
+            }
+            self.load_data();
+            self.recompute();
+            // Adjust selection if we deleted the last position
+            if self.selected_index >= self.display_positions.len() && self.selected_index > 0 {
+                self.selected_index = self.display_positions.len() - 1;
+            }
+        }
+    }
+
     pub fn shutdown(self) {
         if let Some(service) = self.price_service {
             service.shutdown();
@@ -3173,5 +3478,312 @@ mod breadcrumb_tests {
         app.chart_timeframe = ChartTimeframe::OneYear;
         let crumb = app.breadcrumb();
         assert!(crumb.contains("1Y"), "got: {crumb}");
+    }
+}
+
+#[cfg(test)]
+mod tx_form_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use rust_decimal_macros::dec;
+
+    fn make_app() -> App {
+        let config = Config::default();
+        App::new(&config, std::path::PathBuf::from(":memory:"))
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn shift_key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT)
+    }
+
+    #[test]
+    fn test_tx_form_field_next_cycles() {
+        assert_eq!(TxFormField::TxType.next(), TxFormField::Quantity);
+        assert_eq!(TxFormField::Quantity.next(), TxFormField::PricePer);
+        assert_eq!(TxFormField::PricePer.next(), TxFormField::Date);
+        assert_eq!(TxFormField::Date.next(), TxFormField::Date); // last stays
+    }
+
+    #[test]
+    fn test_tx_form_field_prev_cycles() {
+        assert_eq!(TxFormField::Date.prev(), TxFormField::PricePer);
+        assert_eq!(TxFormField::PricePer.prev(), TxFormField::Quantity);
+        assert_eq!(TxFormField::Quantity.prev(), TxFormField::TxType);
+        assert_eq!(TxFormField::TxType.prev(), TxFormField::TxType); // first stays
+    }
+
+    #[test]
+    fn test_tx_form_state_defaults() {
+        let form = TxFormState::new("BTC".to_string(), AssetCategory::Crypto);
+        assert_eq!(form.symbol, "BTC");
+        assert_eq!(form.category, AssetCategory::Crypto);
+        assert_eq!(form.tx_type, TxType::Buy);
+        assert!(form.quantity_input.is_empty());
+        assert!(form.price_input.is_empty());
+        assert_eq!(form.date_input.len(), 10); // YYYY-MM-DD
+        assert!(form.error.is_none());
+    }
+
+    #[test]
+    fn test_tx_form_opens_on_shift_a() {
+        let mut app = make_app();
+        app.positions = vec![Position {
+            symbol: "AAPL".to_string(),
+            name: "Apple".to_string(),
+            category: AssetCategory::Equity,
+            quantity: dec!(10),
+            avg_cost: dec!(150),
+            total_cost: dec!(1500),
+            currency: "USD".to_string(),
+            current_price: Some(dec!(155)),
+            current_value: Some(dec!(1550)),
+            gain: Some(dec!(50)),
+            gain_pct: Some(dec!(3.33)),
+            allocation_pct: Some(dec!(100)),
+        }];
+        app.display_positions = app.positions.clone();
+        app.selected_index = 0;
+
+        assert!(app.tx_form.is_none());
+        app.handle_key(shift_key('A'));
+        assert!(app.tx_form.is_some());
+        let form = app.tx_form.as_ref().unwrap();
+        assert_eq!(form.symbol, "AAPL");
+        assert_eq!(form.category, AssetCategory::Equity);
+    }
+
+    #[test]
+    fn test_tx_form_esc_cancels() {
+        let mut app = make_app();
+        app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.tx_form.is_none());
+    }
+
+    #[test]
+    fn test_tx_form_tab_advances_field() {
+        let mut app = make_app();
+        app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Quantity);
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::PricePer);
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Date);
+    }
+
+    #[test]
+    fn test_tx_form_type_toggles() {
+        let mut app = make_app();
+        app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
+        assert_eq!(app.tx_form.as_ref().unwrap().tx_type, TxType::Buy);
+
+        // Any char toggles type
+        app.handle_key(key('x'));
+        assert_eq!(app.tx_form.as_ref().unwrap().tx_type, TxType::Sell);
+
+        app.handle_key(key('x'));
+        assert_eq!(app.tx_form.as_ref().unwrap().tx_type, TxType::Buy);
+    }
+
+    #[test]
+    fn test_tx_form_quantity_accepts_digits() {
+        let mut app = make_app();
+        app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
+        // Move to quantity field
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Quantity);
+
+        app.handle_key(key('1'));
+        app.handle_key(key('0'));
+        app.handle_key(key('.'));
+        app.handle_key(key('5'));
+        assert_eq!(app.tx_form.as_ref().unwrap().quantity_input, "10.5");
+
+        // Non-digit/non-dot is ignored
+        app.handle_key(key('a'));
+        assert_eq!(app.tx_form.as_ref().unwrap().quantity_input, "10.5");
+    }
+
+    #[test]
+    fn test_tx_form_backspace_removes_char() {
+        let mut app = make_app();
+        app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
+        // Move to quantity field
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        app.handle_key(key('1'));
+        app.handle_key(key('0'));
+        assert_eq!(app.tx_form.as_ref().unwrap().quantity_input, "10");
+
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().quantity_input, "1");
+    }
+
+    #[test]
+    fn test_tx_form_does_not_quit_on_q() {
+        let mut app = make_app();
+        app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
+        app.handle_key(key('q'));
+        // Should NOT quit — form eats the key
+        assert!(!app.should_quit);
+        assert!(app.tx_form.is_some());
+    }
+
+    #[test]
+    fn test_tx_form_enter_advances_until_date() {
+        let mut app = make_app();
+        app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
+
+        // Enter on TxType → Quantity
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Quantity);
+
+        // Enter on Quantity → PricePer
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::PricePer);
+
+        // Enter on PricePer → Date
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Date);
+    }
+
+    #[test]
+    fn test_tx_form_validation_rejects_empty_quantity() {
+        let mut app = make_app();
+        let mut form = TxFormState::new("BTC".to_string(), AssetCategory::Crypto);
+        form.active_field = TxFormField::Date;
+        form.price_input = "100".to_string();
+        // quantity_input is empty
+        app.tx_form = Some(form);
+
+        // Enter on Date attempts submit
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        // Should still have form open with error
+        assert!(app.tx_form.is_some());
+        assert!(app.tx_form.as_ref().unwrap().error.is_some());
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().error.as_deref(),
+            Some("Invalid quantity")
+        );
+    }
+
+    #[test]
+    fn test_tx_form_validation_rejects_empty_price() {
+        let mut app = make_app();
+        let mut form = TxFormState::new("BTC".to_string(), AssetCategory::Crypto);
+        form.active_field = TxFormField::Date;
+        form.quantity_input = "10".to_string();
+        // price_input is empty
+        app.tx_form = Some(form);
+
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.tx_form.is_some());
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().error.as_deref(),
+            Some("Invalid price")
+        );
+    }
+
+    #[test]
+    fn test_tx_form_validation_rejects_bad_date() {
+        let mut app = make_app();
+        let mut form = TxFormState::new("BTC".to_string(), AssetCategory::Crypto);
+        form.active_field = TxFormField::Date;
+        form.quantity_input = "10".to_string();
+        form.price_input = "100".to_string();
+        form.date_input = "2026-1-1".to_string(); // wrong format
+        app.tx_form = Some(form);
+
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.tx_form.is_some());
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().error.as_deref(),
+            Some("Date must be YYYY-MM-DD")
+        );
+    }
+
+    #[test]
+    fn test_delete_confirm_state() {
+        let state = DeleteConfirmState {
+            symbol: "BTC".to_string(),
+            tx_count: 3,
+            tx_ids: vec![1, 2, 3],
+        };
+        assert_eq!(state.symbol, "BTC");
+        assert_eq!(state.tx_count, 3);
+        assert_eq!(state.tx_ids.len(), 3);
+    }
+
+    #[test]
+    fn test_delete_confirm_cancels_on_non_y() {
+        let mut app = make_app();
+        app.delete_confirm = Some(DeleteConfirmState {
+            symbol: "BTC".to_string(),
+            tx_count: 1,
+            tx_ids: vec![1],
+        });
+
+        app.handle_key(key('n'));
+        assert!(app.delete_confirm.is_none());
+    }
+
+    #[test]
+    fn test_delete_confirm_cancels_on_esc() {
+        let mut app = make_app();
+        app.delete_confirm = Some(DeleteConfirmState {
+            symbol: "BTC".to_string(),
+            tx_count: 1,
+            tx_ids: vec![1],
+        });
+
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.delete_confirm.is_none());
+    }
+
+    #[test]
+    fn test_shift_a_does_nothing_in_percentage_mode() {
+        let mut app = make_app();
+        app.portfolio_mode = PortfolioMode::Percentage;
+        app.display_positions = vec![Position {
+            symbol: "AAPL".to_string(),
+            name: "Apple".to_string(),
+            category: AssetCategory::Equity,
+            quantity: dec!(100),
+            avg_cost: dec!(0),
+            total_cost: dec!(0),
+            currency: "USD".to_string(),
+            current_price: None,
+            current_value: None,
+            gain: None,
+            gain_pct: None,
+            allocation_pct: Some(dec!(50)),
+        }];
+        app.selected_index = 0;
+
+        app.handle_key(shift_key('A'));
+        assert!(app.tx_form.is_none());
+    }
+
+    #[test]
+    fn test_shift_a_does_nothing_with_no_selection() {
+        let mut app = make_app();
+        // No positions
+        app.handle_key(shift_key('A'));
+        assert!(app.tx_form.is_none());
+    }
+
+    #[test]
+    fn test_tx_form_field_labels() {
+        assert_eq!(TxFormField::TxType.label(), "Type");
+        assert_eq!(TxFormField::Quantity.label(), "Qty");
+        assert_eq!(TxFormField::PricePer.label(), "Price");
+        assert_eq!(TxFormField::Date.label(), "Date");
     }
 }

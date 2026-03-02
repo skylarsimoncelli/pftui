@@ -3,8 +3,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::App;
+use crate::app::{App, TxFormField};
 use crate::config::PortfolioMode;
+use crate::models::transaction::TxType;
 use crate::tui::theme;
 use crate::tui::ui::COMPACT_WIDTH;
 
@@ -57,6 +58,119 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .style(Style::default().bg(t.surface_2)),
         );
         frame.render_widget(search_bar, area);
+        return;
+    }
+
+    // Delete confirmation prompt
+    if let Some(ref confirm) = app.delete_confirm {
+        let confirm_spans = vec![
+            Span::styled(" ⚠ Delete ", Style::default().fg(t.loss_red).bold()),
+            Span::styled(&confirm.symbol, Style::default().fg(t.text_accent).bold()),
+            Span::styled(
+                format!("? ({} transaction{})", confirm.tx_count, if confirm.tx_count == 1 { "" } else { "s" }),
+                Style::default().fg(t.text_primary),
+            ),
+            Span::styled("  [y]", Style::default().fg(t.key_hint).bold()),
+            Span::styled("es  ", Style::default().fg(t.text_secondary)),
+            Span::styled("[any]", Style::default().fg(t.key_hint)),
+            Span::styled(" cancel", Style::default().fg(t.text_secondary)),
+        ];
+        let confirm_line = Line::from(confirm_spans);
+        let confirm_bar = Paragraph::new(confirm_line).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(t.loss_red))
+                .style(Style::default().bg(t.surface_2)),
+        );
+        frame.render_widget(confirm_bar, area);
+        return;
+    }
+
+    // Add-transaction form
+    if let Some(ref form) = app.tx_form {
+        let mut form_spans: Vec<Span> = Vec::new();
+
+        // Symbol label
+        form_spans.push(Span::styled(
+            format!(" + {} ", form.symbol),
+            Style::default().fg(t.text_accent).bold(),
+        ));
+        form_spans.push(Span::styled("│ ", Style::default().fg(t.border_subtle)));
+
+        // Type field
+        let type_active = form.active_field == TxFormField::TxType;
+        let type_label = match form.tx_type {
+            TxType::Buy => "Buy",
+            TxType::Sell => "Sell",
+        };
+        let type_color = match form.tx_type {
+            TxType::Buy => t.gain_green,
+            TxType::Sell => t.loss_red,
+        };
+        if type_active {
+            form_spans.push(Span::styled("[", Style::default().fg(t.text_accent)));
+            form_spans.push(Span::styled(type_label, Style::default().fg(type_color).bold()));
+            form_spans.push(Span::styled("]", Style::default().fg(t.text_accent)));
+        } else {
+            form_spans.push(Span::styled(type_label, Style::default().fg(type_color)));
+        }
+        form_spans.push(Span::styled(" ", Style::default()));
+
+        // Quantity field
+        let qty_active = form.active_field == TxFormField::Quantity;
+        form_spans.push(Span::styled("Qty:", Style::default().fg(t.text_muted)));
+        if qty_active {
+            form_spans.push(Span::styled(&form.quantity_input, Style::default().fg(t.text_primary)));
+            form_spans.push(Span::styled("█", Style::default().fg(t.text_accent)));
+        } else {
+            let qty_display = if form.quantity_input.is_empty() { "—" } else { &form.quantity_input };
+            form_spans.push(Span::styled(qty_display, Style::default().fg(t.text_secondary)));
+        }
+        form_spans.push(Span::styled(" ", Style::default()));
+
+        // Price field
+        let price_active = form.active_field == TxFormField::PricePer;
+        form_spans.push(Span::styled("@$", Style::default().fg(t.text_muted)));
+        if price_active {
+            form_spans.push(Span::styled(&form.price_input, Style::default().fg(t.text_primary)));
+            form_spans.push(Span::styled("█", Style::default().fg(t.text_accent)));
+        } else {
+            let price_display = if form.price_input.is_empty() { "—" } else { &form.price_input };
+            form_spans.push(Span::styled(price_display, Style::default().fg(t.text_secondary)));
+        }
+        form_spans.push(Span::styled(" ", Style::default()));
+
+        // Date field
+        let date_active = form.active_field == TxFormField::Date;
+        form_spans.push(Span::styled("Date:", Style::default().fg(t.text_muted)));
+        if date_active {
+            form_spans.push(Span::styled(&form.date_input, Style::default().fg(t.text_primary)));
+            form_spans.push(Span::styled("█", Style::default().fg(t.text_accent)));
+        } else {
+            form_spans.push(Span::styled(&form.date_input, Style::default().fg(t.text_secondary)));
+        }
+
+        // Hints
+        form_spans.push(Span::styled("  Tab", Style::default().fg(t.key_hint)));
+        form_spans.push(Span::styled(":next ", Style::default().fg(t.text_muted)));
+        form_spans.push(Span::styled("Enter", Style::default().fg(t.key_hint)));
+        form_spans.push(Span::styled(":submit ", Style::default().fg(t.text_muted)));
+        form_spans.push(Span::styled("Esc", Style::default().fg(t.key_hint)));
+        form_spans.push(Span::styled(":cancel", Style::default().fg(t.text_muted)));
+
+        // Error display
+        if let Some(ref err) = form.error {
+            form_spans.push(Span::styled(format!("  ⚠ {err}"), Style::default().fg(t.loss_red)));
+        }
+
+        let form_line = Line::from(form_spans);
+        let form_bar = Paragraph::new(form_line).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(t.text_accent))
+                .style(Style::default().bg(t.surface_2)),
+        );
+        frame.render_widget(form_bar, area);
         return;
     }
 

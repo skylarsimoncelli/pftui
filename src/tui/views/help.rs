@@ -117,6 +117,8 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("r", "Force refresh prices", kc, tc));
     lines.push(key_line("p", "Toggle privacy view", kc, tc));
     lines.push(key_line("t", "Cycle color theme", kc, tc));
+    lines.push(key_line("A (Shift+a)", "Add transaction for position", kc, tc));
+    lines.push(key_line("X (Shift+x)", "Delete all txns for position", kc, tc));
     lines.push(key_line("q / Ctrl+C", "Quit", kc, tc));
     lines.push(Line::from(""));
 
