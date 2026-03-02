@@ -144,7 +144,7 @@
 
 ## P0 — CI & Release Pipeline (Owner Request)
 
-- [ ] **Create GitHub Actions CI workflow** — `.github/workflows/ci.yml` that runs on push/PR: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`. Matrix: `ubuntu-latest`, `macos-latest`. Cache `~/.cargo/registry` and `target/`. Files: `.github/workflows/ci.yml`.
+- [~] **Create GitHub Actions CI workflow** — `.github/workflows/ci.yml` that runs on push/PR: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`. Matrix: `ubuntu-latest`, `macos-latest`. Cache `~/.cargo/registry` and `target/`. Files: `.github/workflows/ci.yml`.
 - [ ] **Create GitHub Actions release workflow** — `.github/workflows/release.yml` triggered on `v*` tags. Single workflow handles ALL publishing:
   1. Run full test suite
   2. Cross-compile release binaries for: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`
