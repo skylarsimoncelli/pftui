@@ -117,6 +117,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         }
     }
 
+
+    // Keystroke echo — flash last key for ~0.3s (18 ticks at 60fps)
+    if !app.last_key_display.is_empty() {
+        let key_age = app.tick_count.saturating_sub(app.last_key_tick);
+        if key_age < 18 {
+            // Fade from text_secondary to text_muted over the display period
+            let fade_color = if key_age < 9 { t.text_secondary } else { t.text_muted };
+            spans.push(Span::styled(
+                format!(" [{}]", app.last_key_display),
+                Style::default().fg(fade_color),
+            ));
+        }
+    }
     spans.push(Span::raw("  "));
     spans.extend(live_indicator);
 

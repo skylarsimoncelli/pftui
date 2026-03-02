@@ -240,6 +240,10 @@ pub struct App {
     // Daily portfolio change (sum of (current_price - prev_close) * quantity)
     pub daily_portfolio_change: Option<Decimal>,
 
+    // Keystroke echo
+    pub last_key_display: String,
+    pub last_key_tick: u64,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -333,6 +337,8 @@ impl App {
             last_price_error: None,
             last_price_error_tick: 0,
             daily_portfolio_change: None,
+            last_key_display: String::new(),
+            last_key_tick: 0,
             db_path,
         }
     }
@@ -1071,6 +1077,8 @@ impl App {
             }
             return;
         }
+        // Record keystroke for status bar echo
+        self.record_keystroke(&key);
 
         // Global keys
         match key.code {
@@ -1551,6 +1559,41 @@ impl App {
         }
     }
 
+
+    /// Record a keystroke for the status bar echo display.
+    /// Handles g-prefix sequences (gg, G) and modifier keys (Ctrl+d, etc.).
+    fn record_keystroke(&mut self, key: &KeyEvent) {
+        let display = match key.code {
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    format!("Ctrl+{}", c)
+                } else if key.modifiers.contains(KeyModifiers::ALT) {
+                    format!("Alt+{}", c)
+                } else if c == 'G' {
+                    "G".to_string()
+                } else if c == 'g' {
+                    // If g was already pending, this completes "gg"
+                    if self.g_pending {
+                        "gg".to_string()
+                    } else {
+                        "g".to_string()
+                    }
+                } else {
+                    c.to_string()
+                }
+            }
+            KeyCode::Enter => "Enter".to_string(),
+            KeyCode::Esc => "Esc".to_string(),
+            KeyCode::Tab => "Tab".to_string(),
+            KeyCode::Up => "↑".to_string(),
+            KeyCode::Down => "↓".to_string(),
+            KeyCode::Left => "←".to_string(),
+            KeyCode::Right => "→".to_string(),
+            _ => return, // Don't display unknown keys
+        };
+        self.last_key_display = display;
+        self.last_key_tick = self.tick_count;
+    }
     pub fn shutdown(self) {
         if let Some(service) = self.price_service {
             service.shutdown();
@@ -2768,5 +2811,99 @@ mod flash_direction_tests {
         let (tick, dir) = flash_map.get("BTC").unwrap();
         assert_eq!(*tick, 100);
         assert_eq!(*dir, PriceFlashDirection::Up);
+    }
+}
+
+#[cfg(test)]
+mod keystroke_echo_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn make_app() -> App {
+        let config = Config::default();
+        App::new(&config, std::path::PathBuf::from(":memory:"))
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn ctrl_key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn test_record_regular_key() {
+        let mut app = make_app();
+        app.tick_count = 50;
+        app.record_keystroke(&key('j'));
+        assert_eq!(app.last_key_display, "j");
+        assert_eq!(app.last_key_tick, 50);
+    }
+
+    #[test]
+    fn test_record_ctrl_key() {
+        let mut app = make_app();
+        app.tick_count = 100;
+        app.record_keystroke(&ctrl_key('d'));
+        assert_eq!(app.last_key_display, "Ctrl+d");
+        assert_eq!(app.last_key_tick, 100);
+    }
+
+    #[test]
+    fn test_record_shift_g() {
+        let mut app = make_app();
+        app.tick_count = 75;
+        app.record_keystroke(&KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT));
+        assert_eq!(app.last_key_display, "G");
+    }
+
+    #[test]
+    fn test_record_gg_sequence() {
+        let mut app = make_app();
+        app.tick_count = 10;
+        // First g
+        app.record_keystroke(&key('g'));
+        assert_eq!(app.last_key_display, "g");
+        // Simulate g_pending being set (handle_key would do this)
+        app.g_pending = true;
+        app.tick_count = 11;
+        // Second g
+        app.record_keystroke(&key('g'));
+        assert_eq!(app.last_key_display, "gg");
+    }
+
+    #[test]
+    fn test_record_enter_key() {
+        let mut app = make_app();
+        app.record_keystroke(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.last_key_display, "Enter");
+    }
+
+    #[test]
+    fn test_record_esc_key() {
+        let mut app = make_app();
+        app.record_keystroke(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.last_key_display, "Esc");
+    }
+
+    #[test]
+    fn test_record_arrow_keys() {
+        let mut app = make_app();
+        app.record_keystroke(&KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(app.last_key_display, "↑");
+        app.record_keystroke(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.last_key_display, "↓");
+    }
+
+    #[test]
+    fn test_key_echo_text_generation() {
+        let mut app = make_app();
+        // Slash for search
+        app.record_keystroke(&key('/'));
+        assert_eq!(app.last_key_display, "/");
+        // Number keys
+        app.record_keystroke(&key('1'));
+        assert_eq!(app.last_key_display, "1");
     }
 }
