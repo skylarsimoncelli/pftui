@@ -87,8 +87,12 @@ pftui add-tx                   # Add a transaction
 pftui remove-tx <id>           # Remove a transaction
 pftui list-tx                  # List all transactions
 pftui summary                  # Portfolio summary (stdout)
+pftui summary --period 1w      # Weekly P&L
+pftui summary --group-by category --period 1m  # Monthly P&L by category
 pftui export csv               # Export as CSV
 pftui export json              # Export as JSON
+pftui refresh                   # Fetch live prices (headless)
+pftui value                     # Quick portfolio value + gain
 pftui watch AAPL               # Add to watchlist
 pftui unwatch AAPL             # Remove from watchlist
 ```

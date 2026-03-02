@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
@@ -38,6 +40,40 @@ pub fn get_history(conn: &Connection, symbol: &str, limit: u32) -> Result<Vec<Hi
     })?;
     let mut result: Vec<HistoryRecord> = rows.filter_map(|r| r.ok()).collect();
     result.reverse(); // chronological order (oldest first)
+    Ok(result)
+}
+
+/// Get the closest price on or before the given date for a symbol.
+/// Returns None if no history exists at or before that date.
+pub fn get_price_at_date(conn: &Connection, symbol: &str, date: &str) -> Result<Option<Decimal>> {
+    let mut stmt = conn.prepare(
+        "SELECT close FROM price_history
+         WHERE symbol = ?1 AND date <= ?2
+         ORDER BY date DESC
+         LIMIT 1",
+    )?;
+    let result = stmt
+        .query_row(params![symbol, date], |row| {
+            let close_str: String = row.get(0)?;
+            Ok(close_str.parse::<Decimal>().unwrap_or(Decimal::ZERO))
+        })
+        .ok();
+    Ok(result)
+}
+
+/// Get the closest prices on or before the given date for multiple symbols.
+/// Returns a map of symbol -> price for symbols that have history.
+pub fn get_prices_at_date(
+    conn: &Connection,
+    symbols: &[String],
+    date: &str,
+) -> Result<HashMap<String, Decimal>> {
+    let mut result = HashMap::new();
+    for symbol in symbols {
+        if let Some(price) = get_price_at_date(conn, symbol, date)? {
+            result.insert(symbol.clone(), price);
+        }
+    }
     Ok(result)
 }
 
@@ -103,16 +139,73 @@ mod tests {
     #[test]
     fn test_upsert_preserves_volume_when_null() {
         let conn = open_in_memory();
-        // First insert with volume
         let r1 = vec![HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(500_000) }];
         upsert_history(&conn, "AAPL", "yahoo", &r1).unwrap();
 
-        // Second insert without volume — should preserve existing
         let r2 = vec![HistoryRecord { date: "2025-01-01".into(), close: dec!(105), volume: None }];
         upsert_history(&conn, "AAPL", "yahoo", &r2).unwrap();
 
         let fetched = get_history(&conn, "AAPL", 90).unwrap();
         assert_eq!(fetched[0].close, dec!(105));
         assert_eq!(fetched[0].volume, Some(500_000));
+    }
+
+    #[test]
+    fn test_get_price_at_date_exact() {
+        let conn = open_in_memory();
+        let records = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None },
+        ];
+        upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
+
+        let price = get_price_at_date(&conn, "AAPL", "2025-01-02").unwrap();
+        assert_eq!(price, Some(dec!(105)));
+    }
+
+    #[test]
+    fn test_get_price_at_date_falls_back() {
+        let conn = open_in_memory();
+        let records = vec![
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None },
+        ];
+        upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
+
+        // No data for Jan 2, should fall back to Jan 1
+        let price = get_price_at_date(&conn, "AAPL", "2025-01-02").unwrap();
+        assert_eq!(price, Some(dec!(100)));
+    }
+
+    #[test]
+    fn test_get_price_at_date_no_data() {
+        let conn = open_in_memory();
+        let records = vec![
+            HistoryRecord { date: "2025-01-05".into(), close: dec!(100), volume: None },
+        ];
+        upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
+
+        // All data is after Jan 2 — no result
+        let price = get_price_at_date(&conn, "AAPL", "2025-01-02").unwrap();
+        assert_eq!(price, None);
+    }
+
+    #[test]
+    fn test_get_prices_at_date_multiple() {
+        let conn = open_in_memory();
+        upsert_history(&conn, "AAPL", "yahoo", &[
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(150), volume: None },
+        ]).unwrap();
+        upsert_history(&conn, "BTC", "coingecko", &[
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(42000), volume: None },
+        ]).unwrap();
+
+        let symbols = vec!["AAPL".to_string(), "BTC".to_string(), "MISSING".to_string()];
+        let prices = get_prices_at_date(&conn, &symbols, "2025-01-01").unwrap();
+        assert_eq!(prices.len(), 2);
+        assert_eq!(prices["AAPL"], dec!(150));
+        assert_eq!(prices["BTC"], dec!(42000));
+        assert!(!prices.contains_key("MISSING"));
     }
 }

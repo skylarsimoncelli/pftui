@@ -1,28 +1,51 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
-use crate::cli::SummaryGroupBy;
+use crate::cli::{SummaryGroupBy, SummaryPeriod};
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
 use crate::db::price_cache::get_all_cached_prices;
+use crate::db::price_history::get_prices_at_date;
 use crate::db::transactions::list_transactions;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
-pub fn run(conn: &Connection, config: &Config, group_by: Option<&SummaryGroupBy>) -> Result<()> {
+pub fn run(
+    conn: &Connection,
+    config: &Config,
+    group_by: Option<&SummaryGroupBy>,
+    period: Option<&SummaryPeriod>,
+) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
 
+    // Compute the start date for period-based P&L
+    let period_start = period.map(|p| {
+        let today = Utc::now().date_naive();
+        let start = today - chrono::Duration::days(p.days_back());
+        start.format("%Y-%m-%d").to_string()
+    });
+
+    // Look up historical prices if period is requested
+    let historical_prices = match (&period_start, period) {
+        (Some(date), Some(_)) => {
+            let symbols: Vec<String> = prices.keys().cloned().collect();
+            Some(get_prices_at_date(conn, &symbols, date)?)
+        }
+        _ => None,
+    };
+
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, &prices, group_by),
-        PortfolioMode::Percentage => run_percentage(conn, &prices, group_by),
+        PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices),
+        PortfolioMode::Percentage => run_percentage(conn, &prices, group_by, period, &historical_prices),
     }
 }
 
@@ -31,6 +54,8 @@ fn run_full(
     config: &Config,
     prices: &HashMap<String, Decimal>,
     group_by: Option<&SummaryGroupBy>,
+    period: Option<&SummaryPeriod>,
+    historical_prices: &Option<HashMap<String, Decimal>>,
 ) -> Result<()> {
     let txs = list_transactions(conn)?;
     if txs.is_empty() {
@@ -44,9 +69,13 @@ fn run_full(
         return Ok(());
     }
 
-    match group_by {
-        Some(SummaryGroupBy::Category) => print_grouped_by_category(&positions, config),
-        None => print_full_table(&positions, config),
+    match (group_by, period) {
+        (Some(SummaryGroupBy::Category), Some(p)) => {
+            print_grouped_by_category_with_period(&positions, config, p, historical_prices)
+        }
+        (Some(SummaryGroupBy::Category), None) => print_grouped_by_category(&positions, config),
+        (None, Some(p)) => print_full_table_with_period(&positions, config, p, historical_prices),
+        (None, None) => print_full_table(&positions, config),
     }
 }
 
@@ -54,6 +83,8 @@ fn run_percentage(
     conn: &Connection,
     prices: &HashMap<String, Decimal>,
     group_by: Option<&SummaryGroupBy>,
+    period: Option<&SummaryPeriod>,
+    historical_prices: &Option<HashMap<String, Decimal>>,
 ) -> Result<()> {
     let allocs = list_allocations(conn)?;
     if allocs.is_empty() {
@@ -63,11 +94,19 @@ fn run_percentage(
 
     let positions = compute_positions_from_allocations(&allocs, prices);
 
-    match group_by {
-        Some(SummaryGroupBy::Category) => print_grouped_by_category_pct(&positions),
-        None => print_percentage_table(&positions),
+    match (group_by, period) {
+        (Some(SummaryGroupBy::Category), Some(p)) => {
+            print_grouped_by_category_pct_with_period(&positions, p, historical_prices)
+        }
+        (Some(SummaryGroupBy::Category), None) => print_grouped_by_category_pct(&positions),
+        (None, Some(p)) => print_percentage_table_with_period(&positions, p, historical_prices),
+        (None, None) => print_percentage_table(&positions),
     }
 }
+
+// ──────────────────────────────────────────────────────────────
+// Full mode: default table
+// ──────────────────────────────────────────────────────────────
 
 fn print_full_table(positions: &[Position], config: &Config) -> Result<()> {
     println!(
@@ -127,31 +166,100 @@ fn print_full_table(positions: &[Position], config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn print_percentage_table(positions: &[Position]) -> Result<()> {
+/// Full mode table with period-based P&L instead of cost-basis gain.
+fn print_full_table_with_period(
+    positions: &[Position],
+    config: &Config,
+    period: &SummaryPeriod,
+    historical_prices: &Option<HashMap<String, Decimal>>,
+) -> Result<()> {
+    let label = period.label();
     println!(
-        "{:<8} {:<10} {:>10} {:>8}",
-        "Symbol", "Category", "Price", "Alloc%"
+        "{:<8} {:<10} {:>8} {:>10} {:>10} {:>10} {:>8}",
+        "Symbol", "Category", "Qty", "Price", format!("{} ago", label), format!("Chg {}", label), "Alloc%"
     );
-    println!("{}", "-".repeat(40));
+    println!("{}", "-".repeat(74));
+
+    let hist = historical_prices.as_ref();
+    let mut total_value = dec!(0);
+    let mut total_prev_value = dec!(0);
+    let mut has_period_data = false;
 
     for pos in positions {
         let price_str = pos.current_price
             .map(|p| format!("{:.2}", p))
             .unwrap_or_else(|| "N/A".to_string());
+
+        let prev_price = if pos.category == AssetCategory::Cash {
+            Some(dec!(1))
+        } else {
+            hist.and_then(|h| h.get(&pos.symbol).copied())
+        };
+
+        let prev_str = prev_price
+            .map(|p| format!("{:.2}", p))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let change_str = match (pos.current_price, prev_price) {
+            (Some(cur), Some(prev)) if prev > dec!(0) => {
+                has_period_data = true;
+                let pct = ((cur - prev) / prev) * dec!(100);
+                format!("{:+.1}%", pct)
+            }
+            _ => "N/A".to_string(),
+        };
+
         let alloc_str = pos.allocation_pct
             .map(|a| format!("{:.1}%", a))
             .unwrap_or_else(|| "N/A".to_string());
 
         println!(
-            "{:<8} {:<10} {:>10} {:>8}",
-            pos.symbol, pos.category, price_str, alloc_str,
+            "{:<8} {:<10} {:>8} {:>10} {:>10} {:>10} {:>8}",
+            pos.symbol,
+            pos.category,
+            pos.quantity,
+            price_str,
+            prev_str,
+            change_str,
+            alloc_str,
+        );
+
+        if let Some(v) = pos.current_value {
+            total_value += v;
+        }
+        if let Some(prev) = prev_price {
+            total_prev_value += prev * pos.quantity;
+        }
+    }
+
+    println!("{}", "-".repeat(74));
+
+    let period_change = total_value - total_prev_value;
+    let period_pct = if total_prev_value > dec!(0) {
+        (period_change / total_prev_value) * dec!(100)
+    } else {
+        dec!(0)
+    };
+
+    println!(
+        "Total Value: {:.2} {}  |  {} P&L: {:+.2} ({:+.1}%)",
+        total_value, config.base_currency, label, period_change, period_pct
+    );
+
+    if !has_period_data {
+        println!(
+            "\nNote: No price history for {} period. Run `pftui refresh` and try again later.",
+            label
         );
     }
 
     Ok(())
 }
 
-/// Group positions by asset category and display allocation summary.
+// ──────────────────────────────────────────────────────────────
+// Full mode: grouped by category
+// ──────────────────────────────────────────────────────────────
+
 fn print_grouped_by_category(positions: &[Position], config: &Config) -> Result<()> {
     let groups = group_by_category(positions);
 
@@ -165,7 +273,6 @@ fn print_grouped_by_category(positions: &[Position], config: &Config) -> Result<
         .map(|p| p.total_cost)
         .sum();
 
-    // Sort groups by value descending
     let mut sorted_groups: Vec<_> = groups.into_iter().collect();
     sorted_groups.sort_by(|a, b| b.1.value.cmp(&a.1.value));
 
@@ -227,7 +334,180 @@ fn print_grouped_by_category(positions: &[Position], config: &Config) -> Result<
     Ok(())
 }
 
-/// Group percentage-mode positions by category.
+/// Grouped by category with period-based P&L.
+fn print_grouped_by_category_with_period(
+    positions: &[Position],
+    config: &Config,
+    period: &SummaryPeriod,
+    historical_prices: &Option<HashMap<String, Decimal>>,
+) -> Result<()> {
+    let hist = historical_prices.as_ref();
+    let label = period.label();
+
+    let total_value: Decimal = positions
+        .iter()
+        .filter_map(|p| p.current_value)
+        .sum();
+
+    // Build category groups with period data
+    let mut groups: HashMap<AssetCategory, CategoryPeriodGroup> = HashMap::new();
+
+    for pos in positions {
+        let group = groups.entry(pos.category).or_insert_with(|| CategoryPeriodGroup {
+            value: dec!(0),
+            prev_value: dec!(0),
+            symbols: Vec::new(),
+        });
+
+        if let Some(v) = pos.current_value {
+            group.value += v;
+        }
+
+        let prev_price = if pos.category == AssetCategory::Cash {
+            Some(dec!(1))
+        } else {
+            hist.and_then(|h| h.get(&pos.symbol).copied())
+        };
+        if let Some(prev) = prev_price {
+            group.prev_value += prev * pos.quantity;
+        }
+
+        group.symbols.push(pos.symbol.clone());
+    }
+
+    let mut sorted: Vec<_> = groups.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.value.cmp(&a.1.value));
+
+    println!(
+        "{:<12} {:>12} {:>12} {:>10} {:>8}",
+        "Category", "Value", format!("{} ago", label), format!("Chg {}", label), "Alloc%"
+    );
+    println!("{}", "─".repeat(58));
+
+    for (category, group) in &sorted {
+        let alloc_pct = if total_value > dec!(0) {
+            (group.value / total_value) * dec!(100)
+        } else {
+            dec!(0)
+        };
+
+        let change_pct = if group.prev_value > dec!(0) {
+            ((group.value - group.prev_value) / group.prev_value) * dec!(100)
+        } else {
+            dec!(0)
+        };
+
+        let symbols_str = group.symbols.join(", ");
+
+        println!(
+            "{:<12} {:>12.2} {:>12.2} {:>+9.1}% {:>6.1}%",
+            format_category(category),
+            group.value,
+            group.prev_value,
+            change_pct,
+            alloc_pct,
+        );
+        println!("  {}", symbols_str);
+    }
+
+    println!("{}", "─".repeat(58));
+
+    let total_prev: Decimal = sorted.iter().map(|(_, g)| g.prev_value).sum();
+    let period_change = total_value - total_prev;
+    let period_pct = if total_prev > dec!(0) {
+        (period_change / total_prev) * dec!(100)
+    } else {
+        dec!(0)
+    };
+
+    println!(
+        "Total: {:.2} {}  |  {} P&L: {:+.2} ({:+.1}%)",
+        total_value, config.base_currency, label, period_change, period_pct
+    );
+
+    Ok(())
+}
+
+// ──────────────────────────────────────────────────────────────
+// Percentage mode
+// ──────────────────────────────────────────────────────────────
+
+fn print_percentage_table(positions: &[Position]) -> Result<()> {
+    println!(
+        "{:<8} {:<10} {:>10} {:>8}",
+        "Symbol", "Category", "Price", "Alloc%"
+    );
+    println!("{}", "-".repeat(40));
+
+    for pos in positions {
+        let price_str = pos.current_price
+            .map(|p| format!("{:.2}", p))
+            .unwrap_or_else(|| "N/A".to_string());
+        let alloc_str = pos.allocation_pct
+            .map(|a| format!("{:.1}%", a))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        println!(
+            "{:<8} {:<10} {:>10} {:>8}",
+            pos.symbol, pos.category, price_str, alloc_str,
+        );
+    }
+
+    Ok(())
+}
+
+/// Percentage mode with period-based price changes.
+fn print_percentage_table_with_period(
+    positions: &[Position],
+    period: &SummaryPeriod,
+    historical_prices: &Option<HashMap<String, Decimal>>,
+) -> Result<()> {
+    let hist = historical_prices.as_ref();
+    let label = period.label();
+
+    println!(
+        "{:<8} {:<10} {:>10} {:>10} {:>10} {:>8}",
+        "Symbol", "Category", "Price", format!("{} ago", label), format!("Chg {}", label), "Alloc%"
+    );
+    println!("{}", "-".repeat(60));
+
+    for pos in positions {
+        let price_str = pos.current_price
+            .map(|p| format!("{:.2}", p))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let prev_price = if pos.category == AssetCategory::Cash {
+            Some(dec!(1))
+        } else {
+            hist.and_then(|h| h.get(&pos.symbol).copied())
+        };
+
+        let prev_str = prev_price
+            .map(|p| format!("{:.2}", p))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let change_str = match (pos.current_price, prev_price) {
+            (Some(cur), Some(prev)) if prev > dec!(0) => {
+                let pct = ((cur - prev) / prev) * dec!(100);
+                format!("{:+.1}%", pct)
+            }
+            _ => "N/A".to_string(),
+        };
+
+        let alloc_str = pos.allocation_pct
+            .map(|a| format!("{:.1}%", a))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        println!(
+            "{:<8} {:<10} {:>10} {:>10} {:>10} {:>8}",
+            pos.symbol, pos.category, price_str, prev_str, change_str, alloc_str,
+        );
+    }
+
+    Ok(())
+}
+
+/// Percentage mode grouped by category.
 fn print_grouped_by_category_pct(positions: &[Position]) -> Result<()> {
     let mut category_alloc: HashMap<AssetCategory, (Decimal, Vec<String>)> = HashMap::new();
 
@@ -256,10 +536,99 @@ fn print_grouped_by_category_pct(positions: &[Position]) -> Result<()> {
     Ok(())
 }
 
+/// Percentage mode grouped by category with period-based price changes.
+fn print_grouped_by_category_pct_with_period(
+    positions: &[Position],
+    period: &SummaryPeriod,
+    historical_prices: &Option<HashMap<String, Decimal>>,
+) -> Result<()> {
+    let hist = historical_prices.as_ref();
+    let label = period.label();
+
+    let mut category_data: HashMap<AssetCategory, CategoryPctPeriodGroup> = HashMap::new();
+
+    for pos in positions {
+        let entry = category_data
+            .entry(pos.category)
+            .or_insert_with(|| CategoryPctPeriodGroup { alloc: dec!(0), symbols: Vec::new() });
+        if let Some(alloc) = pos.allocation_pct {
+            entry.alloc += alloc;
+        }
+
+        let prev_price = if pos.category == AssetCategory::Cash {
+            Some(dec!(1))
+        } else {
+            hist.and_then(|h| h.get(&pos.symbol).copied())
+        };
+
+        entry.symbols.push(SymbolPriceData {
+            symbol: pos.symbol.clone(),
+            current_price: pos.current_price,
+            prev_price,
+        });
+    }
+
+    let mut sorted: Vec<_> = category_data.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.alloc.cmp(&a.1.alloc));
+
+    println!("{:<12} {:>8} {:>10}", "Category", "Alloc%", format!("Chg {}", label));
+    println!("{}", "─".repeat(34));
+
+    for (category, group) in &sorted {
+        // Compute average change for the category (simple mean of % changes)
+        let changes: Vec<Decimal> = group.symbols
+            .iter()
+            .filter_map(|spd| {
+                match (spd.current_price, spd.prev_price) {
+                    (Some(c), Some(p)) if p > dec!(0) => Some(((c - p) / p) * dec!(100)),
+                    _ => None,
+                }
+            })
+            .collect();
+
+        let avg_change = if changes.is_empty() {
+            "N/A".to_string()
+        } else {
+            let sum: Decimal = changes.iter().sum();
+            let avg = sum / Decimal::from(changes.len() as i64);
+            format!("{:+.1}%", avg)
+        };
+
+        let symbol_names: Vec<String> = group.symbols.iter().map(|spd| spd.symbol.clone()).collect();
+        let symbols_str = symbol_names.join(", ");
+
+        println!("{:<12} {:>6.1}% {:>10}", format_category(category), group.alloc, avg_change);
+        println!("  {}", symbols_str);
+    }
+
+    Ok(())
+}
+
+// ──────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────
+
 struct CategoryGroup {
     value: Decimal,
     cost: Decimal,
     symbols: Vec<String>,
+}
+
+struct CategoryPeriodGroup {
+    value: Decimal,
+    prev_value: Decimal,
+    symbols: Vec<String>,
+}
+
+struct SymbolPriceData {
+    symbol: String,
+    current_price: Option<Decimal>,
+    prev_price: Option<Decimal>,
+}
+
+struct CategoryPctPeriodGroup {
+    alloc: Decimal,
+    symbols: Vec<SymbolPriceData>,
 }
 
 fn group_by_category(positions: &[Position]) -> HashMap<AssetCategory, CategoryGroup> {
@@ -351,8 +720,8 @@ mod tests {
         let groups = group_by_category(&positions);
         assert_eq!(groups.len(), 1);
         let eq = groups.get(&AssetCategory::Equity).unwrap();
-        assert_eq!(eq.value, dec!(2600)); // 2000 + 600
-        assert_eq!(eq.cost, dec!(2000)); // 1500 + 500
+        assert_eq!(eq.value, dec!(2600));
+        assert_eq!(eq.cost, dec!(2000));
         assert_eq!(eq.symbols.len(), 2);
     }
 
@@ -383,7 +752,7 @@ mod tests {
         ];
         let groups = group_by_category(&positions);
         let eq = groups.get(&AssetCategory::Equity).unwrap();
-        assert_eq!(eq.value, dec!(0)); // no price = no value added
+        assert_eq!(eq.value, dec!(0));
         assert_eq!(eq.cost, dec!(1000));
     }
 
@@ -402,5 +771,132 @@ mod tests {
         let positions: Vec<Position> = vec![];
         let groups = group_by_category(&positions);
         assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn test_period_days_back() {
+        assert_eq!(SummaryPeriod::Today.days_back(), 1);
+        assert_eq!(SummaryPeriod::OneWeek.days_back(), 7);
+        assert_eq!(SummaryPeriod::OneMonth.days_back(), 30);
+        assert_eq!(SummaryPeriod::ThreeMonths.days_back(), 90);
+        assert_eq!(SummaryPeriod::OneYear.days_back(), 365);
+    }
+
+    #[test]
+    fn test_period_label() {
+        assert_eq!(SummaryPeriod::Today.label(), "today");
+        assert_eq!(SummaryPeriod::OneWeek.label(), "1W");
+        assert_eq!(SummaryPeriod::OneMonth.label(), "1M");
+        assert_eq!(SummaryPeriod::ThreeMonths.label(), "3M");
+        assert_eq!(SummaryPeriod::OneYear.label(), "1Y");
+    }
+
+    #[test]
+    fn test_summary_with_period_no_history() {
+        // When no historical prices exist, period output should still work (showing N/A)
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::transactions::insert_transaction;
+        use crate::models::transaction::{NewTransaction, TxType};
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        insert_transaction(&conn, &NewTransaction {
+            symbol: "AAPL".to_string(),
+            category: AssetCategory::Equity,
+            tx_type: TxType::Buy,
+            quantity: dec!(10),
+            price_per: dec!(150),
+            currency: "USD".to_string(),
+            date: "2025-01-15".to_string(),
+            notes: None,
+        }).unwrap();
+
+        upsert_price(&conn, &PriceQuote {
+            symbol: "AAPL".to_string(),
+            price: dec!(200),
+            currency: "USD".to_string(),
+            source: "test".to_string(),
+            fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        }).unwrap();
+
+        // Should succeed even with no history data
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_summary_with_period_and_history() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::transactions::insert_transaction;
+        use crate::models::transaction::{NewTransaction, TxType};
+        use crate::db::price_cache::upsert_price;
+        use crate::db::price_history::upsert_history;
+        use crate::models::price::{HistoryRecord, PriceQuote};
+
+        insert_transaction(&conn, &NewTransaction {
+            symbol: "AAPL".to_string(),
+            category: AssetCategory::Equity,
+            tx_type: TxType::Buy,
+            quantity: dec!(10),
+            price_per: dec!(150),
+            currency: "USD".to_string(),
+            date: "2025-01-15".to_string(),
+            notes: None,
+        }).unwrap();
+
+        upsert_price(&conn, &PriceQuote {
+            symbol: "AAPL".to_string(),
+            price: dec!(200),
+            currency: "USD".to_string(),
+            source: "test".to_string(),
+            fetched_at: "2025-06-15T00:00:00Z".to_string(),
+        }).unwrap();
+
+        upsert_history(&conn, "AAPL", "yahoo", &[
+            HistoryRecord { date: "2025-05-15".into(), close: dec!(180), volume: None },
+            HistoryRecord { date: "2025-06-01".into(), close: dec!(190), volume: None },
+        ]).unwrap();
+
+        // Should succeed with historical data available
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_summary_with_period_and_group_by() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::transactions::insert_transaction;
+        use crate::models::transaction::{NewTransaction, TxType};
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        insert_transaction(&conn, &NewTransaction {
+            symbol: "AAPL".to_string(),
+            category: AssetCategory::Equity,
+            tx_type: TxType::Buy,
+            quantity: dec!(10),
+            price_per: dec!(150),
+            currency: "USD".to_string(),
+            date: "2025-01-15".to_string(),
+            notes: None,
+        }).unwrap();
+
+        upsert_price(&conn, &PriceQuote {
+            symbol: "AAPL".to_string(),
+            price: dec!(200),
+            currency: "USD".to_string(),
+            source: "test".to_string(),
+            fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        }).unwrap();
+
+        // Both --group-by category and --period together
+        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek));
+        assert!(result.is_ok());
     }
 }
