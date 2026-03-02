@@ -201,3 +201,22 @@
 - [ ] **Fix GBP chart ratio — shows BTCUSD, should be GBPBTC** — Same issue as USD. GBP ratio chart against BTC should be GBP/BTC, not BTC/USD. Check all forex/currency ratio variant generation. Files: `src/app.rs` (chart_variants_for_position).
 - [ ] **Fix silver and all commodities missing BTC ratio chart** — Gold correctly shows Gold/BTC ratio variant, but Silver and other commodities don't. All commodities should have a /BTC ratio variant like Gold does. Files: `src/app.rs` (chart_variants_for_position — check commodity branch).
 - [ ] **Fix Sprott Uranium (U.UN) chart — no data** — U.UN shows no chart data. This is likely a Yahoo Finance ticker issue (Toronto exchange suffix). If the ticker can't be resolved, gracefully show "No chart data available for U.UN" instead of a blank/broken chart. Don't crash or show misleading empty axes. Files: `src/price/yahoo.rs`, `src/tui/widgets/price_chart.rs` (empty state handling).
+
+## P0 — Portfolio Chart Broken (Owner Report)
+
+- [ ] **Fix main portfolio chart** — The portfolio sparkline/chart in the left pane appears broken. Debug: check if portfolio value history is being computed and stored correctly, verify the sparkline widget receives valid data points. Also:
+  - The chart is too small — give it more vertical space in the layout
+  - Should show gains/returns at multiple timeframes: hourly, daily, weekly, monthly, yearly
+  - Show both the chart AND the numeric gain/loss for each period (e.g. "1D: +$420 (+1.2%)", "1W: -$130 (-0.3%)")
+  - Files: `src/tui/widgets/portfolio_sparkline.rs`, `src/tui/ui.rs` (layout sizing), `src/app.rs` (portfolio history computation)
+
+## P1 — Layout Restructure (Owner Request)
+
+- [ ] **Restructure left pane as "PORTFOLIO OVERVIEW"** — The top-left pane should be a comprehensive portfolio overview section with a visible header "PORTFOLIO OVERVIEW". Contents (top to bottom):
+  - Portfolio value + day gain/loss (already in header, but also here)
+  - Allocation bars
+  - Portfolio chart (with timeframe gains: hourly/daily/weekly/monthly/yearly)
+  - Key portfolio stats (total positions, top performer, worst performer)
+  - Files: `src/tui/ui.rs`, possibly new `src/tui/views/portfolio_overview.rs`
+- [ ] **Add "POSITIONS" section header** — Below the portfolio overview, the positions table should have its own visible section header "POSITIONS". Clear visual separation between portfolio overview and positions list. Files: `src/tui/ui.rs`, `src/tui/views/positions.rs`.
+- [ ] **Add "ASSET OVERVIEW" header to right pane** — The right pane should have a visible "ASSET OVERVIEW" header. Contains: asset detail header (already exists), asset chart, and any asset-specific data. Files: `src/tui/ui.rs`, `src/tui/widgets/asset_header.rs`.
