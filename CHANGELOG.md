@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-02 — Add crosshair cursor on charts
+
+- What: press `x` in Positions view to toggle a crosshair cursor on the chart. When active, `h`/`l` move the vertical crosshair left/right instead of cycling chart timeframes. A vertical `│` line in `text_accent` color is drawn at the cursor position across all chart rows (including volume and separator). The stats line switches to show the date and price at the cursor position with hint text (`x:off  h/l:move`). Chart title nav hint updates to show crosshair mode. Crosshair resets when changing selected position.
+- Why: lets users inspect historical data points on the braille chart without leaving the TUI. Common feature in financial terminals (Bloomberg, TradingView).
+- Key: `x` (toggle on/off), `h`/`l` (move cursor left/right when active)
+- Files: `src/app.rs` (crosshair_mode, crosshair_x fields, `x` keybinding, h/l override, reset on position change), `src/tui/widgets/price_chart.rs` (CrosshairState struct, vertical line + tooltip rendering, crosshair parameter threading), `src/tui/views/help.rs` (help text for `x` key)
+- Tests: 15 new — crosshair toggle on/off, h/l movement, clamp at zero, timeframe unchanged when active, timeframe changes when inactive, no effect in other views, reset on position change, record mapping (leftmost/rightmost/middle), bounds clamping. Total: 486 tests passing.
+- TODO: Add crosshair cursor on charts (P2)
+
 ### 2026-03-02 — Add `pftui import` command for restoring JSON snapshots
 
 - What: new `pftui import <path> [--mode replace|merge]` command. Imports data from JSON snapshot files produced by `pftui export json`. Two modes: `replace` (default) wipes existing transactions, allocations, and watchlist then inserts from snapshot; `merge` adds new entries without deleting, skipping duplicates. Validates before importing: portfolio mode match, non-empty symbols, positive quantities, non-negative prices, YYYY-MM-DD dates, 0-100 allocation pcts. All inserts run in a single SQLite transaction for atomicity.

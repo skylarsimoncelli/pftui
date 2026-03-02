@@ -333,6 +333,10 @@ pub struct App {
     pub tx_form: Option<TxFormState>,
     pub delete_confirm: Option<DeleteConfirmState>,
 
+    // Crosshair cursor on charts
+    pub crosshair_mode: bool,
+    pub crosshair_x: usize, // column index within chart width
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -433,6 +437,8 @@ impl App {
             theme_toast_tick: 0,
             tx_form: None,
             delete_confirm: None,
+            crosshair_mode: false,
+            crosshair_x: 0,
             db_path,
         }
     }
@@ -675,6 +681,8 @@ impl App {
     fn on_position_selection_changed(&mut self) {
         if matches!(self.view_mode, ViewMode::Positions) {
             self.chart_index = 0;
+            self.crosshair_mode = false;
+            self.crosshair_x = 0;
             self.last_selection_change_tick = self.tick_count;
             self.refetch_chart_history();
         }
@@ -1401,14 +1409,35 @@ impl App {
                     }
                 }
             }
-            // Timeframe cycling with h/l (when detail open)
+            // Crosshair toggle with x (Positions view only)
+            KeyCode::Char('x') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.crosshair_mode = !self.crosshair_mode;
+                if self.crosshair_mode {
+                    // Start crosshair at the rightmost position (most recent data).
+                    // Chart width is ~43% of terminal minus 2 for borders.
+                    let estimated_chart_width =
+                        ((self.terminal_width as usize * 43) / 100).saturating_sub(2);
+                    self.crosshair_x = estimated_chart_width.saturating_sub(1);
+                }
+            }
+
+            // Timeframe cycling with h/l — or crosshair movement when active
             KeyCode::Char('h') | KeyCode::Left if matches!(self.view_mode, ViewMode::Positions) => {
-                self.chart_timeframe = self.chart_timeframe.prev();
-                self.refetch_chart_history();
+                if self.crosshair_mode {
+                    self.crosshair_x = self.crosshair_x.saturating_sub(1);
+                } else {
+                    self.chart_timeframe = self.chart_timeframe.prev();
+                    self.refetch_chart_history();
+                }
             }
             KeyCode::Char('l') | KeyCode::Right if matches!(self.view_mode, ViewMode::Positions) => {
-                self.chart_timeframe = self.chart_timeframe.next();
-                self.refetch_chart_history();
+                if self.crosshair_mode {
+                    self.crosshair_x = self.crosshair_x.saturating_add(1);
+                    // clamped during render
+                } else {
+                    self.chart_timeframe = self.chart_timeframe.next();
+                    self.refetch_chart_history();
+                }
             }
 
 
@@ -2961,6 +2990,157 @@ mod timeframe_tests {
 
         app.handle_key(key('l'));
         assert_eq!(app.chart_timeframe, original);
+    }
+}
+
+#[cfg(test)]
+mod crosshair_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::path::PathBuf;
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn make_crosshair_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        let mut app = App::new(&config, PathBuf::from(":memory:"));
+        app.view_mode = ViewMode::Positions;
+        app.terminal_width = 120;
+        app
+    }
+
+    #[test]
+    fn test_crosshair_starts_disabled() {
+        let app = make_crosshair_app();
+        assert!(!app.crosshair_mode);
+        assert_eq!(app.crosshair_x, 0);
+    }
+
+    #[test]
+    fn test_x_toggles_crosshair_on() {
+        let mut app = make_crosshair_app();
+        app.handle_key(key('x'));
+        assert!(app.crosshair_mode);
+        // Should start at rightmost based on estimated chart width
+        // Chart width ≈ 120 * 43 / 100 - 2 = 49
+        assert!(app.crosshair_x > 0);
+    }
+
+    #[test]
+    fn test_x_toggles_crosshair_off() {
+        let mut app = make_crosshair_app();
+        app.handle_key(key('x'));
+        assert!(app.crosshair_mode);
+        app.handle_key(key('x'));
+        assert!(!app.crosshair_mode);
+    }
+
+    #[test]
+    fn test_crosshair_h_moves_left() {
+        let mut app = make_crosshair_app();
+        app.handle_key(key('x'));
+        let initial_x = app.crosshair_x;
+        app.handle_key(key('h'));
+        assert_eq!(app.crosshair_x, initial_x - 1);
+    }
+
+    #[test]
+    fn test_crosshair_l_moves_right() {
+        let mut app = make_crosshair_app();
+        app.handle_key(key('x'));
+        app.handle_key(key('h')); // move left first
+        app.handle_key(key('h'));
+        let after_left = app.crosshair_x;
+        app.handle_key(key('l'));
+        assert_eq!(app.crosshair_x, after_left + 1);
+    }
+
+    #[test]
+    fn test_crosshair_h_clamps_at_zero() {
+        let mut app = make_crosshair_app();
+        app.crosshair_mode = true;
+        app.crosshair_x = 0;
+        app.handle_key(key('h'));
+        assert_eq!(app.crosshair_x, 0);
+    }
+
+    #[test]
+    fn test_crosshair_h_l_changes_timeframe_when_crosshair_off() {
+        let mut app = make_crosshair_app();
+        assert!(!app.crosshair_mode);
+        let original_tf = app.chart_timeframe;
+        app.handle_key(key('l'));
+        assert_ne!(app.chart_timeframe, original_tf);
+    }
+
+    #[test]
+    fn test_crosshair_h_l_does_not_change_timeframe_when_crosshair_on() {
+        let mut app = make_crosshair_app();
+        app.handle_key(key('x')); // enable crosshair
+        let tf = app.chart_timeframe;
+        app.handle_key(key('l'));
+        assert_eq!(app.chart_timeframe, tf);
+        app.handle_key(key('h'));
+        assert_eq!(app.chart_timeframe, tf);
+    }
+
+    #[test]
+    fn test_crosshair_x_no_effect_in_other_views() {
+        let mut app = make_crosshair_app();
+        app.view_mode = ViewMode::Markets;
+        app.handle_key(key('x'));
+        assert!(!app.crosshair_mode);
+    }
+
+    #[test]
+    fn test_crosshair_resets_on_position_change() {
+        let mut app = make_crosshair_app();
+        // Set up positions so selection change is possible
+        app.display_positions = vec![
+            crate::models::position::Position {
+                symbol: "BTC".to_string(),
+                name: "Bitcoin".to_string(),
+                quantity: rust_decimal_macros::dec!(1),
+                avg_cost: rust_decimal_macros::dec!(50000),
+                total_cost: rust_decimal_macros::dec!(50000),
+                currency: "USD".to_string(),
+                current_price: Some(rust_decimal_macros::dec!(60000)),
+                current_value: Some(rust_decimal_macros::dec!(60000)),
+                gain: Some(rust_decimal_macros::dec!(10000)),
+                gain_pct: Some(rust_decimal_macros::dec!(20)),
+                allocation_pct: Some(rust_decimal_macros::dec!(50)),
+                category: crate::models::asset::AssetCategory::Crypto,
+            },
+            crate::models::position::Position {
+                symbol: "ETH".to_string(),
+                name: "Ethereum".to_string(),
+                quantity: rust_decimal_macros::dec!(10),
+                avg_cost: rust_decimal_macros::dec!(3000),
+                total_cost: rust_decimal_macros::dec!(30000),
+                currency: "USD".to_string(),
+                current_price: Some(rust_decimal_macros::dec!(4000)),
+                current_value: Some(rust_decimal_macros::dec!(40000)),
+                gain: Some(rust_decimal_macros::dec!(10000)),
+                gain_pct: Some(rust_decimal_macros::dec!(33)),
+                allocation_pct: Some(rust_decimal_macros::dec!(50)),
+                category: crate::models::asset::AssetCategory::Crypto,
+            },
+        ];
+        app.selected_index = 0;
+        app.crosshair_mode = true;
+        app.crosshair_x = 25;
+
+        // Move selection down — should reset crosshair
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert!(!app.crosshair_mode);
+        assert_eq!(app.crosshair_x, 0);
     }
 }
 

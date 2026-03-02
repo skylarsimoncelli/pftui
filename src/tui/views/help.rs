@@ -80,6 +80,11 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("J / K", "Cycle chart variant", kc, tc));
     lines.push(key_line("h / l", "Cycle chart timeframe (1W–5Y)", kc, tc));
+    lines.push(key_line("x", "Toggle crosshair cursor on chart", kc, tc));
+    lines.push(Line::from(Span::styled(
+        "  Crosshair: h/l move cursor, shows date + price",
+        Style::default().fg(sc),
+    )));
     lines.push(Line::from(Span::styled(
         "  Variants: Single, Ratio (BTC/SPX …), All",
         Style::default().fg(sc),

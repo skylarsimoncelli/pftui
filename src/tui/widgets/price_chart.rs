@@ -11,6 +11,12 @@ use crate::tui::theme;
 
 const BRAILLE_ROWS: usize = 4;
 
+/// Crosshair state passed into chart rendering.
+pub struct CrosshairState {
+    /// Column index within chart width (clamped by renderer).
+    pub x: usize,
+}
+
 /// Block characters for volume bars (8 levels of fill)
 const VOLUME_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
@@ -46,7 +52,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     // Navigation hint
-    let nav_hint = if variant_count > 1 {
+    let nav_hint = if app.crosshair_mode {
+        if variant_count > 1 {
+            format!(" ⊹ [{}/{}] J/K  h/l:cursor  x:off ", idx + 1, variant_count)
+        } else {
+            " ⊹ h/l:cursor  x:off ".to_string()
+        }
+    } else if variant_count > 1 {
         format!(" [{}/{}] J/K  h/l ", idx + 1, variant_count)
     } else {
         " h/l ".to_string()
@@ -80,6 +92,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    // Build crosshair state if active
+    let crosshair = if app.crosshair_mode {
+        Some(CrosshairState { x: app.crosshair_x })
+    } else {
+        None
+    };
+
     match &variant.kind {
         ChartKind::All => {
             // Get individual variants (skip index 0 which is "All")
@@ -88,14 +107,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             render_multi_panel(frame, inner, &individuals, app);
         }
         ChartKind::Single { symbol, .. } => {
-            render_single_chart(frame, inner, symbol, &variant.label, app);
+            render_single_chart(frame, inner, symbol, &variant.label, crosshair.as_ref(), app);
         }
         ChartKind::Ratio {
             num_symbol,
             den_symbol,
             ..
         } => {
-            render_ratio_chart(frame, inner, num_symbol, den_symbol, &variant.label, app);
+            render_ratio_chart(frame, inner, num_symbol, den_symbol, &variant.label, crosshair.as_ref(), app);
         }
     }
 }
@@ -115,18 +134,18 @@ fn render_multi_panel(
     let panel_count = variants.len();
     let panel_height = area.height / panel_count as u16;
     if panel_height < 3 {
-        // Too small for multi-panel; just show first
+        // Too small for multi-panel; just show first (no crosshair in multi-panel)
         if let Some(v) = variants.first() {
             match &v.kind {
                 ChartKind::Single { symbol, .. } => {
-                    render_single_chart(frame, area, symbol, &v.label, app);
+                    render_single_chart(frame, area, symbol, &v.label, None, app);
                 }
                 ChartKind::Ratio {
                     num_symbol,
                     den_symbol,
                     ..
                 } => {
-                    render_ratio_chart(frame, area, num_symbol, den_symbol, &v.label, app);
+                    render_ratio_chart(frame, area, num_symbol, den_symbol, &v.label, None, app);
                 }
                 _ => {}
             }
@@ -180,6 +199,7 @@ fn render_single_chart(
     area: Rect,
     symbol: &str,
     _label: &str,
+    crosshair: Option<&CrosshairState>,
     app: &App,
 ) {
     let t = &app.theme;
@@ -245,7 +265,7 @@ fn render_single_chart(
         sma_overlays.push((sma50, t.border_accent));
     }
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, t);
+    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, crosshair, t);
 }
 
 /// Render a ratio chart (numerator / denominator)
@@ -255,6 +275,7 @@ fn render_ratio_chart(
     num_symbol: &str,
     den_symbol: &str,
     _label: &str,
+    crosshair: Option<&CrosshairState>,
     app: &App,
 ) {
     let t = &app.theme;
@@ -312,7 +333,7 @@ fn render_ratio_chart(
     };
 
     // No volume for ratio charts
-    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], t);
+    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], crosshair, t);
 }
 
 /// Compact single chart for multi-panel (no stats line, just braille)
@@ -464,6 +485,7 @@ fn render_braille_chart(
     gain_pct: Option<Decimal>,
     volumes: Option<&[Option<u64>]>,
     sma_overlays: &[(Vec<Option<f64>>, Color)],
+    crosshair: Option<&CrosshairState>,
     t: &theme::Theme,
 ) {
     if area.width < 4 || area.height < 4 {
@@ -580,6 +602,9 @@ fn render_braille_chart(
             ));
         }
 
+        // Crosshair: clamp and compute the column position
+        let ch_col = crosshair.map(|ch| ch.x.min(chart_width.saturating_sub(1)));
+
         // Y-axis labels
         let label_width = 6;
         if row == chart_height - 1 && chart_width > label_width + 2 {
@@ -589,72 +614,137 @@ fn render_braille_chart(
             overlay_label(&mut spans, format_compact_short(min_val), t);
         }
 
+        // Crosshair vertical line overlay
+        if let Some(cx) = ch_col {
+            if cx < spans.len() {
+                spans[cx] = Span::styled("│", Style::default().fg(t.text_accent));
+            }
+        }
+
         lines.push(Line::from(spans));
     }
 
+    // Crosshair: compute the record index and data for the tooltip
+    let ch_col_clamped = crosshair.map(|ch| ch.x.min(chart_width.saturating_sub(1)));
+    let ch_record_data: Option<(&str, f64)> = ch_col_clamped.and_then(|cx| {
+        // Map chart column back to source record index
+        // Each chart column covers 2 sample points; use the first sample's source position
+        let sample_idx = cx * 2;
+        if records.is_empty() || sample_count == 0 {
+            return None;
+        }
+        let src_idx_f = (sample_idx as f64 / sample_count as f64) * (records.len() - 1) as f64;
+        let src_idx = src_idx_f.round() as usize;
+        let src_idx = src_idx.min(records.len() - 1);
+        let rec = &records[src_idx];
+        let price_f = rec.close.to_string().parse::<f64>().unwrap_or(0.0);
+        Some((rec.date.as_str(), price_f))
+    });
+
     // Volume bars (1 row of block characters)
     if let Some(vols) = volumes {
-        lines.push(build_volume_line(vols, chart_width, t));
+        let mut vol_line = build_volume_line(vols, chart_width, t);
+        // Overlay crosshair on volume row too
+        if let Some(cx) = ch_col_clamped {
+            if cx < vol_line.spans.len() {
+                vol_line.spans[cx] = Span::styled("│", Style::default().fg(t.text_accent));
+            }
+        }
+        lines.push(vol_line);
     }
 
     // Separator
-    lines.push(Line::from(Span::styled(
+    let mut sep_chars: Vec<Span> = vec![Span::styled(
         "─".repeat(area.width as usize),
         Style::default().fg(t.border_subtle),
-    )));
+    )];
+    // Crosshair marker on separator
+    if let Some(cx) = ch_col_clamped {
+        // Rebuild separator with crosshair mark
+        let mut sep_str: Vec<char> = "─".repeat(area.width as usize).chars().collect();
+        if cx < sep_str.len() {
+            sep_str[cx] = '┼';
+        }
+        let sep_string: String = sep_str.into_iter().collect();
+        sep_chars = vec![Span::styled(sep_string, Style::default().fg(t.border_subtle))];
+    }
+    lines.push(Line::from(sep_chars));
 
-    // Price + gain line
-    let price_str = current_price
-        .map(format_price)
-        .unwrap_or_else(|| "---".to_string());
-    let gain_color = if gain > dec!(0) {
-        t.gain_green
-    } else if gain < dec!(0) {
-        t.loss_red
-    } else {
-        t.neutral
-    };
-
-    let mut stats_spans = vec![
-        Span::styled(price_str, Style::default().fg(t.text_primary).bold()),
-        Span::raw(" "),
-        Span::styled(
-            format!("({:+.1}%)", gain),
-            Style::default().fg(gain_color),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!(
-                "H:{} L:{}",
-                format_price_f64(max_val),
-                format_price_f64(min_val)
+    // Stats line: show crosshair data when active, otherwise normal stats
+    if let Some((date, price)) = ch_record_data {
+        // Crosshair tooltip: date + price at cursor position
+        let stats_spans = vec![
+            Span::styled("⊹ ", Style::default().fg(t.text_accent)),
+            Span::styled(
+                date.to_string(),
+                Style::default().fg(t.text_primary).bold(),
             ),
-            Style::default().fg(t.text_muted),
-        ),
-    ];
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                format_price_f64(price),
+                Style::default().fg(t.text_accent).bold(),
+            ),
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                "x:off  h/l:move",
+                Style::default().fg(t.text_muted),
+            ),
+        ];
+        lines.push(Line::from(stats_spans));
+    } else {
+        // Normal price + gain stats line
+        let price_str = current_price
+            .map(format_price)
+            .unwrap_or_else(|| "---".to_string());
+        let gain_color = if gain > dec!(0) {
+            t.gain_green
+        } else if gain < dec!(0) {
+            t.loss_red
+        } else {
+            t.neutral
+        };
 
-    // Add SMA legend labels
-    if !sma_overlays.is_empty() {
-        stats_spans.push(Span::raw("  "));
-        for (i, (sma_raw, color)) in sma_overlays.iter().enumerate() {
-            // Determine SMA period from data (count non-None leading entries)
-            let period = sma_raw.iter().take_while(|v| v.is_none()).count() + 1;
-            let label = if period <= SMA_SHORT_PERIOD + 1 {
-                format!("SMA{}", SMA_SHORT_PERIOD)
-            } else {
-                format!("SMA{}", SMA_LONG_PERIOD)
-            };
-            stats_spans.push(Span::styled(
-                format!("─{}", label),
-                Style::default().fg(*color),
-            ));
-            if i < sma_overlays.len() - 1 {
-                stats_spans.push(Span::raw(" "));
+        let mut stats_spans = vec![
+            Span::styled(price_str, Style::default().fg(t.text_primary).bold()),
+            Span::raw(" "),
+            Span::styled(
+                format!("({:+.1}%)", gain),
+                Style::default().fg(gain_color),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!(
+                    "H:{} L:{}",
+                    format_price_f64(max_val),
+                    format_price_f64(min_val)
+                ),
+                Style::default().fg(t.text_muted),
+            ),
+        ];
+
+        // Add SMA legend labels
+        if !sma_overlays.is_empty() {
+            stats_spans.push(Span::raw("  "));
+            for (i, (sma_raw, color)) in sma_overlays.iter().enumerate() {
+                // Determine SMA period from data (count non-None leading entries)
+                let period = sma_raw.iter().take_while(|v| v.is_none()).count() + 1;
+                let label = if period <= SMA_SHORT_PERIOD + 1 {
+                    format!("SMA{}", SMA_SHORT_PERIOD)
+                } else {
+                    format!("SMA{}", SMA_LONG_PERIOD)
+                };
+                stats_spans.push(Span::styled(
+                    format!("─{}", label),
+                    Style::default().fg(*color),
+                ));
+                if i < sma_overlays.len() - 1 {
+                    stats_spans.push(Span::raw(" "));
+                }
             }
         }
-    }
 
-    lines.push(Line::from(stats_spans));
+        lines.push(Line::from(stats_spans));
+    }
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
@@ -1225,6 +1315,68 @@ mod tests {
         assert_eq!(result.len(), 5);
         // All should be 42.0 (interpolating between same point)
         assert!(result.iter().all(|&v| (v - 42.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_crosshair_state_clamps_to_chart_width() {
+        // CrosshairState with x beyond chart width should be clamped during render
+        let ch = CrosshairState { x: 1000 };
+        let chart_width: usize = 50;
+        let clamped = ch.x.min(chart_width.saturating_sub(1));
+        assert_eq!(clamped, 49);
+    }
+
+    #[test]
+    fn test_crosshair_state_zero_is_valid() {
+        let ch = CrosshairState { x: 0 };
+        let chart_width: usize = 50;
+        let clamped = ch.x.min(chart_width.saturating_sub(1));
+        assert_eq!(clamped, 0);
+    }
+
+    #[test]
+    fn test_crosshair_record_mapping() {
+        // Given a chart width of 10, sample_count = 20,
+        // and 5 records, crosshair at column 5 should map to record ~2
+        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(120), volume: None },
+            HistoryRecord { date: "2025-01-04".into(), close: dec!(130), volume: None },
+            HistoryRecord { date: "2025-01-05".into(), close: dec!(140), volume: None }];
+        let chart_width = 10;
+        let sample_count = chart_width * 2; // 20
+        let crosshair_col = 5;
+        let sample_idx = crosshair_col * 2; // 10
+        let src_idx_f = (sample_idx as f64 / sample_count as f64) * (records.len() - 1) as f64;
+        let src_idx = src_idx_f.round() as usize;
+        let src_idx = src_idx.min(records.len() - 1);
+        assert_eq!(records[src_idx].date, "2025-01-03");
+    }
+
+    #[test]
+    fn test_crosshair_record_mapping_rightmost() {
+        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None }];
+        let chart_width = 10;
+        let sample_count = chart_width * 2;
+        let crosshair_col = chart_width - 1; // rightmost
+        let sample_idx = crosshair_col * 2;
+        let src_idx_f = (sample_idx as f64 / sample_count as f64) * (records.len() - 1) as f64;
+        let src_idx = (src_idx_f.round() as usize).min(records.len() - 1);
+        assert_eq!(records[src_idx].date, "2025-01-02");
+    }
+
+    #[test]
+    fn test_crosshair_record_mapping_leftmost() {
+        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None }];
+        let chart_width = 10;
+        let sample_count = chart_width * 2;
+        let crosshair_col = 0; // leftmost
+        let sample_idx = crosshair_col * 2;
+        let src_idx_f = (sample_idx as f64 / sample_count as f64) * (records.len() - 1) as f64;
+        let src_idx = (src_idx_f.round() as usize).min(records.len() - 1);
+        assert_eq!(records[src_idx].date, "2025-01-01");
     }
 
 }
