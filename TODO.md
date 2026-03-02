@@ -232,3 +232,21 @@
   - crossterm already supports mouse events via `EnableMouseCapture` — just need to wire up hit-testing for each clickable region
   - Store rendered region rects per frame for hit-testing
   - Files: `src/app.rs` (handle_mouse, hit regions), `src/tui/ui.rs` (track rendered rects), all view files (register clickable regions)
+
+## P2 — Theme Overhaul (Owner Request)
+
+- [ ] **Revamp theme selection** — Current themes are too flat and samey. Every theme should feel bold, dynamic, and visually distinct. Rework existing and add new themes so the full set covers a wide range of aesthetics. Ideas:
+  - **Inferno** — deep blacks with fire reds, oranges, and amber accents. Gains glow hot, losses smolder
+  - **Neon** — cyberpunk-inspired. Electric pink, cyan, purple on dark. Think synthwave/retrowave
+  - **Pastel** — soft, toned-down palette. Muted pinks, blues, greens on a warm gray. Easy on the eyes
+  - **Miasma** — warm atmospheric haze. Deep burgundy, dusty orange, olive, muted gold
+  - **Hacker** — classic green-on-black terminal aesthetic. Multiple shades of green, minimal color
+  - **Dracula** — keep but make more vivid and punchy, lean into the purples
+  - **Nord** — keep but add more contrast, feels too washed out currently
+  - **Catppuccin** — keep, it's good
+  - **Midnight** — keep as default but ensure it's the most polished of all
+  - **Solarized** — evaluate if it's distinct enough to keep, otherwise replace
+  - **Gruvbox** — evaluate, replace with something more unique if too similar to Miasma
+  - Each theme should have strong visual identity — a user should instantly know which theme they're on
+  - Test all 28 color slots per theme across all views to ensure nothing looks flat or broken
+  - Files: `src/tui/theme.rs`, `src/tui/views/help.rs` (theme preview)
