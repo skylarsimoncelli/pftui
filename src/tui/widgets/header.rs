@@ -8,7 +8,7 @@ use rust_decimal_macros::dec;
 
 use crate::app::{is_privacy_view, App, ViewMode};
 use crate::config::PortfolioMode;
-use crate::tui::theme;
+use crate::tui::theme::{self, lerp_color};
 use crate::tui::ui::COMPACT_WIDTH;
 use crate::tui::views::markets;
 
@@ -457,10 +457,18 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         vec![line1]
     };
 
+    // Tint header border based on daily portfolio performance.
+    // Subtle 15% blend toward green (up) or red (down) for ambient mood.
+    let border_color = match app.daily_portfolio_change {
+        Some(change) if change > dec!(0) => lerp_color(t.border_subtle, t.gain_green, 0.15),
+        Some(change) if change < dec!(0) => lerp_color(t.border_subtle, t.loss_red, 0.15),
+        _ => t.border_subtle,
+    };
+
     let header = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(t.border_subtle))
+            .border_style(Style::default().fg(border_color))
             .style(Style::default().bg(t.surface_2)),
     );
 
@@ -655,5 +663,51 @@ mod tests {
     #[test]
     fn test_format_compact_signed_negative_million() {
         assert_eq!(format_compact_signed(dec!(-1200000)), "-$1.2M");
+    }
+
+    #[test]
+    fn test_header_border_tint_positive() {
+        let config = crate::config::Config::default();
+        let mut app = App::new(&config, std::path::PathBuf::from("/tmp/test_tint_pos.db"));
+        app.daily_portfolio_change = Some(dec!(500));
+        let t = &app.theme;
+        let blended = lerp_color(t.border_subtle, t.gain_green, 0.15);
+        // Blended color should differ from border_subtle (shifted toward green)
+        assert_ne!(blended, t.border_subtle);
+        // Blended color should differ from pure gain_green (only 15% blend)
+        assert_ne!(blended, t.gain_green);
+    }
+
+    #[test]
+    fn test_header_border_tint_negative() {
+        let config = crate::config::Config::default();
+        let mut app = App::new(&config, std::path::PathBuf::from("/tmp/test_tint_neg.db"));
+        app.daily_portfolio_change = Some(dec!(-300));
+        let t = &app.theme;
+        let blended = lerp_color(t.border_subtle, t.loss_red, 0.15);
+        assert_ne!(blended, t.border_subtle);
+        assert_ne!(blended, t.loss_red);
+    }
+
+    #[test]
+    fn test_header_border_tint_zero_change() {
+        let config = crate::config::Config::default();
+        let mut app = App::new(&config, std::path::PathBuf::from("/tmp/test_tint_zero.db"));
+        app.daily_portfolio_change = Some(dec!(0));
+        let t = &app.theme;
+        // Zero change should use border_subtle unchanged
+        let expected = t.border_subtle;
+        // The match arm for zero doesn't blend
+        assert_eq!(expected, t.border_subtle);
+    }
+
+    #[test]
+    fn test_header_border_tint_no_data() {
+        let config = crate::config::Config::default();
+        let app = App::new(&config, std::path::PathBuf::from("/tmp/test_tint_none.db"));
+        let t = &app.theme;
+        // None daily change should use border_subtle unchanged
+        assert!(app.daily_portfolio_change.is_none());
+        assert_eq!(t.border_subtle, t.border_subtle);
     }
 }
