@@ -5,15 +5,11 @@
 
 ## P1 — Animations & Live Feel
 
-- [x] **Add price flash with directional arrows** — When a price updates, show a brief ▲/▼ arrow next to the price that fades after ~1s. Currently we flash the price cell bg, but adding a directional indicator makes the update scannable without reading the number. Use `price_flash_ticks` map (already exists) and extend to store direction (up/down/same). Files: `src/tui/views/positions.rs`, `src/app.rs`. Test: verify flash direction stored on update.
-- [x] **Add scrolling ticker tape in header** — Horizontal marquee-style ticker showing top movers from Markets view data: "SPX +1.2% │ BTC -3.4% │ GOLD +0.5%" scrolling left. Renders in the header row using the space after the portfolio value. Uses `app.tick_count` to advance position by 1 char every ~6 ticks (~10 chars/sec). Only active on Positions view to avoid clutter. Files: `src/tui/widgets/header.rs`, `src/app.rs` (market data already available). Test: test ticker text generation and wrap-around.
 - [ ] **Add pulsing border on active panel** — Instead of static `border_active` color, pulse the focused panel's border using `pulse_color()` (already exists in theme.rs). Subtle 2-second sine wave between `border_inactive` and `border_active` intensity. Gives the app a "breathing" feel. Only when prices are live (dead/stale = static border). Files: `src/tui/views/positions.rs` (render_table block), `src/tui/widgets/price_chart.rs` (chart block). Test: verify pulse applied only when prices_live.
 - [ ] **Add row highlight animation on selection change** — When j/k moves selection, briefly flash the entire new row brighter (lerp from `surface_3` toward `border_accent` then fade back over ~15 ticks). Track `last_selection_change_tick` on App. Files: `src/tui/views/positions.rs` (row_bg calculation), `src/app.rs` (track tick on selection change). Test: test flash decay timing.
 
 ## P1 — Header & Status Bar Enhancements
 
-- [x] **Add day gain/loss to header** — Show today's portfolio change alongside total gain: "$45.2k +1.3% ▲$580 today". Compute from sum of (position.quantity × position.day_change_amount). The "today" figure is the most-checked number in any portfolio app. Files: `src/tui/widgets/header.rs` (add today gain span), `src/app.rs` (compute daily portfolio change from position day changes). Test: test daily change computation.
-- [x] **Add market status indicator to header** — Show "◉ OPEN" (green) or "◎ CLOSED" (muted) based on current UTC time vs US market hours (9:30-16:00 ET, weekdays). Simple timezone offset check, no external dependency. Renders after the clock in the header. Files: `src/tui/widgets/header.rs`. Test: test market open/closed detection for various UTC times.
 - [ ] **Add breadcrumb trail to status bar** — When in chart view, show the navigation path: "Positions › AAPL › 3M Chart › AAPL/SPX". When in detail popup: "Positions › AAPL › Detail". Replaces the generic hint bar text with context-aware breadcrumbs. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (expose chart variant label). Test: test breadcrumb string generation for each navigation state.
 
 ## P1 — Positions Table Visual Density
@@ -106,33 +102,20 @@
 
 ## P0 — Bugs & Layout Fixes (Owner Report)
 
-- [x] **Fix chart timeframe selection** — Many timeframes (1W, 1M, 6M, 1Y, 5Y) don't load data or show empty charts. Only 3M works reliably. Debug: check if history fetch requests the correct number of days, if Yahoo/CoinGecko APIs return data for all periods, and if resampling handles short data correctly. Files: `src/price/mod.rs`, `src/tui/widgets/price_chart.rs`, `src/app.rs`.
-- [x] **Fix layout: allocation bars belong in left pane** — The left pane should be the portfolio overview (allocation bars, portfolio sparkline, total portfolio info). The right pane should be the selected asset detail (asset chart, asset info). Currently allocation may be rendering in the wrong pane. Files: `src/tui/ui.rs`, `src/tui/widgets/sidebar.rs`.
-- [x] **Fix layout: portfolio chart on left, asset chart on right** — Portfolio-level chart (sparkline/value over time) should be in the left pane. Per-asset price chart should be in the right pane. Establish clear L/R separation: left = portfolio overview, right = selected asset detail. Files: `src/tui/ui.rs`.
-- [x] **Make asset detail info permanent in right pane header** — The asset overview popup that appears when cycling through charts should be permanently displayed at the top of the right pane (not a popup). Show: symbol, name, price, gain/loss, quantity, allocation% — always visible above the asset chart. Files: `src/tui/ui.rs`, `src/tui/widgets/price_chart.rs`, possibly new `src/tui/widgets/asset_header.rs`.
 - [ ] **Add easy position modification** — There's no easy way to modify existing positions from the TUI. Add keybinding (e.g., `a` to add transaction, `d` to delete transaction for selected asset) that opens an inline form or spawns the CLI flow. Files: `src/app.rs`, possibly new `src/tui/views/edit_position.rs`.
 
 ## P0 — CLI & Headless Gaps (Feedback)
 
-- [x] **[Feedback] Add `pftui refresh` headless price command** — Fetch and cache current prices for all held symbols without launching the TUI. This is the #1 blocker for both beta testers — without it, the tool is a transaction ledger rather than a live portfolio tracker for agents/scripts/cron. Reuse the existing `fetch_all_prices()` logic from `src/price/mod.rs` but run it in a CLI context (no App/TUI setup). Write results to the price cache DB. Output a summary: "Refreshed 6 symbols: BTC $84,200, GC=F $5,278..." Files: new `src/commands/refresh.rs`, `src/cli.rs`, `src/price/mod.rs` (extract fetch logic from App dependency).
 - [ ] **[Feedback] Add `pftui value` / `pftui worth` command** — Show total portfolio value with all current prices in a single CLI line. Depends on headless price refresh. Output: "Portfolio: $128,450.23 (+2.1% / +$2,640.50 today)". Files: new `src/commands/value.rs`, `src/cli.rs`.
 - [ ] **[Feedback] Add `--period` flag to `pftui summary`** — Support `--period today/1w/1m/3m` for daily/weekly/monthly P&L in headless summary output. Currently only total gain from cost basis is shown. Files: `src/commands/summary.rs` (add period arg, compute P&L from cached price history).
-- [x] **[Feedback] Add `--group-by category` flag to `pftui summary`** — Show allocation grouped by asset class: "Metals 33%, Crypto 18%, Cash 49%". Uses existing category data from positions. Files: `src/commands/summary.rs`.
 
 ## P0 — Setup & Pricing Bugs (Owner Report)
 
 - [ ] **Setup wizard fuzzy finder** — The asset symbol entry in the setup wizard should have fuzzy autocomplete. As the user types, show matching symbols/names from the asset_names map (and any custom symbols). Use a ranked fuzzy match (not just prefix). Show results inline below the input. Files: `src/commands/setup.rs`, `src/models/asset_names.rs` (search_names already exists — wire it into interactive input).
 - [ ] **Setup wizard: configurable primary fiat currency** — Full mode should let the user choose their primary fiat currency (EUR, GBP, JPY, etc.) instead of hardcoding USD. Default to USD if not specified. Store in `config.toml`. All portfolio values, gains, and display formatting should respect the chosen currency. Files: `src/config.rs`, `src/commands/setup.rs`, `src/tui/widgets/header.rs`, `src/models/position.rs`.
-- [x] **Fix BTC price fetching** — BTC price fails to load for at least one user. Debug: check CoinGecko→Yahoo fallback chain, verify `BTC-USD` symbol resolves, check rate limiting / API errors. Add better error logging to identify where the fetch fails. Files: `src/price/coingecko.rs`, `src/price/yahoo.rs`, `src/price/mod.rs`.
 
 ## P0 — Performance Fix (Owner Request)
 
-- [x] **Switch to on-demand chart history fetching** — Currently fetches 5Y of daily data for every asset upfront (wasteful, slow startup, rate limiting risk). Change to:
-  - Default initial fetch: 3M (90 days) — covers the most common view
-  - On timeframe switch: if requested range exceeds cached data, fetch the delta and merge (merge_history_into already exists)
-  - Cache for session: once 1Y data is fetched for an asset, don't re-fetch if user switches back to 3M then 1Y
-  - This reduces startup API calls, avoids CoinGecko rate limiting, and saves bandwidth
-  - Files: `src/price/mod.rs` (request_all_history, request_history_for_symbol), `src/app.rs` (trigger fetch on timeframe change if needed)
 
 ## P1 — Import/Export (Owner Request)
 
@@ -169,24 +152,6 @@
 
 ## P0 — CI & Release Pipeline (Owner Request)
 
-- [x] **Create GitHub Actions CI workflow** — `.github/workflows/ci.yml` that runs on push/PR: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`. Matrix: `ubuntu-latest`, `macos-latest`. Cache `~/.cargo/registry` and `target/`. Files: `.github/workflows/ci.yml`.
-- [x] **Create GitHub Actions release workflow** — `.github/workflows/release.yml` triggered on `v*` tags. Single workflow handles ALL publishing:
-  1. Run full test suite
-  2. Cross-compile release binaries for: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`
-  3. Generate SHA256 checksums
-  4. Create GitHub Release with all binaries + checksums + auto-generated changelog
-  5. `cargo publish` to crates.io (uses `CARGO_REGISTRY_TOKEN` secret)
-  6. Update Homebrew formula in `skylarsimoncelli/homebrew-tap` repo (uses `HOMEBREW_TAP_TOKEN` secret)
-  7. Build and push `.deb` package (via `cargo-deb`) — attach to GitHub Release
-  8. Build and push `.rpm` package (via `cargo-generate-rpm`) — attach to GitHub Release
-  9. Build and push Docker image to GitHub Container Registry (`ghcr.io/skylarsimoncelli/pftui`)
-  10. Build and push Snap package to Snapcraft (uses `SNAPCRAFT_TOKEN` secret)
-  11. Update AUR PKGBUILD (uses `AUR_SSH_KEY` secret)
-  - Use `cross` or `cargo-zigbuild` for cross-compilation. Use `softprops/action-gh-release` for GitHub Release creation.
-  - Each publish step should be independent — if one fails, others still run (`continue-on-error` per step)
-  - Files: `.github/workflows/release.yml`
-- [x] **Prepare Cargo.toml for publishing** — Add required crates.io metadata: `description`, `license` (MIT), `repository`, `homepage`, `readme`, `keywords` (portfolio, tui, terminal, finance, stock), `categories` (command-line-utilities, finance). Files: `Cargo.toml`.
-- [x] **Create Homebrew tap repo** — Create `skylarsimoncelli/homebrew-tap` with `Formula/pftui.rb`. Formula downloads the GitHub Release binary for macOS. The release workflow auto-updates this on new tags. Files: separate repo, referenced by release workflow.
 
 ## P2 — Remaining Package Managers (Need Owner Action)
 
