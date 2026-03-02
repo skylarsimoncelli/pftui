@@ -255,6 +255,15 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 _ => (Style::default().fg(t.text_primary), None),
             };
 
+            let mini_sparkline_spans = build_sparkline_spans(
+                t,
+                app.price_history
+                    .get(&pos.symbol)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]),
+                3,
+            );
+
             let sparkline_spans = build_sparkline_spans(
                 t,
                 app.price_history
@@ -292,7 +301,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                     .style(Style::default().fg(t.text_primary)),
                 Cell::from(Line::from({
                     let price_text = format_price_opt(pos.current_price);
-                    match flash_direction {
+                    let mut spans = match flash_direction {
                         Some(PriceFlashDirection::Up) => vec![
                             Span::styled(price_text, price_style),
                             Span::styled(" ▲", price_style),
@@ -302,7 +311,12 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                             Span::styled(" ▼", price_style),
                         ],
                         _ => vec![Span::styled(price_text, price_style)],
+                    };
+                    if !mini_sparkline_spans.is_empty() {
+                        spans.push(Span::raw(" "));
+                        spans.extend(mini_sparkline_spans);
                     }
+                    spans
                 })),
                 Cell::from(format_change_pct(day_change))
                     .style(Style::default().fg(day_change_color)),
@@ -320,7 +334,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     let widths = [
         Constraint::Min(14),
         Constraint::Length(8),
-        Constraint::Length(12),
+        Constraint::Length(16),
         Constraint::Length(7),
         Constraint::Length(8),
         Constraint::Length(7),
@@ -841,6 +855,70 @@ mod tests {
         assert_eq!(positions_border_color(false, true, active, inactive, 60), inactive);
         assert_eq!(positions_border_color(false, false, active, inactive, 0), inactive);
         assert_eq!(positions_border_color(false, false, active, inactive, 99), inactive);
+    }
+}
+
+#[cfg(test)]
+mod mini_sparkline_tests {
+    use super::*;
+
+    fn make_history(prices: &[&str]) -> Vec<HistoryRecord> {
+        prices
+            .iter()
+            .enumerate()
+            .map(|(i, p)| HistoryRecord {
+                date: format!("2025-01-{:02}", i + 1),
+                close: p.parse().unwrap_or_default(),
+                volume: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_mini_sparkline_three_points() {
+        let t = crate::tui::theme::theme_by_name("midnight");
+        let history = make_history(&["100", "110", "120"]);
+        let spans = build_sparkline_spans(&t, &history, 3);
+        assert_eq!(spans.len(), 3, "mini sparkline should have 3 chars");
+        // Ascending prices: chars should increase
+        assert!(spans[0].content.as_ref() <= spans[2].content.as_ref(),
+            "ascending prices should produce ascending sparkline");
+    }
+
+    #[test]
+    fn test_mini_sparkline_uses_last_three_of_many() {
+        let t = crate::tui::theme::theme_by_name("midnight");
+        // 10 records, mini sparkline should use only the last 3
+        let history = make_history(&["50", "60", "70", "80", "90", "100", "200", "300", "100", "110"]);
+        let spans = build_sparkline_spans(&t, &history, 3);
+        assert_eq!(spans.len(), 3, "should produce exactly 3 chars from long history");
+    }
+
+    #[test]
+    fn test_mini_sparkline_fewer_than_three_records() {
+        let t = crate::tui::theme::theme_by_name("midnight");
+        let history = make_history(&["100", "110"]);
+        let spans = build_sparkline_spans(&t, &history, 3);
+        // Should produce 2 chars (as many as available, up to 3)
+        assert_eq!(spans.len(), 2, "should produce chars equal to available history");
+    }
+
+    #[test]
+    fn test_mini_sparkline_empty_history() {
+        let t = crate::tui::theme::theme_by_name("midnight");
+        let spans = build_sparkline_spans(&t, &[], 3);
+        assert!(spans.is_empty(), "empty history should produce no sparkline");
+    }
+
+    #[test]
+    fn test_mini_sparkline_flat_prices() {
+        let t = crate::tui::theme::theme_by_name("midnight");
+        let history = make_history(&["100", "100", "100"]);
+        let spans = build_sparkline_spans(&t, &history, 3);
+        assert_eq!(spans.len(), 3);
+        // All same price → all same middle char
+        assert_eq!(spans[0].content, spans[1].content);
+        assert_eq!(spans[1].content, spans[2].content);
     }
 }
 
