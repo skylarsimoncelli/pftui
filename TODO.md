@@ -102,7 +102,7 @@
 
 ## P1 — Mock Mode (Owner Request)
 
-- [ ] **Add `pftui mock` command** — Opens pftui with a realistic mock portfolio from a bundled mock DB. `pftui mock` copies a pre-built SQLite DB to a temp location and launches the TUI against it. The mock portfolio should be diverse and realistic:
+- [ ] **Add `pftui demo` command** — Opens pftui with a realistic mock portfolio from a bundled mock DB. `pftui demo` loads a pre-built demo SQLite DB packaged with the repo and launches the TUI against it. The demo mock portfolio should be diverse and realistic:
   - **Commodities:** GLD (Gold), SLV (Silver), COPX (Copper), URA (Uranium), USO (Oil)
   - **Indices/ETFs:** SPY (S&P 500), QQQ (Nasdaq), IWM (Russell 2000)
   - **Crypto:** BTC, ETH, SOL
@@ -110,8 +110,8 @@
   - **Bonds:** TLT (20Y Treasury), SHY (Short-term)
   - Realistic quantities and cost bases (e.g. 10 SPY @ $420, 0.5 BTC @ $28000, 100 GLD @ $180)
   - Multiple transactions per asset (buys at different dates/prices for realism)
-  - Store as `mock/portfolio.db` in the repo (or `mock/portfolio.json` and build DB on first run)
-  - Files: new `src/commands/mock.rs`, new `mock/portfolio.json`, `src/cli.rs`
+  - Store as `demo.db` in the repo
+  - Running `pftui demo` should not overwrite the existing user DB 
 
 ## P2 — Web Interface (Owner Request)
 
