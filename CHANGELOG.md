@@ -374,3 +374,11 @@
 - Files: `src/app.rs` (new `breadcrumb()` method with 10 tests), `src/tui/widgets/status_bar.rs` (render breadcrumb before key hints)
 - Tests: added 10 tests — test_breadcrumb_positions_no_selection, test_breadcrumb_positions_with_selection, test_breadcrumb_detail_popup, test_breadcrumb_chart_variant, test_breadcrumb_transactions_view, test_breadcrumb_markets_view, test_breadcrumb_economy_view, test_breadcrumb_watchlist_view, test_breadcrumb_detail_overrides_chart, test_breadcrumb_chart_timeframe_label. Total: 353 tests passing.
 - TODO: Add breadcrumb trail to status bar (P1)
+
+### 2026-03-02 — Add pulsing border on active panel
+
+- What: active panel borders now gently pulse with a 2-second sine wave when price data is live. The focused panel's border breathes between `border_active` and `border_inactive` colors using the existing `pulse_color()` utility. When prices are stale or the panel is inactive, borders remain static. Applies to positions table, price chart, and asset header panels. Added `PULSE_PERIOD_BORDER` constant (120 ticks = 2s at 60fps) separate from the existing live-dot pulse period. Extracted `positions_border_color()` helper function for clean testability.
+- Why: P1 animation — gives the app a subtle "alive" breathing feel when connected to live price data. The static border when prices are stale provides an additional ambient indicator of data freshness beyond the live dot in the status bar.
+- Files: `src/tui/theme.rs` (new `PULSE_PERIOD_BORDER` constant, 2 tests), `src/tui/views/positions.rs` (extracted `positions_border_color()` helper, pulse logic, 3 tests), `src/tui/widgets/price_chart.rs` (chart border pulse), `src/tui/widgets/asset_header.rs` (header border pulse)
+- Tests: added 5 tests — test_positions_border_pulse_when_active_and_live, test_positions_border_static_when_active_and_stale, test_positions_border_inactive_when_not_active, pulse_intensity_border_period_range, pulse_border_period_produces_variation. Total: 358 tests passing.
+- TODO: Add pulsing border on active panel (P1)
