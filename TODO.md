@@ -1,6 +1,6 @@
 # TODO — pftui
 
-> Pick the highest-priority unclaimed `[ ]` item. Mark `[~]` while working, `[x]` when done.
+> Pick the highest-priority unclaimed item. Remove it from this file when done.
 > Each item is scoped to ~1 hour. If it's bigger, split it. Update CHANGELOG.md when done.
 
 ## P1 — Animations & Live Feel
