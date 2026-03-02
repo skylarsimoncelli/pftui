@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Summary { group_by, period }) => commands::summary::run(&conn, &config, group_by.as_ref(), period.as_ref()),
-        Some(Command::Export { format }) => commands::export::run(&conn, &format, &config),
+        Some(Command::Export { format, output }) => commands::export::run(&conn, &format, &config, output.as_deref()),
 
         Some(Command::ListTx { notes }) => {
             if config.is_percentage_mode() {

@@ -20,10 +20,14 @@ pub enum Command {
         period: Option<SummaryPeriod>,
     },
 
-    /// Export portfolio data
+    /// Export portfolio data (JSON exports full snapshot; CSV exports positions only)
     Export {
         #[arg(value_enum)]
         format: ExportFormat,
+
+        /// Write output to a file instead of stdout
+        #[arg(long, short)]
+        output: Option<String>,
     },
 
     /// List all transactions
