@@ -350,3 +350,19 @@
 - Files: new `src/commands/brief.rs` (run, run_full, run_percentage, fmt_commas, fmt_currency, pct_change, print_category_allocation, print_category_allocation_pct, print_top_movers, print_position_table_full, format_category, 16 tests), `src/commands/mod.rs`, `src/cli.rs` (Brief variant), `src/main.rs` (dispatch), `docs/README.md` (CLI usage)
 - Tests: added 16 tests — fmt_commas (4: basic, small, negative, zero), fmt_currency (2: usd, gbp), pct_change (3: positive, negative, zero_base), brief_empty_db, brief_with_positions_no_prices, brief_with_positions_and_prices, brief_percentage_mode, brief_percentage_mode_no_prices, top_movers_sorts_by_absolute_change, category_allocation_groups_correctly. Total: 323 tests passing.
 - TODO: Add `pftui brief` markdown summary command (P1)
+
+### 2026-03-02 — Upgrade asset search to ranked fuzzy matching
+
+- What: replaced prefix-only `search_names()` with a 5-tier ranked fuzzy scoring system. Match tiers: exact (100), prefix (80), word-start (65), substring (50), subsequence (10-30). Results sorted by match quality then alphabetically. The setup wizard's `resolve_symbol()` now benefits from fuzzy finding — typing "depot" finds Home Depot, "old" finds Gold/GLD, "slna" finds Solana via subsequence matching.
+- Why: P0 setup wizard fuzzy finder — the symbol entry flow previously only matched prefix, missing relevant results. Fuzzy matching makes the setup wizard significantly more usable for discovering assets by partial name, abbreviation, or substring.
+- Files: `src/models/asset_names.rs` (new `fuzzy_score()` function, rewritten `search_names()`, 14 new tests)
+- Tests: added 14 tests — fuzzy_score_exact, fuzzy_score_prefix, fuzzy_score_word_start, fuzzy_score_substring, fuzzy_score_subsequence, fuzzy_score_no_match, search_names_substring_match, search_names_word_start_match, search_names_subsequence_match, search_names_empty_query, search_names_ranking_exact_over_prefix, search_names_ranking_prefix_over_substring. Total: 335 tests passing.
+- TODO: Setup wizard fuzzy finder (P0) — core matching done; inline-as-you-type display is a future enhancement
+
+### 2026-03-02 — Add keystroke echo in status bar
+
+- What: added keystroke echo that briefly flashes the last pressed key in the status bar for ~0.3s (18 ticks at 60fps). Displays formatted key names: regular keys ("j", "k"), sequences ("gg"), modifier keys ("Ctrl+d"), and special keys ("Enter", "↑", "↓"). Fades from `text_secondary` to `text_muted` color over the display period. Only echoes keys outside of search mode (search input is already visible).
+- Why: P2 micro-interaction — helps users learn keybindings and confirms input was received. Especially useful for multi-key sequences like "gg" where there's no immediate visual feedback that the first key registered.
+- Files: `src/app.rs` (new `record_keystroke()` method, `last_key_display`/`last_key_tick` fields, call in `handle_key`, 8 new tests), `src/tui/widgets/status_bar.rs` (render keystroke echo with fade)
+- Tests: added 8 tests — test_record_regular_key, test_record_ctrl_key, test_record_shift_g, test_record_gg_sequence, test_record_enter_key, test_record_esc_key, test_record_arrow_keys, test_key_echo_text_generation. Total: 343 tests passing.
+- TODO: Keystroke echo in status bar (P2)

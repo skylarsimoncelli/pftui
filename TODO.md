@@ -46,7 +46,6 @@
 
 ## P2 — Micro-Interactions & Feedback
 
-- [ ] **Add keystroke echo in status bar** — Briefly flash the last pressed key in the status bar corner: shows "k" for 0.3s when you press k, "gg" for the two-key sequence, "Ctrl+d" etc. Helps users learn keybindings and confirms input was received. Render in `text_muted` with quick fade. Files: `src/tui/widgets/status_bar.rs`, `src/app.rs` (last_key_display, last_key_tick). Test: test key echo text generation.
 - [ ] **Add sort indicator animation** — When user changes sort order (s/n/c/% etc.), briefly animate the sort arrow (▲/▼) by flashing it in `text_accent` then fading to normal. Confirms the sort happened. Track `last_sort_change_tick` on App. Files: `src/tui/views/positions.rs` (sort indicator styling), `src/app.rs`. Test: test flash timing.
 - [ ] **Add loading skeleton for empty states** — When a view is loading data, show shimmer/skeleton placeholder rows instead of "Waiting for data...". Render 5-6 rows of `░░░░░░` block characters in `text_muted` with a wave animation (phase offset per row). Makes loading feel fast and intentional. Files: `src/tui/views/positions.rs`, `src/tui/views/markets.rs`, `src/tui/views/economy.rs`. Test: verify skeleton row count matches expected.
 
@@ -105,7 +104,7 @@
 
 ## P0 — Setup & Pricing Bugs (Owner Report)
 
-- [ ] **Setup wizard fuzzy finder** — The asset symbol entry in the setup wizard should have fuzzy autocomplete. As the user types, show matching symbols/names from the asset_names map (and any custom symbols). Use a ranked fuzzy match (not just prefix). Show results inline below the input. Files: `src/commands/setup.rs`, `src/models/asset_names.rs` (search_names already exists — wire it into interactive input).
+- [ ] **Setup wizard inline suggestions** — The fuzzy matching backend is done (5-tier ranked scoring in search_names). Next step: show ranked matches inline as the user types in the setup wizard, instead of requiring Enter first. Needs raw terminal mode for character-by-character input with live result display below the prompt. Files: `src/commands/setup.rs` (interactive input loop with crossterm raw mode).
 - [ ] **Setup wizard: configurable primary fiat currency** — Full mode should let the user choose their primary fiat currency (EUR, GBP, JPY, etc.) instead of hardcoding USD. Default to USD if not specified. Store in `config.toml`. All portfolio values, gains, and display formatting should respect the chosen currency. Files: `src/config.rs`, `src/commands/setup.rs`, `src/tui/widgets/header.rs`, `src/models/position.rs`.
 
 ## P0 — Performance Fix (Owner Request)
