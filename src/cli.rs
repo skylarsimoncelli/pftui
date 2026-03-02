@@ -71,6 +71,9 @@ pub enum Command {
 
     /// Fetch and cache current prices for all held symbols without launching the TUI
     Refresh,
+
+    /// Show total portfolio value with gain/loss (uses cached prices)
+    Value,
 }
 
 #[derive(Clone, ValueEnum)]
