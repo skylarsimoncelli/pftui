@@ -486,3 +486,11 @@
 - Why: P1 CLI feedback item — both testers flagged that managing cash positions via `add-tx` was unintuitive. Cash is conceptually "I have X dollars" not "I bought X dollars at $1 each". This command matches that mental model.
 - Files: new `src/commands/set_cash.rs` (run, delete_all_for_symbol, KNOWN_CASH list, 10 tests), `src/commands/mod.rs`, `src/cli.rs` (SetCash variant), `src/main.rs` (dispatch + percentage mode guard)
 - Tests: added 10 new tests (create position, replace existing, clear with zero, clear nonexistent, uppercase normalization, decimal amounts, negative rejection, invalid amount, multiple currencies, isolation from non-cash symbols). Total: 496 tests passing.
+
+### 2026-03-02 — Add portfolio sparkline timeframe selector
+
+- What: added `[`/`]` keybindings to cycle the portfolio sparkline's timeframe through 1W, 1M, 3M, 6M, 1Y, 5Y. Previously the sparkline was hardcoded to show all available history (~90 days). Now the title shows the active timeframe (e.g. "Portfolio 3M $42.5k") and the gain/loss periods below the chart automatically adapt to only show periods that fit within the selected window. Extended the gain display to include 6M and 1Y periods when enough data exists.
+- Why: P2 sidebar enhancement — the hardcoded 90-day sparkline was limiting. Users viewing short-term vs long-term trends needed to zoom in/out. This reuses the existing `ChartTimeframe` enum for consistency with the per-asset chart `h`/`l` cycling.
+- Files: `src/app.rs` (sparkline_timeframe field, `[`/`]` keybindings, 3 tests), `src/tui/widgets/portfolio_sparkline.rs` (timeframe filtering, dynamic period selection, title label, 2 tests), `src/tui/views/help.rs` (keybinding documentation)
+- Tests: 5 new tests (default timeframe, forward cycling, backward cycling, larger periods, 1W-only periods). Total: 501 tests passing.
+- TODO: Add portfolio sparkline period selector (P2)

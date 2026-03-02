@@ -53,7 +53,6 @@
 
 ## P2 — Sidebar & Sparkline Enhancements
 
-- [ ] **Add portfolio sparkline period selector** — The sparkline is hardcoded to 90d. Allow cycling with `[`/`]` keys (when sidebar is focused) through 1W, 1M, 3M, 6M, 1Y. Show period label in the sparkline panel title. Reuse the `ChartTimeframe` enum. Files: `src/tui/widgets/portfolio_sparkline.rs` (accept timeframe), `src/app.rs` (sparkline_timeframe field, `[`/`]` keybindings). Test: test timeframe cycling.
 - [ ] **Add allocation change indicators** — Show ▲/▼ arrows next to allocation percentages when they've changed since the previous day (based on price movements shifting allocation weights). Helps identify rebalancing needs. Files: `src/tui/widgets/allocation_bars.rs`, `src/app.rs` (store previous day allocations for comparison). Test: test change detection logic.
 
 ## P2 — Micro-Interactions & Feedback
