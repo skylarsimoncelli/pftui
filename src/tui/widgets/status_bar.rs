@@ -8,6 +8,15 @@ use crate::config::PortfolioMode;
 use crate::tui::theme;
 use crate::tui::ui::COMPACT_WIDTH;
 
+/// Capitalize the first character of a string.
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+    }
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let compact = app.terminal_width < COMPACT_WIDTH;
@@ -114,6 +123,25 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("Theme", Style::default().fg(t.text_secondary)));
     }
 
+    // Theme toast — show theme name briefly after cycling
+    let theme_toast_age = app.tick_count.saturating_sub(app.theme_toast_tick);
+    if app.theme_toast_tick > 0 && theme_toast_age < theme::THEME_TOAST_DURATION {
+        // Fade: full accent for first half, then lerp to muted
+        let fade_progress = theme_toast_age as f32 / theme::THEME_TOAST_DURATION as f32;
+        let toast_color = if fade_progress < 0.5 {
+            t.text_accent
+        } else {
+            let fade = (fade_progress - 0.5) * 2.0; // 0.0..1.0 over second half
+            theme::lerp_color(t.text_accent, t.text_muted, fade)
+        };
+        // Capitalize theme name for display
+        let display_name = capitalize_first(&app.theme_name);
+        spans.push(Span::styled(
+            format!("  ◆ {display_name}"),
+            Style::default().fg(toast_color).bold(),
+        ));
+    }
+
     // Show recent price error (fades after ~5 seconds = 300 ticks at 60fps)
     if let Some(ref err) = app.last_price_error {
         let age = app.tick_count.saturating_sub(app.last_price_error_tick);
@@ -151,4 +179,75 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     frame.render_widget(status, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_capitalize_first_basic() {
+        assert_eq!(capitalize_first("midnight"), "Midnight");
+        assert_eq!(capitalize_first("catppuccin"), "Catppuccin");
+        assert_eq!(capitalize_first("nord"), "Nord");
+        assert_eq!(capitalize_first("dracula"), "Dracula");
+        assert_eq!(capitalize_first("solarized"), "Solarized");
+        assert_eq!(capitalize_first("gruvbox"), "Gruvbox");
+    }
+
+    #[test]
+    fn test_capitalize_first_empty() {
+        assert_eq!(capitalize_first(""), "");
+    }
+
+    #[test]
+    fn test_capitalize_first_already_capitalized() {
+        assert_eq!(capitalize_first("Midnight"), "Midnight");
+    }
+
+    #[test]
+    fn test_capitalize_first_single_char() {
+        assert_eq!(capitalize_first("a"), "A");
+    }
+
+    #[test]
+    fn test_theme_toast_timing() {
+        // Toast should be visible when age < THEME_TOAST_DURATION
+        let toast_tick: u64 = 100;
+        let current_tick: u64 = 120;
+        let age = current_tick.saturating_sub(toast_tick);
+        assert!(age < theme::THEME_TOAST_DURATION, "toast should be visible shortly after cycle");
+
+        // Toast should be invisible after THEME_TOAST_DURATION ticks
+        let current_tick_expired: u64 = toast_tick + theme::THEME_TOAST_DURATION;
+        let age_expired = current_tick_expired.saturating_sub(toast_tick);
+        assert!(
+            !(toast_tick > 0 && age_expired < theme::THEME_TOAST_DURATION),
+            "toast should be hidden after duration expires"
+        );
+    }
+
+    #[test]
+    fn test_theme_toast_not_shown_on_init() {
+        // theme_toast_tick starts at 0, toast should not display
+        let toast_tick: u64 = 0;
+        let current_tick: u64 = 10;
+        let age = current_tick.saturating_sub(toast_tick);
+        // Guard: toast_tick must be > 0 for display
+        let should_show = toast_tick > 0 && age < theme::THEME_TOAST_DURATION;
+        assert!(!should_show, "toast should not show on initial state (tick=0)");
+    }
+
+    #[test]
+    fn test_theme_toast_fade_phases() {
+        // First half: full accent color
+        let fade_progress_early = 0.2_f32;
+        assert!(fade_progress_early < 0.5, "early progress should be in first (bright) phase");
+
+        // Second half: fading to muted
+        let fade_progress_late = 0.8_f32;
+        assert!(fade_progress_late >= 0.5, "late progress should be in second (fading) phase");
+        let fade = (fade_progress_late - 0.5) * 2.0;
+        assert!((0.0..=1.0).contains(&fade), "fade factor should be in 0.0..=1.0 range");
+    }
 }

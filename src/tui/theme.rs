@@ -7,6 +7,7 @@ pub const PULSE_PERIOD: u64 = 90; // ~1.4s at 60fps
 pub const FLASH_DURATION: u64 = 45; // ~0.7s at 60fps
 pub const PULSE_PERIOD_BORDER: u64 = 120; // 2s at 60fps — subtle breathing for active panel borders
 pub const SELECTION_FLASH_DURATION: u64 = 15; // ~0.25s at 60fps — row highlight on selection change
+pub const THEME_TOAST_DURATION: u64 = 90; // ~1.5s at 60fps — theme name toast on cycle
 
 // ---- Theme struct ----
 

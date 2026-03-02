@@ -247,6 +247,9 @@ pub struct App {
     // Row highlight flash on selection change
     pub last_selection_change_tick: u64,
 
+    // Theme toast on cycle
+    pub theme_toast_tick: u64,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -343,6 +346,7 @@ impl App {
             last_key_display: String::new(),
             last_key_tick: 0,
             last_selection_change_tick: 0,
+            theme_toast_tick: 0,
             db_path,
         }
     }
@@ -1591,6 +1595,7 @@ impl App {
         let next = theme::next_theme_name(&self.theme_name);
         self.theme_name = next.to_string();
         self.theme = theme::theme_by_name(next);
+        self.theme_toast_tick = self.tick_count;
         // Persist to config
         if let Ok(mut cfg) = config::load_config() {
             cfg.theme = self.theme_name.clone();
