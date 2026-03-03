@@ -16,6 +16,8 @@
 //! 8. HY credit (HYG/LQD): rising → risk-on (spreads tightening), falling → risk-off
 //! 9. Copper/Gold:    rising → risk-on, falling → risk-off
 
+pub mod suggestions;
+
 use std::collections::HashMap;
 
 use rust_decimal::Decimal;
