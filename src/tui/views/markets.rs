@@ -48,9 +48,13 @@ pub fn market_symbols() -> Vec<MarketItem> {
         MarketItem { symbol: "EUR".into(), name: "Euro / USD".into(), category: AssetCategory::Forex, yahoo_symbol: "EURUSD=X".into() },
         MarketItem { symbol: "GBP".into(), name: "Pound / USD".into(), category: AssetCategory::Forex, yahoo_symbol: "GBPUSD=X".into() },
         MarketItem { symbol: "JPY".into(), name: "USD / Yen".into(), category: AssetCategory::Forex, yahoo_symbol: "JPY=X".into() },
-        // Bonds
+        // Bonds & Credit
         MarketItem { symbol: "10Y".into(), name: "10-Year Treasury".into(), category: AssetCategory::Fund, yahoo_symbol: "^TNX".into() },
         MarketItem { symbol: "2Y".into(), name: "2-Year Treasury".into(), category: AssetCategory::Fund, yahoo_symbol: "^IRX".into() },
+        MarketItem { symbol: "HYG".into(), name: "High Yield Bond ETF".into(), category: AssetCategory::Fund, yahoo_symbol: "HYG".into() },
+        MarketItem { symbol: "LQD".into(), name: "Inv Grade Bond ETF".into(), category: AssetCategory::Fund, yahoo_symbol: "LQD".into() },
+        // Metals & Industrial
+        MarketItem { symbol: "Copper".into(), name: "Copper Futures".into(), category: AssetCategory::Commodity, yahoo_symbol: "HG=F".into() },
     ]
 }
 
@@ -322,7 +326,7 @@ mod tests {
     #[test]
     fn market_symbols_has_expected_count() {
         let items = market_symbols();
-        assert_eq!(items.len(), 18);
+        assert_eq!(items.len(), 21);
     }
 
     #[test]

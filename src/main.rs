@@ -5,6 +5,7 @@ mod config;
 mod db;
 mod models;
 mod price;
+mod regime;
 mod tui;
 
 use anyhow::{bail, Result};

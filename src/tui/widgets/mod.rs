@@ -4,6 +4,7 @@ pub mod header;
 pub mod portfolio_sparkline;
 pub mod portfolio_stats;
 pub mod price_chart;
+pub mod regime_bar;
 pub mod sidebar;
 pub mod status_bar;
 pub mod top_movers;

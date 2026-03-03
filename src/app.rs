@@ -347,6 +347,9 @@ pub struct App {
     pub crosshair_mode: bool,
     pub crosshair_x: usize, // column index within chart width
 
+    /// Regime intelligence — composite risk-on/risk-off score from cross-asset signals.
+    pub regime_score: crate::regime::RegimeScore,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -453,6 +456,11 @@ impl App {
             sparkline_timeframe: ChartTimeframe::ThreeMonths,
             crosshair_mode: false,
             crosshair_x: 0,
+            regime_score: crate::regime::RegimeScore {
+                signals: Vec::new(),
+                total: 0,
+                active_count: 0,
+            },
             db_path,
         }
     }
@@ -465,6 +473,7 @@ impl App {
         self.load_cached_history();
         self.load_watchlist();
         self.recompute();
+        self.recompute_regime();
     }
 
     pub fn init(&mut self) {
@@ -473,6 +482,7 @@ impl App {
         self.load_cached_history();
         self.load_watchlist();
         self.recompute();
+        self.recompute_regime();
 
         // Start price service
         let config = Config {
@@ -726,6 +736,11 @@ impl App {
         self.compute_totals();
         self.compute_prev_day_cat_allocations();
         self.last_value_update_tick = self.tick_count;
+    }
+
+    /// Recompute regime score from current prices and history data.
+    pub fn recompute_regime(&mut self) {
+        self.regime_score = crate::regime::compute_regime(&self.prices, &self.price_history);
     }
 
     fn apply_filter_and_sort(&mut self) {
@@ -1228,11 +1243,14 @@ impl App {
                     None => break,
                 }
             }
-            if updated {
-                self.recompute();
-            }
-            if history_updated && self.portfolio_mode == PortfolioMode::Full {
-                self.compute_portfolio_value_history();
+            if updated || history_updated {
+                if updated {
+                    self.recompute();
+                }
+                if history_updated && self.portfolio_mode == PortfolioMode::Full {
+                    self.compute_portfolio_value_history();
+                }
+                self.recompute_regime();
             }
         }
 
