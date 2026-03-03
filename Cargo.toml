@@ -6,7 +6,7 @@ description = "A beautiful terminal portfolio tracker with real-time prices, cha
 license = "MIT"
 repository = "https://github.com/skylarsimoncelli/pftui"
 homepage = "https://github.com/skylarsimoncelli/pftui"
-readme = "docs/README.md"
+readme = "README.md"
 keywords = ["portfolio", "tui", "terminal", "finance", "stock"]
 categories = ["command-line-utilities"]
 
