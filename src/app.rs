@@ -882,21 +882,32 @@ impl App {
             price_by_date.insert(symbol.as_str(), map);
         }
 
+        // LOCF (Last Observation Carried Forward): for each symbol, if no price
+        // exists on a given date, use the most recent prior close. This prevents
+        // positions from contributing $0 on dates with no data, which would cause
+        // the portfolio value to swing wildly (sine wave bug).
+        let mut last_known: HashMap<&str, Decimal> = HashMap::new();
         let mut history = Vec::new();
         for date in &all_dates {
             let mut total = dec!(0);
             let mut has_data = false;
+
+            // Update last_known prices for all symbols that have data on this date
+            for (symbol, sym_prices) in &price_by_date {
+                if let Some(&close) = sym_prices.get(date.as_str()) {
+                    last_known.insert(symbol, close);
+                }
+            }
+
             for pos in &self.positions {
                 if pos.category == AssetCategory::Cash {
                     total += pos.quantity;
                     has_data = true;
                     continue;
                 }
-                if let Some(sym_prices) = price_by_date.get(pos.symbol.as_str()) {
-                    if let Some(&close) = sym_prices.get(date.as_str()) {
-                        total += pos.quantity * close;
-                        has_data = true;
-                    }
+                if let Some(&price) = last_known.get(pos.symbol.as_str()) {
+                    total += pos.quantity * price;
+                    has_data = true;
                 }
             }
             if has_data {
@@ -3450,6 +3461,168 @@ mod daily_change_tests {
         // Should use 2026-02-28 close (150), not today's record
         // (160 - 150) * 10 = 100
         assert_eq!(app.daily_portfolio_change, Some(dec!(100)));
+    }
+}
+
+#[cfg(test)]
+mod portfolio_value_history_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
+    }
+
+    fn make_position(symbol: &str, qty: Decimal, category: AssetCategory) -> Position {
+        Position {
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            category,
+            quantity: qty,
+            avg_cost: dec!(100),
+            total_cost: qty * dec!(100),
+            currency: "USD".to_string(),
+            current_price: None,
+            current_value: None,
+            gain: None,
+            gain_pct: None,
+            allocation_pct: None,
+        }
+    }
+
+    #[test]
+    fn test_locf_fills_missing_dates() {
+        // The core bug: if AAPL has price on day 1 and 3 but not day 2,
+        // day 2 should use AAPL's day-1 price (not contribute $0).
+        let mut app = make_app();
+        app.positions = vec![make_position("AAPL", dec!(10), AssetCategory::Equity)];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None },
+            // No record for 2026-01-02
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(155), volume: None },
+        ]);
+        // Add a second symbol that has data on day 2 to create the date
+        app.positions.push(make_position("GOOG", dec!(5), AssetCategory::Equity));
+        app.price_history.insert("GOOG".to_string(), vec![
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(2800), volume: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(2850), volume: None },
+        ]);
+        app.compute_portfolio_value_history();
+
+        // Day 1: AAPL=10*150=1500, GOOG has no data yet = not included
+        // Day 2: AAPL LOCF=10*150=1500, GOOG=5*2800=14000 → 15500
+        // Day 3: AAPL=10*155=1550, GOOG=5*2850=14250 → 15800
+        assert_eq!(app.portfolio_value_history.len(), 3);
+        assert_eq!(app.portfolio_value_history[0], ("2026-01-01".to_string(), dec!(1500)));
+        assert_eq!(app.portfolio_value_history[1], ("2026-01-02".to_string(), dec!(15500)));
+        assert_eq!(app.portfolio_value_history[2], ("2026-01-03".to_string(), dec!(15800)));
+    }
+
+    #[test]
+    fn test_locf_no_sine_wave_with_staggered_data() {
+        // Simulate the sine wave scenario: two assets with alternating price data.
+        // Without LOCF, the total swings wildly. With LOCF, it's smooth.
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), AssetCategory::Equity),
+            make_position("GOOG", dec!(5), AssetCategory::Equity),
+        ];
+        // AAPL has prices on odd days, GOOG on even days
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-01-05".to_string(), close: dec!(100), volume: None },
+        ]);
+        app.price_history.insert("GOOG".to_string(), vec![
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(200), volume: None },
+            HistoryRecord { date: "2026-01-04".to_string(), close: dec!(200), volume: None },
+        ]);
+        app.compute_portfolio_value_history();
+
+        // With LOCF, once both assets have appeared, the total stays consistent:
+        // Day 1: AAPL=10*100=1000 (GOOG not yet seen)
+        // Day 2: AAPL LOCF=1000, GOOG=5*200=1000 → 2000
+        // Day 3: AAPL=1000, GOOG LOCF=1000 → 2000
+        // Day 4: AAPL LOCF=1000, GOOG=1000 → 2000
+        // Day 5: AAPL=1000, GOOG LOCF=1000 → 2000
+        // Without LOCF, days would swing between ~1000 and ~2000 (the sine wave bug)
+        assert_eq!(app.portfolio_value_history.len(), 5);
+        // Day 1 only has AAPL
+        assert_eq!(app.portfolio_value_history[0].1, dec!(1000));
+        // Days 2-5 should all be 2000 (no sine wave)
+        for i in 1..5 {
+            assert_eq!(app.portfolio_value_history[i].1, dec!(2000),
+                "Day {} should be 2000 but was {}", i + 1, app.portfolio_value_history[i].1);
+        }
+    }
+
+    #[test]
+    fn test_locf_cash_always_included() {
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("USD", dec!(5000), AssetCategory::Cash),
+            make_position("AAPL", dec!(10), AssetCategory::Equity),
+        ];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(155), volume: None },
+        ]);
+        app.compute_portfolio_value_history();
+
+        // Cash always priced at quantity (1.0 * qty)
+        assert_eq!(app.portfolio_value_history[0].1, dec!(5000) + dec!(10) * dec!(150));
+        assert_eq!(app.portfolio_value_history[1].1, dec!(5000) + dec!(10) * dec!(155));
+    }
+
+    #[test]
+    fn test_locf_position_not_included_before_first_price() {
+        // A position should NOT contribute until its first price point appears
+        let mut app = make_app();
+        app.positions = vec![
+            make_position("AAPL", dec!(10), AssetCategory::Equity),
+            make_position("NEW", dec!(20), AssetCategory::Equity),
+        ];
+        app.price_history.insert("AAPL".to_string(), vec![
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(105), volume: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(110), volume: None },
+        ]);
+        // NEW only gets a price on day 3
+        app.price_history.insert("NEW".to_string(), vec![
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(50), volume: None },
+        ]);
+        app.compute_portfolio_value_history();
+
+        // Day 1: AAPL=10*100=1000, NEW not yet priced
+        assert_eq!(app.portfolio_value_history[0].1, dec!(1000));
+        // Day 2: AAPL=10*105=1050, NEW still not yet priced
+        assert_eq!(app.portfolio_value_history[1].1, dec!(1050));
+        // Day 3: AAPL=10*110=1100, NEW=20*50=1000 → 2100
+        assert_eq!(app.portfolio_value_history[2].1, dec!(2100));
+    }
+
+    #[test]
+    fn test_empty_history_produces_empty_result() {
+        let mut app = make_app();
+        app.positions = vec![make_position("AAPL", dec!(10), AssetCategory::Equity)];
+        // No price history at all
+        app.compute_portfolio_value_history();
+        assert!(app.portfolio_value_history.is_empty());
+    }
+
+    #[test]
+    fn test_percentage_mode_clears_history() {
+        let mut app = make_app();
+        app.portfolio_mode = PortfolioMode::Percentage;
+        app.portfolio_value_history = vec![("2026-01-01".to_string(), dec!(1000))];
+        app.compute_portfolio_value_history();
+        assert!(app.portfolio_value_history.is_empty());
     }
 }
 
