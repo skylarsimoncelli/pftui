@@ -121,6 +121,9 @@ pub const THEME_NAMES: &[&str] = &[
     "dracula",
     "solarized",
     "gruvbox",
+    "inferno",
+    "neon",
+    "hacker",
 ];
 
 pub fn theme_by_name(name: &str) -> Theme {
@@ -130,6 +133,9 @@ pub fn theme_by_name(name: &str) -> Theme {
         "dracula" => dracula(),
         "solarized" => solarized(),
         "gruvbox" => gruvbox(),
+        "inferno" => inferno(),
+        "neon" => neon(),
+        "hacker" => hacker(),
         _ => midnight(),
     }
 }
@@ -352,6 +358,117 @@ pub fn gruvbox() -> Theme {
         cat_commodity: Color::Rgb(250, 189, 47),
         cat_fund: Color::Rgb(211, 134, 155),
         cat_cash: Color::Rgb(189, 174, 147),
+    }
+}
+
+/// Inferno — deep blacks with fire reds, oranges, and amber accents.
+/// Gains glow hot, losses smolder like dying embers.
+pub fn inferno() -> Theme {
+    Theme {
+        name: "inferno",
+        surface_0: Color::Rgb(10, 8, 6),       // near-black with warm undertone
+        surface_1: Color::Rgb(20, 14, 10),      // very dark brown
+        surface_1_alt: Color::Rgb(25, 17, 12),  // slightly lighter for striping
+        surface_2: Color::Rgb(35, 22, 14),      // dark ember
+        surface_3: Color::Rgb(55, 30, 18),      // smoldering coal
+        border_active: Color::Rgb(235, 140, 40),   // bright amber
+        border_inactive: Color::Rgb(80, 45, 25),   // dim ember
+        border_accent: Color::Rgb(255, 180, 50),   // hot gold
+        border_subtle: Color::Rgb(45, 28, 16),     // barely visible warmth
+        text_primary: Color::Rgb(245, 230, 210),   // warm white
+        text_secondary: Color::Rgb(180, 150, 120), // warm gray
+        text_muted: Color::Rgb(100, 75, 55),       // dark warm gray
+        text_accent: Color::Rgb(255, 160, 40),     // fire orange
+        gain_green: Color::Rgb(255, 180, 30),      // golden glow (gains = hot)
+        loss_red: Color::Rgb(180, 40, 30),         // smoldering red
+        neutral: Color::Rgb(180, 150, 120),
+        live_green: Color::Rgb(255, 180, 30),
+        stale_yellow: Color::Rgb(200, 130, 40),
+        key_hint: Color::Rgb(255, 200, 80),
+        chart_line: Color::Rgb(245, 130, 35),      // flame orange
+        chart_grad_low: Color::Rgb(120, 20, 15),   // deep ember
+        chart_grad_mid: Color::Rgb(235, 140, 40),  // amber
+        chart_grad_high: Color::Rgb(255, 220, 60), // white-hot gold
+        cat_equity: Color::Rgb(235, 130, 40),      // amber
+        cat_crypto: Color::Rgb(255, 80, 30),       // hot red-orange
+        cat_forex: Color::Rgb(255, 200, 60),       // gold
+        cat_commodity: Color::Rgb(200, 100, 30),   // copper
+        cat_fund: Color::Rgb(180, 70, 50),         // dark flame
+        cat_cash: Color::Rgb(180, 160, 130),       // warm ash
+    }
+}
+
+/// Neon — cyberpunk-inspired. Electric pink, cyan, purple on dark.
+/// Think synthwave, retrowave, Blade Runner.
+pub fn neon() -> Theme {
+    Theme {
+        name: "neon",
+        surface_0: Color::Rgb(8, 8, 18),        // deep void blue-black
+        surface_1: Color::Rgb(14, 14, 28),       // dark navy
+        surface_1_alt: Color::Rgb(18, 16, 34),   // slight purple tint
+        surface_2: Color::Rgb(24, 20, 42),       // dark purple
+        surface_3: Color::Rgb(38, 30, 60),       // medium purple
+        border_active: Color::Rgb(255, 50, 180),    // hot pink
+        border_inactive: Color::Rgb(60, 40, 90),    // muted purple
+        border_accent: Color::Rgb(0, 230, 255),     // electric cyan
+        border_subtle: Color::Rgb(30, 25, 50),      // subtle purple
+        text_primary: Color::Rgb(235, 235, 255),    // cool white
+        text_secondary: Color::Rgb(160, 150, 200),  // lavender
+        text_muted: Color::Rgb(80, 70, 120),        // dim purple
+        text_accent: Color::Rgb(0, 230, 255),       // cyan
+        gain_green: Color::Rgb(0, 255, 160),        // neon green-cyan
+        loss_red: Color::Rgb(255, 50, 100),         // hot pink-red
+        neutral: Color::Rgb(160, 150, 200),
+        live_green: Color::Rgb(0, 255, 160),
+        stale_yellow: Color::Rgb(255, 220, 50),
+        key_hint: Color::Rgb(255, 220, 50),
+        chart_line: Color::Rgb(0, 200, 255),         // bright cyan
+        chart_grad_low: Color::Rgb(255, 30, 80),     // hot pink
+        chart_grad_mid: Color::Rgb(180, 50, 255),    // electric purple
+        chart_grad_high: Color::Rgb(0, 255, 160),    // neon green
+        cat_equity: Color::Rgb(0, 180, 255),         // sky cyan
+        cat_crypto: Color::Rgb(255, 50, 180),        // hot pink
+        cat_forex: Color::Rgb(0, 255, 160),          // neon green
+        cat_commodity: Color::Rgb(255, 220, 50),     // electric yellow
+        cat_fund: Color::Rgb(180, 50, 255),          // purple
+        cat_cash: Color::Rgb(160, 160, 200),         // muted lavender
+    }
+}
+
+/// Hacker — classic green-on-black terminal aesthetic.
+/// Multiple shades of green, minimal color palette. Matrix-inspired.
+pub fn hacker() -> Theme {
+    Theme {
+        name: "hacker",
+        surface_0: Color::Rgb(4, 8, 4),         // near-black with green tint
+        surface_1: Color::Rgb(8, 16, 8),         // very dark green
+        surface_1_alt: Color::Rgb(10, 20, 10),   // slightly lighter
+        surface_2: Color::Rgb(14, 28, 14),       // dark green
+        surface_3: Color::Rgb(22, 44, 22),       // medium dark green
+        border_active: Color::Rgb(0, 200, 0),      // bright terminal green
+        border_inactive: Color::Rgb(0, 70, 0),     // dim green
+        border_accent: Color::Rgb(0, 255, 0),      // full green
+        border_subtle: Color::Rgb(0, 35, 0),       // barely visible green
+        text_primary: Color::Rgb(0, 220, 0),       // classic green
+        text_secondary: Color::Rgb(0, 160, 0),     // medium green
+        text_muted: Color::Rgb(0, 90, 0),          // dim green
+        text_accent: Color::Rgb(0, 255, 0),        // bright green
+        gain_green: Color::Rgb(0, 255, 80),        // bright green with slight cyan
+        loss_red: Color::Rgb(180, 0, 0),           // the one red (losses stand out)
+        neutral: Color::Rgb(0, 160, 0),
+        live_green: Color::Rgb(0, 255, 80),
+        stale_yellow: Color::Rgb(0, 180, 0),       // yellow → green to stay on-brand
+        key_hint: Color::Rgb(0, 255, 0),
+        chart_line: Color::Rgb(0, 200, 40),         // terminal green
+        chart_grad_low: Color::Rgb(180, 0, 0),      // red (only non-green color)
+        chart_grad_mid: Color::Rgb(0, 150, 0),      // mid green
+        chart_grad_high: Color::Rgb(0, 255, 80),    // bright green
+        cat_equity: Color::Rgb(0, 200, 60),         // green
+        cat_crypto: Color::Rgb(0, 255, 120),        // bright green-cyan
+        cat_forex: Color::Rgb(0, 180, 0),           // medium green
+        cat_commodity: Color::Rgb(0, 220, 40),      // yellow-green
+        cat_fund: Color::Rgb(0, 160, 80),           // teal-green
+        cat_cash: Color::Rgb(0, 130, 0),            // muted green
     }
 }
 
@@ -675,7 +792,8 @@ mod tests {
     #[test]
     fn next_theme_cycles() {
         assert_eq!(next_theme_name("midnight"), "catppuccin");
-        assert_eq!(next_theme_name("gruvbox"), "midnight"); // wraps around
+        assert_eq!(next_theme_name("gruvbox"), "inferno");
+        assert_eq!(next_theme_name("hacker"), "midnight"); // wraps around
     }
 
     #[test]
@@ -694,6 +812,71 @@ mod tests {
         let _ = theme.category_color(AssetCategory::Commodity);
         let _ = theme.category_color(AssetCategory::Fund);
         let _ = theme.category_color(AssetCategory::Cash);
+    }
+
+    #[test]
+    fn inferno_theme_has_warm_palette() {
+        let theme = inferno();
+        assert_eq!(theme.name, "inferno");
+        // Gains are golden (warm), not green
+        match theme.gain_green {
+            Color::Rgb(r, _, b) => {
+                assert!(r > 200, "inferno gains should be warm (high red)");
+                assert!(b < 100, "inferno gains should not be blue");
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn neon_theme_has_vivid_accents() {
+        let theme = neon();
+        assert_eq!(theme.name, "neon");
+        // Border active should be hot pink
+        match theme.border_active {
+            Color::Rgb(r, _, _) => assert!(r > 200, "neon border should be vivid pink"),
+            _ => panic!("expected Rgb"),
+        }
+        // Chart grad high should be neon green
+        match theme.chart_grad_high {
+            Color::Rgb(_, g, _) => assert!(g > 200, "neon chart high should be bright green"),
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn hacker_theme_is_mostly_green() {
+        let theme = hacker();
+        assert_eq!(theme.name, "hacker");
+        // Text primary should be green-dominant
+        match theme.text_primary {
+            Color::Rgb(r, g, b) => {
+                assert!(g > 200, "hacker text should be bright green");
+                assert!(r < 50, "hacker text should have minimal red");
+                assert!(b < 50, "hacker text should have minimal blue");
+            }
+            _ => panic!("expected Rgb"),
+        }
+        // Loss red is the only non-green color
+        match theme.loss_red {
+            Color::Rgb(r, g, _) => {
+                assert!(r > 100, "hacker loss should be red");
+                assert!(g < 50, "hacker loss should have minimal green");
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn new_themes_load_by_name() {
+        assert_eq!(theme_by_name("inferno").name, "inferno");
+        assert_eq!(theme_by_name("neon").name, "neon");
+        assert_eq!(theme_by_name("hacker").name, "hacker");
+    }
+
+    #[test]
+    fn theme_count_is_nine() {
+        assert_eq!(THEME_NAMES.len(), 9);
     }
 
     #[test]
