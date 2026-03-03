@@ -167,7 +167,6 @@
 
 ## P2 — Mouse Enhancements (Follow-up)
 
-- [ ] **Click allocation bars** — Click on a category bar in the portfolio overview to filter by that category.
 - [ ] **Right-click context menu** — Context menu on position rows with: View Detail, Add Transaction, Delete, Copy Symbol.
 
 ## P2 — Theme Overhaul (Owner Request)
