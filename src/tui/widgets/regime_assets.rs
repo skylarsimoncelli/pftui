@@ -159,7 +159,7 @@ fn truncate_list(items: &[&str], max_chars: usize) -> String {
 
         if char_count + needed > max_chars {
             // Won't fit — add ellipsis if there's room
-            if char_count + sep_chars + 1 <= max_chars {
+            if char_count + sep_chars < max_chars {
                 result.push_str(sep);
                 result.push('…');
             }

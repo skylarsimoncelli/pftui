@@ -30,6 +30,7 @@ fn key_line(key: &str, desc: &str, key_color: Color, text_color: Color) -> Line<
 }
 
 /// Build the full help text content as a list of Lines.
+#[allow(clippy::vec_init_then_push)]
 pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     let t = &app.theme;
     let sep_w = 48;
