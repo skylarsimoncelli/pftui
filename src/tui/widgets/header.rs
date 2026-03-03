@@ -100,7 +100,7 @@ fn is_us_eastern_dst(utc: chrono::DateTime<Utc>, year: i32) -> bool {
 /// 2 otherwise.
 pub fn header_height(app: &App) -> u16 {
     let compact = app.terminal_width < COMPACT_WIDTH;
-    if !compact && matches!(app.view_mode, ViewMode::Positions) {
+    if !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist) {
         3
     } else {
         2
@@ -330,6 +330,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     spans.push(Span::styled("[4]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "Ec" } else { "Econ" }, econ_style));
 
+    // Watchlist tab — always visible
+    let watch_style = if matches!(app.view_mode, ViewMode::Watchlist) {
+        Style::default().fg(t.text_primary).bold().underlined()
+    } else {
+        Style::default().fg(t.text_muted)
+    };
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled(if compact { "W" } else { "Watch" }, watch_style));
+
     if !privacy {
         let total = app.total_value;
         let cost = app.total_cost;
@@ -424,7 +434,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let line1 = Line::from(spans);
 
     // Build lines for the paragraph
-    let show_ticker = !compact && matches!(app.view_mode, ViewMode::Positions);
+    let show_ticker = !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist);
     let lines = if show_ticker {
         // Ticker tape line: scrolling market data marquee
         // Available width is the full area width minus 3 for the leading " ▸ " prefix

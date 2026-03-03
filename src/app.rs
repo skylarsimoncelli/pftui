@@ -34,12 +34,6 @@ pub enum ViewMode {
     Transactions,
     Markets,
     Economy,
-}
-
-/// Sub-tab within the Positions view: shows either portfolio positions or watchlist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MainTab {
-    Positions,
     Watchlist,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,7 +236,6 @@ pub struct DeleteConfirmState {
 pub struct App {
     pub should_quit: bool,
     pub view_mode: ViewMode,
-    pub main_tab: MainTab,
     pub show_help: bool,
     pub help_scroll: usize,
     pub detail_open: bool,
@@ -400,7 +393,6 @@ impl App {
         App {
             should_quit: false,
             view_mode: ViewMode::Positions,
-            main_tab: MainTab::Positions,
             show_help: false,
             help_scroll: 0,
             detail_open: false,
@@ -971,13 +963,11 @@ impl App {
     /// Examples: "Positions › AAPL › 3M Chart › AAPL/SPX", "Positions › AAPL › Detail"
     pub fn breadcrumb(&self) -> String {
         let view_label = match self.view_mode {
-            ViewMode::Positions => match self.main_tab {
-                MainTab::Positions => "Positions",
-                MainTab::Watchlist => "Watchlist",
-            },
+            ViewMode::Positions => "Positions",
             ViewMode::Transactions => "Transactions",
             ViewMode::Markets => "Markets",
             ViewMode::Economy => "Economy",
+            ViewMode::Watchlist => "Watchlist",
         };
 
         // Only positions view has deeper navigation context
@@ -1384,7 +1374,6 @@ impl App {
             // View switching
             KeyCode::Char('1') => {
                 self.view_mode = ViewMode::Positions;
-                self.main_tab = MainTab::Positions;
             }
             KeyCode::Char('2') => {
                 // Transactions view not available in percentage mode
@@ -1406,24 +1395,19 @@ impl App {
                 self.detail_popup_open = false;
                 self.request_economy_data();
             }
+            KeyCode::Char('5') | KeyCode::Char('w') => {
+                self.view_mode = ViewMode::Watchlist;
+                self.detail_open = false;
+                self.detail_popup_open = false;
+                self.load_watchlist();
+                self.request_watchlist_data();
+            }
 
             // Privacy toggle
             KeyCode::Char('p') => {
                 if self.portfolio_mode == PortfolioMode::Full {
                     self.show_percentages_only = !self.show_percentages_only;
                 }
-            }
-
-            // Watchlist sub-tab toggle (Positions view only)
-            KeyCode::Char('w') if matches!(self.view_mode, ViewMode::Positions) => {
-                self.main_tab = match self.main_tab {
-                    MainTab::Positions => {
-                        self.load_watchlist();
-                        self.request_watchlist_data();
-                        MainTab::Watchlist
-                    }
-                    MainTab::Watchlist => MainTab::Positions,
-                };
             }
 
             // Detail popup toggle (chart is always visible in right pane)
@@ -1579,16 +1563,14 @@ impl App {
             }
 
             // Add transaction (Shift+A) — opens inline form for selected position
-            KeyCode::Char('A') if matches!(self.view_mode, ViewMode::Positions)
-                && self.main_tab == MainTab::Positions => {
+            KeyCode::Char('A') if matches!(self.view_mode, ViewMode::Positions) => {
                 if self.portfolio_mode == PortfolioMode::Full {
                     self.open_tx_form();
                 }
             }
 
             // Delete position transactions (Shift+X) — confirmation prompt
-            KeyCode::Char('X') if matches!(self.view_mode, ViewMode::Positions)
-                && self.main_tab == MainTab::Positions => {
+            KeyCode::Char('X') if matches!(self.view_mode, ViewMode::Positions) => {
                 if self.portfolio_mode == PortfolioMode::Full {
                     self.open_delete_confirm();
                 }
@@ -1602,14 +1584,15 @@ impl App {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
-                if self.main_tab == MainTab::Watchlist {
-                    if !self.watchlist_entries.is_empty() {
-                        self.watchlist_selected_index =
-                            (self.watchlist_selected_index + 1).min(self.watchlist_entries.len() - 1);
-                    }
-                } else if !self.display_positions.is_empty() {
+                if !self.display_positions.is_empty() {
                     self.selected_index =
                         (self.selected_index + 1).min(self.display_positions.len() - 1);
+                }
+            }
+            ViewMode::Watchlist => {
+                if !self.watchlist_entries.is_empty() {
+                    self.watchlist_selected_index =
+                        (self.watchlist_selected_index + 1).min(self.watchlist_entries.len() - 1);
                 }
             }
             ViewMode::Transactions => {
@@ -1634,7 +1617,6 @@ impl App {
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)
-            && self.main_tab == MainTab::Positions
             && self.selected_index != old_pos_idx
         {
             self.on_position_selection_changed();
@@ -1645,11 +1627,10 @@ impl App {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
-                if self.main_tab == MainTab::Watchlist {
-                    self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(1);
-                } else {
-                    self.selected_index = self.selected_index.saturating_sub(1);
-                }
+                self.selected_index = self.selected_index.saturating_sub(1);
+            }
+            ViewMode::Watchlist => {
+                self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(1);
             }
             ViewMode::Transactions => {
                 self.tx_selected_index = self.tx_selected_index.saturating_sub(1);
@@ -1662,7 +1643,6 @@ impl App {
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)
-            && self.main_tab == MainTab::Positions
             && self.selected_index != old_pos_idx
         {
             self.on_position_selection_changed();
@@ -1673,11 +1653,10 @@ impl App {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
-                if self.main_tab == MainTab::Watchlist {
-                    self.watchlist_selected_index = 0;
-                } else {
-                    self.selected_index = 0;
-                }
+                self.selected_index = 0;
+            }
+            ViewMode::Watchlist => {
+                self.watchlist_selected_index = 0;
             }
             ViewMode::Transactions => {
                 self.tx_selected_index = 0;
@@ -1690,7 +1669,6 @@ impl App {
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)
-            && self.main_tab == MainTab::Positions
             && self.selected_index != old_pos_idx
         {
             self.on_position_selection_changed();
@@ -1701,12 +1679,13 @@ impl App {
         let old_pos_idx = self.selected_index;
         match self.view_mode {
             ViewMode::Positions => {
-                if self.main_tab == MainTab::Watchlist {
-                    if !self.watchlist_entries.is_empty() {
-                        self.watchlist_selected_index = self.watchlist_entries.len() - 1;
-                    }
-                } else if !self.display_positions.is_empty() {
+                if !self.display_positions.is_empty() {
                     self.selected_index = self.display_positions.len() - 1;
+                }
+            }
+            ViewMode::Watchlist => {
+                if !self.watchlist_entries.is_empty() {
+                    self.watchlist_selected_index = self.watchlist_entries.len() - 1;
                 }
             }
             ViewMode::Transactions => {
@@ -1728,7 +1707,6 @@ impl App {
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)
-            && self.main_tab == MainTab::Positions
             && self.selected_index != old_pos_idx
         {
             self.on_position_selection_changed();
@@ -1751,14 +1729,15 @@ impl App {
         let step = self.half_page();
         match self.view_mode {
             ViewMode::Positions => {
-                if self.main_tab == MainTab::Watchlist {
-                    if !self.watchlist_entries.is_empty() {
-                        self.watchlist_selected_index =
-                            (self.watchlist_selected_index + step).min(self.watchlist_entries.len() - 1);
-                    }
-                } else if !self.display_positions.is_empty() {
+                if !self.display_positions.is_empty() {
                     self.selected_index =
                         (self.selected_index + step).min(self.display_positions.len() - 1);
+                }
+            }
+            ViewMode::Watchlist => {
+                if !self.watchlist_entries.is_empty() {
+                    self.watchlist_selected_index =
+                        (self.watchlist_selected_index + step).min(self.watchlist_entries.len() - 1);
                 }
             }
             ViewMode::Transactions => {
@@ -1783,7 +1762,6 @@ impl App {
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)
-            && self.main_tab == MainTab::Positions
             && self.selected_index != old_pos_idx
         {
             self.on_position_selection_changed();
@@ -1795,11 +1773,10 @@ impl App {
         let step = self.half_page();
         match self.view_mode {
             ViewMode::Positions => {
-                if self.main_tab == MainTab::Watchlist {
-                    self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(step);
-                } else {
-                    self.selected_index = self.selected_index.saturating_sub(step);
-                }
+                self.selected_index = self.selected_index.saturating_sub(step);
+            }
+            ViewMode::Watchlist => {
+                self.watchlist_selected_index = self.watchlist_selected_index.saturating_sub(step);
             }
             ViewMode::Transactions => {
                 self.tx_selected_index = self.tx_selected_index.saturating_sub(step);
@@ -1812,7 +1789,6 @@ impl App {
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)
-            && self.main_tab == MainTab::Positions
             && self.selected_index != old_pos_idx
         {
             self.on_position_selection_changed();
@@ -1937,15 +1913,15 @@ impl App {
                     if let Some(idx) = self.display_positions.iter().position(|p| p.symbol == symbol) {
                         self.selected_index = idx;
                         self.view_mode = ViewMode::Positions;
-                        self.main_tab = MainTab::Positions;
                         self.detail_popup_open = true;
                         self.last_selection_change_tick = self.tick_count;
                     }
                     // If in watchlist, switch to watchlist tab and select it
                     else if let Some(idx) = self.watchlist_entries.iter().position(|w| w.symbol == symbol) {
                         self.watchlist_selected_index = idx;
-                        self.view_mode = ViewMode::Positions;
-                        self.main_tab = MainTab::Watchlist;
+                        self.view_mode = ViewMode::Watchlist;
+                        self.load_watchlist();
+                        self.request_watchlist_data();
                         self.last_selection_change_tick = self.tick_count;
                     }
                     // Otherwise just close (asset not in portfolio or watchlist)
@@ -3948,8 +3924,7 @@ mod breadcrumb_tests {
     #[test]
     fn test_breadcrumb_watchlist_tab() {
         let mut app = make_app();
-        app.view_mode = ViewMode::Positions;
-        app.main_tab = MainTab::Watchlist;
+        app.view_mode = ViewMode::Watchlist;
         assert_eq!(app.breadcrumb(), "Watchlist");
     }
 
@@ -3991,55 +3966,52 @@ mod watchlist_tab_tests {
     }
 
     #[test]
-    fn test_main_tab_defaults_to_positions() {
+    fn test_default_view_is_positions() {
         let app = make_app();
-        assert_eq!(app.main_tab, MainTab::Positions);
-    }
-
-    #[test]
-    fn test_w_toggles_to_watchlist() {
-        let mut app = make_app();
-        assert_eq!(app.main_tab, MainTab::Positions);
-        app.handle_key(key('w'));
-        assert_eq!(app.main_tab, MainTab::Watchlist);
-    }
-
-    #[test]
-    fn test_w_toggles_back_to_positions() {
-        let mut app = make_app();
-        app.handle_key(key('w'));
-        assert_eq!(app.main_tab, MainTab::Watchlist);
-        app.handle_key(key('w'));
-        assert_eq!(app.main_tab, MainTab::Positions);
-    }
-
-    #[test]
-    fn test_w_only_works_in_positions_view() {
-        let mut app = make_app();
-        app.view_mode = ViewMode::Markets;
-        app.handle_key(key('w'));
-        assert_eq!(app.main_tab, MainTab::Positions); // unchanged
-    }
-
-    #[test]
-    fn test_key_1_resets_to_positions_tab() {
-        let mut app = make_app();
-        app.handle_key(key('w')); // switch to watchlist
-        assert_eq!(app.main_tab, MainTab::Watchlist);
-        app.handle_key(key('1')); // press 1
-        assert_eq!(app.main_tab, MainTab::Positions);
         assert_eq!(app.view_mode, ViewMode::Positions);
     }
 
     #[test]
-    fn test_watchlist_tab_persists_across_view_switch() {
+    fn test_w_switches_to_watchlist_view() {
         let mut app = make_app();
-        app.handle_key(key('w')); // switch to watchlist tab
-        assert_eq!(app.main_tab, MainTab::Watchlist);
-        app.handle_key(key('3')); // switch to Markets view
+        assert_eq!(app.view_mode, ViewMode::Positions);
+        app.handle_key(key('w'));
+        assert_eq!(app.view_mode, ViewMode::Watchlist);
+    }
+
+    #[test]
+    fn test_5_switches_to_watchlist_view() {
+        let mut app = make_app();
+        app.handle_key(key('5'));
+        assert_eq!(app.view_mode, ViewMode::Watchlist);
+    }
+
+    #[test]
+    fn test_key_1_returns_to_positions_from_watchlist() {
+        let mut app = make_app();
+        app.handle_key(key('w'));
+        assert_eq!(app.view_mode, ViewMode::Watchlist);
+        app.handle_key(key('1'));
+        assert_eq!(app.view_mode, ViewMode::Positions);
+    }
+
+    #[test]
+    fn test_w_from_any_view_goes_to_watchlist() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Markets;
+        app.handle_key(key('w'));
+        assert_eq!(app.view_mode, ViewMode::Watchlist);
+    }
+
+    #[test]
+    fn test_watchlist_then_markets_then_back() {
+        let mut app = make_app();
+        app.handle_key(key('5'));
+        assert_eq!(app.view_mode, ViewMode::Watchlist);
+        app.handle_key(key('3'));
         assert_eq!(app.view_mode, ViewMode::Markets);
-        // main_tab is still Watchlist (persisted), but it doesn't matter in Markets view
-        assert_eq!(app.main_tab, MainTab::Watchlist);
+        app.handle_key(key('5'));
+        assert_eq!(app.view_mode, ViewMode::Watchlist);
     }
 }
 

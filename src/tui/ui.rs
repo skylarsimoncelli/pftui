@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::Block;
 
-use crate::app::{App, MainTab, ViewMode};
+use crate::app::{App, ViewMode};
 use crate::tui::views;
 use crate::tui::widgets;
 
@@ -40,6 +40,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         }
         ViewMode::Markets => views::markets::render(frame, chunks[1], app),
         ViewMode::Economy => views::economy::render(frame, chunks[1], app),
+        ViewMode::Watchlist => render_watchlist_layout(frame, chunks[1], app),
     }
 
     widgets::status_bar::render(frame, chunks[2], app);
@@ -62,19 +63,12 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
 
     let width = app.terminal_width;
 
-    let is_watchlist = app.main_tab == MainTab::Watchlist;
-    let section_label = if is_watchlist { "WATCHLIST" } else { "POSITIONS" };
-
     if width < COMPACT_WIDTH {
         // Compact: full width, no right pane
-        if is_watchlist {
-            views::watchlist::render(frame, area, app);
-        } else {
-            views::positions::render(frame, area, app);
-        }
+        views::positions::render(frame, area, app);
     } else {
         // Standard two-column layout:
-        //   Left (57%):  table (top) + portfolio overview (bottom, positions only)
+        //   Left (57%):  table (top) + portfolio overview (bottom)
         //   Right (43%): asset section header + asset header + price chart
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -86,7 +80,7 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
 
         // Left pane: section header + table + portfolio overview
         let left_height = h_chunks[0].height;
-        if !is_watchlist && left_height > MIN_OVERVIEW_HEIGHT + 5 + theme::SECTION_HEADER_HEIGHT {
+        if left_height > MIN_OVERVIEW_HEIGHT + 5 + theme::SECTION_HEADER_HEIGHT {
             // Enough room: split left pane vertically with section header + overview
             let overview_height = compute_overview_height(app, left_height);
             let left_chunks = Layout::default()
@@ -98,7 +92,7 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(h_chunks[0]);
 
-            theme::render_section_header(frame, left_chunks[0], section_label, &app.theme);
+            theme::render_section_header(frame, left_chunks[0], "POSITIONS", &app.theme);
             views::positions::render(frame, left_chunks[1], app);
             widgets::sidebar::render(frame, left_chunks[2], app);
         } else if left_height > 5 + theme::SECTION_HEADER_HEIGHT {
@@ -111,19 +105,11 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(h_chunks[0]);
 
-            theme::render_section_header(frame, left_chunks[0], section_label, &app.theme);
-            if is_watchlist {
-                views::watchlist::render(frame, left_chunks[1], app);
-            } else {
-                views::positions::render(frame, left_chunks[1], app);
-            }
+            theme::render_section_header(frame, left_chunks[0], "POSITIONS", &app.theme);
+            views::positions::render(frame, left_chunks[1], app);
         } else {
             // Too short: table only
-            if is_watchlist {
-                views::watchlist::render(frame, h_chunks[0], app);
-            } else {
-                views::positions::render(frame, h_chunks[0], app);
-            }
+            views::positions::render(frame, h_chunks[0], app);
         }
 
         // Right pane: section header + asset header + price chart
@@ -172,6 +158,33 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
 
                 theme::render_section_header(frame, right_chunks[0], "ASSET OVERVIEW", &app.theme);
             }
+        }
+    }
+}
+
+fn render_watchlist_layout(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::tui::theme;
+
+    let width = app.terminal_width;
+
+    if width < COMPACT_WIDTH {
+        views::watchlist::render(frame, area, app);
+    } else {
+        // Section header + watchlist table (full width)
+        let left_height = area.height;
+        if left_height > 5 + theme::SECTION_HEADER_HEIGHT {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(theme::SECTION_HEADER_HEIGHT),
+                    Constraint::Min(5),
+                ])
+                .split(area);
+
+            theme::render_section_header(frame, chunks[0], "WATCHLIST", &app.theme);
+            views::watchlist::render(frame, chunks[1], app);
+        } else {
+            views::watchlist::render(frame, area, app);
         }
     }
 }
