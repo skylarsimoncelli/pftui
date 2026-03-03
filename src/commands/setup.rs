@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::io::{self, Write};
 
 use anyhow::{bail, Result};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::terminal;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
@@ -172,18 +174,16 @@ fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {
     let mut position_num = 1;
 
     loop {
-        let input = prompt(&format!("  Position {}: ", position_num))?;
-        if input.to_lowercase() == "done" || input.is_empty() {
-            if entries.is_empty() {
-                println!("  \x1b[33mNo positions added. Add at least one.\x1b[0m");
-                continue;
-            }
-            break;
-        }
-
-        let (symbol, name, category) = match resolve_symbol(&input)? {
+        let result = interactive_symbol_search(&format!("  Position {}: ", position_num))?;
+        let (symbol, name, category) = match result {
             Some(r) => r,
-            None => continue,
+            None => {
+                if entries.is_empty() {
+                    println!("  \x1b[33mNo positions added. Add at least one.\x1b[0m");
+                    continue;
+                }
+                break;
+            }
         };
 
         if seen_symbols.contains(&symbol) {
@@ -327,18 +327,16 @@ fn percentage_mode_setup(conn: &Connection) -> Result<()> {
     let mut position_num = 1;
 
     loop {
-        let input = prompt(&format!("  Position {}: ", position_num))?;
-        if input.to_lowercase() == "done" || input.is_empty() {
-            if entries.is_empty() {
-                println!("  \x1b[33mNo positions added. Add at least one.\x1b[0m");
-                continue;
-            }
-            break;
-        }
-
-        let (symbol, name, category) = match resolve_symbol(&input)? {
+        let result = interactive_symbol_search(&format!("  Position {}: ", position_num))?;
+        let (symbol, name, category) = match result {
             Some(r) => r,
-            None => continue,
+            None => {
+                if entries.is_empty() {
+                    println!("  \x1b[33mNo positions added. Add at least one.\x1b[0m");
+                    continue;
+                }
+                break;
+            }
         };
 
         if seen_symbols.contains(&symbol) {
@@ -417,77 +415,209 @@ fn percentage_mode_setup(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Resolve user input to (symbol, name, category) via autocomplete.
-fn resolve_symbol(input: &str) -> Result<Option<(String, String, AssetCategory)>> {
-    let query = input.trim();
-    if query.is_empty() {
-        return Ok(None);
-    }
+/// Maximum number of inline suggestions to display.
+const MAX_SUGGESTIONS: usize = 8;
 
-    let matches = asset_names::search_names(query);
+/// Interactive symbol search with inline suggestions.
+///
+/// Uses crossterm raw mode to capture keystrokes character-by-character.
+/// Shows ranked fuzzy matches from `search_names` below the input prompt,
+/// updating live as the user types.
+///
+/// Controls:
+///   - Type characters to search
+///   - Backspace to delete
+///   - Up/Down arrows to highlight a suggestion
+///   - Enter to accept highlighted suggestion (or raw input if none highlighted)
+///   - 1-9 to quick-select a numbered suggestion
+///   - Esc to cancel
+///   - Ctrl-C to cancel
+fn interactive_symbol_search(label: &str) -> Result<Option<(String, String, AssetCategory)>> {
+    let mut input = String::new();
+    let mut highlight: usize = 0; // 0 = none, 1-based index into suggestions
+    let mut last_match_count: usize = 0;
 
-    if matches.is_empty() {
-        // No match — accept as custom symbol
-        let symbol = query.to_uppercase();
-        let category = asset_names::infer_category(&symbol);
-        println!(
-            "    \x1b[90mUnknown symbol. Category inferred: {}\x1b[0m",
-            category
-        );
-        let cat_input = prompt("    Category (or Enter to accept): ")?;
-        let final_cat = if cat_input.is_empty() {
-            category
-        } else {
-            cat_input.parse().unwrap_or(category)
-        };
-        return Ok(Some((symbol, String::new(), final_cat)));
-    }
+    // Print the initial prompt
+    print!("{}", label);
+    io::stdout().flush()?;
 
-    // Check for exact ticker match
-    let upper = query.to_uppercase();
-    if let Some(&(ticker, name)) = matches
-        .iter()
-        .find(|(t, _)| t.to_uppercase() == upper)
-    {
-        let cat = asset_names::infer_category(ticker);
-        return Ok(Some((ticker.to_string(), name.to_string(), cat)));
-    }
+    terminal::enable_raw_mode()?;
 
-    // Single match
-    if matches.len() == 1 {
-        let (ticker, name) = matches[0];
-        let cat = asset_names::infer_category(ticker);
-        return Ok(Some((ticker.to_string(), name.to_string(), cat)));
-    }
+    let result = (|| -> Result<Option<(String, String, AssetCategory)>> {
+        loop {
+            if !event::poll(std::time::Duration::from_millis(100))? {
+                continue;
+            }
 
-    // Multiple matches — show numbered list (max 10)
-    let display: Vec<_> = matches.iter().take(10).collect();
-    println!("    \x1b[90mMultiple matches:\x1b[0m");
-    for (i, (ticker, name)) in display.iter().enumerate() {
-        let cat = asset_names::infer_category(ticker);
-        println!(
-            "      \x1b[1m[{}]\x1b[0m {} ({}) \x1b[90m[{}]\x1b[0m",
-            i + 1,
-            name,
-            ticker,
-            cat
-        );
-    }
-    if matches.len() > 10 {
-        println!("      \x1b[90m... and {} more\x1b[0m", matches.len() - 10);
-    }
+            let ev = event::read()?;
+            let Event::Key(key) = ev else {
+                continue;
+            };
 
-    let choice = prompt("    Select number: ")?;
-    let idx: usize = choice.parse().unwrap_or(0);
-    if idx >= 1 && idx <= display.len() {
-        let (ticker, name) = display[idx - 1];
-        let cat = asset_names::infer_category(ticker);
-        Ok(Some((ticker.to_string(), name.to_string(), cat)))
-    } else {
-        println!("    \x1b[33mInvalid choice. Try again.\x1b[0m");
-        Ok(None)
+            // Only handle Press events (ignore Release/Repeat on some platforms)
+            if key.kind != event::KeyEventKind::Press {
+                continue;
+            }
+
+            match key.code {
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    clear_suggestions(last_match_count);
+                    print!("\r\n");
+                    return Ok(None);
+                }
+                KeyCode::Esc => {
+                    clear_suggestions(last_match_count);
+                    print!("\r\n");
+                    return Ok(None);
+                }
+                KeyCode::Enter => {
+                    let matches = asset_names::search_names(&input);
+                    let display: Vec<_> = matches.iter().take(MAX_SUGGESTIONS).collect();
+
+                    clear_suggestions(last_match_count);
+                    print!("\r\n");
+
+                    if highlight >= 1 && highlight <= display.len() {
+                        let (ticker, name) = display[highlight - 1];
+                        let cat = asset_names::infer_category(ticker);
+                        return Ok(Some((ticker.to_string(), name.to_string(), cat)));
+                    }
+
+                    // No highlight — treat raw input like the old resolve_symbol
+                    let trimmed = input.trim().to_string();
+                    if trimmed.is_empty() || trimmed.to_lowercase() == "done" {
+                        return Ok(None);
+                    }
+
+                    // Check for exact match first
+                    let upper = trimmed.to_uppercase();
+                    if let Some(&(ticker, name)) =
+                        matches.iter().find(|(t, _)| t.to_uppercase() == upper)
+                    {
+                        let cat = asset_names::infer_category(ticker);
+                        return Ok(Some((ticker.to_string(), name.to_string(), cat)));
+                    }
+
+                    // Single match
+                    if matches.len() == 1 {
+                        let (ticker, name) = matches[0];
+                        let cat = asset_names::infer_category(ticker);
+                        return Ok(Some((ticker.to_string(), name.to_string(), cat)));
+                    }
+
+                    if !matches.is_empty() {
+                        // Multiple matches but none highlighted — take first
+                        let (ticker, name) = matches[0];
+                        let cat = asset_names::infer_category(ticker);
+                        return Ok(Some((ticker.to_string(), name.to_string(), cat)));
+                    }
+
+                    // No matches at all — accept as custom symbol
+                    let symbol = upper;
+                    let category = asset_names::infer_category(&symbol);
+                    return Ok(Some((symbol, String::new(), category)));
+                }
+                KeyCode::Backspace => {
+                    input.pop();
+                    highlight = 0;
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Quick-select: digit 1-9 selects that suggestion if matches exist
+                    if c.is_ascii_digit() && c != '0' && !input.is_empty() {
+                        let idx = (c as u8 - b'0') as usize;
+                        let matches = asset_names::search_names(&input);
+                        let display_len = matches.len().min(MAX_SUGGESTIONS);
+                        if idx <= display_len {
+                            clear_suggestions(last_match_count);
+                            print!("\r\n");
+                            let (ticker, name) = matches[idx - 1];
+                            let cat = asset_names::infer_category(ticker);
+                            return Ok(Some((ticker.to_string(), name.to_string(), cat)));
+                        }
+                    }
+                    input.push(c);
+                    highlight = 0;
+                }
+                KeyCode::Up => {
+                    highlight = highlight.saturating_sub(1);
+                }
+                KeyCode::Down => {
+                    let matches = asset_names::search_names(&input);
+                    let max = matches.len().min(MAX_SUGGESTIONS);
+                    if highlight < max {
+                        highlight += 1;
+                    }
+                }
+                _ => {}
+            }
+
+            // Redraw prompt line and suggestions
+            let matches = asset_names::search_names(&input);
+            let display: Vec<_> = matches.iter().take(MAX_SUGGESTIONS).collect();
+
+            // Clear old suggestions first
+            clear_suggestions(last_match_count);
+
+            // Rewrite the prompt line (carriage return, clear line, print prompt + input)
+            print!("\r\x1b[2K{}{}", label, input);
+
+            // Show suggestion count hint on the prompt line
+            if !input.is_empty() && !matches.is_empty() {
+                let shown = display.len();
+                let total = matches.len();
+                if total > shown {
+                    print!("  \x1b[90m({} of {} matches)\x1b[0m", shown, total);
+                } else {
+                    print!("  \x1b[90m({} match{})\x1b[0m", total, if total == 1 { "" } else { "es" });
+                }
+            }
+
+            // Print suggestions below
+            if !input.is_empty() && !display.is_empty() {
+                for (i, (ticker, name)) in display.iter().enumerate() {
+                    let cat = asset_names::infer_category(ticker);
+                    let idx = i + 1;
+                    if highlight == idx {
+                        // Highlighted row
+                        print!(
+                            "\r\n    \x1b[7m [{idx}] {name} ({ticker}) [{cat}] \x1b[0m",
+                        );
+                    } else {
+                        print!(
+                            "\r\n    \x1b[1m[{idx}]\x1b[0m {name} ({ticker}) \x1b[90m[{cat}]\x1b[0m",
+                        );
+                    }
+                }
+                // Move cursor back up to the prompt line
+                let count = display.len();
+                if count > 0 {
+                    print!("\x1b[{}A", count);
+                }
+                // Position cursor at end of input on the prompt line
+                let col = label.len() + input.len() + 1;
+                print!("\r\x1b[{}C", col - 1);
+            }
+
+            last_match_count = display.len();
+            io::stdout().flush()?;
+        }
+    })();
+
+    terminal::disable_raw_mode()?;
+    result
+}
+
+/// Clear N suggestion lines below the cursor.
+fn clear_suggestions(count: usize) {
+    if count > 0 {
+        // Save cursor, move down and clear each line, restore cursor
+        for i in 1..=count {
+            print!("\x1b[s\x1b[{}B\r\x1b[2K\x1b[u", i);
+        }
     }
 }
+
+
 
 fn parse_value_or_pct(input: &str, total: Decimal) -> Result<(Decimal, Decimal)> {
     let trimmed = input.replace([',', '$'], "");

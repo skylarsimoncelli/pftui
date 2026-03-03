@@ -446,7 +446,7 @@ pub fn render_section_header(frame: &mut Frame, area: Rect, label: &str, theme: 
 
     let used_width = prefix.len() + label.len() + 1; // +1 for trailing space after label
     let remaining = (area.width as usize).saturating_sub(used_width);
-    let fill: String = std::iter::repeat(suffix_char).take(remaining).collect();
+    let fill: String = std::iter::repeat_n(suffix_char, remaining).collect();
     let fill_span = Span::styled(fill, Style::default().fg(theme.border_subtle));
 
     let line = Line::from(vec![prefix_span, label_span, fill_span]);
