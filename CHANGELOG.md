@@ -542,3 +542,11 @@
 - Files: `src/tui/widgets/price_chart.rs` (added `area_fill_bg()`, `FILL_OPACITY_NEAR`, `FILL_OPACITY_FAR`, applied `.bg()` in `render_braille_chart` and `render_braille_mini` loops, 6 new tests)
 - Tests: 6 new tests (fill above line returns surface, fill below line tints, bottom dimmer than near-line, uses max of v0/v1, exact boundary no fill, opacity constants valid). Total: 542 tests passing.
 - TODO: Add chart area fill with gradient (P2)
+
+### 2026-03-03 — Add Bollinger Bands overlay on price charts
+
+- What: price charts now display Bollinger Bands (BB) as faint braille dot overlays above and below the SMA(20) line. Bands are computed as SMA(20) ± 2 standard deviations. The band color uses a muted blend of `text_accent` and `surface_1` so they're visible but don't overpower the price line or SMA overlays. The stats legend line shows a "BB" label in the muted band color alongside existing SMA20/SMA50 labels. Bands only appear on single-symbol charts (not ratio or multi-panel mini charts).
+- Why: P2 chart visual enhancement — Bollinger Bands show volatility and overbought/oversold conditions. When price touches or exceeds a band, it signals unusual price movement. The faint rendering keeps the chart clean while adding meaningful technical analysis context. This is the most commonly requested overlay after SMA.
+- Files: `src/tui/widgets/price_chart.rs` (added `compute_bollinger()`, `BOLLINGER_MULTIPLIER` constant, integrated BB overlays into `render_single_chart`, updated `render_braille_chart` signature with `sma_count` parameter for legend labeling, 8 new tests)
+- Tests: 8 new tests (basic computation, symmetric around SMA, constant values zero bandwidth, empty input, period zero, period larger than data, upper >= lower invariant, multiplier constant). Total: 550 tests passing.
+- TODO: Add Bollinger Bands overlay (P2)

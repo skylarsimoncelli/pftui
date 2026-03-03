@@ -41,7 +41,7 @@
 
 ## P2 — Chart Visual Enhancements
 
-- [ ] **Add Bollinger Bands overlay** — Compute 20-period SMA ± 2 standard deviations. Render as faint dotted braille lines above and below the SMA(20). When price touches a band, highlight the touch point. Shows volatility and overbought/oversold conditions. Files: `src/tui/widgets/price_chart.rs` (compute_bollinger, overlay rendering). Test: test band computation with known data.
+
 
 ## P2 — Layout & Visual Polish
 
