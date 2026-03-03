@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Wire indicators into asset detail popup, add MACD + RSI gauge + SMA(200) (F1.2)
+
+- What: Replaced local SMA/BB/RSI implementations in asset detail popup with the `indicators/` module. Added MACD(12,26,9) display with histogram bars, RSI visual gauge bar (color-zoned), and SMA(200). Removed dead_code suppressions from indicators module.
+- Why: F1.2 — first consumer of the indicators engine in the TUI. Makes technical analysis visible per-asset in the detail popup.
+- Files: `src/indicators/mod.rs`, `src/indicators/bollinger.rs`, `src/tui/views/asset_detail_popup.rs`
+- Tests: 828 passing (replaced 5 old local-function tests with 4 new gauge/MACD/integration tests)
+- TODO: F1.2 — Technicals in asset detail popup
+
 ### 2026-03-03 — Add technical indicators math module (F1.1)
 
 - What: New `src/indicators/` module with pure math functions: RSI (Wilder's smoothing, period 14), MACD (12/26/9 with EMA), SMA (configurable period), and Bollinger Bands (20,2 with band width). All operate on `&[f64]` slices — no I/O, no side effects.
