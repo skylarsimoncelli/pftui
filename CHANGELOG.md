@@ -694,3 +694,11 @@
 - Files: new `src/regime/suggestions.rs` (compute_suggestions, PortfolioAlignment, category_regime_class, 13 tests), new `src/tui/widgets/regime_assets.rs` (render, build_asset_line, build_alignment_line, truncate_list, compute_height, 7 tests), `src/regime/mod.rs` (registered suggestions submodule), `src/tui/widgets/mod.rs` (registered regime_assets), `src/tui/widgets/sidebar.rs` (5-panel layout with regime assets)
 - Tests: 716 passing (20 new). Zero clippy warnings on new code.
 - TODO: Regime Asset Suggestions (P1 Regime Intelligence)
+
+### 2026-03-03 — Add Pastel and Miasma themes
+
+- What: added two new themes to the rotation, expanding from 9 to 11 total. **Pastel**: soft, toned-down palette with muted pinks, blues, and greens on warm gray backgrounds. Easy on the eyes with gentle contrast — sage green gains, soft rose losses, periwinkle chart lines, warm parchment-tinted text. Designed for extended viewing sessions. **Miasma**: warm atmospheric haze theme with deep burgundy-brown surfaces, dusty orange borders, olive green gains, and aged gold accents. Rich and slightly ominous, like looking through smoke at a sunset. Both themes define all 28 color slots with carefully chosen palettes that feel visually distinct from each other and from existing themes.
+- Why: P2 Theme Overhaul (Owner Request) — continuing the theme expansion that added Inferno, Neon, and Hacker earlier today. Pastel covers the "easy on the eyes" aesthetic that was missing, while Miasma fills the warm/atmospheric niche distinct from Gruvbox (which is retro-brown) and Inferno (which is volcanic).
+- Files: `src/tui/theme.rs` (2 new theme functions, updated THEME_NAMES to 11 entries, updated theme_by_name dispatcher, 4 new tests, updated cycle/count tests)
+- Tests: 718 passing (4 new: pastel soft palette verification, miasma warm brown verification, updated theme count to 11, updated cycle wrap test). Zero new clippy warnings.
+- TODO: Continue theme overhaul — add Pastel and Miasma themes (P2 Theme Overhaul)

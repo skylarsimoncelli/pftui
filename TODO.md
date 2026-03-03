@@ -174,9 +174,7 @@
 
 ## P2 — Theme Overhaul (Owner Request)
 
-- [ ] **Continue theme overhaul** — 3 new themes added (Inferno, Neon, Hacker). Remaining work:
-  - **Pastel** — soft, toned-down palette. Muted pinks, blues, greens on a warm gray. Easy on the eyes
-  - **Miasma** — warm atmospheric haze. Deep burgundy, dusty orange, olive, muted gold
+- [ ] **Continue theme overhaul** — 5 new themes added (Inferno, Neon, Hacker, Pastel, Miasma). 11 total. Remaining work:
   - **Dracula** — make more vivid and punchy, lean into the purples
   - **Nord** — add more contrast, feels too washed out currently
   - **Solarized** — evaluate if it's distinct enough to keep, otherwise replace
