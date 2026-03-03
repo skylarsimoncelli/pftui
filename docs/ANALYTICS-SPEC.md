@@ -494,3 +494,233 @@ A one-time migration script parses JOURNAL.md and creates entries with correct t
 **Files:** new `src/db/journal.rs`, new `src/commands/journal.rs`, new `src/tui/views/journal_popup.rs`, `src/app.rs` (add `j` hotkey), `cli.rs`
 
 **Effort:** Medium (2 sessions). DB schema + CLI is session 1. TUI popup is session 2.
+
+---
+
+### F9/F11: Absorbed into F6 (Unified Alert Engine)
+
+Watchlist entry levels (F9) and allocation drift detection (F11) are now part of F6. One alert system handles price alerts, allocation drift, and indicator thresholds. See F6 spec above.
+
+**Unified alert types:**
+- Price: `"GC=F above 5500"`, `"BTC below 55000"`
+- Allocation: `"gold allocation above 30%"`, `"cash allocation below 30%"`
+- Indicator: `"VIX above 25"`, `"GC=F RSI below 30"`
+- Watchlist entry: `pftui watch TSLA --target 300 --direction below`
+
+**Three-phase rollout:**
+1. CLI check only (`pftui alerts check`) — no daemon, battle-tested first
+2. Refresh hook (`pftui refresh` auto-checks) — still no daemon
+3. Optional OS notifications (`pftui refresh --notify`) — `notify-send` / `osascript`, no daemon
+
+**Crons should NOT rely on pftui alerts until battle-tested and bug-free.** Parallel operation with existing threshold checking, then cut over.
+
+---
+
+### F10: Portfolio Performance History
+
+**What:** Automated daily portfolio snapshots → time-series returns → benchmark comparison.
+
+**Financial engineering:**
+- Daily snapshot: total value + per-position values, stored on every `refresh`
+- Returns: simple return = (V_end - V_start) / V_start for any period
+- Annualized return: (1 + total_return)^(365/days) - 1
+- Benchmark comparison: fetch SPY (or custom) daily, compute same returns, show delta
+- Time-weighted return (TWR) for accuracy when cash flows exist (adds/withdrawals)
+
+**TUI integration:**
+- **Positions tab [1]:** Compact return row in portfolio overview panel: `1D: -0.5% | 1W: +1.2% | 1M: +3.4% | YTD: +5.1%`
+- **Existing 3M chart:** Fixed — now has actual data from daily snapshots
+
+**CLI:**
+```
+pftui performance                     # MTD, QTD, YTD, inception
+pftui performance --since 2026-02-24  # since rebalance
+pftui performance --period weekly     # weekly return series
+pftui performance --vs SPY            # benchmark comparison
+pftui performance --json              # agent output
+```
+
+**Agent output:**
+```json
+{
+  "performance": {
+    "1d": -0.5, "1w": 1.2, "1m": 3.4, "ytd": 5.1,
+    "since_inception": 8.3, "inception_date": "2026-02-20",
+    "benchmark": {"symbol": "SPY", "1m": 2.1, "delta": 1.3}
+  }
+}
+```
+
+**Files:** new `src/db/snapshots.rs`, new `src/commands/performance.rs`, modify `commands/refresh.rs`, `tui/views/positions.rs`, `tui/widgets/portfolio_stats.rs`
+
+**Effort:** Small-Medium (1-2 sessions). Snapshot storage is trivial. TWR calculation is the complexity.
+
+---
+
+### F12: Economic Calendar
+
+**What:** Upcoming market-moving events integrated into Economy tab [4]. Replaces agent web searches for "what's happening this week."
+
+**Data sources (free):**
+- Finnhub free tier: economic calendar + earnings calendar API
+- Trading Economics free: limited but covers major events
+- Forex Factory: RSS feed, scrapeable
+- Yahoo Finance: earnings dates per-symbol (already have Yahoo integration)
+
+**Financial engineering:** N/A — this is data aggregation and display.
+
+**TUI integration:**
+- **Economy tab [4]:** Right-side panel (or toggleable sub-view if screen too narrow):
+  ```
+  ┌─ UPCOMING EVENTS ─────────────────────────────┐
+  │ Mar 4  🔴 JOLTS Job Openings     prev: 7.6M   │
+  │ Mar 5  🟡 ADP Employment         prev: 183K   │
+  │ Mar 7  🔴 Non-Farm Payrolls      prev: 143K   │
+  │ Mar 7  🔴 Unemployment Rate      prev: 4.0%   │
+  │ Mar 12 🔴 CPI YoY               prev: 3.0%   │
+  │ Mar 19 🔴 FOMC Rate Decision     prev: 3.50%  │
+  │                                                │
+  │ EARNINGS (watchlist)                           │
+  │ Mar 6  COIN Q4 2025                            │
+  │ Mar 12 HOOD Q4 2025                            │
+  └────────────────────────────────────────────────┘
+  ```
+- Impact icons: 🔴 high, 🟡 medium, ⚪ low
+- Countdown: events within 24h highlighted
+- Earnings for watchlist stocks auto-included
+
+**CLI:**
+```
+pftui calendar                    # next 7 days
+pftui calendar --days 30          # next month
+pftui calendar --impact high      # high-impact only
+pftui calendar --json             # agent output
+```
+
+**Agent output:**
+```json
+{
+  "events": [
+    {"date": "2026-03-07", "name": "Non-Farm Payrolls", "impact": "high", "previous": "143K", "forecast": "160K"},
+    {"date": "2026-03-19", "name": "FOMC Rate Decision", "impact": "high", "previous": "3.50%"}
+  ],
+  "earnings": [
+    {"date": "2026-03-06", "symbol": "COIN", "name": "Coinbase Q4 2025"}
+  ]
+}
+```
+
+**Files:** new `src/data/calendar.rs`, new `src/db/calendar_cache.rs`, modify `tui/views/economy.rs`, new `src/commands/calendar.rs`, `cli.rs`
+
+**Effort:** Medium (2 sessions). API integration + caching is session 1. TUI panel is session 2.
+
+---
+
+### F13: Position Annotations & Thesis Tracking
+
+**What:** Structured per-position metadata: entry thesis, invalidation criteria, review dates, target levels. Agents query this instead of JOURNAL.md open calls.
+
+**SQLite schema:**
+```sql
+CREATE TABLE annotations (
+    symbol TEXT PRIMARY KEY,
+    thesis TEXT,                    -- why you bought
+    invalidation TEXT,             -- what would make you sell
+    review_date TEXT,              -- when to re-evaluate
+    target_add REAL,               -- price to add more
+    target_sell REAL,              -- price to take profit
+    conviction TEXT,               -- high/medium/low
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+```
+
+**TUI integration:**
+- **Position detail popup (exists):** New "Thesis" section below price chart:
+  ```
+  ─ THESIS ──────────────────────────────────────
+  Entry: BRICS + CB buying + stagflation hedge
+  Invalidate: Real rates go positive, gold <$4,500
+  Review: 2026-03-20 (17 days) ⏰
+  Add target: $4,800 (5.7% below)
+  Sell target: $6,000 (17.8% above)
+  Conviction: HIGH
+  ```
+- **Positions tab [1]:** ⏰ icon on positions with overdue review dates
+- **Watchlist tab [5]:** Shows target_add with proximity (from F6 integration)
+
+**CLI:**
+```
+pftui annotate GC=F --thesis "BRICS + CB buying"
+pftui annotate GC=F --invalidate "Real rates positive, gold <4500"
+pftui annotate GC=F --review-date 2026-03-20
+pftui annotate GC=F --target-add 4800 --target-sell 6000
+pftui annotate GC=F                   # show current annotation
+pftui annotate GC=F --json            # agent output
+pftui annotate --all --json           # all annotations for agents
+pftui annotate --overdue              # positions past review date
+```
+
+**Agent output:**
+```json
+{
+  "symbol": "GC=F",
+  "thesis": "BRICS + CB buying + stagflation hedge",
+  "invalidation": "Real rates go positive, gold <$4,500",
+  "review_date": "2026-03-20",
+  "review_overdue": false,
+  "review_days_remaining": 17,
+  "target_add": 4800,
+  "target_add_distance_pct": -5.7,
+  "target_sell": 6000,
+  "target_sell_distance_pct": 17.8,
+  "conviction": "high"
+}
+```
+
+**Files:** new `src/db/annotations.rs`, new `src/commands/annotate.rs`, modify `tui/views/asset_detail_popup.rs`, `tui/views/positions.rs`, `cli.rs`
+
+**Effort:** Small (1 session). Simple DB + CLI + popup section.
+
+---
+
+### F14: Tag-Based Asset Groups
+
+**What:** Group assets by theme. Track combined allocation and performance per group.
+
+**SQLite schema:**
+```sql
+CREATE TABLE groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,         -- "hard-assets", "inflation-hedges"
+    symbols TEXT NOT NULL,             -- comma-separated: "GC=F,SI=F,BTC"
+    created_at TEXT DEFAULT (datetime('now'))
+);
+```
+
+**TUI integration:**
+- **Positions tab [1]:** Filter dropdown or hotkey to filter by group. Allocation bars update to show group-level allocation.
+
+**CLI:**
+```
+pftui group create "hard-assets" --symbols GC=F,SI=F,BTC
+pftui group create "war-beneficiaries" --symbols GC=F,SI=F,XLE,CL=F
+pftui group list
+pftui group "hard-assets"              # combined allocation + performance
+pftui group "hard-assets" --json       # agent output
+pftui group remove "hard-assets"
+```
+
+**Agent output:**
+```json
+{
+  "name": "hard-assets",
+  "symbols": ["GC=F", "SI=F", "BTC"],
+  "combined_allocation_pct": 50.2,
+  "combined_value": 181500,
+  "combined_1d_change_pct": -1.8
+}
+```
+
+**Files:** new `src/db/groups.rs`, new `src/commands/group.rs`, modify `tui/views/positions.rs`, `tui/widgets/allocation_bars.rs`, `cli.rs`
+
+**Effort:** Small (1 session). Simple CRUD + filter.

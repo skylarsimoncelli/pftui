@@ -28,14 +28,23 @@ _(no items)_
 - [ ] **F3.3: Economy tab enhancement** — Top strip (key numbers row), yield curve braille chart, macro trends panel with sparklines + direction arrows + context labels. Derived metrics: gold/silver ratio, real rate (10Y - CPI). Files: `tui/views/economy.rs`, `tui/widgets/`
 - [ ] **F3.4: `pftui macro` CLI command** — Terminal-friendly macro dashboard output. Supports `--json` for agent consumption. Files: new `src/commands/macro_cmd.rs`, `cli.rs`
 
-### F6: Alert & Threshold Engine
-> **Goal:** Define thresholds, check on every refresh, surface breaches everywhere. Replaces manual cron threshold checking.
+### F6: Unified Alert Engine (price + allocation + indicators)
+> **Goal:** One alert system for everything: price targets (inc. watchlist entry levels), allocation drift, indicator thresholds. Check on every refresh. Optional OS notifications. Absorbs watchlist alerts (F9) and allocation drift (F11).
 > **Spec:** `docs/ANALYTICS-SPEC.md#f6`
 
-- [ ] **F6.1: Alert rules engine + DB** — Rule parser for price/indicator/portfolio/compound alerts. Store in SQLite. Check on `refresh`. Files: new `src/alerts/{mod,engine,rules}.rs`, new `src/db/alerts.rs`
-- [ ] **F6.2: `pftui alerts` CLI** — List thresholds + status (armed/triggered). `pftui alerts add "VIX above 25"`. Supports `--json`. Files: new `src/commands/alerts.rs`, `cli.rs`
-- [ ] **F6.3: Alert badge in TUI status bar** — `⚠️ 2 alerts` count. Hotkey to expand alerts popup overlay. Per-asset ⚠️ icons on triggered positions. Files: `tui/widgets/status_bar.rs`, new `tui/views/alerts_popup.rs`, `tui/views/positions.rs`, `tui/views/watchlist.rs`
-- [ ] **F6.4: Alerts in `refresh` output** — After price update, report newly triggered alerts. Files: `commands/refresh.rs`, `alerts/engine.rs`
+- [ ] **F6.1: Alert rules engine + DB** — Unified rule parser supporting three alert types: (1) price alerts: `"GC=F above 5500"`, `"BTC below 55000"`, `"TSLA below 300"`; (2) allocation drift: `"gold allocation above 30%"`, `"cash allocation below 30%"`; (3) indicator alerts: `"VIX above 25"`, `"DXY above 100"`, `"GC=F RSI below 30"`. Store in SQLite with status (armed/triggered/acknowledged). Check against cached prices on `refresh`. Files: new `src/alerts/{mod,engine,rules}.rs`, new `src/db/alerts.rs`
+- [ ] **F6.2: `pftui alerts` CLI** — `alerts add "rule"`, `alerts list`, `alerts remove <id>`, `alerts check` (manual one-shot), `alerts check --json` (agent output). Show distance-to-trigger for armed alerts. Files: new `src/commands/alerts.rs`, `cli.rs`
+- [ ] **F6.3: Watchlist entry level integration** — `pftui watch TSLA --target 300 --direction below` stores as an alert rule. Watchlist tab [5] shows target column + proximity bar (green=far, yellow=approaching, red=hit). `pftui watchlist --approaching 10%` filters to assets within 10% of target. Files: `tui/views/watchlist.rs`, `commands/watchlist_cli.rs`, `db/watchlist.rs`
+- [ ] **F6.4: Allocation target + drift in Positions tab** — `pftui target set gold 25% --band 3%` stores as allocation alert. Positions tab [1] shows target vs actual column, color-coded bands. `pftui drift` shows all positions' drift from targets. `pftui rebalance` suggests trades to restore. Files: `tui/views/positions.rs`, new `src/commands/target.rs`, `alerts/engine.rs`
+- [ ] **F6.5: Alert badge in TUI status bar** — `⚠️ 2 alerts` count. Hotkey to expand alerts popup overlay. Per-asset ⚠️ icons on triggered positions/watchlist items. Files: `tui/widgets/status_bar.rs`, new `tui/views/alerts_popup.rs`
+- [ ] **F6.6: Alerts in `refresh` output + optional OS notifications** — After price update, report newly triggered alerts in CLI output. `pftui refresh --notify` fires native OS notification via `notify-send` (Linux) or `osascript` (macOS). No daemon required. Files: `commands/refresh.rs`, `alerts/engine.rs`, new `src/notify.rs`
+
+### F10: Portfolio Performance History
+> **Goal:** Track portfolio value over time. Compute returns over any period. Benchmark comparison. Requires automated daily snapshots.
+
+- [ ] **F10.1: Automated daily portfolio snapshots** — On every `refresh`, store total portfolio value + per-position values in SQLite. This also fixes the 3M chart "Waiting for data" bug. Files: `db/price_cache.rs`, `commands/refresh.rs`, new `src/db/snapshots.rs`
+- [ ] **F10.2: `pftui performance` CLI** — Show MTD, QTD, YTD, since-inception returns. `--since 2026-02-24` for custom period. `--period weekly` for return series. `--vs SPY` for benchmark comparison. `--json` for agents. Files: new `src/commands/performance.rs`, `cli.rs`
+- [ ] **F10.3: Performance panel in Positions tab** — Compact return summary in portfolio overview: 1D, 1W, 1M, YTD. Sparkline of portfolio value over selected period. Files: `tui/views/positions.rs`, `tui/widgets/portfolio_stats.rs`
 
 ### Other P1
 
@@ -77,6 +86,26 @@ _(no items)_
 - [ ] **F8.1: Journal DB schema + CLI command suite** — SQLite table (timestamp, content, tag, symbol, conviction, status). Full CLI: `pftui journal add/list/search/update/remove/tags/stats`. All commands support `--json`. Files: new `src/db/journal.rs`, new `src/commands/journal.rs`, `cli.rs`
 - [ ] **F8.2: Journal tab [7] in TUI** — New tab in numbered menu. Scrollable list: date, content (truncated), tag columns. `a` to add entry inline, Enter to expand full text, `/` to search within journal. Files: new `src/tui/views/journal.rs`, `src/app.rs` (add ViewMode::Journal, bind key `7`)
 - [ ] **F8.3: JOURNAL.md migration script** — One-time parser that seeds SQLite from existing JOURNAL.md entries with correct timestamps, tags, statuses. Files: new `src/commands/migrate_journal.rs` or standalone script
+
+### F12: Economic Calendar
+> **Goal:** Upcoming market-moving events (FOMC, CPI, NFP, earnings) with impact ratings. Integrates into existing Economy tab [4].
+
+- [ ] **F12.1: Calendar data source + cache** — Free API integration (Finnhub free tier or Trading Economics free or Forex Factory RSS). Fetch upcoming events, cache in SQLite with: date, event name, impact (high/medium/low), previous value, forecast, actual. Refresh daily. Files: new `src/data/calendar.rs`, new `src/db/calendar_cache.rs`
+- [ ] **F12.2: Calendar in Economy tab [4]** — Right-side panel or sub-view showing next 7 days of events. Impact color-coded (🔴 high, 🟡 medium, ⚪ low). Countdown to next event. Earnings dates for watchlist stocks highlighted. Files: `tui/views/economy.rs`
+- [ ] **F12.3: `pftui calendar` CLI** — `pftui calendar` (next 7 days), `--days 30`, `--impact high`, `--json`. Files: new `src/commands/calendar.rs`, `cli.rs`
+
+### F13: Position Annotations & Thesis Tracking
+> **Goal:** Attach entry thesis, invalidation criteria, review dates, and target levels to positions. Per-position structured notes that agents can query instead of reading JOURNAL.md open calls.
+
+- [ ] **F13.1: Annotations DB + CLI** — SQLite table: symbol, thesis, invalidation, review_date, target_add, target_sell, conviction, updated_at. CLI: `pftui annotate GC=F --thesis "..." --invalidate "..." --review-date 2026-03-20 --target-sell 6000`. `pftui annotate GC=F --json` returns full annotation. Files: new `src/db/annotations.rs`, new `src/commands/annotate.rs`, `cli.rs`
+- [ ] **F13.2: Thesis section in position detail popup** — Existing asset detail popup gains "Thesis" section: entry thesis, invalidation, review date (color-coded if approaching/overdue), target levels with distance. Editable inline. Files: `tui/views/asset_detail_popup.rs`, `tui/views/position_detail.rs`
+- [ ] **F13.3: Review date alerts** — Positions with overdue review dates show ⏰ icon in Positions tab. Integrates with F6 alert engine — auto-creates alert when review date is set. Files: `alerts/engine.rs`, `tui/views/positions.rs`
+
+### F14: Tag-Based Asset Groups
+> **Goal:** Group assets by theme for combined performance tracking.
+
+- [ ] **F14.1: Groups DB + CLI** — SQLite table: group_name, symbols (comma-separated). CLI: `pftui group create "hard-assets" --symbols GC=F,SI=F,BTC`, `pftui group list`, `pftui group "hard-assets"` (combined allocation + performance), `--json`. Files: new `src/db/groups.rs`, new `src/commands/group.rs`, `cli.rs`
+- [ ] **F14.2: Group filter in Positions tab** — Filter positions by group. Allocation bars show group-level allocation. Files: `tui/views/positions.rs`, `tui/widgets/allocation_bars.rs`
 
 ### Other P2
 
