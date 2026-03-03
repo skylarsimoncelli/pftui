@@ -221,147 +221,152 @@ pub fn catppuccin() -> Theme {
     }
 }
 
-/// Nord — cool arctic blue-gray
+/// Nord — cool arctic blue-gray with enhanced contrast.
+/// Darker surfaces for depth, brighter accents for readability.
 pub fn nord() -> Theme {
     Theme {
         name: "nord",
-        surface_0: Color::Rgb(46, 52, 64),
-        surface_1: Color::Rgb(59, 66, 82),
-        surface_1_alt: Color::Rgb(55, 62, 78),
-        surface_2: Color::Rgb(67, 76, 94),
-        surface_3: Color::Rgb(76, 86, 106),
-        border_active: Color::Rgb(136, 192, 208),
-        border_inactive: Color::Rgb(76, 86, 106),
-        border_accent: Color::Rgb(129, 161, 193),
-        border_subtle: Color::Rgb(59, 66, 82),
-        text_primary: Color::Rgb(236, 239, 244),
-        text_secondary: Color::Rgb(216, 222, 233),
-        text_muted: Color::Rgb(127, 140, 160),
+        surface_0: Color::Rgb(36, 40, 52),       // darker base for more depth
+        surface_1: Color::Rgb(46, 52, 64),        // original base becomes panel interior
+        surface_1_alt: Color::Rgb(50, 56, 70),    // subtle stripe
+        surface_2: Color::Rgb(59, 66, 82),        // header/status
+        surface_3: Color::Rgb(76, 86, 106),       // selected row — brighter jump
+        border_active: Color::Rgb(136, 192, 208), // nord frost cyan — keep
+        border_inactive: Color::Rgb(67, 76, 94),  // slightly dimmer for contrast
+        border_accent: Color::Rgb(163, 190, 240), // brighter blue accent
+        border_subtle: Color::Rgb(50, 56, 70),
+        text_primary: Color::Rgb(242, 244, 248),  // brighter white for contrast
+        text_secondary: Color::Rgb(200, 208, 220),// clearer secondary
+        text_muted: Color::Rgb(110, 120, 140),    // more visible muted
         text_accent: Color::Rgb(136, 192, 208),
-        gain_green: Color::Rgb(163, 190, 140),
-        loss_red: Color::Rgb(191, 97, 106),
-        neutral: Color::Rgb(216, 222, 233),
-        live_green: Color::Rgb(163, 190, 140),
-        stale_yellow: Color::Rgb(235, 203, 139),
-        key_hint: Color::Rgb(235, 203, 139),
+        gain_green: Color::Rgb(145, 210, 130),    // more saturated, brighter green
+        loss_red: Color::Rgb(210, 85, 95),        // more vivid red
+        neutral: Color::Rgb(200, 208, 220),
+        live_green: Color::Rgb(145, 210, 130),
+        stale_yellow: Color::Rgb(240, 210, 130),  // warmer, brighter
+        key_hint: Color::Rgb(240, 210, 130),
         chart_line: Color::Rgb(136, 192, 208),
-        chart_grad_low: Color::Rgb(191, 97, 106),
-        chart_grad_mid: Color::Rgb(235, 203, 139),
-        chart_grad_high: Color::Rgb(163, 190, 140),
+        chart_grad_low: Color::Rgb(210, 85, 95),
+        chart_grad_mid: Color::Rgb(240, 210, 130),
+        chart_grad_high: Color::Rgb(145, 210, 130),
         cat_equity: Color::Rgb(129, 161, 193),
-        cat_crypto: Color::Rgb(208, 135, 112),
-        cat_forex: Color::Rgb(163, 190, 140),
-        cat_commodity: Color::Rgb(235, 203, 139),
-        cat_fund: Color::Rgb(180, 142, 173),
-        cat_cash: Color::Rgb(216, 222, 233),
+        cat_crypto: Color::Rgb(220, 140, 100),    // warmer, more saturated
+        cat_forex: Color::Rgb(145, 210, 130),
+        cat_commodity: Color::Rgb(240, 210, 130),
+        cat_fund: Color::Rgb(190, 140, 185),      // more vivid purple
+        cat_cash: Color::Rgb(200, 208, 220),
     }
 }
 
-/// Dracula — purple/dark with vivid accents
+/// Dracula — deep purple/dark with vivid, punchy accents.
+/// Leans hard into purples, magentas, and cyans. Unapologetically bold.
 pub fn dracula() -> Theme {
     Theme {
         name: "dracula",
-        surface_0: Color::Rgb(40, 42, 54),
-        surface_1: Color::Rgb(48, 51, 65),
-        surface_1_alt: Color::Rgb(44, 47, 60),
-        surface_2: Color::Rgb(55, 58, 72),
-        surface_3: Color::Rgb(68, 71, 90),
-        border_active: Color::Rgb(189, 147, 249),
-        border_inactive: Color::Rgb(98, 114, 164),
-        border_accent: Color::Rgb(255, 121, 198),
-        border_subtle: Color::Rgb(55, 58, 72),
-        text_primary: Color::Rgb(248, 248, 242),
-        text_secondary: Color::Rgb(189, 194, 210),
-        text_muted: Color::Rgb(98, 114, 164),
-        text_accent: Color::Rgb(189, 147, 249),
-        gain_green: Color::Rgb(80, 250, 123),
-        loss_red: Color::Rgb(255, 85, 85),
-        neutral: Color::Rgb(189, 194, 210),
-        live_green: Color::Rgb(80, 250, 123),
-        stale_yellow: Color::Rgb(241, 250, 140),
-        key_hint: Color::Rgb(241, 250, 140),
-        chart_line: Color::Rgb(139, 233, 253),
-        chart_grad_low: Color::Rgb(255, 85, 85),
-        chart_grad_mid: Color::Rgb(241, 250, 140),
-        chart_grad_high: Color::Rgb(80, 250, 123),
-        cat_equity: Color::Rgb(139, 233, 253),
-        cat_crypto: Color::Rgb(255, 184, 108),
-        cat_forex: Color::Rgb(80, 250, 123),
-        cat_commodity: Color::Rgb(241, 250, 140),
-        cat_fund: Color::Rgb(189, 147, 249),
-        cat_cash: Color::Rgb(189, 194, 210),
+        surface_0: Color::Rgb(30, 28, 44),       // deeper, more purple-tinted base
+        surface_1: Color::Rgb(40, 38, 58),        // purple-dark panel
+        surface_1_alt: Color::Rgb(36, 34, 52),    // stripe
+        surface_2: Color::Rgb(50, 46, 70),        // richer purple header
+        surface_3: Color::Rgb(65, 58, 90),        // vivid purple selection
+        border_active: Color::Rgb(200, 150, 255), // brighter purple
+        border_inactive: Color::Rgb(90, 80, 140), // purple-tinted inactive
+        border_accent: Color::Rgb(255, 100, 200), // hot pink accent
+        border_subtle: Color::Rgb(50, 46, 70),
+        text_primary: Color::Rgb(250, 250, 245),
+        text_secondary: Color::Rgb(180, 175, 210),// purple-tinted secondary
+        text_muted: Color::Rgb(100, 95, 140),     // purple muted
+        text_accent: Color::Rgb(200, 150, 255),   // bright purple
+        gain_green: Color::Rgb(80, 255, 130),     // punchy green
+        loss_red: Color::Rgb(255, 70, 80),        // vivid red
+        neutral: Color::Rgb(180, 175, 210),
+        live_green: Color::Rgb(80, 255, 130),
+        stale_yellow: Color::Rgb(245, 250, 140),
+        key_hint: Color::Rgb(245, 250, 140),
+        chart_line: Color::Rgb(130, 230, 255),    // bright cyan
+        chart_grad_low: Color::Rgb(255, 70, 80),
+        chart_grad_mid: Color::Rgb(245, 250, 140),
+        chart_grad_high: Color::Rgb(80, 255, 130),
+        cat_equity: Color::Rgb(130, 230, 255),    // bright cyan
+        cat_crypto: Color::Rgb(255, 170, 100),    // warm orange
+        cat_forex: Color::Rgb(80, 255, 130),      // punchy green
+        cat_commodity: Color::Rgb(245, 250, 140), // electric yellow
+        cat_fund: Color::Rgb(200, 150, 255),      // bright purple
+        cat_cash: Color::Rgb(180, 175, 210),
     }
 }
 
-/// Solarized Dark — teal-tinted dark with warm/cool accents
+/// Solarized Dark — teal-tinted dark with warm/cool accent balance.
+/// Enhanced contrast and brighter accents while preserving the distinctive teal feel.
 pub fn solarized() -> Theme {
     Theme {
         name: "solarized",
-        surface_0: Color::Rgb(0, 43, 54),
-        surface_1: Color::Rgb(7, 54, 66),
-        surface_1_alt: Color::Rgb(4, 49, 60),
-        surface_2: Color::Rgb(15, 63, 75),
-        surface_3: Color::Rgb(30, 80, 92),
-        border_active: Color::Rgb(38, 139, 210),
-        border_inactive: Color::Rgb(88, 110, 117),
-        border_accent: Color::Rgb(108, 113, 196),
+        surface_0: Color::Rgb(0, 36, 46),        // slightly darker base for depth
+        surface_1: Color::Rgb(0, 43, 54),         // canonical solarized base03
+        surface_1_alt: Color::Rgb(3, 48, 60),     // subtle stripe
+        surface_2: Color::Rgb(7, 54, 66),          // canonical base02
+        surface_3: Color::Rgb(20, 72, 85),         // brighter selection
+        border_active: Color::Rgb(42, 161, 232),   // brighter blue for punch
+        border_inactive: Color::Rgb(75, 100, 108), // slightly dimmer
+        border_accent: Color::Rgb(120, 120, 210),  // brighter violet
         border_subtle: Color::Rgb(7, 54, 66),
-        text_primary: Color::Rgb(238, 232, 213),
-        text_secondary: Color::Rgb(147, 161, 161),
+        text_primary: Color::Rgb(245, 240, 225),   // slightly brighter
+        text_secondary: Color::Rgb(160, 175, 175), // clearer
         text_muted: Color::Rgb(88, 110, 117),
-        text_accent: Color::Rgb(38, 139, 210),
-        gain_green: Color::Rgb(133, 153, 0),
-        loss_red: Color::Rgb(220, 50, 47),
-        neutral: Color::Rgb(147, 161, 161),
-        live_green: Color::Rgb(133, 153, 0),
-        stale_yellow: Color::Rgb(181, 137, 0),
-        key_hint: Color::Rgb(181, 137, 0),
-        chart_line: Color::Rgb(38, 139, 210),
-        chart_grad_low: Color::Rgb(220, 50, 47),
-        chart_grad_mid: Color::Rgb(181, 137, 0),
-        chart_grad_high: Color::Rgb(133, 153, 0),
-        cat_equity: Color::Rgb(38, 139, 210),
-        cat_crypto: Color::Rgb(203, 75, 22),
-        cat_forex: Color::Rgb(133, 153, 0),
-        cat_commodity: Color::Rgb(181, 137, 0),
-        cat_fund: Color::Rgb(108, 113, 196),
-        cat_cash: Color::Rgb(147, 161, 161),
+        text_accent: Color::Rgb(42, 161, 232),
+        gain_green: Color::Rgb(150, 175, 0),       // brighter, more saturated
+        loss_red: Color::Rgb(235, 55, 52),          // slightly brighter
+        neutral: Color::Rgb(160, 175, 175),
+        live_green: Color::Rgb(150, 175, 0),
+        stale_yellow: Color::Rgb(200, 150, 0),     // richer gold
+        key_hint: Color::Rgb(200, 150, 0),
+        chart_line: Color::Rgb(42, 161, 232),
+        chart_grad_low: Color::Rgb(235, 55, 52),
+        chart_grad_mid: Color::Rgb(200, 150, 0),
+        chart_grad_high: Color::Rgb(150, 175, 0),
+        cat_equity: Color::Rgb(42, 161, 232),
+        cat_crypto: Color::Rgb(215, 85, 30),       // brighter orange
+        cat_forex: Color::Rgb(150, 175, 0),
+        cat_commodity: Color::Rgb(200, 150, 0),
+        cat_fund: Color::Rgb(120, 120, 210),
+        cat_cash: Color::Rgb(160, 175, 175),
     }
 }
 
-/// Gruvbox Dark — warm retro brown/orange palette
+/// Gruvbox Dark — warm retro palette with bright, saturated accents.
+/// Leans into the classic Gruvbox identity: aqua, lime, orange, pink on warm dark.
+/// Distinct from Miasma: Gruvbox is retro-bright, Miasma is atmospheric/smoky.
 pub fn gruvbox() -> Theme {
     Theme {
         name: "gruvbox",
-        surface_0: Color::Rgb(40, 40, 40),
-        surface_1: Color::Rgb(50, 48, 47),
-        surface_1_alt: Color::Rgb(45, 44, 43),
-        surface_2: Color::Rgb(60, 56, 54),
-        surface_3: Color::Rgb(80, 73, 69),
-        border_active: Color::Rgb(215, 153, 33),
-        border_inactive: Color::Rgb(102, 92, 84),
-        border_accent: Color::Rgb(250, 189, 47),
-        border_subtle: Color::Rgb(60, 56, 54),
-        text_primary: Color::Rgb(235, 219, 178),
-        text_secondary: Color::Rgb(189, 174, 147),
-        text_muted: Color::Rgb(124, 111, 100),
-        text_accent: Color::Rgb(250, 189, 47),
-        gain_green: Color::Rgb(184, 187, 38),
-        loss_red: Color::Rgb(251, 73, 52),
-        neutral: Color::Rgb(189, 174, 147),
+        surface_0: Color::Rgb(28, 28, 28),       // gruvbox hard dark bg
+        surface_1: Color::Rgb(40, 40, 40),        // standard bg
+        surface_1_alt: Color::Rgb(36, 36, 36),    // stripe
+        surface_2: Color::Rgb(50, 48, 47),        // header
+        surface_3: Color::Rgb(70, 65, 60),        // selection
+        border_active: Color::Rgb(250, 189, 47),  // bright yellow — signature gruvbox
+        border_inactive: Color::Rgb(90, 82, 75),  // dimmer
+        border_accent: Color::Rgb(254, 128, 25),  // bright orange accent
+        border_subtle: Color::Rgb(50, 48, 47),
+        text_primary: Color::Rgb(251, 241, 199),  // gruvbox fg0 (bright cream)
+        text_secondary: Color::Rgb(213, 196, 161),// gruvbox fg2
+        text_muted: Color::Rgb(124, 111, 100),    // gruvbox gray
+        text_accent: Color::Rgb(250, 189, 47),    // bright yellow
+        gain_green: Color::Rgb(184, 187, 38),     // gruvbox bright green
+        loss_red: Color::Rgb(251, 73, 52),        // gruvbox bright red
+        neutral: Color::Rgb(213, 196, 161),
         live_green: Color::Rgb(184, 187, 38),
         stale_yellow: Color::Rgb(250, 189, 47),
         key_hint: Color::Rgb(250, 189, 47),
-        chart_line: Color::Rgb(131, 165, 152),
+        chart_line: Color::Rgb(142, 192, 124),    // gruvbox bright aqua-green
         chart_grad_low: Color::Rgb(251, 73, 52),
         chart_grad_mid: Color::Rgb(250, 189, 47),
         chart_grad_high: Color::Rgb(184, 187, 38),
-        cat_equity: Color::Rgb(131, 165, 152),
-        cat_crypto: Color::Rgb(254, 128, 25),
-        cat_forex: Color::Rgb(184, 187, 38),
-        cat_commodity: Color::Rgb(250, 189, 47),
-        cat_fund: Color::Rgb(211, 134, 155),
-        cat_cash: Color::Rgb(189, 174, 147),
+        cat_equity: Color::Rgb(131, 165, 152),    // gruvbox aqua
+        cat_crypto: Color::Rgb(254, 128, 25),     // bright orange
+        cat_forex: Color::Rgb(184, 187, 38),      // bright green
+        cat_commodity: Color::Rgb(250, 189, 47),  // bright yellow
+        cat_fund: Color::Rgb(211, 134, 155),      // gruvbox pink
+        cat_cash: Color::Rgb(213, 196, 161),      // warm cream
     }
 }
 
