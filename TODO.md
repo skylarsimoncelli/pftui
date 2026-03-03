@@ -5,8 +5,7 @@
 
 ## P0
 
-- [ ] **Fix chart ratios: USD→USDBTC, GBP→GBPBTC** — USD shows BTCUSD (should be USDBTC), GBP shows BTCUSD (should be GBPBTC). Ratio should always be {ASSET}/{BENCHMARK}. Files: `app.rs` (chart_variants_for_position), `price_chart.rs` (compute_ratio)
-- [ ] **Fix commodities missing /BTC ratio** — Gold has /BTC variant but Silver and others don't. All commodities need /BTC ratio. Files: `app.rs` (chart_variants_for_position, commodity branch)
+
 - [ ] **Fix U.UN (Sprott Uranium) chart** — TSX trust unit ticker broken. `normalize_yahoo_symbol()` may need fixing or graceful "No chart data" if unresolvable. Files: `price/yahoo.rs`, `price_chart.rs` (empty state)
 - [ ] **Show 24h % change in search results** — Each `/` search result row should display 24h change color-coded. Files: `search_overlay.rs`
 

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Fix chart ratio labels and add /BTC to all assets
+
+- What: Fixed USD chart ratio labels from misleading "USD/Gold", "USD/BTC" to honest "DXY/Gold", "DXY/SPX", "DXY/BTC" (since DXY is the actual proxy used, not literal USD). Added DXY/SPX ratio variant for USD cash positions. Extended /BTC ratio to all equities and funds (previously only commodities had it), so SLV, VTI, AAPL etc. now show /BTC comparison charts.
+- Why: P0 — ratio labels should honestly reflect the underlying data. Commodities-only /BTC restriction was arbitrary; comparing any asset to BTC is useful context.
+- Files: `src/app.rs` (chart_variants_for_position USD/cash branches, generic equity/fund/commodity branch, 4 updated tests)
+- Tests: 803 passing, 4 updated (test_usd_cash_variants, test_regular_equity_has_ratio_variants, test_fund_has_ratio_variants, test_equity_has_btc_ratio)
+- TODO: Fix chart ratios (P0), Fix commodities missing /BTC ratio (P0)
+
 ### 2026-03-03 — Click column headers to sort positions table
 
 - What: added mouse click-to-sort on column headers in the positions table. Clicking the Asset column sorts by name, Gain% sorts by gain percentage, and Alloc% sorts by allocation. Clicking an already-active sort column toggles between ascending and descending. Works in both full (8-column) and privacy (6-column) table layouts. Column hit detection computes boundaries from the same width constraints used by the render code (accounting for table borders, column spacing, and the 57%/43% left/right panel split in wide mode). Sort flash animation triggers on column header clicks just like keyboard sort changes. Non-sortable columns (Qty, Price, Day%, 52W, Trend) are ignored on click.
