@@ -195,3 +195,16 @@
 ## P0 — Portfolio Value History Sine Wave Bug (Owner Report)
 
 
+
+## P0 — Search Overlay Enhancements (Owner Request)
+
+- [ ] **Show 24h % change in search results** — Each result row in the `/` search overlay should display the 24-hour percentage change alongside the price. Color-coded green/red. Pull from cached price history (compare current price to previous day close). If no history available, show "—". Files: `src/tui/views/search_overlay.rs` (render row), `src/app.rs` (pass history data to overlay).
+- [ ] **Full asset detail popup on Enter** — When pressing Enter on a search result, open a full-size popup overlay (not navigate to position detail). The popup should show everything we know about the asset:
+  - Header: Symbol, full name, category badge
+  - Price section: current price, 24h change ($ and %), 7D change, 30D change, 52W high/low
+  - Chart: full braille price chart with SMA/BB overlays (reuse existing chart renderer)
+  - Technicals: SMA(20), SMA(50), Bollinger Band width, RSI if computable
+  - Portfolio context: if in portfolio → show quantity, cost basis, gain/loss, allocation %. If in watchlist → show "Watching". If neither → show "Not in portfolio"
+  - Close with Esc (returns to search overlay, not main screen)
+  - Should be a large centered popup (80-90% of screen) with drop shadow
+  - Files: new `src/tui/views/asset_detail_popup.rs`, `src/app.rs` (state for popup), `src/tui/ui.rs` (render dispatch), `src/tui/views/search_overlay.rs` (Enter handler)
