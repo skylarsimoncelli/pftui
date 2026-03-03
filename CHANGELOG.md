@@ -582,3 +582,11 @@
 - Files: `src/tui/theme.rs` (added `SHADOW_OPACITY` constant, `render_popup_shadow()` function, imported `ratatui::prelude::*`, 6 new tests), `src/tui/views/help.rs` (call shadow before Clear), `src/tui/views/position_detail.rs` (call shadow before Clear)
 - Tests: 6 new tests (opacity constant valid, shadow darker than surface, right edge placement, bottom edge placement, clips to bounds without panic, no shadow on popup top-left). Total: 572 tests passing.
 - TODO: Add shadow effect on popups (P2)
+
+### 2026-03-03 — Add inline fuzzy search suggestions to setup wizard
+
+- What: replaced the old type-then-enter symbol resolution in the setup wizard with a live interactive search using crossterm raw mode. As the user types characters, ranked fuzzy matches from the 130+ symbol database appear inline below the input prompt, updating in real-time. Up to 8 suggestions display with number keys [1]-[8], ticker, full name, and category. Users can quick-select with number keys 1-9, navigate with Up/Down arrows, accept with Enter, or cancel with Esc/Ctrl-C. Match count shown on the prompt line ("3 matches" or "8 of 24 matches"). Works in both full and percentage setup modes. The old `resolve_symbol` function was removed entirely as the interactive search subsumes all its functionality.
+- Why: P0 setup wizard improvement — the old flow required typing a full symbol, pressing Enter, then choosing from a numbered list if ambiguous. The new inline suggestions make the setup feel like a modern autocomplete: type "gol" and immediately see Gold (GC=F), Gold ETF (GLD), Gold Miners (GDX) ranked below the cursor. This dramatically reduces friction for new users who don't know exact ticker symbols. Also fixed a pre-existing clippy warning in theme.rs (repeat→repeat_n).
+- Files: `src/commands/setup.rs` (new `interactive_symbol_search()` function with crossterm raw mode, `clear_suggestions()` helper, `MAX_SUGGESTIONS` constant; removed old `resolve_symbol()`; rewired both `full_mode_setup` and `percentage_mode_setup`), `src/tui/theme.rs` (clippy fix)
+- Tests: 578 tests passing (no new tests — interactive terminal I/O is inherently hard to unit test; fuzzy search logic already covered by 12 existing tests in `asset_names`).
+- TODO: Setup wizard inline suggestions (P0)

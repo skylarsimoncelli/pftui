@@ -100,7 +100,7 @@
 
 ## P0 — Setup & Pricing Bugs (Owner Report)
 
-- [ ] **Setup wizard inline suggestions** — The fuzzy matching backend is done (5-tier ranked scoring in search_names). Next step: show ranked matches inline as the user types in the setup wizard, instead of requiring Enter first. Needs raw terminal mode for character-by-character input with live result display below the prompt. Files: `src/commands/setup.rs` (interactive input loop with crossterm raw mode).
+
 
 
 ## P0 — Performance Fix (Owner Request)
