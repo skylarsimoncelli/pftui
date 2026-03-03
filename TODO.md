@@ -57,6 +57,11 @@
 - [ ] **Add candlestick chart variant** — OHLC candlestick rendering using braille/block characters. Green body for close > open, red for close < open. Wicks as thin lines. Requires OHLC data in HistoryRecord. Files: `src/models/price.rs`, `src/price/yahoo.rs`, `src/tui/widgets/price_chart.rs`.
 
 
+## P1 — Markets & Economy Tab Enhancements (Feedback)
+
+- [ ] **[Feedback] Enhanced Markets tab with mini-charts** — Replace the simple price list in the Markets tab (tab 3) with richer data: add a 7-day mini braille sparkline per row, momentum indicator (e.g. RSI or simple momentum %), and volume context. Consider a heat-map-style row background tint based on daily change magnitude. Files: `src/tui/views/markets.rs` (add sparkline column, momentum calc), reuse `build_sparkline_spans()` from positions view.
+- [ ] **[Feedback] Economy tab context enrichment** — Add last release date, trend arrows (↑/↓/→), and consensus vs actual context to economy indicators. For treasury yields, show the yield curve status (normal/inverted). Files: `src/tui/views/economy.rs`.
+
 ## P2 — Scenario & Analytics (Feedback)
 
 - [ ] **[Feedback] Add `--what-if` flag to summary** — `pftui summary --what-if GC=F:5500,BTC:55000` to model hypothetical price scenarios. Compute portfolio value and allocation under hypothetical prices. Transformative for scenario planning. Files: `src/commands/summary.rs` (parse what-if pairs, override cached prices for computation).
@@ -141,25 +146,39 @@
 
 ## Feedback Summary
 
-**Last reviewed:** 2026-03-02
+**Last reviewed:** 2026-03-03
 
-| Tester | Usefulness | Overall | Trend |
-|--------|-----------|---------|-------|
-| Sentinel Main (Interactive Review) | 25% | 40% | — (first entry) |
-| Evening Eventuality Planner | 20% | 38% | — (first entry) |
-| Portfolio Analyst | — | — | No data yet |
+| Tester | Routine | Usefulness | Overall | Trend |
+|--------|---------|-----------|---------|-------|
+| Sentinel Main | Interactive TUI Review | 75% | 78% | ↑↑ (+50/+38 from CLI review) |
+| Sentinel Main | CLI Review (prior) | 25% | 40% | — (baseline) |
+| Evening Eventuality Planner | Headless CLI | 20% | 38% | → (no new entry) |
+| Portfolio Analyst | — | — | — | No data yet |
 
-**Lowest scorer:** Evening Eventuality Planner (20% usefulness, 38% overall) — entirely headless workflow, blocked by lack of CLI price refresh.
+**Lowest scorer:** Evening Eventuality Planner (20% usefulness, 38% overall) — headless workflow. Their top requests (`pftui refresh`, `--period`, `--group-by`) are now ALL implemented but they haven't re-evaluated yet. Expect significant score improvement on next review.
+
+**Highest scorer:** Sentinel Main TUI Review (75/78) — strong validation of TUI quality. Rated visual design, sparklines, ticker tape, and information hierarchy highly. Remaining gaps are analytical depth (correlation, benchmarks, risk metrics).
 
 **Top 3 priorities based on feedback:**
-1. **`pftui refresh` — headless price command** (P0) — Both testers' #1 request. Without it, 4 of 6 positions show N/A outside the TUI. This single feature transforms the tool from a ledger to a live portfolio tracker.
-2. ~~**Period-based P&L (`--period` flag)**~~ (P0, DONE) — Both testers need daily/weekly/monthly change, not just total gain from cost basis. Critical for daily briefings and monitoring routines.
-3. **Category-grouped summary (`--group-by`)** (P0) — Both testers want "Metals 33%, Crypto 18%, Cash 49%" style output. Currently allocation percentages are meaningless when positions lack prices.
+1. ~~**`pftui refresh`**~~ ✅ DONE — ~~**`--period` flag**~~ ✅ DONE — ~~**`--group-by category`**~~ ✅ DONE — All three prior top priorities shipped.
+2. **Native multi-currency with live FX conversion** (P1) — Shared pain point from both testers. GBP stored as USD equivalent masks currency risk. Base currency selection is done; full FX conversion is next.
+3. **Enhanced Markets tab** (P1) — Sentinel TUI review requests mini-charts, heat maps, momentum indicators. Current tab is a simple price list. High-impact for the 78% → 85%+ push.
+
+**Completed since last review:**
+- ✅ `pftui refresh` (headless price command)
+- ✅ `--period` flag (daily/weekly/monthly P&L)
+- ✅ `--group-by category` (category allocation)
+- ✅ Day P&L in header
+- ✅ `pftui value` / `pftui brief` / `pftui watchlist` CLI commands
+- ✅ `pftui set-cash` command
+- ✅ CSV decimal rounding, `--notes` flag on list-tx
+- ✅ Configurable base currency with symbol display
 
 **Notes:**
-- All scores are initial baselines — no trends yet. Third tester (Portfolio Analyst) has not submitted feedback.
-- The overwhelming signal: **CLI/headless capabilities are the critical gap**. The TUI is well-regarded architecturally, but both testers run headless workflows and get minimal value without CLI price refresh.
-- Multi-currency (GBP stored as USD) is a shared pain point but lower priority than price refresh.
+- Sentinel's TUI score (78%) vs CLI score (40%) confirms: the TUI is strong, CLI/headless was the gap, and we've now closed most of it.
+- Evening Eventuality Planner hasn't submitted a follow-up review — their 3 top requests are all shipped. Re-evaluation should show major improvement.
+- Portfolio Analyst still has no data. Third tester activation remains a gap.
+- Next score ceiling will be hit by analytical features: correlation, benchmarks, risk metrics, what-if scenarios. These are P2/P3 items that collectively represent the "70% → professional tool" gap Sentinel identified.
 
 ## P1 — Mouse Support (Owner Request)
 
