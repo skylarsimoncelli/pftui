@@ -8,6 +8,7 @@ use rust_decimal_macros::dec;
 use crate::app::App;
 use crate::models::asset::AssetCategory;
 use crate::tui::theme;
+use crate::tui::widgets::skeleton;
 
 /// Braille-style sparkline characters (bottom to top).
 const SPARKLINE_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -74,7 +75,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
 
-    let rows: Vec<Row> = items
+    // Show skeleton placeholder rows while waiting for initial price data
+    let rows: Vec<Row> = if !app.prices_live {
+        let col_widths = [6, 12, 8, 10, 7, 5, 6];
+        skeleton::skeleton_rows(t, app.tick_count, &col_widths, 7)
+    } else {
+    items
         .iter()
         .enumerate()
         .map(|(i, item)| {
@@ -157,7 +163,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             .style(Style::default().bg(row_bg))
             .height(1)
         })
-        .collect();
+        .collect()
+    };
 
     let widths = [
         Constraint::Length(8),   // Symbol

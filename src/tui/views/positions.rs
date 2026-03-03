@@ -10,6 +10,7 @@ use crate::config::PortfolioMode;
 use crate::models::asset::AssetCategory;
 use crate::models::price::HistoryRecord;
 use crate::tui::theme;
+use crate::tui::widgets::skeleton;
 
 const SPARKLINE_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
@@ -242,6 +243,13 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
     let col_count = 8;
     let mut rows: Vec<Row> = Vec::new();
+
+    // Show skeleton placeholder rows while waiting for initial data
+    if positions.is_empty() && !app.prices_live {
+        let col_widths = [12, 6, 10, 5, 6, 5, 9, 6];
+        rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, col_count);
+    }
+
     let mut last_category: Option<AssetCategory> = None;
 
     for (i, pos) in positions.iter().enumerate() {
@@ -401,6 +409,13 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
     let privacy_col_count = 6;
     let mut rows: Vec<Row> = Vec::new();
+
+    // Show skeleton placeholder rows while waiting for initial data
+    if positions.is_empty() && !app.prices_live {
+        let col_widths = [14, 10, 5, 6, 9, 6];
+        rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, privacy_col_count);
+    }
+
     let mut last_category: Option<AssetCategory> = None;
 
     for (i, pos) in positions.iter().enumerate() {

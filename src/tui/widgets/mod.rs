@@ -7,5 +7,6 @@ pub mod price_chart;
 pub mod regime_assets;
 pub mod regime_bar;
 pub mod sidebar;
+pub mod skeleton;
 pub mod status_bar;
 pub mod top_movers;

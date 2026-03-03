@@ -9,6 +9,7 @@ use crate::app::App;
 use crate::models::asset::AssetCategory;
 use crate::models::price::HistoryRecord;
 use crate::tui::theme;
+use crate::tui::widgets::skeleton;
 
 /// Braille sparkline characters for mini-charts (same as markets view).
 const SPARKLINE_CHARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -97,10 +98,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     .height(1);
 
     let mut rows: Vec<Row> = Vec::with_capacity(items.len() + 4);
+
+    // Show skeleton placeholder rows while waiting for initial price data
+    let show_skeleton = !app.prices_live;
+    if show_skeleton {
+        let col_widths = [6, 12, 10, 10, 7, 5, 7, 4];
+        rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, 8);
+    }
+
     let mut prev_group: Option<EconomyGroup> = None;
     let yield_curve = yield_curve_status(app);
 
     for (i, item) in items.iter().enumerate() {
+        if show_skeleton {
+            break;
+        }
         // Insert yield curve status row after yields group ends
         if prev_group == Some(EconomyGroup::Yields) && item.group != EconomyGroup::Yields {
             let (curve_label, curve_color) = match yield_curve {
