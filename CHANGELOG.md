@@ -741,3 +741,10 @@
 - Files: new `src/commands/history.rs` (run, validate_date, full/percentage mode rendering, grouped-by-category output, 9 tests), `src/commands/mod.rs` (register module), `src/cli.rs` (History command variant with --date and --group-by args), `src/main.rs` (dispatch)
 - Tests: 744 passing (9 new: validate_date valid/invalid_format/invalid_day, history empty_db/no_txs_before_date/with_price_data/with_group_by/cash_always_priced/percentage_mode). Zero new clippy warnings.
 - TODO: Add historical price snapshots (P2 Scenario & Analytics)
+
+### 2026-03-03 — Add clickable theme and privacy indicators in header
+
+- What: added mouse click support for the theme name and privacy `[% view]` indicators in the header bar. Clicking the theme name (visible in non-compact mode) cycles through all 11 themes — same as pressing `t`. Clicking the `[% view]` indicator toggles privacy mode — same as pressing `p`. Column positions are dynamically tracked during header render by counting character widths of preceding spans, stored in `App` state, and checked during mouse click handling. Works correctly across all terminal widths and portfolio modes (privacy indicator only works in Full mode, not Percentage mode where it's always active).
+- Why: P2 Mouse Enhancements — Click theme/privacy indicators. Makes the TUI more discoverable and mouse-friendly. Users can now interact with all header elements: tabs (existing), theme, and privacy mode — without needing to know keyboard shortcuts.
+- Files: `src/app.rs` (2 new fields: `header_theme_col_range`, `header_privacy_col_range`; click handling in `handle_header_click`; 6 new tests), `src/tui/widgets/header.rs` (render signature `&App` → `&mut App`; column tracking for theme/privacy spans), `src/tui/views/help.rs` (2 new mouse help entries)
+- Tests: 755 passing (6 new: click_theme_indicator_cycles_theme, click_theme_indicator_outside_range_does_nothing, click_privacy_indicator_toggles_privacy, click_privacy_indicator_ignored_in_percentage_mode, click_targets_none_by_default, click_theme_no_crash_when_range_is_none). Zero new clippy warnings.
