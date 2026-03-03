@@ -9,8 +9,11 @@ use rusqlite::Connection;
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
 use crate::db::price_cache::get_all_cached_prices;
-use crate::db::price_history::get_prices_at_date;
+use crate::db::price_history::{get_history, get_prices_at_date};
 use crate::db::transactions::list_transactions;
+use crate::indicators::macd::{compute_macd, MacdResult};
+use crate::indicators::rsi::compute_rsi;
+use crate::indicators::sma::compute_sma;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
@@ -62,7 +65,7 @@ fn pct_change(current: Decimal, previous: Decimal) -> Option<Decimal> {
     }
 }
 
-pub fn run(conn: &Connection, config: &Config) -> Result<()> {
+pub fn run(conn: &Connection, config: &Config, technicals: bool) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
@@ -76,9 +79,16 @@ pub fn run(conn: &Connection, config: &Config) -> Result<()> {
     let symbols: Vec<String> = prices.keys().cloned().collect();
     let hist_1d = get_prices_at_date(conn, &symbols, &yesterday_str).unwrap_or_default();
 
+    // Load price history for technicals if requested
+    let technicals_data = if technicals {
+        compute_technicals_for_symbols(conn, &symbols)
+    } else {
+        HashMap::new()
+    };
+
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, &prices, &hist_1d),
-        PortfolioMode::Percentage => run_percentage(conn, config, &prices, &hist_1d),
+        PortfolioMode::Full => run_full(conn, config, &prices, &hist_1d, &technicals_data),
+        PortfolioMode::Percentage => run_percentage(conn, config, &prices, &hist_1d, &technicals_data),
     }
 }
 
@@ -87,6 +97,7 @@ fn run_full(
     config: &Config,
     prices: &HashMap<String, Decimal>,
     hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
 ) -> Result<()> {
     let txs = list_transactions(conn)?;
     if txs.is_empty() {
@@ -173,6 +184,11 @@ fn run_full(
     // Position table
     print_position_table_full(&positions, base, hist_1d);
 
+    // Technicals section
+    if !technicals_data.is_empty() {
+        print_technicals_section(&positions, technicals_data);
+    }
+
     // Warnings
     if priced_count < total_count {
         let missing = total_count - priced_count;
@@ -190,6 +206,7 @@ fn run_percentage(
     config: &Config,
     prices: &HashMap<String, Decimal>,
     hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
 ) -> Result<()> {
     let allocs = list_allocations(conn)?;
     if allocs.is_empty() {
@@ -249,6 +266,11 @@ fn run_percentage(
         println!("| {} | {} | {} | {} | {} |", symbol_display, pos.category, price_str, day_str, alloc_str);
     }
 
+    // Technicals section
+    if !technicals_data.is_empty() {
+        print_technicals_section(&positions, technicals_data);
+    }
+
     let missing = positions.len() - priced.len();
     if missing > 0 {
         println!(
@@ -259,6 +281,154 @@ fn run_percentage(
     }
 
     Ok(())
+}
+
+// ──────────────────────────────────────────────────────────────
+// Technicals
+// ──────────────────────────────────────────────────────────────
+
+/// Snapshot of technical indicator values for a single symbol.
+#[derive(Debug)]
+struct TechnicalSnapshot {
+    rsi_14: Option<f64>,
+    macd: Option<MacdResult>,
+    sma_50: Option<f64>,
+    sma_200: Option<f64>,
+}
+
+/// Label the RSI value for quick reading.
+fn rsi_label(rsi: f64) -> &'static str {
+    if rsi >= 70.0 {
+        "overbought"
+    } else if rsi <= 30.0 {
+        "oversold"
+    } else {
+        "neutral"
+    }
+}
+
+/// Label the MACD signal.
+fn macd_label(m: &MacdResult) -> &'static str {
+    if m.histogram > 0.0 {
+        "bullish"
+    } else if m.histogram < 0.0 {
+        "bearish"
+    } else {
+        "neutral"
+    }
+}
+
+/// Compute technical indicators for a list of symbols from cached price history.
+fn compute_technicals_for_symbols(
+    conn: &Connection,
+    symbols: &[String],
+) -> HashMap<String, TechnicalSnapshot> {
+    let mut result = HashMap::new();
+
+    for symbol in symbols {
+        // Need at least 200 days for SMA-200; fetch 250 to be safe
+        let history = match get_history(conn, symbol, 250) {
+            Ok(h) if h.len() >= 14 => h,
+            _ => continue,
+        };
+
+        let closes: Vec<f64> = history
+            .iter()
+            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+            .collect();
+
+        let rsi_values = compute_rsi(&closes, 14);
+        let rsi_14 = rsi_values.iter().rev().find_map(|v| *v);
+
+        let macd_values = compute_macd(&closes, 12, 26, 9);
+        let macd = macd_values.iter().rev().find_map(|v| *v);
+
+        let sma_50_values = compute_sma(&closes, 50);
+        let sma_50 = sma_50_values.iter().rev().find_map(|v| *v);
+
+        let sma_200_values = compute_sma(&closes, 200);
+        let sma_200 = sma_200_values.iter().rev().find_map(|v| *v);
+
+        result.insert(
+            symbol.clone(),
+            TechnicalSnapshot {
+                rsi_14,
+                macd,
+                sma_50,
+                sma_200,
+            },
+        );
+    }
+
+    result
+}
+
+/// Print a technicals section for all positions that have indicator data.
+fn print_technicals_section(
+    positions: &[Position],
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
+) {
+    // Only show positions that have technicals (skip cash)
+    let relevant: Vec<&Position> = positions
+        .iter()
+        .filter(|p| {
+            p.category != AssetCategory::Cash && technicals_data.contains_key(&p.symbol)
+        })
+        .collect();
+
+    if relevant.is_empty() {
+        return;
+    }
+
+    println!("## Technicals\n");
+    println!("| Symbol | RSI(14) | Signal | MACD | Hist | SMA(50) | SMA(200) |");
+    println!("|--------|--------:|--------|-----:|-----:|--------:|---------:|");
+
+    for pos in &relevant {
+        let snap = match technicals_data.get(&pos.symbol) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let rsi_str = snap
+            .rsi_14
+            .map(|v| format!("{:.1}", v))
+            .unwrap_or_else(|| "—".to_string());
+
+        let rsi_sig = snap
+            .rsi_14
+            .map(|v| rsi_label(v).to_string())
+            .unwrap_or_else(|| "—".to_string());
+
+        let macd_str = snap
+            .macd
+            .map(|m| format!("{:.2}", m.macd))
+            .unwrap_or_else(|| "—".to_string());
+
+        let hist_str = snap
+            .macd
+            .map(|m| {
+                let sign = if m.histogram >= 0.0 { "+" } else { "" };
+                format!("{}{:.2} ({})", sign, m.histogram, macd_label(&m))
+            })
+            .unwrap_or_else(|| "—".to_string());
+
+        let sma50_str = snap
+            .sma_50
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "—".to_string());
+
+        let sma200_str = snap
+            .sma_200
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "—".to_string());
+
+        println!(
+            "| {} | {} | {} | {} | {} | {} | {} |",
+            pos.symbol, rsi_str, rsi_sig, macd_str, hist_str, sma50_str, sma200_str,
+        );
+    }
+    println!();
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -510,7 +680,7 @@ mod tests {
     fn brief_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -537,7 +707,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -605,7 +775,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -648,7 +818,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -663,7 +833,7 @@ mod tests {
         use crate::db::allocations::insert_allocation;
         insert_allocation(&conn, "BTC", AssetCategory::Crypto, dec!(50)).unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -730,5 +900,100 @@ mod tests {
 
         // Verify it doesn't panic — output goes to stdout
         print_category_allocation(&positions, dec!(2600));
+    }
+
+    #[test]
+    fn technicals_section_skips_cash_positions() {
+        let positions = vec![
+            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(150), Some(dec!(200)), Some(dec!(100000))),
+            make_position("USD", AssetCategory::Cash, dec!(50000), dec!(1), Some(dec!(1)), Some(dec!(100000))),
+        ];
+
+        let mut technicals = HashMap::new();
+        technicals.insert(
+            "AAPL".to_string(),
+            TechnicalSnapshot {
+                rsi_14: Some(55.0),
+                macd: Some(MacdResult { macd: 1.5, signal: 1.0, histogram: 0.5 }),
+                sma_50: Some(190.0),
+                sma_200: Some(175.0),
+            },
+        );
+
+        // Should not panic and should skip USD
+        print_technicals_section(&positions, &technicals);
+    }
+
+    #[test]
+    fn technicals_section_empty_data_produces_no_output() {
+        let positions = vec![
+            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(150), Some(dec!(200)), Some(dec!(100000))),
+        ];
+
+        let technicals: HashMap<String, TechnicalSnapshot> = HashMap::new();
+
+        // Should not produce output when no technicals data
+        print_technicals_section(&positions, &technicals);
+    }
+
+    #[test]
+    fn rsi_label_categories() {
+        assert_eq!(rsi_label(75.0), "overbought");
+        assert_eq!(rsi_label(70.0), "overbought");
+        assert_eq!(rsi_label(25.0), "oversold");
+        assert_eq!(rsi_label(30.0), "oversold");
+        assert_eq!(rsi_label(50.0), "neutral");
+    }
+
+    #[test]
+    fn macd_label_categories() {
+        let bullish = MacdResult { macd: 1.0, signal: 0.5, histogram: 0.5 };
+        assert_eq!(macd_label(&bullish), "bullish");
+        let bearish = MacdResult { macd: -1.0, signal: -0.5, histogram: -0.5 };
+        assert_eq!(macd_label(&bearish), "bearish");
+        let neutral = MacdResult { macd: 0.0, signal: 0.0, histogram: 0.0 };
+        assert_eq!(macd_label(&neutral), "neutral");
+    }
+
+    #[test]
+    fn brief_with_technicals_flag() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::transactions::insert_transaction;
+        use crate::models::transaction::{NewTransaction, TxType};
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(200),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2025-06-15T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        // With technicals=true, should succeed (no history means no indicators displayed)
+        let result = run(&conn, &config, true);
+        assert!(result.is_ok());
     }
 }

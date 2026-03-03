@@ -22,6 +22,10 @@ pub enum Command {
         /// Model hypothetical prices: SYMBOL:PRICE,SYMBOL:PRICE (e.g. GC=F:5500,BTC:55000)
         #[arg(long, value_name = "OVERRIDES")]
         what_if: Option<String>,
+
+        /// Show technical indicators (RSI, MACD, SMA) for each position
+        #[arg(long)]
+        technicals: bool,
     },
 
     /// Export portfolio data (JSON exports full snapshot; CSV exports positions only)
@@ -89,7 +93,11 @@ pub enum Command {
     Refresh,
 
     /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
-    Brief,
+    Brief {
+        /// Show technical indicators (RSI, MACD, SMA) for each position
+        #[arg(long)]
+        technicals: bool,
+    },
     /// Show total portfolio value with gain/loss (uses cached prices)
     Value,
 

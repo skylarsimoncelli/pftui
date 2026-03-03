@@ -50,7 +50,7 @@ fn main() -> Result<()> {
             commands::setup::run(&conn, &config, true)
         }
 
-        Some(Command::Summary { group_by, period, what_if }) => commands::summary::run(&conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref()),
+        Some(Command::Summary { group_by, period, what_if, technicals }) => commands::summary::run(&conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref(), technicals),
         Some(Command::Export { format, output }) => commands::export::run(&conn, &format, &config, output.as_deref()),
 
         Some(Command::ListTx { notes }) => {
@@ -111,7 +111,7 @@ fn main() -> Result<()> {
 
         Some(Command::Refresh) => commands::refresh::run(&conn, &config),
         Some(Command::Value) => commands::value::run(&conn, &config),
-        Some(Command::Brief) => commands::brief::run(&conn, &config),
+        Some(Command::Brief { technicals }) => commands::brief::run(&conn, &config, technicals),
         Some(Command::Watchlist) => commands::watchlist_cli::run(&conn, &config),
 
         Some(Command::SetCash { symbol, amount }) => {

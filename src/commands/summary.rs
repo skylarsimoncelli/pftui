@@ -11,8 +11,11 @@ use crate::cli::{SummaryGroupBy, SummaryPeriod};
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
 use crate::db::price_cache::get_all_cached_prices;
-use crate::db::price_history::get_prices_at_date;
+use crate::db::price_history::{get_history, get_prices_at_date};
 use crate::db::transactions::list_transactions;
+use crate::indicators::macd::{compute_macd, MacdResult};
+use crate::indicators::rsi::compute_rsi;
+use crate::indicators::sma::compute_sma;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
@@ -50,6 +53,7 @@ pub fn run(
     group_by: Option<&SummaryGroupBy>,
     period: Option<&SummaryPeriod>,
     what_if: Option<&str>,
+    technicals: bool,
 ) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
     let mut prices: HashMap<String, Decimal> = cached
@@ -96,9 +100,16 @@ pub fn run(
         print_what_if_banner(ov);
     }
 
+    // Load price history for technicals if requested
+    let technicals_data = if technicals {
+        compute_technicals_for_symbols(conn, &all_symbols)
+    } else {
+        HashMap::new()
+    };
+
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices, &hist_1d),
-        PortfolioMode::Percentage => run_percentage(conn, &prices, group_by, period, &historical_prices, &hist_1d),
+        PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices, &hist_1d, &technicals_data),
+        PortfolioMode::Percentage => run_percentage(conn, &prices, group_by, period, &historical_prices, &hist_1d, &technicals_data),
     }
 }
 
@@ -116,6 +127,7 @@ fn print_what_if_banner(overrides: &HashMap<String, Decimal>) {
     println!();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_full(
     conn: &Connection,
     config: &Config,
@@ -124,6 +136,7 @@ fn run_full(
     period: Option<&SummaryPeriod>,
     historical_prices: &Option<HashMap<String, Decimal>>,
     hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
 ) -> Result<()> {
     let txs = list_transactions(conn)?;
     if txs.is_empty() {
@@ -140,14 +153,21 @@ fn run_full(
     // Print daily P&L header if available
     print_daily_pnl_header(&positions, hist_1d, config);
 
-    match (group_by, period) {
+    let result = match (group_by, period) {
         (Some(SummaryGroupBy::Category), Some(p)) => {
             print_grouped_by_category_with_period(&positions, config, p, historical_prices)
         }
         (Some(SummaryGroupBy::Category), None) => print_grouped_by_category(&positions, config),
         (None, Some(p)) => print_full_table_with_period(&positions, config, p, historical_prices),
         (None, None) => print_full_table(&positions, config),
+    };
+
+    if !technicals_data.is_empty() {
+        println!();
+        print_technicals_table(&positions, technicals_data);
     }
+
+    result
 }
 
 fn run_percentage(
@@ -157,6 +177,7 @@ fn run_percentage(
     period: Option<&SummaryPeriod>,
     historical_prices: &Option<HashMap<String, Decimal>>,
     _hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
 ) -> Result<()> {
     let allocs = list_allocations(conn)?;
     if allocs.is_empty() {
@@ -166,14 +187,21 @@ fn run_percentage(
 
     let positions = compute_positions_from_allocations(&allocs, prices);
 
-    match (group_by, period) {
+    let result = match (group_by, period) {
         (Some(SummaryGroupBy::Category), Some(p)) => {
             print_grouped_by_category_pct_with_period(&positions, p, historical_prices)
         }
         (Some(SummaryGroupBy::Category), None) => print_grouped_by_category_pct(&positions),
         (None, Some(p)) => print_percentage_table_with_period(&positions, p, historical_prices),
         (None, None) => print_percentage_table(&positions),
+    };
+
+    if !technicals_data.is_empty() {
+        println!();
+        print_technicals_table(&positions, technicals_data);
     }
+
+    result
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -734,6 +762,147 @@ fn print_grouped_by_category_pct_with_period(
 }
 
 // ──────────────────────────────────────────────────────────────
+// Technicals
+// ──────────────────────────────────────────────────────────────
+
+/// Snapshot of technical indicator values for a single symbol.
+#[derive(Debug)]
+struct TechnicalSnapshot {
+    rsi_14: Option<f64>,
+    macd: Option<MacdResult>,
+    sma_50: Option<f64>,
+    sma_200: Option<f64>,
+}
+
+/// Compute technical indicators for a list of symbols from cached price history.
+fn compute_technicals_for_symbols(
+    conn: &Connection,
+    symbols: &[String],
+) -> HashMap<String, TechnicalSnapshot> {
+    let mut result = HashMap::new();
+
+    for symbol in symbols {
+        // Need at least 14 days for RSI; fetch 250 for SMA-200
+        let history = match get_history(conn, symbol, 250) {
+            Ok(h) if h.len() >= 14 => h,
+            _ => continue,
+        };
+
+        let closes: Vec<f64> = history
+            .iter()
+            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+            .collect();
+
+        let rsi_values = compute_rsi(&closes, 14);
+        let rsi_14 = rsi_values.iter().rev().find_map(|v| *v);
+
+        let macd_values = compute_macd(&closes, 12, 26, 9);
+        let macd = macd_values.iter().rev().find_map(|v| *v);
+
+        let sma_50_values = compute_sma(&closes, 50);
+        let sma_50 = sma_50_values.iter().rev().find_map(|v| *v);
+
+        let sma_200_values = compute_sma(&closes, 200);
+        let sma_200 = sma_200_values.iter().rev().find_map(|v| *v);
+
+        result.insert(
+            symbol.clone(),
+            TechnicalSnapshot {
+                rsi_14,
+                macd,
+                sma_50,
+                sma_200,
+            },
+        );
+    }
+
+    result
+}
+
+/// Print a technicals table for all positions that have indicator data.
+fn print_technicals_table(
+    positions: &[Position],
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
+) {
+    let relevant: Vec<&Position> = positions
+        .iter()
+        .filter(|p| {
+            p.category != AssetCategory::Cash && technicals_data.contains_key(&p.symbol)
+        })
+        .collect();
+
+    if relevant.is_empty() {
+        return;
+    }
+
+    println!(
+        "{:<8} {:>8} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Symbol", "RSI(14)", "Signal", "MACD", "Histogram", "SMA(50)", "SMA(200)"
+    );
+    println!("{}", "─".repeat(70));
+
+    for pos in &relevant {
+        let snap = match technicals_data.get(&pos.symbol) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let rsi_str = snap
+            .rsi_14
+            .map(|v| format!("{:.1}", v))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let rsi_sig = snap
+            .rsi_14
+            .map(|v| {
+                if v >= 70.0 {
+                    "overbought"
+                } else if v <= 30.0 {
+                    "oversold"
+                } else {
+                    "neutral"
+                }
+                .to_string()
+            })
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let macd_str = snap
+            .macd
+            .map(|m| format!("{:.2}", m.macd))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let hist_str = snap
+            .macd
+            .map(|m| {
+                let label = if m.histogram > 0.0 {
+                    "bull"
+                } else if m.histogram < 0.0 {
+                    "bear"
+                } else {
+                    "flat"
+                };
+                format!("{:+.2} {}", m.histogram, label)
+            })
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let sma50_str = snap
+            .sma_50
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let sma200_str = snap
+            .sma_200
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        println!(
+            "{:<8} {:>8} {:>10} {:>10} {:>10} {:>10} {:>10}",
+            pos.symbol, rsi_str, rsi_sig, macd_str, hist_str, sma50_str, sma200_str,
+        );
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────
 
@@ -951,7 +1120,7 @@ mod tests {
         }).unwrap();
 
         // Should succeed even with no history data
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None);
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false);
         assert!(result.is_ok());
     }
 
@@ -991,7 +1160,7 @@ mod tests {
         ]).unwrap();
 
         // Should succeed with historical data available
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None);
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false);
         assert!(result.is_ok());
     }
 
@@ -1025,7 +1194,7 @@ mod tests {
         }).unwrap();
 
         // Both --group-by category and --period together
-        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None);
+        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false);
         assert!(result.is_ok());
     }
 
@@ -1115,7 +1284,7 @@ mod tests {
         }).unwrap();
 
         // With what-if override, should succeed and use hypothetical price
-        let result = run(&conn, &config, None, None, Some("AAPL:300"));
+        let result = run(&conn, &config, None, None, Some("AAPL:300"), false);
         assert!(result.is_ok());
     }
 
@@ -1149,7 +1318,7 @@ mod tests {
         }).unwrap();
 
         // What-if + group-by should work together
-        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"));
+        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false);
         assert!(result.is_ok());
     }
 }
