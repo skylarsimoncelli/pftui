@@ -98,7 +98,7 @@
 
 ## P0 — Bugs & Layout Fixes (Owner Report)
 
-- [x] **Add easy position modification** — DONE (2026-03-02). Added `A` (add transaction inline form) and `X` (delete position with confirmation) from TUI. See CHANGELOG.
+
 
 ## P0 — CLI & Headless Gaps (Feedback)
 
@@ -113,7 +113,7 @@
 
 ## P1 — Import/Export (Owner Request)
 
-- [x] **Add `pftui import` command** — DONE (2026-03-02). `pftui import <path> [--mode replace|merge]`. Replace wipes and rebuilds (default), merge adds new entries without deleting. Validates mode match, symbols, quantities, dates, allocation pcts. Full export→import roundtrip tested. 15 new tests. See CHANGELOG.
+
 
 ## P1 — Mock Mode (Owner Request)
 
@@ -231,23 +231,15 @@
   - Portfolio chart (with timeframe gains: hourly/daily/weekly/monthly/yearly)
   - Key portfolio stats (total positions, top performer, worst performer)
   - Files: `src/tui/ui.rs`, possibly new `src/tui/views/portfolio_overview.rs`
-- [x] **Add "POSITIONS" section header** — DONE (2026-03-03). Section header bar above positions table with styled rule line. Files: `src/tui/theme.rs`, `src/tui/ui.rs`.
-- [x] **Add "ASSET OVERVIEW" header to right pane** — DONE (2026-03-03). Section header bar above asset header + chart. Files: `src/tui/theme.rs`, `src/tui/ui.rs`.
+
 
 ## P0 — Global Asset Search Overlay (Owner Request)
 
-- [ ] **Replace position-only search with full global asset search** — Pressing `/` on the default screen should open a full-screen search overlay (not just filter positions). The overlay should:
-  - Search ALL known assets (portfolio positions, watchlist, AND the full 130+ symbol database)
-  - Show rich market details for the selected result: current price, 24h change, 7D change, category, mini sparkline
-  - Allow drilling into any asset for full analysis (chart, stats, technicals) even if not in portfolio
-  - Fuzzy matching with ranked results (like the setup wizard search)
-  - Esc to dismiss, Enter to select and view asset detail
-  - This is the discovery/research entry point — not just a portfolio filter
-  - Files: `src/app.rs` (new search overlay state), new `src/tui/views/search_overlay.rs`, `src/tui/ui.rs` (render dispatch)
+
 
 ## P0 — Watchlist as Tab on Main Screen (Owner Request)
 
-- [x] **Move watchlist from separate page to main screen tab** — DONE (2026-03-03). Press `w` to toggle between Positions and Watchlist sub-tabs on the main screen. Section header switches between "POSITIONS" and "WATCHLIST". Removed old ViewMode::Watchlist and [5]Watch header tab entirely. 6 new tests. See CHANGELOG.
+
 
 ## P0 — Portfolio Value History Sine Wave Bug (Owner Report)
 
