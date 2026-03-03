@@ -92,7 +92,7 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(h_chunks[0]);
 
-            theme::render_section_header(frame, left_chunks[0], "POSITIONS", &app.theme);
+            theme::render_section_header(frame, left_chunks[0], "PORTFOLIO OVERVIEW", &app.theme);
             views::positions::render(frame, left_chunks[1], app);
             widgets::sidebar::render(frame, left_chunks[2], app);
         } else if left_height > 5 + theme::SECTION_HEADER_HEIGHT {
@@ -105,7 +105,7 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(h_chunks[0]);
 
-            theme::render_section_header(frame, left_chunks[0], "POSITIONS", &app.theme);
+            theme::render_section_header(frame, left_chunks[0], "PORTFOLIO OVERVIEW", &app.theme);
             views::positions::render(frame, left_chunks[1], app);
         } else {
             // Too short: table only

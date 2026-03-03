@@ -1,3 +1,6 @@
+//! Top movers widget — retained for potential future use. Currently superseded by portfolio_stats.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use ratatui::prelude::*;
