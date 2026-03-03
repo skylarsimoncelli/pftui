@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use yahoo_finance_api as yahoo;
 
 use crate::models::price::{HistoryRecord, PriceQuote};
@@ -26,14 +27,83 @@ pub fn normalize_yahoo_symbol(symbol: &str) -> String {
     symbol.to_string()
 }
 
+/// Fetch the FX rate to convert from `from_currency` to USD.
+/// Uses Yahoo Finance FX pairs (e.g., CADUSD=X).
+/// Returns the multiplier: price_in_foreign * rate = price_in_usd.
+async fn fetch_fx_rate(from_currency: &str) -> Result<Decimal> {
+    let pair = format!("{}USD=X", from_currency);
+    let provider = yahoo::YahooConnector::new()?;
+    let response = provider.get_latest_quotes(&pair, "1d").await?;
+    let quote = response.last_quote()?;
+    let rate = Decimal::try_from(quote.close)?;
+    if rate <= dec!(0) {
+        anyhow::bail!("Invalid FX rate for {}: {}", pair, rate);
+    }
+    Ok(rate)
+}
+
+/// Fetch the daily FX rate history to convert from `from_currency` to USD.
+/// Returns a map of date string → FX rate.
+async fn fetch_fx_history(
+    from_currency: &str,
+    days: u32,
+) -> Result<std::collections::HashMap<String, Decimal>> {
+    let pair = format!("{}USD=X", from_currency);
+    let provider = yahoo::YahooConnector::new()?;
+    let now = time::OffsetDateTime::now_utc();
+    let start = now - time::Duration::days(days as i64);
+    let response = provider.get_quote_history(&pair, start, now).await?;
+    let quotes = response.quotes()?;
+
+    let mut rates = std::collections::HashMap::new();
+    for q in &quotes {
+        let ts = chrono::DateTime::from_timestamp(q.timestamp as i64, 0);
+        if let Some(dt) = ts {
+            let date = dt.format("%Y-%m-%d").to_string();
+            if let Ok(rate) = Decimal::try_from(q.close) {
+                if rate > dec!(0) {
+                    rates.insert(date, rate);
+                }
+            }
+        }
+    }
+    Ok(rates)
+}
+
 pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
     let yahoo_sym = normalize_yahoo_symbol(symbol);
     let provider = yahoo::YahooConnector::new()?;
     let response = provider.get_latest_quotes(&yahoo_sym, "1d").await?;
     let quote = response.last_quote()?;
 
-    let price = Decimal::try_from(quote.close)?;
+    let mut price = Decimal::try_from(quote.close)?;
     let now = chrono::Utc::now().to_rfc3339();
+
+    // Check if the security trades in a non-USD currency and convert
+    let currency = response
+        .metadata()
+        .ok()
+        .and_then(|m| m.currency)
+        .unwrap_or_else(|| "USD".to_string());
+
+    if currency != "USD" {
+        // Convert to USD using live FX rate
+        match fetch_fx_rate(&currency).await {
+            Ok(fx_rate) => {
+                price = (price * fx_rate).round_dp(4);
+            }
+            Err(_) => {
+                // If FX fetch fails, return the foreign price with a warning in source
+                return Ok(PriceQuote {
+                    symbol: symbol.to_string(),
+                    price,
+                    source: format!("yahoo (unconverted {})", currency),
+                    currency,
+                    fetched_at: now,
+                });
+            }
+        }
+    }
 
     Ok(PriceQuote {
         symbol: symbol.to_string(),
@@ -53,6 +123,27 @@ pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>
     let response = provider
         .get_quote_history(&yahoo_sym, start, now)
         .await?;
+
+    // Check if the security trades in a non-USD currency
+    let currency = response
+        .metadata()
+        .ok()
+        .and_then(|m| m.currency)
+        .unwrap_or_else(|| "USD".to_string());
+
+    let fx_rates = if currency != "USD" {
+        fetch_fx_history(&currency, days).await.ok()
+    } else {
+        None
+    };
+
+    // If we need FX conversion but have no rates, fetch a single spot rate as fallback
+    let fallback_fx = if currency != "USD" && fx_rates.is_none() {
+        fetch_fx_rate(&currency).await.ok()
+    } else {
+        None
+    };
+
     let quotes = response.quotes()?;
 
     let mut records = Vec::new();
@@ -60,7 +151,29 @@ pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>
         let ts = chrono::DateTime::from_timestamp(q.timestamp as i64, 0);
         if let Some(dt) = ts {
             let date = dt.format("%Y-%m-%d").to_string();
-            if let Ok(close) = Decimal::try_from(q.close) {
+            if let Ok(mut close) = Decimal::try_from(q.close) {
+                // Apply FX conversion if needed
+                if currency != "USD" {
+                    if let Some(ref rates) = fx_rates {
+                        if let Some(&rate) = rates.get(&date) {
+                            close = (close * rate).round_dp(4);
+                        } else if let Some(rate) = fallback_fx {
+                            // Use fallback spot rate for dates without FX data
+                            close = (close * rate).round_dp(4);
+                        }
+                        // If no rate at all, skip this record to avoid
+                        // mixing currencies
+                        else {
+                            continue;
+                        }
+                    } else if let Some(rate) = fallback_fx {
+                        close = (close * rate).round_dp(4);
+                    }
+                    // No FX data at all — skip to avoid mixing currencies
+                    else {
+                        continue;
+                    }
+                }
                 records.push(HistoryRecord {
                     date,
                     close,
