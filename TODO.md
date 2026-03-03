@@ -237,9 +237,6 @@
 
 
 
-## P0 — Watchlist as Tab on Main Screen (Owner Request)
-
-
 
 ## P0 — Portfolio Value History Sine Wave Bug (Owner Report)
 
