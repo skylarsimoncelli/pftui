@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
-use crate::config::{save_config, Config, PortfolioMode};
+use crate::config::{save_config, Config, PortfolioMode, SUPPORTED_CURRENCIES};
 use crate::db::{allocations, transactions};
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names;
@@ -69,6 +69,47 @@ pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> 
     println!();
     println!("  \x1b[1mWelcome to pftui setup!\x1b[0m");
     println!();
+
+    // Currency selection
+    println!("  \x1b[1mBase currency:\x1b[0m \x1b[90m(all values displayed in this currency)\x1b[0m");
+    println!();
+    let cols = 2;
+    let per_col = SUPPORTED_CURRENCIES.len().div_ceil(cols);
+    for row in 0..per_col {
+        let mut line = String::from("    ");
+        for col in 0..cols {
+            let idx = row + col * per_col;
+            if let Some((code, label)) = SUPPORTED_CURRENCIES.get(idx) {
+                line.push_str(&format!(
+                    "\x1b[1m[{:<3}]\x1b[0m {:<28}",
+                    code, label
+                ));
+            }
+        }
+        println!("{}", line);
+    }
+    println!();
+    let chosen_currency = loop {
+        let input = prompt("  Currency code [USD]: ")?;
+        let code = if input.is_empty() {
+            "USD".to_string()
+        } else {
+            input.to_uppercase()
+        };
+        // Accept any code from our list, or any 3-letter code
+        if SUPPORTED_CURRENCIES.iter().any(|(c, _)| *c == code.as_str()) {
+            break code;
+        }
+        if code.len() == 3 && code.chars().all(|c| c.is_ascii_alphabetic()) {
+            println!("    \x1b[90mCustom currency: {}. Prices will still be fetched in USD.\x1b[0m", code);
+            break code;
+        }
+        println!("    \x1b[33mEnter a valid 3-letter currency code (e.g. USD, EUR, GBP).\x1b[0m");
+    };
+    println!("    → {}", chosen_currency);
+    println!();
+
+    // Mode selection
     println!("  Select portfolio mode:");
     println!("    \x1b[1m[1]\x1b[0m Full \x1b[90m— track values, quantities, and transactions\x1b[0m");
     println!("    \x1b[1m[2]\x1b[0m Percentage \x1b[90m— allocation percentages only (privacy)\x1b[0m");
@@ -88,14 +129,17 @@ pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> 
 
     println!();
 
+    // Build new config with chosen currency for use during setup
+    let mut new_config = config.clone();
+    new_config.base_currency = chosen_currency;
+    new_config.portfolio_mode = mode;
+
     match mode {
-        PortfolioMode::Full => full_mode_setup(conn, config)?,
+        PortfolioMode::Full => full_mode_setup(conn, &new_config)?,
         PortfolioMode::Percentage => percentage_mode_setup(conn)?,
     }
 
-    // Save config with chosen mode
-    let mut new_config = config.clone();
-    new_config.portfolio_mode = mode;
+    // Save config with chosen mode and currency
     save_config(&new_config)?;
 
     println!("  \x1b[32m✓\x1b[0m Setup complete!");
@@ -157,9 +201,10 @@ fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {
         let val_input = prompt("    Value or percentage: ")?;
         let (value, pct) = parse_value_or_pct(&val_input, total)?;
 
+        let csym = crate::config::currency_symbol(&config.base_currency);
         println!(
-            "    → ${:.2} ({:.1}% of portfolio)",
-            value, pct
+            "    → {}{:.2} ({:.1}% of portfolio)",
+            csym, value, pct
         );
         println!();
 
@@ -175,14 +220,16 @@ fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {
     }
 
     // Summary
+    let csym = crate::config::currency_symbol(&config.base_currency);
     println!();
     println!("  \x1b[1mPortfolio Summary:\x1b[0m");
     let mut allocated = dec!(0);
     for entry in &entries {
         let val = entry.value.unwrap_or(dec!(0));
         println!(
-            "    {:<20} ${:>12.2}  {:>5.1}%",
+            "    {:<20} {:>1}{:>12.2}  {:>5.1}%",
             name_or_symbol(&entry.name, &entry.symbol),
+            csym,
             val,
             entry.pct
         );
@@ -196,13 +243,13 @@ fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {
     };
     println!("    {}", "─".repeat(42));
     println!(
-        "    {:<20} ${:>12.2}  {:>5.1}%",
-        "Allocated", allocated, dec!(100) - remaining_pct
+        "    {:<20} {:>1}{:>12.2}  {:>5.1}%",
+        "Allocated", csym, allocated, dec!(100) - remaining_pct
     );
     if remaining > dec!(0) {
         println!(
-            "    {:<20} ${:>12.2}  {:>5.1}%",
-            "Remaining", remaining, remaining_pct
+            "    {:<20} {:>1}{:>12.2}  {:>5.1}%",
+            "Remaining", csym, remaining, remaining_pct
         );
     }
     println!();
@@ -233,8 +280,8 @@ fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {
                 Ok(p) if p > dec!(0) => {
                     let q = value / p;
                     println!(
-                        "    {}: ${:.2} → qty {:.4}",
-                        entry.symbol, p, q
+                        "    {}: {}{:.2} → qty {:.4}",
+                        entry.symbol, csym, p, q
                     );
                     (p, q)
                 }

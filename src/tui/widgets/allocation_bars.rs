@@ -71,9 +71,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Total portfolio value line (hidden in privacy mode)
     if !is_privacy_view(app) && app.total_value > dec!(0) {
+        let csym = crate::config::currency_symbol(&app.base_currency);
         let total_str = format_compact_value(app.total_value);
         let total_line = Line::from(Span::styled(
-            format!("Total: ${total_str}"),
+            format!("Total: {csym}{total_str}"),
             Style::default().fg(t.text_secondary),
         ));
         lines.push(total_line);

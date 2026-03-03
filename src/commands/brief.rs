@@ -47,13 +47,10 @@ fn fmt_commas(value: Decimal, dp: u32) -> String {
     }
 }
 
-/// Format a currency value with symbol prefix/suffix.
+/// Format a currency value with symbol prefix.
 fn fmt_currency(value: Decimal, dp: u32, base: &str) -> String {
-    if base == "USD" {
-        format!("${}", fmt_commas(value, dp))
-    } else {
-        format!("{} {}", fmt_commas(value, dp), base)
-    }
+    let sym = crate::config::currency_symbol(base);
+    format!("{}{}", sym, fmt_commas(value, dp))
 }
 
 /// Compute percent change between two values.
@@ -408,7 +405,18 @@ mod tests {
 
     #[test]
     fn fmt_currency_gbp() {
-        assert_eq!(fmt_currency(dec!(1234.56), 2, "GBP"), "1,234.56 GBP");
+        assert_eq!(fmt_currency(dec!(1234.56), 2, "GBP"), "£1,234.56");
+    }
+
+    #[test]
+    fn fmt_currency_eur() {
+        assert_eq!(fmt_currency(dec!(500.00), 2, "EUR"), "€500.00");
+    }
+
+    #[test]
+    fn fmt_currency_unknown() {
+        // Unknown currencies use the code as prefix
+        assert_eq!(fmt_currency(dec!(100.00), 2, "XYZ"), "XYZ100.00");
     }
 
     #[test]

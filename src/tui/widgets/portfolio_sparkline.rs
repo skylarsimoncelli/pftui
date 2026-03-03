@@ -41,8 +41,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Dynamic title: show timeframe label and current portfolio value if available
     let tf_label = app.sparkline_timeframe.label();
+    let csym = crate::config::currency_symbol(&app.base_currency);
     let title = if let Some((_, latest)) = history.last() {
-        format!(" Portfolio {}  {} ", tf_label, format_compact_value(*latest))
+        format!(" Portfolio {}  {} ", tf_label, format_compact_value(*latest, csym))
     } else {
         format!(" Portfolio {} ", tf_label)
     };
@@ -77,7 +78,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     // Compute timeframe gains for display below the chart
     let timeframe_gains = compute_timeframe_gains(history, &timeframe_periods);
     // Reserve lines: 1 separator + gain rows (up to 2 lines for timeframes)
-    let gain_lines = build_gain_lines(&timeframe_gains, inner.width as usize, t);
+    let gain_lines = build_gain_lines(&timeframe_gains, inner.width as usize, t, csym);
     let reserved_lines = 1 + gain_lines.len(); // separator + gain display
 
     let chart_height = inner.height.saturating_sub(reserved_lines as u16) as usize;
@@ -219,7 +220,7 @@ fn compute_timeframe_gains<'a>(history: &[(String, Decimal)], periods: &[(&'a st
 
 /// Build styled gain/loss lines that fit within the given width.
 /// Tries to fit all timeframes on one line; wraps to two if needed.
-fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tui::theme::Theme) -> Vec<Line<'a>> {
+fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tui::theme::Theme, csym: &str) -> Vec<Line<'a>> {
     if gains.is_empty() {
         return vec![Line::from(Span::styled(
             "No period data yet",
@@ -238,7 +239,7 @@ fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tu
         };
 
         let arrow = if g.pct > dec!(0) { "▲" } else if g.pct < dec!(0) { "▼" } else { "─" };
-        let change_str = format_compact_change(g.change);
+        let change_str = format_compact_change(g.change, csym);
         let pct_str = format!("{:+.1}%", g.pct);
 
         items.push(vec![
@@ -342,25 +343,25 @@ fn braille_char(v0: usize, v1: usize, row: usize, dots_per_row: usize) -> char {
     char::from_u32(0x2800 + bits as u32).unwrap_or(' ')
 }
 
-fn format_compact_value(v: Decimal) -> String {
+fn format_compact_value(v: Decimal, sym: &str) -> String {
     let f: f64 = v.to_string().parse().unwrap_or(0.0);
     if f.abs() >= 1_000_000.0 {
-        format!("${:.1}M", f / 1_000_000.0)
+        format!("{}{:.1}M", sym, f / 1_000_000.0)
     } else if f.abs() >= 1_000.0 {
-        format!("${:.1}k", f / 1_000.0)
+        format!("{}{:.1}k", sym, f / 1_000.0)
     } else {
-        format!("${:.0}", f)
+        format!("{}{:.0}", sym, f)
     }
 }
 
-fn format_compact_change(v: Decimal) -> String {
+fn format_compact_change(v: Decimal, sym: &str) -> String {
     let f: f64 = v.to_string().parse().unwrap_or(0.0);
     if f.abs() >= 1_000_000.0 {
-        format!("${:+.1}M", f / 1_000_000.0)
+        format!("{}{:+.1}M", sym, f / 1_000_000.0)
     } else if f.abs() >= 1_000.0 {
-        format!("${:+.1}k", f / 1_000.0)
+        format!("{}{:+.1}k", sym, f / 1_000.0)
     } else {
-        format!("${:+.0}", f)
+        format!("{}{:+.0}", sym, f)
     }
 }
 
@@ -406,32 +407,44 @@ mod tests {
 
     #[test]
     fn test_format_compact_value_thousands() {
-        assert_eq!(format_compact_value(dec!(5432)), "$5.4k");
+        assert_eq!(format_compact_value(dec!(5432), "$"), "$5.4k");
     }
 
     #[test]
     fn test_format_compact_value_millions() {
-        assert_eq!(format_compact_value(dec!(1234567)), "$1.2M");
+        assert_eq!(format_compact_value(dec!(1234567), "$"), "$1.2M");
     }
 
     #[test]
     fn test_format_compact_value_small() {
-        assert_eq!(format_compact_value(dec!(42)), "$42");
+        assert_eq!(format_compact_value(dec!(42), "$"), "$42");
     }
 
     #[test]
     fn test_format_compact_change_positive() {
-        assert_eq!(format_compact_change(dec!(1500)), "$+1.5k");
+        assert_eq!(format_compact_change(dec!(1500), "$"), "$+1.5k");
     }
 
     #[test]
     fn test_format_compact_change_negative() {
-        assert_eq!(format_compact_change(dec!(-250)), "$-250");
+        assert_eq!(format_compact_change(dec!(-250), "$"), "$-250");
     }
 
     #[test]
     fn test_format_compact_change_millions() {
-        assert_eq!(format_compact_change(dec!(2500000)), "$+2.5M");
+        assert_eq!(format_compact_change(dec!(2500000), "$"), "$+2.5M");
+    }
+
+    #[test]
+    fn test_format_compact_value_euro() {
+        assert_eq!(format_compact_value(dec!(5432), "€"), "€5.4k");
+        assert_eq!(format_compact_value(dec!(42), "€"), "€42");
+    }
+
+    #[test]
+    fn test_format_compact_change_gbp() {
+        assert_eq!(format_compact_change(dec!(1500), "£"), "£+1.5k");
+        assert_eq!(format_compact_change(dec!(-800), "£"), "£-800");
     }
 
     /// Default periods for 3M sparkline timeframe (1D, 1W, 1M fit within 90 days).

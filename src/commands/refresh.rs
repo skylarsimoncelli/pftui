@@ -129,15 +129,15 @@ async fn fetch_all_prices(
 }
 
 /// Format a price for display: compact representation.
-fn format_price(price: Decimal) -> String {
+fn format_price(price: Decimal, sym: &str) -> String {
     if price >= dec!(10000) {
-        format!("${}", price.round_dp(0))
+        format!("{}{}", sym, price.round_dp(0))
     } else if price >= dec!(100) {
-        format!("${}", price.round_dp(1))
+        format!("{}{}", sym, price.round_dp(1))
     } else if price >= dec!(1) {
-        format!("${}", price.round_dp(2))
+        format!("{}{}", sym, price.round_dp(2))
     } else {
-        format!("${}", price.round_dp(4))
+        format!("{}{}", sym, price.round_dp(4))
     }
 }
 
@@ -197,7 +197,8 @@ pub fn run(conn: &Connection, config: &Config) -> Result<()> {
 
     // Print each fetched price
     for q in &fetched {
-        println!("  {} {} ({})", q.symbol, format_price(q.price), q.source);
+        let csym = crate::config::currency_symbol(&config.base_currency);
+        println!("  {} {} ({})", q.symbol, format_price(q.price, csym), q.source);
     }
 
     // Print errors
@@ -238,26 +239,32 @@ mod tests {
 
     #[test]
     fn format_price_large() {
-        assert_eq!(format_price(dec!(84200)), "$84200");
-        assert_eq!(format_price(dec!(84200.56)), "$84201");
+        assert_eq!(format_price(dec!(84200), "$"), "$84200");
+        assert_eq!(format_price(dec!(84200.56), "$"), "$84201");
     }
 
     #[test]
     fn format_price_medium() {
-        assert_eq!(format_price(dec!(189.50)), "$189.5");
-        assert_eq!(format_price(dec!(5278.30)), "$5278.3");
+        assert_eq!(format_price(dec!(189.50), "$"), "$189.5");
+        assert_eq!(format_price(dec!(5278.30), "$"), "$5278.3");
     }
 
     #[test]
     fn format_price_small() {
-        assert_eq!(format_price(dec!(1.2345)), "$1.23");
-        assert_eq!(format_price(dec!(42.99)), "$42.99");
+        assert_eq!(format_price(dec!(1.2345), "$"), "$1.23");
+        assert_eq!(format_price(dec!(42.99), "$"), "$42.99");
     }
 
     #[test]
     fn format_price_very_small() {
-        assert_eq!(format_price(dec!(0.5678)), "$0.5678");
-        assert_eq!(format_price(dec!(0.00012345)), "$0.0001");
+        assert_eq!(format_price(dec!(0.5678), "$"), "$0.5678");
+        assert_eq!(format_price(dec!(0.00012345), "$"), "$0.0001");
+    }
+
+    #[test]
+    fn format_price_euro() {
+        assert_eq!(format_price(dec!(189.50), "€"), "€189.5");
+        assert_eq!(format_price(dec!(42.99), "€"), "€42.99");
     }
 
     #[test]

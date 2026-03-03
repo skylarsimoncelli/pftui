@@ -42,7 +42,7 @@ fn format_price(value: Decimal) -> String {
     }
 }
 
-pub fn run(conn: &Connection) -> Result<()> {
+pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
     let entries = list_watchlist(conn)?;
 
     if entries.is_empty() {
@@ -66,9 +66,10 @@ pub fn run(conn: &Connection) -> Result<()> {
             name
         };
 
+        let csym = crate::config::currency_symbol(&config.base_currency);
         let (price_str, fetched_str) = match prices.get(&entry.symbol) {
             Some((price, fetched_at)) => {
-                let p = format!("${}", format_price(*price));
+                let p = format!("{}{}", csym, format_price(*price));
                 let f = format_fetched_at(fetched_at);
                 (p, f)
             }
@@ -237,26 +238,29 @@ mod tests {
     #[test]
     fn watchlist_empty_db() {
         let conn = crate::db::open_in_memory();
-        let result = run(&conn);
+        let config = crate::config::Config::default();
+        let result = run(&conn, &config);
         assert!(result.is_ok());
     }
 
     #[test]
     fn watchlist_with_entries_no_prices() {
         let conn = crate::db::open_in_memory();
+        let config = crate::config::Config::default();
         use crate::db::watchlist::add_to_watchlist;
         use crate::models::asset::AssetCategory;
 
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
 
-        let result = run(&conn);
+        let result = run(&conn, &config);
         assert!(result.is_ok());
     }
 
     #[test]
     fn watchlist_with_entries_and_prices() {
         let conn = crate::db::open_in_memory();
+        let config = crate::config::Config::default();
         use crate::db::price_cache::upsert_price;
         use crate::db::watchlist::add_to_watchlist;
         use crate::models::asset::AssetCategory;
@@ -277,7 +281,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn);
+        let result = run(&conn, &config);
         assert!(result.is_ok());
     }
 }

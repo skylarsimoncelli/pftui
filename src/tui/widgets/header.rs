@@ -357,7 +357,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             t.neutral
         };
 
-        let value_str = format_compact(total);
+        let csym = crate::config::currency_symbol(&app.base_currency);
+        let value_str = format_compact(total, csym);
         let gain_str = format!("{:+.1}%", gain_pct);
 
         // Flash on value update
@@ -394,7 +395,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             } else {
                 t.neutral
             };
-            let day_str = format_compact_signed(day_change);
+            let day_str = format_compact_signed(day_change, csym);
             spans.push(Span::styled(
                 format!("  {}{} today", day_arrow, day_str),
                 Style::default().fg(day_color),
@@ -475,27 +476,27 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(header, area);
 }
 
-fn format_compact(v: rust_decimal::Decimal) -> String {
+fn format_compact(v: rust_decimal::Decimal, sym: &str) -> String {
     let f: f64 = v.to_string().parse().unwrap_or(0.0);
     if f.abs() >= 1_000_000.0 {
-        format!("${:.1}M", f / 1_000_000.0)
+        format!("{}{:.1}M", sym, f / 1_000_000.0)
     } else if f.abs() >= 1_000.0 {
-        format!("${:.1}k", f / 1_000.0)
+        format!("{}{:.1}k", sym, f / 1_000.0)
     } else {
-        format!("${:.0}", f)
+        format!("{}{:.0}", sym, f)
     }
 }
 
-fn format_compact_signed(v: rust_decimal::Decimal) -> String {
+fn format_compact_signed(v: rust_decimal::Decimal, sym: &str) -> String {
     let f: f64 = v.to_string().parse().unwrap_or(0.0);
     let sign = if f >= 0.0 { "+" } else { "-" };
     let abs = f.abs();
     if abs >= 1_000_000.0 {
-        format!("{}${:.1}M", sign, abs / 1_000_000.0)
+        format!("{}{}{:.1}M", sign, sym, abs / 1_000_000.0)
     } else if abs >= 1_000.0 {
-        format!("{}${:.1}k", sign, abs / 1_000.0)
+        format!("{}{}{:.1}k", sign, sym, abs / 1_000.0)
     } else {
-        format!("{}${:.0}", sign, abs)
+        format!("{}{}{:.0}", sign, sym, abs)
     }
 }
 
@@ -642,27 +643,40 @@ mod tests {
 
     #[test]
     fn test_format_compact_signed_positive() {
-        assert_eq!(format_compact_signed(dec!(1500)), "+$1.5k");
+        assert_eq!(format_compact_signed(dec!(1500), "$"), "+$1.5k");
     }
 
     #[test]
     fn test_format_compact_signed_negative() {
-        assert_eq!(format_compact_signed(dec!(-2300)), "-$2.3k");
+        assert_eq!(format_compact_signed(dec!(-2300), "$"), "-$2.3k");
     }
 
     #[test]
     fn test_format_compact_signed_small_positive() {
-        assert_eq!(format_compact_signed(dec!(42)), "+$42");
+        assert_eq!(format_compact_signed(dec!(42), "$"), "+$42");
     }
 
     #[test]
     fn test_format_compact_signed_million() {
-        assert_eq!(format_compact_signed(dec!(1500000)), "+$1.5M");
+        assert_eq!(format_compact_signed(dec!(1500000), "$"), "+$1.5M");
     }
 
     #[test]
     fn test_format_compact_signed_negative_million() {
-        assert_eq!(format_compact_signed(dec!(-1200000)), "-$1.2M");
+        assert_eq!(format_compact_signed(dec!(-1200000), "$"), "-$1.2M");
+    }
+
+    #[test]
+    fn test_format_compact_euro() {
+        assert_eq!(format_compact(dec!(5000), "€"), "€5.0k");
+        assert_eq!(format_compact(dec!(1234567), "€"), "€1.2M");
+        assert_eq!(format_compact(dec!(42), "€"), "€42");
+    }
+
+    #[test]
+    fn test_format_compact_signed_gbp() {
+        assert_eq!(format_compact_signed(dec!(1500), "£"), "+£1.5k");
+        assert_eq!(format_compact_signed(dec!(-800), "£"), "-£800");
     }
 
     #[test]

@@ -55,7 +55,7 @@ pub fn run(conn: &Connection, config: &Config) -> Result<()> {
 
     match config.portfolio_mode {
         PortfolioMode::Full => run_full(conn, config, &prices),
-        PortfolioMode::Percentage => run_percentage(conn, &prices),
+        PortfolioMode::Percentage => run_percentage(conn, config, &prices),
     }
 }
 
@@ -100,19 +100,14 @@ fn run_full(
     let total_count = positions.len();
 
     // Single compact output line
-    let currency_sym = if config.base_currency == "USD" { "$" } else { "" };
-    let currency_suffix = if config.base_currency != "USD" {
-        format!(" {}", config.base_currency)
-    } else {
-        String::new()
-    };
+    let csym = config.currency_symbol();
     let sign = if total_gain >= dec!(0) { "+" } else { "" };
     println!(
-        "Portfolio: {}{}{} ({}{} / {}{}%)",
-        currency_sym,
+        "Portfolio: {}{} ({}{}{} / {}{}%)",
+        csym,
         format_with_commas(total_value, 2),
-        currency_suffix,
         sign,
+        csym,
         format_with_commas(total_gain, 2),
         sign,
         total_gain_pct.round_dp(1),
@@ -152,6 +147,7 @@ fn run_full(
 
 fn run_percentage(
     conn: &Connection,
+    config: &Config,
     prices: &HashMap<String, Decimal>,
 ) -> Result<()> {
     let allocs = list_allocations(conn)?;
@@ -173,11 +169,12 @@ fn run_percentage(
     }
 
     // In percentage mode, show allocation breakdown with prices
+    let csym = config.currency_symbol();
     println!("Portfolio allocations:");
     for pos in &positions {
         let price_str = pos
             .current_price
-            .map(|p| format!("${}", format_with_commas(p, 2)))
+            .map(|p| format!("{}{}", csym, format_with_commas(p, 2)))
             .unwrap_or_else(|| "N/A".to_string());
         let alloc_str = pos
             .allocation_pct

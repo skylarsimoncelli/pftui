@@ -49,7 +49,69 @@ impl Config {
     pub fn is_percentage_mode(&self) -> bool {
         self.portfolio_mode == PortfolioMode::Percentage
     }
+
+    /// Return the currency symbol for the configured base currency.
+    pub fn currency_symbol(&self) -> &str {
+        currency_symbol(&self.base_currency)
+    }
 }
+
+/// Map a currency code to its display symbol.
+/// Returns the code itself for unknown currencies.
+pub fn currency_symbol(code: &str) -> &str {
+    match code {
+        "USD" => "$",
+        "EUR" => "€",
+        "GBP" => "£",
+        "JPY" => "¥",
+        "CNY" => "¥",
+        "KRW" => "₩",
+        "INR" => "₹",
+        "RUB" => "₽",
+        "BRL" => "R$",
+        "CHF" => "CHF",
+        "CAD" => "C$",
+        "AUD" => "A$",
+        "NZD" => "NZ$",
+        "SEK" => "kr",
+        "NOK" => "kr",
+        "DKK" => "kr",
+        "PLN" => "zł",
+        "THB" => "฿",
+        "TRY" => "₺",
+        "MXN" => "MX$",
+        "ZAR" => "R",
+        "HKD" => "HK$",
+        "SGD" => "S$",
+        "TWD" => "NT$",
+        "ILS" => "₪",
+        _ => code,
+    }
+}
+
+/// Supported currencies for selection in the setup wizard.
+pub const SUPPORTED_CURRENCIES: &[(&str, &str)] = &[
+    ("USD", "US Dollar ($)"),
+    ("EUR", "Euro (€)"),
+    ("GBP", "British Pound (£)"),
+    ("JPY", "Japanese Yen (¥)"),
+    ("CAD", "Canadian Dollar (C$)"),
+    ("AUD", "Australian Dollar (A$)"),
+    ("CHF", "Swiss Franc (CHF)"),
+    ("CNY", "Chinese Yuan (¥)"),
+    ("INR", "Indian Rupee (₹)"),
+    ("KRW", "South Korean Won (₩)"),
+    ("BRL", "Brazilian Real (R$)"),
+    ("SEK", "Swedish Krona (kr)"),
+    ("NOK", "Norwegian Krone (kr)"),
+    ("NZD", "New Zealand Dollar (NZ$)"),
+    ("MXN", "Mexican Peso (MX$)"),
+    ("SGD", "Singapore Dollar (S$)"),
+    ("HKD", "Hong Kong Dollar (HK$)"),
+    ("ZAR", "South African Rand (R)"),
+    ("TRY", "Turkish Lira (₺)"),
+    ("PLN", "Polish Złoty (zł)"),
+];
 
 pub fn config_path() -> PathBuf {
     dirs::config_dir()
@@ -157,5 +219,41 @@ mod tests {
     fn config_path_ends_with_pftui() {
         let path = config_path();
         assert!(path.ends_with("pftui/config.toml"));
+    }
+
+    #[test]
+    fn currency_symbol_known_currencies() {
+        assert_eq!(currency_symbol("USD"), "$");
+        assert_eq!(currency_symbol("EUR"), "€");
+        assert_eq!(currency_symbol("GBP"), "£");
+        assert_eq!(currency_symbol("JPY"), "¥");
+        assert_eq!(currency_symbol("CAD"), "C$");
+        assert_eq!(currency_symbol("AUD"), "A$");
+        assert_eq!(currency_symbol("CHF"), "CHF");
+        assert_eq!(currency_symbol("INR"), "₹");
+        assert_eq!(currency_symbol("BRL"), "R$");
+    }
+
+    #[test]
+    fn currency_symbol_unknown_returns_code() {
+        assert_eq!(currency_symbol("XYZ"), "XYZ");
+        assert_eq!(currency_symbol("FAKE"), "FAKE");
+    }
+
+    #[test]
+    fn config_currency_symbol_method() {
+        let config = Config::default();
+        assert_eq!(config.currency_symbol(), "$");
+        let eur_config = Config { base_currency: "EUR".to_string(), ..Default::default() };
+        assert_eq!(eur_config.currency_symbol(), "€");
+    }
+
+    #[test]
+    fn supported_currencies_contains_major() {
+        let codes: Vec<&str> = SUPPORTED_CURRENCIES.iter().map(|(c, _)| *c).collect();
+        assert!(codes.contains(&"USD"));
+        assert!(codes.contains(&"EUR"));
+        assert!(codes.contains(&"GBP"));
+        assert!(codes.contains(&"JPY"));
     }
 }
