@@ -216,12 +216,7 @@
 
 ## P1 — Layout Restructure (Owner Request)
 
-- [ ] **Restructure left pane as "PORTFOLIO OVERVIEW"** — The top-left pane should be a comprehensive portfolio overview section with a visible header "PORTFOLIO OVERVIEW". Contents (top to bottom):
-  - Portfolio value + day gain/loss (already in header, but also here)
-  - Allocation bars
-  - Portfolio chart (with timeframe gains: hourly/daily/weekly/monthly/yearly)
-  - Key portfolio stats (total positions, top performer, worst performer)
-  - Files: `src/tui/ui.rs`, possibly new `src/tui/views/portfolio_overview.rs`
+
 
 
 ## P0 — Global Asset Search Overlay (Owner Request)
