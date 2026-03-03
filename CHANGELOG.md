@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Add technical indicators math module (F1.1)
+
+- What: New `src/indicators/` module with pure math functions: RSI (Wilder's smoothing, period 14), MACD (12/26/9 with EMA), SMA (configurable period), and Bollinger Bands (20,2 with band width). All operate on `&[f64]` slices — no I/O, no side effects.
+- Why: Foundation for F1.2–F1.4 (technicals in asset detail popup, position rows, CLI output). Replaces future need for external `fetch_prices.py` dependency.
+- Files: new `src/indicators/{mod,rsi,macd,sma,bollinger}.rs`, `src/main.rs` (module registration)
+- Tests: 26 new tests (RSI: 7, MACD: 6, SMA: 6, Bollinger: 6, EMA: 1). Total: 829 passing.
+- TODO: F1.1 Indicators math module (P1)
+
 ### 2026-03-03 — Fix U.UN (Sprott Uranium) price accuracy via FX conversion
 
 - What: Yahoo Finance returns prices in the security's native currency (CAD for TSX-listed U-UN.TO). The code hardcoded `currency: "USD"`, causing a ~40% price inflation for Canadian securities. Now `fetch_price()` and `fetch_history()` extract the currency from Yahoo's metadata and, for non-USD securities, automatically fetch the live FX rate (e.g., CADUSD=X) and convert to USD. Historical prices use date-matched FX history with spot rate fallback.

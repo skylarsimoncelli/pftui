@@ -14,7 +14,6 @@ _(no items)_
 > **Goal:** Replace external `fetch_prices.py` dependency. Compute RSI/MACD/SMA/BB from cached price history.
 > **Spec:** `docs/ANALYTICS-SPEC.md#f1`
 
-- [ ] **F1.1: Indicators math module** — RSI(14) Wilder's method, MACD(12/26/9), SMA(50/200), Bollinger Bands(20,2). Pure functions on `Vec<f64>`. Files: new `src/indicators/{mod,rsi,macd,sma,bollinger}.rs`
 - [ ] **F1.2: Technicals in asset detail popup** — RSI gauge (color zones: <30 green, >70 red), MACD histogram (braille), price vs SMA50/200, BB width. Files: `tui/views/asset_detail_popup.rs`, `indicators/`
 - [ ] **F1.3: Compact indicator strip on position rows** — Show `RSI 45 ▲` or 🟢/🟡/🔴 per position in Positions tab. Same for Watchlist tab. Files: `tui/views/positions.rs`, `tui/views/watchlist.rs`
 - [ ] **F1.4: `--technicals` flag for `brief` and `summary`** — Add RSI/MACD/SMA to CLI output per position. Files: `commands/brief.rs`, `commands/summary.rs`
