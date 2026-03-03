@@ -4,6 +4,7 @@ use anyhow::Result;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::str::FromStr;
 use rusqlite::Connection;
 
 use crate::cli::{SummaryGroupBy, SummaryPeriod};
@@ -15,17 +16,58 @@ use crate::db::transactions::list_transactions;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
+/// Parse a what-if override string like "GC=F:5500,BTC:55000" into symbol→price pairs.
+fn parse_what_if(input: &str) -> Result<HashMap<String, Decimal>> {
+    let mut overrides = HashMap::new();
+    for pair in input.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        // Split on last ':' to handle symbols containing '=' etc.
+        let colon_pos = pair.rfind(':').ok_or_else(|| {
+            anyhow::anyhow!("Invalid --what-if pair '{}': expected SYMBOL:PRICE", pair)
+        })?;
+        let symbol = pair[..colon_pos].trim().to_uppercase();
+        let price_str = pair[colon_pos + 1..].trim();
+        let price = Decimal::from_str(price_str).map_err(|_| {
+            anyhow::anyhow!("Invalid price '{}' for symbol '{}' in --what-if", price_str, symbol)
+        })?;
+        if price < dec!(0) {
+            anyhow::bail!("Negative price '{}' for symbol '{}' in --what-if", price, symbol);
+        }
+        overrides.insert(symbol, price);
+    }
+    if overrides.is_empty() {
+        anyhow::bail!("--what-if requires at least one SYMBOL:PRICE pair");
+    }
+    Ok(overrides)
+}
+
 pub fn run(
     conn: &Connection,
     config: &Config,
     group_by: Option<&SummaryGroupBy>,
     period: Option<&SummaryPeriod>,
+    what_if: Option<&str>,
 ) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
-    let prices: HashMap<String, Decimal> = cached
+    let mut prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
+
+    // Apply hypothetical price overrides
+    let overrides = match what_if {
+        Some(input) => {
+            let ov = parse_what_if(input)?;
+            for (sym, price) in &ov {
+                prices.insert(sym.clone(), *price);
+            }
+            Some(ov)
+        }
+        None => None,
+    };
 
     // Compute the start date for period-based P&L
     let period_start = period.map(|p| {
@@ -43,10 +85,28 @@ pub fn run(
         _ => None,
     };
 
+    if let Some(ref ov) = overrides {
+        print_what_if_banner(ov);
+    }
+
     match config.portfolio_mode {
         PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices),
         PortfolioMode::Percentage => run_percentage(conn, &prices, group_by, period, &historical_prices),
     }
+}
+
+/// Print a banner showing the hypothetical price overrides being applied.
+fn print_what_if_banner(overrides: &HashMap<String, Decimal>) {
+    println!("╔══════════════════════════════════════════╗");
+    println!("║         ⚠  WHAT-IF SCENARIO  ⚠          ║");
+    println!("╠══════════════════════════════════════════╣");
+    let mut sorted: Vec<_> = overrides.iter().collect();
+    sorted.sort_by_key(|(sym, _)| (*sym).clone());
+    for (symbol, price) in &sorted {
+        println!("║  {:<12} → {:>24.2}  ║", symbol, price);
+    }
+    println!("╚══════════════════════════════════════════╝");
+    println!();
 }
 
 fn run_full(
@@ -822,7 +882,7 @@ mod tests {
         }).unwrap();
 
         // Should succeed even with no history data
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth));
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None);
         assert!(result.is_ok());
     }
 
@@ -862,7 +922,7 @@ mod tests {
         ]).unwrap();
 
         // Should succeed with historical data available
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth));
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None);
         assert!(result.is_ok());
     }
 
@@ -896,7 +956,131 @@ mod tests {
         }).unwrap();
 
         // Both --group-by category and --period together
-        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek));
+        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_what_if_single() {
+        let overrides = parse_what_if("BTC:55000").unwrap();
+        assert_eq!(overrides.len(), 1);
+        assert_eq!(overrides.get("BTC"), Some(&dec!(55000)));
+    }
+
+    #[test]
+    fn test_parse_what_if_multiple() {
+        let overrides = parse_what_if("GC=F:5500,BTC:55000,AAPL:250.50").unwrap();
+        assert_eq!(overrides.len(), 3);
+        assert_eq!(overrides.get("GC=F"), Some(&dec!(5500)));
+        assert_eq!(overrides.get("BTC"), Some(&dec!(55000)));
+        assert_eq!(overrides.get("AAPL"), Some(&Decimal::new(25050, 2)));
+    }
+
+    #[test]
+    fn test_parse_what_if_case_insensitive() {
+        let overrides = parse_what_if("btc:50000").unwrap();
+        assert_eq!(overrides.get("BTC"), Some(&dec!(50000)));
+    }
+
+    #[test]
+    fn test_parse_what_if_with_spaces() {
+        let overrides = parse_what_if(" BTC : 55000 , AAPL : 200 ").unwrap();
+        assert_eq!(overrides.len(), 2);
+        assert_eq!(overrides.get("BTC"), Some(&dec!(55000)));
+        assert_eq!(overrides.get("AAPL"), Some(&dec!(200)));
+    }
+
+    #[test]
+    fn test_parse_what_if_empty_fails() {
+        assert!(parse_what_if("").is_err());
+    }
+
+    #[test]
+    fn test_parse_what_if_no_colon_fails() {
+        assert!(parse_what_if("BTC55000").is_err());
+    }
+
+    #[test]
+    fn test_parse_what_if_bad_price_fails() {
+        assert!(parse_what_if("BTC:notanumber").is_err());
+    }
+
+    #[test]
+    fn test_parse_what_if_negative_price_fails() {
+        assert!(parse_what_if("BTC:-100").is_err());
+    }
+
+    #[test]
+    fn test_parse_what_if_zero_price() {
+        let overrides = parse_what_if("BTC:0").unwrap();
+        assert_eq!(overrides.get("BTC"), Some(&dec!(0)));
+    }
+
+    #[test]
+    fn test_what_if_overrides_prices() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::transactions::insert_transaction;
+        use crate::models::transaction::{NewTransaction, TxType};
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        insert_transaction(&conn, &NewTransaction {
+            symbol: "AAPL".to_string(),
+            category: AssetCategory::Equity,
+            tx_type: TxType::Buy,
+            quantity: dec!(10),
+            price_per: dec!(150),
+            currency: "USD".to_string(),
+            date: "2025-01-15".to_string(),
+            notes: None,
+        }).unwrap();
+
+        upsert_price(&conn, &PriceQuote {
+            symbol: "AAPL".to_string(),
+            price: dec!(200),
+            currency: "USD".to_string(),
+            source: "test".to_string(),
+            fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        }).unwrap();
+
+        // With what-if override, should succeed and use hypothetical price
+        let result = run(&conn, &config, None, None, Some("AAPL:300"));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_what_if_with_group_by() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::transactions::insert_transaction;
+        use crate::models::transaction::{NewTransaction, TxType};
+        use crate::db::price_cache::upsert_price;
+        use crate::models::price::PriceQuote;
+
+        insert_transaction(&conn, &NewTransaction {
+            symbol: "BTC".to_string(),
+            category: AssetCategory::Crypto,
+            tx_type: TxType::Buy,
+            quantity: dec!(1),
+            price_per: dec!(30000),
+            currency: "USD".to_string(),
+            date: "2025-01-15".to_string(),
+            notes: None,
+        }).unwrap();
+
+        upsert_price(&conn, &PriceQuote {
+            symbol: "BTC".to_string(),
+            price: dec!(85000),
+            currency: "USD".to_string(),
+            source: "test".to_string(),
+            fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        }).unwrap();
+
+        // What-if + group-by should work together
+        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"));
         assert!(result.is_ok());
     }
 }

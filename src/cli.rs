@@ -18,6 +18,10 @@ pub enum Command {
         /// Show P&L over a time period instead of total gain from cost basis
         #[arg(long, value_enum)]
         period: Option<SummaryPeriod>,
+
+        /// Model hypothetical prices: SYMBOL:PRICE,SYMBOL:PRICE (e.g. GC=F:5500,BTC:55000)
+        #[arg(long, value_name = "OVERRIDES")]
+        what_if: Option<String>,
     },
 
     /// Export portfolio data (JSON exports full snapshot; CSV exports positions only)
