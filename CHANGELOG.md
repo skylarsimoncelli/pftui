@@ -606,3 +606,11 @@
 - Files: `src/tui/views/markets.rs` (new `build_mini_sparkline()`, `build_sparkline_spans()`, `compute_7d_momentum()`, `heatmap_tint()` functions; added `SPARKLINE_CHARS` and `SPARKLINE_DAYS` constants; expanded render to 7 columns with heat-map backgrounds; 11 new tests)
 - Tests: 11 new tests (sparkline building: empty/single/ascending/truncation/flat, heatmap tint: zero/positive/negative/saturation, constants validation). Total: 598 tests passing.
 - TODO: Enhanced Markets tab with mini-charts (P1 Feedback)
+
+### 2026-03-03 — Fix portfolio value history sine wave bug (LOCF)
+
+- What: fixed a critical bug in `compute_portfolio_value_history()` where positions with no price record on a given date contributed $0 to the portfolio total, causing the chart to produce a sine wave pattern as assets dropped in and out of the sum. Implemented Last Observation Carried Forward (LOCF): a `last_known_price` HashMap tracks the most recent close for each symbol as dates are iterated chronologically. On dates with no price record, the last known close is used instead of skipping the position. Positions are not included in the total until their first price point appears, preventing phantom values. This is the standard approach for portfolio value time series computation.
+- Why: P0 bug — the portfolio sparkline and chart were unusable because the total swung wildly between dates where different assets had/didn't have price records. With alternating coverage (e.g., crypto has weekend prices but equities don't), the old code would show the equity portion dropping to $0 on weekends and reappearing on weekdays, creating a dramatic sine wave.
+- Files: `src/app.rs` (rewrote the date iteration loop in `compute_portfolio_value_history()` to build and consult `last_known` HashMap; 6 new tests in `portfolio_value_history_tests` module)
+- Tests: 6 new tests (LOCF fills missing dates, no sine wave with staggered data, cash always included, position excluded before first price, empty history, percentage mode clears). Total: 604 tests passing.
+- TODO: Fix portfolio value history sine wave bug (P0)
