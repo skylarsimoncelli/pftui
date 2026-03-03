@@ -7,6 +7,7 @@ use rust_decimal_macros::dec;
 
 use crate::app::{is_privacy_view, App, PriceFlashDirection, SortField};
 use crate::config::PortfolioMode;
+use crate::indicators;
 use crate::models::asset::AssetCategory;
 use crate::models::price::HistoryRecord;
 use crate::tui::theme;
@@ -165,6 +166,63 @@ fn format_change_pct(change: Option<Decimal>) -> String {
         .unwrap_or_else(|| "---".to_string())
 }
 
+/// Build compact RSI indicator spans for a position row.
+/// Format: `45 ▲` with color coding:
+/// - RSI > 70: red (overbought)
+/// - RSI < 30: green (oversold)
+/// - 30-70: neutral/secondary
+///
+/// The direction arrow compares current RSI to 1 bar ago.
+fn build_rsi_spans<'a>(t: &'a theme::Theme, records: &[HistoryRecord]) -> Line<'a> {
+    if records.len() < 15 {
+        return Line::from(Span::styled("---", Style::default().fg(t.text_muted)));
+    }
+    let closes: Vec<f64> = records
+        .iter()
+        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        .collect();
+    let rsi_series = indicators::compute_rsi(&closes, 14);
+    let current = match rsi_series.last().copied().flatten() {
+        Some(v) => v,
+        None => return Line::from(Span::styled("---", Style::default().fg(t.text_muted))),
+    };
+
+    let rsi_color = if current > 70.0 {
+        t.loss_red
+    } else if current < 30.0 {
+        t.gain_green
+    } else {
+        t.text_secondary
+    };
+
+    // Direction arrow: compare to previous RSI value
+    let prev_rsi = if rsi_series.len() >= 2 {
+        rsi_series[rsi_series.len() - 2]
+    } else {
+        None
+    };
+    let arrow = match prev_rsi {
+        Some(prev) if current > prev + 0.5 => " ▲",
+        Some(prev) if current < prev - 0.5 => " ▼",
+        _ => "",
+    };
+
+    let arrow_color = if arrow == " ▲" {
+        // RSI rising — could be moving toward overbought
+        if current > 60.0 { t.loss_red } else { t.text_secondary }
+    } else if arrow == " ▼" {
+        // RSI falling — could be moving toward oversold
+        if current < 40.0 { t.gain_green } else { t.text_secondary }
+    } else {
+        t.text_muted
+    };
+
+    Line::from(vec![
+        Span::styled(format!("{:.0}", current), Style::default().fg(rsi_color)),
+        Span::styled(arrow.to_string(), Style::default().fg(arrow_color)),
+    ])
+}
+
 /// Compute the background color for a row in the positions table.
 /// Selected rows flash briefly on selection change, lerping from
 /// `border_accent` back to `surface_3` over SELECTION_FLASH_DURATION ticks.
@@ -234,6 +292,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Day%"),
         Cell::from("Gain%"),
         Cell::from("Alloc%"),
+        Cell::from("RSI"),
         Cell::from("52W"),
         Cell::from("Trend"),
     ])
@@ -241,12 +300,12 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     .height(1);
 
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
-    let col_count = 8;
+    let col_count = 9;
     let mut rows: Vec<Row> = Vec::new();
 
     // Show skeleton placeholder rows while waiting for initial data
     if positions.is_empty() && !app.prices_live {
-        let col_widths = [12, 6, 10, 5, 6, 5, 9, 6];
+        let col_widths = [12, 6, 10, 5, 6, 5, 5, 9, 6];
         rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, col_count);
     }
 
@@ -343,6 +402,15 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 .unwrap_or(0.0);
             let day_change_color = theme::gain_intensity_color(t, day_change_f);
 
+            // RSI indicator
+            let rsi_line = build_rsi_spans(
+                t,
+                app.price_history
+                    .get(&pos.symbol)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]),
+            );
+
             rows.push(Row::new(vec![
                 Cell::from(asset_line),
                 Cell::from(format_qty(pos.quantity))
@@ -371,6 +439,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 Cell::from(build_gain_bar_spans(t, pos.gain_pct, 8)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
+                Cell::from(rsi_line),
                 Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
             ])
@@ -384,6 +453,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(7),
         Constraint::Length(8),
         Constraint::Length(7),
+        Constraint::Length(6),
         Constraint::Length(11),
         Constraint::Length(8),
     ];
@@ -400,6 +470,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Price"),
         Cell::from("Day%"),
         Cell::from("Alloc%"),
+        Cell::from("RSI"),
         Cell::from("52W"),
         Cell::from("Trend"),
     ])
@@ -407,12 +478,12 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     .height(1);
 
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
-    let privacy_col_count = 6;
+    let privacy_col_count = 7;
     let mut rows: Vec<Row> = Vec::new();
 
     // Show skeleton placeholder rows while waiting for initial data
     if positions.is_empty() && !app.prices_live {
-        let col_widths = [14, 10, 5, 6, 9, 6];
+        let col_widths = [14, 10, 5, 6, 5, 9, 6];
         rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, privacy_col_count);
     }
 
@@ -481,6 +552,15 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                 .unwrap_or(0.0);
             let day_change_color = theme::gain_intensity_color(t, day_change_f);
 
+            // RSI indicator (privacy-safe — derived from public price data)
+            let rsi_line = build_rsi_spans(
+                t,
+                app.price_history
+                    .get(&pos.symbol)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]),
+            );
+
             rows.push(Row::new(vec![
                 Cell::from(asset_line),
                 Cell::from(format_price_opt(pos.current_price))
@@ -489,6 +569,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                     .style(Style::default().fg(day_change_color)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
+                Cell::from(rsi_line),
                 Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
             ])
@@ -500,6 +581,7 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(12),
         Constraint::Length(7),
         Constraint::Length(8),
+        Constraint::Length(6),
         Constraint::Length(11),
         Constraint::Length(8),
     ];
@@ -1449,5 +1531,117 @@ mod sort_flash_style_tests {
         // At progress=1.0, color should be text_accent
         let color = theme::lerp_color(t.text_primary, t.text_accent, 1.0);
         assert_eq!(color, t.text_accent);
+    }
+}
+
+#[cfg(test)]
+mod rsi_indicator_tests {
+    use super::*;
+    use crate::models::price::HistoryRecord;
+    use crate::tui::theme;
+
+    fn make_history(prices: &[f64]) -> Vec<HistoryRecord> {
+        prices
+            .iter()
+            .enumerate()
+            .map(|(i, p)| HistoryRecord {
+                date: format!("2025-{:02}-{:02}", (i / 28) + 1, (i % 28) + 1),
+                close: rust_decimal::Decimal::from_str_exact(&format!("{:.2}", p))
+                    .unwrap_or_default(),
+                volume: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rsi_spans_insufficient_data() {
+        let t = theme::theme_by_name("midnight");
+        let records = make_history(&[100.0, 101.0, 102.0]);
+        let line = build_rsi_spans(&t, &records);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "---");
+    }
+
+    #[test]
+    fn rsi_spans_empty_history() {
+        let t = theme::theme_by_name("midnight");
+        let line = build_rsi_spans(&t, &[]);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "---");
+    }
+
+    #[test]
+    fn rsi_spans_all_rising_shows_high_value() {
+        let t = theme::theme_by_name("midnight");
+        // 20 steadily rising prices → RSI should be ~100
+        let prices: Vec<f64> = (0..20).map(|i| 50.0 + i as f64).collect();
+        let records = make_history(&prices);
+        let line = build_rsi_spans(&t, &records);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        // Should contain "100" and be colored red (overbought)
+        assert!(text.contains("100"), "Expected RSI ~100, got: {}", text);
+        // First span should have loss_red color (overbought)
+        assert_eq!(line.spans[0].style.fg, Some(t.loss_red));
+    }
+
+    #[test]
+    fn rsi_spans_all_falling_shows_low_value() {
+        let t = theme::theme_by_name("midnight");
+        // 20 steadily falling prices → RSI should be ~0
+        let prices: Vec<f64> = (0..20).map(|i| 100.0 - i as f64).collect();
+        let records = make_history(&prices);
+        let line = build_rsi_spans(&t, &records);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("0"), "Expected RSI ~0, got: {}", text);
+        // First span should have gain_green color (oversold)
+        assert_eq!(line.spans[0].style.fg, Some(t.gain_green));
+    }
+
+    #[test]
+    fn rsi_spans_neutral_uses_secondary_color() {
+        let t = theme::theme_by_name("midnight");
+        // Alternating up/down prices → RSI should be ~50 (neutral zone)
+        let mut prices = vec![50.0];
+        for i in 1..20 {
+            if i % 2 == 0 {
+                prices.push(prices[i - 1] + 1.0);
+            } else {
+                prices.push(prices[i - 1] - 0.8);
+            }
+        }
+        let records = make_history(&prices);
+        let line = build_rsi_spans(&t, &records);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        // RSI should be between 30 and 70
+        let rsi_val: f64 = text.trim().split_whitespace().next()
+            .and_then(|s| s.replace('▲', "").replace('▼', "").parse().ok())
+            .unwrap_or(0.0);
+        assert!(rsi_val >= 30.0 && rsi_val <= 70.0,
+            "Expected neutral RSI (30-70), got: {}", rsi_val);
+        // Should use text_secondary (not red or green)
+        assert_eq!(line.spans[0].style.fg, Some(t.text_secondary));
+    }
+
+    #[test]
+    fn rsi_spans_rising_shows_up_arrow() {
+        let t = theme::theme_by_name("midnight");
+        // Alternating prices that dip then rise strongly at the end → RSI jumps up
+        let mut prices = vec![50.0];
+        for i in 1..16 {
+            // Mild oscillation keeping RSI in mid range
+            if i % 2 == 0 {
+                prices.push(prices[i - 1] + 0.5);
+            } else {
+                prices.push(prices[i - 1] - 0.3);
+            }
+        }
+        // Strong rise at end to push RSI up significantly vs previous bar
+        prices.push(prices.last().unwrap() + 3.0);
+        prices.push(prices.last().unwrap() + 3.0);
+        let records = make_history(&prices);
+        let line = build_rsi_spans(&t, &records);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        // Should have an up arrow since RSI jumped
+        assert!(text.contains('▲'), "Expected ▲ arrow, got: {}", text);
     }
 }

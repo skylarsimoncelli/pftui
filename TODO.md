@@ -14,7 +14,7 @@ _(no items)_
 > **Goal:** Replace external `fetch_prices.py` dependency. Compute RSI/MACD/SMA/BB from cached price history.
 > **Spec:** `docs/ANALYTICS-SPEC.md#f1`
 
-- [ ] **F1.3: Compact indicator strip on position rows** — Show `RSI 45 ▲` or 🟢/🟡/🔴 per position in Positions tab. Same for Watchlist tab. Files: `tui/views/positions.rs`, `tui/views/watchlist.rs`
+- [~] **F1.3: Compact indicator strip on position rows** — Show `RSI 45 ▲` or 🟢/🟡/🔴 per position in Positions tab. Same for Watchlist tab. Files: `tui/views/positions.rs`, `tui/views/watchlist.rs`
 - [ ] **F1.4: `--technicals` flag for `brief` and `summary`** — Add RSI/MACD/SMA to CLI output per position. Files: `commands/brief.rs`, `commands/summary.rs`
 
 ### F3: Macro Dashboard

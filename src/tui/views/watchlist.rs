@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::app::App;
+use crate::indicators;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::tui::theme;
@@ -48,6 +49,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Category"),
         Cell::from("Price"),
         Cell::from("Change %"),
+        Cell::from("RSI"),
     ])
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
@@ -96,6 +98,67 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 None => ("---".to_string(), t.text_muted),
             };
 
+            // Compute RSI from price history
+            let rsi_cell = {
+                let history = app.price_history.get(&yahoo_sym);
+                match history {
+                    Some(records) if records.len() >= 15 => {
+                        let closes: Vec<f64> = records
+                            .iter()
+                            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+                            .collect();
+                        let rsi_series = indicators::compute_rsi(&closes, 14);
+                        match rsi_series.last().copied().flatten() {
+                            Some(rsi_val) => {
+                                let rsi_color = if rsi_val > 70.0 {
+                                    t.loss_red
+                                } else if rsi_val < 30.0 {
+                                    t.gain_green
+                                } else {
+                                    t.text_secondary
+                                };
+                                // Direction arrow
+                                let prev_rsi = if rsi_series.len() >= 2 {
+                                    rsi_series[rsi_series.len() - 2]
+                                } else {
+                                    None
+                                };
+                                let arrow = match prev_rsi {
+                                    Some(prev) if rsi_val > prev + 0.5 => " ▲",
+                                    Some(prev) if rsi_val < prev - 0.5 => " ▼",
+                                    _ => "",
+                                };
+                                let arrow_color = if arrow == " ▲" {
+                                    if rsi_val > 60.0 { t.loss_red } else { t.text_secondary }
+                                } else if arrow == " ▼" {
+                                    if rsi_val < 40.0 { t.gain_green } else { t.text_secondary }
+                                } else {
+                                    t.text_muted
+                                };
+                                Cell::from(Line::from(vec![
+                                    Span::styled(
+                                        format!("{:.0}", rsi_val),
+                                        Style::default().fg(rsi_color),
+                                    ),
+                                    Span::styled(
+                                        arrow.to_string(),
+                                        Style::default().fg(arrow_color),
+                                    ),
+                                ]))
+                            }
+                            None => Cell::from(Span::styled(
+                                "---",
+                                Style::default().fg(t.text_muted),
+                            )),
+                        }
+                    }
+                    _ => Cell::from(Span::styled(
+                        "---",
+                        Style::default().fg(t.text_muted),
+                    )),
+                }
+            };
+
             Row::new(vec![
                 Cell::from(Span::styled(
                     entry.symbol.clone(),
@@ -117,6 +180,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                     change_str,
                     Style::default().fg(change_color),
                 )),
+                rsi_cell,
             ])
             .style(Style::default().bg(row_bg))
             .height(1)
@@ -129,6 +193,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(10),
         Constraint::Length(12),
         Constraint::Length(10),
+        Constraint::Length(6),
     ];
 
     let table = Table::new(rows, widths)
