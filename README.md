@@ -1,7 +1,3 @@
-<p align="center">
-  <img width="1728" height="1049" alt="pftui" src="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b" />
-</p>
-
 <h1 align="center">pftui</h1>
 
 <p align="center">
@@ -14,6 +10,10 @@
   <a href="https://crates.io/crates/pftui"><img src="https://img.shields.io/crates/v/pftui.svg" alt="crates.io"></a>
   <a href="https://github.com/skylarsimoncelli/pftui/releases"><img src="https://img.shields.io/github/v/release/skylarsimoncelli/pftui" alt="release"></a>
   <a href="https://github.com/skylarsimoncelli/pftui/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license"></a>
+</p>
+
+<p align="center">
+  <img width="1728" height="1049" alt="pftui" src="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b" />
 </p>
 
 ---
@@ -32,21 +32,21 @@ Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
 
 ## ✨ What You Get
 
-**📊 Live Portfolio Tracking** — Add your positions once. Prices update automatically from Yahoo Finance and CoinGecko. See your allocation, daily P&L, total gain, and 52-week range at a glance.
+- **📊 Live Portfolio Tracking** — Add your positions once. Prices update automatically from Yahoo Finance and CoinGecko. See your allocation, daily P&L, total gain, and 52-week range at a glance.
 
-**📈 Beautiful Charts** — High-resolution braille charts with SMA overlays, volume bars, and gain-aware coloring. Six timeframes from 1 week to 5 years. Compare any asset against benchmarks — BTC vs S&P, Gold vs DXY, anything vs anything.
+- **📈 Beautiful Charts** — High-resolution braille charts with SMA overlays, volume bars, and gain-aware coloring. Six timeframes from 1 week to 5 years. Compare any asset against benchmarks — BTC vs S&P, Gold vs DXY, anything vs anything.
 
-**🌍 Market & Economy Views** — 18 major market symbols and 14 macro indicators built in. Treasury yields, VIX, DXY, oil, gold, currencies — the numbers that move your portfolio, always one keypress away.
+- **🌍 Market & Economy Views** — 18 major market symbols and 14 macro indicators built in. Treasury yields, VIX, DXY, oil, gold, currencies — the numbers that move your portfolio, always one keypress away.
 
-**🔍 Watchlist** — Track assets you don't own yet. Set entry targets. See when they're approaching your buy zone.
+- **🔍 Watchlist** — Track assets you don't own yet. Set entry targets. See when they're approaching your buy zone.
 
-**📋 Journal** — Log your trade thesis, track predictions, search your decision history. Your future self will thank you.
+- **📋 Journal** — Log your trade thesis, track predictions, search your decision history. Your future self will thank you.
 
-**🎨 6 Stunning Themes** — Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox. Every pixel themed. Cycle with `t`.
+- **🎨 6 Stunning Themes** — Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox. Every pixel themed. Cycle with `t`.
 
-**🔒 Privacy First** — Percentage-only mode stores zero dollar amounts. Toggle `p` to hide values instantly. Your portfolio stays on your machine, in a local SQLite database. Nothing is sent anywhere.
+- **🔒 Privacy First** — Percentage-only mode stores zero dollar amounts. Toggle `p` to hide values instantly. Your portfolio stays on your machine, in a local SQLite database. Nothing is sent anywhere.
 
-**⌨️ Vim-Native** — `j`/`k` to navigate, `/` to search, `gg`/`G` to jump. If you've used vim, you already know pftui. If you haven't — you'll learn in 30 seconds.
+- **⌨️ Vim-Native** — `j`/`k` to navigate, `/` to search, `gg`/`G` to jump. If you've used vim, you already know pftui. If you haven't — you'll learn in 30 seconds.
 
 ---
 
