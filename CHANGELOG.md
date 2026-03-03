@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Add daily P&L to `brief` and `summary` CLI commands
+
+- What: Added 1D P&L (daily change in $ and %) to both CLI commands. `brief` now shows portfolio-level "**1D:** +$X (Y%)" line under the total value, plus a per-position "1D" column in the positions table showing each asset's daily price change %. `summary` now prints a "1D P&L" header line with portfolio-level daily dollar and percent change. Both modes (full and percentage) supported in `brief`; full mode in `summary`.
+- Why: P0 — most requested feature across all 3 testers. TUI header showed daily P&L but CLI commands didn't.
+- Files: `src/commands/brief.rs` (daily P&L header, 1D column in both full and percentage tables), `src/commands/summary.rs` (hist_1d fetch, `print_daily_pnl_header()`, threaded through run_full/run_percentage)
+- Tests: all 803 tests pass, no new tests needed (existing brief integration tests cover the code paths)
+
 ### 2026-03-03 — Fix 2 clippy warnings (vec_init_then_push, int_plus_one)
 
 - What: resolved final 2 clippy warnings. Added `#[allow(clippy::vec_init_then_push)]` to `build_help_lines()` in help.rs (100+ sequential pushes make `vec![]` macro impractical). Replaced `char_count + sep_chars + 1 <= max_chars` with `char_count + sep_chars < max_chars` in regime_assets.rs.
