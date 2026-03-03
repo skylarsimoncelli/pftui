@@ -590,3 +590,11 @@
 - Files: `src/commands/setup.rs` (new `interactive_symbol_search()` function with crossterm raw mode, `clear_suggestions()` helper, `MAX_SUGGESTIONS` constant; removed old `resolve_symbol()`; rewired both `full_mode_setup` and `percentage_mode_setup`), `src/tui/theme.rs` (clippy fix)
 - Tests: 578 tests passing (no new tests — interactive terminal I/O is inherently hard to unit test; fuzzy search logic already covered by 12 existing tests in `asset_names`).
 - TODO: Setup wizard inline suggestions (P0)
+
+### 2026-03-03 — Add `pftui demo` command
+
+- What: added a new `pftui demo` subcommand that launches the TUI with a realistic mock portfolio, without touching the user's real database. The demo creates a fresh temporary SQLite DB in `/tmp/pftui-demo/demo.db` on each run with a diverse portfolio: commodities (GC=F gold ×3 buys, SI=F silver ×2), ETFs (SPY ×3, QQQ ×2, IWM), crypto (BTC ×3, ETH ×2, SOL ×2), bonds (TLT ×2, SHY), equities (AAPL, NVDA ×2, PLTR ×2), funds (URA ×2, COPX, USO), and $15,000 USD cash — 31 total transactions across 15 unique symbols with realistic quantities and cost bases at different dates. Also populates a watchlist with 6 market indicators (MSFT, AMZN, TSLA, XOM, DXY, VIX). The demo DB is rebuilt fresh each launch for a clean experience.
+- Why: P1 Mock Mode — enables showcasing pftui to others without exposing personal portfolio data. Users can run `pftui demo` to instantly see the full TUI experience with live price fetching against a realistic portfolio. Essential for README screenshots, demos, and letting new users explore the interface before setting up their own portfolio.
+- Files: new `src/commands/demo.rs` (31 transactions, 6 watchlist entries, `build_demo_db()`, `run()`, 9 tests), `src/commands/mod.rs` (register module), `src/cli.rs` (add `Demo` variant), `src/main.rs` (wire up dispatch)
+- Tests: 9 new tests (valid categories, valid tx_types, positive quantities, positive prices, valid dates, diverse categories, multiple txns per asset, valid watchlist, full DB build roundtrip). Total: 587 tests passing.
+- TODO: Add `pftui demo` command (P1)
