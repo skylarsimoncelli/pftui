@@ -199,7 +199,7 @@
 
 ## P0 — Search Overlay Enhancements (Owner Request)
 
-- [ ] **Embed braille price chart in asset detail popup** — The asset detail popup (opened via Enter in search overlay) currently shows price/technicals/portfolio context as text. Add a full braille price chart section between the Price and Technicals sections, reusing the existing `price_chart::render` infrastructure. Show SMA/BB overlays on the chart. Requires the popup to allocate a chart area and pass it to the chart renderer. Files: `src/tui/views/asset_detail_popup.rs` (add chart section), `src/tui/widgets/price_chart.rs` (may need a standalone render function that takes symbol + history instead of relying on app.selected_position).
+
 
 ## P1 — thinkorswim UX Research (Owner Request)
 
