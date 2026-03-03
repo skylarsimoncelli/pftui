@@ -109,6 +109,28 @@ fn run_full(
     let priced_count = positions.iter().filter(|p| p.current_price.is_some()).count();
     let total_count = positions.len();
 
+    // Compute daily P&L
+    let mut daily_pnl = dec!(0);
+    let mut has_daily = false;
+    for pos in &positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        let current = match pos.current_price {
+            Some(p) => p,
+            None => continue,
+        };
+        let prev = match hist_1d.get(&pos.symbol) {
+            Some(p) => *p,
+            None => continue,
+        };
+        if prev <= dec!(0) {
+            continue;
+        }
+        daily_pnl += (current - prev) * pos.quantity;
+        has_daily = true;
+    }
+
     // Date header
     let date_str = Utc::now().format("%Y-%m-%d").to_string();
     println!("# Portfolio Brief — {}\n", date_str);
@@ -116,13 +138,31 @@ fn run_full(
     // Total value line
     let sign = if total_gain >= dec!(0) { "+" } else { "" };
     println!(
-        "**{}** ({}{} / {}{}%)\n",
+        "**{}** ({}{} / {}{}%)",
         fmt_currency(total_value, 2, base),
         sign,
         fmt_commas(total_gain, 2),
         sign,
         total_gain_pct.round_dp(1),
     );
+
+    // Daily P&L line
+    if has_daily {
+        let day_sign = if daily_pnl >= dec!(0) { "+" } else { "" };
+        let day_pct = if total_value > dec!(0) {
+            (daily_pnl / (total_value - daily_pnl)) * dec!(100)
+        } else {
+            dec!(0)
+        };
+        println!(
+            "**1D:** {}{} ({}{}%)",
+            day_sign,
+            fmt_currency(daily_pnl.abs(), 2, base),
+            day_sign,
+            day_pct.round_dp(2),
+        );
+    }
+    println!();
 
     // Category allocation
     print_category_allocation(&positions, total_value);
@@ -131,7 +171,7 @@ fn run_full(
     print_top_movers(&positions, hist_1d, base);
 
     // Position table
-    print_position_table_full(&positions, base);
+    print_position_table_full(&positions, base, hist_1d);
 
     // Warnings
     if priced_count < total_count {
@@ -178,8 +218,8 @@ fn run_percentage(
 
     // Position table for percentage mode
     println!("## Positions\n");
-    println!("| Symbol | Category | Price | Alloc |");
-    println!("|--------|----------|------:|------:|");
+    println!("| Symbol | Category | Price | 1D | Alloc |");
+    println!("|--------|----------|------:|---:|------:|");
     for pos in &positions {
         let price_str = pos
             .current_price
@@ -195,7 +235,18 @@ fn run_percentage(
         } else {
             format!("{} ({})", pos.symbol, name)
         };
-        println!("| {} | {} | {} | {} |", symbol_display, pos.category, price_str, alloc_str);
+        let day_str = if pos.category == AssetCategory::Cash {
+            "—".to_string()
+        } else {
+            match (pos.current_price, hist_1d.get(&pos.symbol)) {
+                (Some(current), Some(prev)) if *prev > dec!(0) => {
+                    let pct = ((current - prev) / prev) * dec!(100);
+                    format!("{:+.1}%", pct)
+                }
+                _ => "—".to_string(),
+            }
+        };
+        println!("| {} | {} | {} | {} | {} |", symbol_display, pos.category, price_str, day_str, alloc_str);
     }
 
     let missing = positions.len() - priced.len();
@@ -326,10 +377,14 @@ fn print_top_movers(
     println!();
 }
 
-fn print_position_table_full(positions: &[Position], base: &str) {
+fn print_position_table_full(
+    positions: &[Position],
+    base: &str,
+    hist_1d: &HashMap<String, Decimal>,
+) {
     println!("## Positions\n");
-    println!("| Symbol | Category | Qty | Price | Value | Gain | Alloc |");
-    println!("|--------|----------|----:|------:|------:|-----:|------:|");
+    println!("| Symbol | Category | Qty | Price | Value | Gain | 1D | Alloc |");
+    println!("|--------|----------|----:|------:|------:|-----:|---:|------:|");
 
     for pos in positions {
         let name = resolve_name(&pos.symbol);
@@ -355,9 +410,23 @@ fn print_position_table_full(positions: &[Position], base: &str) {
             .map(|a| format!("{:.1}%", a))
             .unwrap_or_else(|| "—".to_string());
 
+        // 1D change
+        let day_str = if pos.category == AssetCategory::Cash {
+            "—".to_string()
+        } else {
+            match (pos.current_price, hist_1d.get(&pos.symbol)) {
+                (Some(current), Some(prev)) if *prev > dec!(0) => {
+                    let pct = ((current - prev) / prev) * dec!(100);
+                    format!("{:+.1}%", pct)
+                }
+                _ => "—".to_string(),
+            }
+        };
+
         println!(
-            "| {} | {} | {} | {} | {} | {} | {} |",
-            symbol_display, pos.category, pos.quantity, price_str, value_str, gain_str, alloc_str,
+            "| {} | {} | {} | {} | {} | {} | {} | {} |",
+            symbol_display, pos.category, pos.quantity, price_str, value_str, gain_str, day_str,
+            alloc_str,
         );
     }
 }

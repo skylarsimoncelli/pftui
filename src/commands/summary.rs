@@ -85,13 +85,20 @@ pub fn run(
         _ => None,
     };
 
+    // Fetch yesterday's prices for daily P&L
+    let today = Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+    let all_symbols: Vec<String> = prices.keys().cloned().collect();
+    let hist_1d = get_prices_at_date(conn, &all_symbols, &yesterday_str).unwrap_or_default();
+
     if let Some(ref ov) = overrides {
         print_what_if_banner(ov);
     }
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices),
-        PortfolioMode::Percentage => run_percentage(conn, &prices, group_by, period, &historical_prices),
+        PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices, &hist_1d),
+        PortfolioMode::Percentage => run_percentage(conn, &prices, group_by, period, &historical_prices, &hist_1d),
     }
 }
 
@@ -116,6 +123,7 @@ fn run_full(
     group_by: Option<&SummaryGroupBy>,
     period: Option<&SummaryPeriod>,
     historical_prices: &Option<HashMap<String, Decimal>>,
+    hist_1d: &HashMap<String, Decimal>,
 ) -> Result<()> {
     let txs = list_transactions(conn)?;
     if txs.is_empty() {
@@ -128,6 +136,9 @@ fn run_full(
         println!("No open positions.");
         return Ok(());
     }
+
+    // Print daily P&L header if available
+    print_daily_pnl_header(&positions, hist_1d, config);
 
     match (group_by, period) {
         (Some(SummaryGroupBy::Category), Some(p)) => {
@@ -145,6 +156,7 @@ fn run_percentage(
     group_by: Option<&SummaryGroupBy>,
     period: Option<&SummaryPeriod>,
     historical_prices: &Option<HashMap<String, Decimal>>,
+    _hist_1d: &HashMap<String, Decimal>,
 ) -> Result<()> {
     let allocs = list_allocations(conn)?;
     if allocs.is_empty() {
@@ -162,6 +174,63 @@ fn run_percentage(
         (None, Some(p)) => print_percentage_table_with_period(&positions, p, historical_prices),
         (None, None) => print_percentage_table(&positions),
     }
+}
+
+// ──────────────────────────────────────────────────────────────
+// Daily P&L header
+// ──────────────────────────────────────────────────────────────
+
+fn print_daily_pnl_header(
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+    config: &Config,
+) {
+    let mut daily_pnl = dec!(0);
+    let mut has_data = false;
+    let mut total_value = dec!(0);
+
+    for pos in positions {
+        if let Some(v) = pos.current_value {
+            total_value += v;
+        }
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        let current = match pos.current_price {
+            Some(p) => p,
+            None => continue,
+        };
+        let prev = match hist_1d.get(&pos.symbol) {
+            Some(p) => *p,
+            None => continue,
+        };
+        if prev <= dec!(0) {
+            continue;
+        }
+        daily_pnl += (current - prev) * pos.quantity;
+        has_data = true;
+    }
+
+    if !has_data {
+        return;
+    }
+
+    let sym = crate::config::currency_symbol(&config.base_currency);
+    let prev_value = total_value - daily_pnl;
+    let day_pct = if prev_value > dec!(0) {
+        (daily_pnl / prev_value) * dec!(100)
+    } else {
+        dec!(0)
+    };
+    let sign = if daily_pnl >= dec!(0) { "+" } else { "-" };
+    println!(
+        "1D P&L: {}{}{:.2} ({}{:.2}%)\n",
+        sign,
+        sym,
+        daily_pnl.abs(),
+        sign,
+        day_pct.abs(),
+    );
 }
 
 // ──────────────────────────────────────────────────────────────

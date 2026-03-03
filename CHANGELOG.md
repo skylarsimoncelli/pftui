@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Fix 2 clippy warnings (vec_init_then_push, int_plus_one)
+
+- What: resolved final 2 clippy warnings. Added `#[allow(clippy::vec_init_then_push)]` to `build_help_lines()` in help.rs (100+ sequential pushes make `vec![]` macro impractical). Replaced `char_count + sep_chars + 1 <= max_chars` with `char_count + sep_chars < max_chars` in regime_assets.rs.
+- Why: P0 — blocking release. `cargo clippy` now passes with zero warnings.
+- Files: `src/tui/views/help.rs`, `src/tui/widgets/regime_assets.rs`
+- Tests: all 803 tests pass, no changes needed
+
 ### 2026-03-03 — Fix chart ratio labels and add /BTC to all assets
 
 - What: Fixed USD chart ratio labels from misleading "USD/Gold", "USD/BTC" to honest "DXY/Gold", "DXY/SPX", "DXY/BTC" (since DXY is the actual proxy used, not literal USD). Added DXY/SPX ratio variant for USD cash positions. Extended /BTC ratio to all equities and funds (previously only commodities had it), so SLV, VTI, AAPL etc. now show /BTC comparison charts.
