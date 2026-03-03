@@ -124,6 +124,8 @@ pub const THEME_NAMES: &[&str] = &[
     "inferno",
     "neon",
     "hacker",
+    "pastel",
+    "miasma",
 ];
 
 pub fn theme_by_name(name: &str) -> Theme {
@@ -136,6 +138,8 @@ pub fn theme_by_name(name: &str) -> Theme {
         "inferno" => inferno(),
         "neon" => neon(),
         "hacker" => hacker(),
+        "pastel" => pastel(),
+        "miasma" => miasma(),
         _ => midnight(),
     }
 }
@@ -472,6 +476,80 @@ pub fn hacker() -> Theme {
     }
 }
 
+/// Pastel — soft, toned-down palette. Muted pinks, blues, greens on warm gray.
+/// Easy on the eyes, gentle contrast, like a watercolor wash.
+pub fn pastel() -> Theme {
+    Theme {
+        name: "pastel",
+        surface_0: Color::Rgb(42, 40, 45),      // warm dark gray with slight purple
+        surface_1: Color::Rgb(50, 48, 54),       // slightly lighter
+        surface_1_alt: Color::Rgb(54, 52, 58),   // alt stripe
+        surface_2: Color::Rgb(62, 60, 68),       // header/status
+        surface_3: Color::Rgb(75, 72, 82),       // selected row
+        border_active: Color::Rgb(160, 180, 210),   // soft blue
+        border_inactive: Color::Rgb(85, 82, 95),    // muted purple-gray
+        border_accent: Color::Rgb(200, 160, 190),   // soft pink
+        border_subtle: Color::Rgb(58, 56, 64),      // subtle divider
+        text_primary: Color::Rgb(225, 220, 230),    // warm white with lavender tint
+        text_secondary: Color::Rgb(170, 165, 180),  // muted lavender
+        text_muted: Color::Rgb(110, 105, 120),      // dim purple-gray
+        text_accent: Color::Rgb(170, 195, 225),     // soft sky blue
+        gain_green: Color::Rgb(140, 200, 160),      // muted sage green
+        loss_red: Color::Rgb(210, 130, 140),         // soft rose
+        neutral: Color::Rgb(170, 165, 180),
+        live_green: Color::Rgb(140, 200, 160),
+        stale_yellow: Color::Rgb(220, 195, 140),    // soft gold
+        key_hint: Color::Rgb(220, 195, 140),
+        chart_line: Color::Rgb(150, 180, 215),       // soft periwinkle
+        chart_grad_low: Color::Rgb(210, 130, 140),   // soft rose
+        chart_grad_mid: Color::Rgb(220, 195, 140),   // soft gold
+        chart_grad_high: Color::Rgb(140, 200, 160),  // soft sage
+        cat_equity: Color::Rgb(150, 180, 215),       // periwinkle
+        cat_crypto: Color::Rgb(215, 165, 130),       // soft peach
+        cat_forex: Color::Rgb(140, 200, 160),        // sage
+        cat_commodity: Color::Rgb(220, 195, 140),    // soft gold
+        cat_fund: Color::Rgb(185, 155, 200),         // soft lilac
+        cat_cash: Color::Rgb(175, 170, 185),         // neutral lavender
+    }
+}
+
+/// Miasma — warm atmospheric haze. Deep burgundy, dusty orange, olive, muted gold.
+/// Like looking through smoke at a sunset. Rich, warm, and slightly ominous.
+pub fn miasma() -> Theme {
+    Theme {
+        name: "miasma",
+        surface_0: Color::Rgb(22, 16, 14),      // dark burgundy-brown
+        surface_1: Color::Rgb(30, 22, 18),       // warm dark brown
+        surface_1_alt: Color::Rgb(35, 25, 20),   // slightly lighter
+        surface_2: Color::Rgb(42, 30, 24),       // medium brown
+        surface_3: Color::Rgb(58, 40, 30),       // warm brown highlight
+        border_active: Color::Rgb(180, 130, 70),    // dusty gold
+        border_inactive: Color::Rgb(75, 55, 40),    // dim brown
+        border_accent: Color::Rgb(200, 110, 60),    // warm orange
+        border_subtle: Color::Rgb(48, 34, 26),      // barely visible
+        text_primary: Color::Rgb(220, 200, 175),    // warm parchment
+        text_secondary: Color::Rgb(165, 140, 115),  // dusty tan
+        text_muted: Color::Rgb(100, 80, 65),        // dark dusty
+        text_accent: Color::Rgb(210, 155, 80),      // muted gold
+        gain_green: Color::Rgb(145, 165, 75),        // olive green
+        loss_red: Color::Rgb(170, 60, 50),           // deep burgundy-red
+        neutral: Color::Rgb(165, 140, 115),
+        live_green: Color::Rgb(145, 165, 75),
+        stale_yellow: Color::Rgb(190, 150, 60),     // aged gold
+        key_hint: Color::Rgb(210, 170, 80),
+        chart_line: Color::Rgb(200, 140, 65),         // dusty orange
+        chart_grad_low: Color::Rgb(150, 45, 40),     // deep burgundy
+        chart_grad_mid: Color::Rgb(200, 150, 60),    // dusty gold
+        chart_grad_high: Color::Rgb(145, 175, 75),   // olive green
+        cat_equity: Color::Rgb(170, 130, 75),         // warm amber
+        cat_crypto: Color::Rgb(200, 100, 55),         // rusty orange
+        cat_forex: Color::Rgb(145, 165, 75),          // olive
+        cat_commodity: Color::Rgb(200, 160, 60),      // aged gold
+        cat_fund: Color::Rgb(150, 90, 80),            // dusty rose
+        cat_cash: Color::Rgb(160, 145, 125),          // warm stone
+    }
+}
+
 // ---- Utility functions ----
 
 /// Linearly interpolate between two RGB colors. t in [0.0, 1.0].
@@ -793,7 +871,7 @@ mod tests {
     fn next_theme_cycles() {
         assert_eq!(next_theme_name("midnight"), "catppuccin");
         assert_eq!(next_theme_name("gruvbox"), "inferno");
-        assert_eq!(next_theme_name("hacker"), "midnight"); // wraps around
+        assert_eq!(next_theme_name("miasma"), "midnight"); // wraps around
     }
 
     #[test]
@@ -875,8 +953,53 @@ mod tests {
     }
 
     #[test]
-    fn theme_count_is_nine() {
-        assert_eq!(THEME_NAMES.len(), 9);
+    fn theme_count_is_eleven() {
+        assert_eq!(THEME_NAMES.len(), 11);
+    }
+
+    #[test]
+    fn pastel_theme_has_soft_palette() {
+        let theme = pastel();
+        assert_eq!(theme.name, "pastel");
+        // Gains should be muted/soft, not vivid
+        match theme.gain_green {
+            Color::Rgb(r, g, b) => {
+                assert!(g > r, "pastel gains should be green-ish");
+                assert!(g < 220, "pastel gains should be soft, not vivid");
+                assert!(r > 100, "pastel gains should have warm undertone");
+                assert!(b > 100, "pastel gains should be toned (not pure green)");
+            }
+            _ => panic!("expected Rgb"),
+        }
+        // Loss red should be soft rose, not harsh
+        match theme.loss_red {
+            Color::Rgb(r, g, _) => {
+                assert!(r > 180, "pastel loss should have red");
+                assert!(g > 100, "pastel loss should be soft (not pure red)");
+            }
+            _ => panic!("expected Rgb"),
+        }
+    }
+
+    #[test]
+    fn miasma_theme_has_warm_brown_palette() {
+        let theme = miasma();
+        assert_eq!(theme.name, "miasma");
+        // Surface should be warm brown (red > blue)
+        match theme.surface_0 {
+            Color::Rgb(r, _, b) => {
+                assert!(r > b, "miasma surface should be warm (red > blue)");
+            }
+            _ => panic!("expected Rgb"),
+        }
+        // Gains should be olive green
+        match theme.gain_green {
+            Color::Rgb(r, g, b) => {
+                assert!(g > r, "miasma gains should be green-dominant");
+                assert!(b < g, "miasma gains should be olive (low blue)");
+            }
+            _ => panic!("expected Rgb"),
+        }
     }
 
     #[test]
