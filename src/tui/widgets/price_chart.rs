@@ -596,9 +596,12 @@ fn render_braille_chart(
                 row_color
             };
 
+            // Area fill: tint background for cells below the chart line
+            let bg_color = area_fill_bg(v0, v1, row, dot_rows, row_color, t.surface_1);
+
             spans.push(Span::styled(
                 String::from(ch),
-                Style::default().fg(cell_color),
+                Style::default().fg(cell_color).bg(bg_color),
             ));
         }
 
@@ -868,9 +871,13 @@ fn render_braille_mini(
             let v0 = normalized.get(idx0).copied().unwrap_or(0);
             let v1 = normalized.get(idx1).copied().unwrap_or(0);
             let ch = braille_char(v0, v1, row, BRAILLE_ROWS);
+
+            // Area fill: tint background for cells below the chart line
+            let bg_color = area_fill_bg(v0, v1, row, dot_rows, row_color, t.surface_1);
+
             spans.push(Span::styled(
                 String::from(ch),
-                Style::default().fg(row_color),
+                Style::default().fg(row_color).bg(bg_color),
             ));
         }
         lines.push(Line::from(spans));
@@ -899,6 +906,46 @@ fn render_braille_mini(
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
 }
+
+/// Compute area fill background color for a chart cell.
+/// If the cell is below the chart line (both sample points above this row),
+/// returns a dim tinted version of the gradient color blended toward the surface.
+/// Intensity fades from ~15% near the line to ~5% at the bottom.
+/// Returns `surface` unchanged if the cell is at or above the line.
+fn area_fill_bg(
+    v0: usize,
+    v1: usize,
+    row: usize,
+    total_dot_rows: usize,
+    line_color: Color,
+    surface: Color,
+) -> Color {
+    let row_top = (row + 1) * BRAILLE_ROWS;
+    let line_max = v0.max(v1);
+
+    // Only fill cells that are entirely below the line
+    if line_max < row_top {
+        return surface;
+    }
+
+    // Compute distance from line to this row (in dot-row units, 0.0 = at line, 1.0 = bottom)
+    // line_max is the highest dot position; row_top is the top of this cell
+    let distance = if total_dot_rows > 0 {
+        1.0 - (row_top as f32 / total_dot_rows as f32)
+    } else {
+        1.0
+    };
+
+    // Opacity fades from FILL_OPACITY_NEAR (near line) to FILL_OPACITY_FAR (bottom)
+    let opacity = FILL_OPACITY_FAR + (FILL_OPACITY_NEAR - FILL_OPACITY_FAR) * (1.0 - distance);
+
+    theme::lerp_color(surface, line_color, opacity)
+}
+
+/// Maximum area fill opacity (cells just below the line)
+const FILL_OPACITY_NEAR: f32 = 0.15;
+/// Minimum area fill opacity (cells at the chart bottom)
+const FILL_OPACITY_FAR: f32 = 0.04;
 
 fn gain_gradient(gain_f: f64, t: &theme::Theme) -> (Color, Color, Color) {
     if gain_f > 0.0 {
@@ -1377,6 +1424,74 @@ mod tests {
         let src_idx_f = (sample_idx as f64 / sample_count as f64) * (records.len() - 1) as f64;
         let src_idx = (src_idx_f.round() as usize).min(records.len() - 1);
         assert_eq!(records[src_idx].date, "2025-01-01");
+    }
+
+    #[test]
+    fn test_area_fill_bg_returns_surface_when_above_line() {
+        let surface = Color::Rgb(20, 20, 30);
+        let line_color = Color::Rgb(100, 200, 100);
+        // v0=2, v1=2 means line is at dot position 2 (row 0 spans dots 0-3)
+        // row 1 spans dots 4-7, which is above the line → should return surface
+        let result = area_fill_bg(2, 2, 1, 8, line_color, surface);
+        assert_eq!(result, surface);
+    }
+
+    #[test]
+    fn test_area_fill_bg_tints_when_below_line() {
+        let surface = Color::Rgb(20, 20, 30);
+        let line_color = Color::Rgb(100, 200, 100);
+        // v0=7, v1=7 means line at top of row 1 (dot 7)
+        // row 0 spans dots 0-3, row_top=4, line_max=7 → 7 >= 4 → fill
+        let result = area_fill_bg(7, 7, 0, 8, line_color, surface);
+        assert_ne!(result, surface);
+        // Should be a blend between surface and line_color
+        if let Color::Rgb(r, g, b) = result {
+            // The fill should shift colors toward line_color
+            assert!(r > 20 || g > 20 || b > 30);
+        } else {
+            panic!("Expected Rgb color");
+        }
+    }
+
+    #[test]
+    fn test_area_fill_bg_bottom_row_dimmer_than_near_line() {
+        let surface = Color::Rgb(20, 20, 30);
+        let line_color = Color::Rgb(200, 200, 200);
+        // Line at top (dot 15 in a 16-dot grid = 4 rows * 4 dots)
+        // row 0 is bottom, row 2 is near the line
+        let bottom = area_fill_bg(15, 15, 0, 16, line_color, surface);
+        let near_line = area_fill_bg(15, 15, 2, 16, line_color, surface);
+        // Near-line should be brighter (more shifted toward line_color)
+        if let (Color::Rgb(br, _, _), Color::Rgb(nr, _, _)) = (bottom, near_line) {
+            assert!(nr >= br, "Near-line fill ({}) should be >= bottom fill ({})", nr, br);
+        } else {
+            panic!("Expected Rgb colors");
+        }
+    }
+
+    #[test]
+    fn test_area_fill_bg_uses_max_of_v0_v1() {
+        let surface = Color::Rgb(20, 20, 30);
+        let line_color = Color::Rgb(100, 200, 100);
+        // v0=1, v1=6 → max is 6, row 0 top is 4, 6 >= 4 → fill
+        let result = area_fill_bg(1, 6, 0, 8, line_color, surface);
+        assert_ne!(result, surface);
+    }
+
+    #[test]
+    fn test_area_fill_bg_exact_boundary_no_fill() {
+        let surface = Color::Rgb(20, 20, 30);
+        let line_color = Color::Rgb(100, 200, 100);
+        // row 0, row_top = 4. line_max = 3 → 3 < 4 → no fill
+        let result = area_fill_bg(3, 3, 0, 8, line_color, surface);
+        assert_eq!(result, surface);
+    }
+
+    #[test]
+    fn test_area_fill_opacity_constants() {
+        assert!(FILL_OPACITY_NEAR > FILL_OPACITY_FAR);
+        assert!(FILL_OPACITY_NEAR <= 0.20);
+        assert!(FILL_OPACITY_FAR >= 0.0);
     }
 
 }
