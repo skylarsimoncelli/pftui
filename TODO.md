@@ -221,5 +221,5 @@
   - Portfolio chart (with timeframe gains: hourly/daily/weekly/monthly/yearly)
   - Key portfolio stats (total positions, top performer, worst performer)
   - Files: `src/tui/ui.rs`, possibly new `src/tui/views/portfolio_overview.rs`
-- [ ] **Add "POSITIONS" section header** — Below the portfolio overview, the positions table should have its own visible section header "POSITIONS". Clear visual separation between portfolio overview and positions list. Files: `src/tui/ui.rs`, `src/tui/views/positions.rs`.
-- [ ] **Add "ASSET OVERVIEW" header to right pane** — The right pane should have a visible "ASSET OVERVIEW" header. Contains: asset detail header (already exists), asset chart, and any asset-specific data. Files: `src/tui/ui.rs`, `src/tui/widgets/asset_header.rs`.
+- [x] **Add "POSITIONS" section header** — DONE (2026-03-03). Section header bar above positions table with styled rule line. Files: `src/tui/theme.rs`, `src/tui/ui.rs`.
+- [x] **Add "ASSET OVERVIEW" header to right pane** — DONE (2026-03-03). Section header bar above asset header + chart. Files: `src/tui/theme.rs`, `src/tui/ui.rs`.

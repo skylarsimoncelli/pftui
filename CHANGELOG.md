@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Add POSITIONS and ASSET OVERVIEW section headers
+
+- What: added section header bars above the positions table (left pane) and asset overview (right pane) in the standard two-column layout. Headers render as a styled rule line: `── LABEL ────────` with `text_accent` for the label and `border_subtle` for decorative rules, on a `surface_2` background for visual separation between layout sections. Gracefully omitted when terminal is too short.
+- Why: clear visual hierarchy between layout sections. Positions and asset overview now have distinct labeled regions, improving scannability of the two-column layout.
+- Files: `src/tui/theme.rs` (new `SECTION_HEADER_HEIGHT` constant, `render_section_header()` function), `src/tui/ui.rs` (updated `render_positions_layout()` with section headers in left and right panes)
+- Tests: 6 new — section header height constant, label rendering, surface_2 background, zero-height skip, narrow-width skip, full-width fill. Total: 578 tests passing.
+- TODO: Add "POSITIONS" section header (P1), Add "ASSET OVERVIEW" header to right pane (P1)
+
 ### 2026-03-02 — Add crosshair cursor on charts
 
 - What: press `x` in Positions view to toggle a crosshair cursor on the chart. When active, `h`/`l` move the vertical crosshair left/right instead of cycling chart timeframes. A vertical `│` line in `text_accent` color is drawn at the cursor position across all chart rows (including volume and separator). The stats line switches to show the date and price at the cursor position with hint text (`x:off  h/l:move`). Chart title nav hint updates to show crosshair mode. Crosshair resets when changing selected position.
