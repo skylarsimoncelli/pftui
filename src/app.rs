@@ -158,6 +158,55 @@ impl ChartVariant {
     }
 }
 
+/// Actions available in the right-click context menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextMenuAction {
+    ViewDetail,
+    AddTransaction,
+    Delete,
+    CopySymbol,
+}
+
+impl ContextMenuAction {
+    pub fn label(self) -> &'static str {
+        match self {
+            ContextMenuAction::ViewDetail => "View Detail",
+            ContextMenuAction::AddTransaction => "Add Transaction",
+            ContextMenuAction::Delete => "Delete",
+            ContextMenuAction::CopySymbol => "Copy Symbol",
+        }
+    }
+
+    /// Returns the ordered list of context menu actions for positions view.
+    /// In percentage mode, transaction-related actions are excluded.
+    pub fn for_positions(is_percentage_mode: bool) -> Vec<ContextMenuAction> {
+        if is_percentage_mode {
+            vec![ContextMenuAction::ViewDetail, ContextMenuAction::CopySymbol]
+        } else {
+            vec![
+                ContextMenuAction::ViewDetail,
+                ContextMenuAction::AddTransaction,
+                ContextMenuAction::Delete,
+                ContextMenuAction::CopySymbol,
+            ]
+        }
+    }
+}
+
+/// State for the right-click context menu overlay.
+#[derive(Debug, Clone)]
+pub struct ContextMenuState {
+    /// Screen position (column, row) where the menu should render.
+    pub col: u16,
+    pub row: u16,
+    /// Currently highlighted menu item index.
+    pub selected: usize,
+    /// Available actions in this menu instance.
+    pub actions: Vec<ContextMenuAction>,
+    /// Symbol of the position this menu was opened for.
+    pub symbol: String,
+}
+
 /// Which field is active in the add-transaction form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TxFormField {
@@ -341,6 +390,12 @@ pub struct App {
     pub tx_form: Option<TxFormState>,
     pub delete_confirm: Option<DeleteConfirmState>,
 
+    // Right-click context menu
+    pub context_menu: Option<ContextMenuState>,
+
+    // Clipboard (OSC 52 pending write)
+    pub clipboard_osc52: Option<String>,
+
     // Portfolio sparkline timeframe
     pub sparkline_timeframe: ChartTimeframe,
 
@@ -399,6 +454,33 @@ fn merge_history_into(
     } else {
         history.insert(symbol, new_records);
     }
+}
+
+/// Base64-encode a symbol string for OSC 52 clipboard.
+fn base64_encode_symbol(symbol: &str) -> String {
+    use std::io::Write;
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = symbol.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((triple >> 18) & 0x3F) as usize]);
+        out.push(CHARS[((triple >> 12) & 0x3F) as usize]);
+        if chunk.len() > 1 {
+            out.push(CHARS[((triple >> 6) & 0x3F) as usize]);
+        } else {
+            let _ = out.write_all(b"=");
+        }
+        if chunk.len() > 2 {
+            out.push(CHARS[(triple & 0x3F) as usize]);
+        } else {
+            let _ = out.write_all(b"=");
+        }
+    }
+    String::from_utf8(out).unwrap_or_default()
 }
 
 pub fn is_privacy_view(app: &App) -> bool {
@@ -467,6 +549,8 @@ impl App {
             theme_toast_tick: 0,
             tx_form: None,
             delete_confirm: None,
+            context_menu: None,
+            clipboard_osc52: None,
             sparkline_timeframe: ChartTimeframe::ThreeMonths,
             crosshair_mode: false,
             crosshair_x: 0,
@@ -1314,6 +1398,12 @@ impl App {
             return;
         }
 
+        // Context menu mode
+        if self.context_menu.is_some() {
+            self.handle_context_menu_key(key);
+            return;
+        }
+
         // Delete confirmation mode
         if self.delete_confirm.is_some() {
             match key.code {
@@ -1652,6 +1742,11 @@ impl App {
             }
 
             MouseEventKind::Down(MouseButton::Left) => {
+                // If context menu is open, click outside to dismiss
+                if self.context_menu.is_some() {
+                    self.context_menu = None;
+                    return;
+                }
                 // If help overlay is open, click anywhere to dismiss
                 if self.show_help {
                     self.show_help = false;
@@ -1697,6 +1792,70 @@ impl App {
                 // Click in main content area → row selection
                 let content_y = row.saturating_sub(header_h);
                 self.handle_content_click(col, content_y);
+            }
+
+            MouseEventKind::Down(MouseButton::Right) => {
+                // Dismiss context menu if already open
+                if self.context_menu.is_some() {
+                    self.context_menu = None;
+                    return;
+                }
+
+                // Only open context menu in Positions view on data rows
+                if !matches!(self.view_mode, ViewMode::Positions) {
+                    return;
+                }
+
+                // Don't open over other overlays
+                if self.show_help || self.search_overlay_open || self.detail_popup_open {
+                    return;
+                }
+
+                // Compute header height
+                let compact = self.terminal_width < crate::tui::ui::COMPACT_WIDTH;
+                let header_h = if !compact
+                    && matches!(self.view_mode, ViewMode::Positions | ViewMode::Watchlist)
+                {
+                    3u16
+                } else {
+                    2u16
+                };
+
+                // Must be in content area
+                if row < header_h || row >= self.terminal_height.saturating_sub(2) {
+                    return;
+                }
+
+                let content_y = row.saturating_sub(header_h);
+                let wide = self.terminal_width >= crate::tui::ui::COMPACT_WIDTH;
+                let data_start: u16 = if wide { 3 } else { 2 };
+                if content_y < data_start {
+                    return;
+                }
+
+                let clicked_row = (content_y - data_start) as usize;
+                if clicked_row >= self.display_positions.len() {
+                    return;
+                }
+
+                // Select the clicked row first
+                let old_idx = self.selected_index;
+                self.selected_index = clicked_row;
+                if self.selected_index != old_idx {
+                    self.on_position_selection_changed();
+                }
+
+                // Open context menu at click position
+                let symbol = self.display_positions[clicked_row].symbol.clone();
+                let is_pct = self.portfolio_mode == PortfolioMode::Percentage;
+                let actions = ContextMenuAction::for_positions(is_pct);
+                self.context_menu = Some(ContextMenuState {
+                    col,
+                    row,
+                    selected: 0,
+                    actions,
+                    symbol,
+                });
             }
 
             _ => {}
@@ -2292,6 +2451,76 @@ impl App {
     // ── Transaction form methods ──
 
     /// Open the add-transaction form for the currently selected position.
+    /// Handle key input when the context menu is open.
+    fn handle_context_menu_key(&mut self, key: KeyEvent) {
+        let menu = match &self.context_menu {
+            Some(m) => m,
+            None => return,
+        };
+        let action_count = menu.actions.len();
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.context_menu = None;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(ref mut menu) = self.context_menu {
+                    if menu.selected + 1 < action_count {
+                        menu.selected += 1;
+                    }
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(ref mut menu) = self.context_menu {
+                    menu.selected = menu.selected.saturating_sub(1);
+                }
+            }
+            KeyCode::Enter => {
+                let action = menu.actions.get(menu.selected).copied();
+                self.context_menu = None;
+                if let Some(action) = action {
+                    self.execute_context_action(action);
+                }
+            }
+            _ => {
+                // Any other key dismisses the menu
+                self.context_menu = None;
+            }
+        }
+    }
+
+    /// Execute a context menu action on the currently selected position.
+    fn execute_context_action(&mut self, action: ContextMenuAction) {
+        match action {
+            ContextMenuAction::ViewDetail => {
+                if self.selected_position().is_some() {
+                    self.detail_popup_open = true;
+                }
+            }
+            ContextMenuAction::AddTransaction => {
+                if self.portfolio_mode == PortfolioMode::Full {
+                    self.open_tx_form();
+                }
+            }
+            ContextMenuAction::Delete => {
+                if self.portfolio_mode == PortfolioMode::Full {
+                    self.open_delete_confirm();
+                }
+            }
+            ContextMenuAction::CopySymbol => {
+                // Copy symbol to clipboard via OSC 52 escape sequence.
+                // This works in terminals that support OSC 52 (most modern terminals).
+                if let Some(pos) = self.selected_position() {
+                    let symbol = pos.symbol.clone();
+                    let encoded = base64_encode_symbol(&symbol);
+                    // The actual clipboard write happens in the TUI event loop
+                    // by emitting the OSC 52 sequence to stdout.
+                    self.clipboard_osc52 = Some(encoded);
+                }
+            }
+        }
+    }
+
     fn open_tx_form(&mut self) {
         if let Some(pos) = self.selected_position().cloned() {
             self.tx_form = Some(TxFormState::new(pos.symbol, pos.category));
@@ -4999,6 +5228,27 @@ mod prev_day_alloc_tests {
 }
 
 #[cfg(test)]
+#[cfg(test)]
+mod base64_tests {
+    use super::base64_encode_symbol;
+
+    #[test]
+    fn encode_aapl() {
+        assert_eq!(base64_encode_symbol("AAPL"), "QUFQTA==");
+    }
+
+    #[test]
+    fn encode_btc() {
+        assert_eq!(base64_encode_symbol("BTC-USD"), "QlRDLVVTRA==");
+    }
+
+    #[test]
+    fn encode_empty() {
+        assert_eq!(base64_encode_symbol(""), "");
+    }
+}
+
+#[cfg(test)]
 mod mouse_tests {
     use super::*;
     use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
@@ -5207,14 +5457,160 @@ mod mouse_tests {
     }
 
     #[test]
-    fn right_click_ignored() {
+    fn right_click_out_of_bounds_no_context_menu() {
         let mut app = make_app();
         app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
         app.selected_index = 0;
 
-        // Right click should be a no-op
+        // Right click on a row beyond positions count — no context menu
         app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Right), 10, 10));
         assert_eq!(app.selected_index, 0);
+        assert!(app.context_menu.is_none());
+    }
+
+    #[test]
+    fn right_click_on_position_opens_context_menu() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.selected_index = 0;
+
+        // Row 6 in wide mode (header=3, section_header=1, border=1, col_header=1, data row 0 = row 6)
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Right), 10, 6));
+        assert!(app.context_menu.is_some());
+        let menu = app.context_menu.as_ref().unwrap();
+        assert_eq!(menu.symbol, "AAPL");
+        assert_eq!(menu.selected, 0);
+        assert_eq!(menu.actions.len(), 4); // Full mode: View Detail, Add Tx, Delete, Copy Symbol
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn right_click_selects_position_and_opens_menu() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.selected_index = 0;
+
+        // Click on row 7 → second position (GOOG)
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Right), 10, 7));
+        assert!(app.context_menu.is_some());
+        let menu = app.context_menu.as_ref().unwrap();
+        assert_eq!(menu.symbol, "GOOG");
+        assert_eq!(app.selected_index, 1);
+    }
+
+    #[test]
+    fn right_click_in_non_positions_view_ignored() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.view_mode = ViewMode::Markets;
+
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Right), 10, 6));
+        assert!(app.context_menu.is_none());
+    }
+
+    #[test]
+    fn left_click_dismisses_context_menu() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.context_menu = Some(ContextMenuState {
+            col: 10,
+            row: 6,
+            selected: 0,
+            actions: ContextMenuAction::for_positions(false),
+            symbol: "AAPL".to_string(),
+        });
+
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 5, 5));
+        assert!(app.context_menu.is_none());
+    }
+
+    #[test]
+    fn context_menu_j_k_navigates() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.context_menu = Some(ContextMenuState {
+            col: 10,
+            row: 6,
+            selected: 0,
+            actions: ContextMenuAction::for_positions(false),
+            symbol: "AAPL".to_string(),
+        });
+
+        // j moves down
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::empty()));
+        assert_eq!(app.context_menu.as_ref().unwrap().selected, 1);
+
+        // k moves back up
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty()));
+        assert_eq!(app.context_menu.as_ref().unwrap().selected, 0);
+
+        // k at 0 stays at 0
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty()));
+        assert_eq!(app.context_menu.as_ref().unwrap().selected, 0);
+    }
+
+    #[test]
+    fn context_menu_esc_dismisses() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.context_menu = Some(ContextMenuState {
+            col: 10,
+            row: 6,
+            selected: 0,
+            actions: ContextMenuAction::for_positions(false),
+            symbol: "AAPL".to_string(),
+        });
+
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
+        assert!(app.context_menu.is_none());
+    }
+
+    #[test]
+    fn context_menu_enter_view_detail_opens_popup() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.selected_index = 0;
+        app.context_menu = Some(ContextMenuState {
+            col: 10,
+            row: 6,
+            selected: 0, // ViewDetail is first
+            actions: ContextMenuAction::for_positions(false),
+            symbol: "AAPL".to_string(),
+        });
+
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+        assert!(app.context_menu.is_none()); // menu closed
+        assert!(app.detail_popup_open); // detail opened
+    }
+
+    #[test]
+    fn context_menu_enter_copy_symbol_sets_clipboard() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.selected_index = 0;
+        app.context_menu = Some(ContextMenuState {
+            col: 10,
+            row: 6,
+            selected: 3, // CopySymbol is fourth
+            actions: ContextMenuAction::for_positions(false),
+            symbol: "AAPL".to_string(),
+        });
+
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+        assert!(app.context_menu.is_none());
+        assert!(app.clipboard_osc52.is_some());
+    }
+
+    #[test]
+    fn context_menu_percentage_mode_excludes_tx_actions() {
+        let mut app = make_app();
+        app.portfolio_mode = PortfolioMode::Percentage;
+        app.display_positions = vec![make_position("AAPL")];
+
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Right), 10, 6));
+        assert!(app.context_menu.is_some());
+        let menu = app.context_menu.as_ref().unwrap();
+        assert_eq!(menu.actions.len(), 2); // ViewDetail, CopySymbol only
     }
 
     #[test]

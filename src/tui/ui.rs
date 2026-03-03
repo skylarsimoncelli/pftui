@@ -49,6 +49,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         views::position_detail::render(frame, size, app);
     }
 
+    if app.context_menu.is_some() {
+        views::context_menu::render(frame, size, app);
+    }
+
     if app.search_overlay_open {
         views::search_overlay::render(frame, size, app);
     }

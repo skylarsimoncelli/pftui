@@ -71,6 +71,14 @@ fn run_loop(
             }
         }
 
+        // Write clipboard via OSC 52 if pending
+        if let Some(encoded) = app.clipboard_osc52.take() {
+            let _ = crossterm::execute!(
+                terminal.backend_mut(),
+                crossterm::style::Print(format!("\x1b]52;c;{encoded}\x07"))
+            );
+        }
+
         if app.should_quit {
             return Ok(());
         }
