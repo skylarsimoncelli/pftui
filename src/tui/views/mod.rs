@@ -1,3 +1,4 @@
+pub mod asset_detail_popup;
 pub mod context_menu;
 pub mod economy;
 pub mod help;

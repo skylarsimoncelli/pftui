@@ -393,6 +393,9 @@ pub struct App {
     // Right-click context menu
     pub context_menu: Option<ContextMenuState>,
 
+    // Asset detail popup (opened from search overlay)
+    pub asset_detail: Option<crate::tui::views::asset_detail_popup::AssetDetailState>,
+
     // Clipboard (OSC 52 pending write)
     pub clipboard_osc52: Option<String>,
 
@@ -550,6 +553,7 @@ impl App {
             tx_form: None,
             delete_confirm: None,
             context_menu: None,
+            asset_detail: None,
             clipboard_osc52: None,
             sparkline_timeframe: ChartTimeframe::ThreeMonths,
             crosshair_mode: false,
@@ -1392,6 +1396,12 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Asset detail popup (sits on top of search overlay)
+        if self.asset_detail.is_some() {
+            self.handle_asset_detail_key(key);
+            return;
+        }
+
         // Global asset search overlay (must be checked first)
         if self.search_overlay_open {
             self.handle_search_overlay_key(key);
@@ -2555,30 +2565,68 @@ impl App {
                 self.search_overlay_selected = self.search_overlay_selected.saturating_sub(1);
             }
             KeyCode::Enter => {
-                // Select the current result and navigate to it in positions view
+                // Open full asset detail popup for the selected result
                 let results = build_results(self, &self.search_overlay_query.clone());
                 if let Some(result) = results.get(self.search_overlay_selected) {
-                    // If the asset is in the portfolio, select it
                     let symbol = result.symbol.clone();
-                    if let Some(idx) = self.display_positions.iter().position(|p| p.symbol == symbol) {
-                        self.selected_index = idx;
-                        self.view_mode = ViewMode::Positions;
-                        self.detail_popup_open = true;
-                        self.last_selection_change_tick = self.tick_count;
+                    let category = crate::models::asset_names::infer_category(&symbol);
+                    // Request price data if we don't have it
+                    if let Some(svc) = &self.price_service {
+                        if !self.prices.contains_key(&symbol) {
+                            svc.send_command(PriceCommand::FetchAll(vec![(
+                                symbol.clone(),
+                                category,
+                            )]));
+                        }
+                        if !self.price_history.contains_key(&symbol) {
+                            svc.send_command(PriceCommand::FetchHistory(
+                                symbol.clone(),
+                                category,
+                                self.chart_timeframe.days(),
+                            ));
+                        }
                     }
-                    // If in watchlist, switch to watchlist tab and select it
-                    else if let Some(idx) = self.watchlist_entries.iter().position(|w| w.symbol == symbol) {
-                        self.watchlist_selected_index = idx;
-                        self.view_mode = ViewMode::Watchlist;
-                        self.load_watchlist();
-                        self.request_watchlist_data();
-                        self.last_selection_change_tick = self.tick_count;
-                    }
-                    // Otherwise just close (asset not in portfolio or watchlist)
+                    self.asset_detail = Some(
+                        crate::tui::views::asset_detail_popup::AssetDetailState {
+                            symbol,
+                            scroll: 0,
+                        },
+                    );
+                    // Keep search overlay open underneath so Esc returns to it
                 }
-                self.search_overlay_open = false;
-                self.search_overlay_query.clear();
-                self.search_overlay_selected = 0;
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle key input in the asset detail popup (opened from search overlay).
+    fn handle_asset_detail_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                // Close popup, return to search overlay (which is still open underneath)
+                self.asset_detail = None;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if let Some(ref mut state) = self.asset_detail {
+                    state.scroll = state.scroll.saturating_add(1);
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if let Some(ref mut state) = self.asset_detail {
+                    state.scroll = state.scroll.saturating_sub(1);
+                }
+            }
+            KeyCode::Char('G') => {
+                // Jump to bottom
+                if let Some(ref mut state) = self.asset_detail {
+                    state.scroll = usize::MAX; // Will be clamped during render
+                }
+            }
+            KeyCode::Char('g') => {
+                // gg — jump to top (simplified: single g jumps to top in this context)
+                if let Some(ref mut state) = self.asset_detail {
+                    state.scroll = 0;
+                }
             }
             _ => {}
         }
@@ -3529,7 +3577,7 @@ mod search_tests {
     }
 
     #[test]
-    fn test_search_overlay_enter_closes() {
+    fn test_search_overlay_enter_opens_asset_detail() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
@@ -3538,8 +3586,10 @@ mod search_tests {
         app.handle_key(key('c'));
         app.handle_key(enter_key());
 
-        assert!(!app.search_overlay_open);
-        assert!(app.search_overlay_query.is_empty());
+        // Enter now opens asset detail popup, keeping search overlay open underneath
+        assert!(app.search_overlay_open);
+        assert!(app.asset_detail.is_some());
+        assert_eq!(app.asset_detail.as_ref().unwrap().symbol, "BTC");
     }
 
     #[test]
@@ -3603,7 +3653,7 @@ mod search_tests {
     }
 
     #[test]
-    fn test_search_overlay_enter_selects_portfolio_position() {
+    fn test_search_overlay_enter_opens_detail_for_portfolio_position() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
@@ -3612,13 +3662,60 @@ mod search_tests {
         app.handle_key(key('C'));
         app.handle_key(enter_key());
 
-        // BTC is in portfolio — should navigate to it and open detail
-        assert!(!app.search_overlay_open);
-        // The position should be selected if BTC is in display_positions
-        if let Some(idx) = app.display_positions.iter().position(|p| p.symbol == "BTC") {
-            assert_eq!(app.selected_index, idx);
-            assert!(app.detail_popup_open);
-        }
+        // BTC is in portfolio — asset detail popup should open
+        assert!(app.asset_detail.is_some());
+        assert_eq!(app.asset_detail.as_ref().unwrap().symbol, "BTC");
+        // Search overlay stays open underneath
+        assert!(app.search_overlay_open);
+    }
+
+    #[test]
+    fn test_asset_detail_esc_returns_to_search() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+        app.handle_key(enter_key());
+
+        assert!(app.asset_detail.is_some());
+        assert!(app.search_overlay_open);
+
+        // Esc closes asset detail, returns to search overlay
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.asset_detail.is_none());
+        assert!(app.search_overlay_open);
+    }
+
+    #[test]
+    fn test_asset_detail_j_k_scrolls() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+        app.handle_key(enter_key());
+
+        assert!(app.asset_detail.is_some());
+        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 0);
+
+        // j scrolls down
+        app.handle_key(key('j'));
+        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 1);
+
+        app.handle_key(key('j'));
+        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 2);
+
+        // k scrolls up
+        app.handle_key(key('k'));
+        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 1);
+
+        // k at 0 stays at 0
+        app.handle_key(key('k'));
+        app.handle_key(key('k'));
+        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 0);
     }
 
     #[test]
