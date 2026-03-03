@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
@@ -1577,6 +1577,214 @@ impl App {
             }
 
             _ => {}
+        }
+    }
+
+    /// Handle mouse events: scroll wheel, tab clicks, row selection.
+    ///
+    /// Layout is recomputed from terminal dimensions and the same constants
+    /// used in `ui.rs` and `widgets/header.rs`, so hit-testing stays in sync
+    /// without storing mutable rects.
+    pub fn handle_mouse(&mut self, mouse: MouseEvent) {
+        let col = mouse.column;
+        let row = mouse.row;
+
+        match mouse.kind {
+            // Scroll wheel — navigate up/down in current view
+            MouseEventKind::ScrollUp => {
+                // Dismiss overlays with scroll if active
+                if self.show_help || self.search_overlay_open || self.detail_popup_open {
+                    return;
+                }
+                self.move_up();
+            }
+            MouseEventKind::ScrollDown => {
+                if self.show_help || self.search_overlay_open || self.detail_popup_open {
+                    return;
+                }
+                self.move_down();
+            }
+
+            MouseEventKind::Down(MouseButton::Left) => {
+                // If help overlay is open, click anywhere to dismiss
+                if self.show_help {
+                    self.show_help = false;
+                    return;
+                }
+                // If search overlay is open, click outside to dismiss
+                if self.search_overlay_open {
+                    self.search_overlay_open = false;
+                    return;
+                }
+                // If detail popup is open, click outside to dismiss
+                if self.detail_popup_open {
+                    self.detail_popup_open = false;
+                    return;
+                }
+
+                // Compute header height (same logic as widgets/header.rs)
+                let compact = self.terminal_width < crate::tui::ui::COMPACT_WIDTH;
+                let header_h = if !compact
+                    && matches!(self.view_mode, ViewMode::Positions | ViewMode::Watchlist)
+                {
+                    3u16
+                } else {
+                    2u16
+                };
+
+                // Click in header area → tab switching
+                if row < header_h {
+                    self.handle_header_click(col);
+                    return;
+                }
+
+                // Click in status bar (last 2 rows) → ignore for now
+                if row >= self.terminal_height.saturating_sub(2) {
+                    return;
+                }
+
+                // Click in main content area → row selection
+                let content_y = row.saturating_sub(header_h);
+                self.handle_content_click(col, content_y);
+            }
+
+            _ => {}
+        }
+    }
+
+    /// Handle a click in the header area. Detect which tab label was clicked.
+    ///
+    /// Tab layout (non-compact): " pftui  [1]Pos [2]Tx [3]Mkt [4]Econ [5]Watch ..."
+    /// Character offsets are approximate; we use generous hit zones.
+    fn handle_header_click(&mut self, col: u16) {
+        let col = col as usize;
+        let compact = self.terminal_width < crate::tui::ui::COMPACT_WIDTH;
+        let pct_mode = self.portfolio_mode == PortfolioMode::Percentage;
+
+        // Tab label positions (0-indexed character columns).
+        // Layout: " pf" (3) + "tui" (3) + "  " (2) = 8 chars before [1]
+        // [1]Pos  = cols ~8..14
+        // [2]Tx   = cols ~15..20 (hidden in pct mode)
+        // [3]Mkt  = cols ~21..27
+        // [4]Econ = cols ~28..35
+        // [5]Watch = cols ~36..45
+        //
+        // These are rough ranges — generous to make clicking easy.
+        // When [2]Tx is hidden, subsequent tabs shift left by ~5 chars.
+
+        let tx_visible = !pct_mode;
+
+        // [1]Pos — always starts around col 8
+        if (8..14).contains(&col) {
+            self.view_mode = ViewMode::Positions;
+            return;
+        }
+
+        // [2]Tx — only in full mode
+        if tx_visible && (15..20).contains(&col) {
+            self.view_mode = ViewMode::Transactions;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            return;
+        }
+
+        // Offset for remaining tabs depends on whether [2] is visible
+        let base = if tx_visible { 20 } else { 15 };
+
+        // [3]Mkt
+        if (base..base + 7).contains(&col) {
+            self.view_mode = ViewMode::Markets;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            self.request_market_data();
+            return;
+        }
+
+        let econ_label_len: usize = if compact { 5 } else { 7 }; // "[4]Ec" or "[4]Econ"
+        let base2 = base + 7;
+
+        // [4]Econ
+        if (base2..base2 + econ_label_len + 1).contains(&col) {
+            self.view_mode = ViewMode::Economy;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            self.request_economy_data();
+            return;
+        }
+
+        let base3 = base2 + econ_label_len + 1;
+        let watch_label_len: usize = if compact { 4 } else { 8 }; // "[5]W" or "[5]Watch"
+
+        // [5]Watch
+        if (base3..base3 + watch_label_len + 1).contains(&col) {
+            self.view_mode = ViewMode::Watchlist;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            self.load_watchlist();
+            self.request_watchlist_data();
+        }
+    }
+
+    /// Handle a click in the main content area. `content_y` is relative to
+    /// the top of the content area (below header).
+    fn handle_content_click(&mut self, _col: u16, content_y: u16) {
+        // In list views, each row in the table has:
+        //   Row 0: section header (SECTION_HEADER_HEIGHT = 1 in wide mode)
+        //   Row 1: table top border
+        //   Row 2: table header row
+        //   Row 3+: data rows
+        //
+        // The exact offsets vary by view and layout. For simplicity we use
+        // the common case: section header (1) + border (1) + header row (1)
+        // = data starts at content_y == 3.
+
+        let wide = self.terminal_width >= crate::tui::ui::COMPACT_WIDTH;
+        let data_start: u16 = if wide {
+            // section header (1) + top border (1) + column header (1) = 3
+            3
+        } else {
+            // no section header; top border (1) + column header (1) = 2
+            2
+        };
+
+        if content_y < data_start {
+            return;
+        }
+
+        let clicked_row = (content_y - data_start) as usize;
+        let old_pos_idx = self.selected_index;
+
+        match self.view_mode {
+            ViewMode::Positions => {
+                if clicked_row < self.display_positions.len() {
+                    self.selected_index = clicked_row;
+                    if self.selected_index != old_pos_idx {
+                        self.on_position_selection_changed();
+                    }
+                }
+            }
+            ViewMode::Watchlist => {
+                if clicked_row < self.watchlist_entries.len() {
+                    self.watchlist_selected_index = clicked_row;
+                }
+            }
+            ViewMode::Transactions => {
+                if clicked_row < self.display_transactions.len() {
+                    self.tx_selected_index = clicked_row;
+                }
+            }
+            ViewMode::Markets => {
+                let count = markets::market_symbols().len();
+                if clicked_row < count {
+                    self.markets_selected_index = clicked_row;
+                }
+            }
+            ViewMode::Economy => {
+                let count = economy::economy_symbols().len();
+                if clicked_row < count {
+                    self.economy_selected_index = clicked_row;
+                }
+            }
         }
     }
 
@@ -4574,5 +4782,235 @@ mod prev_day_alloc_tests {
         let crypto = app.prev_day_cat_allocations.get(&AssetCategory::Crypto).unwrap();
         assert!(*equity > dec!(4) && *equity < dec!(5));
         assert!(*crypto > dec!(95) && *crypto < dec!(96));
+    }
+}
+
+#[cfg(test)]
+mod mouse_tests {
+    use super::*;
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use std::path::PathBuf;
+
+    fn make_app() -> App {
+        let config = crate::config::Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+        };
+        let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
+        app.terminal_width = 120;
+        app.terminal_height = 40;
+        app
+    }
+
+    fn make_position(symbol: &str) -> Position {
+        Position {
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            category: AssetCategory::Equity,
+            quantity: dec!(10),
+            avg_cost: dec!(100),
+            total_cost: dec!(1000),
+            currency: "USD".to_string(),
+            current_price: Some(dec!(150)),
+            current_value: Some(dec!(1500)),
+            gain: Some(dec!(500)),
+            gain_pct: Some(dec!(50)),
+            allocation_pct: Some(dec!(50)),
+        }
+    }
+
+    fn mouse_event(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: col,
+            row,
+            modifiers: crossterm::event::KeyModifiers::empty(),
+        }
+    }
+
+    #[test]
+    fn scroll_down_moves_selection_down() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG"), make_position("MSFT")];
+        assert_eq!(app.selected_index, 0);
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
+        assert_eq!(app.selected_index, 1);
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
+        assert_eq!(app.selected_index, 2);
+    }
+
+    #[test]
+    fn scroll_up_moves_selection_up() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG"), make_position("MSFT")];
+        app.selected_index = 2;
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollUp, 10, 10));
+        assert_eq!(app.selected_index, 1);
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollUp, 10, 10));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn scroll_up_clamps_at_zero() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.selected_index = 0;
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollUp, 10, 10));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn scroll_ignored_when_help_open() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.show_help = true;
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
+        assert_eq!(app.selected_index, 0); // unchanged
+    }
+
+    #[test]
+    fn scroll_ignored_when_search_overlay_open() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.search_overlay_open = true;
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn click_dismisses_help_overlay() {
+        let mut app = make_app();
+        app.show_help = true;
+
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 10, 10));
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn click_dismisses_search_overlay() {
+        let mut app = make_app();
+        app.search_overlay_open = true;
+
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 10, 10));
+        assert!(!app.search_overlay_open);
+    }
+
+    #[test]
+    fn click_dismisses_detail_popup() {
+        let mut app = make_app();
+        app.detail_popup_open = true;
+
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 10, 10));
+        assert!(!app.detail_popup_open);
+    }
+
+    #[test]
+    fn click_header_tab_1_switches_to_positions() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Markets;
+
+        // Click on [1]Pos area (col ~8-13)
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 10, 0));
+        assert_eq!(app.view_mode, ViewMode::Positions);
+    }
+
+    #[test]
+    fn click_header_tab_2_switches_to_transactions() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+
+        // Click on [2]Tx area (col ~15-19)
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 16, 0));
+        assert_eq!(app.view_mode, ViewMode::Transactions);
+    }
+
+    #[test]
+    fn click_header_tab_2_area_in_percentage_mode_hits_mkt() {
+        let mut app = make_app();
+        app.portfolio_mode = PortfolioMode::Percentage;
+        app.view_mode = ViewMode::Positions;
+
+        // In percentage mode, [2]Tx is hidden. Col 15-21 is now [3]Mkt
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 16, 0));
+        assert_eq!(app.view_mode, ViewMode::Markets);
+    }
+
+    #[test]
+    fn click_position_row_selects_it() {
+        let mut app = make_app();
+        app.display_positions = vec![
+            make_position("AAPL"),
+            make_position("GOOG"),
+            make_position("MSFT"),
+        ];
+        app.selected_index = 0;
+
+        // In wide mode (120 cols), data starts at content_y=3 (section header + border + header row)
+        // Header is 3 rows (positions view, non-compact), so row 0 for positions = absolute row 3+3=6
+        // Click on second row (index 1) = absolute row 3 (header) + 3 (data_start) + 1 = 7
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 5, 7));
+        assert_eq!(app.selected_index, 1);
+    }
+
+    #[test]
+    fn click_out_of_bounds_row_does_not_crash() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.selected_index = 0;
+
+        // Click well beyond the last row
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 5, 30));
+        // Should stay at 0 (out of bounds is ignored)
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn scroll_works_in_markets_view() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Markets;
+        app.markets_selected_index = 0;
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
+        assert_eq!(app.markets_selected_index, 1);
+    }
+
+    #[test]
+    fn scroll_works_in_economy_view() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Economy;
+        app.economy_selected_index = 0;
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
+        assert_eq!(app.economy_selected_index, 1);
+    }
+
+    #[test]
+    fn right_click_ignored() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.selected_index = 0;
+
+        // Right click should be a no-op
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Right), 10, 10));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn scroll_down_clamps_at_last_position() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.selected_index = 1;
+
+        app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
+        assert_eq!(app.selected_index, 1); // clamped
     }
 }

@@ -57,3 +57,12 @@ Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and v
 | `p` | Toggle privacy view (full mode only) |
 | `t` | Cycle color theme |
 | `?` | Toggle help overlay |
+
+## Mouse
+
+| Action | Effect |
+|---|---|
+| Scroll wheel ↑↓ | Navigate up/down in current view |
+| Click tab label | Switch to that view (Pos/Tx/Mkt/Econ/Watch) |
+| Click row | Select that position/item |
+| Click anywhere | Dismiss help overlay, search overlay, or detail popup |

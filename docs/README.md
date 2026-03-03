@@ -150,6 +150,9 @@ Essential keys to get started:
 | `p` | Toggle privacy |
 | `?` | Help overlay |
 | `q` | Quit |
+| Scroll wheel | Navigate up/down |
+| Click tab | Switch view |
+| Click row | Select position/item |
 
 Full reference: **[docs/KEYBINDINGS.md](KEYBINDINGS.md)**
 

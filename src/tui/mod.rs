@@ -60,6 +60,9 @@ fn run_loop(
             event::Event::Key(key) => {
                 app.handle_key(key);
             }
+            event::Event::Mouse(mouse) => {
+                app.handle_mouse(mouse);
+            }
             event::Event::Tick => {
                 app.tick();
             }

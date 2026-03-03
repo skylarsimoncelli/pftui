@@ -3,10 +3,11 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossterm::event::{self as ct_event, KeyEvent};
+use crossterm::event::{self as ct_event, KeyEvent, MouseEvent};
 
 pub enum Event {
     Key(KeyEvent),
+    Mouse(MouseEvent),
     Tick,
     #[allow(dead_code)]
     Resize(u16, u16),
@@ -27,6 +28,11 @@ impl EventHandler {
                 match ct_event::read() {
                     Ok(ct_event::Event::Key(key)) => {
                         if tx.send(Event::Key(key)).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(ct_event::Event::Mouse(mouse)) => {
+                        if tx.send(Event::Mouse(mouse)).is_err() {
                             return;
                         }
                     }

@@ -128,6 +128,15 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("q / Ctrl+C", "Quit", kc, tc));
     lines.push(Line::from(""));
 
+    // ── Mouse ──
+    lines.push(section_header("  Mouse", ac));
+    lines.push(sep_line(bc, sep_w));
+    lines.push(key_line("Scroll ↑↓", "Navigate up/down", kc, tc));
+    lines.push(key_line("Click tab", "Switch view (header tabs)", kc, tc));
+    lines.push(key_line("Click row", "Select position/item", kc, tc));
+    lines.push(key_line("Click", "Dismiss help/search/detail popup", kc, tc));
+    lines.push(Line::from(""));
+
     // ── Footer ──
     lines.push(Line::from(Span::styled(
         "  j/k to scroll · Esc to close",
