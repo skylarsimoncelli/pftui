@@ -199,3 +199,17 @@
 ## P0 — Search Overlay Enhancements (Owner Request)
 
 - [ ] **Embed braille price chart in asset detail popup** — The asset detail popup (opened via Enter in search overlay) currently shows price/technicals/portfolio context as text. Add a full braille price chart section between the Price and Technicals sections, reusing the existing `price_chart::render` infrastructure. Show SMA/BB overlays on the chart. Requires the popup to allocate a chart area and pass it to the chart renderer. Files: `src/tui/views/asset_detail_popup.rs` (add chart section), `src/tui/widgets/price_chart.rs` (may need a standalone render function that takes symbol + history instead of relying on app.selected_position).
+
+## P1 — thinkorswim UX Research (Owner Request)
+
+- [ ] **Research thinkorswim terminal for feature/UX inspiration** — thinkorswim (Schwab/TD Ameritrade) is a mature trading terminal with overlapping features. Research and document what we can learn from their UX:
+  - Layout patterns: how they organize watchlists, charts, positions, order entry
+  - Chart features: drawing tools, studies, multi-timeframe views, chart types (candlestick, Heikin Ashi, etc.)
+  - Scanners/screeners: how they filter and discover assets
+  - Portfolio analytics: Greeks, P&L analysis, risk graphs
+  - Keyboard shortcuts: power-user workflows
+  - Alerts/notifications: price alerts, condition-based triggers
+  - What translates well to a TUI context vs what doesn't
+  - Concrete feature ideas to add to pftui TODO
+  - Output: `docs/RESEARCH-THINKORSWIM.md` with findings and actionable items
+  - Files: new `docs/RESEARCH-THINKORSWIM.md`, then add derived TODO items
