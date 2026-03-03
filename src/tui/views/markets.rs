@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn sparkline_days_reasonable() {
-        assert!(SPARKLINE_DAYS >= 3 && SPARKLINE_DAYS <= 14);
+        const { assert!(SPARKLINE_DAYS >= 3 && SPARKLINE_DAYS <= 14) };
     }
 
     #[test]

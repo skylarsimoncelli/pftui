@@ -69,12 +69,6 @@ fn shimmer_color(theme: &Theme, brightness: f32) -> Color {
     theme::lerp_color(dim, bright, brightness)
 }
 
-/// Returns the expected number of skeleton rows (for testing).
-#[cfg(test)]
-pub fn expected_row_count() -> usize {
-    SKELETON_ROW_COUNT
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

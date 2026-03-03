@@ -1613,10 +1613,10 @@ mod rsi_indicator_tests {
         let line = build_rsi_spans(&t, &records);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         // RSI should be between 30 and 70
-        let rsi_val: f64 = text.trim().split_whitespace().next()
-            .and_then(|s| s.replace('▲', "").replace('▼', "").parse().ok())
+        let rsi_val: f64 = text.split_whitespace().next()
+            .and_then(|s| s.replace(['▲', '▼'], "").parse().ok())
             .unwrap_or(0.0);
-        assert!(rsi_val >= 30.0 && rsi_val <= 70.0,
+        assert!((30.0..=70.0).contains(&rsi_val),
             "Expected neutral RSI (30-70), got: {}", rsi_val);
         // Should use text_secondary (not red or green)
         assert_eq!(line.spans[0].style.fg, Some(t.text_secondary));

@@ -1045,8 +1045,8 @@ mod tests {
 
     #[test]
     fn shadow_opacity_constant_valid() {
-        assert!(SHADOW_OPACITY > 0.0, "shadow should be visible");
-        assert!(SHADOW_OPACITY <= 1.0, "shadow opacity cannot exceed 1.0");
+        const { assert!(SHADOW_OPACITY > 0.0, "shadow should be visible") };
+        const { assert!(SHADOW_OPACITY <= 1.0, "shadow opacity cannot exceed 1.0") };
     }
 
     #[test]

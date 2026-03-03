@@ -1773,9 +1773,9 @@ mod tests {
 
     #[test]
     fn test_area_fill_opacity_constants() {
-        assert!(FILL_OPACITY_NEAR > FILL_OPACITY_FAR);
-        assert!(FILL_OPACITY_NEAR <= 0.20);
-        assert!(FILL_OPACITY_FAR >= 0.0);
+        const { assert!(FILL_OPACITY_NEAR > FILL_OPACITY_FAR) };
+        const { assert!(FILL_OPACITY_NEAR <= 0.20) };
+        const { assert!(FILL_OPACITY_FAR >= 0.0) };
     }
 
     #[test]

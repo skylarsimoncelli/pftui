@@ -5346,7 +5346,6 @@ mod prev_day_alloc_tests {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod base64_tests {
     use super::base64_encode_symbol;
 
