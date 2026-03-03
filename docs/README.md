@@ -26,7 +26,7 @@ Think Bloomberg Terminal, but it runs in your terminal and costs nothing.
 curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
 ```
 
-Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](docs/INSTALLATION.md)
+Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
 
 ---
 
