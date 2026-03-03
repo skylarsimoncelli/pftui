@@ -718,3 +718,11 @@
 - Files: `src/cli.rs` (new `--what-if` arg on Summary), `src/main.rs` (pass through new arg), `src/commands/summary.rs` (parse_what_if function, print_what_if_banner, price override injection)
 - Tests: 729 passing (11 new: parse_what_if single/multiple/case/spaces/empty/no-colon/bad-price/negative/zero, what_if_overrides_prices e2e, what_if_with_group_by e2e). Zero new clippy warnings.
 - TODO: Add `--what-if` flag to summary (P2 Scenario & Analytics)
+
+### 2026-03-03 — Add loading skeleton placeholders for empty view states
+
+- What: added animated shimmer/skeleton placeholder rows that display in the positions, markets, and economy views while waiting for initial price data. Instead of showing blank tables or "---" values during startup, views now show 6 rows of `░` block characters with a sine wave animation — each row has a phase offset creating a cascading downward shimmer effect. The animation uses theme-aware colors (interpolating between `text_muted` and `text_secondary`), alternating row backgrounds for depth, and column widths matched to each view's layout. Skeleton rows appear only when `prices_live` is false; they disappear instantly once the first price update arrives.
+- Why: P2 Micro-Interactions & Feedback — loading skeleton. Makes the initial load feel intentional and polished rather than broken/empty. The shimmer animation signals "data is coming" without needing explicit loading text. Standard UX pattern from web/mobile apps brought to the terminal.
+- Files: new `src/tui/widgets/skeleton.rs` (skeleton_rows, wave_brightness, shimmer_color, 6 tests), `src/tui/widgets/mod.rs` (registered skeleton module), `src/tui/views/positions.rs` (skeleton in render_full_table and render_privacy_table), `src/tui/views/markets.rs` (skeleton gate with else branch), `src/tui/views/economy.rs` (skeleton gate with break)
+- Tests: 735 passing (6 new: skeleton_row_count_matches, skeleton_rows_vary_with_tick, wave_brightness_in_range, shimmer_color_returns_rgb, skeleton_handles_more_cols_than_widths, skeleton_handles_zero_columns). Zero new clippy warnings.
+- TODO: Add loading skeleton for empty states (P2 Micro-Interactions)
