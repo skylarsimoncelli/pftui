@@ -726,3 +726,11 @@
 - Files: new `src/tui/widgets/skeleton.rs` (skeleton_rows, wave_brightness, shimmer_color, 6 tests), `src/tui/widgets/mod.rs` (registered skeleton module), `src/tui/views/positions.rs` (skeleton in render_full_table and render_privacy_table), `src/tui/views/markets.rs` (skeleton gate with else branch), `src/tui/views/economy.rs` (skeleton gate with break)
 - Tests: 735 passing (6 new: skeleton_row_count_matches, skeleton_rows_vary_with_tick, wave_brightness_in_range, shimmer_color_returns_rgb, skeleton_handles_more_cols_than_widths, skeleton_handles_zero_columns). Zero new clippy warnings.
 - TODO: Add loading skeleton for empty states (P2 Micro-Interactions)
+
+### 2026-03-03 — Add `pftui history --date` command for historical portfolio snapshots
+
+- What: added `pftui history --date YYYY-MM-DD` CLI command that reconstructs portfolio state as of a past date using cached price history. Filters transactions to only those on or before the target date, looks up the closest available price at or before that date for each held symbol, computes positions with those historical prices, and displays a summary with a clear date banner. Supports `--group-by category` for category-level breakdown. Works in both full and percentage portfolio modes. Cash positions always price at 1.0 regardless of date. Input validation rejects invalid date formats and future dates.
+- Why: P2 Scenario & Analytics (Feedback) — `pftui history --date 2026-02-28` enables answering "what was my portfolio worth last Friday?" directly from the CLI. Uses existing `get_prices_at_date` infrastructure in price_history.rs. Pairs well with `--what-if` for temporal + hypothetical analysis.
+- Files: new `src/commands/history.rs` (run, validate_date, full/percentage mode rendering, grouped-by-category output, 9 tests), `src/commands/mod.rs` (register module), `src/cli.rs` (History command variant with --date and --group-by args), `src/main.rs` (dispatch)
+- Tests: 744 passing (9 new: validate_date valid/invalid_format/invalid_day, history empty_db/no_txs_before_date/with_price_data/with_group_by/cash_always_priced/percentage_mode). Zero new clippy warnings.
+- TODO: Add historical price snapshots (P2 Scenario & Analytics)

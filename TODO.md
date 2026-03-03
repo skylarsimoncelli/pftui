@@ -50,7 +50,7 @@
 ## P2 — Scenario & Analytics (Feedback)
 
 
-- [ ] **[Feedback] Add historical price snapshots** — `pftui history --date 2026-02-28` to show portfolio value and positions as of a past date using cached price history. Files: new `src/commands/history.rs`, `src/cli.rs`, `src/db/price_history.rs`.
+
 
 ## P3 — Future
 
