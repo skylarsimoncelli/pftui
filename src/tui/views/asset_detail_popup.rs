@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::app::App;
+use crate::indicators;
 use crate::models::asset_names::{infer_category, resolve_name};
 use crate::tui::theme;
 use crate::tui::views::position_detail::format_money;
@@ -322,7 +323,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         }
     }
 
-    // ── Technicals (SMA, Bollinger) ──
+    // ── Technicals (SMA, BB, RSI, MACD) ──
     if let Some(hist) = history {
         if hist.len() >= 20 {
             lines.push(section_header("  Technicals", t.text_accent));
@@ -332,99 +333,87 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 .iter()
                 .map(|h| h.close.to_string().parse::<f64>().unwrap_or(0.0))
                 .collect();
+            let current_f: f64 = current_price
+                .map(|p| p.to_string().parse::<f64>().unwrap_or(0.0))
+                .unwrap_or(0.0);
 
-            // SMA 20
-            let sma20 = simple_moving_average(&closes, 20);
-            if let Some(sma) = sma20 {
-                let current_f: f64 = current_price
-                    .map(|p| p.to_string().parse::<f64>().unwrap_or(0.0))
-                    .unwrap_or(0.0);
-                let above = current_f > sma;
-                let indicator = if above { "▲" } else { "▼" };
-                let ind_color = if above { t.gain_green } else { t.loss_red };
-                lines.push(Line::from(vec![
-                    Span::styled("  SMA(20)     ", Style::default().fg(t.text_secondary)),
-                    Span::styled(
-                        format!("{:.2}", sma),
-                        Style::default().fg(t.text_primary),
-                    ),
-                    Span::styled(
-                        format!(" {}", indicator),
-                        Style::default().fg(ind_color),
-                    ),
-                ]));
-            }
-
-            // SMA 50
-            if closes.len() >= 50 {
-                let sma50 = simple_moving_average(&closes, 50);
-                if let Some(sma) = sma50 {
-                    let current_f: f64 = current_price
-                        .map(|p| p.to_string().parse::<f64>().unwrap_or(0.0))
-                        .unwrap_or(0.0);
-                    let above = current_f > sma;
-                    let indicator = if above { "▲" } else { "▼" };
-                    let ind_color = if above { t.gain_green } else { t.loss_red };
-                    lines.push(Line::from(vec![
-                        Span::styled("  SMA(50)     ", Style::default().fg(t.text_secondary)),
-                        Span::styled(
-                            format!("{:.2}", sma),
-                            Style::default().fg(t.text_primary),
-                        ),
-                        Span::styled(
-                            format!(" {}", indicator),
-                            Style::default().fg(ind_color),
-                        ),
-                    ]));
+            // ── Moving Averages ──
+            let sma_periods: &[(usize, &str)] = &[
+                (20, "SMA(20)  "),
+                (50, "SMA(50)  "),
+                (200, "SMA(200) "),
+            ];
+            for &(period, label) in sma_periods {
+                if closes.len() >= period {
+                    let sma_series = indicators::compute_sma(&closes, period);
+                    if let Some(Some(sma_val)) = sma_series.last() {
+                        let above = current_f > *sma_val;
+                        let indicator = if above { "▲" } else { "▼" };
+                        let ind_color = if above { t.gain_green } else { t.loss_red };
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                format!("  {}   ", label),
+                                Style::default().fg(t.text_secondary),
+                            ),
+                            Span::styled(
+                                format!("{:.2}", sma_val),
+                                Style::default().fg(t.text_primary),
+                            ),
+                            Span::styled(
+                                format!(" {}", indicator),
+                                Style::default().fg(ind_color),
+                            ),
+                        ]));
+                    }
                 }
             }
 
-            // Bollinger Band width (20-period, 2 std dev)
-            let bb = bollinger_band_width(&closes, 20);
-            if let Some((upper, lower, width)) = bb {
+            // ── Bollinger Bands ──
+            let bb_series = indicators::bollinger::compute_bollinger(&closes, 20, 2.0);
+            if let Some(Some(bb)) = bb_series.last() {
                 lines.push(Line::from(vec![
-                    Span::styled("  BB Upper    ", Style::default().fg(t.text_secondary)),
+                    Span::styled("  BB Upper      ", Style::default().fg(t.text_secondary)),
                     Span::styled(
-                        format!("{:.2}", upper),
+                        format!("{:.2}", bb.upper),
                         Style::default().fg(t.text_primary),
                     ),
                 ]));
                 lines.push(Line::from(vec![
-                    Span::styled("  BB Lower    ", Style::default().fg(t.text_secondary)),
+                    Span::styled("  BB Lower      ", Style::default().fg(t.text_secondary)),
                     Span::styled(
-                        format!("{:.2}", lower),
+                        format!("{:.2}", bb.lower),
                         Style::default().fg(t.text_primary),
                     ),
                 ]));
                 lines.push(Line::from(vec![
-                    Span::styled("  BB Width    ", Style::default().fg(t.text_secondary)),
+                    Span::styled("  BB Width      ", Style::default().fg(t.text_secondary)),
                     Span::styled(
-                        format!("{:.2}%", width),
+                        format!("{:.2}%", bb.width * 100.0),
                         Style::default().fg(t.text_primary),
                     ),
                 ]));
             }
 
-            // RSI (14-period)
+            // ── RSI with visual gauge ──
             if closes.len() >= 15 {
-                let rsi = compute_rsi(&closes, 14);
-                if let Some(rsi_val) = rsi {
-                    let rsi_color = if rsi_val > 70.0 {
+                let rsi_series = indicators::compute_rsi(&closes, 14);
+                if let Some(Some(rsi_val)) = rsi_series.last() {
+                    let rsi_color = if *rsi_val > 70.0 {
                         t.loss_red
-                    } else if rsi_val < 30.0 {
+                    } else if *rsi_val < 30.0 {
                         t.gain_green
                     } else {
                         t.text_primary
                     };
-                    let label = if rsi_val > 70.0 {
+                    let label = if *rsi_val > 70.0 {
                         " Overbought"
-                    } else if rsi_val < 30.0 {
+                    } else if *rsi_val < 30.0 {
                         " Oversold"
                     } else {
                         ""
                     };
                     lines.push(Line::from(vec![
-                        Span::styled("  RSI(14)     ", Style::default().fg(t.text_secondary)),
+                        Span::styled("  RSI(14)       ", Style::default().fg(t.text_secondary)),
                         Span::styled(
                             format!("{:.1}", rsi_val),
                             Style::default().fg(rsi_color).bold(),
@@ -434,6 +423,53 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                             Style::default().fg(rsi_color),
                         ),
                     ]));
+                    // Visual RSI gauge: 30 chars wide, color-zoned
+                    lines.push(rsi_gauge_line(*rsi_val, t));
+                }
+            }
+
+            // ── MACD (12, 26, 9) ──
+            if closes.len() >= 35 {
+                let macd_series = indicators::compute_macd(&closes, 12, 26, 9);
+                if let Some(Some(macd)) = macd_series.last() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled("  MACD          ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format!("{:+.4}", macd.macd),
+                            Style::default().fg(t.text_primary),
+                        ),
+                    ]));
+                    lines.push(Line::from(vec![
+                        Span::styled("  Signal        ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format!("{:+.4}", macd.signal),
+                            Style::default().fg(t.text_primary),
+                        ),
+                    ]));
+                    let hist_color = if macd.histogram > 0.0 {
+                        t.gain_green
+                    } else {
+                        t.loss_red
+                    };
+                    let trend = if macd.histogram > 0.0 { "Bullish" } else { "Bearish" };
+                    lines.push(Line::from(vec![
+                        Span::styled("  Histogram     ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format!("{:+.4}", macd.histogram),
+                            Style::default().fg(hist_color).bold(),
+                        ),
+                        Span::styled(
+                            format!(" {}", trend),
+                            Style::default().fg(hist_color),
+                        ),
+                    ]));
+
+                    // Visual MACD histogram bar (last 20 values)
+                    let hist_bars = macd_histogram_bars(&macd_series, t);
+                    if !hist_bars.spans.is_empty() {
+                        lines.push(hist_bars);
+                    }
                 }
             }
 
@@ -564,62 +600,110 @@ fn format_qty(v: Decimal) -> String {
     }
 }
 
-/// Compute simple moving average of the last `period` values.
-fn simple_moving_average(values: &[f64], period: usize) -> Option<f64> {
-    if values.len() < period {
-        return None;
-    }
-    let slice = &values[values.len() - period..];
-    let sum: f64 = slice.iter().sum();
-    Some(sum / period as f64)
-}
+/// Render a visual RSI gauge bar with color zones.
+///
+/// Layout: `  [oversold |   neutral   | overbought]`
+/// 30 chars wide, position marker shows current RSI.
+/// Green zone: 0-30, neutral: 30-70, red zone: 70-100.
+fn rsi_gauge_line<'a>(rsi: f64, t: &crate::tui::theme::Theme) -> Line<'a> {
+    let gauge_width: usize = 30;
+    let pos = ((rsi / 100.0) * gauge_width as f64).round() as usize;
+    let pos = pos.min(gauge_width);
 
-/// Compute Bollinger Band upper, lower, and width percentage.
-fn bollinger_band_width(values: &[f64], period: usize) -> Option<(f64, f64, f64)> {
-    if values.len() < period {
-        return None;
-    }
-    let slice = &values[values.len() - period..];
-    let mean: f64 = slice.iter().sum::<f64>() / period as f64;
-    if mean.abs() < f64::EPSILON {
-        return None;
-    }
-    let variance: f64 = slice.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / period as f64;
-    let std_dev = variance.sqrt();
-    let upper = mean + 2.0 * std_dev;
-    let lower = mean - 2.0 * std_dev;
-    let width = ((upper - lower) / mean) * 100.0;
-    Some((upper, lower, width))
-}
+    let mut spans: Vec<Span<'a>> = Vec::with_capacity(gauge_width + 4);
+    spans.push(Span::styled("  ", Style::default()));
 
-/// Compute RSI (Relative Strength Index) from closing prices.
-fn compute_rsi(values: &[f64], period: usize) -> Option<f64> {
-    if values.len() < period + 1 {
-        return None;
-    }
-
-    let mut gains = 0.0f64;
-    let mut losses = 0.0f64;
-
-    // Initial average gain/loss over first `period` changes
-    for i in (values.len() - period)..values.len() {
-        let change = values[i] - values[i - 1];
-        if change > 0.0 {
-            gains += change;
+    // Build the gauge character by character
+    for i in 0..gauge_width {
+        let zone_color = if i < 9 {
+            // 0-30% zone (oversold = green/bullish)
+            t.gain_green
+        } else if i < 21 {
+            // 30-70% zone (neutral)
+            t.text_muted
         } else {
-            losses += change.abs();
+            // 70-100% zone (overbought = red/bearish)
+            t.loss_red
+        };
+
+        if i == pos {
+            spans.push(Span::styled(
+                "◆".to_string(),
+                Style::default().fg(t.text_accent).bold(),
+            ));
+        } else {
+            spans.push(Span::styled(
+                "─".to_string(),
+                Style::default().fg(zone_color),
+            ));
         }
     }
 
-    let avg_gain = gains / period as f64;
-    let avg_loss = losses / period as f64;
+    spans.push(Span::styled(
+        "  0".to_string(),
+        Style::default().fg(t.text_muted),
+    ));
+    spans.push(Span::styled(
+        "·30·70·".to_string(),
+        Style::default().fg(t.text_muted),
+    ));
+    spans.push(Span::styled(
+        "100".to_string(),
+        Style::default().fg(t.text_muted),
+    ));
 
-    if avg_loss.abs() < f64::EPSILON {
-        return Some(100.0);
+    Line::from(spans)
+}
+
+/// Render a compact MACD histogram bar from the last N values.
+///
+/// Uses block characters (▁▂▃▄▅▆▇█) scaled to the max absolute histogram value.
+/// Green for positive, red for negative.
+fn macd_histogram_bars<'a>(
+    macd_series: &[Option<indicators::MacdResult>],
+    t: &crate::tui::theme::Theme,
+) -> Line<'a> {
+    let bar_chars: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let display_count = 20;
+
+    // Collect last N histogram values
+    let hist_values: Vec<f64> = macd_series
+        .iter()
+        .rev()
+        .take(display_count)
+        .filter_map(|v| v.as_ref().map(|m| m.histogram))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    if hist_values.is_empty() {
+        return Line::from("");
     }
 
-    let rs = avg_gain / avg_loss;
-    Some(100.0 - (100.0 / (1.0 + rs)))
+    let max_abs = hist_values
+        .iter()
+        .map(|v| v.abs())
+        .fold(0.0_f64, f64::max);
+
+    if max_abs < f64::EPSILON {
+        return Line::from("");
+    }
+
+    let mut spans: Vec<Span<'a>> = Vec::with_capacity(hist_values.len() + 2);
+    spans.push(Span::styled("  Hist          ", Style::default().fg(t.text_secondary)));
+
+    for &val in &hist_values {
+        let normalized = (val.abs() / max_abs * (bar_chars.len() - 1) as f64).round() as usize;
+        let idx = normalized.min(bar_chars.len() - 1);
+        let color = if val >= 0.0 { t.gain_green } else { t.loss_red };
+        spans.push(Span::styled(
+            bar_chars[idx].to_string(),
+            Style::default().fg(color),
+        ));
+    }
+
+    Line::from(spans)
 }
 
 #[cfg(test)]
@@ -745,42 +829,56 @@ mod tests {
     }
 
     #[test]
-    fn sma_basic() {
-        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        assert_eq!(simple_moving_average(&values, 5), Some(3.0));
+    fn rsi_gauge_oversold() {
+        let t = crate::tui::theme::midnight();
+        let line = rsi_gauge_line(20.0, &t);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains('◆'), "Gauge should contain position marker");
     }
 
     #[test]
-    fn sma_insufficient_data() {
-        let values = vec![1.0, 2.0];
-        assert_eq!(simple_moving_average(&values, 5), None);
+    fn rsi_gauge_overbought() {
+        let t = crate::tui::theme::midnight();
+        let line = rsi_gauge_line(80.0, &t);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains('◆'));
     }
 
     #[test]
-    fn rsi_all_gains() {
-        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0];
-        let rsi = compute_rsi(&values, 14);
-        assert!(rsi.is_some());
-        assert!((rsi.unwrap() - 100.0).abs() < 0.01);
+    fn macd_histogram_bars_with_data() {
+        let t = crate::tui::theme::midnight();
+        let macd_data: Vec<Option<indicators::MacdResult>> = (0..30)
+            .map(|i| {
+                Some(indicators::MacdResult {
+                    macd: (i as f64 * 0.1).sin(),
+                    signal: (i as f64 * 0.1).cos() * 0.5,
+                    histogram: (i as f64 * 0.1).sin() - (i as f64 * 0.1).cos() * 0.5,
+                })
+            })
+            .collect();
+        let line = macd_histogram_bars(&macd_data, &t);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(!text.is_empty(), "Should render histogram bars");
     }
 
     #[test]
-    fn rsi_mixed() {
-        let values: Vec<f64> = (0..20).map(|i| 100.0 + (i as f64 * 0.5).sin() * 5.0).collect();
-        let rsi = compute_rsi(&values, 14);
-        assert!(rsi.is_some());
-        let v = rsi.unwrap();
-        assert!(v >= 0.0 && v <= 100.0);
-    }
-
-    #[test]
-    fn bollinger_basic() {
-        let values: Vec<f64> = (0..20).map(|i| 100.0 + i as f64).collect();
-        let bb = bollinger_band_width(&values, 20);
-        assert!(bb.is_some());
-        let (upper, lower, width) = bb.unwrap();
-        assert!(upper > lower);
-        assert!(width > 0.0);
+    fn build_lines_shows_macd_with_enough_history() {
+        let mut app = test_app();
+        app.prices.insert("AAPL".to_string(), dec!(175));
+        let mut hist = Vec::new();
+        for i in 0..50 {
+            hist.push(HistoryRecord {
+                date: format!("2026-01-{:02}", (i % 28) + 1),
+                close: dec!(150) + Decimal::from(i),
+                volume: None,
+            });
+        }
+        app.price_history.insert("AAPL".to_string(), hist);
+        let lines = build_lines("AAPL", &app);
+        let text = lines_to_string(&lines);
+        assert!(text.contains("MACD"), "Should show MACD with 50+ data points");
+        assert!(text.contains("Signal"), "Should show Signal line");
+        assert!(text.contains("Histogram"), "Should show Histogram value");
     }
 
     #[test]

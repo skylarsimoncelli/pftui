@@ -9,6 +9,7 @@ use crate::indicators::sma::compute_sma;
 #[derive(Debug, Clone, Copy)]
 pub struct BollingerBands {
     /// Middle band (SMA).
+    #[allow(dead_code)]
     pub middle: f64,
     /// Upper band (SMA + multiplier * stddev).
     pub upper: f64,
