@@ -60,7 +60,7 @@
 ## P1 — Markets & Economy Tab Enhancements (Feedback)
 
 
-- [ ] **[Feedback] Economy tab context enrichment** — Add last release date, trend arrows (↑/↓/→), and consensus vs actual context to economy indicators. For treasury yields, show the yield curve status (normal/inverted). Files: `src/tui/views/economy.rs`.
+
 
 ## P2 — Scenario & Analytics (Feedback)
 

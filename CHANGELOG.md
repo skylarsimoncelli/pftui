@@ -622,3 +622,11 @@
 - Files: `src/app.rs` (rewrote the date iteration loop in `compute_portfolio_value_history()` to build and consult `last_known` HashMap; 6 new tests in `portfolio_value_history_tests` module)
 - Tests: 6 new tests (LOCF fills missing dates, no sine wave with staggered data, cash always included, position excluded before first price, empty history, percentage mode clears). Total: 604 tests passing.
 - TODO: Fix portfolio value history sine wave bug (P0)
+
+### 2026-03-03 — Enrich Economy tab with trend arrows, 7D sparklines, momentum, and yield curve status
+
+- What: overhauled the Economy tab (tab 4) from a basic 5-column value table to a rich 8-column dashboard. Added three new columns: (1) 7D mini braille sparkline showing recent price trend per indicator using gradient-colored block characters (▁▂▃▄▅▆▇█), (2) 7D momentum % showing weekly price change, and (3) trend arrow (↑/↓/→) based on 7D momentum with a ±0.5% threshold. Also added a yield curve status row that appears after the treasury yields group, showing NORMAL/INVERTED/FLAT with the 2Y-10Y spread in basis points. Renamed existing "Change %" column to "Day %" for clarity alongside the new 7D column. Column widths rebalanced: Symbol(8), Name(14+), Group(12), Value(12), Day%(9), 7D sparkline(7), 7D%(9), Trend(6).
+- Why: P1 Feedback — Economy tab context enrichment. Adds the trend arrows, weekly momentum, and yield curve context requested in feedback. The yield curve status (normal vs inverted) is one of the most important macro signals and was completely missing. The sparklines and trend arrows give instant visual context for each indicator's direction without requiring the user to interpret raw numbers.
+- Files: `src/tui/views/economy.rs` (new `YieldCurveState` enum, `yield_curve_status()`, `trend_arrow()`, `build_mini_sparkline()`, `build_sparkline_spans()`, `compute_7d_momentum()` functions; expanded render to 8 columns with yield curve status row; 20 new tests)
+- Tests: 20 new tests (yield curve: normal/inverted/flat/unknown, trend arrows: up/down/flat/none, sparklines: ascending/empty/flat, momentum: basic/insufficient, constants). Total: 624 tests passing.
+- TODO: Economy tab context enrichment (P1 Feedback)
