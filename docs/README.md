@@ -1,10 +1,8 @@
-# pftui
-
-**Your portfolio, in the terminal. Live prices. Braille charts. Zero fluff.**
+# pftui - The Portfolio TUI!
 
 <img width="1606" height="1025" alt="image" src="https://github.com/user-attachments/assets/375d1af7-8050-4879-aee0-0e04f1dce125" />
 
-A maximalist terminal dashboard for tracking your investments — equities, crypto, forex, commodities, funds — with live market data, ratio analysis, 6 hand-tuned color themes, and vim-native keybindings. Built in Rust.
+A maximalist terminal dashboard for tracking your investments — equities, crypto, forex, commodities, funds — with live market data, ratio analysis, 6 hand-tuned color themes, and vim-native keybindings. Built in Rust. 
 
 Think Bloomberg Terminal meets btop.
 
