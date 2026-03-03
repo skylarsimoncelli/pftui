@@ -97,6 +97,9 @@ pftui value                     # Quick portfolio value + gain
 pftui brief                     # Markdown portfolio brief (for agents/scripts)
 pftui watch AAPL               # Add to watchlist
 pftui unwatch AAPL             # Remove from watchlist
+pftui snapshot                 # Render TUI as ANSI text to stdout
+pftui snapshot --plain         # Render TUI as plain text (no colors)
+pftui snapshot --width 80 --height 24  # Custom dimensions
 ```
 
 ## Views

@@ -103,6 +103,21 @@ pub enum Command {
     /// Launch pftui with a realistic demo portfolio (your real data is untouched)
     Demo,
 
+    /// Render the TUI as ANSI text to stdout (no interactive terminal required)
+    Snapshot {
+        /// Terminal width in columns (default: 120)
+        #[arg(long, default_value = "120")]
+        width: u16,
+
+        /// Terminal height in rows (default: 40)
+        #[arg(long, default_value = "40")]
+        height: u16,
+
+        /// Strip colors and output plain text only
+        #[arg(long)]
+        plain: bool,
+    },
+
     /// Import data from a JSON snapshot file (as produced by `pftui export json`)
     Import {
         /// Path to the JSON snapshot file

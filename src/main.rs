@@ -123,6 +123,10 @@ fn main() -> Result<()> {
             commands::demo::run(&config)
         }
 
+        Some(Command::Snapshot { width, height, plain }) => {
+            commands::snapshot::run(&config, Some(width), Some(height), plain)
+        }
+
         Some(Command::Import { path, mode }) => {
             let import_mode = match mode {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,

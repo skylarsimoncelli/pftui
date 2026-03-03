@@ -457,6 +457,16 @@ impl App {
         }
     }
 
+    /// Initialize app state from cached data only, without starting the price
+    /// service or fetching live data. Used by the `snapshot` command.
+    pub fn init_offline(&mut self) {
+        self.load_data();
+        self.load_cached_prices();
+        self.load_cached_history();
+        self.load_watchlist();
+        self.recompute();
+    }
+
     pub fn init(&mut self) {
         self.load_data();
         self.load_cached_prices();
