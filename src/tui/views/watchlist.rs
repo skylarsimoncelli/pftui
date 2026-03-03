@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, BorderType, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Row, Table},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -34,7 +34,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let paragraph = ratatui::widgets::Paragraph::new(empty_msg).block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_set(crate::tui::theme::BORDER_INACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
                 .title(Span::styled(
                     " Watchlist ",
@@ -140,7 +140,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_set(crate::tui::theme::BORDER_INACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
                 .title(Span::styled(
                     " Watchlist ",

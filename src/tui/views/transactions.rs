@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, BorderType, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Row, Table},
 };
 
 use crate::app::App;
@@ -84,7 +84,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_set(crate::tui::theme::BORDER_ACTIVE)
                 .border_style(Style::default().fg(t.border_active))
                 .style(Style::default().bg(t.surface_1))
                 .title(Span::styled(

@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -30,7 +30,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_set(crate::tui::theme::BORDER_ACTIVE)
         .border_style(Style::default().fg(header_border_color))
         .style(Style::default().bg(t.surface_1));
 

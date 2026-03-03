@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, BorderType, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Row, Table},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -531,7 +531,7 @@ fn render_table(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_set(if is_active_panel { crate::tui::theme::BORDER_ACTIVE } else { crate::tui::theme::BORDER_INACTIVE })
                 .border_style(Style::default().fg(border_color))
                 .style(Style::default().bg(t.surface_1))
                 .title(Span::styled(title, Style::default().fg(t.text_primary).bold()))

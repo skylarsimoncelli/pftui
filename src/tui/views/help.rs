@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 
 use crate::app::App;
@@ -184,7 +184,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let help = Paragraph::new(scrolled_lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
+            .border_set(crate::tui::theme::BORDER_POPUP)
             .border_style(Style::default().fg(t.border_accent))
             .style(Style::default().bg(t.surface_2))
             .title(Span::styled(

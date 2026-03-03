@@ -1,6 +1,39 @@
 use ratatui::style::Color;
+use ratatui::symbols::border;
 
 use crate::models::asset::AssetCategory;
+
+// ---- Border set constants ----
+
+/// Active/focused panel border: double-line top (═══) with single-line sides (│).
+/// Gives a premium, Bloomberg-like feel to the focused panel.
+pub const BORDER_ACTIVE: border::Set = border::Set {
+    top_left: "╒",
+    top_right: "╕",
+    bottom_left: "└",
+    bottom_right: "┘",
+    vertical_left: "│",
+    vertical_right: "│",
+    horizontal_top: "═",
+    horizontal_bottom: "─",
+};
+
+/// Inactive/unfocused panel border: standard single-line (┌───┐).
+/// Clean and minimal, recedes visually behind the active panel.
+pub const BORDER_INACTIVE: border::Set = border::Set {
+    top_left: "┌",
+    top_right: "┐",
+    bottom_left: "└",
+    bottom_right: "┘",
+    vertical_left: "│",
+    vertical_right: "│",
+    horizontal_top: "─",
+    horizontal_bottom: "─",
+};
+
+/// Popup/overlay border: full double-line (╔═══╗ / ║ ║ / ╚═══╝).
+/// Maximum visual weight for modals that need to stand out above everything.
+pub const BORDER_POPUP: border::Set = border::DOUBLE;
 
 // ---- Animation constants ----
 pub const PULSE_PERIOD: u64 = 90; // ~1.4s at 60fps
@@ -573,5 +606,41 @@ mod tests {
         let _ = theme.category_color(AssetCategory::Commodity);
         let _ = theme.category_color(AssetCategory::Fund);
         let _ = theme.category_color(AssetCategory::Cash);
+    }
+
+    #[test]
+    fn border_active_has_double_top_single_sides() {
+        assert_eq!(BORDER_ACTIVE.horizontal_top, "═");
+        assert_eq!(BORDER_ACTIVE.vertical_left, "│");
+        assert_eq!(BORDER_ACTIVE.vertical_right, "│");
+        assert_eq!(BORDER_ACTIVE.horizontal_bottom, "─");
+        assert_eq!(BORDER_ACTIVE.top_left, "╒");
+        assert_eq!(BORDER_ACTIVE.top_right, "╕");
+    }
+
+    #[test]
+    fn border_inactive_is_plain_single_line() {
+        assert_eq!(BORDER_INACTIVE.horizontal_top, "─");
+        assert_eq!(BORDER_INACTIVE.horizontal_bottom, "─");
+        assert_eq!(BORDER_INACTIVE.vertical_left, "│");
+        assert_eq!(BORDER_INACTIVE.vertical_right, "│");
+        assert_eq!(BORDER_INACTIVE.top_left, "┌");
+        assert_eq!(BORDER_INACTIVE.top_right, "┐");
+        assert_eq!(BORDER_INACTIVE.bottom_left, "└");
+        assert_eq!(BORDER_INACTIVE.bottom_right, "┘");
+    }
+
+    #[test]
+    fn border_popup_is_full_double_line() {
+        use ratatui::symbols::border;
+        assert_eq!(BORDER_POPUP, border::DOUBLE);
+    }
+
+    #[test]
+    fn border_active_and_inactive_differ() {
+        // Active and inactive should have visually distinct top borders
+        assert_ne!(BORDER_ACTIVE.horizontal_top, BORDER_INACTIVE.horizontal_top);
+        assert_ne!(BORDER_ACTIVE.top_left, BORDER_INACTIVE.top_left);
+        assert_ne!(BORDER_ACTIVE.top_right, BORDER_INACTIVE.top_right);
     }
 }
