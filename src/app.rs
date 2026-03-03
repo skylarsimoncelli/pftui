@@ -1755,7 +1755,7 @@ impl App {
 
     /// Handle a click in the main content area. `content_y` is relative to
     /// the top of the content area (below header).
-    fn handle_content_click(&mut self, _col: u16, content_y: u16) {
+    fn handle_content_click(&mut self, col: u16, content_y: u16) {
         // In list views, each row in the table has:
         //   Row 0: section header (SECTION_HEADER_HEIGHT = 1 in wide mode)
         //   Row 1: table top border
@@ -1774,6 +1774,13 @@ impl App {
             // no section header; top border (1) + column header (1) = 2
             2
         };
+
+        // Check if click is on the column header row (one row before data start)
+        let header_row = data_start.saturating_sub(1);
+        if content_y == header_row && matches!(self.view_mode, ViewMode::Positions) {
+            self.handle_column_header_click(col);
+            return;
+        }
 
         if content_y < data_start {
             return;
@@ -1813,6 +1820,88 @@ impl App {
                     self.economy_selected_index = clicked_row;
                 }
             }
+        }
+    }
+
+    /// Handle a click on the column header row in the Positions view.
+    /// Maps the clicked column to a SortField and toggles sort direction
+    /// if clicking the already-active sort column.
+    fn handle_column_header_click(&mut self, col: u16) {
+        let wide = self.terminal_width >= crate::tui::ui::COMPACT_WIDTH;
+        let privacy = is_privacy_view(self);
+
+        // Compute the table content area start X.
+        // In wide mode, the positions table is in the left 57% panel.
+        // The table Block has Borders::ALL, so content starts 1 cell in.
+        let table_area_width = if wide {
+            (self.terminal_width * 57) / 100
+        } else {
+            self.terminal_width
+        };
+        // Table content starts at x=1 (left border), ends at table_area_width-2
+        let content_start_x: u16 = 1;
+        let content_width = table_area_width.saturating_sub(2); // minus left+right border
+
+        // Column widths and their sort field mappings.
+        // Must match the constraints in positions.rs render_full_table / render_privacy_table.
+        // ratatui default column_spacing = 1.
+        let (col_widths, sort_fields): (Vec<u16>, Vec<Option<SortField>>) = if privacy {
+            // Privacy: Asset, Price, Day%, Alloc%, 52W, Trend
+            let fixed: u16 = 12 + 7 + 8 + 11 + 8; // all fixed-width columns
+            let gaps: u16 = 5; // 6 columns → 5 gaps
+            let asset_w = content_width.saturating_sub(fixed + gaps).max(18);
+            (
+                vec![asset_w, 12, 7, 8, 11, 8],
+                vec![
+                    Some(SortField::Name),       // Asset
+                    None,                         // Price (no sort field)
+                    None,                         // Day% (no sort field)
+                    Some(SortField::Allocation),  // Alloc%
+                    None,                         // 52W
+                    None,                         // Trend
+                ],
+            )
+        } else {
+            // Full: Asset, Qty, Price, Day%, Gain%, Alloc%, 52W, Trend
+            let fixed: u16 = 8 + 16 + 7 + 8 + 7 + 11 + 8; // all fixed-width columns
+            let gaps: u16 = 7; // 8 columns → 7 gaps
+            let asset_w = content_width.saturating_sub(fixed + gaps).max(14);
+            (
+                vec![asset_w, 8, 16, 7, 8, 7, 11, 8],
+                vec![
+                    Some(SortField::Name),       // Asset
+                    None,                         // Qty (no sort field)
+                    None,                         // Price (no sort field)
+                    None,                         // Day% (no sort field)
+                    Some(SortField::GainPct),     // Gain%
+                    Some(SortField::Allocation),  // Alloc%
+                    None,                         // 52W
+                    None,                         // Trend
+                ],
+            )
+        };
+
+        // Find which column was clicked
+        let rel_col = col.saturating_sub(content_start_x);
+        let mut cumulative: u16 = 0;
+        for (i, &w) in col_widths.iter().enumerate() {
+            let col_end = cumulative + w;
+            if rel_col < col_end {
+                // Clicked in column i
+                if let Some(field) = &sort_fields[i] {
+                    if self.sort_field == *field {
+                        self.sort_ascending = !self.sort_ascending;
+                    } else {
+                        self.sort_field = *field;
+                        // Default direction: Name/Category ascending, others descending
+                        self.sort_ascending = matches!(field, SortField::Name | SortField::Category);
+                    }
+                    self.last_sort_change_tick = self.tick_count;
+                    self.recompute();
+                }
+                return;
+            }
+            cumulative = col_end + 1; // +1 for column spacing
         }
     }
 
@@ -5040,5 +5129,81 @@ mod mouse_tests {
 
         app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
         assert_eq!(app.selected_index, 1); // clamped
+    }
+
+    #[test]
+    fn click_column_header_sorts_by_asset_name() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.view_mode = ViewMode::Positions;
+        // Default sort is Allocation desc
+        assert_eq!(app.sort_field, SortField::Allocation);
+
+        // In wide mode (120 cols), header row is at content_y = 2 (section_header=1, border=1, then header).
+        // With header_h = 3 (wide + Positions view with ticker), content_y = row - header_h.
+        // Header row is at absolute row = header_h + section_header(1) + border(1) = 3 + 1 + 1 = 5.
+        // content_y = 5 - 3 = 2, which is data_start - 1 = 3 - 1 = 2. ✓
+        // Click in Asset column (col ~2, inside left border)
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 2, 5));
+        assert_eq!(app.sort_field, SortField::Name);
+        assert!(app.sort_ascending); // Name defaults ascending
+    }
+
+    #[test]
+    fn click_column_header_toggles_direction_on_same_field() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.view_mode = ViewMode::Positions;
+        app.sort_field = SortField::Name;
+        app.sort_ascending = true;
+
+        // Click Asset column again → should toggle to descending
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 2, 5));
+        assert_eq!(app.sort_field, SortField::Name);
+        assert!(!app.sort_ascending);
+    }
+
+    #[test]
+    fn click_column_header_alloc_column() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.view_mode = ViewMode::Positions;
+        app.sort_field = SortField::Name;
+        app.sort_ascending = true;
+
+        // In full mode (120 cols wide), compute Alloc% column position.
+        // Table content width = 57% of 120 = 68, minus 2 borders = 66.
+        // Fixed cols: 8+16+7+8+7+11+8 = 65. Gaps: 7. Asset = 66-65-7 = max(14, -6) → 14.
+        // But Min(14) means at least 14, so asset_w = max(66 - 65 - 7, 14) = max(-6, 14) = 14.
+        // Col offsets (0-indexed from border):
+        //   Asset: 0..14, gap, Qty: 15..23, gap, Price: 24..40, gap,
+        //   Day%: 41..48, gap, Gain%: 49..57, gap, Alloc%: 58..65
+        // Absolute col = 1 (border) + 58 = 59
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 59, 5));
+        assert_eq!(app.sort_field, SortField::Allocation);
+        assert!(!app.sort_ascending); // Allocation defaults descending
+    }
+
+    #[test]
+    fn click_column_header_updates_sort_flash_tick() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.view_mode = ViewMode::Positions;
+        app.tick_count = 100;
+
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 2, 5));
+        assert_eq!(app.last_sort_change_tick, 100);
+    }
+
+    #[test]
+    fn click_column_header_ignored_in_non_positions_view() {
+        let mut app = make_app();
+        app.display_positions = vec![make_position("AAPL")];
+        app.view_mode = ViewMode::Markets;
+        app.sort_field = SortField::Allocation;
+
+        // Click where header would be — should NOT change sort
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 2, 5));
+        assert_eq!(app.sort_field, SortField::Allocation);
     }
 }
