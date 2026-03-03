@@ -3,6 +3,7 @@ mod cli;
 mod commands;
 mod config;
 mod db;
+mod indicators;
 mod models;
 mod price;
 mod regime;
