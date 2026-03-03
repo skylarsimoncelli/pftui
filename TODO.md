@@ -113,10 +113,11 @@
   - The web UI should share as much logic as possible with the TUI — extract portfolio data computation, sorting, filtering, chart data generation into a shared `core` layer that both TUI and web consume. The web frontend renders the same data, NOT a copy of the TUI rendering code.
   - Tech stack suggestion: `axum` or `warp` for HTTP server, serve a lightweight JS frontend (or HTMX) that calls REST API endpoints backed by the shared core. Keep dependencies minimal.
   - Files: new `src/web/` module (server.rs, routes.rs, static/), refactor shared logic into `src/core/` if not already separated, `src/cli.rs`
+  - **Embedded TradingView charts** — Use TradingView's free embeddable widget (Advanced Chart Widget) for interactive charts in the web UI. Each asset detail page should embed a TradingView chart with the correct symbol. This gives us professional-grade charting (candlesticks, indicators, drawing tools, multi-timeframe) for free. Use the lightweight widget JS embed, not the full library. Fall back to our own braille-style SVG chart if TradingView widget fails to load.
   - This is a bigger effort — break into sub-tasks if needed:
     1. [ ] Extract shared core logic from TUI-specific rendering
     2. [ ] Build REST API (positions, transactions, watchlist, chart data, portfolio summary)
-    3. [ ] Build minimal web frontend
+    3. [ ] Build minimal web frontend with TradingView chart embeds
     4. [ ] Add auth, bind options, PID management
 
 ## P0 — CI & Release Pipeline (Owner Request)
