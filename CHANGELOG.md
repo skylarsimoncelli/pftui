@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Add compact RSI(14) indicator column to Positions and Watchlist tabs (F1.3)
+
+- What: Added RSI column to Positions tab (full and privacy views) and Watchlist tab. Shows RSI(14) value with color-coded zones: red >70 (overbought), green <30 (oversold), neutral otherwise. Direction arrows (▲/▼) show RSI momentum vs previous bar. Uses the existing `indicators::compute_rsi()` engine.
+- Why: F1.3 — at-a-glance RSI per position without opening the detail popup. Helps spot overbought/oversold conditions across the whole portfolio.
+- Files: `src/tui/views/positions.rs` (added `build_rsi_spans()`, RSI column in full/privacy tables), `src/tui/views/watchlist.rs` (RSI column)
+- Tests: 834 passing (+6 new: empty history, insufficient data, all-rising overbought, all-falling oversold, neutral range, rising arrow)
+- TODO: F1.3 — Compact indicator strip on position rows
+
 ### 2026-03-03 — Wire indicators into asset detail popup, add MACD + RSI gauge + SMA(200) (F1.2)
 
 - What: Replaced local SMA/BB/RSI implementations in asset detail popup with the `indicators/` module. Added MACD(12,26,9) display with histogram bars, RSI visual gauge bar (color-zoned), and SMA(200). Removed dead_code suppressions from indicators module.
