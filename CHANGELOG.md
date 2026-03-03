@@ -662,3 +662,11 @@
 - Files: new `src/tui/widgets/portfolio_stats.rs` (Performer type alias, `find_top_worst_performers()`, `build_performer_line()`, `render()`, STATS_HEIGHT constant; 4 tests), `src/tui/widgets/sidebar.rs` (replaced top_movers with portfolio_stats in layout), `src/tui/widgets/mod.rs` (registered new module), `src/tui/ui.rs` (renamed section header to "PORTFOLIO OVERVIEW"), `src/tui/widgets/top_movers.rs` (added `#![allow(dead_code)]`)
 - Tests: 4 new tests (stats height constant, performer line formatting for positive/negative/zero values). Total: 656 tests passing.
 - TODO: Restructure left pane as "PORTFOLIO OVERVIEW" (P1 Owner Request)
+
+### 2026-03-03 — Add `pftui snapshot` command for headless TUI rendering
+
+- What: added a new `pftui snapshot` command that renders the full TUI as ANSI-colored text to stdout, without requiring an interactive terminal. Supports `--plain` flag for color-stripped output, and `--width`/`--height` flags to control viewport dimensions (defaults: 120×40). Uses ratatui's `TestBackend` to render a single frame with cached data only — no price service, no live fetching. Added `App::init_offline()` method for data loading without starting background services. The ANSI output preserves all theme colors (RGB, indexed, basic), bold/italic/underline modifiers, and renders braille charts, allocation bars, sparklines, and all widgets faithfully.
+- Why: P1 Feedback item — enables agents and scripts to review the TUI's visual layout without running interactively. `pftui snapshot --plain` gives a text-only view suitable for automated analysis; `pftui snapshot` gives a full-color ANSI rendering that can be piped, captured, or displayed.
+- Files: new `src/commands/snapshot.rs` (run(), print_plain(), print_ansi(), color conversion helpers; 7 tests), `src/commands/mod.rs` (register module), `src/cli.rs` (Snapshot variant with --width/--height/--plain args), `src/main.rs` (dispatch), `src/app.rs` (new `init_offline()` public method), `docs/README.md` (usage examples)
+- Tests: 7 new tests (RGB/indexed/basic/reset color conversion for both fg and bg, default dimensions). Total: 663 tests passing.
+- TODO: `pftui snapshot` / `pftui render` command (P1 Feedback)

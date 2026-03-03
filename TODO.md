@@ -28,7 +28,7 @@
 ## P1 — CLI Enhancements (Feedback)
 
 - [ ] **[Feedback] Native multi-currency with live FX conversion** — Store non-USD currencies in their native denomination (e.g., GBP as GBP, not as USD equivalent). Convert to primary currency using live FX rates in summary/TUI. Show FX rate and flag currency risk. This is a larger effort — may need to split into sub-tasks. Files: `src/models/position.rs`, `src/price/mod.rs` (FX rate fetching), `src/commands/summary.rs`, `src/tui/widgets/header.rs`.
-- [ ] **[Feedback] Add `pftui snapshot` / `pftui render` command** — Dump the TUI view as ANSI text to stdout, enabling agents to review the visual layout without running interactively. Files: new `src/commands/snapshot.rs`, `src/cli.rs` (use ratatui's `TestBackend` or similar to render to string).
+
 
 ## P2 — Chart Visual Enhancements
 
