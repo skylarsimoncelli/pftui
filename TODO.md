@@ -49,7 +49,7 @@
 
 ## P2 — Scenario & Analytics (Feedback)
 
-- [ ] **[Feedback] Add `--what-if` flag to summary** — `pftui summary --what-if GC=F:5500,BTC:55000` to model hypothetical price scenarios. Compute portfolio value and allocation under hypothetical prices. Transformative for scenario planning. Files: `src/commands/summary.rs` (parse what-if pairs, override cached prices for computation).
+
 - [ ] **[Feedback] Add historical price snapshots** — `pftui history --date 2026-02-28` to show portfolio value and positions as of a past date using cached price history. Files: new `src/commands/history.rs`, `src/cli.rs`, `src/db/price_history.rs`.
 
 ## P3 — Future

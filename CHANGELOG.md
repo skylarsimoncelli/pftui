@@ -710,3 +710,11 @@
 - Files: `src/tui/theme.rs` (4 theme functions rewritten with updated color values)
 - Tests: 718 passing (all existing tests pass, no changes needed — theme property tests still valid). Zero new clippy warnings.
 - TODO: Continue theme overhaul — revamp Nord, Dracula, Solarized, Gruvbox (P2 Theme Overhaul)
+
+### 2026-03-03 — Add --what-if flag to summary for hypothetical price scenarios
+
+- What: added `--what-if` flag to `pftui summary` that accepts comma-separated `SYMBOL:PRICE` pairs (e.g. `--what-if GC=F:5500,BTC:55000`) to model portfolio value under hypothetical prices. Overrides cached prices for the computation, computes positions with the hypothetical values, and displays a clear box-drawn `WHAT-IF SCENARIO` banner listing all overrides before the normal summary output. Works seamlessly with existing `--group-by` and `--period` flags. Input validation rejects: empty input, missing colons, non-numeric prices, and negative prices. Symbols are case-insensitive (uppercased internally). Symbols with special characters (e.g. `GC=F`) are handled correctly via last-colon splitting.
+- Why: P2 Scenario & Analytics (Feedback) — enables quick scenario planning directly from CLI. `pftui summary --what-if BTC:100000` instantly shows what your portfolio would look like at that price. Transformative for "what if gold hits $5500" type questions without needing a spreadsheet.
+- Files: `src/cli.rs` (new `--what-if` arg on Summary), `src/main.rs` (pass through new arg), `src/commands/summary.rs` (parse_what_if function, print_what_if_banner, price override injection)
+- Tests: 729 passing (11 new: parse_what_if single/multiple/case/spaces/empty/no-colon/bad-price/negative/zero, what_if_overrides_prices e2e, what_if_with_group_by e2e). Zero new clippy warnings.
+- TODO: Add `--what-if` flag to summary (P2 Scenario & Analytics)
