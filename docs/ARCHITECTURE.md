@@ -1,106 +1,88 @@
 # Architecture — pftui
 
-Quick-reference for automated agents. Read this FIRST to find the right files.
+Quick-reference for automated agents. Read this FIRST, then only open the files your task needs.
+Use `read --offset N --limit M` to read specific line ranges instead of full files.
 
-## Core State
+## app.rs Line Map (6000 lines — DO NOT read in full)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/app.rs` | ~6000 | God file: App struct, keybindings, tick loop, portfolio computation, chart variants. If splitting, key sections: state fields (top), `handle_key()` (~line 950), `compute_*()` methods, chart variant logic |
-| `src/config.rs` | ~120 | Config struct, load/save `~/.config/pftui/config.toml` |
-| `src/cli.rs` | ~150 | Clap CLI definitions, all subcommands |
-| `src/main.rs` | ~200 | CLI dispatch, entry point |
+| Lines | Section | When to read |
+|-------|---------|-------------|
+| 1-285 | Imports, enums (ViewMode, SortField, ChartVariant, MainTab) | Adding views/sort modes/chart types |
+| 286-492 | `struct App` fields | Adding new state |
+| 493-847 | `App::new()`, `init()`, `init_offline()`, price update handlers | Startup/init changes |
+| 848-980 | `recompute_regime()` | Regime signal changes |
+| 980-1040 | `compute_portfolio_value_history()` (LOCF forward-fill) | Portfolio chart bugs |
+| 1041-1138 | `compute_daily_change()`, `compute_timeframe_gains()` | Gain/loss calculations |
+| 1139-1314 | `chart_variants_for_position()` | Chart ratio/variant bugs |
+| 1315-1397 | `tick()` — 60fps loop, animation counters | Animation/tick changes |
+| 1398-1733 | `handle_key()` — ALL keybindings | Adding/changing keys |
+| 1734-2820 | `handle_mouse()`, helpers, sorting, filtering | Mouse/sort/filter changes |
+| 2821+ | `#[cfg(test)]` blocks (~3100 lines) | NEVER read unless writing tests |
 
-## Data Layer
+## price_chart.rs Line Map (1970 lines)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/db/schema.rs` | ~100 | SQLite migrations (4 tables: transactions, price_cache, price_history, allocations) |
-| `src/db/transactions.rs` | ~100 | Transaction CRUD |
-| `src/db/price_cache.rs` | ~80 | Spot price cache CRUD |
-| `src/db/price_history.rs` | ~150 | Daily history CRUD, `merge_history()` |
-| `src/db/allocations.rs` | ~60 | Percentage-mode allocation CRUD |
-| `src/db/watchlist.rs` | ~80 | Watchlist CRUD |
+| Lines | Section | When to read |
+|-------|---------|-------------|
+| 1-40 | Imports, `slice_history()` | — |
+| 41-125 | `render()` — main dispatch (single/ratio/multi) | Chart layout changes |
+| 126-440 | `render_multi_panel`, `render_single_chart`, `render_ratio_chart`, minis | Specific chart type changes |
+| 440-540 | `compute_ratio()`, `compute_sma()`, `compute_bollinger()` | Technical indicator changes |
+| 540-870 | `render_braille_chart()` — core braille renderer, SMA/BB overlays, crosshair, area fill | Chart rendering changes |
+| 871-990 | `render_braille_mini()`, `area_fill_bg()` | Mini chart / fill changes |
+| 991+ | `render_braille_lines()` (embeddable), tests | Embedding charts elsewhere |
 
-## Models
+## positions.rs Line Map (1450 lines)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/models/position.rs` | ~200 | Position struct, `compute_positions()`, `compute_positions_from_allocations()` |
-| `src/models/transaction.rs` | ~50 | Transaction, NewTransaction, TxType |
-| `src/models/asset.rs` | ~80 | AssetCategory, PriceProvider enums |
-| `src/models/asset_names.rs` | ~460 | 130+ symbol→name map, `infer_category()`, `search_names()` |
-| `src/models/price.rs` | ~40 | PriceQuote, HistoryRecord structs |
+| Lines | Section | When to read |
+|-------|---------|-------------|
+| 1-220 | Helpers: 52W range, change%, row_background, category dividers | Row rendering helpers |
+| 218-393 | `render()` dispatch, `render_full_table()` | Full table layout |
+| 394-770 | `render_privacy_table()`, watchlist rendering | Privacy/watchlist changes |
+| 771+ | Tests | NEVER read unless writing tests |
 
-## Price Service
+## Quick Reference
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/price/mod.rs` | ~350 | PriceService (dedicated thread + Tokio), PriceCommand/PriceUpdate channels |
-| `src/price/yahoo.rs` | ~250 | Yahoo Finance API (spot + history), `normalize_yahoo_symbol()` for TSX tickers |
-| `src/price/coingecko.rs` | ~300 | CoinGecko API (spot + history), 62-coin ID map, Yahoo fallback |
+| Task | Read these files (with line ranges) |
+|------|-------------------------------------|
+| Fix keybinding | `app.rs:1398-1733` |
+| Fix chart ratio | `app.rs:1139-1314` |
+| Fix portfolio chart | `app.rs:980-1040` |
+| Add new widget | `tui/widgets/new.rs` + parent view + `widgets/mod.rs` |
+| Add CLI command | `cli.rs` + `commands/new.rs` + `main.rs` |
+| Add view/tab | `app.rs:1-285` (ViewMode enum) + `ui.rs` + `help.rs` + `header.rs` |
+| Theme changes | `theme.rs` (all 11 themes) |
+| Price fetching | `price/yahoo.rs` or `price/coingecko.rs` |
+| Mouse handling | `app.rs:1734-2820` |
+| Add state field | `app.rs:286-492` (struct) + `app.rs:493-847` (init) |
 
-## TUI Views (each takes `(&mut Frame, Rect, &App)`)
+## Module Index
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/tui/ui.rs` | ~200 | Root layout compositor, panel splits, section headers |
-| `src/tui/views/positions.rs` | ~1450 | Positions table (full + privacy), watchlist tab, row rendering, sort logic |
-| `src/tui/views/markets.rs` | ~520 | Markets tab with sparklines, momentum, heatmap |
-| `src/tui/views/economy.rs` | ~710 | Economy tab with indicators, yield curve |
-| `src/tui/views/transactions.rs` | ~300 | Transaction list view |
-| `src/tui/views/help.rs` | ~350 | Help overlay popup |
-| `src/tui/views/position_detail.rs` | ~570 | Position detail popup |
-| `src/tui/views/search_overlay.rs` | ~450 | Global asset search (`/` key) |
-| `src/tui/views/asset_detail_popup.rs` | ~850 | Full asset detail popup (from search) |
-| `src/tui/views/context_menu.rs` | ~200 | Right-click context menu |
+### Data Layer
+`db/schema.rs` (migrations) · `db/transactions.rs` (CRUD) · `db/price_cache.rs` (spot cache) · `db/price_history.rs` (daily history, merge) · `db/allocations.rs` (% mode) · `db/watchlist.rs`
 
-## TUI Widgets
+### Models
+`models/position.rs` (Position, compute_positions) · `models/transaction.rs` (Transaction, TxType) · `models/asset.rs` (AssetCategory, PriceProvider) · `models/asset_names.rs` (130+ symbols, infer_category, search) · `models/price.rs` (PriceQuote, HistoryRecord)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/tui/theme.rs` | ~1300 | Theme struct (28 color slots), 11 themes, gradients, animation constants, `render_popup_shadow()` |
-| `src/tui/widgets/price_chart.rs` | ~1970 | Braille price/ratio charts, SMA, Bollinger, crosshair, area fill |
-| `src/tui/widgets/header.rs` | ~740 | Top bar: logo, tabs, portfolio value, ticker tape, clock |
-| `src/tui/widgets/status_bar.rs` | ~400 | Bottom bar: key hints, search mode, theme toast |
-| `src/tui/widgets/sidebar.rs` | ~200 | Sidebar compositor |
-| `src/tui/widgets/allocation_bars.rs` | ~350 | Category allocation bars with change indicators |
-| `src/tui/widgets/portfolio_sparkline.rs` | ~550 | Portfolio braille sparkline with timeframe gains |
-| `src/tui/widgets/portfolio_stats.rs` | ~150 | Top/worst performer stats |
-| `src/tui/widgets/asset_header.rs` | ~200 | Asset detail header above chart |
-| `src/tui/widgets/top_movers.rs` | ~250 | Top movers by category |
-| `src/tui/widgets/skeleton.rs` | ~150 | Loading shimmer placeholders |
-| `src/tui/widgets/regime_bar.rs` | ~200 | Regime intelligence health bar |
+### Price Service
+`price/mod.rs` (PriceService thread + Tokio channels) · `price/yahoo.rs` (Yahoo spot+history, TSX normalization) · `price/coingecko.rs` (CoinGecko 62-coin map, Yahoo fallback)
 
-## Regime Intelligence
+### TUI Views (signature: `(&mut Frame, Rect, &App)`)
+`tui/ui.rs` (root layout) · `views/positions.rs` (positions+watchlist table) · `views/markets.rs` (markets tab) · `views/economy.rs` (economy tab) · `views/transactions.rs` · `views/help.rs` (help popup) · `views/position_detail.rs` · `views/search_overlay.rs` (/ search) · `views/asset_detail_popup.rs` · `views/context_menu.rs` (right-click)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/regime/mod.rs` | ~690 | 9-signal regime scorer (VIX, yields, DXY, Cu/Au, etc.) |
-| `src/regime/suggestions.rs` | ~420 | Regime-based portfolio suggestions |
+### TUI Widgets
+`theme.rs` (28 color slots, 11 themes, animations, shadows) · `widgets/price_chart.rs` (braille charts, SMA, BB, crosshair) · `widgets/header.rs` (top bar) · `widgets/status_bar.rs` (bottom bar) · `widgets/sidebar.rs` (compositor) · `widgets/allocation_bars.rs` · `widgets/portfolio_sparkline.rs` · `widgets/portfolio_stats.rs` · `widgets/asset_header.rs` · `widgets/top_movers.rs` · `widgets/skeleton.rs` · `widgets/regime_bar.rs`
 
-## CLI Commands
+### Regime
+`regime/mod.rs` (9-signal scorer) · `regime/suggestions.rs` (portfolio suggestions)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/commands/setup.rs` | ~685 | Interactive setup wizard with fuzzy search |
-| `src/commands/summary.rs` | ~1090 | `pftui summary` with --group-by, --period, --what-if |
-| `src/commands/export.rs` | ~420 | JSON/CSV export with --output flag |
-| `src/commands/import.rs` | ~720 | JSON import with replace/merge modes |
-| `src/commands/history.rs` | ~600 | `pftui history --date` time travel |
-| `src/commands/brief.rs` | ~665 | `pftui brief` markdown summary |
-| `src/commands/demo.rs` | ~300 | `pftui demo` with mock portfolio |
-| `src/commands/snapshot.rs` | ~250 | `pftui snapshot` ANSI/plain render |
-| `src/commands/watchlist_cli.rs` | ~200 | `pftui watchlist` display |
-| `src/commands/set_cash.rs` | ~180 | `pftui set-cash` shortcut |
-| `src/commands/refresh.rs` | ~150 | `pftui refresh` headless price fetch |
-| `src/commands/value.rs` | ~100 | `pftui value` quick check |
+### CLI Commands
+`commands/setup.rs` (wizard) · `commands/summary.rs` (--group-by, --period, --what-if) · `commands/export.rs` (JSON/CSV) · `commands/import.rs` (replace/merge) · `commands/history.rs` (--date) · `commands/brief.rs` · `commands/demo.rs` · `commands/snapshot.rs` · `commands/watchlist_cli.rs` · `commands/set_cash.rs` · `commands/refresh.rs` · `commands/value.rs`
 
 ## Key Patterns
 
-- **Adding a keybinding**: `app.rs` → `handle_key()` → match on `KeyCode`
-- **Adding a view/tab**: `ViewMode` enum in `app.rs` + `ui.rs` compositor + help.rs + header tab
-- **Adding a CLI command**: `cli.rs` (clap) + `commands/new.rs` + `main.rs` dispatch
-- **Adding a widget**: `tui/widgets/new.rs` + wire into parent view + `mod.rs`
-- **Chart changes**: `price_chart.rs` for rendering, `app.rs` for variant logic
-- **Theme changes**: `theme.rs` — all 11 themes must be updated for new color slots
+- **Keybinding**: `app.rs` → `handle_key()` L1398 → match `KeyCode`
+- **View/tab**: `ViewMode` enum L1-285 + `ui.rs` + `help.rs` + `header.rs`
+- **CLI command**: `cli.rs` (clap) + `commands/new.rs` + `main.rs`
+- **Widget**: `widgets/new.rs` + wire into parent view + `mod.rs`
+- **Chart**: `price_chart.rs` render, `app.rs` L1139 variant logic
+- **Theme**: `theme.rs` — update ALL 11 themes for new color slots
