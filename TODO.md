@@ -174,13 +174,7 @@
 
 ## P2 — Theme Overhaul (Owner Request)
 
-- [ ] **Continue theme overhaul** — 5 new themes added (Inferno, Neon, Hacker, Pastel, Miasma). 11 total. Remaining work:
-  - **Dracula** — make more vivid and punchy, lean into the purples
-  - **Nord** — add more contrast, feels too washed out currently
-  - **Solarized** — evaluate if it's distinct enough to keep, otherwise replace
-  - **Gruvbox** — evaluate, replace with something more unique if too similar to Miasma
-  - Test all 28 color slots per theme across all views to ensure nothing looks flat or broken
-  - Files: `src/tui/theme.rs`, `src/tui/views/help.rs` (theme preview)
+- [ ] **Theme overhaul: visual audit across all views** — All 11 themes have been designed/revamped. Remaining: visually audit all 28 color slots per theme across all views (positions, transactions, markets, economy, watchlist, help, search overlay, detail popup) to ensure nothing looks flat or broken. Particularly check: category colors in allocation bars, chart gradients, selection highlight contrast, popup readability. Files: `src/tui/theme.rs`, all views.
 
 ## P0 — Chart Ratio Bugs (Owner Report)
 

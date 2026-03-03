@@ -702,3 +702,11 @@
 - Files: `src/tui/theme.rs` (2 new theme functions, updated THEME_NAMES to 11 entries, updated theme_by_name dispatcher, 4 new tests, updated cycle/count tests)
 - Tests: 718 passing (4 new: pastel soft palette verification, miasma warm brown verification, updated theme count to 11, updated cycle wrap test). Zero new clippy warnings.
 - TODO: Continue theme overhaul — add Pastel and Miasma themes (P2 Theme Overhaul)
+
+### 2026-03-03 — Revamp Nord, Dracula, Solarized, and Gruvbox themes
+
+- What: overhauled the four original community themes for better contrast, readability, and visual distinctiveness. **Nord**: pushed surfaces darker (36,40,52 base vs old 46,52,64) for more depth, brightened gain green (145,210,130) and loss red (210,85,95) for clearer P&L at a glance, raised text primary to near-white (242,244,248). **Dracula**: went deeper into purple identity — surfaces are now purple-tinted (30,28,44 base), border active pushed brighter (200,150,255), loss red more vivid (255,70,80), secondary text has lavender tint. **Solarized**: preserved the distinctive teal aesthetic but added a darker base layer (0,36,46) for depth, brightened blue accent (42,161,232) and green (150,175,0), enhanced category color saturation. **Gruvbox**: pushed into hard-dark territory (28,28,28 base) to distinguish from Miasma's warm browns, used gruvbox fg0 cream (251,241,199) for primary text, and leaned harder into the retro-bright identity with aqua-green chart line (142,192,124).
+- Why: P2 Theme Overhaul (Owner Request) — Nord was too washed out, Dracula needed more purple punch, Solarized needed more contrast, and Gruvbox overlapped too much with Miasma. All four now have stronger visual identity and better readability.
+- Files: `src/tui/theme.rs` (4 theme functions rewritten with updated color values)
+- Tests: 718 passing (all existing tests pass, no changes needed — theme property tests still valid). Zero new clippy warnings.
+- TODO: Continue theme overhaul — revamp Nord, Dracula, Solarized, Gruvbox (P2 Theme Overhaul)
