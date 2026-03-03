@@ -387,3 +387,109 @@ That's 3 new commands max. Could be 2 if `risk` merges into `summary`.
 **Phase 2 (next week):** F7 + F2 + F4 → Agent integration is complete. Human gets correlation analysis and risk modeling.
 
 **Phase 3 (following week):** F5 → Intelligence layer. The moat. No other TUI does this.
+
+---
+
+### F8: Journal & Decision Log
+
+**What:** Structured trade journal stored in SQLite. Hotkey-triggered overlay in TUI. Full CLI command suite for agents to seed, query, and search entries.
+
+**Design philosophy:** The TUI keeps it minimal — a popup overlay, not a main tab. The CLI is the power interface for agents and scripting.
+
+**SQLite schema:**
+```sql
+CREATE TABLE journal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,           -- ISO 8601 (default: now)
+    content TEXT NOT NULL,             -- free-form entry text
+    tag TEXT,                          -- category: trade, thesis, prediction, reflection, alert, lesson, call
+    symbol TEXT,                       -- optional asset link (GC=F, BTC, etc.)
+    conviction TEXT,                   -- high, medium, low (optional)
+    status TEXT DEFAULT 'open',        -- open, validated, invalidated, closed
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_journal_timestamp ON journal(timestamp);
+CREATE INDEX idx_journal_tag ON journal(tag);
+CREATE INDEX idx_journal_symbol ON journal(symbol);
+CREATE INDEX idx_journal_status ON journal(status);
+```
+
+**TUI integration:**
+- **Hotkey `j`** — opens journal overlay popup (similar to search overlay `/ `).
+- **Journal popup layout:**
+  ```
+  ┌─ JOURNAL ──────────────────────────────────────────────────────┐
+  │ Date              │ Content                           │ Tag    │
+  │───────────────────│───────────────────────────────────│────────│
+  │ 2026-03-03 11:30  │ Added gold — BRICS thesis, CB...  │ trade  │
+  │ 2026-03-03 08:00  │ VIX breached 25 — fear confirmed  │ alert  │
+  │ 2026-03-01 04:46  │ Iran war — 10 predictions logged  │ call   │
+  │ 2026-02-27 15:00  │ BTC conviction resolved +3 long   │ thesis │
+  │ ...               │                                   │        │
+  └─────────────────────────────────────────────────────────────────┘
+  [a] Add entry  [/] Search  [↑↓] Scroll  [Esc] Close
+  ```
+- **`a` inside popup** — inline prompt: date (pre-filled with now, editable), content (free text), tag (optional, tab-complete from existing tags). Simple and fast.
+- **Scrollable.** Most recent first. Date and tag columns are compact. Content column takes remaining width, truncated with `...` — full text on hover/select.
+
+**CLI command suite — `pftui journal`:**
+
+```
+pftui journal                          # List recent entries (last 20)
+pftui journal add "content text"       # Add entry (timestamp = now)
+pftui journal add "content" --date "2026-03-01 04:46" --tag prediction --symbol BTC --conviction high
+pftui journal list                     # All entries (paginated)
+pftui journal list --since 7d          # Last 7 days
+pftui journal list --since 2026-02-24  # Since specific date
+pftui journal list --tag call          # Filter by tag
+pftui journal list --tag call,prediction  # Multiple tags
+pftui journal list --symbol GC=F       # Filter by asset
+pftui journal list --status open       # Filter by status
+pftui journal list --limit 50          # Control count
+pftui journal search "gold thesis"     # Full-text search across all content
+pftui journal search "BRICS" --since 30d  # Search with time filter
+pftui journal update <id> --status validated  # Update status
+pftui journal update <id> --content "revised text"  # Edit content
+pftui journal remove <id>              # Delete entry
+pftui journal tags                     # List all tags with counts
+pftui journal stats                    # Summary: total entries, entries by tag, entries by month
+```
+
+**All commands support `--json` for agent consumption.**
+
+**Agent output example (`--json`):**
+```json
+{
+  "entries": [
+    {
+      "id": 1,
+      "timestamp": "2026-03-03T11:30:00Z",
+      "content": "Added gold — BRICS thesis, central bank buying, $5,150 entry",
+      "tag": "trade",
+      "symbol": "GC=F",
+      "conviction": "high",
+      "status": "open"
+    }
+  ],
+  "total": 1,
+  "query": {"since": "7d", "tag": "trade"}
+}
+```
+
+**Agent integration — replaces JOURNAL.md sections:**
+| JOURNAL.md Section | Replacement |
+|---|---|
+| Open calls | `pftui journal list --tag call --status open --json` |
+| Trade tracker notes | Transaction notes + `journal list --tag trade --json` |
+| Big moves log | `pftui journal list --tag move --since 1d --json` |
+| Predictions | `pftui journal list --tag prediction --status open --json` |
+| Lessons learned | `pftui journal list --tag lesson --json` |
+| Reflections | `pftui journal list --tag reflection --since 7d --json` |
+| Hypotheses | `pftui journal search "hypothesis" --status open --json` |
+
+**Seeding from existing JOURNAL.md:**
+A one-time migration script parses JOURNAL.md and creates entries with correct timestamps, tags, and statuses. This populates the DB with 2 weeks of history immediately.
+
+**Files:** new `src/db/journal.rs`, new `src/commands/journal.rs`, new `src/tui/views/journal_popup.rs`, `src/app.rs` (add `j` hotkey), `cli.rs`
+
+**Effort:** Medium (2 sessions). DB schema + CLI is session 1. TUI popup is session 2.
