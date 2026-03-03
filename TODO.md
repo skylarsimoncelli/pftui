@@ -255,3 +255,7 @@
   - Right pane (ASSET OVERVIEW) still works — selecting a watchlist item shows its chart/details
   - Remove the old separate watchlist page/view entirely
   - Files: `src/app.rs` (tab state, `n` keybinding), `src/tui/ui.rs` (tab dispatch), `src/tui/views/positions.rs` (tab header + watchlist rendering), remove old watchlist view if separate
+
+## P0 — Portfolio Value History Sine Wave Bug (Owner Report)
+
+- [ ] **Fix portfolio value history computation — produces sine wave** — `compute_portfolio_value_history()` in `src/app.rs` (line 862) has a critical bug: on dates where a symbol has NO price record, that position is simply skipped (contributes $0). Since different assets have price data on different dates, the total jumps wildly — assets drop in and out of the sum, creating a sine wave pattern. **Fix:** Use forward-fill (LOCF — Last Observation Carried Forward). For each symbol on each date, if no price exists, use the most recent prior close. Build a `last_known_price: HashMap<&str, Decimal>` that updates as you iterate chronologically through dates. Only start including a position once its first price point appears. This is the standard approach for portfolio value time series.
