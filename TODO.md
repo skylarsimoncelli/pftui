@@ -8,15 +8,6 @@
 
 ## P1 — Regime Intelligence (Sentinel Proposed)
 
-- [ ] **Top Movers section on homepage** — Group assets by category (crypto, equity, commodity, forex) and rank by daily/weekly % change. Display as a compact panel:
-  ```
-  🔥 TOP MOVERS
-  Crypto    BTC +3.5%   ETH +2.1%   SOL -4.2%
-  Equity    PLTR +7.8%  NFLX +13%   NVDA -4.2%
-  Commodity Gold +2.5%  Oil +7.3%   Silver +0.6%
-  Forex     GBP -0.8%  EUR -0.3%   JPY +0.4%
-  ```
-  Toggleable 1D/1W/1M. Uses existing price data. Files: new `src/tui/widgets/top_movers.rs`, integrate into `src/tui/views/positions.rs` or new homepage layout.
 
 - [ ] **Risk-On/Risk-Off Regime Health Bar** — Composite regime score from 9 cross-asset signals (all freely available via Yahoo Finance): VIX level, VIX 5D direction, 10Y yield direction, 2Y-10Y spread, DXY direction, Gold vs S&P 5D ratio, BTC/SPX correlation, HY credit spread (HYG/LQD ratio), Copper/Gold ratio. Each signal +1 (risk-on) or -1 (risk-off). Display as a gauge:
   ```

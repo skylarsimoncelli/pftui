@@ -558,3 +558,11 @@
 - Files: `src/tui/theme.rs` (added `BORDER_ACTIVE`, `BORDER_INACTIVE`, `BORDER_POPUP` constants, 4 new tests), `src/tui/views/positions.rs`, `src/tui/views/transactions.rs`, `src/tui/views/watchlist.rs`, `src/tui/views/markets.rs`, `src/tui/views/economy.rs`, `src/tui/views/help.rs`, `src/tui/views/position_detail.rs`, `src/tui/widgets/price_chart.rs`, `src/tui/widgets/allocation_bars.rs`, `src/tui/widgets/portfolio_sparkline.rs`, `src/tui/widgets/asset_header.rs`
 - Tests: 4 new tests (active has double top single sides, inactive is plain single line, popup is full double, active and inactive differ). Total: 554 tests passing.
 - TODO: Add Unicode box-drawing panel separators (P2)
+
+### 2026-03-03 — Add Top Movers panel to sidebar
+
+- What: added a new "TOP MOVERS" panel in the sidebar below the portfolio sparkline. Shows daily % change for each portfolio asset, grouped by category (Crypto, Equity, Commodity, Fund, Forex) and sorted by absolute change magnitude. Each category row displays up to 3 movers with color-coded gain/loss percentages (green for positive, red for negative). The panel computes change from previous close using existing price history data (same logic as `daily_portfolio_change`). Panel only appears when: sufficient screen height (alloc + sparkline + movers fit), at least 2 assets have price history, and not in privacy mode. Uses inactive border style consistent with other sidebar panels.
+- Why: P1 Regime Intelligence — top movers give instant visibility into which assets are moving most in the portfolio, grouped by asset class. This is the foundation for regime awareness: seeing "Crypto BTC +3.5%, Equity PLTR +7.8%, Commodity Gold +2.5%" at a glance tells you the market story without scrolling through positions.
+- Files: new `src/tui/widgets/top_movers.rs` (compute_movers, group_by_category, prev_close_from_history, render, 12 tests), `src/tui/widgets/mod.rs` (register module), `src/tui/widgets/sidebar.rs` (three-section layout with movers panel)
+- Tests: 12 new tests (format_mover positive/negative/zero, category labels, prev_close logic for today/not-today/empty/single, group ordering, empty groups, constants). Total: 566 tests passing.
+- TODO: Top Movers section on homepage (P1)
