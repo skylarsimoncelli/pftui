@@ -8,6 +8,7 @@
 - [ ] **[Feedback] Add daily P&L to `brief` and `summary` CLI commands** — TUI header shows day P&L but CLI commands don't. `brief` should show 1D change in $ and % per position and portfolio total. Most requested feature across all 3 testers. Files: `commands/brief.rs`, `commands/summary.rs`
 - [ ] **Fix U.UN (Sprott Uranium) chart + price accuracy** — TSX trust unit ticker broken for charts. Additionally, `brief` reports U.UN at +31% gain when actual is ~-4.8% — investigate Yahoo Finance data source accuracy for Canadian-listed securities. Files: `price/yahoo.rs`, `price_chart.rs`, `commands/brief.rs`
 - [ ] **Show 24h % change in search results** — Each `/` search result row should display 24h change color-coded. Files: `search_overlay.rs`
+- [ ] **Fix 2 clippy warnings (vec_init_then_push)** — Blocking release. `cargo clippy` must pass clean. Find and fix the `vec_init_then_push` warnings. Files: likely `regime/mod.rs` or recent additions
 
 ## P1
 
