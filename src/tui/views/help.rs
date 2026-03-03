@@ -59,7 +59,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("G", "Jump to bottom", kc, tc));
     lines.push(key_line("Ctrl+d", "Scroll down half page", kc, tc));
     lines.push(key_line("Ctrl+u", "Scroll up half page", kc, tc));
-    lines.push(key_line("/", "Search / filter by name", kc, tc));
+    lines.push(key_line("/", "Search all assets", kc, tc));
     lines.push(Line::from(""));
 
     // ── Views ──

@@ -42,25 +42,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ];
 
-    // Search mode: show search input instead of normal hints
-    if app.search_mode {
-        let search_spans = vec![
-            Span::styled(" /", Style::default().fg(t.text_accent).bold()),
-            Span::styled(&app.search_query, Style::default().fg(t.text_primary)),
-            Span::styled("█", Style::default().fg(t.text_accent)),
-            Span::styled("  (Enter to confirm, Esc to cancel)", Style::default().fg(t.text_muted)),
-        ];
-        let search_line = Line::from(search_spans);
-        let search_bar = Paragraph::new(search_line).block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(t.border_accent))
-                .style(Style::default().bg(t.surface_2)),
-        );
-        frame.render_widget(search_bar, area);
-        return;
-    }
-
     // Delete confirmation prompt
     if let Some(ref confirm) = app.delete_confirm {
         let confirm_spans = vec![
@@ -174,13 +155,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Show active search filter indicator
-    let search_filter_text = if !app.search_query.is_empty() {
-        format!(" [/{}/]", app.search_query)
-    } else {
-        String::new()
-    };
-
     let filter_text = app
         .category_filter
         .map(|c| format!(" [{}]", c))
@@ -206,7 +180,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Search", Style::default().fg(t.text_secondary)));
         spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
-        spans.push(Span::styled(search_filter_text, Style::default().fg(t.text_accent)));
     } else {
         // Full: show all hints
         spans.push(Span::styled("[?]", Style::default().fg(t.key_hint)));
@@ -224,7 +197,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("[f]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Filter", Style::default().fg(t.text_secondary)));
         spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
-        spans.push(Span::styled(search_filter_text, Style::default().fg(t.text_accent)));
 
         if app.portfolio_mode == PortfolioMode::Full {
             spans.push(sep.clone());

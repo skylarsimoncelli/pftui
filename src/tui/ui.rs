@@ -48,6 +48,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         views::position_detail::render(frame, size, app);
     }
 
+    if app.search_overlay_open {
+        views::search_overlay::render(frame, size, app);
+    }
+
     if app.show_help {
         views::help::render(frame, size, app);
     }

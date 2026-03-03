@@ -278,9 +278,10 @@ pub struct App {
     pub terminal_height: u16,
     pub terminal_width: u16,
 
-    // Search
-    pub search_mode: bool,
-    pub search_query: String,
+    // Global asset search overlay
+    pub search_overlay_open: bool,
+    pub search_overlay_query: String,
+    pub search_overlay_selected: usize,
 
     // Sorting
     pub sort_field: SortField,
@@ -424,8 +425,9 @@ impl App {
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
-            search_mode: false,
-            search_query: String::new(),
+            search_overlay_open: false,
+            search_overlay_query: String::new(),
+            search_overlay_selected: 0,
             sort_field: SortField::Allocation,
             sort_ascending: false,
             category_filter: None,
@@ -736,15 +738,6 @@ impl App {
             None => self.positions.clone(),
         };
 
-        // Filter positions by search query
-        if !self.search_query.is_empty() {
-            let query = self.search_query.to_lowercase();
-            positions.retain(|p| {
-                p.symbol.to_lowercase().contains(&query)
-                    || p.name.to_lowercase().contains(&query)
-            });
-        }
-
         // Sort positions
         match self.sort_field {
             SortField::Name => positions.sort_by(|a, b| a.symbol.cmp(&b.symbol)),
@@ -778,12 +771,6 @@ impl App {
         // Sort transactions (only relevant in full mode)
         if self.portfolio_mode == PortfolioMode::Full {
             let mut txs = self.transactions.clone();
-
-            // Filter transactions by search query
-            if !self.search_query.is_empty() {
-                let query = self.search_query.to_lowercase();
-                txs.retain(|tx| tx.symbol.to_lowercase().contains(&query));
-            }
 
             if matches!(self.sort_field, SortField::Date) {
                 txs.sort_by(|a, b| a.date.cmp(&b.date));
@@ -1285,33 +1272,9 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        // Search mode input handling (must be checked before global keys
-        // so that typing e.g. 'q' doesn't quit while searching)
-        if self.search_mode {
-            match key.code {
-                KeyCode::Esc => {
-                    self.search_mode = false;
-                    self.search_query.clear();
-                    self.apply_filter_and_sort();
-                }
-                KeyCode::Enter => {
-                    // Confirm search — exit search mode but keep filter active
-                    self.search_mode = false;
-                }
-                KeyCode::Backspace => {
-                    self.search_query.pop();
-                    self.selected_index = 0;
-                    self.tx_selected_index = 0;
-                    self.apply_filter_and_sort();
-                }
-                KeyCode::Char(c) => {
-                    self.search_query.push(c);
-                    self.selected_index = 0;
-                    self.tx_selected_index = 0;
-                    self.apply_filter_and_sort();
-                }
-                _ => {}
-            }
+        // Global asset search overlay (must be checked first)
+        if self.search_overlay_open {
+            self.handle_search_overlay_key(key);
             return;
         }
 
@@ -1590,11 +1553,11 @@ impl App {
                 self.cycle_filter();
             }
 
-            // Search
+            // Global asset search overlay
             KeyCode::Char('/') => {
-                self.search_mode = true;
-                self.search_query.clear();
-                self.apply_filter_and_sort();
+                self.search_overlay_open = true;
+                self.search_overlay_query.clear();
+                self.search_overlay_selected = 0;
             }
 
             // Refresh
@@ -1935,6 +1898,63 @@ impl App {
     fn open_tx_form(&mut self) {
         if let Some(pos) = self.selected_position().cloned() {
             self.tx_form = Some(TxFormState::new(pos.symbol, pos.category));
+        }
+    }
+
+    /// Handle key input in the global asset search overlay.
+    fn handle_search_overlay_key(&mut self, key: KeyEvent) {
+        use crate::tui::views::search_overlay::build_results;
+
+        match key.code {
+            KeyCode::Esc => {
+                self.search_overlay_open = false;
+                self.search_overlay_query.clear();
+                self.search_overlay_selected = 0;
+            }
+            KeyCode::Backspace => {
+                self.search_overlay_query.pop();
+                self.search_overlay_selected = 0;
+            }
+            KeyCode::Char(c) => {
+                self.search_overlay_query.push(c);
+                self.search_overlay_selected = 0;
+            }
+            KeyCode::Down => {
+                // Navigate results (capped at max 19 since results are limited to 20)
+                if self.search_overlay_selected < 19 {
+                    self.search_overlay_selected += 1;
+                }
+            }
+            KeyCode::Up => {
+                self.search_overlay_selected = self.search_overlay_selected.saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                // Select the current result and navigate to it in positions view
+                let results = build_results(self, &self.search_overlay_query.clone());
+                if let Some(result) = results.get(self.search_overlay_selected) {
+                    // If the asset is in the portfolio, select it
+                    let symbol = result.symbol.clone();
+                    if let Some(idx) = self.display_positions.iter().position(|p| p.symbol == symbol) {
+                        self.selected_index = idx;
+                        self.view_mode = ViewMode::Positions;
+                        self.main_tab = MainTab::Positions;
+                        self.detail_popup_open = true;
+                        self.last_selection_change_tick = self.tick_count;
+                    }
+                    // If in watchlist, switch to watchlist tab and select it
+                    else if let Some(idx) = self.watchlist_entries.iter().position(|w| w.symbol == symbol) {
+                        self.watchlist_selected_index = idx;
+                        self.view_mode = ViewMode::Positions;
+                        self.main_tab = MainTab::Watchlist;
+                        self.last_selection_change_tick = self.tick_count;
+                    }
+                    // Otherwise just close (asset not in portfolio or watchlist)
+                }
+                self.search_overlay_open = false;
+                self.search_overlay_query.clear();
+                self.search_overlay_selected = 0;
+            }
+            _ => {}
         }
     }
 
@@ -2846,133 +2866,148 @@ mod search_tests {
     }
 
     #[test]
-    fn test_slash_enters_search_mode() {
+    fn test_slash_opens_search_overlay() {
         let mut app = make_search_app();
-        assert!(!app.search_mode);
+        assert!(!app.search_overlay_open);
 
         app.handle_key(key('/'));
-        assert!(app.search_mode);
-        assert!(app.search_query.is_empty());
+        assert!(app.search_overlay_open);
+        assert!(app.search_overlay_query.is_empty());
     }
 
     #[test]
-    fn test_search_filters_by_symbol() {
+    fn test_search_overlay_typing_updates_query() {
         let mut app = make_search_app();
-        assert_eq!(app.display_positions.len(), 3);
 
-        // Enter search mode and type "BTC"
         app.handle_key(key('/'));
         app.handle_key(key('b'));
         app.handle_key(key('t'));
         app.handle_key(key('c'));
 
-        assert_eq!(app.display_positions.len(), 1);
-        assert_eq!(app.display_positions[0].symbol, "BTC");
+        assert!(app.search_overlay_open);
+        assert_eq!(app.search_overlay_query, "btc");
     }
 
     #[test]
-    fn test_search_filters_by_name_case_insensitive() {
+    fn test_search_overlay_esc_closes_and_clears() {
         let mut app = make_search_app();
 
-        // Search by name substring
-        app.handle_key(key('/'));
-        app.handle_key(key('a'));
-        app.handle_key(key('p'));
-        app.handle_key(key('p'));
-        app.handle_key(key('l'));
-        app.handle_key(key('e'));
-
-        assert_eq!(app.display_positions.len(), 1);
-        assert_eq!(app.display_positions[0].symbol, "AAPL");
-    }
-
-    #[test]
-    fn test_search_esc_clears_and_exits() {
-        let mut app = make_search_app();
-
-        // Enter search, type something
         app.handle_key(key('/'));
         app.handle_key(key('b'));
         app.handle_key(key('t'));
-        assert_eq!(app.display_positions.len(), 1);
 
-        // Esc should clear search and show all positions
         app.handle_key(esc_key());
-        assert!(!app.search_mode);
-        assert!(app.search_query.is_empty());
-        assert_eq!(app.display_positions.len(), 3);
+        assert!(!app.search_overlay_open);
+        assert!(app.search_overlay_query.is_empty());
+        assert_eq!(app.search_overlay_selected, 0);
     }
 
     #[test]
-    fn test_search_enter_confirms_filter() {
+    fn test_search_overlay_enter_closes() {
         let mut app = make_search_app();
 
-        // Enter search, type, confirm
         app.handle_key(key('/'));
         app.handle_key(key('b'));
         app.handle_key(key('t'));
         app.handle_key(key('c'));
         app.handle_key(enter_key());
 
-        // Search mode exits but filter stays
-        assert!(!app.search_mode);
-        assert_eq!(app.search_query, "btc");
-        assert_eq!(app.display_positions.len(), 1);
+        assert!(!app.search_overlay_open);
+        assert!(app.search_overlay_query.is_empty());
     }
 
     #[test]
-    fn test_search_backspace_removes_char() {
+    fn test_search_overlay_backspace_removes_char() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
         app.handle_key(key('b'));
         app.handle_key(key('t'));
         app.handle_key(key('c'));
-        assert_eq!(app.display_positions.len(), 1);
-
-        // Backspace to widen the filter
-        app.handle_key(backspace_key());
-        assert_eq!(app.search_query, "bt");
+        assert_eq!(app.search_overlay_query, "btc");
 
         app.handle_key(backspace_key());
+        assert_eq!(app.search_overlay_query, "bt");
+
         app.handle_key(backspace_key());
-        assert!(app.search_query.is_empty());
-        assert_eq!(app.display_positions.len(), 3);
+        app.handle_key(backspace_key());
+        assert!(app.search_overlay_query.is_empty());
     }
 
     #[test]
-    fn test_search_no_match_shows_empty() {
+    fn test_search_overlay_arrow_down_increments_selected() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
-        app.handle_key(key('x'));
-        app.handle_key(key('y'));
-        app.handle_key(key('z'));
+        app.handle_key(key('a'));
 
-        assert_eq!(app.display_positions.len(), 0);
-        assert_eq!(app.selected_index, 0);
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        app.handle_key(down);
+        assert_eq!(app.search_overlay_selected, 1);
+        app.handle_key(down);
+        assert_eq!(app.search_overlay_selected, 2);
     }
 
     #[test]
-    fn test_search_resets_selection_index() {
+    fn test_search_overlay_arrow_up_decrements_selected() {
         let mut app = make_search_app();
-        app.selected_index = 2;
 
         app.handle_key(key('/'));
-        app.handle_key(key('b'));
-        // Typing should reset index to 0
-        assert_eq!(app.selected_index, 0);
+        app.handle_key(key('a'));
+
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        app.handle_key(down);
+        app.handle_key(down);
+        assert_eq!(app.search_overlay_selected, 2);
+
+        app.handle_key(up);
+        assert_eq!(app.search_overlay_selected, 1);
     }
 
     #[test]
-    fn test_search_blocks_normal_keys() {
+    fn test_search_overlay_blocks_normal_keys() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
-        // Typing 'q' in search mode should NOT quit
+        // Typing 'q' in overlay should NOT quit
         app.handle_key(key('q'));
         assert!(!app.should_quit);
-        assert_eq!(app.search_query, "q");
+        assert_eq!(app.search_overlay_query, "q");
+    }
+
+    #[test]
+    fn test_search_overlay_enter_selects_portfolio_position() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        app.handle_key(key('B'));
+        app.handle_key(key('T'));
+        app.handle_key(key('C'));
+        app.handle_key(enter_key());
+
+        // BTC is in portfolio — should navigate to it and open detail
+        assert!(!app.search_overlay_open);
+        // The position should be selected if BTC is in display_positions
+        if let Some(idx) = app.display_positions.iter().position(|p| p.symbol == "BTC") {
+            assert_eq!(app.selected_index, idx);
+            assert!(app.detail_popup_open);
+        }
+    }
+
+    #[test]
+    fn test_search_overlay_typing_resets_selection() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        app.handle_key(down);
+        app.handle_key(down);
+        assert_eq!(app.search_overlay_selected, 2);
+
+        // Typing a char should reset selection to 0
+        app.handle_key(key('a'));
+        assert_eq!(app.search_overlay_selected, 0);
     }
 }
 

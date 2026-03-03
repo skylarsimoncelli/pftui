@@ -3,5 +3,6 @@ pub mod help;
 pub mod markets;
 pub mod position_detail;
 pub mod positions;
+pub mod search_overlay;
 pub mod transactions;
 pub mod watchlist;
