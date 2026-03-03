@@ -422,6 +422,39 @@ pub fn gain_intensity_color(theme: &Theme, gain_pct: f64) -> Color {
 
 /// Render a drop shadow on the right and bottom edges of a popup rectangle.
 ///
+/// Height of a section header bar (1 row).
+pub const SECTION_HEADER_HEIGHT: u16 = 1;
+
+/// Render a thin section header bar: `"── LABEL ──────────"`.
+/// Fills the full width of `area` with a styled line using `text_accent` for the
+/// label and `border_subtle` for the decorative rule characters.
+/// The background is `surface_2` to give visual separation from the panels below.
+pub fn render_section_header(frame: &mut Frame, area: Rect, label: &str, theme: &Theme) {
+    if area.height == 0 || area.width < 4 {
+        return;
+    }
+
+    let prefix = "── ";
+    let suffix_char = '─';
+
+    // Build spans: "── LABEL " + fill with ─
+    let prefix_span = Span::styled(prefix, Style::default().fg(theme.border_subtle));
+    let label_span = Span::styled(
+        format!("{} ", label),
+        Style::default().fg(theme.text_accent).bold(),
+    );
+
+    let used_width = prefix.len() + label.len() + 1; // +1 for trailing space after label
+    let remaining = (area.width as usize).saturating_sub(used_width);
+    let fill: String = std::iter::repeat(suffix_char).take(remaining).collect();
+    let fill_span = Span::styled(fill, Style::default().fg(theme.border_subtle));
+
+    let line = Line::from(vec![prefix_span, label_span, fill_span]);
+    let paragraph = ratatui::widgets::Paragraph::new(line)
+        .style(Style::default().bg(theme.surface_2));
+    frame.render_widget(paragraph, area);
+}
+
 /// Draws a 1-cell-wide shadow strip along the right edge and a 1-cell-tall
 /// strip along the bottom edge, offset by 1 cell from the popup boundary.
 /// The shadow color blends the theme's `surface_0` toward black at
@@ -793,6 +826,123 @@ mod tests {
                 // Right edge at x=10 (out of bounds), bottom at y=8 (out of bounds)
                 // This should NOT panic
                 render_popup_shadow(frame, popup, area, &theme);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn section_header_height_is_one() {
+        assert_eq!(SECTION_HEADER_HEIGHT, 1);
+    }
+
+    #[test]
+    fn section_header_renders_label() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(40, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 40, 1);
+                render_section_header(frame, area, "POSITIONS", &theme);
+
+                // Extract the rendered text from the buffer
+                let buf = frame.buffer_mut();
+                let mut text = String::new();
+                for col in 0..40 {
+                    if let Some(cell) = buf.cell(Position::new(col, 0)) {
+                        text.push_str(cell.symbol());
+                    }
+                }
+                assert!(text.contains("POSITIONS"), "header should contain label, got: '{}'", text);
+                assert!(text.contains("──"), "header should contain rule chars, got: '{}'", text);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn section_header_uses_surface_2_background() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(30, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 30, 1);
+                render_section_header(frame, area, "TEST", &theme);
+
+                // Check that cells have the surface_2 background
+                let buf = frame.buffer_mut();
+                if let Some(cell) = buf.cell(Position::new(5, 0)) {
+                    assert_eq!(cell.bg, theme.surface_2,
+                        "section header should use surface_2 background");
+                }
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn section_header_skips_zero_height() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(30, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                // Zero height area — should not panic
+                let area = Rect::new(0, 0, 30, 0);
+                render_section_header(frame, area, "TEST", &theme);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn section_header_skips_narrow_width() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(30, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                // Width < 4 — should not panic, just skip
+                let area = Rect::new(0, 0, 3, 1);
+                render_section_header(frame, area, "TEST", &theme);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn section_header_fills_full_width() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(50, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 50, 1);
+                render_section_header(frame, area, "ASSET OVERVIEW", &theme);
+
+                // The last cell should have surface_2 bg (the fill extends to the edge)
+                let buf = frame.buffer_mut();
+                if let Some(cell) = buf.cell(Position::new(49, 0)) {
+                    assert_eq!(cell.bg, theme.surface_2,
+                        "section header fill should reach the right edge");
+                }
             })
             .unwrap();
     }
