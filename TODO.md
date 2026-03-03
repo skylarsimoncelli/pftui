@@ -9,14 +9,6 @@
 ## P1 — Regime Intelligence (Sentinel Proposed)
 
 
-- [ ] **Regime Asset Suggestions** — Based on regime score, show assets that historically perform well/poorly in current regime. NOT "buy this" — framed as regime context:
-  ```
-  📡 REGIME ASSETS
-  Strong in current regime: Gold, Silver, Treasuries, USD, Utilities
-  Weak in current regime: Growth stocks, Crypto, High-yield, Copper
-  Transitioning: Oil (geopolitical override), Uranium (structural)
-  ```
-  Portfolio-aware: flag if user's holdings are well/poorly positioned for current regime ("Your portfolio is 33% metals — well positioned for risk-off"). Files: new `src/regime/suggestions.rs`, new `src/tui/widgets/regime_assets.rs`. Depends on regime score from health bar.
 
 ## P1 — CLI Enhancements (Feedback)
 
