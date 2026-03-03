@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::Block;
 
-use crate::app::{App, ViewMode};
+use crate::app::{App, MainTab, ViewMode};
 use crate::tui::views;
 use crate::tui::widgets;
 
@@ -40,7 +40,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         }
         ViewMode::Markets => views::markets::render(frame, chunks[1], app),
         ViewMode::Economy => views::economy::render(frame, chunks[1], app),
-        ViewMode::Watchlist => views::watchlist::render(frame, chunks[1], app),
     }
 
     widgets::status_bar::render(frame, chunks[2], app);
@@ -59,12 +58,19 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
 
     let width = app.terminal_width;
 
+    let is_watchlist = app.main_tab == MainTab::Watchlist;
+    let section_label = if is_watchlist { "WATCHLIST" } else { "POSITIONS" };
+
     if width < COMPACT_WIDTH {
-        // Compact: positions get full width, no right pane
-        views::positions::render(frame, area, app);
+        // Compact: full width, no right pane
+        if is_watchlist {
+            views::watchlist::render(frame, area, app);
+        } else {
+            views::positions::render(frame, area, app);
+        }
     } else {
         // Standard two-column layout:
-        //   Left (57%):  positions table (top) + portfolio overview (bottom)
+        //   Left (57%):  table (top) + portfolio overview (bottom, positions only)
         //   Right (43%): asset section header + asset header + price chart
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -74,10 +80,10 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
             ])
             .split(area);
 
-        // Left pane: positions section header + positions table + portfolio overview
+        // Left pane: section header + table + portfolio overview
         let left_height = h_chunks[0].height;
-        if left_height > MIN_OVERVIEW_HEIGHT + 5 + theme::SECTION_HEADER_HEIGHT {
-            // Enough room: split left pane vertically with section header
+        if !is_watchlist && left_height > MIN_OVERVIEW_HEIGHT + 5 + theme::SECTION_HEADER_HEIGHT {
+            // Enough room: split left pane vertically with section header + overview
             let overview_height = compute_overview_height(app, left_height);
             let left_chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -88,11 +94,11 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(h_chunks[0]);
 
-            theme::render_section_header(frame, left_chunks[0], "POSITIONS", &app.theme);
+            theme::render_section_header(frame, left_chunks[0], section_label, &app.theme);
             views::positions::render(frame, left_chunks[1], app);
             widgets::sidebar::render(frame, left_chunks[2], app);
         } else if left_height > 5 + theme::SECTION_HEADER_HEIGHT {
-            // Enough for header + positions, but no overview
+            // Enough for header + table, but no overview
             let left_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -101,11 +107,19 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(h_chunks[0]);
 
-            theme::render_section_header(frame, left_chunks[0], "POSITIONS", &app.theme);
-            views::positions::render(frame, left_chunks[1], app);
+            theme::render_section_header(frame, left_chunks[0], section_label, &app.theme);
+            if is_watchlist {
+                views::watchlist::render(frame, left_chunks[1], app);
+            } else {
+                views::positions::render(frame, left_chunks[1], app);
+            }
         } else {
-            // Too short: positions table only
-            views::positions::render(frame, h_chunks[0], app);
+            // Too short: table only
+            if is_watchlist {
+                views::watchlist::render(frame, h_chunks[0], app);
+            } else {
+                views::positions::render(frame, h_chunks[0], app);
+            }
         }
 
         // Right pane: section header + asset header + price chart

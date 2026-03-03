@@ -330,16 +330,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     spans.push(Span::styled("[4]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "Ec" } else { "Econ" }, econ_style));
 
-    // Watchlist tab — always visible
-    let watch_style = if matches!(app.view_mode, ViewMode::Watchlist) {
-        Style::default().fg(t.text_primary).bold().underlined()
-    } else {
-        Style::default().fg(t.text_muted)
-    };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(if compact { "Wl" } else { "Watch" }, watch_style));
-
     if !privacy {
         let total = app.total_value;
         let cost = app.total_cost;

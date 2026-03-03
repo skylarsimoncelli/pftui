@@ -36,10 +36,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_set(crate::tui::theme::BORDER_INACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
-                .title(Span::styled(
-                    " Watchlist ",
-                    Style::default().fg(t.text_accent).bold(),
-                ))
                 .style(Style::default().bg(t.surface_0)),
         );
         frame.render_widget(paragraph, area);
@@ -142,10 +138,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_set(crate::tui::theme::BORDER_INACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
-                .title(Span::styled(
-                    " Watchlist ",
-                    Style::default().fg(t.text_accent).bold(),
-                ))
                 .style(Style::default().bg(t.surface_0)),
         )
         .row_highlight_style(Style::default().bg(t.surface_3));
