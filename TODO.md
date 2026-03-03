@@ -9,13 +9,6 @@
 ## P1 — Regime Intelligence (Sentinel Proposed)
 
 
-- [ ] **Risk-On/Risk-Off Regime Health Bar** — Composite regime score from 9 cross-asset signals (all freely available via Yahoo Finance): VIX level, VIX 5D direction, 10Y yield direction, 2Y-10Y spread, DXY direction, Gold vs S&P 5D ratio, BTC/SPX correlation, HY credit spread (HYG/LQD ratio), Copper/Gold ratio. Each signal +1 (risk-on) or -1 (risk-off). Display as a gauge:
-  ```
-  ⚡ REGIME: RISK-OFF ████████░░ -6/9
-     VIX 23.7↑  10Y 3.98↓  DXY 97.9↑  Cu/Au↓  Gold>SPX
-  ```
-  Show individual signal breakdown below the bar. Files: new `src/regime/mod.rs` (signal computation), new `src/tui/widgets/regime_bar.rs`, integrate into homepage. Needs: rolling 5D/30D price data for direction and correlation calculations.
-
 - [ ] **Regime Asset Suggestions** — Based on regime score, show assets that historically perform well/poorly in current regime. NOT "buy this" — framed as regime context:
   ```
   📡 REGIME ASSETS
