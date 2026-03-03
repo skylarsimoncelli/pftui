@@ -167,7 +167,7 @@
 
 ## P2 — Mouse Enhancements (Follow-up)
 
-- [ ] **Right-click context menu** — Context menu on position rows with: View Detail, Add Transaction, Delete, Copy Symbol.
+
 
 ## P2 — Theme Overhaul (Owner Request)
 
