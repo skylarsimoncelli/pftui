@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Move watchlist from separate page to main screen sub-tab
+
+- What: watchlist is now a sub-tab on the main Positions screen instead of a separate view. Press `w` to toggle between Positions and Watchlist on the main screen. The section header dynamically switches between "POSITIONS" and "WATCHLIST". The right pane (ASSET OVERVIEW) remains visible alongside the watchlist. Removed the `ViewMode::Watchlist` variant entirely, removed the `[5]Watch` tab from the header bar, and updated all navigation functions (move_down/up, jump_to_top/bottom, scroll half-page) to route through the new `MainTab` enum. Position-only keys (A for add transaction, X for delete) are guarded behind `MainTab::Positions`. Key `1` resets both `view_mode` and `main_tab` to Positions. Help overlay updated: `5 Watchlist` → `w Toggle Watchlist`.
+- Why: P0 Owner Request — watchlist shouldn't require leaving the main screen. Having it as a sub-tab (`w` toggle) keeps the user in the same layout context with the chart pane still visible, making it easy to quickly check watched assets without losing position context. Reduces view count from 5 to 4 for cleaner navigation.
+- Files: `src/app.rs` (new `MainTab` enum, `main_tab` field, `w` keybinding, updated all navigation match arms, removed `ViewMode::Watchlist`, 6 new tests), `src/tui/ui.rs` (dynamic section label, watchlist rendering in left pane), `src/tui/views/help.rs` (updated key hint), `src/tui/views/watchlist.rs` (removed title from block), `src/tui/widgets/header.rs` (removed `[5]Watch` tab)
+- Tests: 6 new tests (default tab, w toggles to watchlist, w toggles back, w only in positions view, key 1 resets, tab persists across view switch). Total: 610 tests passing.
+- TODO: Move watchlist from separate page to main screen tab (P0)
+
 ### 2026-03-03 — Add POSITIONS and ASSET OVERVIEW section headers
 
 - What: added section header bars above the positions table (left pane) and asset overview (right pane) in the standard two-column layout. Headers render as a styled rule line: `── LABEL ────────` with `text_accent` for the label and `border_subtle` for decorative rules, on a `surface_2` background for visual separation between layout sections. Gracefully omitted when terminal is too short.

@@ -247,14 +247,7 @@
 
 ## P0 — Watchlist as Tab on Main Screen (Owner Request)
 
-- [ ] **Move watchlist from separate page to main screen tab** — Watchlist should NOT be on a separate page. Instead:
-  - Default main screen shows "Positions" tab (current behavior)
-  - Press `n` to cycle to "Watchlist" tab on the same screen
-  - Tab indicator in the positions section header: `── POSITIONS ──` vs `── WATCHLIST ──`
-  - Watchlist tab shows watched symbols with price, change, sparkline (reuse Markets-style rendering)
-  - Right pane (ASSET OVERVIEW) still works — selecting a watchlist item shows its chart/details
-  - Remove the old separate watchlist page/view entirely
-  - Files: `src/app.rs` (tab state, `n` keybinding), `src/tui/ui.rs` (tab dispatch), `src/tui/views/positions.rs` (tab header + watchlist rendering), remove old watchlist view if separate
+- [x] **Move watchlist from separate page to main screen tab** — DONE (2026-03-03). Press `w` to toggle between Positions and Watchlist sub-tabs on the main screen. Section header switches between "POSITIONS" and "WATCHLIST". Removed old ViewMode::Watchlist and [5]Watch header tab entirely. 6 new tests. See CHANGELOG.
 
 ## P0 — Portfolio Value History Sine Wave Bug (Owner Report)
 
