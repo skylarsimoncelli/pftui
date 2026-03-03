@@ -24,6 +24,9 @@ const VOLUME_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇
 const SMA_SHORT_PERIOD: usize = 20;
 const SMA_LONG_PERIOD: usize = 50;
 
+/// Bollinger Band multiplier (standard deviations from SMA)
+const BOLLINGER_MULTIPLIER: f64 = 2.0;
+
 /// Slice history records to only the last `days` entries.
 /// Records are assumed to be in chronological order (oldest first).
 fn slice_history(records: &[HistoryRecord], days: u32) -> &[HistoryRecord] {
@@ -265,7 +268,17 @@ fn render_single_chart(
         sma_overlays.push((sma50, t.border_accent));
     }
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, crosshair, t);
+    let sma_overlay_count = sma_overlays.len();
+
+    // Bollinger Bands: SMA(20) ± 2σ, rendered as faint overlays
+    let (bb_upper, bb_lower) = compute_bollinger(&raw_values, SMA_SHORT_PERIOD, BOLLINGER_MULTIPLIER);
+    let bb_color = muted_color(t.text_accent, t.surface_1);
+    if bb_upper.iter().any(|v| v.is_some()) {
+        sma_overlays.push((bb_upper, bb_color));
+        sma_overlays.push((bb_lower, bb_color));
+    }
+
+    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, crosshair, t);
 }
 
 /// Render a ratio chart (numerator / denominator)
@@ -332,8 +345,8 @@ fn render_ratio_chart(
         None
     };
 
-    // No volume for ratio charts
-    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], crosshair, t);
+    // No volume or overlays for ratio charts
+    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], 0, crosshair, t);
 }
 
 /// Compact single chart for multi-panel (no stats line, just braille)
@@ -475,7 +488,54 @@ pub fn compute_sma(values: &[f64], period: usize) -> Vec<Option<f64>> {
     result
 }
 
+/// Compute Bollinger Bands (upper and lower) for a slice of f64 values.
+/// Returns (upper_band, lower_band) where each is the same length as input.
+/// Bands are SMA(period) ± multiplier * stddev(period).
+/// Entries before the first full window are None.
+pub fn compute_bollinger(
+    values: &[f64],
+    period: usize,
+    multiplier: f64,
+) -> (Vec<Option<f64>>, Vec<Option<f64>>) {
+    if period == 0 || values.is_empty() {
+        let nones = vec![None; values.len()];
+        return (nones.clone(), nones);
+    }
+
+    let sma = compute_sma(values, period);
+    let mut upper = Vec::with_capacity(values.len());
+    let mut lower = Vec::with_capacity(values.len());
+
+    for (i, sma_val) in sma.iter().enumerate() {
+        match sma_val {
+            Some(mean) => {
+                // Compute stddev over the window [i+1-period..=i]
+                let start = i + 1 - period;
+                let window = &values[start..=i];
+                let variance = window
+                    .iter()
+                    .map(|v| {
+                        let diff = v - mean;
+                        diff * diff
+                    })
+                    .sum::<f64>()
+                    / period as f64;
+                let stddev = variance.sqrt();
+                upper.push(Some(mean + multiplier * stddev));
+                lower.push(Some(mean - multiplier * stddev));
+            }
+            None => {
+                upper.push(None);
+                lower.push(None);
+            }
+        }
+    }
+
+    (upper, lower)
+}
+
 /// Full braille chart with optional volume bars and stats line (price, gain%, H/L)
+/// `sma_count` is the number of SMA overlays (the rest are Bollinger Band overlays).
 #[allow(clippy::too_many_arguments)]
 fn render_braille_chart(
     frame: &mut Frame,
@@ -485,6 +545,7 @@ fn render_braille_chart(
     gain_pct: Option<Decimal>,
     volumes: Option<&[Option<u64>]>,
     sma_overlays: &[(Vec<Option<f64>>, Color)],
+    sma_count: usize,
     crosshair: Option<&CrosshairState>,
     t: &theme::Theme,
 ) {
@@ -725,21 +786,36 @@ fn render_braille_chart(
             ),
         ];
 
-        // Add SMA legend labels
+        // Add SMA + Bollinger Band legend labels
         if !sma_overlays.is_empty() {
             stats_spans.push(Span::raw("  "));
+            let mut bb_labeled = false;
             for (i, (sma_raw, color)) in sma_overlays.iter().enumerate() {
-                // Determine SMA period from data (count non-None leading entries)
-                let period = sma_raw.iter().take_while(|v| v.is_none()).count() + 1;
-                let label = if period <= SMA_SHORT_PERIOD + 1 {
-                    format!("SMA{}", SMA_SHORT_PERIOD)
+                if i < sma_count {
+                    // SMA overlay — determine period from leading None count
+                    let period = sma_raw.iter().take_while(|v| v.is_none()).count() + 1;
+                    let label = if period <= SMA_SHORT_PERIOD + 1 {
+                        format!("SMA{}", SMA_SHORT_PERIOD)
+                    } else {
+                        format!("SMA{}", SMA_LONG_PERIOD)
+                    };
+                    stats_spans.push(Span::styled(
+                        format!("─{}", label),
+                        Style::default().fg(*color),
+                    ));
+                } else if !bb_labeled {
+                    // Bollinger Band overlay — label once for both upper+lower
+                    stats_spans.push(Span::styled(
+                        "─BB".to_string(),
+                        Style::default().fg(*color),
+                    ));
+                    bb_labeled = true;
+                    // Skip adding separator for the paired lower band
+                    continue;
                 } else {
-                    format!("SMA{}", SMA_LONG_PERIOD)
-                };
-                stats_spans.push(Span::styled(
-                    format!("─{}", label),
-                    Style::default().fg(*color),
-                ));
+                    // Lower band — skip (already labeled)
+                    continue;
+                }
                 if i < sma_overlays.len() - 1 {
                     stats_spans.push(Span::raw(" "));
                 }
@@ -1492,6 +1568,102 @@ mod tests {
         assert!(FILL_OPACITY_NEAR > FILL_OPACITY_FAR);
         assert!(FILL_OPACITY_NEAR <= 0.20);
         assert!(FILL_OPACITY_FAR >= 0.0);
+    }
+
+    #[test]
+    fn test_compute_bollinger_basic() {
+        // 5 values, period 3, multiplier 2.0
+        let values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let (upper, lower) = compute_bollinger(&values, 3, 2.0);
+        assert_eq!(upper.len(), 5);
+        assert_eq!(lower.len(), 5);
+        // First 2 are None (need 3 values for period 3)
+        assert!(upper[0].is_none());
+        assert!(upper[1].is_none());
+        assert!(lower[0].is_none());
+        assert!(lower[1].is_none());
+        // At index 2: SMA = 20.0, window = [10, 20, 30]
+        // variance = ((10-20)^2 + (20-20)^2 + (30-20)^2) / 3 = (100+0+100)/3 = 66.67
+        // stddev = sqrt(66.67) ≈ 8.165
+        // upper = 20.0 + 2*8.165 ≈ 36.33, lower = 20.0 - 2*8.165 ≈ 3.67
+        let u2 = upper[2].unwrap();
+        let l2 = lower[2].unwrap();
+        assert!((u2 - 36.33).abs() < 0.1, "upper[2] = {}", u2);
+        assert!((l2 - 3.67).abs() < 0.1, "lower[2] = {}", l2);
+    }
+
+    #[test]
+    fn test_compute_bollinger_symmetric_around_sma() {
+        let values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let (upper, lower) = compute_bollinger(&values, 3, 2.0);
+        let sma = compute_sma(&values, 3);
+        // For each defined point, upper and lower should be equidistant from SMA
+        for i in 0..values.len() {
+            if let (Some(u), Some(l), Some(m)) = (upper[i], lower[i], sma[i]) {
+                let diff_upper = u - m;
+                let diff_lower = m - l;
+                assert!(
+                    (diff_upper - diff_lower).abs() < 1e-10,
+                    "Bands not symmetric at index {}: upper_diff={}, lower_diff={}",
+                    i, diff_upper, diff_lower
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_bollinger_constant_values_zero_bandwidth() {
+        // If all values are the same, stddev = 0, so bands collapse to the SMA
+        let values = vec![50.0, 50.0, 50.0, 50.0, 50.0];
+        let (upper, lower) = compute_bollinger(&values, 3, 2.0);
+        for i in 2..5 {
+            assert!((upper[i].unwrap() - 50.0).abs() < 1e-10);
+            assert!((lower[i].unwrap() - 50.0).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_compute_bollinger_empty_input() {
+        let values: Vec<f64> = vec![];
+        let (upper, lower) = compute_bollinger(&values, 20, 2.0);
+        assert!(upper.is_empty());
+        assert!(lower.is_empty());
+    }
+
+    #[test]
+    fn test_compute_bollinger_period_zero() {
+        let values = vec![1.0, 2.0, 3.0];
+        let (upper, lower) = compute_bollinger(&values, 0, 2.0);
+        assert_eq!(upper.len(), 3);
+        assert!(upper.iter().all(|v| v.is_none()));
+        assert!(lower.iter().all(|v| v.is_none()));
+    }
+
+    #[test]
+    fn test_compute_bollinger_period_larger_than_data() {
+        let values = vec![1.0, 2.0, 3.0];
+        let (upper, lower) = compute_bollinger(&values, 10, 2.0);
+        assert_eq!(upper.len(), 3);
+        // All None since we never have 10 data points
+        assert!(upper.iter().all(|v| v.is_none()));
+        assert!(lower.iter().all(|v| v.is_none()));
+    }
+
+    #[test]
+    fn test_compute_bollinger_upper_above_lower() {
+        // With positive multiplier, upper should always be >= lower
+        let values = vec![10.0, 15.0, 8.0, 22.0, 18.0, 5.0, 30.0];
+        let (upper, lower) = compute_bollinger(&values, 3, 2.0);
+        for i in 0..values.len() {
+            if let (Some(u), Some(l)) = (upper[i], lower[i]) {
+                assert!(u >= l, "upper ({}) < lower ({}) at index {}", u, l, i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_bollinger_multiplier_constant() {
+        assert!((BOLLINGER_MULTIPLIER - 2.0).abs() < f64::EPSILON);
     }
 
 }
