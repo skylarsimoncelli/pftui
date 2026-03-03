@@ -598,3 +598,11 @@
 - Files: new `src/commands/demo.rs` (31 transactions, 6 watchlist entries, `build_demo_db()`, `run()`, 9 tests), `src/commands/mod.rs` (register module), `src/cli.rs` (add `Demo` variant), `src/main.rs` (wire up dispatch)
 - Tests: 9 new tests (valid categories, valid tx_types, positive quantities, positive prices, valid dates, diverse categories, multiple txns per asset, valid watchlist, full DB build roundtrip). Total: 587 tests passing.
 - TODO: Add `pftui demo` command (P1)
+
+### 2026-03-03 — Enhanced Markets tab with mini-sparklines, 7D momentum, and heatmap tint
+
+- What: overhauled the Markets tab (tab 3) from a simple price list to a richer data view. Added three new features: (1) a 7-day mini braille sparkline column showing recent price trend for each market symbol using gradient-colored block characters (▁▂▃▄▅▆▇█), (2) a 7D momentum % column showing the 7-day price change percentage, and (3) heat-map row background tinting where rows subtly shift toward green for gainers and red for losers based on daily change magnitude (max 8% blend at ±5%). Renamed the existing "Change %" column to "Day %" for clarity alongside the new 7D column. Column widths rebalanced: Symbol(8), Name(14+), Category(10), Price(12), Day%(9), 7D sparkline(7), 7D%(8).
+- Why: P1 Feedback — Sentinel TUI review specifically requested mini-charts, momentum indicators, and heat-map tinting for the Markets tab. The previous tab was just a plain price list with no visual context. The sparklines give instant trend awareness, momentum % adds weekly context beyond daily noise, and the heatmap tint makes scanning for big movers effortless.
+- Files: `src/tui/views/markets.rs` (new `build_mini_sparkline()`, `build_sparkline_spans()`, `compute_7d_momentum()`, `heatmap_tint()` functions; added `SPARKLINE_CHARS` and `SPARKLINE_DAYS` constants; expanded render to 7 columns with heat-map backgrounds; 11 new tests)
+- Tests: 11 new tests (sparkline building: empty/single/ascending/truncation/flat, heatmap tint: zero/positive/negative/saturation, constants validation). Total: 598 tests passing.
+- TODO: Enhanced Markets tab with mini-charts (P1 Feedback)

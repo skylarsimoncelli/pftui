@@ -59,7 +59,7 @@
 
 ## P1 — Markets & Economy Tab Enhancements (Feedback)
 
-- [ ] **[Feedback] Enhanced Markets tab with mini-charts** — Replace the simple price list in the Markets tab (tab 3) with richer data: add a 7-day mini braille sparkline per row, momentum indicator (e.g. RSI or simple momentum %), and volume context. Consider a heat-map-style row background tint based on daily change magnitude. Files: `src/tui/views/markets.rs` (add sparkline column, momentum calc), reuse `build_sparkline_spans()` from positions view.
+
 - [ ] **[Feedback] Economy tab context enrichment** — Add last release date, trend arrows (↑/↓/→), and consensus vs actual context to economy indicators. For treasury yields, show the yield curve status (normal/inverted). Files: `src/tui/views/economy.rs`.
 
 ## P2 — Scenario & Analytics (Feedback)
