@@ -34,6 +34,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect::new(x, y, width, height);
 
+    // Draw shadow behind popup (before Clear so shadow is visible around edges)
+    crate::tui::theme::render_popup_shadow(frame, popup_area, area, t);
+
     frame.render_widget(Clear, popup_area);
 
     let visible_lines = height.saturating_sub(2) as usize;

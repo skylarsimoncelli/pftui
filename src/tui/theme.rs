@@ -1,7 +1,11 @@
-use ratatui::style::Color;
+use ratatui::prelude::*;
 use ratatui::symbols::border;
 
 use crate::models::asset::AssetCategory;
+
+/// Shadow opacity — controls how dark the popup shadow is.
+/// 0.0 = fully transparent (no shadow), 1.0 = fully black.
+const SHADOW_OPACITY: f32 = 0.70;
 
 // ---- Border set constants ----
 
@@ -416,6 +420,57 @@ pub fn gain_intensity_color(theme: &Theme, gain_pct: f64) -> Color {
     }
 }
 
+/// Render a drop shadow on the right and bottom edges of a popup rectangle.
+///
+/// Draws a 1-cell-wide shadow strip along the right edge and a 1-cell-tall
+/// strip along the bottom edge, offset by 1 cell from the popup boundary.
+/// The shadow color blends the theme's `surface_0` toward black at
+/// [`SHADOW_OPACITY`] intensity, creating a subtle elevated/floating effect.
+///
+/// Shadow cells that would exceed `area` bounds are silently clipped.
+pub fn render_popup_shadow(frame: &mut Frame, popup: Rect, area: Rect, theme: &Theme) {
+    let shadow_color = lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+    let shadow_style = Style::default().bg(shadow_color);
+
+    // Right edge shadow: 1 cell wide, starts 1 row below popup top,
+    // height = popup height (so the bottom-right corner overlaps).
+    let right_x = popup.x + popup.width;
+    let right_y = popup.y + 1;
+    let right_h = popup.height;
+
+    if right_x < area.x + area.width {
+        let max_y = area.y + area.height;
+        for row in right_y..right_y.saturating_add(right_h) {
+            if row < max_y {
+                let cell = frame.buffer_mut().cell_mut(Position::new(right_x, row));
+                if let Some(cell) = cell {
+                    cell.set_char(' ');
+                    cell.set_style(shadow_style);
+                }
+            }
+        }
+    }
+
+    // Bottom edge shadow: 1 cell tall, starts 1 column right of popup left,
+    // width = popup width (so the bottom-right corner overlaps).
+    let bottom_y = popup.y + popup.height;
+    let bottom_x = popup.x + 1;
+    let bottom_w = popup.width;
+
+    if bottom_y < area.y + area.height {
+        let max_x = area.x + area.width;
+        for col in bottom_x..bottom_x.saturating_add(bottom_w) {
+            if col < max_x {
+                let cell = frame.buffer_mut().cell_mut(Position::new(col, bottom_y));
+                if let Some(cell) = cell {
+                    cell.set_char(' ');
+                    cell.set_style(shadow_style);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,5 +697,145 @@ mod tests {
         assert_ne!(BORDER_ACTIVE.horizontal_top, BORDER_INACTIVE.horizontal_top);
         assert_ne!(BORDER_ACTIVE.top_left, BORDER_INACTIVE.top_left);
         assert_ne!(BORDER_ACTIVE.top_right, BORDER_INACTIVE.top_right);
+    }
+
+    #[test]
+    fn shadow_opacity_constant_valid() {
+        assert!(SHADOW_OPACITY > 0.0, "shadow should be visible");
+        assert!(SHADOW_OPACITY <= 1.0, "shadow opacity cannot exceed 1.0");
+    }
+
+    #[test]
+    fn shadow_color_is_darker_than_surface() {
+        let theme = midnight();
+        let shadow = lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+        // surface_0 for midnight is Rgb(12, 13, 22)
+        // Shadow should be darker (closer to black)
+        if let (Color::Rgb(sr, sg, sb), Color::Rgb(thr, thg, thb)) = (shadow, theme.surface_0) {
+            assert!(sr <= thr, "shadow red should be <= surface red");
+            assert!(sg <= thg, "shadow green should be <= surface green");
+            assert!(sb <= thb, "shadow blue should be <= surface blue");
+        }
+    }
+
+    #[test]
+    fn shadow_right_edge_placed_correctly() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(20, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 20, 10);
+                let popup = Rect::new(5, 2, 8, 4);
+                render_popup_shadow(frame, popup, area, &theme);
+
+                // Right shadow should be at x=13 (5+8), rows 3..7 (y+1 to y+height+1)
+                let shadow_color =
+                    lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+                for row in 3..7 {
+                    let cell = frame.buffer_mut().cell_mut(Position::new(13, row)).unwrap();
+                    assert_eq!(
+                        cell.bg, shadow_color,
+                        "right shadow cell at (13, {row}) should have shadow bg"
+                    );
+                }
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn shadow_bottom_edge_placed_correctly() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(20, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 20, 10);
+                let popup = Rect::new(5, 2, 8, 4);
+                render_popup_shadow(frame, popup, area, &theme);
+
+                // Bottom shadow should be at y=6 (2+4), cols 6..14 (x+1 to x+width+1)
+                let shadow_color =
+                    lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+                for col in 6..14 {
+                    let cell = frame.buffer_mut().cell_mut(Position::new(col, 6)).unwrap();
+                    assert_eq!(
+                        cell.bg, shadow_color,
+                        "bottom shadow cell at ({col}, 6) should have shadow bg"
+                    );
+                }
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn shadow_clips_to_area_bounds() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(10, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 10, 8);
+                // Popup at bottom-right corner — shadow would go off-screen
+                let popup = Rect::new(3, 4, 7, 4);
+                // Right edge at x=10 (out of bounds), bottom at y=8 (out of bounds)
+                // This should NOT panic
+                render_popup_shadow(frame, popup, area, &theme);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn shadow_does_not_touch_popup_top_left() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let backend = TestBackend::new(20, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = midnight();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 20, 10);
+                let popup = Rect::new(5, 2, 8, 4);
+                render_popup_shadow(frame, popup, area, &theme);
+
+                let shadow_color =
+                    lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+
+                // Top-left corner of popup (5, 2) should NOT have shadow
+                let cell = frame.buffer_mut().cell_mut(Position::new(5, 2)).unwrap();
+                assert_ne!(
+                    cell.bg, shadow_color,
+                    "popup top-left corner should not have shadow"
+                );
+
+                // Cell above right shadow (13, 2) should NOT have shadow
+                let cell = frame.buffer_mut().cell_mut(Position::new(13, 2)).unwrap();
+                assert_ne!(
+                    cell.bg, shadow_color,
+                    "cell above right shadow should not have shadow"
+                );
+
+                // Cell left of bottom shadow (5, 6) should NOT have shadow
+                let cell = frame.buffer_mut().cell_mut(Position::new(5, 6)).unwrap();
+                assert_ne!(
+                    cell.bg, shadow_color,
+                    "cell left of bottom shadow should not have shadow"
+                );
+            })
+            .unwrap();
     }
 }
