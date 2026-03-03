@@ -23,12 +23,26 @@ esac
 
 ASSET="${BINARY}-${arch}-${os}"
 
-echo "🦀 Installing pftui..."
+# Check if upgrading
+CURRENT_VERSION=""
+if command -v "$BINARY" &>/dev/null; then
+  CURRENT_VERSION=$("$BINARY" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+  echo "🦀 Upgrading pftui (current: v${CURRENT_VERSION})..."
+else
+  echo "🦀 Installing pftui..."
+fi
 echo "   Platform: ${os}/${arch}"
 
 # Get latest release tag
 TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
-echo "   Version:  ${TAG}"
+echo "   Latest:   ${TAG}"
+
+# Skip if already up to date
+if [ -n "$CURRENT_VERSION" ] && [ "v${CURRENT_VERSION}" = "$TAG" ]; then
+  echo ""
+  echo "✅ Already up to date (${TAG})"
+  exit 0
+fi
 
 # Download binary
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
@@ -50,7 +64,9 @@ if ! curl -fsSL "$URL" -o "${TMPDIR}/${BINARY}"; then
   exit 1
 fi
 
-# Install binary
+# Install binary (only replaces the binary — config and data are untouched)
+# Data: ~/.local/share/pftui/pftui.db  — NOT affected
+# Config: ~/.config/pftui/config.toml  — NOT affected
 if [ -w "$INSTALL_DIR" ]; then
   mv "${TMPDIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 else
@@ -61,9 +77,14 @@ fi
 chmod +x "${INSTALL_DIR}/${BINARY}"
 
 echo ""
-echo "✅ pftui ${TAG} installed to ${INSTALL_DIR}/${BINARY}"
-echo ""
-echo "Get started:"
-echo "  pftui          # launch TUI (setup wizard on first run)"
-echo "  pftui demo     # try with sample portfolio"
-echo "  pftui --help   # see all commands"
+if [ -n "$CURRENT_VERSION" ]; then
+  echo "✅ pftui upgraded: v${CURRENT_VERSION} → ${TAG}"
+  echo "   Your portfolio data and config are unchanged."
+else
+  echo "✅ pftui ${TAG} installed to ${INSTALL_DIR}/${BINARY}"
+  echo ""
+  echo "Get started:"
+  echo "  pftui          # launch TUI (setup wizard on first run)"
+  echo "  pftui demo     # try with sample portfolio"
+  echo "  pftui --help   # see all commands"
+fi
