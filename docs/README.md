@@ -1,6 +1,8 @@
 # pftui - The Portfolio TUI!
 
-<img width="1606" height="1025" alt="image" src="https://github.com/user-attachments/assets/375d1af7-8050-4879-aee0-0e04f1dce125" />
+
+<img width="1728" height="1051" alt="image" src="https://github.com/user-attachments/assets/4cd885ef-4945-4895-8056-170ba81c9266" />
+
 
 A maximalist terminal dashboard for tracking your investments — equities, crypto, forex, commodities, funds — with live market data, ratio analysis, 6 hand-tuned color themes, and vim-native keybindings. Built in Rust. 
 
