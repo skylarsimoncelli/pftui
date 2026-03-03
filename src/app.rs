@@ -350,6 +350,12 @@ pub struct App {
     /// Regime intelligence — composite risk-on/risk-off score from cross-asset signals.
     pub regime_score: crate::regime::RegimeScore,
 
+    // Header click targets (column ranges set during render)
+    /// Column range for the theme name indicator in the header (for mouse click cycling).
+    pub header_theme_col_range: Option<(u16, u16)>,
+    /// Column range for the privacy/percentage-view indicator in the header.
+    pub header_privacy_col_range: Option<(u16, u16)>,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -456,6 +462,8 @@ impl App {
             sparkline_timeframe: ChartTimeframe::ThreeMonths,
             crosshair_mode: false,
             crosshair_x: 0,
+            header_theme_col_range: None,
+            header_privacy_col_range: None,
             regime_score: crate::regime::RegimeScore {
                 signals: Vec::new(),
                 total: 0,
@@ -1750,6 +1758,24 @@ impl App {
             self.detail_popup_open = false;
             self.load_watchlist();
             self.request_watchlist_data();
+            return;
+        }
+
+        // Theme indicator click — cycle theme (non-compact only)
+        if let Some((start, end)) = self.header_theme_col_range {
+            if (start as usize..end as usize).contains(&col) {
+                self.cycle_theme();
+                return;
+            }
+        }
+
+        // Privacy/percentage-view indicator click — toggle privacy mode
+        if let Some((start, end)) = self.header_privacy_col_range {
+            if (start as usize..end as usize).contains(&col)
+                && self.portfolio_mode == PortfolioMode::Full
+            {
+                self.show_percentages_only = !self.show_percentages_only;
+            }
         }
     }
 
@@ -5205,5 +5231,76 @@ mod mouse_tests {
         // Click where header would be — should NOT change sort
         app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 2, 5));
         assert_eq!(app.sort_field, SortField::Allocation);
+    }
+
+    #[test]
+    fn click_theme_indicator_cycles_theme() {
+        let mut app = make_app();
+        app.theme_name = "midnight".to_string();
+        // Simulate header render setting the click range
+        app.header_theme_col_range = Some((80, 92));
+        let old_theme = app.theme_name.clone();
+
+        // Click within the theme indicator range (row 0 = header)
+        app.handle_header_click(85);
+        assert_ne!(app.theme_name, old_theme, "Theme should have cycled");
+    }
+
+    #[test]
+    fn click_theme_indicator_outside_range_does_nothing() {
+        let mut app = make_app();
+        app.theme_name = "midnight".to_string();
+        app.header_theme_col_range = Some((80, 92));
+        let old_theme = app.theme_name.clone();
+
+        // Click outside the range
+        app.handle_header_click(95);
+        assert_eq!(app.theme_name, old_theme, "Theme should not have changed");
+    }
+
+    #[test]
+    fn click_privacy_indicator_toggles_privacy() {
+        let mut app = make_app();
+        assert!(!app.show_percentages_only);
+        // Simulate header render setting the privacy click range
+        app.header_privacy_col_range = Some((50, 60));
+
+        // Click within the privacy indicator range
+        app.handle_header_click(55);
+        assert!(app.show_percentages_only, "Privacy should be toggled on");
+
+        // Click again to toggle off
+        app.handle_header_click(55);
+        assert!(!app.show_percentages_only, "Privacy should be toggled off");
+    }
+
+    #[test]
+    fn click_privacy_indicator_ignored_in_percentage_mode() {
+        let mut app = make_app();
+        app.portfolio_mode = PortfolioMode::Percentage;
+        app.show_percentages_only = true; // already in pct mode
+        app.header_privacy_col_range = Some((50, 60));
+
+        app.handle_header_click(55);
+        // In percentage mode, the toggle should not change (already percentage)
+        assert!(app.show_percentages_only);
+    }
+
+    #[test]
+    fn click_targets_none_by_default() {
+        let app = make_app();
+        assert!(app.header_theme_col_range.is_none());
+        assert!(app.header_privacy_col_range.is_none());
+    }
+
+    #[test]
+    fn click_theme_no_crash_when_range_is_none() {
+        let mut app = make_app();
+        app.header_theme_col_range = None;
+        let old_theme = app.theme_name.clone();
+
+        // Should not crash or change theme
+        app.handle_header_click(85);
+        assert_eq!(app.theme_name, old_theme);
     }
 }

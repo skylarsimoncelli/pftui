@@ -278,7 +278,7 @@ fn build_ticker_spans(app: &App, width: usize) -> Vec<Span<'static>> {
     spans
 }
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let now = chrono::Utc::now().format("%H:%M UTC");
     let privacy = is_privacy_view(app);
     let pct_mode = app.portfolio_mode == PortfolioMode::Percentage;
@@ -341,6 +341,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     spans.push(Span::styled(if compact { "W" } else { "Watch" }, watch_style));
 
     if !privacy {
+        app.header_privacy_col_range = None;
         let total = app.total_value;
         let cost = app.total_cost;
         let gain = total - cost;
@@ -402,8 +403,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             ));
         }
     } else {
+        // Privacy/percentage-view indicator — track position for click target
+        let privacy_col_start: u16 = spans.iter().map(|s| s.content.chars().count() as u16).sum();
+        let privacy_text = "  [% view]";
         spans.push(Span::raw("  "));
         spans.push(Span::styled("[% view]", Style::default().fg(t.text_muted)));
+        let privacy_col_end = privacy_col_start + privacy_text.chars().count() as u16;
+        app.header_privacy_col_range = Some((privacy_col_start, privacy_col_end));
     }
 
     // In compact mode, hide the clock, market status, and theme name to save space
@@ -424,11 +430,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             spans.push(Span::styled("CLOSED", Style::default().fg(t.text_muted)));
         }
 
-        // Theme indicator
+        // Theme indicator — track position for click target
+        let theme_text = format!("  {}", app.theme_name);
+        let theme_col_start: u16 = spans.iter().map(|s| s.content.chars().count() as u16).sum();
         spans.push(Span::styled(
-            format!("  {}", app.theme_name),
+            theme_text.clone(),
             Style::default().fg(t.text_muted),
         ));
+        let theme_col_end = theme_col_start + theme_text.chars().count() as u16;
+        app.header_theme_col_range = Some((theme_col_start, theme_col_end));
+    } else {
+        app.header_theme_col_range = None;
     }
 
     let line1 = Line::from(spans);
