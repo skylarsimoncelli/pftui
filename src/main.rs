@@ -119,6 +119,10 @@ fn main() -> Result<()> {
             commands::set_cash::run(&conn, &symbol, &amount)
         }
 
+        Some(Command::Demo) => {
+            commands::demo::run(&config)
+        }
+
         Some(Command::Import { path, mode }) => {
             let import_mode = match mode {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,

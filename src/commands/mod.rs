@@ -1,5 +1,6 @@
 pub mod brief;
 pub mod add_tx;
+pub mod demo;
 pub mod import;
 pub mod refresh;
 pub mod export;

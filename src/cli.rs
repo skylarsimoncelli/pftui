@@ -100,6 +100,9 @@ pub enum Command {
         amount: String,
     },
 
+    /// Launch pftui with a realistic demo portfolio (your real data is untouched)
+    Demo,
+
     /// Import data from a JSON snapshot file (as produced by `pftui export json`)
     Import {
         /// Path to the JSON snapshot file
