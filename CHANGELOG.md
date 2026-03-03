@@ -566,3 +566,11 @@
 - Files: new `src/tui/widgets/top_movers.rs` (compute_movers, group_by_category, prev_close_from_history, render, 12 tests), `src/tui/widgets/mod.rs` (register module), `src/tui/widgets/sidebar.rs` (three-section layout with movers panel)
 - Tests: 12 new tests (format_mover positive/negative/zero, category labels, prev_close logic for today/not-today/empty/single, group ordering, empty groups, constants). Total: 566 tests passing.
 - TODO: Top Movers section on homepage (P1)
+
+### 2026-03-03 — Add drop shadow effect on popup overlays
+
+- What: popup overlays (help overlay and position detail popup) now render a subtle 1-cell drop shadow on their right and bottom edges. The shadow uses a dark color derived from `surface_0` blended 70% toward black (`SHADOW_OPACITY`). The right shadow starts 1 row below the popup top and spans the full popup height; the bottom shadow starts 1 column right of the popup left and spans the full width. This creates a floating/elevated look common in modern terminal UIs. Shadow cells are clipped to terminal bounds so edge-positioned popups don't panic. The new `render_popup_shadow()` utility in `theme.rs` is shared by both popup views.
+- Why: P2 layout/visual polish — flat popups with no depth cue blended into the panel borders behind them. The drop shadow adds visual separation and a premium feel, making it immediately obvious that the popup is a modal layer floating above the content.
+- Files: `src/tui/theme.rs` (added `SHADOW_OPACITY` constant, `render_popup_shadow()` function, imported `ratatui::prelude::*`, 6 new tests), `src/tui/views/help.rs` (call shadow before Clear), `src/tui/views/position_detail.rs` (call shadow before Clear)
+- Tests: 6 new tests (opacity constant valid, shadow darker than surface, right edge placement, bottom edge placement, clips to bounds without panic, no shadow on popup top-left). Total: 572 tests passing.
+- TODO: Add shadow effect on popups (P2)
