@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Add `--technicals` flag to `brief` and `summary` CLI commands (F1.4)
+
+- What: added `--technicals` flag to both `pftui brief` and `pftui summary`. When passed, appends a technicals table showing RSI(14) with signal label (overbought/neutral/oversold), MACD line + histogram with signal label (bullish/bearish), SMA(50), and SMA(200) for each non-cash position. Uses existing indicators engine with cached price history (up to 250 days). Cash positions are skipped. Missing data gracefully shows "—" or "N/A".
+- Files: `cli.rs` (flag definitions), `main.rs` (dispatch), `commands/brief.rs` (technicals computation + markdown table), `commands/summary.rs` (technicals computation + plain text table)
+- Tests: 5 new tests — rsi_label_categories, macd_label_categories, technicals_section_skips_cash, technicals_section_empty_data, brief_with_technicals_flag. Total: 839 passing.
+- TODO: F1.4 `--technicals` flag for `brief` and `summary`
+
 ### 2026-03-03 — Add compact RSI(14) indicator column to Positions and Watchlist tabs (F1.3)
 
 - What: Added RSI column to Positions tab (full and privacy views) and Watchlist tab. Shows RSI(14) value with color-coded zones: red >70 (overbought), green <30 (oversold), neutral otherwise. Direction arrows (▲/▼) show RSI momentum vs previous bar. Uses the existing `indicators::compute_rsi()` engine.

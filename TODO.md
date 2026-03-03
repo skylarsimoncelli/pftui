@@ -10,12 +10,6 @@ _(no items)_
 
 ## P1 — Analytics Foundation
 
-### F1: Technical Indicators Engine
-> **Goal:** Replace external `fetch_prices.py` dependency. Compute RSI/MACD/SMA/BB from cached price history.
-> **Spec:** `docs/ANALYTICS-SPEC.md#f1`
-
-- [ ] **F1.4: `--technicals` flag for `brief` and `summary`** — Add RSI/MACD/SMA to CLI output per position. Files: `commands/brief.rs`, `commands/summary.rs`
-
 ### F3: Macro Dashboard
 > **Goal:** Economy tab becomes a full macro intelligence dashboard. One new CLI command: `pftui macro`. Replaces `fetch_prices.py` entirely.
 > **Spec:** `docs/ANALYTICS-SPEC.md#f3`
