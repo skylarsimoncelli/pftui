@@ -233,3 +233,25 @@
   - Files: `src/tui/ui.rs`, possibly new `src/tui/views/portfolio_overview.rs`
 - [x] **Add "POSITIONS" section header** — DONE (2026-03-03). Section header bar above positions table with styled rule line. Files: `src/tui/theme.rs`, `src/tui/ui.rs`.
 - [x] **Add "ASSET OVERVIEW" header to right pane** — DONE (2026-03-03). Section header bar above asset header + chart. Files: `src/tui/theme.rs`, `src/tui/ui.rs`.
+
+## P0 — Global Asset Search Overlay (Owner Request)
+
+- [ ] **Replace position-only search with full global asset search** — Pressing `/` on the default screen should open a full-screen search overlay (not just filter positions). The overlay should:
+  - Search ALL known assets (portfolio positions, watchlist, AND the full 130+ symbol database)
+  - Show rich market details for the selected result: current price, 24h change, 7D change, category, mini sparkline
+  - Allow drilling into any asset for full analysis (chart, stats, technicals) even if not in portfolio
+  - Fuzzy matching with ranked results (like the setup wizard search)
+  - Esc to dismiss, Enter to select and view asset detail
+  - This is the discovery/research entry point — not just a portfolio filter
+  - Files: `src/app.rs` (new search overlay state), new `src/tui/views/search_overlay.rs`, `src/tui/ui.rs` (render dispatch)
+
+## P0 — Watchlist as Tab on Main Screen (Owner Request)
+
+- [ ] **Move watchlist from separate page to main screen tab** — Watchlist should NOT be on a separate page. Instead:
+  - Default main screen shows "Positions" tab (current behavior)
+  - Press `n` to cycle to "Watchlist" tab on the same screen
+  - Tab indicator in the positions section header: `── POSITIONS ──` vs `── WATCHLIST ──`
+  - Watchlist tab shows watched symbols with price, change, sparkline (reuse Markets-style rendering)
+  - Right pane (ASSET OVERVIEW) still works — selecting a watchlist item shows its chart/details
+  - Remove the old separate watchlist page/view entirely
+  - Files: `src/app.rs` (tab state, `n` keybinding), `src/tui/ui.rs` (tab dispatch), `src/tui/views/positions.rs` (tab header + watchlist rendering), remove old watchlist view if separate
