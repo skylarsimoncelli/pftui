@@ -1163,6 +1163,214 @@ fn format_compact_short(f: f64) -> String {
     }
 }
 
+/// Generate braille chart content as `Vec<Line>` for embedding in popups.
+/// Takes history records and a theme, renders a compact braille chart with
+/// SMA overlays and a stats line. `chart_width` is in terminal columns,
+/// `chart_height` is the number of rows to use for the braille area.
+/// Returns empty vec if insufficient data.
+pub fn render_braille_lines<'a>(
+    records: &[HistoryRecord],
+    chart_width: usize,
+    chart_height: usize,
+    t: &'a theme::Theme,
+) -> Vec<Line<'a>> {
+    if records.len() < 2 || chart_width < 4 || chart_height < 2 {
+        return Vec::new();
+    }
+
+    let values: Vec<f64> = records
+        .iter()
+        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        .collect();
+
+    let first_close = records.first().map(|r| r.close).unwrap_or(dec!(0));
+    let last_close = records.last().map(|r| r.close).unwrap_or(dec!(0));
+    let gain_pct = if first_close > dec!(0) {
+        ((last_close - first_close) / first_close) * dec!(100)
+    } else {
+        dec!(0)
+    };
+    let gain_f: f64 = gain_pct.to_string().parse().unwrap_or(0.0);
+
+    let sample_count = chart_width * 2;
+    let resampled = resample(&values, sample_count);
+
+    let min_val = resampled.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_val = resampled.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let range = max_val - min_val;
+    let dot_rows = chart_height * BRAILLE_ROWS;
+
+    let normalize_val = |v: f64| -> usize {
+        if range > 0.0 {
+            (((v - min_val) / range) * (dot_rows.saturating_sub(1)) as f64).round() as usize
+        } else {
+            dot_rows / 2
+        }
+    };
+
+    let normalized: Vec<usize> = resampled.iter().map(|v| normalize_val(*v)).collect();
+
+    // Compute SMA overlays
+    let sma20 = compute_sma(&values, SMA_SHORT_PERIOD);
+    let sma50 = compute_sma(&values, SMA_LONG_PERIOD);
+    let mut sma_overlays: Vec<(Vec<Option<f64>>, Color)> = Vec::new();
+    if sma20.iter().any(|v| v.is_some()) {
+        sma_overlays.push((sma20, t.text_accent));
+    }
+    if sma50.iter().any(|v| v.is_some()) {
+        sma_overlays.push((sma50, t.border_accent));
+    }
+
+    // Resample and normalize SMA overlays
+    let sma_normalized: Vec<(Vec<Option<usize>>, Color)> = sma_overlays
+        .iter()
+        .map(|(sma_raw, color)| {
+            let sma_f64: Vec<f64> = sma_raw
+                .iter()
+                .map(|v| v.unwrap_or(f64::NAN))
+                .collect();
+            let resampled_sma = resample(&sma_f64, sample_count);
+            let norm: Vec<Option<usize>> = resampled_sma
+                .iter()
+                .map(|v| {
+                    if v.is_nan() {
+                        None
+                    } else {
+                        Some(normalize_val(*v))
+                    }
+                })
+                .collect();
+            (norm, *color)
+        })
+        .collect();
+
+    let (grad_low, grad_mid, grad_high) = gain_gradient(gain_f, t);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    for row in (0..chart_height).rev() {
+        let position = if chart_height > 1 {
+            row as f32 / (chart_height - 1) as f32
+        } else {
+            0.5
+        };
+        let row_color = theme::gradient_3(grad_low, grad_mid, grad_high, position);
+
+        let mut spans = Vec::new();
+        // Left padding to match popup text alignment
+        spans.push(Span::styled("  ", Style::default()));
+
+        for col in 0..chart_width {
+            let idx0 = col * 2;
+            let idx1 = idx0 + 1;
+            let v0 = normalized.get(idx0).copied().unwrap_or(0);
+            let v1 = normalized.get(idx1).copied().unwrap_or(0);
+
+            let price_bits = braille_bits(v0, v1, row, BRAILLE_ROWS);
+
+            let mut sma_bits: u8 = 0;
+            let mut sma_color: Option<Color> = None;
+            for (sma_norm, color) in &sma_normalized {
+                let sv0 = sma_norm.get(idx0).and_then(|v| *v);
+                let sv1 = sma_norm.get(idx1).and_then(|v| *v);
+                let bits = braille_dot_bits(sv0, sv1, row, BRAILLE_ROWS);
+                if bits != 0 {
+                    sma_bits |= bits;
+                    sma_color = Some(*color);
+                }
+            }
+
+            let combined_bits = price_bits | sma_bits;
+            let ch = char::from_u32(0x2800 + combined_bits as u32).unwrap_or(' ');
+
+            let cell_color = if price_bits == 0 && sma_bits != 0 {
+                sma_color.unwrap_or(row_color)
+            } else {
+                row_color
+            };
+
+            let bg_color = area_fill_bg(v0, v1, row, dot_rows, row_color, t.surface_2);
+
+            spans.push(Span::styled(
+                String::from(ch),
+                Style::default().fg(cell_color).bg(bg_color),
+            ));
+        }
+
+        // Y-axis labels on first and last rows
+        let label_offset = 1; // account for "  " padding at index 0
+        if row == chart_height - 1 && chart_width > 8 {
+            let label = format_compact_short(max_val);
+            for (j, c) in label.chars().enumerate() {
+                let span_idx = label_offset + j;
+                if span_idx < spans.len() {
+                    spans[span_idx] = Span::styled(String::from(c), Style::default().fg(t.text_muted));
+                }
+            }
+        }
+        if row == 0 && chart_width > 8 {
+            let label = format_compact_short(min_val);
+            for (j, c) in label.chars().enumerate() {
+                let span_idx = label_offset + j;
+                if span_idx < spans.len() {
+                    spans[span_idx] = Span::styled(String::from(c), Style::default().fg(t.text_muted));
+                }
+            }
+        }
+
+        lines.push(Line::from(spans));
+    }
+
+    // Stats line
+    let price_str = format_price(last_close);
+    let gain_color = if gain_pct > dec!(0) {
+        t.gain_green
+    } else if gain_pct < dec!(0) {
+        t.loss_red
+    } else {
+        t.neutral
+    };
+
+    let mut stats_spans = vec![
+        Span::styled("  ", Style::default()),
+        Span::styled(price_str, Style::default().fg(t.text_primary).bold()),
+        Span::raw(" "),
+        Span::styled(
+            format!("({:+.1}%)", gain_pct),
+            Style::default().fg(gain_color),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            format!(
+                "H:{} L:{}",
+                format_price_f64(max_val),
+                format_price_f64(min_val)
+            ),
+            Style::default().fg(t.text_muted),
+        ),
+    ];
+
+    // SMA legend
+    if !sma_overlays.is_empty() {
+        stats_spans.push(Span::raw("  "));
+        for (i, (_sma_raw, color)) in sma_overlays.iter().enumerate() {
+            let label = if i == 0 {
+                format!("─SMA{}", SMA_SHORT_PERIOD)
+            } else {
+                format!("─SMA{}", SMA_LONG_PERIOD)
+            };
+            stats_spans.push(Span::styled(label, Style::default().fg(*color)));
+            if i < sma_overlays.len() - 1 {
+                stats_spans.push(Span::raw(" "));
+            }
+        }
+    }
+
+    lines.push(Line::from(stats_spans));
+
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1664,6 +1872,97 @@ mod tests {
     #[test]
     fn test_bollinger_multiplier_constant() {
         assert!((BOLLINGER_MULTIPLIER - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_render_braille_lines_insufficient_data() {
+        let t = theme::midnight();
+        let records = vec![HistoryRecord {
+            date: "2026-01-01".into(),
+            close: dec!(100),
+            volume: None,
+        }];
+        let lines = render_braille_lines(&records, 40, 6, &t);
+        assert!(lines.is_empty(), "Should return empty for < 2 records");
+    }
+
+    #[test]
+    fn test_render_braille_lines_too_narrow() {
+        let t = theme::midnight();
+        let records = vec![
+            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None },
+        ];
+        let lines = render_braille_lines(&records, 2, 6, &t);
+        assert!(lines.is_empty(), "Should return empty for width < 4");
+    }
+
+    #[test]
+    fn test_render_braille_lines_basic_structure() {
+        let t = theme::midnight();
+        let mut records = Vec::new();
+        for i in 0..30 {
+            records.push(HistoryRecord {
+                date: format!("2026-01-{:02}", (i % 28) + 1),
+                close: dec!(100) + Decimal::from(i),
+                volume: None,
+            });
+        }
+        let chart_height = 6;
+        let lines = render_braille_lines(&records, 40, chart_height, &t);
+        // Should have chart_height braille rows + 1 stats line
+        assert_eq!(lines.len(), chart_height + 1, "Expected {} lines, got {}", chart_height + 1, lines.len());
+    }
+
+    #[test]
+    fn test_render_braille_lines_stats_line_contains_price() {
+        let t = theme::midnight();
+        let records = vec![
+            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-01-02".into(), close: dec!(120), volume: None },
+            HistoryRecord { date: "2026-01-03".into(), close: dec!(130), volume: None },
+        ];
+        let lines = render_braille_lines(&records, 40, 4, &t);
+        // Last line is the stats line, should contain the last price
+        let stats_text: String = lines.last().unwrap().spans.iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(stats_text.contains("130"), "Stats line should contain last price: {}", stats_text);
+    }
+
+    #[test]
+    fn test_render_braille_lines_has_left_padding() {
+        let t = theme::midnight();
+        let records = vec![
+            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None },
+        ];
+        let lines = render_braille_lines(&records, 20, 4, &t);
+        // First span of each braille row should be "  " (left padding)
+        for line in &lines[..lines.len() - 1] {
+            assert_eq!(line.spans[0].content.as_ref(), "  ", "Braille rows should have 2-space left padding");
+        }
+    }
+
+    #[test]
+    fn test_render_braille_lines_with_sma_data() {
+        let t = theme::midnight();
+        // Need 50+ records for SMA(50) to kick in
+        let mut records = Vec::new();
+        for i in 0..60 {
+            records.push(HistoryRecord {
+                date: format!("2026-{:02}-{:02}", (i / 28) + 1, (i % 28) + 1),
+                close: dec!(100) + Decimal::from(i),
+                volume: None,
+            });
+        }
+        let lines = render_braille_lines(&records, 50, 6, &t);
+        // Stats line should contain SMA legend
+        let stats_text: String = lines.last().unwrap().spans.iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(stats_text.contains("SMA20"), "Stats should show SMA20 legend: {}", stats_text);
+        assert!(stats_text.contains("SMA50"), "Stats should show SMA50 legend: {}", stats_text);
     }
 
 }

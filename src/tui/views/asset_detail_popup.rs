@@ -10,6 +10,7 @@ use crate::models::asset_names::{infer_category, resolve_name};
 use crate::tui::theme;
 use crate::tui::views::position_detail::format_money;
 use crate::tui::views::positions::compute_52w_range;
+use crate::tui::widgets::price_chart;
 
 /// State for the asset detail popup opened from search overlay.
 #[derive(Debug, Clone)]
@@ -293,6 +294,33 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     }
 
     lines.push(Line::from(""));
+
+    // ── Chart ──
+    if let Some(hist) = history {
+        if hist.len() >= 2 {
+            lines.push(section_header("  Chart", t.text_accent));
+            lines.push(sep_line(t.border_subtle, 80));
+
+            // Use popup width minus border/padding: 2 border + 2 left padding = 4
+            // Popup is 85% of screen width, clamped 50-100. Use a reasonable chart width.
+            let chart_width = 70_usize; // fits within the popup comfortably
+            let chart_height = 8_usize; // 8 rows of braille = 32 dot-rows of resolution
+
+            let chart_lines = price_chart::render_braille_lines(hist, chart_width, chart_height, t);
+            if !chart_lines.is_empty() {
+                for line in chart_lines {
+                    lines.push(line);
+                }
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled("Insufficient chart data", Style::default().fg(t.text_muted)),
+                ]));
+            }
+
+            lines.push(Line::from(""));
+        }
+    }
 
     // ── Technicals (SMA, Bollinger) ──
     if let Some(hist) = history {
@@ -763,6 +791,49 @@ mod tests {
         };
         assert_eq!(state.scroll, 0);
         assert_eq!(state.symbol, "BTC");
+    }
+
+    #[test]
+    fn build_lines_shows_chart_with_enough_history() {
+        let mut app = test_app();
+        app.prices.insert("AAPL".to_string(), dec!(175));
+        let mut hist = Vec::new();
+        for i in 0..30 {
+            hist.push(HistoryRecord {
+                date: format!("2026-02-{:02}", (i % 28) + 1),
+                close: dec!(150) + Decimal::from(i),
+                volume: None,
+            });
+        }
+        app.price_history.insert("AAPL".to_string(), hist);
+        let lines = build_lines("AAPL", &app);
+        let text = lines_to_string(&lines);
+        assert!(text.contains("Chart"), "Should contain Chart section header when history is available");
+    }
+
+    #[test]
+    fn build_lines_no_chart_without_history() {
+        let app = test_app();
+        let lines = build_lines("AAPL", &app);
+        let text = lines_to_string(&lines);
+        assert!(!text.contains("Chart"), "Should not contain Chart section without history data");
+    }
+
+    #[test]
+    fn build_lines_no_chart_with_single_record() {
+        let mut app = test_app();
+        app.prices.insert("AAPL".to_string(), dec!(175));
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![HistoryRecord {
+                date: "2026-03-01".to_string(),
+                close: dec!(170),
+                volume: None,
+            }],
+        );
+        let lines = build_lines("AAPL", &app);
+        let text = lines_to_string(&lines);
+        assert!(!text.contains("Chart"), "Should not show Chart section with only 1 record");
     }
 
     fn lines_to_string(lines: &[Line]) -> String {
