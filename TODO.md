@@ -114,7 +114,7 @@
 ## P0 — Setup & Pricing Bugs (Owner Report)
 
 - [ ] **Setup wizard inline suggestions** — The fuzzy matching backend is done (5-tier ranked scoring in search_names). Next step: show ranked matches inline as the user types in the setup wizard, instead of requiring Enter first. Needs raw terminal mode for character-by-character input with live result display below the prompt. Files: `src/commands/setup.rs` (interactive input loop with crossterm raw mode).
-- [ ] **Setup wizard: configurable primary fiat currency** — Full mode should let the user choose their primary fiat currency (EUR, GBP, JPY, etc.) instead of hardcoding USD. Default to USD if not specified. Store in `config.toml`. All portfolio values, gains, and display formatting should respect the chosen currency. Files: `src/config.rs`, `src/commands/setup.rs`, `src/tui/widgets/header.rs`, `src/models/position.rs`.
+
 
 ## P0 — Performance Fix (Owner Request)
 
