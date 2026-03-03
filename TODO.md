@@ -180,21 +180,12 @@
 - Portfolio Analyst still has no data. Third tester activation remains a gap.
 - Next score ceiling will be hit by analytical features: correlation, benchmarks, risk metrics, what-if scenarios. These are P2/P3 items that collectively represent the "70% → professional tool" gap Sentinel identified.
 
-## P1 — Mouse Support (Owner Request)
+## P2 — Mouse Enhancements (Follow-up)
 
-- [ ] **Add mouse click support** — Like htop. All UI elements that look clickable should be clickable. Specifically:
-  - Click on a position row to select it
-  - Click on tab labels (1-5) to switch views
-  - Click on chart to open/focus it
-  - Click on sort column headers to sort by that column
-  - Click on allocation bars to select that position
-  - Click on help overlay items
-  - Scroll wheel for scrolling (j/k equivalent)
-  - Click on theme/privacy indicators to toggle
-  - Right-click context menu (stretch goal)
-  - crossterm already supports mouse events via `EnableMouseCapture` — just need to wire up hit-testing for each clickable region
-  - Store rendered region rects per frame for hit-testing
-  - Files: `src/app.rs` (handle_mouse, hit regions), `src/tui/ui.rs` (track rendered rects), all view files (register clickable regions)
+- [ ] **Click sort column headers** — Click on column headers (Asset, Qty, Price, Day%, Gain%, Alloc%, 52W, Trend) to sort by that column. Requires tracking rendered column header rects.
+- [ ] **Click theme/privacy indicators** — Click on theme name in header to cycle theme, click on "[% view]" to toggle privacy mode.
+- [ ] **Click allocation bars** — Click on a category bar in the portfolio overview to filter by that category.
+- [ ] **Right-click context menu** — Context menu on position rows with: View Detail, Add Transaction, Delete, Copy Symbol.
 
 ## P2 — Theme Overhaul (Owner Request)
 
