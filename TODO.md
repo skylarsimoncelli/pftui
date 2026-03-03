@@ -6,7 +6,7 @@
 
 ## P0
 
-- [ ] **Fix U.UN (Sprott Uranium) chart + price accuracy** — TSX trust unit ticker broken for charts. Additionally, `brief` reports U.UN at +31% gain when actual is ~-4.8% — investigate Yahoo Finance data source accuracy for Canadian-listed securities. Files: `price/yahoo.rs`, `price_chart.rs`, `commands/brief.rs`
+_(no items)_
 
 ## P1 — Analytics Foundation
 

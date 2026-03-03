@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Fix U.UN (Sprott Uranium) price accuracy via FX conversion
+
+- What: Yahoo Finance returns prices in the security's native currency (CAD for TSX-listed U-UN.TO). The code hardcoded `currency: "USD"`, causing a ~40% price inflation for Canadian securities. Now `fetch_price()` and `fetch_history()` extract the currency from Yahoo's metadata and, for non-USD securities, automatically fetch the live FX rate (e.g., CADUSD=X) and convert to USD. Historical prices use date-matched FX history with spot rate fallback.
+- Why: P0 — `brief` reported U.UN at +31.7% gain when actual was ~-4%. Root cause: CAD price stored as USD.
+- Files: `src/price/yahoo.rs` (added `fetch_fx_rate()`, `fetch_fx_history()`, currency detection in `fetch_price()` and `fetch_history()`)
+- Tests: all 803 existing tests pass, no regressions. FX conversion is transparent to all consumers (TUI, CLI, price service).
+
 ### 2026-03-03 — Add daily P&L to `brief` and `summary` CLI commands
 
 - What: Added 1D P&L (daily change in $ and %) to both CLI commands. `brief` now shows portfolio-level "**1D:** +$X (Y%)" line under the total value, plus a per-position "1D" column in the positions table showing each asset's daily price change %. `summary` now prints a "1D P&L" header line with portfolio-level daily dollar and percent change. Both modes (full and percentage) supported in `brief`; full mode in `summary`.
