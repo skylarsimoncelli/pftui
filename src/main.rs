@@ -135,5 +135,9 @@ fn main() -> Result<()> {
             };
             commands::import::run(&conn, &config, &path, import_mode)
         }
+
+        Some(Command::History { date, group_by }) => {
+            commands::history::run(&conn, &config, &date, group_by.as_ref())
+        }
     }
 }

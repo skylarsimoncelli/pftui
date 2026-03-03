@@ -131,6 +131,17 @@ pub enum Command {
         #[arg(long, value_enum, default_value = "replace")]
         mode: ImportModeArg,
     },
+
+    /// Show portfolio value and positions as of a past date using cached price history
+    History {
+        /// Target date in YYYY-MM-DD format (e.g. 2026-02-28)
+        #[arg(long)]
+        date: String,
+
+        /// Group output by a field (e.g. "category")
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
