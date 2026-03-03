@@ -550,3 +550,11 @@
 - Files: `src/tui/widgets/price_chart.rs` (added `compute_bollinger()`, `BOLLINGER_MULTIPLIER` constant, integrated BB overlays into `render_single_chart`, updated `render_braille_chart` signature with `sma_count` parameter for legend labeling, 8 new tests)
 - Tests: 8 new tests (basic computation, symmetric around SMA, constant values zero bandwidth, empty input, period zero, period larger than data, upper >= lower invariant, multiplier constant). Total: 550 tests passing.
 - TODO: Add Bollinger Bands overlay (P2)
+
+### 2026-03-03 — Add tiered box-drawing panel separators
+
+- What: replaced all `BorderType::Rounded` (╭──╮) borders with a three-tier box-drawing system that creates clear visual hierarchy. Active/focused panels (positions table, price chart, asset header, transactions, markets, economy) use a hybrid border with double-line top and single-line sides (╒═══╕ │ │ └───┘). Inactive panels (allocation bars, portfolio sparkline, watchlist empty state) use plain single-line borders (┌───┐). Popups and overlays (help, position detail) use full double-line borders (╔═══╗ ║ ║ ╚═══╝). The positions table dynamically switches between active and inactive border sets based on focus state.
+- Why: P2 layout/visual polish — the uniform rounded borders made all panels look the same, with no visual indication of hierarchy or focus. The tiered system gives a premium, Bloomberg-like feel: focused panels have a heavier top edge that draws the eye, background panels recede with lighter lines, and modal overlays float above everything with full double borders.
+- Files: `src/tui/theme.rs` (added `BORDER_ACTIVE`, `BORDER_INACTIVE`, `BORDER_POPUP` constants, 4 new tests), `src/tui/views/positions.rs`, `src/tui/views/transactions.rs`, `src/tui/views/watchlist.rs`, `src/tui/views/markets.rs`, `src/tui/views/economy.rs`, `src/tui/views/help.rs`, `src/tui/views/position_detail.rs`, `src/tui/widgets/price_chart.rs`, `src/tui/widgets/allocation_bars.rs`, `src/tui/widgets/portfolio_sparkline.rs`, `src/tui/widgets/asset_header.rs`
+- Tests: 4 new tests (active has double top single sides, inactive is plain single line, popup is full double, active and inactive differ). Total: 554 tests passing.
+- TODO: Add Unicode box-drawing panel separators (P2)
