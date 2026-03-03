@@ -415,10 +415,10 @@ CREATE INDEX idx_journal_status ON journal(status);
 ```
 
 **TUI integration:**
-- **Hotkey `j`** — opens journal overlay popup (similar to search overlay `/ `).
-- **Journal popup layout:**
+- **Tab [7] Journal** — full tab in the numbered menu: `[1] Positions [2] Transactions [3] Markets [4] Economy [5] Watchlist [6] Analytics [7] Journal`
+- **Journal view layout:**
   ```
-  ┌─ JOURNAL ──────────────────────────────────────────────────────┐
+  ┌─ [7] JOURNAL ──────────────────────────────────────────────────┐
   │ Date              │ Content                           │ Tag    │
   │───────────────────│───────────────────────────────────│────────│
   │ 2026-03-03 11:30  │ Added gold — BRICS thesis, CB...  │ trade  │
@@ -427,10 +427,11 @@ CREATE INDEX idx_journal_status ON journal(status);
   │ 2026-02-27 15:00  │ BTC conviction resolved +3 long   │ thesis │
   │ ...               │                                   │        │
   └─────────────────────────────────────────────────────────────────┘
-  [a] Add entry  [/] Search  [↑↓] Scroll  [Esc] Close
+  [a] Add entry  [/] Search  [↑↓] Scroll  [Enter] Expand
   ```
-- **`a` inside popup** — inline prompt: date (pre-filled with now, editable), content (free text), tag (optional, tab-complete from existing tags). Simple and fast.
-- **Scrollable.** Most recent first. Date and tag columns are compact. Content column takes remaining width, truncated with `...` — full text on hover/select.
+- **`a` key (in Journal tab)** — inline prompt: date (pre-filled with now, editable), content (free text), tag (optional, tab-complete from existing tags). Simple and fast.
+- **Scrollable.** Most recent first. Date and tag columns are compact. Content column takes remaining width, truncated with `...` — Enter on a row to see full text in a detail popup.
+- **Search within Journal tab:** `/` opens search overlay filtered to journal entries.
 
 **CLI command suite — `pftui journal`:**
 
