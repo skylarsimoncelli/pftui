@@ -167,7 +167,6 @@
 
 ## P2 — Mouse Enhancements (Follow-up)
 
-- [ ] **Click sort column headers** — Click on column headers (Asset, Qty, Price, Day%, Gain%, Alloc%, 52W, Trend) to sort by that column. Requires tracking rendered column header rects.
 - [ ] **Click theme/privacy indicators** — Click on theme name in header to cycle theme, click on "[% view]" to toggle privacy mode.
 - [ ] **Click allocation bars** — Click on a category bar in the portfolio overview to filter by that category.
 - [ ] **Right-click context menu** — Context menu on position rows with: View Detail, Add Transaction, Delete, Copy Symbol.

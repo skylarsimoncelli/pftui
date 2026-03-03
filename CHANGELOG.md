@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-03 — Click column headers to sort positions table
+
+- What: added mouse click-to-sort on column headers in the positions table. Clicking the Asset column sorts by name, Gain% sorts by gain percentage, and Alloc% sorts by allocation. Clicking an already-active sort column toggles between ascending and descending. Works in both full (8-column) and privacy (6-column) table layouts. Column hit detection computes boundaries from the same width constraints used by the render code (accounting for table borders, column spacing, and the 57%/43% left/right panel split in wide mode). Sort flash animation triggers on column header clicks just like keyboard sort changes. Non-sortable columns (Qty, Price, Day%, 52W, Trend) are ignored on click.
+- Why: P2 Mouse Enhancements — click sort column headers. Natural, discoverable interaction — users expect clicking column headers to sort. Complements the existing keyboard sort shortcuts (a, %, $, n, c, Tab).
+- Files: `src/app.rs` (new `handle_column_header_click` method, header row detection in `handle_content_click`, 5 new tests), `src/tui/views/help.rs` (added "Click header" to mouse section)
+- Tests: 749 passing (5 new: click_column_header_sorts_by_asset_name, click_column_header_toggles_direction_on_same_field, click_column_header_alloc_column, click_column_header_updates_sort_flash_tick, click_column_header_ignored_in_non_positions_view). Zero new clippy warnings.
+
 ### 2026-03-03 — Move watchlist from separate page to main screen sub-tab
 
 - What: watchlist is now a sub-tab on the main Positions screen instead of a separate view. Press `w` to toggle between Positions and Watchlist on the main screen. The section header dynamically switches between "POSITIONS" and "WATCHLIST". The right pane (ASSET OVERVIEW) remains visible alongside the watchlist. Removed the `ViewMode::Watchlist` variant entirely, removed the `[5]Watch` tab from the header bar, and updated all navigation functions (move_down/up, jump_to_top/bottom, scroll half-page) to route through the new `MainTab` enum. Position-only keys (A for add transaction, X for delete) are guarded behind `MainTab::Positions`. Key `1` resets both `view_mode` and `main_tab` to Positions. Help overlay updated: `5 Watchlist` → `w Toggle Watchlist`.
