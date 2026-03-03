@@ -670,3 +670,11 @@
 - Files: new `src/commands/snapshot.rs` (run(), print_plain(), print_ansi(), color conversion helpers; 7 tests), `src/commands/mod.rs` (register module), `src/cli.rs` (Snapshot variant with --width/--height/--plain args), `src/main.rs` (dispatch), `src/app.rs` (new `init_offline()` public method), `docs/README.md` (usage examples)
 - Tests: 7 new tests (RGB/indexed/basic/reset color conversion for both fg and bg, default dimensions). Total: 663 tests passing.
 - TODO: `pftui snapshot` / `pftui render` command (P1 Feedback)
+
+### 2026-03-03 — Add Inferno, Neon, and Hacker themes
+
+- What: added three bold new themes to the theme rotation, expanding from 6 to 9 themes. **Inferno**: deep blacks with fire reds, oranges, and amber accents — gains glow golden-hot, losses smolder like dying embers, warm undertones throughout. **Neon**: cyberpunk synthwave aesthetic — electric pink borders, cyan accents, purple gradients on void-dark backgrounds, hot pink losses, neon green charts. **Hacker**: classic green-on-black terminal aesthetic — multiple shades of green with red as the only non-green color (for losses), Matrix-inspired and monochromatic. Each theme defines all 28 color slots with carefully chosen palettes that feel visually distinct.
+- Why: P2 Theme Overhaul (Owner Request) — existing themes were too flat and samey. These three new themes cover dramatically different aesthetics: warm/volcanic (Inferno), cyberpunk/vivid (Neon), and retro-terminal/minimal (Hacker). Users can instantly identify which theme they're on.
+- Files: `src/tui/theme.rs` (3 new theme functions, updated THEME_NAMES array and theme_by_name dispatcher, 5 new tests, fixed cycle test)
+- Tests: 5 new tests (inferno warm palette verification, neon vivid accents verification, hacker green-dominant verification, new themes load by name, theme count is 9). Total: 668 tests passing.
+- TODO: Revamp theme selection — add Inferno, Neon, and Hacker themes (P2 Theme Overhaul)
