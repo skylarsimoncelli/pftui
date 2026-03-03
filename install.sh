@@ -21,7 +21,7 @@ case "$ARCH" in
   *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
-ASSET="${BINARY}-${os}-${arch}.tar.gz"
+ASSET="${BINARY}-${arch}-${os}"
 
 echo "🦀 Installing pftui..."
 echo "   Platform: ${os}/${arch}"
@@ -30,14 +30,14 @@ echo "   Platform: ${os}/${arch}"
 TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
 echo "   Version:  ${TAG}"
 
-# Download and extract
+# Download binary
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 echo "   Downloading ${ASSET}..."
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-if ! curl -fsSL "$URL" -o "${TMPDIR}/${ASSET}"; then
+if ! curl -fsSL "$URL" -o "${TMPDIR}/${BINARY}"; then
   echo ""
   echo "❌ Download failed. Binary not available for ${os}/${arch}."
   echo ""
@@ -49,8 +49,6 @@ if ! curl -fsSL "$URL" -o "${TMPDIR}/${ASSET}"; then
   echo "See https://github.com/${REPO}#installation for all options."
   exit 1
 fi
-
-tar -xzf "${TMPDIR}/${ASSET}" -C "$TMPDIR"
 
 # Install binary
 if [ -w "$INSTALL_DIR" ]; then
