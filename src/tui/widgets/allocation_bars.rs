@@ -13,7 +13,7 @@ const EIGHTH_BLOCKS: &[char] = &[' ', '▏', '▎', '▍', '▌', '▋', '▊', 
 /// Minimum full-cell width for the percentage label to be rendered inside the bar.
 const MIN_LABEL_WIDTH: usize = 5;
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = &app.theme;
 
     // Aggregate allocation by category
@@ -31,12 +31,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     }
     cat_allocs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
+    // Record click targets: area rect and ordered categories
+    app.alloc_bar_area = Some(area);
+    app.alloc_bar_categories = cat_allocs.iter().map(|(cat, _)| *cat).collect();
+
     let inner_width = area.width.saturating_sub(4) as usize;
     let bar_width = inner_width.saturating_sub(10);
+
+    let active_filter = app.category_filter;
 
     let mut lines = Vec::new();
     for (cat, pct) in &cat_allocs {
         let cat_color = t.category_color(*cat);
+        let is_active = active_filter == Some(*cat);
         let label = match cat {
             AssetCategory::Equity => "Eqty",
             AssetCategory::Crypto => "Cryp",
@@ -53,9 +60,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let change_indicator = allocation_change_span(*cat, *pct, app, t);
 
         let mut spans = bar_spans;
+
+        // Active filter indicator: bold label with ▸ prefix
+        let label_style = if is_active {
+            Style::default().fg(cat_color).bold()
+        } else {
+            Style::default().fg(cat_color)
+        };
+        let prefix = if is_active { "▸" } else { " " };
         spans.push(Span::styled(
-            format!(" {} {:>4.0}%", label, pct),
-            Style::default().fg(cat_color),
+            format!("{}{} {:>4.0}%", prefix, label, pct),
+            label_style,
         ));
         spans.push(change_indicator);
 

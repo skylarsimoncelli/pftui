@@ -6,7 +6,7 @@ use crate::tui::widgets::{allocation_bars, portfolio_sparkline, portfolio_stats,
 
 /// Renders the portfolio overview panel: value summary, allocation bars,
 /// portfolio sparkline chart, key portfolio stats, and regime health bar.
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     if is_privacy_view(app) {
         // In privacy view, allocation bars get full height (no sparkline/stats/regime)
         allocation_bars::render(frame, area, app);

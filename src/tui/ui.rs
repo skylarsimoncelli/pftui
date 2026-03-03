@@ -58,7 +58,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
 }
 
-fn render_positions_layout(frame: &mut Frame, area: Rect, app: &App) {
+fn render_positions_layout(frame: &mut Frame, area: Rect, app: &mut App) {
     use crate::tui::theme;
 
     let width = app.terminal_width;

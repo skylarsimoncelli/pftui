@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::prelude::Rect;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
@@ -356,6 +357,13 @@ pub struct App {
     /// Column range for the privacy/percentage-view indicator in the header.
     pub header_privacy_col_range: Option<(u16, u16)>,
 
+    // Allocation bar click targets (set during render)
+    /// Absolute Rect of the allocation bars widget (for hit-testing mouse clicks).
+    pub alloc_bar_area: Option<Rect>,
+    /// Ordered list of categories as rendered in the allocation bars (top to bottom).
+    /// Index 0 = first bar line inside the block border.
+    pub alloc_bar_categories: Vec<AssetCategory>,
+
     // DB
     db_path: std::path::PathBuf,
 }
@@ -464,6 +472,8 @@ impl App {
             crosshair_x: 0,
             header_theme_col_range: None,
             header_privacy_col_range: None,
+            alloc_bar_area: None,
+            alloc_bar_categories: Vec::new(),
             regime_score: crate::regime::RegimeScore {
                 signals: Vec::new(),
                 total: 0,
@@ -1679,6 +1689,11 @@ impl App {
                     return;
                 }
 
+                // Click in allocation bars → category filter
+                if self.handle_alloc_bar_click(col, row) {
+                    return;
+                }
+
                 // Click in main content area → row selection
                 let content_y = row.saturating_sub(header_h);
                 self.handle_content_click(col, content_y);
@@ -1777,6 +1792,61 @@ impl App {
                 self.show_percentages_only = !self.show_percentages_only;
             }
         }
+    }
+
+    /// Handle a click on the allocation bars widget.
+    /// Returns `true` if the click was consumed (hit an allocation bar).
+    ///
+    /// The allocation bars widget is a Block with Borders::ALL.
+    /// Inside the block, each line corresponds to one category bar, in the
+    /// same order as `alloc_bar_categories`.
+    /// Clicking a bar sets the category filter to that category.
+    /// Clicking the already-active filter category clears the filter.
+    fn handle_alloc_bar_click(&mut self, col: u16, row: u16) -> bool {
+        // Only in Positions view
+        if !matches!(self.view_mode, ViewMode::Positions) {
+            return false;
+        }
+
+        let area = match self.alloc_bar_area {
+            Some(a) => a,
+            None => return false,
+        };
+
+        // Check if click is within the allocation bars widget area
+        if col < area.x || col >= area.x + area.width || row < area.y || row >= area.y + area.height
+        {
+            return false;
+        }
+
+        // Skip top border row
+        if row <= area.y {
+            return false;
+        }
+
+        // Row within the block: subtract area.y and 1 for top border
+        let inner_row = (row - area.y - 1) as usize;
+
+        if inner_row < self.alloc_bar_categories.len() {
+            let clicked_cat = self.alloc_bar_categories[inner_row];
+            if self.category_filter == Some(clicked_cat) {
+                // Already filtering this category — clear filter
+                self.category_filter = None;
+                self.filter_cycle_index = 0;
+            } else {
+                self.category_filter = Some(clicked_cat);
+                // Sync filter_cycle_index with the category position in AssetCategory::all()
+                let all_cats = AssetCategory::all();
+                self.filter_cycle_index = all_cats
+                    .iter()
+                    .position(|c| *c == clicked_cat)
+                    .unwrap_or(0);
+            }
+            self.recompute();
+            return true;
+        }
+
+        false
     }
 
     /// Handle a click in the main content area. `content_y` is relative to
@@ -5302,5 +5372,94 @@ mod mouse_tests {
         // Should not crash or change theme
         app.handle_header_click(85);
         assert_eq!(app.theme_name, old_theme);
+    }
+
+    #[test]
+    fn click_alloc_bar_sets_category_filter() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        // Simulate allocation bars rendered at area (x=0, y=10, w=30, h=6)
+        // with two categories: Equity at inner row 0, Crypto at inner row 1
+        app.alloc_bar_area = Some(Rect::new(0, 10, 30, 6));
+        app.alloc_bar_categories = vec![AssetCategory::Equity, AssetCategory::Crypto];
+        app.category_filter = None;
+
+        // Click row 11 (area.y=10 + 1 border + 0 = inner row 0 → Equity)
+        let consumed = app.handle_alloc_bar_click(5, 11);
+        assert!(consumed);
+        assert_eq!(app.category_filter, Some(AssetCategory::Equity));
+    }
+
+    #[test]
+    fn click_alloc_bar_second_category() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.alloc_bar_area = Some(Rect::new(0, 10, 30, 6));
+        app.alloc_bar_categories = vec![AssetCategory::Equity, AssetCategory::Crypto];
+        app.category_filter = None;
+
+        // Click row 12 (inner row 1 → Crypto)
+        let consumed = app.handle_alloc_bar_click(5, 12);
+        assert!(consumed);
+        assert_eq!(app.category_filter, Some(AssetCategory::Crypto));
+    }
+
+    #[test]
+    fn click_alloc_bar_toggles_off_same_category() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.alloc_bar_area = Some(Rect::new(0, 10, 30, 6));
+        app.alloc_bar_categories = vec![AssetCategory::Equity, AssetCategory::Crypto];
+        app.category_filter = Some(AssetCategory::Equity);
+
+        // Click Equity again → should clear filter
+        let consumed = app.handle_alloc_bar_click(5, 11);
+        assert!(consumed);
+        assert_eq!(app.category_filter, None);
+    }
+
+    #[test]
+    fn click_alloc_bar_outside_area_returns_false() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.alloc_bar_area = Some(Rect::new(0, 10, 30, 6));
+        app.alloc_bar_categories = vec![AssetCategory::Equity];
+
+        // Click above the area
+        assert!(!app.handle_alloc_bar_click(5, 5));
+        // Click below the area
+        assert!(!app.handle_alloc_bar_click(5, 20));
+        // Click to the right
+        assert!(!app.handle_alloc_bar_click(35, 11));
+    }
+
+    #[test]
+    fn click_alloc_bar_no_area_returns_false() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.alloc_bar_area = None;
+
+        assert!(!app.handle_alloc_bar_click(5, 11));
+    }
+
+    #[test]
+    fn click_alloc_bar_wrong_view_returns_false() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Markets;
+        app.alloc_bar_area = Some(Rect::new(0, 10, 30, 6));
+        app.alloc_bar_categories = vec![AssetCategory::Equity];
+
+        assert!(!app.handle_alloc_bar_click(5, 11));
+    }
+
+    #[test]
+    fn click_alloc_bar_on_border_row_returns_false() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.alloc_bar_area = Some(Rect::new(0, 10, 30, 6));
+        app.alloc_bar_categories = vec![AssetCategory::Equity];
+
+        // Click on top border (row 10 = area.y)
+        assert!(!app.handle_alloc_bar_click(5, 10));
     }
 }

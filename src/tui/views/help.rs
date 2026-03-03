@@ -137,6 +137,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("Click row", "Select position/item", kc, tc));
     lines.push(key_line("Click theme", "Cycle color theme (header)", kc, tc));
     lines.push(key_line("Click [% view]", "Toggle privacy mode (header)", kc, tc));
+    lines.push(key_line("Click alloc bar", "Filter by category (toggle)", kc, tc));
     lines.push(key_line("Click", "Dismiss help/search/detail popup", kc, tc));
     lines.push(Line::from(""));
 
