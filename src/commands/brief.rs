@@ -5,6 +5,7 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
+use serde::Serialize;
 
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
@@ -17,6 +18,431 @@ use crate::indicators::sma::compute_sma;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
+
+// ==================== Agent JSON Structures ====================
+
+#[derive(Serialize)]
+struct AgentBrief {
+    timestamp: String,
+    portfolio: PortfolioSummaryJson,
+    positions: Vec<PositionJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    watchlist: Vec<WatchlistItemJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    movers: Vec<MoverJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    macro_data: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    alerts: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    drift: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    regime: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+struct PortfolioSummaryJson {
+    total_value: String,
+    total_cost: String,
+    total_gain: String,
+    total_gain_pct: String,
+    daily_pnl: Option<String>,
+    daily_pnl_pct: Option<String>,
+    base_currency: String,
+}
+
+#[derive(Serialize)]
+struct PositionJson {
+    symbol: String,
+    name: String,
+    category: String,
+    quantity: String,
+    current_price: Option<String>,
+    total_cost: String,
+    current_value: Option<String>,
+    unrealized_gain: Option<String>,
+    unrealized_gain_pct: Option<String>,
+    daily_change: Option<String>,
+    daily_change_pct: Option<String>,
+    allocation_pct: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    technicals: Option<TechnicalSnapshotJson>,
+}
+
+#[derive(Serialize)]
+struct TechnicalSnapshotJson {
+    rsi: Option<String>,
+    rsi_signal: Option<String>,
+    macd: Option<String>,
+    macd_signal: Option<String>,
+    macd_histogram: Option<String>,
+    sma_20: Option<String>,
+    sma_50: Option<String>,
+}
+
+#[derive(Serialize)]
+struct WatchlistItemJson {
+    symbol: String,
+    name: String,
+    category: String,
+    current_price: Option<String>,
+    daily_change_pct: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    technicals: Option<TechnicalSnapshotJson>,
+}
+
+#[derive(Serialize)]
+struct MoverJson {
+    symbol: String,
+    name: String,
+    daily_change_pct: String,
+    daily_change_abs: String,
+}
+
+/// Agent mode: single comprehensive JSON blob
+fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
+    let cached = get_all_cached_prices(conn)?;
+    let prices: HashMap<String, Decimal> = cached
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect();
+
+    let today = Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+    let symbols: Vec<String> = prices.keys().cloned().collect();
+    let hist_1d = get_prices_at_date(conn, &symbols, &yesterday_str).unwrap_or_default();
+
+    // Load technicals for all symbols
+    let technicals_data = compute_technicals_for_symbols(conn, &symbols);
+
+    let base = &config.base_currency;
+    let timestamp = Utc::now().to_rfc3339();
+
+    // Compute positions
+    let positions = match config.portfolio_mode {
+        PortfolioMode::Full => {
+            let txs = list_transactions(conn)?;
+            compute_positions(&txs, &prices)
+        }
+        PortfolioMode::Percentage => {
+            let allocs = list_allocations(conn)?;
+            compute_positions_from_allocations(&allocs, &prices)
+        }
+    };
+
+    // Portfolio summary
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
+    let total_cost: Decimal = positions.iter().map(|p| p.total_cost).sum();
+    let total_gain = total_value - total_cost;
+    let total_gain_pct = pct_change(total_value, total_cost).unwrap_or(dec!(0));
+
+    let mut daily_pnl = dec!(0);
+    let mut has_daily = false;
+    for pos in &positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+            if prev > dec!(0) {
+                daily_pnl += (current - prev) * pos.quantity;
+                has_daily = true;
+            }
+        }
+    }
+
+    let daily_pnl_pct = if has_daily && total_value > dec!(0) {
+        Some((daily_pnl / (total_value - daily_pnl)) * dec!(100))
+    } else {
+        None
+    };
+
+    let portfolio_summary = PortfolioSummaryJson {
+        total_value: total_value.to_string(),
+        total_cost: total_cost.to_string(),
+        total_gain: total_gain.to_string(),
+        total_gain_pct: total_gain_pct.round_dp(2).to_string(),
+        daily_pnl: if has_daily { Some(daily_pnl.to_string()) } else { None },
+        daily_pnl_pct: daily_pnl_pct.map(|p| p.round_dp(2).to_string()),
+        base_currency: base.to_string(),
+    };
+
+    // Positions with technicals
+    let positions_json: Vec<PositionJson> = positions
+        .iter()
+        .map(|pos| {
+            let daily_change = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+                if prev > dec!(0) {
+                    Some((current - prev) * pos.quantity)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let daily_change_pct = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+                pct_change(current, prev)
+            } else {
+                None
+            };
+
+            let allocation_pct = if total_value > dec!(0) {
+                pos.current_value.map(|v| ((v / total_value) * dec!(100)).round_dp(2))
+            } else {
+                None
+            };
+
+            let technicals_json = technicals_data.get(&pos.symbol).map(|t| TechnicalSnapshotJson {
+                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                rsi_signal: t.rsi_14.map(|v| {
+                    if v > 70.0 { "overbought".to_string() }
+                    else if v < 30.0 { "oversold".to_string() }
+                    else { "neutral".to_string() }
+                }),
+                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
+                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
+                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                sma_20: None, // Not available in current TechnicalSnapshot
+                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+            });
+
+            PositionJson {
+                symbol: pos.symbol.clone(),
+                name: resolve_name(&pos.symbol),
+                category: format!("{:?}", pos.category),
+                quantity: pos.quantity.to_string(),
+                current_price: pos.current_price.map(|p| p.to_string()),
+                total_cost: pos.total_cost.to_string(),
+                current_value: pos.current_value.map(|v| v.to_string()),
+                unrealized_gain: pos.gain.map(|g| g.to_string()),
+                unrealized_gain_pct: pos.gain_pct.map(|p| p.round_dp(2).to_string()),
+                daily_change: daily_change.map(|c| c.to_string()),
+                daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
+                allocation_pct: allocation_pct.map(|a| a.to_string()),
+                technicals: technicals_json,
+            }
+        })
+        .collect();
+
+    // Watchlist
+    let watchlist_json = get_watchlist_json(conn, &prices, &hist_1d, &technicals_data)?;
+
+    // Top movers
+    let movers_json = get_movers_json(&positions, &hist_1d);
+
+    // Macro data (if available)
+    let macro_data = get_macro_json(conn).ok();
+
+    // Alerts (if available)
+    let alerts_json = get_alerts_json(conn);
+
+    // Drift (if available)
+    let drift_json = get_drift_json(conn).ok();
+
+    // Regime (if available)
+    let regime_json = get_regime_json(conn).ok();
+
+    let brief = AgentBrief {
+        timestamp,
+        portfolio: portfolio_summary,
+        positions: positions_json,
+        watchlist: watchlist_json,
+        movers: movers_json,
+        macro_data,
+        alerts: alerts_json,
+        drift: drift_json,
+        regime: regime_json,
+    };
+
+    let json = serde_json::to_string_pretty(&brief)?;
+    println!("{}", json);
+    Ok(())
+}
+
+fn get_watchlist_json(
+    conn: &Connection,
+    prices: &HashMap<String, Decimal>,
+    hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
+) -> Result<Vec<WatchlistItemJson>> {
+    use crate::db::watchlist::list_watchlist;
+    
+    let watchlist = list_watchlist(conn)?;
+    let items: Vec<WatchlistItemJson> = watchlist
+        .iter()
+        .map(|w| {
+            let current_price = prices.get(&w.symbol).copied();
+            let daily_change_pct = if let (Some(current), Some(&prev)) = (current_price, hist_1d.get(&w.symbol)) {
+                pct_change(current, prev)
+            } else {
+                None
+            };
+
+            let technicals_json = technicals_data.get(&w.symbol).map(|t| TechnicalSnapshotJson {
+                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                rsi_signal: t.rsi_14.map(|v| {
+                    if v > 70.0 { "overbought".to_string() }
+                    else if v < 30.0 { "oversold".to_string() }
+                    else { "neutral".to_string() }
+                }),
+                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
+                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
+                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                sma_20: None,
+                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+            });
+
+            WatchlistItemJson {
+                symbol: w.symbol.clone(),
+                name: resolve_name(&w.symbol),
+                category: w.category.clone(),
+                current_price: current_price.map(|p| p.to_string()),
+                daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
+                technicals: technicals_json,
+            }
+        })
+        .collect();
+    Ok(items)
+}
+
+fn get_movers_json(positions: &[Position], hist_1d: &HashMap<String, Decimal>) -> Vec<MoverJson> {
+    let mut movers: Vec<(String, String, Decimal)> = Vec::new();
+    
+    for pos in positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+            if let Some(pct) = pct_change(current, prev) {
+                movers.push((pos.symbol.clone(), resolve_name(&pos.symbol), pct));
+            }
+        }
+    }
+
+    movers.sort_by(|a, b| b.2.abs().cmp(&a.2.abs()));
+    movers.truncate(5);
+
+    movers
+        .into_iter()
+        .map(|(symbol, name, pct)| MoverJson {
+            symbol,
+            name,
+            daily_change_pct: pct.round_dp(2).to_string(),
+            daily_change_abs: pct.abs().round_dp(2).to_string(),
+        })
+        .collect()
+}
+
+fn get_macro_json(conn: &Connection) -> Result<serde_json::Value> {
+    // Try to get macro data from the macro command
+    use crate::db::price_cache::get_cached_price;
+    
+    let mut macro_map = serde_json::Map::new();
+    
+    // Standard macro symbols
+    let macro_symbols = vec![
+        ("DX-Y.NYB", "Dollar Index"),
+        ("^VIX", "VIX"),
+        ("^TNX", "10Y Treasury"),
+        ("CL=F", "Crude Oil"),
+        ("GC=F", "Gold"),
+        ("SI=F", "Silver"),
+        ("HG=F", "Copper"),
+    ];
+    
+    for (symbol, name) in macro_symbols {
+        if let Ok(Some(quote)) = get_cached_price(conn, symbol, "USD") {
+            let mut item = serde_json::Map::new();
+            item.insert("name".to_string(), serde_json::Value::String(name.to_string()));
+            item.insert("price".to_string(), serde_json::Value::String(quote.price.to_string()));
+            item.insert("fetched_at".to_string(), serde_json::Value::String(quote.fetched_at));
+            macro_map.insert(symbol.to_string(), serde_json::Value::Object(item));
+        }
+    }
+    
+    if macro_map.is_empty() {
+        anyhow::bail!("No macro data available");
+    }
+    
+    Ok(serde_json::Value::Object(macro_map))
+}
+
+fn get_alerts_json(conn: &Connection) -> Vec<serde_json::Value> {
+    use crate::alerts::engine::check_alerts;
+    
+    match check_alerts(conn) {
+        Ok(results) => {
+            results.iter().filter(|r| r.newly_triggered).map(|r| {
+                serde_json::json!({
+                    "kind": format!("{:?}", r.rule.kind),
+                    "symbol": r.rule.symbol,
+                    "direction": format!("{:?}", r.rule.direction),
+                    "threshold": r.rule.threshold,
+                    "current_value": r.current_value.map(|v| v.to_string()),
+                    "rule_text": r.rule.rule_text,
+                    "newly_triggered": r.newly_triggered,
+                    "distance_pct": r.distance_pct.map(|d| d.round_dp(2).to_string()),
+                })
+            }).collect()
+        }
+        Err(_) => Vec::new(),
+    }
+}
+
+fn get_drift_json(conn: &Connection) -> Result<serde_json::Value> {
+    // Simplified drift data - just return whether drift exists
+    use crate::db::allocations::list_allocations;
+    use crate::db::price_cache::get_all_cached_prices;
+    
+    let allocs = list_allocations(conn)?;
+    if allocs.is_empty() {
+        anyhow::bail!("No allocations (not in percentage mode)");
+    }
+    
+    let cached = get_all_cached_prices(conn)?;
+    let prices: HashMap<String, Decimal> = cached
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect();
+    
+    let positions = compute_positions_from_allocations(&allocs, &prices);
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
+    
+    if total_value <= dec!(0) {
+        anyhow::bail!("No priced positions");
+    }
+    
+    let mut drift_items = Vec::new();
+    for pos in positions {
+        if let Some(current_value) = pos.current_value {
+            let current_pct = (current_value / total_value) * dec!(100);
+            if let Some(alloc) = allocs.iter().find(|a| a.symbol == pos.symbol) {
+                let target_pct = alloc.allocation_pct;
+                let drift = current_pct - target_pct;
+                if drift.abs() > dec!(1.0) {
+                    drift_items.push(serde_json::json!({
+                        "symbol": pos.symbol,
+                        "target_pct": target_pct.to_string(),
+                        "current_pct": current_pct.round_dp(2).to_string(),
+                        "drift": drift.round_dp(2).to_string(),
+                    }));
+                }
+            }
+        }
+    }
+    
+    Ok(serde_json::json!({
+        "items": drift_items,
+        "has_drift": !drift_items.is_empty(),
+    }))
+}
+
+fn get_regime_json(_conn: &Connection) -> Result<serde_json::Value> {
+    // Placeholder - regime module doesn't exist yet
+    // Return empty object for now
+    Ok(serde_json::json!({}))
+}
 
 /// Format a decimal with commas as thousands separators.
 fn fmt_commas(value: Decimal, dp: u32) -> String {
@@ -65,7 +491,10 @@ fn pct_change(current: Decimal, previous: Decimal) -> Option<Decimal> {
     }
 }
 
-pub fn run(conn: &Connection, config: &Config, technicals: bool) -> Result<()> {
+pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) -> Result<()> {
+    if agent {
+        return run_agent_mode(conn, config);
+    }
     let cached = get_all_cached_prices(conn)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
@@ -742,7 +1171,7 @@ mod tests {
     fn brief_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
-        let result = run(&conn, &config, false);
+        let result = run(&conn, &config, false, false);
         assert!(result.is_ok());
     }
 
@@ -769,7 +1198,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false);
+        let result = run(&conn, &config, false, false);
         assert!(result.is_ok());
     }
 
@@ -837,7 +1266,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false);
+        let result = run(&conn, &config, false, false);
         assert!(result.is_ok());
     }
 
@@ -880,7 +1309,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false);
+        let result = run(&conn, &config, false, false);
         assert!(result.is_ok());
     }
 
@@ -895,7 +1324,7 @@ mod tests {
         use crate::db::allocations::insert_allocation;
         insert_allocation(&conn, "BTC", AssetCategory::Crypto, dec!(50)).unwrap();
 
-        let result = run(&conn, &config, false);
+        let result = run(&conn, &config, false, false);
         assert!(result.is_ok());
     }
 
@@ -1055,7 +1484,7 @@ mod tests {
         .unwrap();
 
         // With technicals=true, should succeed (no history means no indicators displayed)
-        let result = run(&conn, &config, true);
+        let result = run(&conn, &config, true, false);
         assert!(result.is_ok());
     }
 }

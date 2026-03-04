@@ -110,6 +110,10 @@ pub enum Command {
         /// Show technical indicators (RSI, MACD, SMA) for each position
         #[arg(long)]
         technicals: bool,
+
+        /// Output structured JSON for agent consumption (includes all available data)
+        #[arg(long)]
+        agent: bool,
     },
     /// Show total portfolio value with gain/loss (uses cached prices)
     Value,

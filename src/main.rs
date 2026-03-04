@@ -166,7 +166,7 @@ fn main() -> Result<()> {
 
         Some(Command::Refresh { notify }) => commands::refresh::run(&conn, &config, notify),
         Some(Command::Value) => commands::value::run(&conn, &config),
-        Some(Command::Brief { technicals }) => commands::brief::run(&conn, &config, technicals),
+        Some(Command::Brief { technicals, agent }) => commands::brief::run(&conn, &config, technicals, agent),
         Some(Command::Watchlist { approaching }) => commands::watchlist_cli::run(&conn, &config, approaching.as_deref()),
 
         Some(Command::SetCash { symbol, amount }) => {
