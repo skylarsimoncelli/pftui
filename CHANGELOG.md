@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — FRED API integration + economic_cache DB (F3.1)
+
+- What: added FRED API client (`src/data/fred.rs`) and SQLite economic indicator cache (`src/db/economic_cache.rs`). Supports 6 macro series: DGS10 (10Y yield), FEDFUNDS, CPIAUCSL (CPI), PPIACO (PPI), UNRATE, T10Y2Y (yield curve spread). New `economic_cache` DB table with (series_id, date) primary key. Added `fred_api_key` optional config field. Aggressive caching with staleness detection per frequency (3 days for daily, 45 days for monthly series).
+- Files: new `src/data/fred.rs`, new `src/data/mod.rs`, new `src/db/economic_cache.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/config.rs`, `src/main.rs`, `src/app.rs`
+- Tests: 17 new tests (6 fred metadata/staleness, 11 economic_cache CRUD). Total: 855 passing.
+- TODO: F3.1 FRED API integration
+
 ### 2026-03-03 — Add `--technicals` flag to `brief` and `summary` CLI commands (F1.4)
 
 - What: added `--technicals` flag to both `pftui brief` and `pftui summary`. When passed, appends a technicals table showing RSI(14) with signal label (overbought/neutral/oversold), MACD line + histogram with signal label (bullish/bearish), SMA(50), and SMA(200) for each non-cash position. Uses existing indicators engine with cached price history (up to 250 days). Cash positions are skipped. Missing data gracefully shows "—" or "N/A".

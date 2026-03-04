@@ -14,7 +14,6 @@ _(no items)_
 > **Goal:** Economy tab becomes a full macro intelligence dashboard. One new CLI command: `pftui macro`. Replaces `fetch_prices.py` entirely.
 > **Spec:** `docs/ANALYTICS-SPEC.md#f3`
 
-- [ ] **F3.1: FRED API integration** — Fetch DGS10, FEDFUNDS, CPIAUCSL, PPIACO, UNRATE, T10Y2Y. New DB table with aggressive caching. Files: new `src/data/fred.rs`, new `src/db/economic_cache.rs`
 - [ ] **F3.2: Macro symbols in `refresh`** — Add DX-Y.NYB (DXY), ^VIX, CL=F (oil), HG=F (copper), GBPUSD=X to refresh cycle. Cache alongside asset prices. Files: `src/price/mod.rs`, `src/commands/refresh.rs`
 - [ ] **F3.3: Economy tab enhancement** — Top strip (key numbers row), yield curve braille chart, macro trends panel with sparklines + direction arrows + context labels. Derived metrics: gold/silver ratio, real rate (10Y - CPI). Files: `tui/views/economy.rs`, `tui/widgets/`
 - [ ] **F3.4: `pftui macro` CLI command** — Terminal-friendly macro dashboard output. Supports `--json` for agent consumption. Files: new `src/commands/macro_cmd.rs`, `cli.rs`
