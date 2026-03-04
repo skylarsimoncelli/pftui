@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — Allocation target storage and CLI (F6.4 foundation)
+
+- What: New `allocation_targets` DB table and `pftui target` CLI command suite. `pftui target set GC=F --target 25% --band 3%` stores target allocation percentage and drift band. `pftui target list [--json]` shows all targets. `pftui target remove SYMBOL` deletes. Default drift band is 2%. Validates target 0-100%, band 0-50%.
+- Why: Foundation for F6.4 (allocation target + drift in Positions tab). Enables setting portfolio allocation targets and drift tolerance bands, which will be used to compute drift, show target vs actual columns in TUI, and suggest rebalance trades.
+- Files: new `src/db/allocation_targets.rs` (CRUD), `src/db/schema.rs` (allocation_targets table), `src/commands/target.rs` (CLI), `src/cli.rs`, `src/main.rs`, `src/db/mod.rs`, `src/commands/mod.rs`
+- Tests: 973 passing (+4 new: set_target, update_target, list_targets, remove_target), clippy clean
+- TODO: F6.4 partial (storage + CLI done, next: drift calculation, positions view update, rebalance suggestions)
+
 ### 2026-03-04 — `pftui movers` command
 
 - What: New `pftui movers` command that scans all held positions + watchlist symbols, computes daily change % from cached price history, and shows those exceeding a threshold (default 3%). Sorted by absolute change descending. `--threshold 5` for custom threshold, `--json` for agent output. Deduplicates symbols in both held and watchlist, skips cash.
