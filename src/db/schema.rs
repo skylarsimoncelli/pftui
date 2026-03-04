@@ -144,6 +144,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_predictions_category ON predictions_cache(category);
         CREATE INDEX IF NOT EXISTS idx_predictions_volume ON predictions_cache(volume_24h);
+
+        CREATE TABLE IF NOT EXISTS cot_cache (
+            cftc_code TEXT NOT NULL,
+            report_date TEXT NOT NULL,
+            open_interest INTEGER NOT NULL,
+            managed_money_long INTEGER NOT NULL,
+            managed_money_short INTEGER NOT NULL,
+            managed_money_net INTEGER NOT NULL,
+            commercial_long INTEGER NOT NULL,
+            commercial_short INTEGER NOT NULL,
+            commercial_net INTEGER NOT NULL,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (cftc_code, report_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_cot_report_date ON cot_cache(report_date);
         ",
     )?;
 
