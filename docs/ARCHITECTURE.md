@@ -31,6 +31,15 @@ Use `read --offset N --limit M` to read specific line ranges instead of full fil
 | 871-990 | `render_braille_mini()`, `area_fill_bg()` | Mini chart / fill changes |
 | 991+ | `render_braille_lines()` (embeddable), tests | Embedding charts elsewhere |
 
+## asset_detail_popup.rs Line Map (850 lines)
+
+| Lines | Section | When to read |
+|-------|---------|-------------|
+| 1-25 | AssetDetailState struct, `render()` dispatch | Adding popup state |
+| 25-117 | `render()` — popup frame, shadow, scroll | Popup layout changes |
+| 117-708 | `build_lines()` — info, price, chart, technicals, portfolio context | Adding/changing popup sections |
+| 709+ | Tests | NEVER read unless writing tests |
+
 ## positions.rs Line Map (1450 lines)
 
 | Lines | Section | When to read |
@@ -54,6 +63,9 @@ Use `read --offset N --limit M` to read specific line ranges instead of full fil
 | Price fetching | `price/yahoo.rs` or `price/coingecko.rs` |
 | Mouse handling | `app.rs:1734-2820` |
 | Add state field | `app.rs:286-492` (struct) + `app.rs:493-847` (init) |
+| Technical indicators | `indicators/mod.rs` re-exports ONLY (never read individual files) |
+| Asset detail popup | `asset_detail_popup.rs:117-708` (build_lines sections) |
+| FX / currency work | `price/yahoo.rs` (YMetaData.currency, FX rate fetch) |
 
 ## Module Index
 
@@ -64,13 +76,23 @@ Use `read --offset N --limit M` to read specific line ranges instead of full fil
 `models/position.rs` (Position, compute_positions) · `models/transaction.rs` (Transaction, TxType) · `models/asset.rs` (AssetCategory, PriceProvider) · `models/asset_names.rs` (130+ symbols, infer_category, search) · `models/price.rs` (PriceQuote, HistoryRecord)
 
 ### Price Service
-`price/mod.rs` (PriceService thread + Tokio channels) · `price/yahoo.rs` (Yahoo spot+history, TSX normalization) · `price/coingecko.rs` (CoinGecko 62-coin map, Yahoo fallback)
+`price/mod.rs` (PriceService thread + Tokio channels) · `price/yahoo.rs` (Yahoo spot+history, TSX normalization, FX conversion via YMetaData.currency) · `price/coingecko.rs` (CoinGecko 62-coin map, Yahoo fallback)
 
 ### TUI Views (signature: `(&mut Frame, Rect, &App)`)
 `tui/ui.rs` (root layout) · `views/positions.rs` (positions+watchlist table) · `views/markets.rs` (markets tab) · `views/economy.rs` (economy tab) · `views/transactions.rs` · `views/help.rs` (help popup) · `views/position_detail.rs` · `views/search_overlay.rs` (/ search) · `views/asset_detail_popup.rs` · `views/context_menu.rs` (right-click)
 
 ### TUI Widgets
 `theme.rs` (28 color slots, 11 themes, animations, shadows) · `widgets/price_chart.rs` (braille charts, SMA, BB, crosshair) · `widgets/header.rs` (top bar) · `widgets/status_bar.rs` (bottom bar) · `widgets/sidebar.rs` (compositor) · `widgets/allocation_bars.rs` · `widgets/portfolio_sparkline.rs` · `widgets/portfolio_stats.rs` · `widgets/asset_header.rs` · `widgets/top_movers.rs` · `widgets/skeleton.rs` · `widgets/regime_bar.rs`
+
+### Indicators (DO NOT read individual files — use mod.rs re-exports)
+```
+indicators/mod.rs re-exports:
+  compute_rsi(&[f64], period) -> Vec<Option<f64>>           // RSI. period=14 standard
+  compute_sma(&[f64], period) -> Vec<Option<f64>>           // Simple moving average
+  compute_macd(&[f64]) -> MacdResult { macd, signal, histogram: Vec<f64> }
+  compute_bollinger(&[f64], period, multiplier) -> BollingerBands { upper, lower, middle, width: Vec<f64> }
+```
+Color conventions: RSI >70 = red (overbought), <30 = green (oversold), 30-70 = neutral
 
 ### Regime
 `regime/mod.rs` (9-signal scorer) · `regime/suggestions.rs` (portfolio suggestions)
