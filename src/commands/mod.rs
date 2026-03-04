@@ -5,6 +5,7 @@ pub mod demo;
 pub mod history;
 pub mod import;
 pub mod macro_cmd;
+pub mod performance;
 pub mod refresh;
 pub mod export;
 pub mod list_tx;

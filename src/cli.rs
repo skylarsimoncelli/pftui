@@ -171,6 +171,25 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show portfolio performance: returns over time (MTD, QTD, YTD, since inception)
+    Performance {
+        /// Custom start date for return calculation (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Return series grouping: daily, weekly, monthly
+        #[arg(long)]
+        period: Option<String>,
+
+        /// Benchmark symbol to compare against (e.g. SPY)
+        #[arg(long)]
+        vs: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage price, allocation, and indicator alerts
     Alerts {
         /// Action: add, list, remove, check, ack, rearm

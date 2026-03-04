@@ -197,6 +197,10 @@ fn main() -> Result<()> {
 
         Some(Command::Macro { json }) => commands::macro_cmd::run(&conn, &config, json),
 
+        Some(Command::Performance { since, period, vs, json }) => {
+            commands::performance::run(&conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
+        }
+
         Some(Command::Alerts { action, value, json, status }) => {
             // Parse value as either a rule string (for add) or an ID (for remove/ack/rearm)
             let id = value.as_deref().and_then(|v| v.parse::<i64>().ok());

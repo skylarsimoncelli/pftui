@@ -158,6 +158,67 @@ pub fn latest_snapshot_date(conn: &Connection) -> Result<Option<String>> {
     }
 }
 
+/// Get portfolio snapshots since a given date (inclusive), ordered ascending.
+#[allow(dead_code)] // Used in tests; available for F10.3 (TUI performance panel)
+pub fn get_portfolio_snapshots_since(
+    conn: &Connection,
+    since_date: &str,
+) -> Result<Vec<PortfolioSnapshot>> {
+    let mut stmt = conn.prepare(
+        "SELECT date, total_value, cash_value, invested_value, snapshot_at
+         FROM portfolio_snapshots
+         WHERE date >= ?1
+         ORDER BY date ASC",
+    )?;
+    let rows = stmt.query_map(params![since_date], |row| {
+        Ok(PortfolioSnapshot {
+            date: row.get(0)?,
+            total_value: row
+                .get::<_, String>(1)?
+                .parse()
+                .unwrap_or(Decimal::ZERO),
+            cash_value: row
+                .get::<_, String>(2)?
+                .parse()
+                .unwrap_or(Decimal::ZERO),
+            invested_value: row
+                .get::<_, String>(3)?
+                .parse()
+                .unwrap_or(Decimal::ZERO),
+            snapshot_at: row.get(4)?,
+        })
+    })?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// Get all portfolio snapshots, ordered ascending.
+pub fn get_all_portfolio_snapshots(conn: &Connection) -> Result<Vec<PortfolioSnapshot>> {
+    let mut stmt = conn.prepare(
+        "SELECT date, total_value, cash_value, invested_value, snapshot_at
+         FROM portfolio_snapshots
+         ORDER BY date ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(PortfolioSnapshot {
+            date: row.get(0)?,
+            total_value: row
+                .get::<_, String>(1)?
+                .parse()
+                .unwrap_or(Decimal::ZERO),
+            cash_value: row
+                .get::<_, String>(2)?
+                .parse()
+                .unwrap_or(Decimal::ZERO),
+            invested_value: row
+                .get::<_, String>(3)?
+                .parse()
+                .unwrap_or(Decimal::ZERO),
+            snapshot_at: row.get(4)?,
+        })
+    })?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
 /// Count total portfolio snapshots.
 #[allow(dead_code)]
 pub fn snapshot_count(conn: &Connection) -> Result<i64> {
