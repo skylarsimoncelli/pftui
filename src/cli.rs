@@ -74,13 +74,16 @@ pub enum Command {
     /// Run the portfolio setup wizard
     Setup,
 
-    /// Add a symbol to the watchlist
+    /// Add symbol(s) to the watchlist
     Watch {
-        /// Symbol to watch (e.g. AAPL, BTC, GC=F)
-        symbol: String,
+        /// Symbol to watch (e.g. AAPL, BTC, GC=F). Omit when using --bulk.
+        symbol: Option<String>,
         /// Asset category (equity, crypto, forex, cash, commodity, fund). Auto-detected if omitted.
         #[arg(long)]
         category: Option<String>,
+        /// Add multiple symbols at once, comma-separated (e.g. GOOG,META,AMZN,TSLA)
+        #[arg(long)]
+        bulk: Option<String>,
     },
 
     /// Remove a symbol from the watchlist

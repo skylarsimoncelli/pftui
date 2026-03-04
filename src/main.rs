@@ -86,17 +86,42 @@ fn main() -> Result<()> {
             commands::remove_tx::run(&conn, id)
         }
 
-        Some(Command::Watch { symbol, category }) => {
+        Some(Command::Watch { symbol, category, bulk }) => {
             use crate::models::asset_names::infer_category;
-            let cat = match category {
-                Some(c) => c.parse().unwrap_or_else(|_| infer_category(&symbol)),
-                None => infer_category(&symbol),
+
+            // Collect symbols: either --bulk or single positional
+            let symbols: Vec<String> = if let Some(bulk_str) = bulk {
+                bulk_str
+                    .split(',')
+                    .map(|s| s.trim().to_uppercase())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            } else if let Some(sym) = symbol {
+                vec![sym.to_uppercase()]
+            } else {
+                bail!("Provide a symbol or use --bulk SYMBOL1,SYMBOL2,...");
             };
-            let upper = symbol.to_uppercase();
-            db::watchlist::add_to_watchlist(&conn, &upper, cat)?;
-            let name = crate::models::asset_names::resolve_name(&upper);
-            let display = if name.is_empty() { upper.clone() } else { name };
-            println!("Added {} ({}) to watchlist as {}", upper, display, cat);
+
+            if symbols.is_empty() {
+                bail!("No valid symbols provided");
+            }
+
+            let mut added = 0;
+            for upper in &symbols {
+                let cat = match &category {
+                    Some(c) => c.parse().unwrap_or_else(|_| infer_category(upper)),
+                    None => infer_category(upper),
+                };
+                db::watchlist::add_to_watchlist(&conn, upper, cat)?;
+                let name = crate::models::asset_names::resolve_name(upper);
+                let display = if name.is_empty() { upper.clone() } else { name };
+                println!("Added {} ({}) to watchlist as {}", upper, display, cat);
+                added += 1;
+            }
+
+            if added > 1 {
+                println!("\n{} symbols added to watchlist.", added);
+            }
             Ok(())
         }
 
