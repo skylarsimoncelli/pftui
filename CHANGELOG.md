@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F6.4: TUI drift visualization with D hotkey
+
+- What: Drift column visualization in positions table with D hotkey toggle. Shows three new columns when enabled: Target (target %), Drift (+/-% from target), Status (▲ overweight / ▼ underweight / ✓ in range). Color-coded green/red when outside drift band, muted gray when in range. Drift section added to asset detail popup showing "Target X% ± Y%", drift amount, and OVERWEIGHT/UNDERWEIGHT/IN RANGE status in bold. Allocation targets loaded from DB on init. Positions without targets show "---" placeholders.
+- Why: F6.4 spec — visual feedback for allocation drift directly in the TUI positions view, making it easy to spot which positions need rebalancing at a glance without switching to CLI
+- Files: `src/app.rs` (show_drift_columns field, allocation_targets HashMap, load_allocation_targets(), D keybinding, 2 new tests), `src/tui/views/positions.rs` (conditional drift columns), `src/tui/views/asset_detail_popup.rs` (drift section in popup), `src/tui/views/help.rs` (D keybinding help)
+- Tests: 975 passing (+2 new: drift_columns_toggle_with_d, allocation_targets_loaded_on_init), clippy clean
+- TODO: F6.4 TUI drift visualization (P1) — COMPLETED
+
 ### 2026-03-04 — Drift and rebalance CLI commands (F6.4 continued)
 
 - What: Two new CLI commands complete F6.4 CLI layer. `pftui drift [--json]` shows allocation drift vs targets: target %, actual %, drift %, drift band, and status (✓ in range / ⚠️ out of band). Sorted by absolute drift descending. `pftui rebalance [--json]` suggests buy/sell trades to bring out-of-band positions back to targets: current value, target value, diff, action (BUY/SELL). Both read allocation targets from DB, compute positions with current prices, support JSON.
