@@ -226,6 +226,7 @@ mod tests {
             refresh_interval: 30,
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
+            fred_api_key: None,
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");

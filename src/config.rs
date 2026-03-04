@@ -20,6 +20,10 @@ pub struct Config {
     pub portfolio_mode: PortfolioMode,
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// FRED API key for fetching economic indicators.
+    /// Register at: https://fred.stlouisfed.org/docs/api/api_key.html
+    #[serde(default)]
+    pub fred_api_key: Option<String>,
 }
 
 fn default_base_currency() -> String {
@@ -41,6 +45,7 @@ impl Default for Config {
             refresh_interval: default_refresh_interval(),
             portfolio_mode: PortfolioMode::default(),
             theme: default_theme(),
+            fred_api_key: None,
         }
     }
 }
@@ -175,6 +180,7 @@ mod tests {
             refresh_interval: 30,
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
+            fred_api_key: None,
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();

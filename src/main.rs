@@ -2,6 +2,7 @@ mod app;
 mod cli;
 mod commands;
 mod config;
+mod data;
 mod db;
 mod indicators;
 mod models;

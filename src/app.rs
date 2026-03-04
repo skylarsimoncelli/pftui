@@ -596,6 +596,7 @@ impl App {
             refresh_interval: self.refresh_interval_secs,
             portfolio_mode: self.portfolio_mode,
             theme: self.theme_name.clone(),
+            fred_api_key: None,
         };
         let service = PriceService::start(config);
         self.request_price_fetch(&service);
@@ -3259,6 +3260,7 @@ mod vim_motion_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
 
@@ -3491,6 +3493,7 @@ mod search_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
 
@@ -3817,6 +3820,7 @@ mod timeframe_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
@@ -3828,6 +3832,7 @@ mod timeframe_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
         app.display_positions.push(Position {
@@ -3905,6 +3910,7 @@ mod crosshair_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         let mut app = App::new(&config, PathBuf::from(":memory:"));
         app.view_mode = ViewMode::Positions;
@@ -4051,6 +4057,7 @@ mod responsive_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
     }
@@ -4103,6 +4110,7 @@ mod on_demand_history_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
     }
@@ -4163,6 +4171,7 @@ mod daily_change_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
     }
@@ -4290,6 +4299,7 @@ mod portfolio_value_history_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
     }
@@ -5135,6 +5145,7 @@ mod sort_flash_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
         for i in 0..3 {
@@ -5219,6 +5230,7 @@ mod prev_day_alloc_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
     }
@@ -5377,6 +5389,7 @@ mod mouse_tests {
             refresh_interval: 60,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
+            fred_api_key: None,
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
         app.terminal_width = 120;

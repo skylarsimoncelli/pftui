@@ -48,6 +48,14 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             category TEXT NOT NULL,
             added_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS economic_cache (
+            series_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            value TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (series_id, date)
+        );
         ",
     )?;
 
