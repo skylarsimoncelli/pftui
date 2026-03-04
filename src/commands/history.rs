@@ -54,10 +54,13 @@ fn run_full(
         return Ok(());
     }
 
-    // Filter transactions to only those on or before the target date
+    // Filter transactions to only those on or before the target date.
+    // Cash positions are always included regardless of date — they represent
+    // current balances (set via `set-cash`), not dated purchases. Excluding
+    // them produces misleading portfolio totals.
     let txs_at_date: Vec<_> = txs
         .into_iter()
-        .filter(|tx| tx.date.as_str() <= date)
+        .filter(|tx| tx.category == AssetCategory::Cash || tx.date.as_str() <= date)
         .collect();
 
     if txs_at_date.is_empty() {
@@ -556,6 +559,78 @@ mod tests {
         // Cash should always show value even without price history
         let result = run(&conn, &config, "2025-06-01", None);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn history_cash_included_regardless_of_date() {
+        // Regression test: cash set via `set-cash` uses today's date, which may be
+        // after the history query date. Cash must always be included because it
+        // represents a current balance, not a dated purchase.
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+
+        use crate::db::price_history::upsert_history;
+        use crate::db::transactions::insert_transaction;
+        use crate::models::price::HistoryRecord;
+        use crate::models::transaction::{NewTransaction, TxType};
+
+        // Equity bought in the past
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(100),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+
+        // Cash set AFTER the query date (simulates `set-cash` run on 2026-03-01)
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "USD".to_string(),
+                category: AssetCategory::Cash,
+                tx_type: TxType::Buy,
+                quantity: dec!(178000),
+                price_per: dec!(1),
+                currency: "USD".to_string(),
+                date: "2026-03-01".to_string(),
+                notes: Some("Set via pftui set-cash".to_string()),
+            },
+        )
+        .unwrap();
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[HistoryRecord {
+                date: "2025-06-01".into(),
+                close: dec!(184),
+                volume: None,
+            }],
+        )
+        .unwrap();
+
+        // Query at a date BEFORE the cash transaction — cash must still appear
+        let result = run(&conn, &config, "2025-06-01", None);
+        assert!(result.is_ok());
+
+        // Verify positions include both equity and cash
+        let txs = crate::db::transactions::list_transactions(&conn).unwrap();
+        let txs_at_date: Vec<_> = txs
+            .into_iter()
+            .filter(|tx| tx.category == AssetCategory::Cash || tx.date.as_str() <= "2025-06-01")
+            .collect();
+        assert_eq!(txs_at_date.len(), 2, "Both AAPL and USD should be included");
+        assert!(txs_at_date.iter().any(|t| t.symbol == "USD"), "Cash must be present");
+        assert!(txs_at_date.iter().any(|t| t.symbol == "AAPL"), "Equity must be present");
     }
 
     #[test]
