@@ -4,6 +4,133 @@
 > Format: `- [ ] **Short title** — Brief description. Files: relevant_file.rs`
 > Full analytics spec: `docs/ANALYTICS-SPEC.md`
 
+## P0 — Free Data Integration (No API Keys)
+
+> **Goal:** pftui ships as a zero-config, zero-key terminal for macro-aware investors. Every data source below is completely free and requires NO authentication. A finance enthusiast installs pftui and immediately has prediction markets, COT positioning, sentiment, news, on-chain data, and economic releases — all in one terminal. This is the moat.
+
+### F17: Prediction Markets Panel
+> **Goal:** Real-money probability data for macro scenarios, directly in the TUI. This is the single most differentiated feature — no other portfolio TUI shows prediction market odds.
+> **Sources:** Polymarket Gamma API (free, no key, JSON REST), Manifold Markets API (free, no key)
+> **Data:** Market title, current probability, 24h change, volume, category (geopolitics/economics/crypto/AI)
+
+- [ ] **F17.1: Prediction market data module** — Fetch from Polymarket Gamma API (`https://gamma-api.polymarket.com/`). Parse market title, outcome prices (= probabilities), volume, end date. Cache in SQLite with 15-min TTL. Filter by category: geopolitics, economics, crypto, finance. Files: new `src/data/polymarket.rs`, new `src/db/prediction_cache.rs`
+- [ ] **F17.2: Predictions panel in Economy tab [4]** — Right-side panel or sub-view. Show top 10 relevant markets: "Fed rate cut by June?" 34% ↓, "US recession 2026?" 22% ↑, "BTC above $100k by Dec?" 45% →. Color-code by probability (green >60%, red <40%, yellow middle). 24h change arrows. Sort by volume or relevance. Files: `tui/views/economy.rs`
+- [ ] **F17.3: `pftui predictions` CLI** — `pftui predictions` (top markets), `--category crypto`, `--search "recession"`, `--json`. Files: new `src/commands/predictions.rs`, `cli.rs`
+- [ ] **F17.4: Prediction sparklines in Markets tab** — For key tracked predictions (recession, rate cuts, BTC price), show probability sparkline over 30 days alongside traditional asset charts. Files: `tui/views/markets.rs`
+
+### F18: CFTC Commitments of Traders (COT)
+> **Goal:** Show what the smart money is doing. Commercials vs speculators positioning on gold, silver, oil, BTC futures. Updated weekly.
+> **Source:** CFTC Socrata API (`publicreporting.cftc.gov`, free, no key, JSON)
+> **Data:** Net positions by trader type (commercial, non-commercial/managed money), open interest, week-over-week changes
+
+- [ ] **F18.1: COT data module** — Fetch from CFTC Socrata API. Parse disaggregated futures report. Map contract codes to pftui symbols (GC=Gold, SI=Silver, CL=Oil, BTC=Bitcoin). Cache in SQLite, weekly refresh (data updates every Friday). Files: new `src/data/cot.rs`, new `src/db/cot_cache.rs`
+- [ ] **F18.2: COT section in asset detail popup** — When viewing gold/silver/oil/BTC, show: "Managed Money: Net Long 142k contracts (+8k) | Commercials: Net Short -89k (-3k)". Bar chart of net positioning. 4-week trend. Extremes flagged (>90th percentile = crowded trade warning). Files: `tui/views/asset_detail_popup.rs`
+- [ ] **F18.3: COT summary in Markets tab** — Compact row per commodity: symbol, managed money net, commercial net, change, signal (🟢 aligned with trend / 🔴 divergence / ⚠️ extreme). Files: `tui/views/markets.rs`
+- [ ] **F18.4: `pftui cot` CLI** — `pftui cot` (all tracked), `--symbol gold`, `--weeks 12` (historical), `--json`. Files: new `src/commands/cot.rs`, `cli.rs`
+
+### F19: Fear & Greed Index Integration
+> **Goal:** Crypto + traditional market sentiment gauges, natively in the TUI.
+> **Sources:** Alternative.me Crypto F&G (free, no key), CNN F&G (scrape — public page)
+> **Data:** Index value (0-100), classification (Extreme Fear/Fear/Neutral/Greed/Extreme Greed), historical values
+
+- [ ] **F19.1: Sentiment data module** — Fetch crypto F&G from `https://api.alternative.me/fng/`. Scrape CNN F&G from public page (or derive from VIX + put/call + junk spread + breadth + momentum + safe haven — all calculable from existing data). Cache in SQLite, 1-hour TTL. Files: new `src/data/sentiment.rs`, new `src/db/sentiment_cache.rs`
+- [ ] **F19.2: Sentiment gauges in header/status bar** — Compact display: `F&G: 🔴10 Extreme Fear | TradFi: 🟡42 Fear`. Always visible. Color-coded. Files: `tui/widgets/status_bar.rs` or `tui/widgets/header.rs`
+- [ ] **F19.3: Sentiment history in Economy tab** — 30-day sparkline of both indices. Overlay with portfolio value sparkline to show correlation/divergence. Files: `tui/views/economy.rs`
+- [ ] **F19.4: `pftui sentiment` CLI** — `pftui sentiment` (current), `--history 30` (days), `--json`. Files: new `src/commands/sentiment.rs`, `cli.rs`
+
+### F20: Live News Feed (RSS)
+> **Goal:** Zero-cost, zero-key financial news aggregation from the best sources. Filterable by topic, searchable, in a dedicated News view.
+> **Sources:** RSS feeds — completely free, no auth, no rate limits.
+> **Feeds:** Reuters (`reuters.com/rssfeed/`), CoinDesk (`coindesk.com/arc/outboundfeeds/rss/`), ZeroHedge (`zerohedge.com/fullrss.xml`), The Block, Yahoo Finance, MarketWatch, CNBC, Seeking Alpha, Bloomberg (headlines)
+
+- [ ] **F20.1: RSS aggregator module** — Poll configured RSS feeds on 10-min interval. Parse titles, links, published dates, source. Deduplicate by URL. Store in SQLite with 48-hour retention. Default feed list ships with pftui (user can add/remove via config). Files: new `src/data/rss.rs`, new `src/db/news_cache.rs`, `src/config.rs`
+- [ ] **F20.2: News tab [6] in TUI** — New tab. Scrollable list: timestamp, source icon/tag, headline. Color-code by source category (macro=blue, crypto=orange, commodities=yellow, geopolitics=red). `Enter` to open URL in browser. `/` to search headlines. `f` to filter by source or category. Files: new `src/tui/views/news.rs`, `src/app.rs` (add ViewMode::News, bind key `6`)
+- [ ] **F20.3: News ticker in header** — Scrolling one-line news ticker below the market bar showing latest 3 headlines. Cycles every 10 seconds. Files: `tui/widgets/header.rs` or new `tui/widgets/news_ticker.rs`
+- [ ] **F20.4: `pftui news` CLI** — `pftui news` (latest 20), `--source coindesk`, `--search "bitcoin"`, `--hours 4`, `--json`. Files: new `src/commands/news.rs`, `cli.rs`
+- [ ] **F20.5: Per-asset news in detail popup** — When viewing a position or watchlist item, filter news by asset name/ticker. Show last 5 relevant headlines. Files: `tui/views/asset_detail_popup.rs`
+
+### F21: BTC On-Chain & ETF Flow Data
+> **Goal:** On-chain signals and institutional flow data for BTC — whale movements, exchange flows, ETF inflows/outflows.
+> **Sources:** Blockchair (5 req/sec free, no key), CoinGlass (scrape public pages), Whale Alert (limited free tier — scrape public feed)
+
+- [ ] **F21.1: On-chain data module** — Fetch BTC exchange net flows from Blockchair (`https://api.blockchair.com/bitcoin/`). Scrape CoinGlass BTC ETF flow page for daily net inflows by fund. Parse Whale Alert public feed for transactions >$10M. Cache in SQLite. Files: new `src/data/onchain.rs`, new `src/db/onchain_cache.rs`
+- [ ] **F21.2: BTC intelligence panel in asset detail** — When viewing BTC: ETF daily net flow (+$458M), 7-day cumulative, top fund flows (IBIT, FBTC, GBTC). Exchange net flow (negative = accumulation). Large whale transactions today. Files: `tui/views/asset_detail_popup.rs`
+- [ ] **F21.3: `pftui etf-flows` CLI** — `pftui etf-flows` (today), `--days 7`, `--fund IBIT`, `--json`. Files: new `src/commands/etf_flows.rs`, `cli.rs`
+
+### F22: COMEX & Commodity Supply Data
+> **Goal:** Physical market data — COMEX inventory, delivery reports, supply/demand signals for metals.
+> **Sources:** CME Group public pages (scrapable), World Gold Council public data (scrapable)
+
+- [ ] **F22.1: COMEX data module** — Scrape CME daily bulletin for COMEX gold + silver registered/eligible inventory, delivery notices, warehouse stocks. Parse World Gold Council public data for central bank purchases (quarterly). Cache in SQLite. Files: new `src/data/comex.rs`, new `src/db/comex_cache.rs`
+- [ ] **F22.2: Supply data in metals detail popup** — When viewing GC=F or SI=F: COMEX registered inventory (oz), registered/eligible ratio, daily delivery notices, trend (drawing down / building). For gold: CB net purchases last quarter. Files: `tui/views/asset_detail_popup.rs`
+- [ ] **F22.3: `pftui supply` CLI** — `pftui supply gold` (COMEX + CB data), `pftui supply silver`, `--json`. Files: new `src/commands/supply.rs`, `cli.rs`
+
+### F23: Economic Release Calendar (Enhanced)
+> **Goal:** Upgrade F12 calendar from sample data to live free sources. Show upcoming releases with countdown, impact ratings, previous/forecast/actual.
+> **Sources:** Scrape TradingEconomics calendar (public page), or FRED release schedule API (free), or Finnhub (if user has free key — optional)
+
+- [ ] **F23.1: Calendar scraper** — Scrape public economic calendar pages for upcoming releases (FOMC, CPI, NFP, PPI, GDP, PMI, JOLTS, jobless claims). Parse: date, event name, previous value, forecast, impact level. Store in SQLite calendar_events table (F12.1 schema already exists). Files: `src/data/calendar.rs` (upgrade from sample data)
+- [ ] **F23.2: Calendar countdown in header** — "Next: NFP in 2d 4h | CPI Mar 12". Always visible. High-impact events only. Files: `tui/widgets/header.rs`
+- [ ] **F23.3: Calendar view in Economy tab** — 7-day forward view. Impact color-coded. Countdown timers. Previous/forecast columns. Actual filled in post-release. Files: `tui/views/economy.rs`
+
+### F24: Government Data Direct (BLS + BEA)
+> **Goal:** Pull employment, inflation, and GDP data directly from US government APIs. These are the actual source — not third-party repackaging.
+> **Sources:** BLS API v2 (no key for v1: 10 calls/day, or free key for v2: 500/day), BEA API (free key required — SKIP for no-key constraint, but v1 BLS works without)
+
+- [ ] **F24.1: BLS data module (no-key mode)** — BLS API v1 requires no registration. Fetch series: CPI-U (CUUR0000SA0), unemployment rate (LNS14000000), NFP (CES0000000001), average hourly earnings (CES0500000003). 10 calls/day limit — cache aggressively (data only changes monthly). Files: new `src/data/bls.rs`, new `src/db/bls_cache.rs`
+- [ ] **F24.2: Enhanced Economy tab indicators** — Replace "sample" economic data with live BLS data. Show: CPI (YoY%, MoM%), unemployment rate, NFP (last + revision), average hourly earnings. Trend arrows. Last release date + next release countdown. Files: `tui/views/economy.rs`
+
+### F25: World Bank & Global Macro
+> **Goal:** Structural macro data for BRICS and major economies. GDP growth, debt/GDP, trade balances, reserves.
+> **Source:** World Bank Open Data API (free, no key, unlimited)
+
+- [ ] **F25.1: World Bank data module** — Fetch key indicators: GDP growth (NY.GDP.MKTP.KD.ZG), debt/GDP (GC.DOD.TOTL.GD.ZS), current account (BN.CAB.XOKA.GD.ZS), reserves (FI.RES.TOTL.CD) for US, China, India, Russia, Brazil, SA, UK, EU. Cache in SQLite with monthly refresh (data updates quarterly). Files: new `src/data/worldbank.rs`, new `src/db/worldbank_cache.rs`
+- [ ] **F25.2: Global macro panel in Economy tab** — Compact table: Country, GDP Growth, Debt/GDP, Reserves trend. BRICS aggregate row. Color-code: green (expanding), red (contracting). Files: `tui/views/economy.rs`
+- [ ] **F25.3: `pftui global` CLI** — `pftui global` (all tracked countries), `--country US`, `--indicator gdp`, `--json`. Files: new `src/commands/global.rs`, `cli.rs`
+
+---
+
+### TUI Layout Vision (Post-P0)
+
+The homepage a finance enthusiast opens every morning:
+
+```
+┌─ HEADER ─────────────────────────────────────────────────────────────────────┐
+│ pftui  $368.3k +1.4%  │ F&G: 🔴10 Extreme Fear │ TradFi: 🟡42 Fear        │
+│ SPX ▼-0.8% │ NDX ▼-1.0% │ VIX ▲+3.5% │ Gold ▼-3.0% │ Oil ▲+1.9% │ BTC ▲+7.6% │
+│ 📰 Reuters: Iran threatens Hormuz closure extension │ Next: NFP in 1d 18h   │
+├─ [1]Pos [2]Tx [3]Mkt [4]Econ [5]Watch [6]News [7]Journal ──────────────────┤
+│                                                                              │
+│  POSITIONS (or WATCHLIST if configured)     │  ASSET DETAIL / CHART          │
+│  ─────────────────────────────────────────  │  ────────────────────────────── │
+│  Asset    Price   Day%  Alloc  RSI  COT    │  Gold (GC=F) — $5,139          │
+│  USD      1.00    ---   48.7%  ---  ---    │  ▄▃▅▇█▆▅▃▂▃▅▆▇▅▃  52W: 78%    │
+│  Gold     5139   -3.0%  24.9%  56▼  🟢    │                                 │
+│  BTC      73705  +4.1%  20.0%  47▲  ---    │  COT: Managed Money Net Long    │
+│  Silver   83.64  -4.9%  6.1%   50▼  ⚠️    │  142k (+8k) | Commercials: -89k │
+│  U.UN     20.17  -4.0%  0.1%   42▼  ---    │  COMEX: 298M oz registered ▼    │
+│                                             │  ETF Flows: n/a (commodity)     │
+│  ALLOCATION                                 │                                 │
+│  ████████ Cash 49% ███████ Comd 31%        │  PREDICTIONS                    │
+│  ██████ Crypto 20%                          │  Gold >$6k by Dec? 38% ↑       │
+│                                             │  US recession 2026? 22% →      │
+│  MOVERS (>3%)                               │  Fed cut before July? 12% ↓    │
+│  🔴 URA -7.7% │ COPX -6.9% │ CCJ -6.6%   │                                 │
+├─────────────────────────────────────────────┴─────────────────────────────────┤
+│ 📰 LATEST: Iran threatens extended Hormuz closure | BTC ETF +$458M daily    │
+│ ISM Services 56.1 beats | ADP +63k, Jan revised to 11k                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key UX decisions:**
+- **Header is the pulse:** Portfolio value, F&G gauges, market ticker, news ticker, next economic event countdown — always visible, never need to switch tabs
+- **COT column in positions table:** Single emoji signal (🟢 aligned / 🔴 divergent / ⚠️ extreme) — detail in popup on Enter
+- **Predictions panel in sidebar:** Top 3-5 relevant prediction market odds, rotates based on which asset is selected (select gold → show gold-related predictions)
+- **News tab [6] is the NEW addition** — replaces agent web-scraping for overnight catchup
+- **Asset detail popup is the deep dive:** COT positioning, COMEX supply data, ETF flows, per-asset news, prediction markets — all contextual to the selected asset
+
+---
+
 ## P1 — Analytics Foundation
 
 ### F8: Journal & Decision Log (PROMOTED from P2)
