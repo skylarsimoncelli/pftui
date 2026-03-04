@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F6.2: `pftui alerts` CLI
+
+- What: Full CLI for managing alerts: `alerts add "rule"`, `alerts list`, `alerts remove <id>`, `alerts check`, `alerts ack <id>`, `alerts rearm <id>`. Supports `--json` for agent output and `--status` filter for list. Check command shows distance-to-trigger for armed alerts, groups results by status (newly triggered, armed, acknowledged).
+- Why: Enables headless alert management for agents and scripts. Completes the CLI layer of F6 unified alert system.
+- Files: new `src/commands/alerts.rs`, `src/commands/mod.rs`, `src/cli.rs` (Alerts subcommand), `src/main.rs` (dispatch + removed dead_code allow on alerts mod)
+- Tests: 11 new tests (928 total), clippy clean
+
 ### 2026-03-04 — F6.1: Unified alert engine + DB schema
 
 - What: Alert rules engine supporting three alert types: price (`"GC=F above 5500"`), allocation (`"gold allocation above 30%"`), and indicator (`"GC=F RSI below 30"`). Natural language rule parser, SQLite storage with status lifecycle (armed → triggered → acknowledged), check engine that evaluates alerts against cached prices with distance-to-trigger calculation.

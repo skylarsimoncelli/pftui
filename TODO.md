@@ -10,7 +10,6 @@
 > **Goal:** One alert system for everything: price targets (inc. watchlist entry levels), allocation drift, indicator thresholds. Check on every refresh. Optional OS notifications. Absorbs watchlist alerts (F9) and allocation drift (F11).
 > **Spec:** `docs/ANALYTICS-SPEC.md#f6`
 
-- [ ] **F6.2: `pftui alerts` CLI** — `alerts add "rule"`, `alerts list`, `alerts remove <id>`, `alerts check` (manual one-shot), `alerts check --json` (agent output). Show distance-to-trigger for armed alerts. Files: new `src/commands/alerts.rs`, `cli.rs`
 - [ ] **F6.3: Watchlist entry level integration** — `pftui watch TSLA --target 300 --direction below` stores as an alert rule. Watchlist tab [5] shows target column + proximity bar (green=far, yellow=approaching, red=hit). `pftui watchlist --approaching 10%` filters to assets within 10% of target. Files: `tui/views/watchlist.rs`, `commands/watchlist_cli.rs`, `db/watchlist.rs`
 - [ ] **F6.4: Allocation target + drift in Positions tab** — `pftui target set gold 25% --band 3%` stores as allocation alert. Positions tab [1] shows target vs actual column, color-coded bands. `pftui drift` shows all positions' drift from targets. `pftui rebalance` suggests trades to restore. Files: `tui/views/positions.rs`, new `src/commands/target.rs`, `alerts/engine.rs`
 - [ ] **F6.5: Alert badge in TUI status bar** — `⚠️ 2 alerts` count. Hotkey to expand alerts popup overlay. Per-asset ⚠️ icons on triggered positions/watchlist items. Files: `tui/widgets/status_bar.rs`, new `tui/views/alerts_popup.rs`
