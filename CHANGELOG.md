@@ -121,6 +121,14 @@
 - Tests: added 10 tests — weekday open/closed before/during/after hours, Saturday, Sunday, exact open/close boundaries, DST summer open/closed, Friday afternoon. Total: 214 tests passing.
 - TODO: Add market status indicator to header (P1)
 
+### 2026-03-04 — Add client-side rate limiting to price fetching
+
+- What: added inter-request delays to prevent Yahoo Finance and CoinGecko rate limiting when fetching prices for large portfolios (40+ symbols). Yahoo requests get ~100ms delay between sequential calls. CoinGecko history fetches get ~200ms delay. History batch fetching changed from fully concurrent (JoinSet) to sequential with delays. Applied to both TUI price service (`price/mod.rs`) and CLI `refresh` command.
+- Why: demo mode and fresh installs fire 40+ requests with no delay, triggering 429 rate limits from Yahoo and CoinGecko free tier.
+- Files: `src/price/mod.rs` (fetch_all, fetch_history_batch + new constants), `src/commands/refresh.rs` (fetch_all_prices)
+- Tests: all 855 tests pass, no changes needed (rate limiting is timing-only, no logic changes)
+- TODO: Add client-side rate limiting to price fetching (P0)
+
 ### 2026-03-01 — Add gg/G vim motions for jump-to-top/bottom
 
 - What: implemented `gg` (jump to first row) and `G` (jump to last row) vim motions. Added `g_pending` state to App for two-key sequence detection. Reassigned gain% sort from `g` to `%` and total gain sort from `G` to `$` to free up the vim-standard keys. Both motions work in Positions and Transactions views. `g_pending` is cleared on any non-g keypress.

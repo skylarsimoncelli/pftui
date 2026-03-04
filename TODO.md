@@ -144,6 +144,6 @@ _(no items)_
 
 **Completed feedback items:** `pftui refresh`, `--period`, `--group-by`, day P&L (TUI header), value/brief/watchlist/set-cash CLI, CSV rounding, base currency config, Markets tab enrichment, `--what-if`, `history --date`, snapshot, import
 
-## P0 — Rate Limiting (Owner Report)
+## P0
 
-- [ ] **Add client-side rate limiting to price fetching** — Demo mode (and fresh installs) fire 40+ requests with no delay, triggering Yahoo/CoinGecko rate limits. Fix: add ~100ms delay between sequential Yahoo requests in `fetch_all()` and `fetch_history_batch()`. CoinGecko already has 429 retry but add a 200ms inter-request delay for history fetches too. Files: `price/mod.rs` (fetch_all, fetch_history_batch), `price/coingecko.rs`
+_(no items)_
