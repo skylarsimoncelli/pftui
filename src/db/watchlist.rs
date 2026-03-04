@@ -11,6 +11,8 @@ pub struct WatchlistEntry {
     pub symbol: String,
     pub category: String,
     pub added_at: String,
+    pub target_price: Option<String>,
+    pub target_direction: Option<String>,
 }
 
 /// Add a symbol to the watchlist. Uses ON CONFLICT to upsert.
@@ -29,6 +31,22 @@ pub fn add_to_watchlist(
     Ok(conn.last_insert_rowid())
 }
 
+/// Set or clear a target price on a watchlist entry.
+/// direction should be "above" or "below". Pass None to clear.
+pub fn set_watchlist_target(
+    conn: &Connection,
+    symbol: &str,
+    target_price: Option<&str>,
+    target_direction: Option<&str>,
+) -> Result<bool> {
+    let rows = conn.execute(
+        "UPDATE watchlist SET target_price = ?1, target_direction = ?2
+         WHERE UPPER(symbol) = UPPER(?3)",
+        params![target_price, target_direction, symbol],
+    )?;
+    Ok(rows > 0)
+}
+
 /// Remove a symbol from the watchlist.
 pub fn remove_from_watchlist(conn: &Connection, symbol: &str) -> Result<bool> {
     let rows = conn.execute(
@@ -41,7 +59,7 @@ pub fn remove_from_watchlist(conn: &Connection, symbol: &str) -> Result<bool> {
 /// List all watchlist entries, ordered by added_at descending.
 pub fn list_watchlist(conn: &Connection) -> Result<Vec<WatchlistEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, symbol, category, added_at
+        "SELECT id, symbol, category, added_at, target_price, target_direction
          FROM watchlist ORDER BY added_at DESC",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -50,6 +68,8 @@ pub fn list_watchlist(conn: &Connection) -> Result<Vec<WatchlistEntry>> {
             symbol: row.get(1)?,
             category: row.get(2)?,
             added_at: row.get(3)?,
+            target_price: row.get(4)?,
+            target_direction: row.get(5)?,
         })
     })?;
     let mut result = Vec::new();
@@ -148,6 +168,30 @@ mod tests {
         // Remove with different case works
         assert!(remove_from_watchlist(&conn, "Aapl").unwrap());
         assert!(list_watchlist(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_set_watchlist_target() {
+        let conn = open_in_memory();
+        add_to_watchlist(&conn, "TSLA", AssetCategory::Equity).unwrap();
+
+        // Set target
+        assert!(set_watchlist_target(&conn, "TSLA", Some("300"), Some("below")).unwrap());
+        let entries = list_watchlist(&conn).unwrap();
+        assert_eq!(entries[0].target_price.as_deref(), Some("300"));
+        assert_eq!(entries[0].target_direction.as_deref(), Some("below"));
+
+        // Clear target
+        assert!(set_watchlist_target(&conn, "TSLA", None, None).unwrap());
+        let entries = list_watchlist(&conn).unwrap();
+        assert!(entries[0].target_price.is_none());
+        assert!(entries[0].target_direction.is_none());
+    }
+
+    #[test]
+    fn test_set_target_nonexistent_symbol() {
+        let conn = open_in_memory();
+        assert!(!set_watchlist_target(&conn, "NOPE", Some("100"), Some("above")).unwrap());
     }
 
     #[test]

@@ -87,7 +87,7 @@ fn main() -> Result<()> {
             commands::remove_tx::run(&conn, id)
         }
 
-        Some(Command::Watch { symbol, category, bulk }) => {
+        Some(Command::Watch { symbol, category, bulk, target, direction }) => {
             use crate::models::asset_names::infer_category;
 
             // Collect symbols: either --bulk or single positional
@@ -107,6 +107,20 @@ fn main() -> Result<()> {
                 bail!("No valid symbols provided");
             }
 
+            // Validate target if provided
+            if let Some(ref t) = target {
+                let cleaned = t.replace(['$', ','], "");
+                if rust_decimal::Decimal::from_str_exact(&cleaned).is_err() {
+                    bail!("Invalid target price: '{}'. Use a number (e.g. 300, 55000.50)", t);
+                }
+                if direction != "above" && direction != "below" {
+                    bail!("Invalid direction: '{}'. Use 'above' or 'below'", direction);
+                }
+                if symbols.len() > 1 {
+                    bail!("--target can only be set for a single symbol, not with --bulk");
+                }
+            }
+
             let mut added = 0;
             for upper in &symbols {
                 let cat = match &category {
@@ -117,6 +131,19 @@ fn main() -> Result<()> {
                 let name = crate::models::asset_names::resolve_name(upper);
                 let display = if name.is_empty() { upper.clone() } else { name };
                 println!("Added {} ({}) to watchlist as {}", upper, display, cat);
+
+                // Set target if provided
+                if let Some(ref t) = target {
+                    let cleaned = t.replace(['$', ','], "");
+                    db::watchlist::set_watchlist_target(&conn, upper, Some(&cleaned), Some(&direction))?;
+                    println!("  Target: {} {} {}", upper, direction, cleaned);
+
+                    // Auto-create an alert rule for this target
+                    let rule_text = format!("{} {} {}", upper, direction, cleaned);
+                    db::alerts::add_alert(&conn, "price", upper, &direction, &cleaned, &rule_text)?;
+                    println!("  Alert created: {}", rule_text);
+                }
+
                 added += 1;
             }
 
@@ -139,7 +166,7 @@ fn main() -> Result<()> {
         Some(Command::Refresh) => commands::refresh::run(&conn, &config),
         Some(Command::Value) => commands::value::run(&conn, &config),
         Some(Command::Brief { technicals }) => commands::brief::run(&conn, &config, technicals),
-        Some(Command::Watchlist) => commands::watchlist_cli::run(&conn, &config),
+        Some(Command::Watchlist { approaching }) => commands::watchlist_cli::run(&conn, &config, approaching.as_deref()),
 
         Some(Command::SetCash { symbol, amount }) => {
             if config.is_percentage_mode() {

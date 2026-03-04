@@ -84,6 +84,12 @@ pub enum Command {
         /// Add multiple symbols at once, comma-separated (e.g. GOOG,META,AMZN,TSLA)
         #[arg(long)]
         bulk: Option<String>,
+        /// Set a target entry price (e.g. 300, 55000). Creates an alert when hit.
+        #[arg(long)]
+        target: Option<String>,
+        /// Direction for target: "below" (default, buy dip) or "above" (breakout)
+        #[arg(long, default_value = "below")]
+        direction: String,
     },
 
     /// Remove a symbol from the watchlist
@@ -105,7 +111,11 @@ pub enum Command {
     Value,
 
     /// Display watchlist symbols with current cached prices
-    Watchlist,
+    Watchlist {
+        /// Filter to symbols within N% of their target price (e.g. 10)
+        #[arg(long)]
+        approaching: Option<String>,
+    },
 
     /// Set a cash position to an exact amount (replaces existing transactions for that currency)
     SetCash {

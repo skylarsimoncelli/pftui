@@ -11,6 +11,38 @@ use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::tui::theme;
 
+/// Compute proximity to target as a percentage. Returns (distance_pct, hit).
+/// distance_pct > 0 means not yet reached. distance_pct <= 0 means target hit.
+fn compute_proximity(current: Decimal, target: Decimal, direction: &str) -> (Decimal, bool) {
+    if target.is_zero() {
+        return (dec!(0), false);
+    }
+    let dist_pct = match direction {
+        "below" => (current - target) / target * dec!(100),
+        "above" => (target - current) / current * dec!(100),
+        _ => dec!(0),
+    };
+    let hit = dist_pct <= dec!(0);
+    (dist_pct, hit)
+}
+
+/// Render a proximity bar as colored spans.
+fn proximity_spans(dist_pct: Decimal, hit: bool, t: &theme::Theme) -> Vec<Span<'static>> {
+    if hit {
+        vec![Span::styled("🎯 HIT".to_string(), Style::default().fg(t.gain_green).bold())]
+    } else {
+        let f: f64 = dist_pct.to_string().parse().unwrap_or(0.0);
+        let color = if f < 3.0 {
+            t.loss_red // very close — red urgency
+        } else if f < 10.0 {
+            Color::Yellow // approaching
+        } else {
+            t.gain_green // far away — green (safe)
+        };
+        vec![Span::styled(format!("{:.1}%", f), Style::default().fg(color))]
+    }
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let entries = &app.watchlist_entries;
@@ -43,16 +75,27 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let header = Row::new(vec![
+    // Check if any entry has a target price set
+    let has_targets = entries
+        .iter()
+        .any(|e| e.target_price.is_some());
+
+    let mut header_cells = vec![
         Cell::from("Symbol"),
         Cell::from("Name"),
         Cell::from("Category"),
         Cell::from("Price"),
         Cell::from("Change %"),
         Cell::from("RSI"),
-    ])
-    .style(Style::default().fg(t.text_secondary).bold())
-    .height(1);
+    ];
+    if has_targets {
+        header_cells.push(Cell::from("Target"));
+        header_cells.push(Cell::from("Prox"));
+    }
+
+    let header = Row::new(header_cells)
+        .style(Style::default().fg(t.text_secondary).bold())
+        .height(1);
 
     let rows: Vec<Row> = entries
         .iter()
@@ -159,7 +202,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 }
             };
 
-            Row::new(vec![
+            let mut cells = vec![
                 Cell::from(Span::styled(
                     entry.symbol.clone(),
                     Style::default().fg(t.text_primary).bold(),
@@ -173,7 +216,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                     Style::default().fg(cat_color),
                 )),
                 Cell::from(Span::styled(
-                    price_str,
+                    price_str.clone(),
                     Style::default().fg(t.text_primary),
                 )),
                 Cell::from(Span::styled(
@@ -181,20 +224,70 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                     Style::default().fg(change_color),
                 )),
                 rsi_cell,
-            ])
+            ];
+
+            if has_targets {
+                match (&entry.target_price, &entry.target_direction) {
+                    (Some(tp), Some(dir)) => {
+                        if let Ok(target_dec) = tp.parse::<Decimal>() {
+                            // Target cell
+                            let dir_symbol = if dir == "below" { "↓" } else { "↑" };
+                            let target_str = format!("{}{:.2}", dir_symbol, target_dec);
+                            cells.push(Cell::from(Span::styled(
+                                target_str,
+                                Style::default().fg(t.text_secondary),
+                            )));
+
+                            // Proximity cell
+                            if let Some(cur) = price {
+                                let (dist_pct, hit) = compute_proximity(cur, target_dec, dir);
+                                let spans = proximity_spans(dist_pct, hit, t);
+                                cells.push(Cell::from(Line::from(spans)));
+                            } else {
+                                cells.push(Cell::from(Span::styled(
+                                    "---",
+                                    Style::default().fg(t.text_muted),
+                                )));
+                            }
+                        } else {
+                            cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
+                            cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
+                        }
+                    }
+                    _ => {
+                        cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
+                        cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
+                    }
+                }
+            }
+
+            Row::new(cells)
             .style(Style::default().bg(row_bg))
             .height(1)
         })
         .collect();
 
-    let widths = [
-        Constraint::Length(8),
-        Constraint::Min(16),
-        Constraint::Length(10),
-        Constraint::Length(12),
-        Constraint::Length(10),
-        Constraint::Length(6),
-    ];
+    let widths: Vec<Constraint> = if has_targets {
+        vec![
+            Constraint::Length(8),
+            Constraint::Min(12),
+            Constraint::Length(10),
+            Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Length(6),
+            Constraint::Length(12),
+            Constraint::Length(10),
+        ]
+    } else {
+        vec![
+            Constraint::Length(8),
+            Constraint::Min(16),
+            Constraint::Length(10),
+            Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Length(6),
+        ]
+    };
 
     let table = Table::new(rows, widths)
         .header(header)

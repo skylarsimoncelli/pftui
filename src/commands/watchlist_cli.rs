@@ -72,7 +72,7 @@ fn compute_change_pct(conn: &Connection, yahoo_sym: &str) -> Option<Decimal> {
     Some((latest.close - prev.close) / prev.close * dec!(100))
 }
 
-pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
+pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Option<&str>) -> Result<()> {
     let entries = list_watchlist(conn)?;
 
     if entries.is_empty() {
@@ -80,14 +80,32 @@ pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
         return Ok(());
     }
 
+    // Parse approaching threshold (percentage)
+    let approaching_pct: Option<Decimal> = approaching.and_then(|s| {
+        let cleaned = s.replace('%', "");
+        Decimal::from_str_exact(&cleaned).ok()
+    });
+
     let cached = get_all_cached_prices(conn)?;
     let prices: HashMap<String, (Decimal, String)> = cached
         .into_iter()
         .map(|q| (q.symbol, (q.price, q.fetched_at)))
         .collect();
 
-    // Compute column widths for alignment
-    let mut rows: Vec<(String, String, String, String, String, String)> = Vec::new();
+    // Row: symbol, name, category, price, change, target, proximity, fetched
+    struct WatchRow {
+        symbol: String,
+        name: String,
+        category: String,
+        price: String,
+        change: String,
+        target: String,
+        proximity: String,
+        fetched: String,
+        proximity_pct: Option<Decimal>,
+    }
+
+    let mut rows: Vec<WatchRow> = Vec::new();
     for entry in &entries {
         let name = resolve_name(&entry.symbol);
         let display_name = if name.is_empty() {
@@ -102,6 +120,7 @@ pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
             .unwrap_or(AssetCategory::Equity);
 
         let csym = crate::config::currency_symbol(&config.base_currency);
+        let current_price = prices.get(&entry.symbol).map(|(p, _)| *p);
         let (price_str, fetched_str) = match prices.get(&entry.symbol) {
             Some((price, fetched_at)) => {
                 let p = format!("{}{}", csym, format_price(*price));
@@ -121,58 +140,135 @@ pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
             None => "---".to_string(),
         };
 
-        rows.push((
-            entry.symbol.clone(),
-            display_name,
-            entry.category.clone(),
-            price_str,
-            change_str,
-            fetched_str,
-        ));
+        // Target and proximity
+        let (target_str, proximity_str, proximity_pct) = match (
+            &entry.target_price,
+            &entry.target_direction,
+            current_price,
+        ) {
+            (Some(tp), Some(dir), Some(cur)) => {
+                if let Ok(target_dec) = Decimal::from_str_exact(tp) {
+                    if target_dec.is_zero() {
+                        ("---".to_string(), "---".to_string(), None)
+                    } else {
+                        let dist_pct = match dir.as_str() {
+                            "below" => (cur - target_dec) / target_dec * dec!(100),
+                            "above" => (target_dec - cur) / cur * dec!(100),
+                            _ => dec!(0),
+                        };
+                        let dist_f: f64 = dist_pct.to_string().parse().unwrap_or(0.0);
+                        let prox = if dist_f <= 0.0 {
+                            "🎯 HIT".to_string()
+                        } else {
+                            format!("{:.1}% away", dist_f)
+                        };
+                        let tgt_str = format!("{} {}{}", dir, csym, format_price(target_dec));
+                        (tgt_str, prox, Some(dist_pct))
+                    }
+                } else {
+                    ("---".to_string(), "---".to_string(), None)
+                }
+            }
+            (Some(tp), Some(dir), None) => {
+                if let Ok(target_dec) = Decimal::from_str_exact(tp) {
+                    let tgt_str = format!("{} {}{}", dir, csym, format_price(target_dec));
+                    (tgt_str, "N/A".to_string(), None)
+                } else {
+                    ("---".to_string(), "---".to_string(), None)
+                }
+            }
+            _ => ("---".to_string(), "---".to_string(), None),
+        };
+
+        rows.push(WatchRow {
+            symbol: entry.symbol.clone(),
+            name: display_name,
+            category: entry.category.clone(),
+            price: price_str,
+            change: change_str,
+            target: target_str,
+            proximity: proximity_str,
+            fetched: fetched_str,
+            proximity_pct,
+        });
+    }
+
+    // Filter by approaching threshold if set
+    if let Some(threshold) = approaching_pct {
+        rows.retain(|r| match r.proximity_pct {
+            Some(pct) => pct >= dec!(0) && pct <= threshold,
+            None => false,
+        });
+        if rows.is_empty() {
+            println!("No watchlist symbols within {}% of their target.", threshold);
+            return Ok(());
+        }
     }
 
     // Sort by symbol for consistent output
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    rows.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+
+    // Check if any rows have targets
+    let has_targets = rows.iter().any(|r| r.target != "---");
 
     // Compute column widths
-    let sym_w = rows.iter().map(|r| r.0.len()).max().unwrap_or(6).max(6);
-    let name_w = rows.iter().map(|r| r.1.len()).max().unwrap_or(4).max(4);
+    let sym_w = rows.iter().map(|r| r.symbol.len()).max().unwrap_or(6).max(6);
+    let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
     let cat_w = rows
         .iter()
-        .map(|r| r.2.len())
+        .map(|r| r.category.len())
         .max()
         .unwrap_or(8)
         .max(8);
     let price_w = rows
         .iter()
-        .map(|r| r.3.len())
+        .map(|r| r.price.len())
         .max()
         .unwrap_or(5)
         .max(5);
     let chg_w = rows
         .iter()
-        .map(|r| r.4.len())
+        .map(|r| r.change.len())
         .max()
         .unwrap_or(8)
         .max(8);
 
-    // Header
-    println!(
-        "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  Updated",
-        "Symbol", "Name", "Category", "Price", "1D Chg %",
-    );
-    let total_w = sym_w + name_w + cat_w + price_w + chg_w + 24;
-    println!("  {}", "─".repeat(total_w));
+    if has_targets {
+        let tgt_w = rows.iter().map(|r| r.target.len()).max().unwrap_or(6).max(6);
+        let prox_w = rows.iter().map(|r| r.proximity.len()).max().unwrap_or(9).max(9);
 
-    // Rows
-    for (symbol, name, category, price, change, fetched) in &rows {
+        // Header
         println!(
-            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {}",
-            symbol, name, category, price, change, fetched,
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>tgt_w$}  {:>prox_w$}  Updated",
+            "Symbol", "Name", "Category", "Price", "1D Chg %", "Target", "Proximity",
         );
+        let total_w = sym_w + name_w + cat_w + price_w + chg_w + tgt_w + prox_w + 30;
+        println!("  {}", "─".repeat(total_w));
+
+        for r in &rows {
+            println!(
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>tgt_w$}  {:>prox_w$}  {}",
+                r.symbol, r.name, r.category, r.price, r.change, r.target, r.proximity, r.fetched,
+            );
+        }
+    } else {
+        // Header (no target columns)
+        println!(
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  Updated",
+            "Symbol", "Name", "Category", "Price", "1D Chg %",
+        );
+        let total_w = sym_w + name_w + cat_w + price_w + chg_w + 24;
+        println!("  {}", "─".repeat(total_w));
+
+        for r in &rows {
+            println!(
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {}",
+                r.symbol, r.name, r.category, r.price, r.change, r.fetched,
+            );
+        }
     }
 
-    let priced = rows.iter().filter(|r| r.3 != "N/A").count();
+    let priced = rows.iter().filter(|r| r.price != "N/A").count();
     let total = rows.len();
     if priced < total {
         println!();
@@ -291,7 +387,7 @@ mod tests {
     fn watchlist_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, None);
         assert!(result.is_ok());
     }
 
@@ -305,7 +401,7 @@ mod tests {
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, None);
         assert!(result.is_ok());
     }
 
@@ -333,7 +429,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, None);
         assert!(result.is_ok());
     }
 
@@ -525,7 +621,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, None);
         assert!(result.is_ok());
     }
 }

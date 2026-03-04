@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F6.3: Watchlist entry level integration
+
+- What: `pftui watch TSLA --target 300 --direction below` stores a target price on the watchlist entry and auto-creates an alert rule. Watchlist CLI and TUI views show Target and Proximity columns when any entry has a target. Proximity is color-coded: red (<3%), yellow (<10%), green (>10%), 🎯 HIT when reached. `pftui watchlist --approaching 10%` filters to symbols within N% of target. DB migration adds `target_price` and `target_direction` columns to watchlist table.
+- Why: Connects the watchlist and alert systems — set entry levels on watched assets and get notified when they're hit, without manually creating separate alerts.
+- Files: `db/schema.rs` (migration), `db/watchlist.rs` (set_watchlist_target), `cli.rs` (--target, --direction, --approaching flags), `main.rs` (watch/watchlist handler updates), `commands/watchlist_cli.rs` (target/proximity columns, --approaching filter), `tui/views/watchlist.rs` (target/proximity TUI columns with color-coded proximity bars)
+- Tests: 942 passing (+2 new: set_watchlist_target, set_target_nonexistent_symbol), clippy clean
+
 ### 2026-03-04 — F10.1: Automated daily portfolio snapshots
 
 - What: On every `pftui refresh`, compute positions from current prices and store a daily portfolio snapshot in SQLite. New `portfolio_snapshots` table (date, total_value, cash_value, invested_value) and `position_snapshots` table (date, symbol, quantity, price, value). Upserts by date so multiple refreshes per day update the same snapshot. Includes reader functions for F10.2/F10.3.
