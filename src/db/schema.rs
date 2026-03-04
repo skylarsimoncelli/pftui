@@ -120,6 +120,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(date, name)
         );
+
+        CREATE TABLE IF NOT EXISTS prediction_cache (
+            market_id TEXT PRIMARY KEY,
+            question TEXT NOT NULL,
+            outcome_yes_price TEXT NOT NULL,
+            outcome_no_price TEXT NOT NULL,
+            volume TEXT NOT NULL,
+            category TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_prediction_category ON prediction_cache(category);
+        CREATE INDEX IF NOT EXISTS idx_prediction_volume ON prediction_cache(volume);
         ",
     )?;
 
