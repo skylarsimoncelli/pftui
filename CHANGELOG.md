@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 22:10 UTC — F17.3: `pftui predictions` CLI command
+
+- What: CLI command for querying cached prediction markets. Usage: `pftui predictions` (top 10 markets by volume), `--category crypto|economics|geopolitics|ai` (filter by category), `--search "recession"` (case-insensitive substring search), `--limit 20` (change result count), `--json` (structured output for agents). Table output: question (truncated to 70 chars), probability %, category, 24h volume (formatted with K/M suffix). JSON output includes: id, question, probability (0.0-1.0), probability_pct (0-100), volume_24h, category (lowercase string), updated_at (unix timestamp). Command reads from predictions_cache table (populated by F17.2 data module, refreshed via `pftui refresh`).
+- Why: F17.3 from TODO.md (P0 — Free Data Integration). Agent-friendly CLI interface for prediction market data. Enables Evening Planner, Market Research, and other automated agents to query market odds without TUI or web interface. Supports filtering by category, search queries, and JSON output for scripting. Zero-config — just reads from SQLite cache.
+- Files: new `src/commands/predictions.rs` (run function with category/search/limit/json args, parse_category helper, print_table/print_json formatters, format_volume helper, 8 tests), `src/commands/mod.rs` (+predictions module), `src/cli.rs` (+Predictions command with --category, --search, --limit, --json), `src/main.rs` (+Predictions dispatch handler)
+- Tests: 8 new tests (empty cache, with data, category filter, search, parse_category validation, format_volume, JSON output). Total: 1008 passing. Clippy clean.
+- TODO: F17.3 — `pftui predictions` CLI (P0) — COMPLETED. Next: F17.4 (prediction sparklines in Markets tab).
+
 ### 2026-03-04 22:30 UTC — `pftui web` — Web dashboard with axum + TradingView charts
 
 - What: Implemented full web dashboard server (`pftui web [--port 8080] [--bind 127.0.0.1] [--no-auth]`). axum REST API with 9 endpoints: /api/portfolio (positions, total value, gains), /api/positions, /api/watchlist, /api/transactions, /api/macro (8 market indicators), /api/alerts, /api/chart/:symbol (price history), /api/performance, /api/summary. Simple bearer token auth (auto-generated, printed on startup, disabled with --no-auth). Dark-themed responsive single-page frontend with TradingView Advanced Chart Widget for interactive charting (fallback to internal data if unavailable). Portfolio overview, sortable/searchable positions table, watchlist panel, macro indicators grid, click-to-chart functionality. Mobile-friendly layout. Frontend embedded in binary via include_str!().
