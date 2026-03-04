@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F10.3: Performance panel in Positions tab
+
+- What: Enhanced portfolio stats widget now displays compact performance metrics (1D, 1W, 1M, YTD returns) with color-coded percentages (green for gains, red for losses) and a braille sparkline showing the last 30 days of portfolio value. Performance computed from existing `portfolio_value_history` in App state. Widget height increased from 3 to 5 lines. Privacy mode hides all performance data.
+- Why: F10.3 spec — provide at-a-glance portfolio performance tracking directly in the main Positions tab. Enables quick monitoring of short-term and year-to-date returns without switching views or running CLI commands.
+- Files: `src/tui/widgets/portfolio_stats.rs` (added performance metrics computation, braille sparkline rendering)
+- Tests: 978 passing (+3 new: render_braille_sparkline_basic, render_braille_sparkline_flat, render_braille_sparkline_empty), clippy clean
+- TODO: F10.3 Performance panel in Positions tab (P1) — COMPLETED
+
 ### 2026-03-04 — F6.6: Alert notifications in refresh output + optional OS notifications
 
 - What: After price update in `pftui refresh`, check_alerts() reports newly triggered alerts in CLI output with emoji indicators (↑ above / ↓ below), current value, and threshold. New `--notify` flag sends OS notifications via notify-send (Linux) or osascript (macOS). No daemon required — fires on-demand during refresh. New `src/notify.rs` module for cross-platform notification support.
