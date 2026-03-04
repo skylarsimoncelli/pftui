@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F3.3: Economy tab enhancement — macro dashboard layout
+
+- What: transformed Economy tab [4] from a flat table into a 3-panel macro intelligence dashboard. Added Key Numbers top strip (DXY, VIX, 10Y, Gold, Oil, Silver with day change at a glance). Added braille yield curve chart showing 2Y/5Y/10Y/30Y with linear interpolation and color-coded state. Added Derived Metrics panel with gold/silver ratio, 10Y-2Y spread with regime context, gold/oil ratio, copper/gold ratio, and VIX sentiment context. Added Silver Futures (SI=F) to economy symbols for cross-asset ratio calculations.
+- Why: F3.3 from TODO.md — Economy tab needs to be a full macro intelligence dashboard, not just a flat indicator table. Top strip provides at-a-glance key numbers, yield curve chart visualizes the term structure, derived metrics surface cross-asset regime signals.
+- Files: `src/tui/views/economy.rs` (new `render_top_strip`, `render_yield_curve_chart`, `render_derived_metrics`, `render_macro_table` functions; `yield_curve_label` helper; silver added to `economy_symbols`)
+- Tests: 871 passing (was 866), 5 new tests (silver inclusion, 4 yield curve label states), clippy clean
+- TODO: F3.3 Economy tab enhancement (P1)
+
 ### 2026-03-04 — Watchlist daily change % column (P1 feedback)
 
 - What: added 1D change % column to `pftui watchlist` CLI output. Computes daily change from price history (last two records) per symbol, with proper Yahoo symbol mapping for crypto. Output now shows: Symbol, Name, Category, Price, 1D Chg %, Updated.
