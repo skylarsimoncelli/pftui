@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F12.1: Calendar data source + SQLite cache
+
+- What: Implemented economic calendar infrastructure. Created `calendar_events` table (date, name, impact, previous, forecast, event_type, symbol) with UNIQUE(date, name). Created `db/calendar_cache.rs` with CRUD operations: `upsert_event`, `get_upcoming_events`, `get_events_by_impact`, `delete_old_events`. Created `data/calendar.rs` with `fetch_events(days_ahead)` — currently uses curated sample data (20 Mar-Apr 2026 events: FOMC, CPI, NFP, earnings). Sample data includes high/medium/low impact levels, economic + earnings event types.
+- Why: F12.1 foundation for upcoming events tracking. Replaces agent web searches for "what's happening this week." Enables F12.2 (Economy tab calendar panel) and F12.3 (`pftui calendar` CLI command). Sample data approach allows immediate testing; future upgrade to Finnhub free tier API straightforward.
+- Files: `src/db/schema.rs` (new table), `src/db/calendar_cache.rs` (new), `src/data/calendar.rs` (new), `src/db/mod.rs`, `src/data/mod.rs`
+- Tests: 984 passing (+6 new: upsert, get upcoming, filter by impact, delete old, fetch filters by days, event structure), clippy clean
+- TODO: F12.1 Calendar data source + cache (P2) — COMPLETED
+
 ### 2026-03-04 — P&L attribution by position in `brief` command
 
 - What: Added `print_pnl_attribution()` function that computes and displays the top 5 positions by absolute dollar P&L contribution in the last 24 hours. Shows position name and signed dollar amount (e.g., "Gold (GC=F): -$5,200 USD"). Output appears in both Full and Percentage modes, positioned after Top Movers and before the main Positions table.

@@ -48,8 +48,6 @@
 
 ### F12: Economic Calendar
 > **Goal:** Upcoming market-moving events (FOMC, CPI, NFP, earnings) with impact ratings. Integrates into existing Economy tab [4].
-
-- [ ] **F12.1: Calendar data source + cache** — Free API integration (Finnhub free tier or Trading Economics free or Forex Factory RSS). Fetch upcoming events, cache in SQLite with: date, event name, impact (high/medium/low), previous value, forecast, actual. Refresh daily. Files: new `src/data/calendar.rs`, new `src/db/calendar_cache.rs`
 - [ ] **F12.2: Calendar in Economy tab [4]** — Right-side panel or sub-view showing next 7 days of events. Impact color-coded (🔴 high, 🟡 medium, ⚪ low). Countdown to next event. Earnings dates for watchlist stocks highlighted. Files: `tui/views/economy.rs`
 - [ ] **F12.3: `pftui calendar` CLI** — `pftui calendar` (next 7 days), `--days 30`, `--impact high`, `--json`. Files: new `src/commands/calendar.rs`, `cli.rs`
 
