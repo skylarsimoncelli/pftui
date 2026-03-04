@@ -217,5 +217,21 @@ fn main() -> Result<()> {
             };
             commands::alerts::run(&conn, &action, &args)
         }
+
+        Some(Command::Target { action, symbol, target, band, json }) => {
+            match action.as_str() {
+                "set" => {
+                    let sym = symbol.as_ref().ok_or_else(|| anyhow::anyhow!("--symbol required for 'set'"))?;
+                    let tgt = target.as_ref().ok_or_else(|| anyhow::anyhow!("--target required for 'set'"))?;
+                    commands::target::run(&db_path, sym, tgt, band.as_deref())
+                }
+                "list" => commands::target::list(&db_path, json),
+                "remove" => {
+                    let sym = symbol.as_ref().ok_or_else(|| anyhow::anyhow!("--symbol required for 'remove'"))?;
+                    commands::target::remove(&db_path, sym)
+                }
+                _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
+            }
+        }
     }
 }

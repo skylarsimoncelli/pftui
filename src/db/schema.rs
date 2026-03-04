@@ -85,6 +85,13 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             value TEXT NOT NULL,
             PRIMARY KEY (date, symbol)
         );
+
+        CREATE TABLE IF NOT EXISTS allocation_targets (
+            symbol TEXT PRIMARY KEY,
+            target_pct TEXT NOT NULL,
+            drift_band_pct TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 

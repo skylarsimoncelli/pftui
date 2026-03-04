@@ -217,6 +217,27 @@ pub enum Command {
         #[arg(long)]
         status: Option<String>,
     },
+
+    /// Manage allocation targets for positions
+    Target {
+        /// Action: set, list, remove
+        action: String,
+
+        /// Symbol (for set/remove)
+        symbol: Option<String>,
+
+        /// Target allocation percentage (e.g. "25", "10.5"). Accepts % suffix.
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Drift band percentage (default: 2%). Accepts % suffix.
+        #[arg(long)]
+        band: Option<String>,
+
+        /// Output as JSON (for list)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

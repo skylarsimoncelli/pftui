@@ -1,6 +1,7 @@
 pub mod alerts;
 pub mod brief;
 pub mod add_tx;
+pub mod target;
 pub mod demo;
 pub mod history;
 pub mod import;
