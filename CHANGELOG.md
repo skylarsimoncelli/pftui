@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F6.5: Alert badge in TUI status bar with Ctrl+A overlay popup
+
+- What: Alert badge in status bar shows "⚠ N alert(s) [Ctrl+A]View" when triggered alerts exist. Ctrl+A opens scrollable alerts popup overlay showing all alerts with status icons (🟢 armed / 🔴 triggered / ✅ acknowledged), rule text, current values, and distance to trigger. Alert count updated on init and after every price refresh. Popup supports j/k/Ctrl+d/Ctrl+u/gg/G vim scrolling, Esc to close.
+- Why: F6.5 spec — visual feedback for triggered alerts in TUI, making it easy to spot price/allocation/indicator alerts without switching to CLI. Completes real-time alert visibility in the UI.
+- Files: `src/app.rs` (alerts_open, alerts_scroll, triggered_alert_count fields, load_alerts(), Ctrl+A keybinding, alert refresh on price update, db_path made public), `src/tui/widgets/status_bar.rs` (alert badge), new `src/tui/views/alerts_popup.rs`, `src/tui/views/mod.rs`, `src/tui/ui.rs` (overlay render)
+- Tests: 975 passing, clippy clean
+- TODO: F6.5 Alert badge in TUI status bar — COMPLETED
+
 ### 2026-03-04 — F6.4: TUI drift visualization with D hotkey
 
 - What: Drift column visualization in positions table with D hotkey toggle. Shows three new columns when enabled: Target (target %), Drift (+/-% from target), Status (▲ overweight / ▼ underweight / ✓ in range). Color-coded green/red when outside drift band, muted gray when in range. Drift section added to asset detail popup showing "Target X% ± Y%", drift amount, and OVERWEIGHT/UNDERWEIGHT/IN RANGE status in bold. Allocation targets loaded from DB on init. Positions without targets show "---" placeholders.
