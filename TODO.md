@@ -6,6 +6,45 @@
 
 ## P1 — Analytics Foundation
 
+### F7: Enhanced Agent Output (PROMOTED from P2)
+> **Goal:** Single JSON entry point for all agent-consumable data. Replaces multiple CLI calls with one command.
+> **Spec:** `docs/ANALYTICS-SPEC.md#f7`
+> **Rationale:** Every cron agent currently runs 4-5 separate commands (refresh, brief, watchlist, movers, macro script). A single `brief --agent` returning one JSON blob cuts every agent's data-gathering phase in half. Highest-leverage single feature for the agent ecosystem.
+
+- [ ] **F7.1: `brief --agent` mode** — Single JSON blob: positions, prices, technicals, macro, alerts, regime, movers, watchlist, drift. Optional `--sections` filter. Files: `commands/brief.rs`
+
+### F8: Journal & Decision Log (PROMOTED from P2)
+> **Goal:** Structured trade journal in SQLite. Hotkey popup in TUI. Full CLI suite for agents to seed, query, search. Replaces JOURNAL.md as primary decision log for agents.
+> **Spec:** `docs/ANALYTICS-SPEC.md#f8`
+> **Rationale:** Agents currently read/write a 1000+ line JOURNAL.md with fragile `head`/`tail`/`sed` commands. Evening Planner has consecutive edit failures on large markdown files — same class of problem. SQLite-backed journal eliminates the biggest reliability risk in the agent system. Also enables structured querying (by tag, symbol, date range, conviction) that markdown can never provide.
+
+- [ ] **F8.1: Journal DB schema + CLI command suite** — SQLite table (timestamp, content, tag, symbol, conviction, status). Full CLI: `pftui journal add/list/search/update/remove/tags/stats`. All commands support `--json`. Files: new `src/db/journal.rs`, new `src/commands/journal.rs`, `cli.rs`
+- [ ] **F8.2: Journal tab [7] in TUI** — New tab in numbered menu. Scrollable list: date, content (truncated), tag columns. `a` to add entry inline, Enter to expand full text, `/` to search within journal. Files: new `src/tui/views/journal.rs`, `src/app.rs` (add ViewMode::Journal, bind key `7`)
+- [ ] **F8.3: JOURNAL.md migration script** — One-time parser that seeds SQLite from existing JOURNAL.md entries with correct timestamps, tags, statuses. Files: new `src/commands/migrate_journal.rs` or standalone script
+
+### F4: Portfolio Risk & Scenario Engine (PROMOTED from P2)
+> **Goal:** Portfolio-level risk metrics + multi-asset "what-if" scenario modeling with cascading impacts.
+> **Spec:** `docs/ANALYTICS-SPEC.md#f4`
+> **Rationale:** The user holds extreme views both ways on every asset and maintains 8 named macro scenarios. Making scenario analysis computational ("what is portfolio value if BTC $40k + Gold $6k" vs "BTC $150k + S&P -40%") maps directly to the decision framework. Currently lives as prose in SCENARIOS.md — should be interactive.
+
+- [ ] **F4.1: Risk metrics module** — Annualized volatility, max drawdown, Sharpe ratio (vs FFR), historical VaR (95%), Herfindahl concentration index. Files: new `src/analytics/{mod,risk}.rs`
+- [ ] **F4.2: Scenario engine** — Named macro scenarios with per-asset impact multipliers. Presets: "Oil $100", "BTC $40k", "Gold $6000", "2008 GFC", "1973 Oil Crisis". Custom: `--what-if "gold:-10%,btc:-20%"`. Files: new `src/analytics/scenarios.rs`, modify `commands/summary.rs`
+- [ ] **F4.3: Analytics tab [6] in TUI** — New tab. Risk panel (gauges + color coding), concentration chart, scenario selector with interactive parameter tweaking, projected portfolio value. Files: new `tui/views/analytics.rs`, `app.rs` (add ViewMode::Analytics)
+- [ ] **F4.4: Risk summary in `brief`** — 1-line risk summary: volatility, VaR, concentration flag. Files: `commands/brief.rs`
+
+### F15: Configurable Homepage & Tab Layout
+> **Goal:** First-run setup lets user choose their default homepage (Portfolio or Watchlist). The non-default view becomes a sub-tab on tab [1]. Not all users are portfolio-first — some want a watchlist/market scanner as their primary view.
+
+- [ ] **F15.1: First-run homepage prompt** — On first launch (no config exists), prompt: "Default homepage: [P]ortfolio or [W]atchlist?" Store choice in config.toml or SQLite settings table. Files: `src/config.rs` or `src/db/settings.rs`, `src/app.rs`
+- [ ] **F15.2: Dual sub-tabs on homepage** — Tab [1] gets two sub-views accessible via `Tab` key or left/right arrows: the default view (Portfolio or Watchlist) and the secondary view. Both share the same tab position but swap content. Header shows active sub-tab indicator. Files: `src/app.rs`, `src/tui/ui.rs`, `src/tui/views/positions.rs`, `src/tui/views/watchlist.rs`
+
+### F16: Full Chart Search (Enhanced `/` Search)
+> **Goal:** The `/` search overlay becomes the primary interface for looking up ANY symbol — not just held/watched assets. Searching "TSLA" should show a full chart + key data even if TSLA isn't in your portfolio or watchlist. Think Bloomberg's `TSLA <GO>`.
+
+- [ ] **F16.1: Search with live price fetch** — When `/` search matches a symbol not in portfolio or watchlist, fetch price data on-the-fly from Yahoo Finance. Show: current price, day change, 52W range. Files: `src/tui/views/search_overlay.rs`, `src/price/mod.rs`
+- [ ] **F16.2: Search result chart popup** — After selecting a search result, open a full-screen chart popup (reuse existing price_chart widget) with braille price history, RSI, volume if available. Same quality as the chart shown for held positions. `Esc` returns to previous view. Files: `src/tui/views/search_overlay.rs`, new `src/tui/views/search_chart_popup.rs`, `src/tui/widgets/price_chart.rs`
+- [ ] **F16.3: Quick-add from search** — From the search chart popup, `w` to add to watchlist, `a` to add a transaction. Seamless flow: search → chart → decide → add. Files: `src/tui/views/search_chart_popup.rs`, `src/db/watchlist.rs`, `src/commands/add_tx.rs`
+
 ### Other P1
 
 - [ ] **Native multi-currency with live FX conversion** — Store non-USD currencies natively, convert via live FX rates. Show FX rate and currency risk flag. Large effort — split into sub-tasks. Files: `models/position.rs`, `price/mod.rs`, `commands/summary.rs`, `widgets/header.rs`
@@ -15,12 +54,6 @@
 
 ## P2 — Analytics Expansion
 
-### F7: Enhanced Agent Output
-> **Goal:** Single JSON entry point for all agent-consumable data. Replaces multiple CLI calls.
-> **Spec:** `docs/ANALYTICS-SPEC.md#f7`
-
-- [ ] **F7.1: `brief --agent` mode** — Single JSON blob: positions, prices, technicals, macro, alerts, regime. Optional `--sections` filter. Files: `commands/brief.rs`
-
 ### F2: Correlation Matrix
 > **Goal:** Rolling Pearson correlation between assets. Identify diversification, crowded trades, correlation breaks.
 > **Spec:** `docs/ANALYTICS-SPEC.md#f2`
@@ -28,23 +61,6 @@
 - [ ] **F2.1: Correlation math module** — Pearson on daily returns. 7/30/90-day rolling windows. Break detection (|Δ30d-90d| > 0.3). Files: new `src/indicators/correlation.rs`
 - [ ] **F2.2: Correlation grid in Markets tab** — Color-coded matrix (green=positive, red=negative). Held assets + key macro indicators. Toggle 7d/30d/90d. Files: `tui/views/markets.rs`, new `tui/views/correlation_grid.rs`
 - [ ] **F2.3: Correlations in `brief --correlations`** — Top pairs + any active breaks. Files: `commands/brief.rs`
-
-### F4: Portfolio Risk & Scenario Engine
-> **Goal:** Portfolio-level risk metrics + multi-asset "what-if" scenario modeling with cascading impacts.
-> **Spec:** `docs/ANALYTICS-SPEC.md#f4`
-
-- [ ] **F4.1: Risk metrics module** — Annualized volatility, max drawdown, Sharpe ratio (vs FFR), historical VaR (95%), Herfindahl concentration index. Files: new `src/analytics/{mod,risk}.rs`
-- [ ] **F4.2: Scenario engine** — Named macro scenarios with per-asset impact multipliers. Presets: "Oil $100", "BTC $40k", "Gold $6000", "2008 GFC", "1973 Oil Crisis". Custom: `--what-if "gold:-10%,btc:-20%"`. Files: new `src/analytics/scenarios.rs`, modify `commands/summary.rs`
-- [ ] **F4.3: Analytics tab [6] in TUI** — New tab. Risk panel (gauges + color coding), concentration chart, scenario selector with interactive parameter tweaking, projected portfolio value. Files: new `tui/views/analytics.rs`, `app.rs` (add ViewMode::Analytics)
-- [ ] **F4.4: Risk summary in `brief`** — 1-line risk summary: volatility, VaR, concentration flag. Files: `commands/brief.rs`
-
-### F8: Journal & Decision Log
-> **Goal:** Structured trade journal in SQLite. Hotkey popup in TUI. Full CLI suite for agents to seed, query, search. Replaces JOURNAL.md as primary decision log for agents.
-> **Spec:** `docs/ANALYTICS-SPEC.md#f8`
-
-- [ ] **F8.1: Journal DB schema + CLI command suite** — SQLite table (timestamp, content, tag, symbol, conviction, status). Full CLI: `pftui journal add/list/search/update/remove/tags/stats`. All commands support `--json`. Files: new `src/db/journal.rs`, new `src/commands/journal.rs`, `cli.rs`
-- [ ] **F8.2: Journal tab [7] in TUI** — New tab in numbered menu. Scrollable list: date, content (truncated), tag columns. `a` to add entry inline, Enter to expand full text, `/` to search within journal. Files: new `src/tui/views/journal.rs`, `src/app.rs` (add ViewMode::Journal, bind key `7`)
-- [ ] **F8.3: JOURNAL.md migration script** — One-time parser that seeds SQLite from existing JOURNAL.md entries with correct timestamps, tags, statuses. Files: new `src/commands/migrate_journal.rs` or standalone script
 
 ### F12: Economic Calendar
 > **Goal:** Upcoming market-moving events (FOMC, CPI, NFP, earnings) with impact ratings. Integrates into existing Economy tab [4].
@@ -63,6 +79,9 @@
 
 - [ ] **F14.1: Groups DB + CLI** — SQLite table: group_name, symbols (comma-separated). CLI: `pftui group create "hard-assets" --symbols GC=F,SI=F,BTC`, `pftui group list`, `pftui group "hard-assets"` (combined allocation + performance), `--json`. Files: new `src/db/groups.rs`, new `src/commands/group.rs`, `cli.rs`
 - [ ] **F14.2: Group filter in Positions tab** — Filter positions by group. Allocation bars show group-level allocation. Files: `tui/views/positions.rs`, `tui/widgets/allocation_bars.rs`
+
+### F15 & F16: See P1
+> F15 (Configurable Homepage) and F16 (Full Chart Search) are defined in P1.
 
 ### Other P2
 
