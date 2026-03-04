@@ -238,6 +238,20 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Show allocation drift vs targets
+    Drift {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Suggest trades to rebalance to target allocations
+    Rebalance {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

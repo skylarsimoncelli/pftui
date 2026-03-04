@@ -3,6 +3,8 @@ pub mod brief;
 pub mod add_tx;
 pub mod target;
 pub mod demo;
+pub mod drift;
+pub mod rebalance;
 pub mod history;
 pub mod import;
 pub mod macro_cmd;

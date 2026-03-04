@@ -233,5 +233,7 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
             }
         }
+        Some(Command::Drift { json }) => commands::drift::run(&db_path, json),
+        Some(Command::Rebalance { json }) => commands::rebalance::run(&db_path, json),
     }
 }
