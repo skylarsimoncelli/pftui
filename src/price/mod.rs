@@ -2,9 +2,17 @@ pub mod coingecko;
 pub mod yahoo;
 
 use std::sync::mpsc;
+use std::time::Duration;
 use crate::config::Config;
 use crate::models::asset::AssetCategory;
 use crate::models::price::{HistoryRecord, PriceQuote};
+
+/// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
+const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
+
+/// Delay between sequential CoinGecko API requests to avoid rate limiting.
+/// CoinGecko free tier is more aggressive with throttling, so use a longer delay.
+const COINGECKO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(200);
 
 #[derive(Debug)]
 pub enum PriceCommand {
@@ -135,8 +143,11 @@ impl PriceService {
             yahoo_symbols.push(pair);
         }
 
-        // Fetch Yahoo prices
-        for sym in &yahoo_symbols {
+        // Fetch Yahoo prices with rate limiting (~100ms between requests)
+        for (i, sym) in yahoo_symbols.iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
+            }
             match yahoo::fetch_price(sym).await {
                 Ok(quote) => {
                     let _ = update_tx.send(PriceUpdate::Quote(quote));
@@ -177,8 +188,11 @@ impl PriceService {
             }
 
             if !cg_ok {
-                // Fallback: fetch each crypto via Yahoo (SYM-USD)
-                for sym in &crypto_symbols {
+                // Fallback: fetch each crypto via Yahoo (SYM-USD) with rate limiting
+                for (i, sym) in crypto_symbols.iter().enumerate() {
+                    if i > 0 {
+                        tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
+                    }
                     let yahoo_sym = yahoo_crypto_symbol(sym);
                     match yahoo::fetch_price(&yahoo_sym).await {
                         Ok(mut quote) => {
@@ -220,27 +234,28 @@ impl PriceService {
         batch: Vec<(String, AssetCategory, u32)>,
         update_tx: &mpsc::Sender<PriceUpdate>,
     ) {
-        let mut set = tokio::task::JoinSet::new();
-
-        for (symbol, category, days) in batch {
-            set.spawn(async move {
-                fetch_history_single(&symbol, category, days).await
-            });
-        }
-
-        while let Some(result) = set.join_next().await {
-            if let Ok((sym, fetch_result)) = result {
-                match fetch_result {
-                    Ok(records) if !records.is_empty() => {
-                        let _ = update_tx.send(PriceUpdate::History(sym, records));
-                    }
-                    Err(e) => {
-                        let _ = update_tx.send(PriceUpdate::Error(
-                            format!("History {}: {}", sym, e),
-                        ));
-                    }
-                    _ => {}
+        // Sequential fetching with rate limiting to avoid API throttling.
+        // CoinGecko history gets a longer delay than Yahoo.
+        for (i, (symbol, category, days)) in batch.iter().enumerate() {
+            if i > 0 {
+                let delay = match category {
+                    AssetCategory::Crypto => COINGECKO_RATE_LIMIT_DELAY,
+                    _ => YAHOO_RATE_LIMIT_DELAY,
+                };
+                tokio::time::sleep(delay).await;
+            }
+            let (sym, fetch_result) =
+                fetch_history_single(symbol, *category, *days).await;
+            match fetch_result {
+                Ok(records) if !records.is_empty() => {
+                    let _ = update_tx.send(PriceUpdate::History(sym, records));
                 }
+                Err(e) => {
+                    let _ = update_tx.send(PriceUpdate::Error(
+                        format!("History {}: {}", sym, e),
+                    ));
+                }
+                _ => {}
             }
         }
     }

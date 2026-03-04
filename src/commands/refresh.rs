@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use anyhow::Result;
 use rust_decimal::Decimal;
@@ -13,6 +14,9 @@ use crate::db::watchlist::get_watchlist_symbols;
 use crate::models::asset::AssetCategory;
 use crate::models::price::PriceQuote;
 use crate::price::{coingecko, yahoo};
+
+/// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
+const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -83,8 +87,11 @@ async fn fetch_all_prices(
         yahoo_symbols.push(pair);
     }
 
-    // Fetch Yahoo prices
-    for sym in &yahoo_symbols {
+    // Fetch Yahoo prices with rate limiting (~100ms between requests)
+    for (i, sym) in yahoo_symbols.iter().enumerate() {
+        if i > 0 {
+            tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
+        }
         match yahoo::fetch_price(sym).await {
             Ok(quote) => quotes.push(quote),
             Err(e) => errors.push(format!("{}: {}", sym, e)),
@@ -110,7 +117,10 @@ async fn fetch_all_prices(
         }
 
         if !cg_ok {
-            for sym in &crypto_symbols {
+            for (i, sym) in crypto_symbols.iter().enumerate() {
+                if i > 0 {
+                    tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
+                }
                 let yahoo_sym = yahoo_crypto_symbol(sym);
                 match yahoo::fetch_price(&yahoo_sym).await {
                     Ok(mut quote) => {
