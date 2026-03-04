@@ -13,8 +13,6 @@
 > **Sources:** Polymarket Gamma API (free, no key, JSON REST), Manifold Markets API (free, no key)
 > **Data:** Market title, current probability, 24h change, volume, category (geopolitics/economics/crypto/AI)
 
-- [ ] **F17.4: Prediction sparklines in Markets tab** — For key tracked predictions (recession, rate cuts, BTC price), show probability sparkline over 30 days alongside traditional asset charts. Files: `tui/views/markets.rs`
-
 ### F18: CFTC Commitments of Traders (COT)
 > **Goal:** Show what the smart money is doing. Commercials vs speculators positioning on gold, silver, oil, BTC futures. Updated weekly.
 > **Source:** CFTC Socrata API (`publicreporting.cftc.gov`, free, no key, JSON)
