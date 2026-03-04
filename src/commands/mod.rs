@@ -11,6 +11,7 @@ pub mod journal;
 pub mod macro_cmd;
 pub mod movers;
 pub mod performance;
+pub mod predictions;
 pub mod refresh;
 pub mod export;
 pub mod list_tx;

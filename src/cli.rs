@@ -209,6 +209,25 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show prediction market odds from Polymarket and Manifold
+    Predictions {
+        /// Filter by category: crypto, economics, geopolitics, ai
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Search question text (case-insensitive substring match)
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Maximum number of markets to show (default: 10)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage price, allocation, and indicator alerts
     Alerts {
         /// Action: add, list, remove, check, ack, rearm
