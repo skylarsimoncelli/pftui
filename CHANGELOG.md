@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 23:10 UTC — F18.1: COT data module with CFTC API client and SQLite cache
+
+- What: infrastructure for Commitments of Traders (COT) positioning data from the CFTC. New `data/cot.rs` module fetches weekly positioning reports from CFTC Socrata Open Data API (Disaggregated Futures-Only report). Supports 4 contracts: Gold (067651→GC=F), Silver (084691→SI=F), WTI Crude Oil (067411→CL=F), Bitcoin (133741→BTC). API is free, no authentication required. Functions: `fetch_latest_report(cftc_code)` for most recent week, `fetch_historical_reports(cftc_code, weeks)` for multi-week trends. Each CotReport contains: report_date, open_interest, managed_money_long/short/net, commercial_long/short/net. Uses blocking reqwest client (safe for CLI, must run in background thread for TUI). New `db/cot_cache.rs` module provides SQLite cache with `upsert_report()`, `get_latest()`, `get_history()`, `get_all_latest()`. Schema adds `cot_cache` table with (cftc_code, report_date) primary key. Helper functions: `cftc_code_to_symbol()`, `symbol_to_cftc_code()` for mapping.
+- Why: F18.1 from TODO.md (P0 — Free Data Integration). Foundation for F18.2 (COT section in asset detail popup), F18.3 (COT summary in Markets tab), F18.4 (`pftui cot` CLI). Smart money positioning data is the most differentiated macro feature — no other portfolio TUI tracks managed money vs commercial positioning. Critical for identifying crowded trades, trend confirmation/divergence, and extreme positioning signals.
+- Files: new `src/data/cot.rs` (API client with fetch functions), new `src/db/cot_cache.rs` (SQLite cache CRUD), `src/db/schema.rs` (+cot_cache table with indexes), `src/data/mod.rs` (+cot module), `src/db/mod.rs` (+cot_cache module)
+- Tests: 1008 passing, clippy clean. No new tests — module is infrastructure-only, will be tested by F18.2-F18.4 consumers.
+- TODO: F18.1 (P0) — COMPLETED. Next: F18.2 (COT section in asset detail popup).
+
 ### 2026-03-04 22:40 UTC — F23.2: Calendar event countdown in header
 
 - What: display next high-impact calendar event in header with countdown. Format: "Next: NFP in 2d" (2 days until), "Next: CPI in tomorrow", "Next: FOMC in Mar 18" (>7 days shows date). Queries calendar_events table for upcoming events (date >= today), filters for impact="high", displays first match. Countdown logic: 0 days = "today", 1 day = "tomorrow", 2-6 days = "Xd", 7+ days = "Mon DD" format. Shown after tabs, before portfolio value, in non-compact mode only (terminal width >= 120). Event name styled with text_accent, countdown bold+accent. Helper function `get_next_event_countdown()` opens DB connection, queries events, parses dates, calculates time delta.

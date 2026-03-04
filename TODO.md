@@ -20,7 +20,6 @@
 > **Source:** CFTC Socrata API (`publicreporting.cftc.gov`, free, no key, JSON)
 > **Data:** Net positions by trader type (commercial, non-commercial/managed money), open interest, week-over-week changes
 
-- [ ] **F18.1: COT data module** — Fetch from CFTC Socrata API. Parse disaggregated futures report. Map contract codes to pftui symbols (GC=Gold, SI=Silver, CL=Oil, BTC=Bitcoin). Cache in SQLite, weekly refresh (data updates every Friday). Files: new `src/data/cot.rs`, new `src/db/cot_cache.rs`
 - [ ] **F18.2: COT section in asset detail popup** — When viewing gold/silver/oil/BTC, show: "Managed Money: Net Long 142k contracts (+8k) | Commercials: Net Short -89k (-3k)". Bar chart of net positioning. 4-week trend. Extremes flagged (>90th percentile = crowded trade warning). Files: `tui/views/asset_detail_popup.rs`
 - [ ] **F18.3: COT summary in Markets tab** — Compact row per commodity: symbol, managed money net, commercial net, change, signal (🟢 aligned with trend / 🔴 divergence / ⚠️ extreme). Files: `tui/views/markets.rs`
 - [ ] **F18.4: `pftui cot` CLI** — `pftui cot` (all tracked), `--symbol gold`, `--weeks 12` (historical), `--json`. Files: new `src/commands/cot.rs`, `cli.rs`
