@@ -252,6 +252,20 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             ));
         }
     }
+    // Alert badge
+    if app.triggered_alert_count > 0 {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled("⚠", Style::default().fg(t.loss_red)));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            format!("{} alert{}", app.triggered_alert_count, if app.triggered_alert_count == 1 { "" } else { "s" }),
+            Style::default().fg(t.loss_red).bold(),
+        ));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled("[Ctrl+A]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("View", Style::default().fg(t.text_secondary)));
+    }
+
     spans.push(Span::raw("  "));
     spans.extend(live_indicator);
 

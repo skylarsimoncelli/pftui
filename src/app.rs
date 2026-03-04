@@ -398,6 +398,11 @@ pub struct App {
     // Asset detail popup (opened from search overlay)
     pub asset_detail: Option<crate::tui::views::asset_detail_popup::AssetDetailState>,
 
+    // Alerts overlay
+    pub alerts_open: bool,
+    pub alerts_scroll: usize,
+    pub triggered_alert_count: usize,
+
     // Clipboard (OSC 52 pending write)
     pub clipboard_osc52: Option<String>,
 
@@ -425,7 +430,7 @@ pub struct App {
     pub alloc_bar_categories: Vec<AssetCategory>,
 
     // DB
-    db_path: std::path::PathBuf,
+    pub db_path: std::path::PathBuf,
 }
 
 /// Returns true when the UI should hide value-sensitive data.
@@ -558,6 +563,9 @@ impl App {
             delete_confirm: None,
             context_menu: None,
             asset_detail: None,
+            alerts_open: false,
+            alerts_scroll: 0,
+            triggered_alert_count: 0,
             clipboard_osc52: None,
             sparkline_timeframe: ChartTimeframe::ThreeMonths,
             crosshair_mode: false,
@@ -583,6 +591,7 @@ impl App {
         self.load_cached_history();
         self.load_watchlist();
         self.load_allocation_targets();
+        self.load_alerts();
         self.recompute();
         self.recompute_regime();
     }
@@ -593,6 +602,7 @@ impl App {
         self.load_cached_history();
         self.load_watchlist();
         self.load_allocation_targets();
+        self.load_alerts();
         self.recompute();
         self.recompute_regime();
 
@@ -661,6 +671,17 @@ impl App {
                     .into_iter()
                     .map(|t| (t.symbol.clone(), t))
                     .collect();
+            }
+        }
+    }
+
+    fn load_alerts(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            if let Ok(results) = crate::alerts::engine::check_alerts(&conn) {
+                self.triggered_alert_count = results
+                    .iter()
+                    .filter(|r| r.newly_triggered || r.rule.status == crate::alerts::AlertStatus::Triggered)
+                    .count();
             }
         }
     }
@@ -1370,6 +1391,7 @@ impl App {
             if updated || history_updated {
                 if updated {
                     self.recompute();
+                    self.load_alerts(); // re-check alerts after price update
                 }
                 if history_updated && self.portfolio_mode == PortfolioMode::Full {
                     self.compute_portfolio_value_history();
@@ -1480,6 +1502,10 @@ impl App {
                 self.show_help = false;
                 return;
             }
+            KeyCode::Esc if self.alerts_open => {
+                self.alerts_open = false;
+                return;
+            }
             _ => {}
         }
 
@@ -1506,6 +1532,39 @@ impl App {
                     if key.code == KeyCode::Char('g') {
                         if self.g_pending {
                             self.help_scroll = 0;
+                            self.g_pending = false;
+                        } else {
+                            self.g_pending = true;
+                        }
+                    } else {
+                        self.g_pending = false;
+                    }
+                }
+            }
+            return;
+        }
+
+        if self.alerts_open {
+            match key.code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.alerts_scroll = self.alerts_scroll.saturating_add(1);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.alerts_scroll = self.alerts_scroll.saturating_sub(1);
+                }
+                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.alerts_scroll = self.alerts_scroll.saturating_add(self.half_page());
+                }
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.alerts_scroll = self.alerts_scroll.saturating_sub(self.half_page());
+                }
+                KeyCode::Char('G') => {
+                    self.alerts_scroll = usize::MAX;
+                }
+                _ => {
+                    if key.code == KeyCode::Char('g') {
+                        if self.g_pending {
+                            self.alerts_scroll = 0;
                             self.g_pending = false;
                         } else {
                             self.g_pending = true;
@@ -1565,6 +1624,15 @@ impl App {
                 self.detail_popup_open = false;
                 self.load_watchlist();
                 self.request_watchlist_data();
+            }
+
+            // Alerts overlay toggle (Ctrl+A)
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.alerts_open = !self.alerts_open;
+                if self.alerts_open {
+                    self.alerts_scroll = 0;
+                    self.load_alerts(); // refresh alerts when opening
+                }
             }
 
             // Privacy toggle

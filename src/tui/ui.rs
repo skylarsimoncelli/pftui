@@ -64,6 +64,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     if app.show_help {
         views::help::render(frame, size, app);
     }
+
+    if app.alerts_open {
+        views::alerts_popup::render(frame, app);
+    }
 }
 
 fn render_positions_layout(frame: &mut Frame, area: Rect, app: &mut App) {
