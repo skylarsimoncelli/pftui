@@ -1,4 +1,3 @@
-#[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
 mod alerts;
 mod app;
 mod cli;
@@ -170,5 +169,18 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Macro { json }) => commands::macro_cmd::run(&conn, &config, json),
+
+        Some(Command::Alerts { action, value, json, status }) => {
+            // Parse value as either a rule string (for add) or an ID (for remove/ack/rearm)
+            let id = value.as_deref().and_then(|v| v.parse::<i64>().ok());
+            let rule = if id.is_none() { value.clone() } else { None };
+            let args = commands::alerts::AlertsArgs {
+                rule,
+                id,
+                json,
+                status_filter: status,
+            };
+            commands::alerts::run(&conn, &action, &args)
+        }
     }
 }

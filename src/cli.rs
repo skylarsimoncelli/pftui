@@ -160,6 +160,23 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Manage price, allocation, and indicator alerts
+    Alerts {
+        /// Action: add, list, remove, check, ack, rearm
+        action: String,
+
+        /// Alert rule (for add) or alert ID (for remove/ack/rearm)
+        value: Option<String>,
+
+        /// Output as JSON (for check and list)
+        #[arg(long)]
+        json: bool,
+
+        /// Filter by status: armed, triggered, acknowledged (for list)
+        #[arg(long)]
+        status: Option<String>,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

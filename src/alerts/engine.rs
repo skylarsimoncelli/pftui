@@ -117,11 +117,13 @@ fn check_single_alert(
 }
 
 /// Get only newly triggered alerts (convenience for refresh output).
+#[allow(dead_code)] // Used by F6.5+ (TUI badge, refresh integration)
 pub fn get_newly_triggered(results: &[AlertCheckResult]) -> Vec<&AlertCheckResult> {
     results.iter().filter(|r| r.newly_triggered).collect()
 }
 
 /// Get armed alerts with their distance to trigger (convenience for status display).
+#[allow(dead_code)] // Used by F6.5+ (TUI status bar)
 pub fn get_armed_with_distance(results: &[AlertCheckResult]) -> Vec<&AlertCheckResult> {
     results
         .iter()
@@ -130,6 +132,7 @@ pub fn get_armed_with_distance(results: &[AlertCheckResult]) -> Vec<&AlertCheckR
 }
 
 /// Count of currently triggered (not yet acknowledged) alerts.
+#[allow(dead_code)] // Used by F6.5+ (TUI alert badge)
 pub fn triggered_count(conn: &Connection) -> Result<i64> {
     alerts::count_by_status(conn, AlertStatus::Triggered)
 }
