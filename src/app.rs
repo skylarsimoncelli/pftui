@@ -294,6 +294,7 @@ pub struct App {
     // Mode
     pub portfolio_mode: PortfolioMode,
     pub show_percentages_only: bool,
+    pub show_drift_columns: bool,
 
     // Data
     pub transactions: Vec<Transaction>,
@@ -301,6 +302,7 @@ pub struct App {
     pub positions: Vec<Position>,
     pub prices: HashMap<String, Decimal>,
     pub base_currency: String,
+    pub allocation_targets: HashMap<String, crate::db::allocation_targets::AllocationTarget>,
 
     // Price history
     pub price_history: HashMap<String, Vec<HistoryRecord>>,
@@ -501,11 +503,13 @@ impl App {
             detail_popup_open: false,
             portfolio_mode: config.portfolio_mode,
             show_percentages_only: config.portfolio_mode == PortfolioMode::Percentage,
+            show_drift_columns: false,
             transactions: Vec::new(),
             allocations: Vec::new(),
             positions: Vec::new(),
             prices: HashMap::new(),
             base_currency: config.base_currency.clone(),
+            allocation_targets: HashMap::new(),
             price_history: HashMap::new(),
             portfolio_value_history: Vec::new(),
             display_positions: Vec::new(),
@@ -578,6 +582,7 @@ impl App {
         self.load_cached_prices();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_allocation_targets();
         self.recompute();
         self.recompute_regime();
     }
@@ -587,6 +592,7 @@ impl App {
         self.load_cached_prices();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_allocation_targets();
         self.recompute();
         self.recompute_regime();
 
@@ -645,6 +651,17 @@ impl App {
     fn load_watchlist(&mut self) {
         if let Ok(conn) = Connection::open(&self.db_path) {
             self.watchlist_entries = db_watchlist::list_watchlist(&conn).unwrap_or_default();
+        }
+    }
+
+    fn load_allocation_targets(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            if let Ok(targets) = crate::db::allocation_targets::list_targets(&conn) {
+                self.allocation_targets = targets
+                    .into_iter()
+                    .map(|t| (t.symbol.clone(), t))
+                    .collect();
+            }
         }
     }
 
@@ -1555,6 +1572,11 @@ impl App {
                 if self.portfolio_mode == PortfolioMode::Full {
                     self.show_percentages_only = !self.show_percentages_only;
                 }
+            }
+
+            // Drift columns toggle
+            KeyCode::Char('D') => {
+                self.show_drift_columns = !self.show_drift_columns;
             }
 
             // Detail popup toggle (chart is always visible in right pane)
@@ -5987,5 +6009,47 @@ mod mouse_tests {
 
         // Click on top border (row 10 = area.y)
         assert!(!app.handle_alloc_bar_click(5, 10));
+    }
+
+    #[test]
+    fn drift_columns_toggle_with_d() {
+        let mut app = make_app();
+        assert!(!app.show_drift_columns);
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('D')));
+        assert!(app.show_drift_columns);
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('D')));
+        assert!(!app.show_drift_columns);
+    }
+
+    #[test]
+    fn allocation_targets_loaded_on_init() {
+        use std::path::PathBuf;
+        let db_path = PathBuf::from("/tmp/pftui_test_drift.db");
+        
+        // Clean up any existing test db
+        let _ = std::fs::remove_file(&db_path);
+        
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        
+        // Add a target
+        crate::db::allocation_targets::set_target(&conn, "BTC", dec!(15), dec!(2)).unwrap();
+        drop(conn);
+
+        let config = Config {
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "default".to_string(),
+            fred_api_key: None,
+        };
+        let mut app = App::new(&config, db_path);
+        app.init_offline();
+
+        assert!(app.allocation_targets.contains_key("BTC"));
+        assert_eq!(app.allocation_targets.get("BTC").unwrap().target_pct, dec!(15));
+        assert_eq!(app.allocation_targets.get("BTC").unwrap().drift_band_pct, dec!(2));
     }
 }

@@ -285,22 +285,33 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     let positions = &app.display_positions;
     let t = &app.theme;
 
-    let header = Row::new(vec![
+    let mut header_cells = vec![
         Cell::from("Asset"),
         Cell::from("Qty"),
         Cell::from("Price"),
         Cell::from("Day%"),
         Cell::from("Gain%"),
         Cell::from("Alloc%"),
+    ];
+    
+    if app.show_drift_columns {
+        header_cells.push(Cell::from("Target"));
+        header_cells.push(Cell::from("Drift"));
+        header_cells.push(Cell::from("Status"));
+    }
+    
+    header_cells.extend(vec![
         Cell::from("RSI"),
         Cell::from("52W"),
         Cell::from("Trend"),
-    ])
-    .style(Style::default().fg(t.text_secondary).bold())
-    .height(1);
+    ]);
+
+    let header = Row::new(header_cells)
+        .style(Style::default().fg(t.text_secondary).bold())
+        .height(1);
 
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
-    let col_count = 9;
+    let col_count = if app.show_drift_columns { 12 } else { 9 };
     let mut rows: Vec<Row> = Vec::new();
 
     // Show skeleton placeholder rows while waiting for initial data
@@ -411,7 +422,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                     .unwrap_or(&[]),
             );
 
-            rows.push(Row::new(vec![
+            let mut row_cells = vec![
                 Cell::from(asset_line),
                 Cell::from(format_qty(pos.quantity))
                     .style(Style::default().fg(t.text_primary)),
@@ -439,24 +450,85 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 Cell::from(build_gain_bar_spans(t, pos.gain_pct, 8)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
+            ];
+
+            // Add drift columns if enabled
+            if app.show_drift_columns {
+                use rust_decimal::Decimal;
+                if let Some(target) = app.allocation_targets.get(&pos.symbol) {
+                    let actual_pct = pos.allocation_pct.unwrap_or(dec!(0));
+                    let target_pct = target.target_pct;
+                    let drift = actual_pct - target_pct;
+                    let abs_drift = drift.abs();
+                    let over_band = abs_drift > target.drift_band_pct;
+                    
+                    let drift_color = if over_band {
+                        if drift > Decimal::ZERO {
+                            t.gain_green
+                        } else {
+                            t.loss_red
+                        }
+                    } else {
+                        t.text_muted
+                    };
+                    
+                    let status_char = if over_band {
+                        if drift > Decimal::ZERO { "▲" } else { "▼" }
+                    } else {
+                        "✓"
+                    };
+                    let status_color = if over_band { drift_color } else { t.gain_green };
+                    
+                    row_cells.push(Cell::from(format!("{:.1}%", target_pct))
+                        .style(Style::default().fg(t.text_secondary)));
+                    row_cells.push(Cell::from(format!("{:+.1}%", drift))
+                        .style(Style::default().fg(drift_color)));
+                    row_cells.push(Cell::from(status_char)
+                        .style(Style::default().fg(status_color)));
+                } else {
+                    row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
+                    row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
+                    row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
+                }
+            }
+
+            row_cells.extend(vec![
                 Cell::from(rsi_line),
                 Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
-            ])
-            .style(style));
+            ]);
+
+            rows.push(Row::new(row_cells).style(style));
     }
 
-    let widths = [
-        Constraint::Min(14),
-        Constraint::Length(8),
-        Constraint::Length(16),
-        Constraint::Length(7),
-        Constraint::Length(8),
-        Constraint::Length(7),
-        Constraint::Length(6),
-        Constraint::Length(11),
-        Constraint::Length(8),
-    ];
+    let widths = if app.show_drift_columns {
+        vec![
+            Constraint::Min(14),    // Asset
+            Constraint::Length(8),  // Qty
+            Constraint::Length(16), // Price
+            Constraint::Length(7),  // Day%
+            Constraint::Length(8),  // Gain%
+            Constraint::Length(7),  // Alloc%
+            Constraint::Length(7),  // Target
+            Constraint::Length(7),  // Drift
+            Constraint::Length(6),  // Status
+            Constraint::Length(6),  // RSI
+            Constraint::Length(11), // 52W
+            Constraint::Length(8),  // Trend
+        ]
+    } else {
+        vec![
+            Constraint::Min(14),
+            Constraint::Length(8),
+            Constraint::Length(16),
+            Constraint::Length(7),
+            Constraint::Length(8),
+            Constraint::Length(7),
+            Constraint::Length(6),
+            Constraint::Length(11),
+            Constraint::Length(8),
+        ]
+    };
 
     render_table(frame, area, app, header, rows, &widths);
 }

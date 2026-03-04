@@ -550,6 +550,54 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 ]));
             }
 
+            // Show drift band if target is set
+            if let Some(target) = app.allocation_targets.get(symbol) {
+                use rust_decimal::Decimal;
+                let actual_pct = pos.allocation_pct.unwrap_or(dec!(0));
+                let drift = actual_pct - target.target_pct;
+                let abs_drift = drift.abs();
+                let over_band = abs_drift > target.drift_band_pct;
+                
+                let drift_color = if over_band {
+                    if drift > Decimal::ZERO {
+                        t.gain_green
+                    } else {
+                        t.loss_red
+                    }
+                } else {
+                    t.text_muted
+                };
+                
+                let status_text = if over_band {
+                    if drift > Decimal::ZERO {
+                        format!("OVERWEIGHT (+{:.1}%)", abs_drift)
+                    } else {
+                        format!("UNDERWEIGHT (-{:.1}%)", abs_drift)
+                    }
+                } else {
+                    "IN RANGE".to_string()
+                };
+                
+                lines.push(Line::from(vec![
+                    Span::styled("  Target      ", Style::default().fg(t.text_secondary)),
+                    Span::styled(
+                        format!("{:.1}% ± {:.1}%", target.target_pct, target.drift_band_pct),
+                        Style::default().fg(t.text_primary),
+                    ),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("  Drift       ", Style::default().fg(t.text_secondary)),
+                    Span::styled(
+                        format!("{:+.1}%  ", drift),
+                        Style::default().fg(drift_color),
+                    ),
+                    Span::styled(
+                        status_text,
+                        Style::default().fg(drift_color).bold(),
+                    ),
+                ]));
+            }
+
             lines.push(Line::from(""));
         }
     } else if in_watchlist {
