@@ -33,7 +33,6 @@
 
 ### Other P1
 
-- [ ] **[Feedback] Watchlist daily change % column** — `pftui watchlist` currently shows symbol/name/price/updated — needs a 1D change % column. Files: `src/commands/watchlist_cli.rs`, `src/tui/views/watchlist.rs`
 - [ ] **Native multi-currency with live FX conversion** — Store non-USD currencies natively, convert via live FX rates. Show FX rate and currency risk flag. Large effort — split into sub-tasks. Files: `models/position.rs`, `price/mod.rs`, `commands/summary.rs`, `widgets/header.rs`
 - [ ] **[Feedback] Populate historical snapshots for 3M chart** — Portfolio 3M chart shows "Waiting for data". Ensure daily portfolio value snapshots are cached for trend analysis. Files: `db/price_cache.rs`, `price_chart.rs`
 - [ ] **Ultra-wide layout (160+ cols)** — Third column: market context panel. Layout: 45% positions / 25% market / 30% chart. Files: `tui/ui.rs`, new `widgets/market_context.rs`

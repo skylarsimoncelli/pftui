@@ -3,6 +3,12 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — Watchlist daily change % column (P1 feedback)
+
+- What: added 1D change % column to `pftui watchlist` CLI output. Computes daily change from price history (last two records) per symbol, with proper Yahoo symbol mapping for crypto. Output now shows: Symbol, Name, Category, Price, 1D Chg %, Updated.
+- Files: `src/commands/watchlist_cli.rs` (added `yahoo_symbol_for`, `compute_change_pct` helpers, 6-column row layout, 11 new tests)
+- Tests: 866 passing (was 855), clippy clean
+
 ### 2026-03-04 — Bulk watchlist add (P1 feedback)
 
 - What: added `--bulk` flag to `pftui watch` command. `pftui watch --bulk GOOG,META,AMZN,TSLA` adds all symbols in one command instead of requiring 20 separate calls. Categories auto-detected per symbol. Optional `--category` override applies to all.
