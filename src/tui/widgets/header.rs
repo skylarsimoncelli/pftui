@@ -1,4 +1,4 @@
-use chrono::{Datelike, Timelike, Utc};
+use chrono::{Datelike, NaiveDate, Timelike, Utc};
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Paragraph},
@@ -8,6 +8,7 @@ use rust_decimal_macros::dec;
 
 use crate::app::{is_privacy_view, App, ViewMode};
 use crate::config::PortfolioMode;
+use crate::db::calendar_cache;
 use crate::tui::theme::{self, lerp_color};
 use crate::tui::ui::COMPACT_WIDTH;
 use crate::tui::views::markets;
@@ -278,6 +279,42 @@ fn build_ticker_spans(app: &App, width: usize) -> Vec<Span<'static>> {
     spans
 }
 
+/// Get next high-impact calendar event and format countdown.
+/// Returns Some((event_name, countdown_text)) or None if no upcoming events.
+fn get_next_event_countdown(app: &App) -> Option<(String, String)> {
+    use rusqlite::Connection;
+    
+    let conn = Connection::open(&app.db_path).ok()?;
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    
+    // Get next 10 events to find the first high-impact one
+    let events = calendar_cache::get_upcoming_events(&conn, &today, 10).ok()?;
+    
+    // Find first high-impact event
+    let next_event = events.iter().find(|e| e.impact == "high")?;
+    
+    // Parse event date
+    let event_date = NaiveDate::parse_from_str(&next_event.date, "%Y-%m-%d").ok()?;
+    let today_date = Utc::now().date_naive();
+    
+    // Calculate days until event
+    let days_until = (event_date - today_date).num_days();
+    
+    // Format countdown based on proximity
+    let countdown = if days_until == 0 {
+        "today".to_string()
+    } else if days_until == 1 {
+        "tomorrow".to_string()
+    } else if days_until < 7 {
+        format!("{}d", days_until)
+    } else {
+        // For >7 days, show date (e.g., "Mar 12")
+        event_date.format("%b %d").to_string()
+    };
+    
+    Some((next_event.name.clone(), countdown))
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let now = chrono::Utc::now().format("%H:%M UTC");
     let privacy = is_privacy_view(app);
@@ -339,6 +376,23 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "W" } else { "Watch" }, watch_style));
+
+    // Calendar countdown — show next high-impact event
+    if !compact {
+        if let Some((event_name, countdown)) = get_next_event_countdown(app) {
+            spans.push(Span::styled("  │  ", Style::default().fg(t.text_muted)));
+            spans.push(Span::styled("Next: ", Style::default().fg(t.text_muted)));
+            spans.push(Span::styled(
+                event_name.clone(),
+                Style::default().fg(t.text_accent),
+            ));
+            spans.push(Span::styled(" in ", Style::default().fg(t.text_muted)));
+            spans.push(Span::styled(
+                countdown.clone(),
+                Style::default().fg(t.text_accent).bold(),
+            ));
+        }
+    }
 
     if !privacy {
         app.header_privacy_col_range = None;
