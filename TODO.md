@@ -6,7 +6,7 @@
 
 ## P0
 
-_(no items)_
+- [ ] **[Feedback] History cash inclusion** — `history --date` omits cash positions, showing misleading portfolio value (e.g., $184k instead of $362k). Include cash in historical snapshots. Files: `src/commands/history.rs`
 
 ## P1 — Analytics Foundation
 
@@ -37,6 +37,8 @@ _(no items)_
 
 ### Other P1
 
+- [ ] **[Feedback] Bulk watchlist add** — `pftui watch --bulk GOOG,META,AMZN,...` to add multiple symbols at once instead of 20 separate commands. Files: `src/commands/watchlist_cli.rs`, `cli.rs`
+- [ ] **[Feedback] Watchlist daily change % column** — `pftui watchlist` currently shows symbol/name/price/updated — needs a 1D change % column. Files: `src/commands/watchlist_cli.rs`, `src/tui/views/watchlist.rs`
 - [ ] **Native multi-currency with live FX conversion** — Store non-USD currencies natively, convert via live FX rates. Show FX rate and currency risk flag. Large effort — split into sub-tasks. Files: `models/position.rs`, `price/mod.rs`, `commands/summary.rs`, `widgets/header.rs`
 - [ ] **[Feedback] Populate historical snapshots for 3M chart** — Portfolio 3M chart shows "Waiting for data". Ensure daily portfolio value snapshots are cached for trend analysis. Files: `db/price_cache.rs`, `price_chart.rs`
 - [ ] **Ultra-wide layout (160+ cols)** — Third column: market context panel. Layout: 45% positions / 25% market / 30% chart. Files: `tui/ui.rs`, new `widgets/market_context.rs`
@@ -98,6 +100,9 @@ _(no items)_
 
 ### Other P2
 
+- [ ] **[Feedback] `pftui movers` command** — `pftui movers --threshold 3%` scans all held + watchlist symbols and returns only those exceeding the daily change threshold. Replaces manual scanning of 40+ symbols. Files: new `src/commands/movers.rs`, `cli.rs`
+- [ ] **[Feedback] P&L attribution in `brief`** — Show which position contributed most to daily P&L (e.g., "Gold: -$5.2k, BTC: +$3.1k"). Files: `src/commands/brief.rs`
+- [ ] **[Feedback] `pftui sector` command** — Show sector ETF performance (XLE, ITA, XLF, IGV, etc.) for tracking sector-level moves. Files: new `src/commands/sector.rs`, `cli.rs`
 - [ ] **[Feedback] Add "What Changed Today" section to `brief`** — Show largest daily movers, notable threshold crossings, and any triggered alerts in the brief output. Files: `commands/brief.rs`
 - [ ] **[Feedback] Benchmark comparison in `brief`** — Show portfolio performance vs SPY, Gold index, or custom benchmark. Files: `commands/brief.rs`, `price/mod.rs`
 - [ ] **News feed integration** — Free RSS/API source (Yahoo Finance RSS, Finnhub). Scrollable list with per-asset filtering. Files: new `src/news/`, new `views/news.rs`
@@ -126,23 +131,26 @@ _(no items)_
 
 ## Feedback Summary
 
-**Last reviewed:** 2026-03-03T17:46Z
+**Last reviewed:** 2026-03-04T03:00Z
 
 | Tester | Latest Score | Trend | Key Pain Point |
 |---|---|---|---|
-| Sentinel Main (TUI) | 78% | ↑ (40→78) | Missing day P&L, sector allocation, benchmarks |
-| Evening Planner (CLI) | 38% | → (single point) | Headless features shipped, awaiting re-eval |
-| Market Research (CLI) | 72% | → (first review) | U.UN price wrong, no daily P&L in brief, no FX |
+| Sentinel Main (TUI) | 82% | ↑↑ (40→78→82) | P&L dollar amounts, sector grouping, cost basis in positions |
+| Evening Planner (CLI) | 85% | ↑↑ (38→85) | Macro command, RSI/MACD for watchlist, correlations CLI |
+| Market Research (CLI) | 72% | → (single point) | FX support, U.UN data accuracy, daily P&L, technicals |
+| Market Close (CLI) | 68% | → (first review) | Macro dashboard, bulk watchlist, history cash, watchlist 1D% |
 
-**Lowest scorer:** Evening Planner at 38% — however, their top requests (refresh, brief, value, set-cash, what-if, history) have all shipped since their review. Expect significant score increase on re-eval.
+**Lowest scorer:** Market Close at 68% — top pain points: no macro dashboard (still using fetch_prices.py for DXY/VIX/10Y/oil/copper), no bulk watchlist add (20 separate calls needed), history omits cash (misleading totals), watchlist missing daily change column.
+
+**Score trajectory:** All testers now in 68-85% range. Evening Planner had the biggest jump (+47 points) after headless features shipped (brief, refresh, value, watchlist, what-if, history). Sentinel Main continues climbing with TUI polish.
 
 **Top 3 priorities from feedback:**
-1. **Daily P&L in CLI commands** (P0) — requested by all 3 testers. TUI has it, `brief`/`summary` don't.
-2. **Fix U.UN price accuracy** (P0) — Market Research reports +31% gain vs actual -4.8%. Data source issue for Canadian securities.
-3. **Native multi-currency FX** (P1) — all 3 testers flag GBP-as-USD as masking currency risk.
+1. **Macro dashboard / `pftui macro`** (P1, F3.3-F3.4) — requested by 3 of 4 testers. Would eliminate fetch_prices.py dependency entirely. F3.1-F3.2 (FRED + refresh integration) already shipped.
+2. **History cash inclusion** (P0) — Market Close reports `history --date` shows $184k instead of $362k because cash is omitted. Misleading for portfolio value tracking.
+3. **Alert engine** (P1, F6) — all 4 testers want price/threshold alerts. Most impactful for workflow integration.
 
-**Completed feedback items:** `pftui refresh`, `--period`, `--group-by`, day P&L (TUI header), value/brief/watchlist/set-cash CLI, CSV rounding, base currency config, Markets tab enrichment, `--what-if`, `history --date`, snapshot, import
+**Completed feedback items:** `pftui refresh`, `--period`, `--group-by`, day P&L (TUI + CLI), value/brief/watchlist/set-cash CLI, CSV rounding, base currency config, Markets tab enrichment, `--what-if`, `history --date`, snapshot, import, U.UN FX fix, `--technicals` flag, RSI column in positions/watchlist, MACD/RSI gauge in detail popup, rate limiting, macro symbols in refresh
 
-## P0
+**Release status:** v0.2.0 is current. Since then: F1.3 (RSI columns), F1.4 (--technicals), F3.1 (FRED API), F3.2 (macro refresh), rate limiting fix, install.sh. Tests: 855 passing, clippy clean. **Ready to release as v0.3.0.**
 
-_(no items)_
+**Homebrew Core:** 1 star — needs 50+ for homebrew-core submission. Not eligible yet.
