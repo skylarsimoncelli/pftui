@@ -7,6 +7,7 @@ pub mod drift;
 pub mod rebalance;
 pub mod history;
 pub mod import;
+pub mod journal;
 pub mod macro_cmd;
 pub mod movers;
 pub mod performance;

@@ -260,6 +260,59 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Manage trade journal and decision log
+    Journal {
+        /// Action: add, list, search, update, remove, tags, stats
+        action: String,
+
+        /// Content text (for add) or search query (for search)
+        value: Option<String>,
+
+        /// Entry ID (for update/remove)
+        #[arg(long)]
+        id: Option<i64>,
+
+        /// ISO 8601 timestamp (for add). Defaults to now.
+        #[arg(long)]
+        date: Option<String>,
+
+        /// Tag: trade, thesis, prediction, reflection, alert, lesson, call
+        #[arg(long)]
+        tag: Option<String>,
+
+        /// Asset symbol (e.g. GC=F, BTC)
+        #[arg(long)]
+        symbol: Option<String>,
+
+        /// Conviction: high, medium, low
+        #[arg(long)]
+        conviction: Option<String>,
+
+        /// Entry status: open, validated, invalidated, closed
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Filter by status (for list)
+        #[arg(long)]
+        filter_status: Option<String>,
+
+        /// Updated content (for update)
+        #[arg(long)]
+        content: Option<String>,
+
+        /// Time filter: "7d", "30d", "2026-02-24" (for list/search)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Maximum number of results (for list/search)
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

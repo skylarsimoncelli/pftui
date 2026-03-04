@@ -6,6 +6,7 @@ pub mod allocations;
 pub mod calendar_cache;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod economic_cache;
+pub mod journal;
 pub mod price_cache;
 pub mod price_history;
 pub mod schema;

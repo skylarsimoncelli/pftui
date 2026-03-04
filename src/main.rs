@@ -236,5 +236,71 @@ fn main() -> Result<()> {
         }
         Some(Command::Drift { json }) => commands::drift::run(&db_path, json),
         Some(Command::Rebalance { json }) => commands::rebalance::run(&db_path, json),
+        Some(Command::Journal {
+            action,
+            value,
+            id,
+            date,
+            tag,
+            symbol,
+            conviction,
+            status,
+            filter_status,
+            content,
+            since,
+            limit,
+            json,
+        }) => match action.as_str() {
+            "add" => {
+                let content_text = value.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing content text. Usage: pftui journal add \"your entry text\"")
+                })?;
+                commands::journal::run_add(
+                    content_text,
+                    date.as_deref(),
+                    tag.as_deref(),
+                    symbol.as_deref(),
+                    conviction.as_deref(),
+                    json,
+                )
+            }
+            "list" => commands::journal::run_list(
+                limit,
+                since.as_deref(),
+                tag.as_deref(),
+                symbol.as_deref(),
+                filter_status.as_deref(),
+                json,
+            ),
+            "search" => {
+                let query = value.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing search query. Usage: pftui journal search \"query\"")
+                })?;
+                commands::journal::run_search(query, since.as_deref(), limit, json)
+            }
+            "update" => {
+                let entry_id = id.ok_or_else(|| {
+                    anyhow::anyhow!("Missing entry ID. Usage: pftui journal update --id N [--content \"...\"] [--status ...]")
+                })?;
+                commands::journal::run_update(
+                    entry_id,
+                    content.as_deref(),
+                    status.as_deref(),
+                    json,
+                )
+            }
+            "remove" => {
+                let entry_id = id.ok_or_else(|| {
+                    anyhow::anyhow!("Missing entry ID. Usage: pftui journal remove --id N")
+                })?;
+                commands::journal::run_remove(entry_id, json)
+            }
+            "tags" => commands::journal::run_tags(json),
+            "stats" => commands::journal::run_stats(json),
+            _ => Err(anyhow::anyhow!(
+                "Unknown journal action '{}'. Valid actions: add, list, search, update, remove, tags, stats",
+                action
+            )),
+        },
     }
 }

@@ -93,6 +93,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS journal (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            content TEXT NOT NULL,
+            tag TEXT,
+            symbol TEXT,
+            conviction TEXT,
+            status TEXT DEFAULT 'open',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_journal_timestamp ON journal(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_journal_tag ON journal(tag);
+        CREATE INDEX IF NOT EXISTS idx_journal_symbol ON journal(symbol);
+        CREATE INDEX IF NOT EXISTS idx_journal_status ON journal(status);
+
         CREATE TABLE IF NOT EXISTS calendar_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
