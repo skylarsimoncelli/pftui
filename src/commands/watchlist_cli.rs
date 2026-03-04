@@ -6,7 +6,9 @@ use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
 use crate::db::price_cache::get_all_cached_prices;
+use crate::db::price_history::get_history;
 use crate::db::watchlist::list_watchlist;
+use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 
 /// Format a decimal value with commas as thousands separators.
@@ -42,6 +44,34 @@ fn format_price(value: Decimal) -> String {
     }
 }
 
+/// Map a watchlist symbol to its Yahoo Finance ticker.
+fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
+    match category {
+        AssetCategory::Crypto => {
+            if symbol.ends_with("-USD") {
+                symbol.to_string()
+            } else {
+                format!("{}-USD", symbol)
+            }
+        }
+        _ => symbol.to_string(),
+    }
+}
+
+/// Compute daily change % from price history for a symbol.
+fn compute_change_pct(conn: &Connection, yahoo_sym: &str) -> Option<Decimal> {
+    let history = get_history(conn, yahoo_sym, 2).ok()?;
+    if history.len() < 2 {
+        return None;
+    }
+    let prev = &history[history.len() - 2];
+    let latest = &history[history.len() - 1];
+    if prev.close == dec!(0) {
+        return None;
+    }
+    Some((latest.close - prev.close) / prev.close * dec!(100))
+}
+
 pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
     let entries = list_watchlist(conn)?;
 
@@ -57,7 +87,7 @@ pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
         .collect();
 
     // Compute column widths for alignment
-    let mut rows: Vec<(String, String, String, String, String)> = Vec::new();
+    let mut rows: Vec<(String, String, String, String, String, String)> = Vec::new();
     for entry in &entries {
         let name = resolve_name(&entry.symbol);
         let display_name = if name.is_empty() {
@@ -65,6 +95,11 @@ pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
         } else {
             name
         };
+
+        let cat: AssetCategory = entry
+            .category
+            .parse()
+            .unwrap_or(AssetCategory::Equity);
 
         let csym = crate::config::currency_symbol(&config.base_currency);
         let (price_str, fetched_str) = match prices.get(&entry.symbol) {
@@ -76,11 +111,22 @@ pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
             None => ("N/A".to_string(), "—".to_string()),
         };
 
+        // Compute daily change %
+        let yahoo_sym = yahoo_symbol_for(&entry.symbol, cat);
+        let change_str = match compute_change_pct(conn, &yahoo_sym) {
+            Some(pct) => {
+                let f: f64 = pct.to_string().parse().unwrap_or(0.0);
+                format!("{:+.2}%", f)
+            }
+            None => "---".to_string(),
+        };
+
         rows.push((
             entry.symbol.clone(),
             display_name,
             entry.category.clone(),
             price_str,
+            change_str,
             fetched_str,
         ));
     }
@@ -103,20 +149,26 @@ pub fn run(conn: &Connection, config: &crate::config::Config) -> Result<()> {
         .max()
         .unwrap_or(5)
         .max(5);
+    let chg_w = rows
+        .iter()
+        .map(|r| r.4.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
 
     // Header
     println!(
-        "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  Updated",
-        "Symbol", "Name", "Category", "Price",
+        "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  Updated",
+        "Symbol", "Name", "Category", "Price", "1D Chg %",
     );
-    let total_w = sym_w + name_w + cat_w + price_w + 20;
+    let total_w = sym_w + name_w + cat_w + price_w + chg_w + 24;
     println!("  {}", "─".repeat(total_w));
 
     // Rows
-    for (symbol, name, category, price, fetched) in &rows {
+    for (symbol, name, category, price, change, fetched) in &rows {
         println!(
-            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {}",
-            symbol, name, category, price, fetched,
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {}",
+            symbol, name, category, price, change, fetched,
         );
     }
 
@@ -278,6 +330,198 @@ mod tests {
                 source: "yahoo".to_string(),
                 fetched_at: "2026-03-02T20:00:00Z".to_string(),
             },
+        )
+        .unwrap();
+
+        let result = run(&conn, &config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn yahoo_symbol_crypto() {
+        assert_eq!(
+            yahoo_symbol_for("BTC", AssetCategory::Crypto),
+            "BTC-USD"
+        );
+    }
+
+    #[test]
+    fn yahoo_symbol_crypto_already_suffixed() {
+        assert_eq!(
+            yahoo_symbol_for("BTC-USD", AssetCategory::Crypto),
+            "BTC-USD"
+        );
+    }
+
+    #[test]
+    fn yahoo_symbol_equity() {
+        assert_eq!(
+            yahoo_symbol_for("AAPL", AssetCategory::Equity),
+            "AAPL"
+        );
+    }
+
+    #[test]
+    fn yahoo_symbol_commodity() {
+        assert_eq!(
+            yahoo_symbol_for("GC=F", AssetCategory::Commodity),
+            "GC=F"
+        );
+    }
+
+    #[test]
+    fn change_pct_no_history() {
+        let conn = crate::db::open_in_memory();
+        assert!(compute_change_pct(&conn, "AAPL").is_none());
+    }
+
+    #[test]
+    fn change_pct_single_record() {
+        let conn = crate::db::open_in_memory();
+        use crate::db::price_history::upsert_history;
+        use crate::models::price::HistoryRecord;
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[HistoryRecord {
+                date: "2026-03-03".to_string(),
+                close: dec!(195.50),
+                volume: None,
+            }],
+        )
+        .unwrap();
+
+        assert!(compute_change_pct(&conn, "AAPL").is_none());
+    }
+
+    #[test]
+    fn change_pct_two_records() {
+        let conn = crate::db::open_in_memory();
+        use crate::db::price_history::upsert_history;
+        use crate::models::price::HistoryRecord;
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[
+                HistoryRecord {
+                    date: "2026-03-02".to_string(),
+                    close: dec!(200),
+                    volume: None,
+                },
+                HistoryRecord {
+                    date: "2026-03-03".to_string(),
+                    close: dec!(210),
+                    volume: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        let pct = compute_change_pct(&conn, "AAPL").unwrap();
+        assert_eq!(pct, dec!(5));
+    }
+
+    #[test]
+    fn change_pct_negative() {
+        let conn = crate::db::open_in_memory();
+        use crate::db::price_history::upsert_history;
+        use crate::models::price::HistoryRecord;
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[
+                HistoryRecord {
+                    date: "2026-03-02".to_string(),
+                    close: dec!(200),
+                    volume: None,
+                },
+                HistoryRecord {
+                    date: "2026-03-03".to_string(),
+                    close: dec!(190),
+                    volume: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        let pct = compute_change_pct(&conn, "AAPL").unwrap();
+        assert_eq!(pct, dec!(-5));
+    }
+
+    #[test]
+    fn change_pct_zero_prev_close() {
+        let conn = crate::db::open_in_memory();
+        use crate::db::price_history::upsert_history;
+        use crate::models::price::HistoryRecord;
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[
+                HistoryRecord {
+                    date: "2026-03-02".to_string(),
+                    close: dec!(0),
+                    volume: None,
+                },
+                HistoryRecord {
+                    date: "2026-03-03".to_string(),
+                    close: dec!(100),
+                    volume: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        assert!(compute_change_pct(&conn, "AAPL").is_none());
+    }
+
+    #[test]
+    fn watchlist_with_history_shows_change() {
+        let conn = crate::db::open_in_memory();
+        let config = crate::config::Config::default();
+        use crate::db::price_cache::upsert_price;
+        use crate::db::price_history::upsert_history;
+        use crate::db::watchlist::add_to_watchlist;
+        use crate::models::asset::AssetCategory;
+        use crate::models::price::{HistoryRecord, PriceQuote};
+
+        add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
+
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(210),
+                currency: "USD".to_string(),
+                source: "yahoo".to_string(),
+                fetched_at: "2026-03-03T20:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[
+                HistoryRecord {
+                    date: "2026-03-02".to_string(),
+                    close: dec!(200),
+                    volume: None,
+                },
+                HistoryRecord {
+                    date: "2026-03-03".to_string(),
+                    close: dec!(210),
+                    volume: None,
+                },
+            ],
         )
         .unwrap();
 
