@@ -153,6 +153,13 @@ pub enum Command {
         #[arg(long, value_enum)]
         group_by: Option<SummaryGroupBy>,
     },
+
+    /// Macro dashboard: key economic indicators, yields, commodities, currencies, and derived metrics
+    Macro {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
