@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F7.1: `brief --agent` mode for comprehensive JSON output
+
+- What: Added `--agent` flag to `pftui brief` command that outputs a single comprehensive JSON blob containing all available portfolio and market intelligence: portfolio summary (total value, cost, gain, daily P&L), all positions with prices/gains/allocation %/daily changes, technical indicators (RSI, MACD, SMA) for each position, watchlist items with prices and technicals, top 5 daily movers, macro indicators (DXY, VIX, yields, commodities), active alerts, allocation drift (percentage mode), and regime status (placeholder). Replaces the need for agents to run multiple separate commands (refresh, brief, watchlist, movers, macro).
+- Why: F7.1 spec — single token-efficient entry point for LLM agent consumption. Current agent workflows require 4-5 separate CLI calls to gather data; this reduces it to one. Highest-leverage feature for the agent ecosystem. Enables future deprecation of fetch_prices.py entirely.
+- Files: `src/cli.rs` (--agent flag definition), `src/commands/brief.rs` (run_agent_mode() function, AgentBrief/PositionJson/WatchlistItemJson/MoverJson structs, helper functions for macro/alerts/drift/watchlist/movers data), `src/main.rs` (dispatch update)
+- Tests: all 984 tests pass (updated 6 test calls to include new agent parameter), clippy clean
+- TODO: F7.1 `brief --agent` mode (P1) — COMPLETED
+
 ### 2026-03-04 — F12.1: Calendar data source + SQLite cache
 
 - What: Implemented economic calendar infrastructure. Created `calendar_events` table (date, name, impact, previous, forecast, event_type, symbol) with UNIQUE(date, name). Created `db/calendar_cache.rs` with CRUD operations: `upsert_event`, `get_upcoming_events`, `get_events_by_impact`, `delete_old_events`. Created `data/calendar.rs` with `fetch_events(days_ahead)` — currently uses curated sample data (20 Mar-Apr 2026 events: FOMC, CPI, NFP, earnings). Sample data includes high/medium/low impact levels, economic + earnings event types.

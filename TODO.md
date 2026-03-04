@@ -6,13 +6,6 @@
 
 ## P1 — Analytics Foundation
 
-### F7: Enhanced Agent Output (PROMOTED from P2)
-> **Goal:** Single JSON entry point for all agent-consumable data. Replaces multiple CLI calls with one command.
-> **Spec:** `docs/ANALYTICS-SPEC.md#f7`
-> **Rationale:** Every cron agent currently runs 4-5 separate commands (refresh, brief, watchlist, movers, macro script). A single `brief --agent` returning one JSON blob cuts every agent's data-gathering phase in half. Highest-leverage single feature for the agent ecosystem.
-
-- [ ] **F7.1: `brief --agent` mode** — Single JSON blob: positions, prices, technicals, macro, alerts, regime, movers, watchlist, drift. Optional `--sections` filter. Files: `commands/brief.rs`
-
 ### F8: Journal & Decision Log (PROMOTED from P2)
 > **Goal:** Structured trade journal in SQLite. Hotkey popup in TUI. Full CLI suite for agents to seed, query, search. Replaces JOURNAL.md as primary decision log for agents.
 > **Spec:** `docs/ANALYTICS-SPEC.md#f8`
