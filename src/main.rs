@@ -1,3 +1,5 @@
+#[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
+mod alerts;
 mod app;
 mod cli;
 mod commands;

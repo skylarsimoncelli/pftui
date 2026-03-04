@@ -56,6 +56,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             fetched_at TEXT NOT NULL,
             PRIMARY KEY (series_id, date)
         );
+
+        CREATE TABLE IF NOT EXISTS alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL DEFAULT 'price',
+            symbol TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            threshold TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'armed',
+            rule_text TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            triggered_at TEXT
+        );
         ",
     )?;
 

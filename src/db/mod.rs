@@ -1,3 +1,5 @@
+#[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
+pub mod alerts;
 pub mod allocations;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod economic_cache;
