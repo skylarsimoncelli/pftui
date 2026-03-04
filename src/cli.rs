@@ -99,7 +99,11 @@ pub enum Command {
     },
 
     /// Fetch and cache current prices for all held symbols without launching the TUI
-    Refresh,
+    Refresh {
+        /// Send OS notification for newly triggered alerts
+        #[arg(long)]
+        notify: bool,
+    },
 
     /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
     Brief {

@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
+use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
 use crate::db::price_cache::{get_all_cached_prices, upsert_price};
@@ -15,6 +16,7 @@ use crate::db::watchlist::get_watchlist_symbols;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 use crate::models::price::PriceQuote;
+use crate::notify;
 use crate::price::{coingecko, yahoo};
 use crate::tui::views::economy;
 
@@ -160,7 +162,7 @@ fn format_price(price: Decimal, sym: &str) -> String {
     }
 }
 
-pub fn run(conn: &Connection, config: &Config) -> Result<()> {
+pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
     let symbols = collect_symbols(conn, config)?;
     if symbols.is_empty() {
         println!("No symbols to refresh. Add positions with `pftui setup` or `pftui add-tx`, or watch symbols with `pftui watch`.");
@@ -265,6 +267,52 @@ pub fn run(conn: &Connection, config: &Config) -> Result<()> {
     // Store daily portfolio snapshot
     if let Err(e) = store_portfolio_snapshot(conn, config) {
         eprintln!("Warning: failed to store portfolio snapshot: {}", e);
+    }
+
+    // Check for newly triggered alerts
+    match engine::check_alerts(conn) {
+        Ok(results) => {
+            let newly_triggered = engine::get_newly_triggered(&results);
+            if !newly_triggered.is_empty() {
+                println!("\n🔔 Alerts Triggered:");
+                for result in &newly_triggered {
+                    let dir_emoji = match result.rule.direction {
+                        crate::alerts::AlertDirection::Above => "↑",
+                        crate::alerts::AlertDirection::Below => "↓",
+                    };
+                    let current_str = result
+                        .current_value
+                        .map(|v| format!("{:.2}", v))
+                        .unwrap_or_else(|| "N/A".to_string());
+                    println!(
+                        "  {} {} {} {} (current: {})",
+                        dir_emoji,
+                        result.rule.symbol,
+                        result.rule.kind,
+                        result.rule.threshold,
+                        current_str
+                    );
+
+                    // Send OS notification if --notify flag is set
+                    if notify {
+                        let title = format!("pftui Alert: {}", result.rule.symbol);
+                        let body = format!(
+                            "{} {} {} (current: {})",
+                            result.rule.kind,
+                            dir_emoji,
+                            result.rule.threshold,
+                            current_str
+                        );
+                        if let Err(e) = notify::send_notification(&title, &body) {
+                            eprintln!("  Warning: failed to send notification: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: failed to check alerts: {}", e);
+        }
     }
 
     Ok(())
