@@ -190,6 +190,17 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show biggest daily movers across held + watchlist symbols
+    Movers {
+        /// Minimum absolute daily change % to include (default: 3)
+        #[arg(long, default_value = "3")]
+        threshold: String,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage price, allocation, and indicator alerts
     Alerts {
         /// Action: add, list, remove, check, ack, rearm
