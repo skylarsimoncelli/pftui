@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — Drift and rebalance CLI commands (F6.4 continued)
+
+- What: Two new CLI commands complete F6.4 CLI layer. `pftui drift [--json]` shows allocation drift vs targets: target %, actual %, drift %, drift band, and status (✓ in range / ⚠️ out of band). Sorted by absolute drift descending. `pftui rebalance [--json]` suggests buy/sell trades to bring out-of-band positions back to targets: current value, target value, diff, action (BUY/SELL). Both read allocation targets from DB, compute positions with current prices, support JSON.
+- Why: Completes CLI layer for allocation management. Enables agents to query drift status and get rebalance suggestions programmatically. Next step: TUI integration in positions view to show target/actual/drift columns.
+- Files: new `src/commands/drift.rs`, new `src/commands/rebalance.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: 973 passing (no new tests; commands are thin wrappers over DB + positions logic), clippy clean
+- TODO: F6.4 partial (DB + CLI done; next: TUI positions view drift columns)
+
 ### 2026-03-04 — Allocation target storage and CLI (F6.4 foundation)
 
 - What: New `allocation_targets` DB table and `pftui target` CLI command suite. `pftui target set GC=F --target 25% --band 3%` stores target allocation percentage and drift band. `pftui target list [--json]` shows all targets. `pftui target remove SYMBOL` deletes. Default drift band is 2%. Validates target 0-100%, band 0-50%.
