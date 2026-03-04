@@ -81,7 +81,6 @@
 
 ### Other P2
 
-- [ ] **[Feedback] `pftui movers` command** — `pftui movers --threshold 3%` scans all held + watchlist symbols and returns only those exceeding the daily change threshold. Replaces manual scanning of 40+ symbols. Files: new `src/commands/movers.rs`, `cli.rs`
 - [ ] **[Feedback] P&L attribution in `brief`** — Show which position contributed most to daily P&L (e.g., "Gold: -$5.2k, BTC: +$3.1k"). Files: `src/commands/brief.rs`
 - [ ] **[Feedback] `pftui sector` command** — Show sector ETF performance (XLE, ITA, XLF, IGV, etc.) for tracking sector-level moves. Files: new `src/commands/sector.rs`, `cli.rs`
 - [ ] **[Feedback] Add "What Changed Today" section to `brief`** — Show largest daily movers, notable threshold crossings, and any triggered alerts in the brief output. Files: `commands/brief.rs`

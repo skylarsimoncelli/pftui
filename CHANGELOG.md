@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — `pftui movers` command
+
+- What: New `pftui movers` command that scans all held positions + watchlist symbols, computes daily change % from cached price history, and shows those exceeding a threshold (default 3%). Sorted by absolute change descending. `--threshold 5` for custom threshold, `--json` for agent output. Deduplicates symbols in both held and watchlist, skips cash.
+- Why: Replaces manual scanning of 40+ symbols. Requested by feedback testers — quick way to spot significant daily moves across the entire universe.
+- Files: new `src/commands/movers.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/mod.rs`
+- Tests: 13 new tests (empty DB, no history, below/above threshold, custom threshold, JSON output, cash skip, negative change, dedup, helpers). Total: 969 passing, clippy clean.
+- TODO: `[Feedback] pftui movers command` (P2)
+
 ### 2026-03-04 — F10.2: `pftui performance` CLI command
 
 - What: New `pftui performance` command showing portfolio returns across standard periods (1D, 1W, 1M, MTD, QTD, YTD, since inception). `--since 2026-02-24` for custom period with best/worst day analysis. `--period weekly` for return series. `--json` for agent consumption. Uses daily snapshots from `pftui refresh`.
