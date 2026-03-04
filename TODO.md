@@ -6,12 +6,6 @@
 
 ## P1 — Analytics Foundation
 
-### F3: Macro Dashboard
-> **Goal:** Economy tab becomes a full macro intelligence dashboard. One new CLI command: `pftui macro`. Replaces `fetch_prices.py` entirely.
-> **Spec:** `docs/ANALYTICS-SPEC.md#f3`
-
-- [ ] **F3.4: `pftui macro` CLI command** — Terminal-friendly macro dashboard output. Supports `--json` for agent consumption. Files: new `src/commands/macro_cmd.rs`, `cli.rs`
-
 ### F6: Unified Alert Engine (price + allocation + indicators)
 > **Goal:** One alert system for everything: price targets (inc. watchlist entry levels), allocation drift, indicator thresholds. Check on every refresh. Optional OS notifications. Absorbs watchlist alerts (F9) and allocation drift (F11).
 > **Spec:** `docs/ANALYTICS-SPEC.md#f6`

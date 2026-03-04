@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F3.4: `pftui macro` CLI command
+
+- What: New `pftui macro` command — terminal-friendly macro dashboard. Displays yields (2Y/5Y/10Y/30Y), currencies (DXY, EUR, GBP, JPY, CNY), commodities (gold, silver, oil, copper, nat gas), VIX with regime context, FRED economic data (FFR, CPI, PPI, unemployment), and derived metrics (Au/Ag ratio, Au/Oil ratio, Cu/Au ratio, yield curve status). Key indicators strip at top for quick scanning. 1-day change arrows from price history. `--json` flag for structured agent output.
+- Why: Most-requested feature across 3 of 4 testers. Eliminates dependency on external `fetch_prices.py` for macro data. Completes F3 (Macro Dashboard) feature set.
+- Files: new `src/commands/macro_cmd.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: 7 new tests (empty DB terminal, empty DB JSON, seeded data terminal, seeded data JSON, fmt_commas, derived metrics, zero-denominator safety). Total: 879 passing.
+- TODO: F3.4 `pftui macro` CLI command (P1)
+
 ### 2026-03-04 — F3.3: Economy tab enhancement — macro dashboard layout
 
 - What: transformed Economy tab [4] from a flat table into a 3-panel macro intelligence dashboard. Added Key Numbers top strip (DXY, VIX, 10Y, Gold, Oil, Silver with day change at a glance). Added braille yield curve chart showing 2Y/5Y/10Y/30Y with linear interpolation and color-coded state. Added Derived Metrics panel with gold/silver ratio, 10Y-2Y spread with regime context, gold/oil ratio, copper/gold ratio, and VIX sentiment context. Added Silver Futures (SI=F) to economy symbols for cross-asset ratio calculations.
