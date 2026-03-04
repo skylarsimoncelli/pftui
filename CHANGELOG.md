@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — Bulk watchlist add (P1 feedback)
+
+- What: added `--bulk` flag to `pftui watch` command. `pftui watch --bulk GOOG,META,AMZN,TSLA` adds all symbols in one command instead of requiring 20 separate calls. Categories auto-detected per symbol. Optional `--category` override applies to all.
+- Files: `src/cli.rs` (Watch variant gains `bulk` field, `symbol` becomes Optional), `src/main.rs` (Watch handler parses comma-separated bulk input)
+- Tests: 856 passing, clippy clean
+- TODO: [Feedback] Bulk watchlist add (P1)
+
 ### 2026-03-04 — Fix history cash inclusion (P0 feedback)
 
 - What: `history --date` now includes cash positions regardless of transaction date. Previously, cash set via `set-cash` (which stamps today's date) was filtered out when querying historical dates, showing misleading totals (e.g. $184k instead of $362k).
