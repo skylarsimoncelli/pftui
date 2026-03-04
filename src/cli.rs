@@ -313,6 +313,21 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Start the web dashboard server
+    Web {
+        /// Port to bind to (default: 8080)
+        #[arg(long, short, default_value = "8080")]
+        port: u16,
+
+        /// Host to bind to (default: 127.0.0.1)
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
+
+        /// Disable authentication (NOT recommended for non-localhost)
+        #[arg(long)]
+        no_auth: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

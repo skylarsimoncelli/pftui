@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pftui - Portfolio Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0e27;
+            --bg-secondary: #151932;
+            --bg-tertiary: #1e2239;
+            --text-primary: #e4e8f0;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --accent: #60a5fa;
+            --accent-hover: #3b82f6;
+            --green: #10b981;
+            --red: #ef4444;
+            --yellow: #f59e0b;
+            --border: #2d3250;
+            --shadow: rgba(0, 0, 0, 0.3);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+
+        /* Header */
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 2px solid var(--border);
+            padding: 1rem 0;
+            margin-bottom: 1.5rem;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .portfolio-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .gain {
+            font-size: 1.25rem;
+            margin-left: 1rem;
+        }
+
+        .gain.positive { color: var(--green); }
+        .gain.negative { color: var(--red); }
+
+        /* Grid Layout */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px var(--shadow);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+
+        /* Positions Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        thead {
+            background: var(--bg-tertiary);
+        }
+
+        th {
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border);
+        }
+
+        th.right, td.right {
+            text-align: right;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+
+        tbody tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        td {
+            padding: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .symbol {
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .name {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .positive {
+            color: var(--green);
+        }
+
+        .negative {
+            color: var(--red);
+        }
+
+        /* Chart Container */
+        #chart-container {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            height: 500px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            position: relative;
+        }
+
+        #tradingview-chart {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Watchlist */
+        .watchlist-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+        }
+
+        .watchlist-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .watchlist-symbol {
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .watchlist-price {
+            color: var(--text-secondary);
+        }
+
+        /* Macro Panel */
+        .macro-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .macro-item {
+            background: var(--bg-tertiary);
+            padding: 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        .macro-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .macro-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Loading State */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            border: 3px solid var(--border);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-right: 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Search */
+        .search-box {
+            margin-bottom: 1rem;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <h1>
+                    <span>📊</span>
+                    <span>pftui</span>
+                </h1>
+                <div>
+                    <span class="portfolio-value" id="total-value">Loading...</span>
+                    <span class="gain" id="total-gain"></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="dashboard">
+            <!-- Left Column: Positions & Chart -->
+            <div>
+                <!-- Positions Table -->
+                <div class="card">
+                    <h2 class="card-title">Positions</h2>
+                    <div class="search-box">
+                        <input type="text" id="search" placeholder="Search positions..." />
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table id="positions-table">
+                            <thead>
+                                <tr>
+                                    <th>Asset</th>
+                                    <th class="right">Price</th>
+                                    <th class="right">Quantity</th>
+                                    <th class="right">Value</th>
+                                    <th class="right">Gain</th>
+                                    <th class="right">Gain %</th>
+                                    <th class="right">Allocation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="7" class="loading">
+                                        <div class="spinner"></div>
+                                        Loading positions...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TradingView Chart -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <h2 class="card-title">Chart</h2>
+                    <div id="chart-container">
+                        <div id="tradingview-chart"></div>
+                        <div id="chart-placeholder">Select a position to view chart</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Watchlist & Macro -->
+            <div>
+                <!-- Macro Indicators -->
+                <div class="card">
+                    <h2 class="card-title">Market Overview</h2>
+                    <div id="macro-panel" class="macro-grid">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Watchlist -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <h2 class="card-title">Watchlist</h2>
+                    <div id="watchlist">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            Loading watchlist...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>pftui web dashboard · Data updates every 60 seconds</p>
+    </footer>
+
+    <!-- TradingView Widget Script -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+
+    <script>
+        let chartWidget = null;
+        let currentSymbol = null;
+
+        // Format number as currency
+        function formatCurrency(value) {
+            if (value === null || value === undefined) return '-';
+            const num = parseFloat(value);
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(num);
+        }
+
+        // Format number with commas
+        function formatNumber(value, decimals = 2) {
+            if (value === null || value === undefined) return '-';
+            const num = parseFloat(value);
+            return num.toLocaleString('en-US', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
+
+        // Format percentage
+        function formatPercent(value) {
+            if (value === null || value === undefined) return '-';
+            const num = parseFloat(value);
+            const sign = num >= 0 ? '+' : '';
+            return `${sign}${num.toFixed(2)}%`;
+        }
+
+        // Load TradingView chart
+        function loadChart(symbol) {
+            if (currentSymbol === symbol && chartWidget) return;
+            
+            currentSymbol = symbol;
+            document.getElementById('chart-placeholder')?.remove();
+            
+            // Destroy existing widget
+            if (chartWidget) {
+                try {
+                    chartWidget.remove();
+                } catch (e) {
+                    console.error('Error removing chart:', e);
+                }
+            }
+
+            // Create new widget
+            chartWidget = new TradingView.widget({
+                autosize: true,
+                symbol: symbol,
+                interval: 'D',
+                timezone: 'Etc/UTC',
+                theme: 'dark',
+                style: '1',
+                locale: 'en',
+                toolbar_bg: '#1e2239',
+                enable_publishing: false,
+                hide_top_toolbar: false,
+                hide_legend: false,
+                save_image: false,
+                container_id: 'tradingview-chart',
+                backgroundColor: '#1e2239',
+                gridColor: '#2d3250',
+                studies: [],
+                disabled_features: ['use_localstorage_for_settings'],
+                enabled_features: ['study_templates'],
+            });
+        }
+
+        // Load portfolio data
+        async function loadPortfolio() {
+            try {
+                const response = await fetch('/api/portfolio');
+                const data = await response.json();
+
+                // Update header
+                const totalValue = data.total_value;
+                const totalGain = data.total_gain;
+                const totalGainPct = data.total_gain_pct;
+
+                document.getElementById('total-value').textContent = formatCurrency(totalValue);
+                
+                const gainEl = document.getElementById('total-gain');
+                if (totalGain !== null && totalGainPct !== null) {
+                    const gainClass = totalGain >= 0 ? 'positive' : 'negative';
+                    gainEl.className = `gain ${gainClass}`;
+                    gainEl.textContent = `${formatCurrency(totalGain)} (${formatPercent(totalGainPct)})`;
+                }
+
+                // Update positions table
+                updatePositionsTable(data.positions);
+            } catch (error) {
+                console.error('Error loading portfolio:', error);
+            }
+        }
+
+        // Update positions table
+        function updatePositionsTable(positions) {
+            const tbody = document.querySelector('#positions-table tbody');
+            tbody.innerHTML = '';
+
+            if (!positions || positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">No positions found</td></tr>';
+                return;
+            }
+
+            positions.forEach(pos => {
+                const row = document.createElement('tr');
+                row.dataset.symbol = pos.symbol;
+                
+                const gainPct = pos.gain_pct !== null ? parseFloat(pos.gain_pct) : 0;
+                const gainClass = gainPct >= 0 ? 'positive' : 'negative';
+                
+                row.innerHTML = `
+                    <td>
+                        <div class="symbol">${pos.symbol}</div>
+                        <div class="name">${pos.name || ''}</div>
+                    </td>
+                    <td class="right">${formatCurrency(pos.current_price)}</td>
+                    <td class="right">${formatNumber(pos.quantity, 4)}</td>
+                    <td class="right">${formatCurrency(pos.current_value)}</td>
+                    <td class="right ${gainClass}">${formatCurrency(pos.gain)}</td>
+                    <td class="right ${gainClass}">${formatPercent(pos.gain_pct)}</td>
+                    <td class="right">${formatNumber(pos.allocation_pct)}%</td>
+                `;
+                
+                row.addEventListener('click', () => {
+                    // Highlight selected row
+                    document.querySelectorAll('#positions-table tbody tr').forEach(r => {
+                        r.style.background = '';
+                    });
+                    row.style.background = 'var(--bg-tertiary)';
+                    
+                    // Load chart
+                    loadChart(pos.symbol);
+                });
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        // Load watchlist
+        async function loadWatchlist() {
+            try {
+                const response = await fetch('/api/watchlist');
+                const data = await response.json();
+
+                const container = document.getElementById('watchlist');
+                container.innerHTML = '';
+
+                if (!data.symbols || data.symbols.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No watchlist items</div>';
+                    return;
+                }
+
+                data.symbols.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'watchlist-item';
+                    div.innerHTML = `
+                        <div>
+                            <div class="watchlist-symbol">${item.symbol}</div>
+                            <div class="name">${item.name || ''}</div>
+                        </div>
+                        <div>
+                            <div class="watchlist-price">${formatCurrency(item.current_price)}</div>
+                        </div>
+                    `;
+                    div.addEventListener('click', () => loadChart(item.symbol));
+                    container.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error loading watchlist:', error);
+            }
+        }
+
+        // Load macro indicators
+        async function loadMacro() {
+            try {
+                const response = await fetch('/api/macro');
+                const data = await response.json();
+
+                const panel = document.getElementById('macro-panel');
+                panel.innerHTML = '';
+
+                if (!data.indicators || data.indicators.length === 0) {
+                    panel.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No macro data</div>';
+                    return;
+                }
+
+                data.indicators.forEach(ind => {
+                    const div = document.createElement('div');
+                    div.className = 'macro-item';
+                    div.innerHTML = `
+                        <div class="macro-label">${ind.name}</div>
+                        <div class="macro-value">${formatNumber(ind.value)}</div>
+                    `;
+                    div.addEventListener('click', () => loadChart(ind.symbol));
+                    div.style.cursor = 'pointer';
+                    panel.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error loading macro:', error);
+            }
+        }
+
+        // Search positions
+        document.getElementById('search')?.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const rows = document.querySelectorAll('#positions-table tbody tr');
+            
+            rows.forEach(row => {
+                const symbol = row.dataset.symbol?.toLowerCase() || '';
+                const name = row.querySelector('.name')?.textContent.toLowerCase() || '';
+                
+                if (symbol.includes(query) || name.includes(query)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+
+        // Initialize dashboard
+        async function init() {
+            await loadPortfolio();
+            await loadWatchlist();
+            await loadMacro();
+
+            // Auto-refresh every 60 seconds
+            setInterval(() => {
+                loadPortfolio();
+                loadWatchlist();
+                loadMacro();
+            }, 60000);
+        }
+
+        // Start when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

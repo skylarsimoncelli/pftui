@@ -11,6 +11,7 @@ mod notify;
 mod price;
 mod regime;
 mod tui;
+mod web;
 
 use anyhow::{bail, Result};
 use clap::Parser;
@@ -302,5 +303,13 @@ fn main() -> Result<()> {
                 action
             )),
         },
+
+        Some(Command::Web { port, bind, no_auth }) => {
+            // Web server runs in async context
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(async {
+                web::run_server(db_path.to_string_lossy().to_string(), config, &bind, port, !no_auth).await
+            })
+        }
     }
 }

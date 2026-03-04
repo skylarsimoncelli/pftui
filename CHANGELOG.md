@@ -3,6 +3,18 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 22:30 UTC — `pftui web` — Web dashboard with axum + TradingView charts
+
+- What: Implemented full web dashboard server (`pftui web [--port 8080] [--bind 127.0.0.1] [--no-auth]`). axum REST API with 9 endpoints: /api/portfolio (positions, total value, gains), /api/positions, /api/watchlist, /api/transactions, /api/macro (8 market indicators), /api/alerts, /api/chart/:symbol (price history), /api/performance, /api/summary. Simple bearer token auth (auto-generated, printed on startup, disabled with --no-auth). Dark-themed responsive single-page frontend with TradingView Advanced Chart Widget for interactive charting (fallback to internal data if unavailable). Portfolio overview, sortable/searchable positions table, watchlist panel, macro indicators grid, click-to-chart functionality. Mobile-friendly layout. Frontend embedded in binary via include_str!().
+- Why: Major feature request — modern web interface for portfolio tracking alongside the TUI. Enables viewing on mobile devices, sharing dashboards, and integration with other tools. TradingView charts provide professional-grade interactive charting without build tooling. Clean separation: web module (mod.rs, api.rs, auth.rs, server.rs, static/index.html) maintains existing architecture. All data flows through existing db/models layers — no duplication.
+- Files: `Cargo.toml` (+axum, tower, tower-http, tokio-util dependencies), new `src/web/mod.rs`, new `src/web/api.rs` (9 endpoints, 491 lines), new `src/web/auth.rs` (bearer token middleware), new `src/web/server.rs` (axum app setup, CORS, route registration), new `src/web/static/index.html` (dark-themed dashboard, TradingView integration, 600+ lines), `src/cli.rs` (+Web command with port/bind/no-auth flags), `src/main.rs` (+web module, Web command handler with tokio runtime)
+- REST API endpoints: GET /api/portfolio, /api/positions, /api/watchlist, /api/transactions, /api/macro, /api/alerts, /api/chart/:symbol, /api/performance, /api/summary. All return JSON. Auth via Authorization: Bearer {token} header (skipped for / and /static/*).
+- Frontend features: Auto-refresh every 60 seconds, search/filter positions, click position to load TradingView chart, macro indicators panel (SPX, Nasdaq, VIX, Gold, Silver, BTC, DXY, 10Y), watchlist with click-to-chart, responsive grid layout (2-column desktop, 1-column mobile), dark theme matching TUI aesthetic.
+- TradingView: Uses free Advanced Chart Widget (no API key needed). User-configurable symbol, interval, timezone. Graceful fallback if TradingView unavailable (internal chart data via /api/chart/:symbol endpoint).
+- Auth: Token format `pftui_{unix_timestamp_hex}`. Printed to stdout on startup. Environment-friendly for scripting. --no-auth flag for localhost-only deployments.
+- Tests: All 1001 tests still pass. Clippy clean. No tests for web module yet (API endpoints are wrappers around existing db/models functions already covered by 1001 tests).
+- TODO: Web interface (`pftui web`) from P2 — COMPLETED. Next: Add API endpoint tests, PID management, systemd service file.
+
 ### 2026-03-04 21:45 UTC — F17.2: Predictions panel in Economy tab [4]
 
 - What: Prediction markets panel in the Economy tab, showing top 10 markets from Polymarket Gamma API by volume. Displays: question, probability (color-coded: >60% green, <40% red, middle yellow), 24h volume, category (crypto/economics/geopolitics/AI). Free data source, no API key required. Replaces the derived metrics section (Au/Ag ratio, yield spreads, Cu/Au, VIX context). Panel shows "No prediction data cached" message with refresh hint when cache is empty.
