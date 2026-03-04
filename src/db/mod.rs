@@ -6,6 +6,7 @@ pub mod economic_cache;
 pub mod price_cache;
 pub mod price_history;
 pub mod schema;
+pub mod snapshots;
 pub mod transactions;
 pub mod watchlist;
 

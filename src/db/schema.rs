@@ -68,6 +68,23 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             triggered_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+            date TEXT PRIMARY KEY,
+            total_value TEXT NOT NULL,
+            cash_value TEXT NOT NULL,
+            invested_value TEXT NOT NULL,
+            snapshot_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS position_snapshots (
+            date TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            quantity TEXT NOT NULL,
+            price TEXT NOT NULL,
+            value TEXT NOT NULL,
+            PRIMARY KEY (date, symbol)
+        );
         ",
     )?;
 

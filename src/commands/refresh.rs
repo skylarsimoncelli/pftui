@@ -7,11 +7,13 @@ use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::get_unique_allocation_symbols;
-use crate::db::price_cache::upsert_price;
-use crate::db::transactions::get_unique_symbols;
+use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
+use crate::db::price_cache::{get_all_cached_prices, upsert_price};
+use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
+use crate::db::transactions::{get_unique_symbols, list_transactions};
 use crate::db::watchlist::get_watchlist_symbols;
 use crate::models::asset::AssetCategory;
+use crate::models::position::{compute_positions, compute_positions_from_allocations};
 use crate::models::price::PriceQuote;
 use crate::price::{coingecko, yahoo};
 use crate::tui::views::economy;
@@ -260,6 +262,76 @@ pub fn run(conn: &Connection, config: &Config) -> Result<()> {
         );
     }
 
+    // Store daily portfolio snapshot
+    if let Err(e) = store_portfolio_snapshot(conn, config) {
+        eprintln!("Warning: failed to store portfolio snapshot: {}", e);
+    }
+
+    Ok(())
+}
+
+/// Compute current positions and store a daily portfolio snapshot.
+fn store_portfolio_snapshot(conn: &Connection, config: &Config) -> Result<()> {
+    let cached = get_all_cached_prices(conn)?;
+    let prices: HashMap<String, Decimal> = cached
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect();
+
+    let positions = match config.portfolio_mode {
+        PortfolioMode::Full => {
+            let transactions = list_transactions(conn)?;
+            if transactions.is_empty() {
+                return Ok(());
+            }
+            compute_positions(&transactions, &prices)
+        }
+        PortfolioMode::Percentage => {
+            let allocations = list_allocations(conn)?;
+            if allocations.is_empty() {
+                return Ok(());
+            }
+            compute_positions_from_allocations(&allocations, &prices)
+        }
+    };
+
+    if positions.is_empty() {
+        return Ok(());
+    }
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let mut total_value = dec!(0);
+    let mut cash_value = dec!(0);
+    let mut invested_value = dec!(0);
+
+    for pos in &positions {
+        let value = pos.current_value.unwrap_or(dec!(0));
+        total_value += value;
+        if pos.category == AssetCategory::Cash {
+            cash_value += value;
+        } else {
+            invested_value += value;
+        }
+    }
+
+    // Store portfolio-level snapshot
+    upsert_portfolio_snapshot(conn, &today, total_value, cash_value, invested_value)?;
+
+    // Store per-position snapshots
+    for pos in &positions {
+        let price = pos.current_price.unwrap_or(dec!(0));
+        let value = pos.current_value.unwrap_or(dec!(0));
+        upsert_position_snapshot(conn, &today, &pos.symbol, pos.quantity, price, value)?;
+    }
+
+    let snap_count = positions.len();
+    println!(
+        "Snapshot stored: {} ({} position{}).",
+        today,
+        snap_count,
+        if snap_count == 1 { "" } else { "s" },
+    );
+
     Ok(())
 }
 
@@ -403,5 +475,110 @@ mod tests {
         let macro_count = economy::economy_symbols().len();
         // AAPL + BTC + macro symbols
         assert_eq!(symbols.len(), macro_count + 2);
+    }
+
+    #[test]
+    fn store_snapshot_with_positions() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+        use crate::db::price_cache::upsert_price;
+        use crate::db::snapshots::{get_portfolio_snapshots, get_position_snapshots_for_date};
+        use crate::db::transactions::insert_transaction;
+        use crate::models::price::PriceQuote;
+        use crate::models::transaction::{NewTransaction, TxType};
+
+        // Add a position
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+
+        // Cache a price
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(200),
+                currency: "USD".to_string(),
+                source: "yahoo".to_string(),
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            },
+        )
+        .unwrap();
+
+        // Store snapshot
+        store_portfolio_snapshot(&conn, &config).unwrap();
+
+        // Verify portfolio snapshot
+        let snaps = get_portfolio_snapshots(&conn, 10).unwrap();
+        assert_eq!(snaps.len(), 1);
+        assert_eq!(snaps[0].total_value, dec!(2000)); // 10 * $200
+        assert_eq!(snaps[0].cash_value, dec!(0));
+        assert_eq!(snaps[0].invested_value, dec!(2000));
+
+        // Verify position snapshot
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let pos_snaps = get_position_snapshots_for_date(&conn, &today).unwrap();
+        assert_eq!(pos_snaps.len(), 1);
+        assert_eq!(pos_snaps[0].symbol, "AAPL");
+        assert_eq!(pos_snaps[0].quantity, dec!(10));
+        assert_eq!(pos_snaps[0].price, dec!(200));
+        assert_eq!(pos_snaps[0].value, dec!(2000));
+    }
+
+    #[test]
+    fn store_snapshot_empty_portfolio_is_noop() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+        use crate::db::snapshots::get_portfolio_snapshots;
+
+        // No transactions, no allocations — should be a no-op
+        store_portfolio_snapshot(&conn, &config).unwrap();
+
+        let snaps = get_portfolio_snapshots(&conn, 10).unwrap();
+        assert!(snaps.is_empty());
+    }
+
+    #[test]
+    fn store_snapshot_includes_cash() {
+        let conn = crate::db::open_in_memory();
+        let config = Config::default();
+        use crate::db::snapshots::get_portfolio_snapshots;
+        use crate::db::transactions::insert_transaction;
+        use crate::models::transaction::{NewTransaction, TxType};
+
+        // Add a cash position
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "USD".to_string(),
+                category: AssetCategory::Cash,
+                tx_type: TxType::Buy,
+                quantity: dec!(50000),
+                price_per: dec!(1),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+
+        store_portfolio_snapshot(&conn, &config).unwrap();
+
+        let snaps = get_portfolio_snapshots(&conn, 10).unwrap();
+        assert_eq!(snaps.len(), 1);
+        assert_eq!(snaps[0].total_value, dec!(50000));
+        assert_eq!(snaps[0].cash_value, dec!(50000));
+        assert_eq!(snaps[0].invested_value, dec!(0));
     }
 }
