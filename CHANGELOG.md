@@ -3,6 +3,12 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — Fix history cash inclusion (P0 feedback)
+
+- What: `history --date` now includes cash positions regardless of transaction date. Previously, cash set via `set-cash` (which stamps today's date) was filtered out when querying historical dates, showing misleading totals (e.g. $184k instead of $362k).
+- Files: `src/commands/history.rs`
+- Tests: added `history_cash_included_regardless_of_date` regression test. Total: 856 passing.
+
 ### 2026-03-04 — Macro symbols in `refresh` cycle (F3.2)
 
 - What: `pftui refresh` now fetches and caches all economy dashboard symbols (DXY, VIX, oil, copper, yields, FX pairs) alongside portfolio and watchlist prices. Macro symbols deduplicate against portfolio positions (e.g. GC=F). Output shows macro symbol count.

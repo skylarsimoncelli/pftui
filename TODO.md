@@ -4,10 +4,6 @@
 > Format: `- [ ] **Short title** — Brief description. Files: relevant_file.rs`
 > Full analytics spec: `docs/ANALYTICS-SPEC.md`
 
-## P0
-
-- [ ] **[Feedback] History cash inclusion** — `history --date` omits cash positions, showing misleading portfolio value (e.g., $184k instead of $362k). Include cash in historical snapshots. Files: `src/commands/history.rs`
-
 ## P1 — Analytics Foundation
 
 ### F3: Macro Dashboard
