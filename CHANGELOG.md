@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 21:45 UTC — F17.2: Predictions panel in Economy tab [4]
+
+- What: Prediction markets panel in the Economy tab, showing top 10 markets from Polymarket Gamma API by volume. Displays: question, probability (color-coded: >60% green, <40% red, middle yellow), 24h volume, category (crypto/economics/geopolitics/AI). Free data source, no API key required. Replaces the derived metrics section (Au/Ag ratio, yield spreads, Cu/Au, VIX context). Panel shows "No prediction data cached" message with refresh hint when cache is empty.
+- Why: F17.2 from TODO.md (P0 — Free Data Integration). The single most differentiated feature for pftui — no other portfolio TUI shows prediction market odds. Real-money probability data for macro scenarios (recession odds, Fed rate cuts, BTC price targets, geopolitics) directly in the terminal. Zero-config, zero-key.
+- Files: new `src/data/predictions.rs` (fetch module with category inference, GammaResponse/GammaMarket types, 4 new tests), new `src/db/predictions_cache.rs` (SQLite caching: upsert_predictions, get_cached_predictions, get_last_update), `src/db/schema.rs` (predictions_cache table with indexes on category and volume_24h), `src/app.rs` (prediction_markets: Vec<PredictionMarket> field, load_predictions() method, init/init_offline integration), `src/tui/views/economy.rs` (render_predictions_panel replaces render_derived_metrics), `src/data/mod.rs`, `src/db/mod.rs`
+- Schema: predictions_cache table (id TEXT PK, question TEXT, probability REAL, volume_24h REAL, category TEXT, updated_at INTEGER). Indexed on category and volume_24h for efficient filtering/sorting.
+- Category inference: crypto (bitcoin/btc/ethereum/eth/crypto/solana), economics (recession/fed/rate cut/inflation/gdp/unemployment), geopolitics (war/iran/russia/china/election/trump/biden), AI (word-boundary detection for " ai "/starts/ends), other (default).
+- Tests: 4 new tests for category inference (crypto/economics/geopolitics/other). Fixed AI detection to require word boundaries (avoid false match on "rain"). Total: 1001 passing. Clippy clean with `#[allow(dead_code)]` for fetch infrastructure (F17.3+ will use).
+- TODO: F17.2 — Predictions panel in Economy tab [4] (P0) — COMPLETED. Next: F17.3 (predictions CLI), F17.4 (prediction sparklines in Markets tab).
+
 ### 2026-03-04 21:10 UTC — F17.1: Prediction market data module
 
 - What: Zero-config prediction market data from Polymarket Gamma API (free, no key). SQLite `prediction_cache` table: market_id (PK), question, outcome_yes_price, outcome_no_price, volume, category, end_date, fetched_at. Indexes on category and volume for fast filtering. Data module: `polymarket::fetch_markets(category_filter, limit)` uses reqwest blocking client (10s timeout). DB module: `prediction_cache::{upsert_prediction, get_all_predictions, get_predictions_by_category, clear_predictions}`. Added reqwest `blocking` feature to Cargo.toml.
