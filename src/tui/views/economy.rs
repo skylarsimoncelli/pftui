@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -62,6 +62,7 @@ pub fn economy_symbols() -> Vec<EconomyItem> {
         EconomyItem { symbol: "CNY".into(), name: "USD / Yuan".into(), group: EconomyGroup::Currency, yahoo_symbol: "CNY=X".into() },
         // Commodities
         EconomyItem { symbol: "Gold".into(), name: "Gold Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "GC=F".into() },
+        EconomyItem { symbol: "Silver".into(), name: "Silver Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "SI=F".into() },
         EconomyItem { symbol: "Oil".into(), name: "Crude Oil WTI".into(), group: EconomyGroup::Commodities, yahoo_symbol: "CL=F".into() },
         EconomyItem { symbol: "Copper".into(), name: "Copper Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "HG=F".into() },
         EconomyItem { symbol: "NatGas".into(), name: "Natural Gas".into(), group: EconomyGroup::Commodities, yahoo_symbol: "NG=F".into() },
@@ -81,6 +82,102 @@ pub fn category_for_group(group: EconomyGroup) -> AssetCategory {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+    // Split into: top strip (3 rows) + body (rest)
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(10)])
+        .split(area);
+
+    render_top_strip(frame, outer[0], app);
+
+    // Body: left table (~65%) + right panel (yield curve + derived metrics, ~35%)
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
+        .split(outer[1]);
+
+    render_macro_table(frame, body[0], app);
+
+    // Right panel: yield curve chart (top) + derived metrics (bottom)
+    let right = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(body[1]);
+
+    render_yield_curve_chart(frame, right[0], app);
+    render_derived_metrics(frame, right[1], app);
+}
+
+/// Top strip: key macro numbers at a glance — DXY, VIX, 10Y, Gold, Oil, BTC.
+fn render_top_strip(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+
+    // Key indicators to show in the strip
+    let indicators: &[(&str, &str)] = &[
+        ("DXY", "DX-Y.NYB"),
+        ("VIX", "^VIX"),
+        ("10Y", "^TNX"),
+        ("Gold", "GC=F"),
+        ("Oil", "CL=F"),
+        ("Silver", "SI=F"),
+    ];
+
+    let mut spans: Vec<Span> = Vec::new();
+    spans.push(Span::styled(" ", Style::default()));
+
+    for (i, (label, yahoo_sym)) in indicators.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  │  ", Style::default().fg(t.border_inactive)));
+        }
+        spans.push(Span::styled(
+            format!("{label} "),
+            Style::default().fg(t.text_secondary).bold(),
+        ));
+
+        let price = app.prices.get(*yahoo_sym).copied();
+        let group = if *label == "10Y" {
+            EconomyGroup::Yields
+        } else {
+            EconomyGroup::Commodities
+        };
+        let val_str = match price {
+            Some(p) => format_value(p, group),
+            None => "---".into(),
+        };
+        spans.push(Span::styled(
+            val_str,
+            Style::default().fg(t.text_primary),
+        ));
+
+        // Day change
+        let change = compute_change_pct(app, yahoo_sym);
+        let (chg_str, chg_color) = match change {
+            Some(pct) => {
+                let f: f64 = pct.to_string().parse().unwrap_or(0.0);
+                (format!(" {:+.1}%", f), theme::gain_intensity_color(t, f))
+            }
+            None => (" ---".into(), t.text_muted),
+        };
+        spans.push(Span::styled(chg_str, Style::default().fg(chg_color)));
+    }
+
+    let line = Line::from(spans);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(theme::BORDER_ACTIVE)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(
+            " Key Numbers ",
+            Style::default().fg(t.text_accent).bold(),
+        ))
+        .style(Style::default().bg(t.surface_0));
+
+    let paragraph = Paragraph::new(line).block(block);
+    frame.render_widget(paragraph, area);
+}
+
+/// Main macro indicators table (left panel).
+fn render_macro_table(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let items = economy_symbols();
 
@@ -115,24 +212,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         }
         // Insert yield curve status row after yields group ends
         if prev_group == Some(EconomyGroup::Yields) && item.group != EconomyGroup::Yields {
-            let (curve_label, curve_color) = match yield_curve {
-                YieldCurveState::Normal(spread) => (
-                    format!("  Yield Curve: NORMAL  2Y-10Y spread {:+.2}bps", spread),
-                    t.gain_green,
-                ),
-                YieldCurveState::Inverted(spread) => (
-                    format!("  Yield Curve: INVERTED  2Y-10Y spread {:.2}bps", spread),
-                    t.loss_red,
-                ),
-                YieldCurveState::Flat => (
-                    "  Yield Curve: FLAT  2Y-10Y spread ~0bps".to_string(),
-                    t.text_accent,
-                ),
-                YieldCurveState::Unknown => (
-                    "  Yield Curve: ---".to_string(),
-                    t.text_muted,
-                ),
-            };
+            let (curve_label, curve_color) = yield_curve_label(&yield_curve, t);
             rows.push(
                 Row::new(vec![Cell::from(Span::styled(
                     curve_label,
@@ -242,24 +322,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // If the last group is Yields (edge case), append yield curve status at the end
     if prev_group == Some(EconomyGroup::Yields) {
-        let (curve_label, curve_color) = match yield_curve {
-            YieldCurveState::Normal(spread) => (
-                format!("  Yield Curve: NORMAL  2Y-10Y spread {:+.2}bps", spread),
-                t.gain_green,
-            ),
-            YieldCurveState::Inverted(spread) => (
-                format!("  Yield Curve: INVERTED  2Y-10Y spread {:.2}bps", spread),
-                t.loss_red,
-            ),
-            YieldCurveState::Flat => (
-                "  Yield Curve: FLAT  2Y-10Y spread ~0bps".to_string(),
-                t.text_accent,
-            ),
-            YieldCurveState::Unknown => (
-                "  Yield Curve: ---".to_string(),
-                t.text_muted,
-            ),
-        };
+        let (curve_label, curve_color) = yield_curve_label(&yield_curve, t);
         rows.push(
             Row::new(vec![Cell::from(Span::styled(
                 curve_label,
@@ -286,10 +349,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_set(crate::tui::theme::BORDER_ACTIVE)
+                .border_set(theme::BORDER_ACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
                 .title(Span::styled(
-                    " Economy ",
+                    " Macro Indicators ",
                     Style::default().fg(t.text_accent).bold(),
                 ))
                 .style(Style::default().bg(t.surface_0)),
@@ -297,6 +360,440 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .row_highlight_style(Style::default().bg(t.surface_3));
 
     frame.render_widget(table, area);
+}
+
+/// Format yield curve state into a label and color.
+fn yield_curve_label(state: &YieldCurveState, t: &theme::Theme) -> (String, Color) {
+    match state {
+        YieldCurveState::Normal(spread) => (
+            format!("  Yield Curve: NORMAL  2Y-10Y {:+.0}bps", spread),
+            t.gain_green,
+        ),
+        YieldCurveState::Inverted(spread) => (
+            format!("  Yield Curve: INVERTED  2Y-10Y {:.0}bps", spread),
+            t.loss_red,
+        ),
+        YieldCurveState::Flat => (
+            "  Yield Curve: FLAT  2Y-10Y ~0bps".to_string(),
+            t.text_accent,
+        ),
+        YieldCurveState::Unknown => (
+            "  Yield Curve: ---".to_string(),
+            t.text_muted,
+        ),
+    }
+}
+
+/// Braille characters for the yield curve chart (2 rows of dots per character row).
+const BRAILLE_BASE: u32 = 0x2800;
+/// Braille dot positions: col0 = [0x01,0x02,0x04,0x40], col1 = [0x08,0x10,0x20,0x80]
+const BRAILLE_COL0: [u32; 4] = [0x01, 0x02, 0x04, 0x40];
+const BRAILLE_COL1: [u32; 4] = [0x08, 0x10, 0x20, 0x80];
+
+/// Render a braille yield curve showing 2Y/5Y/10Y/30Y maturities.
+fn render_yield_curve_chart(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(theme::BORDER_INACTIVE)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(
+            " Yield Curve ",
+            Style::default().fg(t.text_accent).bold(),
+        ))
+        .style(Style::default().bg(t.surface_0));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height < 3 || inner.width < 20 {
+        return;
+    }
+
+    // Gather yield data: 2Y (^IRX), 5Y (^FVX), 10Y (^TNX), 30Y (^TYX)
+    let maturity_syms = ["^IRX", "^FVX", "^TNX", "^TYX"];
+    let maturity_labels = ["2Y", "5Y", "10Y", "30Y"];
+    let yields: Vec<Option<f64>> = maturity_syms
+        .iter()
+        .map(|s| {
+            app.prices
+                .get(*s)
+                .and_then(|p| p.to_string().parse::<f64>().ok())
+        })
+        .collect();
+
+    // Check if we have at least 2 data points
+    let available: Vec<(usize, f64)> = yields
+        .iter()
+        .enumerate()
+        .filter_map(|(i, y)| y.map(|v| (i, v)))
+        .collect();
+
+    if available.len() < 2 {
+        let msg = "Waiting for yield data...";
+        let msg_line = Line::from(Span::styled(msg, Style::default().fg(t.text_muted)));
+        frame.render_widget(
+            Paragraph::new(msg_line).alignment(Alignment::Center),
+            inner,
+        );
+        return;
+    }
+
+    // Reserve bottom row for maturity labels
+    let chart_height = (inner.height - 1) as usize;
+    let chart_width = inner.width as usize;
+
+    if chart_height < 2 {
+        return;
+    }
+
+    // Build interpolated yield values across chart_width columns
+    // Map 4 maturities to x positions: evenly spaced
+    let x_positions: Vec<f64> = (0..4)
+        .map(|i| i as f64 * (chart_width.saturating_sub(1) as f64) / 3.0)
+        .collect();
+
+    // Linear interpolation between available points
+    let mut curve_values: Vec<f64> = Vec::with_capacity(chart_width);
+    for col in 0..chart_width {
+        let x = col as f64;
+        // Find the two surrounding known points
+        let mut val = available[0].1; // default to first
+        for w in 0..available.len().saturating_sub(1) {
+            let (i0, v0) = available[w];
+            let (i1, v1) = available[w + 1];
+            let x0 = x_positions[i0];
+            let x1 = x_positions[i1];
+            if x >= x0 && x <= x1 {
+                let frac = if (x1 - x0).abs() > 0.001 {
+                    (x - x0) / (x1 - x0)
+                } else {
+                    0.0
+                };
+                val = v0 + frac * (v1 - v0);
+                break;
+            } else if x > x1 {
+                val = v1; // beyond last known, use last
+            }
+        }
+        curve_values.push(val);
+    }
+
+    // Determine Y range with some padding
+    let y_min = curve_values
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min)
+        - 0.1;
+    let y_max = curve_values
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max)
+        + 0.1;
+    let y_range = y_max - y_min;
+
+    // Each braille character covers 2 columns (dots) and 4 rows (dots)
+    // But we map: chart_height character rows × chart_width character cols
+    // Each char row = 4 dot rows, each char col = 2 dot cols
+    let dot_rows = chart_height * 4;
+
+    // Render braille: one character per (char_col, char_row)
+    // char_col maps to 2 data columns, char_row maps to 4 dot rows
+    let char_cols = chart_width.div_ceil(2);
+    let mut braille_grid: Vec<Vec<u32>> = vec![vec![0u32; char_cols]; chart_height];
+
+    for (col_idx, val) in curve_values.iter().enumerate() {
+        if y_range < 0.001 {
+            continue;
+        }
+        let norm = ((val - y_min) / y_range).clamp(0.0, 1.0);
+        let dot_row = ((1.0 - norm) * (dot_rows as f64 - 1.0)).round() as usize;
+        let dot_row = dot_row.min(dot_rows - 1);
+
+        let char_row = dot_row / 4;
+        let sub_row = dot_row % 4;
+        let char_col = col_idx / 2;
+        let sub_col = col_idx % 2;
+
+        if char_row < chart_height && char_col < char_cols {
+            let dot_bit = if sub_col == 0 {
+                BRAILLE_COL0[sub_row]
+            } else {
+                BRAILLE_COL1[sub_row]
+            };
+            braille_grid[char_row][char_col] |= dot_bit;
+        }
+    }
+
+    // Determine curve color based on yield curve state
+    let curve_state = yield_curve_status(app);
+    let curve_color = match curve_state {
+        YieldCurveState::Normal(_) => t.gain_green,
+        YieldCurveState::Inverted(_) => t.loss_red,
+        YieldCurveState::Flat => t.text_accent,
+        YieldCurveState::Unknown => t.text_muted,
+    };
+
+    // Render braille rows
+    for (row_idx, char_row) in braille_grid.iter().enumerate() {
+        let text: String = char_row
+            .iter()
+            .map(|bits| char::from_u32(BRAILLE_BASE | bits).unwrap_or(' '))
+            .collect();
+        let span = Span::styled(text, Style::default().fg(curve_color));
+        let y = inner.y + row_idx as u16;
+        if y < inner.y + inner.height - 1 {
+            frame.render_widget(
+                Paragraph::new(Line::from(span)),
+                Rect::new(inner.x, y, inner.width, 1),
+            );
+        }
+    }
+
+    // Render maturity labels at bottom
+    let label_y = inner.y + inner.height - 1;
+    let mut label_spans: Vec<Span> = Vec::new();
+    for (i, label) in maturity_labels.iter().enumerate() {
+        let x_pos = x_positions[i] as usize;
+        // Pad to reach the x position
+        let current_len: usize = label_spans.iter().map(|s| s.content.len()).sum();
+        if x_pos > current_len {
+            label_spans.push(Span::styled(
+                " ".repeat(x_pos - current_len),
+                Style::default(),
+            ));
+        }
+        let val_str = match yields[i] {
+            Some(v) => format!("{label} {v:.2}%"),
+            None => format!("{label} ---"),
+        };
+        label_spans.push(Span::styled(
+            val_str,
+            Style::default().fg(t.text_secondary),
+        ));
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(label_spans)),
+        Rect::new(inner.x, label_y, inner.width, 1),
+    );
+}
+
+/// Render derived metrics panel: gold/silver ratio, real rate, yield curve spread.
+fn render_derived_metrics(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(theme::BORDER_INACTIVE)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(
+            " Derived Metrics ",
+            Style::default().fg(t.text_accent).bold(),
+        ))
+        .style(Style::default().bg(t.surface_0));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height < 2 || inner.width < 15 {
+        return;
+    }
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Gold/Silver ratio
+    let gold_price = app
+        .prices
+        .get("GC=F")
+        .and_then(|p| p.to_string().parse::<f64>().ok());
+    let silver_price = app
+        .prices
+        .get("SI=F")
+        .and_then(|p| p.to_string().parse::<f64>().ok());
+
+    match (gold_price, silver_price) {
+        (Some(g), Some(s)) if s > 0.01 => {
+            let ratio = g / s;
+            // Historical context: <60 = silver strong, >80 = gold strong, 60-80 = normal
+            let (context, ctx_color) = if ratio > 80.0 {
+                ("Gold strong", t.cat_commodity)
+            } else if ratio < 60.0 {
+                ("Silver strong", t.gain_green)
+            } else {
+                ("Normal range", t.text_secondary)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(" Au/Ag  ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled(format!("{ratio:.1}"), Style::default().fg(t.text_primary)),
+                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
+            ]));
+        }
+        _ => {
+            lines.push(Line::from(vec![
+                Span::styled(" Au/Ag  ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled("---", Style::default().fg(t.text_muted)),
+            ]));
+        }
+    }
+
+    // Blank separator
+    lines.push(Line::from(""));
+
+    // Real rate estimate: 10Y yield - implied inflation
+    // We use Fed Funds Rate as a proxy since we don't have CPI YoY from live data
+    // Real Rate ≈ 10Y - (10Y - Fed Funds spread inverted) — simplify to: 10Y - estimated_inflation
+    // Better: use 10Y TIPS breakeven if available, or just show 10Y - 2Y spread as real rate proxy
+    let yield_10y = app
+        .prices
+        .get("^TNX")
+        .and_then(|p| p.to_string().parse::<f64>().ok());
+    let yield_2y = app
+        .prices
+        .get("^IRX")
+        .and_then(|p| p.to_string().parse::<f64>().ok());
+
+    // Real rate approximation: 10Y yield - 2Y yield = term premium / real rate proxy
+    match (yield_10y, yield_2y) {
+        (Some(y10), Some(y2)) => {
+            let spread = y10 - y2;
+            let spread_bps = spread * 100.0;
+            let (context, ctx_color) = if spread > 0.5 {
+                ("Expansionary", t.gain_green)
+            } else if spread < -0.5 {
+                ("Contractionary", t.loss_red)
+            } else {
+                ("Neutral", t.text_secondary)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    " 10Y-2Y ",
+                    Style::default().fg(t.text_secondary).bold(),
+                ),
+                Span::styled(
+                    format!("{spread_bps:+.0}bps"),
+                    Style::default().fg(if spread >= 0.0 {
+                        t.gain_green
+                    } else {
+                        t.loss_red
+                    }),
+                ),
+                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
+            ]));
+        }
+        _ => {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    " 10Y-2Y ",
+                    Style::default().fg(t.text_secondary).bold(),
+                ),
+                Span::styled("---", Style::default().fg(t.text_muted)),
+            ]));
+        }
+    }
+
+    // Blank separator
+    lines.push(Line::from(""));
+
+    // Oil/Gold ratio (economic demand signal)
+    let oil_price = app
+        .prices
+        .get("CL=F")
+        .and_then(|p| p.to_string().parse::<f64>().ok());
+    match (gold_price, oil_price) {
+        (Some(g), Some(o)) if o > 0.01 => {
+            let ratio = g / o;
+            // Historical: ~15-25 is normal; >25 = gold outperforming (risk-off), <15 = oil strong (expansion)
+            let (context, ctx_color) = if ratio > 25.0 {
+                ("Risk-off", t.loss_red)
+            } else if ratio < 15.0 {
+                ("Expansion", t.gain_green)
+            } else {
+                ("Balanced", t.text_secondary)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(" Au/Oil ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled(format!("{ratio:.1}"), Style::default().fg(t.text_primary)),
+                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
+            ]));
+        }
+        _ => {
+            lines.push(Line::from(vec![
+                Span::styled(" Au/Oil ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled("---", Style::default().fg(t.text_muted)),
+            ]));
+        }
+    }
+
+    // Blank separator
+    lines.push(Line::from(""));
+
+    // Copper/Gold ratio (economic health barometer)
+    let copper_price = app
+        .prices
+        .get("HG=F")
+        .and_then(|p| p.to_string().parse::<f64>().ok());
+    match (copper_price, gold_price) {
+        (Some(c), Some(g)) if g > 0.01 => {
+            let ratio = c / g * 1000.0; // Scale up for readability
+            // Higher = growth expectations, lower = caution
+            let (context, ctx_color) = if ratio > 2.0 {
+                ("Growth", t.gain_green)
+            } else if ratio < 1.2 {
+                ("Caution", t.loss_red)
+            } else {
+                ("Steady", t.text_secondary)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(" Cu/Au  ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled(
+                    format!("{ratio:.2}"),
+                    Style::default().fg(t.text_primary),
+                ),
+                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
+            ]));
+        }
+        _ => {
+            lines.push(Line::from(vec![
+                Span::styled(" Cu/Au  ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled("---", Style::default().fg(t.text_muted)),
+            ]));
+        }
+    }
+
+    // Blank separator + VIX context
+    lines.push(Line::from(""));
+    let vix = app
+        .prices
+        .get("^VIX")
+        .and_then(|p| p.to_string().parse::<f64>().ok());
+    match vix {
+        Some(v) => {
+            let (context, ctx_color) = if v > 30.0 {
+                ("High fear", t.loss_red)
+            } else if v > 20.0 {
+                ("Elevated", t.cat_commodity)
+            } else if v > 12.0 {
+                ("Normal", t.text_secondary)
+            } else {
+                ("Complacent", t.gain_green)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(" VIX    ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled(format!("{v:.1}"), Style::default().fg(t.text_primary)),
+                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
+            ]));
+        }
+        None => {
+            lines.push(Line::from(vec![
+                Span::styled(" VIX    ", Style::default().fg(t.text_secondary).bold()),
+                Span::styled("---", Style::default().fg(t.text_muted)),
+            ]));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
 }
 
 /// Yield curve state derived from 2Y and 10Y treasury yields.
@@ -482,7 +979,7 @@ mod tests {
     #[test]
     fn economy_symbols_has_expected_count() {
         let items = economy_symbols();
-        assert_eq!(items.len(), 14);
+        assert_eq!(items.len(), 15);
     }
 
     #[test]
@@ -706,5 +1203,52 @@ mod tests {
     #[test]
     fn sparkline_chars_count() {
         assert_eq!(SPARKLINE_CHARS.len(), 8);
+    }
+
+    // --- Silver added to economy symbols ---
+
+    #[test]
+    fn economy_symbols_includes_silver() {
+        let items = economy_symbols();
+        let silver = items.iter().find(|i| i.symbol == "Silver");
+        assert!(silver.is_some(), "silver should be in economy symbols");
+        let silver = silver.unwrap();
+        assert_eq!(silver.yahoo_symbol, "SI=F");
+        assert_eq!(silver.group, EconomyGroup::Commodities);
+    }
+
+    // --- Yield curve label tests ---
+
+    #[test]
+    fn yield_curve_label_normal() {
+        let t = theme::midnight();
+        let (label, color) = yield_curve_label(&YieldCurveState::Normal(50.0), &t);
+        assert!(label.contains("NORMAL"));
+        assert!(label.contains("50"));
+        assert_eq!(color, t.gain_green);
+    }
+
+    #[test]
+    fn yield_curve_label_inverted() {
+        let t = theme::midnight();
+        let (label, color) = yield_curve_label(&YieldCurveState::Inverted(-30.0), &t);
+        assert!(label.contains("INVERTED"));
+        assert_eq!(color, t.loss_red);
+    }
+
+    #[test]
+    fn yield_curve_label_flat() {
+        let t = theme::midnight();
+        let (label, color) = yield_curve_label(&YieldCurveState::Flat, &t);
+        assert!(label.contains("FLAT"));
+        assert_eq!(color, t.text_accent);
+    }
+
+    #[test]
+    fn yield_curve_label_unknown() {
+        let t = theme::midnight();
+        let (label, color) = yield_curve_label(&YieldCurveState::Unknown, &t);
+        assert!(label.contains("---"));
+        assert_eq!(color, t.text_muted);
     }
 }
