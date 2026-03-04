@@ -12,6 +12,7 @@ pub mod journal;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
 pub mod predictions_cache;
+pub mod predictions_history;
 pub mod price_cache;
 pub mod price_history;
 pub mod schema;

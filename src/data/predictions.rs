@@ -121,6 +121,26 @@ pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
     Ok(markets)
 }
 
+/// Save daily probability snapshots for tracked prediction markets.
+/// Call this after fetching and caching predictions to build historical data.
+#[allow(dead_code)] // Infrastructure for F17.4+ (prediction sparklines)
+pub fn save_daily_snapshots(
+    conn: &rusqlite::Connection,
+    markets: &[PredictionMarket],
+) -> Result<()> {
+    use crate::db::predictions_history;
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+    let records: Vec<_> = markets
+        .iter()
+        .map(|m| (m.id.clone(), today.clone(), m.probability))
+        .collect();
+
+    predictions_history::batch_insert_history(conn, &records)?;
+    Ok(())
+}
+
 /// Infer market category from question text and tags.
 #[allow(dead_code)] // Used by fetch_polymarket_predictions (F17.3+)
 fn infer_category(question: &str, tags: &[String]) -> MarketCategory {

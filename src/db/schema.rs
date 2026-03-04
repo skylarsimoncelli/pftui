@@ -159,6 +159,15 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (cftc_code, report_date)
         );
         CREATE INDEX IF NOT EXISTS idx_cot_report_date ON cot_cache(report_date);
+
+        CREATE TABLE IF NOT EXISTS predictions_history (
+            id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            probability REAL NOT NULL,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (id, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_predictions_history_date ON predictions_history(date);
         ",
     )?;
 

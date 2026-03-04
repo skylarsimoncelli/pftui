@@ -60,6 +60,20 @@ pub fn market_symbols() -> Vec<MarketItem> {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+    // Split area: top 70% for traditional markets, bottom 30% for predictions
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(70),
+            Constraint::Percentage(30),
+        ])
+        .split(area);
+    
+    render_markets_table(frame, chunks[0], app);
+    render_predictions_panel(frame, chunks[1], app);
+}
+
+fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let items = market_symbols();
 
@@ -322,6 +336,184 @@ fn format_price(p: Decimal) -> String {
         format!("{:.2}", f)
     } else {
         format!("{:.4}", f)
+    }
+}
+
+/// Render the prediction markets panel showing key tracked predictions with 30-day sparklines.
+fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
+    use rusqlite::Connection;
+    
+    let t = &app.theme;
+    
+    // Use prediction markets already loaded in app state
+    let predictions = &app.prediction_markets;
+    
+    let header = Row::new(vec![
+        Cell::from("Question"),
+        Cell::from("Prob"),
+        Cell::from("Chg"),
+        Cell::from("30D Trend"),
+        Cell::from("Cat"),
+    ])
+    .style(Style::default().fg(t.text_secondary).bold())
+    .height(1);
+    
+    let rows: Vec<Row> = if predictions.is_empty() {
+        // Show skeleton or empty state
+        let col_widths = [40, 6, 6, 12, 8];
+        skeleton::skeleton_rows(t, app.tick_count, &col_widths, 5)
+    } else {
+        predictions
+            .iter()
+            .take(6) // Limit to 6 rows to fit in the panel
+            .map(|pred| {
+                // Format probability as percentage
+                let prob_pct = pred.probability * 100.0;
+                let prob_str = format!("{:.0}%", prob_pct);
+                
+                // Get 30-day history for sparkline
+                let history = if let Ok(conn) = Connection::open(&app.db_path) {
+                    crate::db::predictions_history::get_history(&conn, &pred.id, 30)
+                        .unwrap_or_default()
+                } else {
+                    vec![]
+                };
+                
+                // Compute 30-day change
+                let change_str = if history.len() >= 2 {
+                    let oldest = history.last().unwrap().probability;
+                    let newest = history.first().unwrap().probability;
+                    let change = (newest - oldest) * 100.0;
+                    format!("{:+.0}pp", change) // percentage points
+                } else {
+                    "---".to_string()
+                };
+                
+                // Build sparkline from history
+                let sparkline_cell = build_prediction_sparkline(t, &history);
+                
+                // Category color
+                let cat_color = match pred.category {
+                    crate::data::predictions::MarketCategory::Crypto => t.cat_crypto,
+                    crate::data::predictions::MarketCategory::Economics => t.cat_fund,
+                    crate::data::predictions::MarketCategory::Geopolitics => t.text_accent,
+                    crate::data::predictions::MarketCategory::AI => t.cat_equity,
+                    crate::data::predictions::MarketCategory::Other => t.text_muted,
+                };
+                
+                // Probability color: green >60%, red <40%, yellow 40-60%
+                let prob_color = if prob_pct > 60.0 {
+                    t.gain_green
+                } else if prob_pct < 40.0 {
+                    t.loss_red
+                } else {
+                    t.text_secondary
+                };
+                
+                Row::new(vec![
+                    Cell::from(Span::styled(
+                        truncate_question(&pred.question, 40),
+                        Style::default().fg(t.text_primary),
+                    )),
+                    Cell::from(Span::styled(
+                        prob_str,
+                        Style::default().fg(prob_color).bold(),
+                    )),
+                    Cell::from(Span::styled(
+                        change_str,
+                        Style::default().fg(t.text_secondary),
+                    )),
+                    sparkline_cell,
+                    Cell::from(Span::styled(
+                        format!("{}", pred.category),
+                        Style::default().fg(cat_color),
+                    )),
+                ])
+                .height(1)
+            })
+            .collect()
+    };
+    
+    let widths = [
+        Constraint::Min(40),     // Question
+        Constraint::Length(6),   // Probability
+        Constraint::Length(6),   // Change
+        Constraint::Length(12),  // Sparkline
+        Constraint::Length(8),   // Category
+    ];
+    
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_set(crate::tui::theme::BORDER_ACTIVE)
+                .border_style(Style::default().fg(t.border_inactive))
+                .title(Span::styled(
+                    " Prediction Markets ",
+                    Style::default().fg(t.text_accent).bold(),
+                ))
+                .style(Style::default().bg(t.surface_0)),
+        );
+    
+    frame.render_widget(table, area);
+}
+
+/// Build a sparkline from prediction history (probability over time).
+fn build_prediction_sparkline<'a>(
+    theme: &'a theme::Theme,
+    history: &[crate::db::predictions_history::PredictionHistoryRecord],
+) -> Cell<'a> {
+    if history.len() < 2 {
+        return Cell::from(Span::styled("   ---   ", Style::default().fg(theme.text_muted)));
+    }
+    
+    // Reverse history so it's oldest to newest
+    let mut sorted: Vec<_> = history.iter().collect();
+    sorted.reverse();
+    
+    // Extract probabilities
+    let probs: Vec<f64> = sorted.iter().map(|r| r.probability).collect();
+    
+    // Find min/max for normalization
+    let min = probs.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max = probs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    
+    let range = max - min;
+    if range < 0.01 {
+        // Flat line
+        let chars: String = "━".repeat(10);
+        return Cell::from(Span::styled(chars, Style::default().fg(theme.text_muted)));
+    }
+    
+    // Build sparkline characters
+    let chars: String = probs
+        .iter()
+        .map(|&p| {
+            let normalized = (p - min) / range;
+            let idx = (normalized * (SPARKLINE_CHARS.len() - 1) as f64).round() as usize;
+            SPARKLINE_CHARS[idx.min(SPARKLINE_CHARS.len() - 1)]
+        })
+        .collect();
+    
+    // Color based on trend (green if rising, red if falling)
+    let trend_color = if probs.last() > probs.first() {
+        theme.gain_green
+    } else if probs.last() < probs.first() {
+        theme.loss_red
+    } else {
+        theme.text_secondary
+    };
+    
+    Cell::from(Span::styled(chars, Style::default().fg(trend_color)))
+}
+
+/// Truncate a prediction question to fit in the table.
+fn truncate_question(question: &str, max_len: usize) -> String {
+    if question.len() <= max_len {
+        question.to_string()
+    } else {
+        format!("{}...", &question[..max_len - 3])
     }
 }
 
