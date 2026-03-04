@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F6.6: Alert notifications in refresh output + optional OS notifications
+
+- What: After price update in `pftui refresh`, check_alerts() reports newly triggered alerts in CLI output with emoji indicators (↑ above / ↓ below), current value, and threshold. New `--notify` flag sends OS notifications via notify-send (Linux) or osascript (macOS). No daemon required — fires on-demand during refresh. New `src/notify.rs` module for cross-platform notification support.
+- Why: F6.6 spec — integrate alert engine with refresh command for automated monitoring and optional native OS alerts. Completes the unified alert engine foundation from F6.
+- Files: `src/commands/refresh.rs` (check_alerts + notification logic), `src/cli.rs` (--notify flag), `src/main.rs` (pass notify flag + mod notify), new `src/notify.rs`
+- Tests: all 975 tests pass, no changes needed (alert integration is output-only, no logic changes to tested functions)
+
 ### 2026-03-04 — F6.5: Alert badge in TUI status bar with Ctrl+A overlay popup
 
 - What: Alert badge in status bar shows "⚠ N alert(s) [Ctrl+A]View" when triggered alerts exist. Ctrl+A opens scrollable alerts popup overlay showing all alerts with status icons (🟢 armed / 🔴 triggered / ✅ acknowledged), rule text, current values, and distance to trigger. Alert count updated on init and after every price refresh. Popup supports j/k/Ctrl+d/Ctrl+u/gg/G vim scrolling, Esc to close.

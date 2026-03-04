@@ -6,12 +6,6 @@
 
 ## P1 — Analytics Foundation
 
-### F6: Unified Alert Engine (price + allocation + indicators)
-> **Goal:** One alert system for everything: price targets (inc. watchlist entry levels), allocation drift, indicator thresholds. Check on every refresh. Optional OS notifications. Absorbs watchlist alerts (F9) and allocation drift (F11).
-> **Spec:** `docs/ANALYTICS-SPEC.md#f6`
-
-- [ ] **F6.6: Alerts in `refresh` output + optional OS notifications** — After price update, report newly triggered alerts in CLI output. `pftui refresh --notify` fires native OS notification via `notify-send` (Linux) or `osascript` (macOS). No daemon required. Files: `commands/refresh.rs`, `alerts/engine.rs`, new `src/notify.rs`
-
 ### F10: Portfolio Performance History
 > **Goal:** Track portfolio value over time. Compute returns over any period. Benchmark comparison. Requires automated daily snapshots.
 
