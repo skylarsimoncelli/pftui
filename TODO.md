@@ -10,7 +10,7 @@
 > **Goal:** One alert system for everything: price targets (inc. watchlist entry levels), allocation drift, indicator thresholds. Check on every refresh. Optional OS notifications. Absorbs watchlist alerts (F9) and allocation drift (F11).
 > **Spec:** `docs/ANALYTICS-SPEC.md#f6`
 
-- [ ] **F6.4: Allocation target + drift in Positions tab** — `pftui target set gold 25% --band 3%` stores as allocation alert. Positions tab [1] shows target vs actual column, color-coded bands. `pftui drift` shows all positions' drift from targets. `pftui rebalance` suggests trades to restore. Files: `tui/views/positions.rs`, new `src/commands/target.rs`, `alerts/engine.rs`
+- [ ] **F6.4: Allocation target + drift in Positions tab** — [PARTIAL: DB + CLI done] Next: Add drift calculation helper in positions.rs, update positions view to show target vs actual column with color-coded bands, add `pftui drift` command, add `pftui rebalance` command. Files: `tui/views/positions.rs`, `src/commands/drift.rs`, `src/commands/rebalance.rs`, `models/position.rs`
 - [ ] **F6.5: Alert badge in TUI status bar** — `⚠️ 2 alerts` count. Hotkey to expand alerts popup overlay. Per-asset ⚠️ icons on triggered positions/watchlist items. Files: `tui/widgets/status_bar.rs`, new `tui/views/alerts_popup.rs`
 - [ ] **F6.6: Alerts in `refresh` output + optional OS notifications** — After price update, report newly triggered alerts in CLI output. `pftui refresh --notify` fires native OS notification via `notify-send` (Linux) or `osascript` (macOS). No daemon required. Files: `commands/refresh.rs`, `alerts/engine.rs`, new `src/notify.rs`
 
