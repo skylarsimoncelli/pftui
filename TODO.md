@@ -138,7 +138,6 @@ The homepage a finance enthusiast opens every morning:
 > **Spec:** `docs/ANALYTICS-SPEC.md#f8`
 > **Rationale:** Agents currently read/write a 1000+ line JOURNAL.md with fragile `head`/`tail`/`sed` commands. Evening Planner has consecutive edit failures on large markdown files — same class of problem. SQLite-backed journal eliminates the biggest reliability risk in the agent system. Also enables structured querying (by tag, symbol, date range, conviction) that markdown can never provide.
 
-- [ ] **F8.1: Journal DB schema + CLI command suite** — SQLite table (timestamp, content, tag, symbol, conviction, status). Full CLI: `pftui journal add/list/search/update/remove/tags/stats`. All commands support `--json`. Files: new `src/db/journal.rs`, new `src/commands/journal.rs`, `cli.rs`
 - [ ] **F8.2: Journal tab [7] in TUI** — New tab in numbered menu. Scrollable list: date, content (truncated), tag columns. `a` to add entry inline, Enter to expand full text, `/` to search within journal. Files: new `src/tui/views/journal.rs`, `src/app.rs` (add ViewMode::Journal, bind key `7`)
 - [ ] **F8.3: JOURNAL.md migration script** — One-time parser that seeds SQLite from existing JOURNAL.md entries with correct timestamps, tags, statuses. Files: new `src/commands/migrate_journal.rs` or standalone script
 

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 20:45 UTC — F8.1: Journal DB schema + CLI command suite
+
+- What: Implemented SQLite-backed journal with full CLI suite. Table schema: timestamp, content, tag (trade/thesis/prediction/reflection/alert/lesson/call), symbol, conviction (high/medium/low), status (open/validated/invalidated/closed), indexed on timestamp/tag/symbol/status. CLI commands: `pftui journal add "content" [--date] [--tag] [--symbol] [--conviction]`, `list [--limit] [--since 7d/30d/YYYY-MM-DD] [--tag] [--symbol] [--status]`, `search "query" [--since] [--limit]`, `update --id N [--content "..."] [--status ...]`, `remove --id N`, `tags` (list all tags with counts), `stats` (total entries, by tag, by month). All commands support `--json` for agent consumption.
+- Why: F8.1 from TODO.md — foundation for replacing 1000+ line JOURNAL.md with structured SQLite storage. Enables agents to seed/query/search journal entries without fragile markdown parsing. Eliminates largest reliability risk in agent system (Evening Planner has consecutive edit failures on large files). Also enables structured queries by tag, symbol, date range, conviction that markdown can never provide.
+- Files: new `src/db/journal.rs` (CRUD, search, stats), new `src/commands/journal.rs` (CLI handlers with relative date parsing), `src/db/schema.rs` (journal table migration), `src/db/mod.rs` (journal module), `src/commands/mod.rs` (journal module), `src/cli.rs` (Journal command enum with all parameters), `src/main.rs` (journal command routing)
+- Tests: 992 passing (+10 new: add/get, list, tag filter, search, update, remove, tags, stats). Clippy clean.
+- TODO: F8.1 from P1 (Journal & Decision Log)
+
 ### 2026-03-04 — F7.1: `brief --agent` mode for comprehensive JSON output
 
 - What: Added `--agent` flag to `pftui brief` command that outputs a single comprehensive JSON blob containing all available portfolio and market intelligence: portfolio summary (total value, cost, gain, daily P&L), all positions with prices/gains/allocation %/daily changes, technical indicators (RSI, MACD, SMA) for each position, watchlist items with prices and technicals, top 5 daily movers, macro indicators (DXY, VIX, yields, commodities), active alerts, allocation drift (percentage mode), and regime status (placeholder). Replaces the need for agents to run multiple separate commands (refresh, brief, watchlist, movers, macro).
