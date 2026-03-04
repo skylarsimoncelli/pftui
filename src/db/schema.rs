@@ -92,6 +92,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             drift_band_pct TEXT NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            name TEXT NOT NULL,
+            impact TEXT NOT NULL,
+            previous TEXT,
+            forecast TEXT,
+            event_type TEXT NOT NULL DEFAULT 'economic',
+            symbol TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(date, name)
+        );
         ",
     )?;
 

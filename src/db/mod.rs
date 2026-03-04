@@ -2,6 +2,8 @@
 pub mod alerts;
 pub mod allocation_targets;
 pub mod allocations;
+#[allow(dead_code)] // Infrastructure for F12.1+ consumers (calendar CLI, Economy tab)
+pub mod calendar_cache;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod economic_cache;
 pub mod price_cache;
