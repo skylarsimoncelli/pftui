@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F10.1: Automated daily portfolio snapshots
+
+- What: On every `pftui refresh`, compute positions from current prices and store a daily portfolio snapshot in SQLite. New `portfolio_snapshots` table (date, total_value, cash_value, invested_value) and `position_snapshots` table (date, symbol, quantity, price, value). Upserts by date so multiple refreshes per day update the same snapshot. Includes reader functions for F10.2/F10.3.
+- Why: Foundation for portfolio performance tracking (F10.2 `pftui performance` CLI, F10.3 TUI panel). Also provides real daily portfolio value data to fix the 3M chart "Waiting for data" bug reported by testers.
+- Files: new `src/db/snapshots.rs`, `src/db/mod.rs`, `src/db/schema.rs` (2 new tables), `src/commands/refresh.rs` (snapshot after price cache)
+- Tests: 14 new tests (11 in db/snapshots, 3 in refresh integration). Total: 940 passing, clippy clean.
+- TODO: F10.1 Automated daily portfolio snapshots (P1)
+
 ### 2026-03-04 — F6.2: `pftui alerts` CLI
 
 - What: Full CLI for managing alerts: `alerts add "rule"`, `alerts list`, `alerts remove <id>`, `alerts check`, `alerts ack <id>`, `alerts rearm <id>`. Supports `--json` for agent output and `--status` filter for list. Check command shows distance-to-trigger for armed alerts, groups results by status (newly triggered, armed, acknowledged).

@@ -18,14 +18,12 @@
 ### F10: Portfolio Performance History
 > **Goal:** Track portfolio value over time. Compute returns over any period. Benchmark comparison. Requires automated daily snapshots.
 
-- [ ] **F10.1: Automated daily portfolio snapshots** — On every `refresh`, store total portfolio value + per-position values in SQLite. This also fixes the 3M chart "Waiting for data" bug. Files: `db/price_cache.rs`, `commands/refresh.rs`, new `src/db/snapshots.rs`
 - [ ] **F10.2: `pftui performance` CLI** — Show MTD, QTD, YTD, since-inception returns. `--since 2026-02-24` for custom period. `--period weekly` for return series. `--vs SPY` for benchmark comparison. `--json` for agents. Files: new `src/commands/performance.rs`, `cli.rs`
 - [ ] **F10.3: Performance panel in Positions tab** — Compact return summary in portfolio overview: 1D, 1W, 1M, YTD. Sparkline of portfolio value over selected period. Files: `tui/views/positions.rs`, `tui/widgets/portfolio_stats.rs`
 
 ### Other P1
 
 - [ ] **Native multi-currency with live FX conversion** — Store non-USD currencies natively, convert via live FX rates. Show FX rate and currency risk flag. Large effort — split into sub-tasks. Files: `models/position.rs`, `price/mod.rs`, `commands/summary.rs`, `widgets/header.rs`
-- [ ] **[Feedback] Populate historical snapshots for 3M chart** — Portfolio 3M chart shows "Waiting for data". Ensure daily portfolio value snapshots are cached for trend analysis. Files: `db/price_cache.rs`, `price_chart.rs`
 - [ ] **Ultra-wide layout (160+ cols)** — Third column: market context panel. Layout: 45% positions / 25% market / 30% chart. Files: `tui/ui.rs`, new `widgets/market_context.rs`
 - [ ] **thinkorswim UX research** — Research ToS layout, charts, scanners, analytics, shortcuts. Document what translates to TUI. Output: `docs/RESEARCH-THINKORSWIM.md`, then add derived TODO items
 - [ ] **Theme visual audit** — Audit all 11 themes across all views. Check: category colors, chart gradients, selection contrast, popup readability. Files: `theme.rs`, all views
