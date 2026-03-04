@@ -98,14 +98,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     render_macro_table(frame, body[0], app);
 
-    // Right panel: yield curve chart (top) + derived metrics (bottom)
+    // Right panel: yield curve chart (top) + predictions panel (bottom)
     let right = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(body[1]);
 
     render_yield_curve_chart(frame, right[0], app);
-    render_derived_metrics(frame, right[1], app);
+    render_predictions_panel(frame, right[1], app);
 }
 
 /// Top strip: key macro numbers at a glance — DXY, VIX, 10Y, Gold, Oil, BTC.
@@ -580,7 +580,7 @@ fn render_yield_curve_chart(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Render derived metrics panel: gold/silver ratio, real rate, yield curve spread.
-fn render_derived_metrics(frame: &mut Frame, area: Rect, app: &App) {
+fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
 
     let block = Block::default()
@@ -588,7 +588,7 @@ fn render_derived_metrics(frame: &mut Frame, area: Rect, app: &App) {
         .border_set(theme::BORDER_INACTIVE)
         .border_style(Style::default().fg(t.border_inactive))
         .title(Span::styled(
-            " Derived Metrics ",
+            " Prediction Markets ",
             Style::default().fg(t.text_accent).bold(),
         ))
         .style(Style::default().bg(t.surface_0));
@@ -596,200 +596,85 @@ fn render_derived_metrics(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height < 2 || inner.width < 15 {
+    if inner.height < 3 || inner.width < 30 {
+        return;
+    }
+
+    if app.prediction_markets.is_empty() {
+        let msg = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "No prediction data cached",
+                Style::default().fg(t.text_muted).italic(),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Run `pftui refresh --predictions`",
+                Style::default().fg(t.text_secondary),
+            )),
+        ])
+        .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(msg, inner);
         return;
     }
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // Gold/Silver ratio
-    let gold_price = app
-        .prices
-        .get("GC=F")
-        .and_then(|p| p.to_string().parse::<f64>().ok());
-    let silver_price = app
-        .prices
-        .get("SI=F")
-        .and_then(|p| p.to_string().parse::<f64>().ok());
+    // Show top 10 prediction markets (sorted by volume)
+    let max_visible = (inner.height as usize).saturating_sub(1);
+    for (i, market) in app.prediction_markets.iter().take(max_visible).enumerate() {
+        if i > 0 {
+            lines.push(Line::from("")); // Blank line separator
+        }
 
-    match (gold_price, silver_price) {
-        (Some(g), Some(s)) if s > 0.01 => {
-            let ratio = g / s;
-            // Historical context: <60 = silver strong, >80 = gold strong, 60-80 = normal
-            let (context, ctx_color) = if ratio > 80.0 {
-                ("Gold strong", t.cat_commodity)
-            } else if ratio < 60.0 {
-                ("Silver strong", t.gain_green)
-            } else {
-                ("Normal range", t.text_secondary)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(" Au/Ag  ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled(format!("{ratio:.1}"), Style::default().fg(t.text_primary)),
-                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
-            ]));
-        }
-        _ => {
-            lines.push(Line::from(vec![
-                Span::styled(" Au/Ag  ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled("---", Style::default().fg(t.text_muted)),
-            ]));
-        }
-    }
+        // Probability color: green >60%, red <40%, yellow middle
+        let prob_pct = (market.probability * 100.0) as u8;
+        let prob_color = if market.probability > 0.6 {
+            t.gain_green
+        } else if market.probability < 0.4 {
+            t.loss_red
+        } else {
+            t.cat_commodity
+        };
 
-    // Blank separator
-    lines.push(Line::from(""));
+        // Category color
+        let cat_color = match market.category {
+            crate::data::predictions::MarketCategory::Crypto => t.cat_crypto,
+            crate::data::predictions::MarketCategory::Economics => t.cat_commodity,
+            crate::data::predictions::MarketCategory::Geopolitics => t.loss_red,
+            crate::data::predictions::MarketCategory::AI => t.cat_equity,
+            crate::data::predictions::MarketCategory::Other => t.text_secondary,
+        };
 
-    // Real rate estimate: 10Y yield - implied inflation
-    // We use Fed Funds Rate as a proxy since we don't have CPI YoY from live data
-    // Real Rate ≈ 10Y - (10Y - Fed Funds spread inverted) — simplify to: 10Y - estimated_inflation
-    // Better: use 10Y TIPS breakeven if available, or just show 10Y - 2Y spread as real rate proxy
-    let yield_10y = app
-        .prices
-        .get("^TNX")
-        .and_then(|p| p.to_string().parse::<f64>().ok());
-    let yield_2y = app
-        .prices
-        .get("^IRX")
-        .and_then(|p| p.to_string().parse::<f64>().ok());
+        // Truncate question to fit width
+        let max_q_len = (inner.width as usize).saturating_sub(20);
+        let question = if market.question.len() > max_q_len {
+            format!("{}...", &market.question[..max_q_len.saturating_sub(3)])
+        } else {
+            market.question.clone()
+        };
 
-    // Real rate approximation: 10Y yield - 2Y yield = term premium / real rate proxy
-    match (yield_10y, yield_2y) {
-        (Some(y10), Some(y2)) => {
-            let spread = y10 - y2;
-            let spread_bps = spread * 100.0;
-            let (context, ctx_color) = if spread > 0.5 {
-                ("Expansionary", t.gain_green)
-            } else if spread < -0.5 {
-                ("Contractionary", t.loss_red)
-            } else {
-                ("Neutral", t.text_secondary)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(
-                    " 10Y-2Y ",
-                    Style::default().fg(t.text_secondary).bold(),
-                ),
-                Span::styled(
-                    format!("{spread_bps:+.0}bps"),
-                    Style::default().fg(if spread >= 0.0 {
-                        t.gain_green
-                    } else {
-                        t.loss_red
-                    }),
-                ),
-                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
-            ]));
-        }
-        _ => {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    " 10Y-2Y ",
-                    Style::default().fg(t.text_secondary).bold(),
-                ),
-                Span::styled("---", Style::default().fg(t.text_muted)),
-            ]));
-        }
-    }
+        lines.push(Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(
+                format!("[{}]", market.category),
+                Style::default().fg(cat_color).bold(),
+            ),
+            Span::styled(" ", Style::default()),
+            Span::styled(question, Style::default().fg(t.text_primary)),
+        ]));
 
-    // Blank separator
-    lines.push(Line::from(""));
-
-    // Oil/Gold ratio (economic demand signal)
-    let oil_price = app
-        .prices
-        .get("CL=F")
-        .and_then(|p| p.to_string().parse::<f64>().ok());
-    match (gold_price, oil_price) {
-        (Some(g), Some(o)) if o > 0.01 => {
-            let ratio = g / o;
-            // Historical: ~15-25 is normal; >25 = gold outperforming (risk-off), <15 = oil strong (expansion)
-            let (context, ctx_color) = if ratio > 25.0 {
-                ("Risk-off", t.loss_red)
-            } else if ratio < 15.0 {
-                ("Expansion", t.gain_green)
-            } else {
-                ("Balanced", t.text_secondary)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(" Au/Oil ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled(format!("{ratio:.1}"), Style::default().fg(t.text_primary)),
-                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
-            ]));
-        }
-        _ => {
-            lines.push(Line::from(vec![
-                Span::styled(" Au/Oil ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled("---", Style::default().fg(t.text_muted)),
-            ]));
-        }
-    }
-
-    // Blank separator
-    lines.push(Line::from(""));
-
-    // Copper/Gold ratio (economic health barometer)
-    let copper_price = app
-        .prices
-        .get("HG=F")
-        .and_then(|p| p.to_string().parse::<f64>().ok());
-    match (copper_price, gold_price) {
-        (Some(c), Some(g)) if g > 0.01 => {
-            let ratio = c / g * 1000.0; // Scale up for readability
-            // Higher = growth expectations, lower = caution
-            let (context, ctx_color) = if ratio > 2.0 {
-                ("Growth", t.gain_green)
-            } else if ratio < 1.2 {
-                ("Caution", t.loss_red)
-            } else {
-                ("Steady", t.text_secondary)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(" Cu/Au  ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled(
-                    format!("{ratio:.2}"),
-                    Style::default().fg(t.text_primary),
-                ),
-                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
-            ]));
-        }
-        _ => {
-            lines.push(Line::from(vec![
-                Span::styled(" Cu/Au  ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled("---", Style::default().fg(t.text_muted)),
-            ]));
-        }
-    }
-
-    // Blank separator + VIX context
-    lines.push(Line::from(""));
-    let vix = app
-        .prices
-        .get("^VIX")
-        .and_then(|p| p.to_string().parse::<f64>().ok());
-    match vix {
-        Some(v) => {
-            let (context, ctx_color) = if v > 30.0 {
-                ("High fear", t.loss_red)
-            } else if v > 20.0 {
-                ("Elevated", t.cat_commodity)
-            } else if v > 12.0 {
-                ("Normal", t.text_secondary)
-            } else {
-                ("Complacent", t.gain_green)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(" VIX    ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled(format!("{v:.1}"), Style::default().fg(t.text_primary)),
-                Span::styled(format!("  {context}"), Style::default().fg(ctx_color).italic()),
-            ]));
-        }
-        None => {
-            lines.push(Line::from(vec![
-                Span::styled(" VIX    ", Style::default().fg(t.text_secondary).bold()),
-                Span::styled("---", Style::default().fg(t.text_muted)),
-            ]));
-        }
+        lines.push(Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(
+                format!("{prob_pct}%"),
+                Style::default().fg(prob_color).bold(),
+            ),
+            Span::styled(
+                format!(" (vol: ${:.0}k)", market.volume_24h / 1000.0),
+                Style::default().fg(t.text_muted).italic(),
+            ),
+        ]));
     }
 
     let paragraph = Paragraph::new(lines);

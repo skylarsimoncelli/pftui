@@ -319,6 +319,7 @@ pub struct App {
     pub economy_selected_index: usize,
     pub watchlist_selected_index: usize,
     pub watchlist_entries: Vec<db_watchlist::WatchlistEntry>,
+    pub prediction_markets: Vec<crate::data::predictions::PredictionMarket>,
     pub g_pending: bool,
     pub terminal_height: u16,
     pub terminal_width: u16,
@@ -525,6 +526,7 @@ impl App {
             economy_selected_index: 0,
             watchlist_selected_index: 0,
             watchlist_entries: Vec::new(),
+            prediction_markets: Vec::new(),
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
@@ -590,6 +592,7 @@ impl App {
         self.load_cached_prices();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_predictions();
         self.load_allocation_targets();
         self.load_alerts();
         self.recompute();
@@ -601,6 +604,7 @@ impl App {
         self.load_cached_prices();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_predictions();
         self.load_allocation_targets();
         self.load_alerts();
         self.recompute();
@@ -661,6 +665,13 @@ impl App {
     fn load_watchlist(&mut self) {
         if let Ok(conn) = Connection::open(&self.db_path) {
             self.watchlist_entries = db_watchlist::list_watchlist(&conn).unwrap_or_default();
+        }
+    }
+
+    fn load_predictions(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            self.prediction_markets = crate::db::predictions_cache::get_cached_predictions(&conn, 10)
+                .unwrap_or_default();
         }
     }
 

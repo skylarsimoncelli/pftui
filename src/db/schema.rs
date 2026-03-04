@@ -133,6 +133,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_prediction_category ON prediction_cache(category);
         CREATE INDEX IF NOT EXISTS idx_prediction_volume ON prediction_cache(volume);
+
+        CREATE TABLE IF NOT EXISTS predictions_cache (
+            id TEXT PRIMARY KEY,
+            question TEXT NOT NULL,
+            probability REAL NOT NULL,
+            volume_24h REAL NOT NULL,
+            category TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_predictions_category ON predictions_cache(category);
+        CREATE INDEX IF NOT EXISTS idx_predictions_volume ON predictions_cache(volume_24h);
         ",
     )?;
 
