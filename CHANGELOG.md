@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F10.2: `pftui performance` CLI command
+
+- What: New `pftui performance` command showing portfolio returns across standard periods (1D, 1W, 1M, MTD, QTD, YTD, since inception). `--since 2026-02-24` for custom period with best/worst day analysis. `--period weekly` for return series. `--json` for agent consumption. Uses daily snapshots from `pftui refresh`.
+- Why: Completes F10.2 from the analytics spec — enables tracking portfolio returns over any period without manual calculation.
+- Files: new `src/commands/performance.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/mod.rs`, `src/db/snapshots.rs` (new `get_all_portfolio_snapshots`, `get_portfolio_snapshots_since` functions)
+- Tests: 12 new tests (956 total), clippy clean
+
 ### 2026-03-04 — F6.3: Watchlist entry level integration
 
 - What: `pftui watch TSLA --target 300 --direction below` stores a target price on the watchlist entry and auto-creates an alert rule. Watchlist CLI and TUI views show Target and Proximity columns when any entry has a target. Proximity is color-coded: red (<3%), yellow (<10%), green (>10%), 🎯 HIT when reached. `pftui watchlist --approaching 10%` filters to symbols within N% of target. DB migration adds `target_price` and `target_direction` columns to watchlist table.

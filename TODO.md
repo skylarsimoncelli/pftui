@@ -17,7 +17,6 @@
 ### F10: Portfolio Performance History
 > **Goal:** Track portfolio value over time. Compute returns over any period. Benchmark comparison. Requires automated daily snapshots.
 
-- [ ] **F10.2: `pftui performance` CLI** — Show MTD, QTD, YTD, since-inception returns. `--since 2026-02-24` for custom period. `--period weekly` for return series. `--vs SPY` for benchmark comparison. `--json` for agents. Files: new `src/commands/performance.rs`, `cli.rs`
 - [ ] **F10.3: Performance panel in Positions tab** — Compact return summary in portfolio overview: 1D, 1W, 1M, YTD. Sparkline of portfolio value over selected period. Files: `tui/views/positions.rs`, `tui/widgets/portfolio_stats.rs`
 
 ### Other P1
