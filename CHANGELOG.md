@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 22:40 UTC — F23.2: Calendar event countdown in header
+
+- What: display next high-impact calendar event in header with countdown. Format: "Next: NFP in 2d" (2 days until), "Next: CPI in tomorrow", "Next: FOMC in Mar 18" (>7 days shows date). Queries calendar_events table for upcoming events (date >= today), filters for impact="high", displays first match. Countdown logic: 0 days = "today", 1 day = "tomorrow", 2-6 days = "Xd", 7+ days = "Mon DD" format. Shown after tabs, before portfolio value, in non-compact mode only (terminal width >= 120). Event name styled with text_accent, countdown bold+accent. Helper function `get_next_event_countdown()` opens DB connection, queries events, parses dates, calculates time delta.
+- Why: F23.2 from TODO.md (P0 — Free Data Integration). Provides immediate visibility of upcoming market-moving events without switching to Economy tab. Complements F12 calendar infrastructure. Critical for macro-aware portfolio management — always know when next major data release is coming. No external API needed — reads from existing calendar_events table (populated by F12.1 schema, will be fed by F23.1 scraper).
+- Files: `src/tui/widgets/header.rs` (+imports: chrono::NaiveDate, rusqlite::Connection, db::calendar_cache; +get_next_event_countdown() helper; +header render countdown section after tabs)
+- Tests: all 1008 tests pass. No new tests needed — feature is UI-only and will be visible once calendar data is populated. Clippy clean.
+- TODO: F23.2 — Calendar countdown in header (P0) — COMPLETED. Next: F23.3 (calendar view in Economy tab).
+
 ### 2026-03-04 22:10 UTC — F17.3: `pftui predictions` CLI command
 
 - What: CLI command for querying cached prediction markets. Usage: `pftui predictions` (top 10 markets by volume), `--category crypto|economics|geopolitics|ai` (filter by category), `--search "recession"` (case-insensitive substring search), `--limit 20` (change result count), `--json` (structured output for agents). Table output: question (truncated to 70 chars), probability %, category, 24h volume (formatted with K/M suffix). JSON output includes: id, question, probability (0.0-1.0), probability_pct (0-100), volume_24h, category (lowercase string), updated_at (unix timestamp). Command reads from predictions_cache table (populated by F17.2 data module, refreshed via `pftui refresh`).
