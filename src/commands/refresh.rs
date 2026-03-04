@@ -14,6 +14,7 @@ use crate::db::watchlist::get_watchlist_symbols;
 use crate::models::asset::AssetCategory;
 use crate::models::price::PriceQuote;
 use crate::price::{coingecko, yahoo};
+use crate::tui::views::economy;
 
 /// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
 const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
@@ -38,6 +39,12 @@ fn collect_symbols(
     let watchlist_symbols = get_watchlist_symbols(conn)?;
     for (sym, cat) in watchlist_symbols {
         seen.entry(sym).or_insert(cat);
+    }
+
+    // Macro/economy symbols (DXY, VIX, oil, copper, yields, FX, etc.)
+    for item in economy::economy_symbols() {
+        let cat = economy::category_for_group(item.group);
+        seen.entry(item.yahoo_symbol).or_insert(cat);
     }
 
     Ok(seen.into_iter().collect())
@@ -158,22 +165,35 @@ pub fn run(conn: &Connection, config: &Config) -> Result<()> {
         return Ok(());
     }
 
+    let macro_yahoo_symbols: std::collections::HashSet<String> = economy::economy_symbols()
+        .iter()
+        .map(|item| item.yahoo_symbol.clone())
+        .collect();
     let non_cash: Vec<_> = symbols
         .iter()
         .filter(|(_, cat)| *cat != AssetCategory::Cash)
         .collect();
     let total = non_cash.len();
     let cash_count = symbols.len() - total;
+    let macro_count = non_cash
+        .iter()
+        .filter(|(sym, _)| macro_yahoo_symbols.contains(sym.as_str()))
+        .count();
 
     println!(
-        "Refreshing {} symbol{}{}...",
+        "Refreshing {} symbol{}{}{}...",
         total,
         if total == 1 { "" } else { "s" },
         if cash_count > 0 {
             format!(" (+{} cash)", cash_count)
         } else {
             String::new()
-        }
+        },
+        if macro_count > 0 {
+            format!(" ({} macro)", macro_count)
+        } else {
+            String::new()
+        },
     );
 
     // Build a tokio runtime for the async fetch
@@ -289,15 +309,23 @@ mod tests {
     }
 
     #[test]
-    fn collect_symbols_empty_db() {
+    fn collect_symbols_empty_db_includes_macro() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
         let symbols = collect_symbols(&conn, &config).unwrap();
-        assert!(symbols.is_empty());
+        let macro_count = economy::economy_symbols().len();
+        // Empty portfolio still gets all macro symbols
+        assert_eq!(symbols.len(), macro_count);
+        let sym_names: Vec<_> = symbols.iter().map(|(s, _)| s.as_str()).collect();
+        assert!(sym_names.contains(&"^VIX"));
+        assert!(sym_names.contains(&"DX-Y.NYB"));
+        assert!(sym_names.contains(&"CL=F"));
+        assert!(sym_names.contains(&"HG=F"));
+        assert!(sym_names.contains(&"GBPUSD=X"));
     }
 
     #[test]
-    fn collect_symbols_from_transactions() {
+    fn collect_symbols_from_transactions_plus_macro() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
         use crate::db::transactions::insert_transaction;
@@ -317,26 +345,31 @@ mod tests {
         )
         .unwrap();
         let symbols = collect_symbols(&conn, &config).unwrap();
-        assert_eq!(symbols.len(), 1);
-        assert_eq!(symbols[0].0, "AAPL");
+        let macro_count = economy::economy_symbols().len();
+        // AAPL + all macro symbols
+        assert_eq!(symbols.len(), macro_count + 1);
+        let sym_names: Vec<_> = symbols.iter().map(|(s, _)| s.as_str()).collect();
+        assert!(sym_names.contains(&"AAPL"));
+        assert!(sym_names.contains(&"^VIX"));
     }
 
     #[test]
-    fn collect_symbols_deduplicates_watchlist_and_portfolio() {
+    fn collect_symbols_deduplicates_portfolio_and_macro() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
         use crate::db::transactions::insert_transaction;
         use crate::db::watchlist::add_to_watchlist;
         use crate::models::transaction::{NewTransaction, TxType};
 
+        // GC=F is both a portfolio position and a macro symbol (Gold Futures)
         insert_transaction(
             &conn,
             &NewTransaction {
-                symbol: "BTC".to_string(),
-                category: AssetCategory::Crypto,
+                symbol: "GC=F".to_string(),
+                category: AssetCategory::Commodity,
                 tx_type: TxType::Buy,
                 quantity: dec!(1),
-                price_per: dec!(50000),
+                price_per: dec!(2000),
                 currency: "USD".to_string(),
                 date: "2025-01-15".to_string(),
                 notes: None,
@@ -344,27 +377,31 @@ mod tests {
         )
         .unwrap();
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
-        add_to_watchlist(&conn, "ETH", AssetCategory::Crypto).unwrap();
 
         let symbols = collect_symbols(&conn, &config).unwrap();
-        assert_eq!(symbols.len(), 2);
+        let macro_count = economy::economy_symbols().len();
+        // GC=F deduplicates between portfolio and macro, BTC is watchlist-only
+        // Total = macro symbols + BTC (GC=F already counted in macro)
+        assert_eq!(symbols.len(), macro_count + 1);
         let sym_names: Vec<_> = symbols.iter().map(|(s, _)| s.as_str()).collect();
+        assert!(sym_names.contains(&"GC=F"));
         assert!(sym_names.contains(&"BTC"));
-        assert!(sym_names.contains(&"ETH"));
     }
 
     #[test]
-    fn collect_symbols_percentage_mode() {
+    fn collect_symbols_percentage_mode_plus_macro() {
         let conn = crate::db::open_in_memory();
         let config = Config {
             portfolio_mode: PortfolioMode::Percentage,
             ..Default::default()
         };
         use crate::db::allocations::insert_allocation;
-        insert_allocation(&conn, "GC=F", AssetCategory::Commodity, dec!(50)).unwrap();
+        insert_allocation(&conn, "AAPL", AssetCategory::Equity, dec!(50)).unwrap();
         insert_allocation(&conn, "BTC", AssetCategory::Crypto, dec!(50)).unwrap();
 
         let symbols = collect_symbols(&conn, &config).unwrap();
-        assert_eq!(symbols.len(), 2);
+        let macro_count = economy::economy_symbols().len();
+        // AAPL + BTC + macro symbols
+        assert_eq!(symbols.len(), macro_count + 2);
     }
 }
