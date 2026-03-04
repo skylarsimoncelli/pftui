@@ -181,6 +181,9 @@ fn run_full(
     // Top movers (by daily change %)
     print_top_movers(&positions, hist_1d, base);
 
+    // P&L attribution (by dollar amount)
+    print_pnl_attribution(&positions, hist_1d, base);
+
     // Position table
     print_position_table_full(&positions, base, hist_1d);
 
@@ -232,6 +235,9 @@ fn run_percentage(
 
     // Top movers
     print_top_movers(&positions, hist_1d, base);
+
+    // P&L attribution (by dollar amount)
+    print_pnl_attribution(&positions, hist_1d, base);
 
     // Position table for percentage mode
     println!("## Positions\n");
@@ -542,6 +548,62 @@ fn print_top_movers(
             label,
             fmt_currency(*current, 2, base),
             pct,
+        );
+    }
+    println!();
+}
+
+fn print_pnl_attribution(
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+    base: &str,
+) {
+    let mut contributions: Vec<(&str, Decimal)> = Vec::new(); // (symbol, dollar_pnl)
+
+    for pos in positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        let current = match pos.current_price {
+            Some(p) => p,
+            None => continue,
+        };
+        let prev = match hist_1d.get(&pos.symbol) {
+            Some(p) => *p,
+            None => continue,
+        };
+        if prev <= dec!(0) {
+            continue;
+        }
+        let pnl = (current - prev) * pos.quantity;
+        contributions.push((&pos.symbol, pnl));
+    }
+
+    if contributions.is_empty() {
+        return;
+    }
+
+    // Sort by absolute dollar contribution descending
+    contributions.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap_or(std::cmp::Ordering::Equal));
+
+    println!("## P&L Attribution (1D)\n");
+
+    // Show top 5 contributors by absolute dollar amount
+    let count = contributions.len().min(5);
+    for (symbol, pnl) in &contributions[..count] {
+        let sign = if *pnl >= dec!(0) { "+" } else { "" };
+        let name = resolve_name(symbol);
+        let label = if name.is_empty() {
+            symbol.to_string()
+        } else {
+            format!("{} ({})", symbol, name)
+        };
+        println!(
+            "- **{}**: {}{} {}",
+            label,
+            sign,
+            fmt_commas(*pnl, 2),
+            base,
         );
     }
     println!();
