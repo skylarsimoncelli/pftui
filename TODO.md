@@ -68,7 +68,6 @@
 
 ### Other P2
 
-- [ ] **[Feedback] P&L attribution in `brief`** — Show which position contributed most to daily P&L (e.g., "Gold: -$5.2k, BTC: +$3.1k"). Files: `src/commands/brief.rs`
 - [ ] **[Feedback] `pftui sector` command** — Show sector ETF performance (XLE, ITA, XLF, IGV, etc.) for tracking sector-level moves. Files: new `src/commands/sector.rs`, `cli.rs`
 - [ ] **[Feedback] Add "What Changed Today" section to `brief`** — Show largest daily movers, notable threshold crossings, and any triggered alerts in the brief output. Files: `commands/brief.rs`
 - [ ] **[Feedback] Benchmark comparison in `brief`** — Show portfolio performance vs SPY, Gold index, or custom benchmark. Files: `commands/brief.rs`, `price/mod.rs`

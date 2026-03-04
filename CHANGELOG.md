@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — P&L attribution by position in `brief` command
+
+- What: Added `print_pnl_attribution()` function that computes and displays the top 5 positions by absolute dollar P&L contribution in the last 24 hours. Shows position name and signed dollar amount (e.g., "Gold (GC=F): -$5,200 USD"). Output appears in both Full and Percentage modes, positioned after Top Movers and before the main Positions table.
+- Why: Feedback request from P2 — traders want to quickly identify which positions are moving the most money (not just percentage), critical for large multi-asset portfolios where a 1% move in a $100k position matters more than a 10% move in a $1k position.
+- Files: `src/commands/brief.rs` (new `print_pnl_attribution()` function, calls added to `run_full()` and `run_percentage()`)
+- Tests: all 978 tests pass, clippy clean (no logic changes to tested functions, attribution is display-only)
+- TODO: [Feedback] P&L attribution in `brief` — COMPLETED
+
 ### 2026-03-04 — F10.3: Performance panel in Positions tab
 
 - What: Enhanced portfolio stats widget now displays compact performance metrics (1D, 1W, 1M, YTD returns) with color-coded percentages (green for gains, red for losses) and a braille sparkline showing the last 30 days of portfolio value. Performance computed from existing `portfolio_value_history` in App state. Widget height increased from 3 to 5 lines. Privacy mode hides all performance data.
