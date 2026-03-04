@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 — F6.1: Unified alert engine + DB schema
+
+- What: Alert rules engine supporting three alert types: price (`"GC=F above 5500"`), allocation (`"gold allocation above 30%"`), and indicator (`"GC=F RSI below 30"`). Natural language rule parser, SQLite storage with status lifecycle (armed → triggered → acknowledged), check engine that evaluates alerts against cached prices with distance-to-trigger calculation.
+- Why: Foundation for the entire F6 unified alert system. All subsequent alert features (CLI, TUI badge, refresh integration) build on this data layer.
+- Files: new `src/alerts/{mod,rules,engine}.rs`, new `src/db/alerts.rs`, `src/db/schema.rs` (alerts table migration), `src/db/mod.rs`, `src/main.rs`
+- Tests: 39 new tests (16 parser, 12 DB CRUD, 11 engine). Total: 916 passing, clippy clean.
+
 ### 2026-03-04 — F3.4: `pftui macro` CLI command
 
 - What: New `pftui macro` command — terminal-friendly macro dashboard. Displays yields (2Y/5Y/10Y/30Y), currencies (DXY, EUR, GBP, JPY, CNY), commodities (gold, silver, oil, copper, nat gas), VIX with regime context, FRED economic data (FFR, CPI, PPI, unemployment), and derived metrics (Au/Ag ratio, Au/Oil ratio, Cu/Au ratio, yield curve status). Key indicators strip at top for quick scanning. 1-day change arrows from price history. `--json` flag for structured agent output.
