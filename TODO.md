@@ -13,7 +13,6 @@
 > **Sources:** Polymarket Gamma API (free, no key, JSON REST), Manifold Markets API (free, no key)
 > **Data:** Market title, current probability, 24h change, volume, category (geopolitics/economics/crypto/AI)
 
-- [ ] **F17.1: Prediction market data module** — Fetch from Polymarket Gamma API (`https://gamma-api.polymarket.com/`). Parse market title, outcome prices (= probabilities), volume, end date. Cache in SQLite with 15-min TTL. Filter by category: geopolitics, economics, crypto, finance. Files: new `src/data/polymarket.rs`, new `src/db/prediction_cache.rs`
 - [ ] **F17.2: Predictions panel in Economy tab [4]** — Right-side panel or sub-view. Show top 10 relevant markets: "Fed rate cut by June?" 34% ↓, "US recession 2026?" 22% ↑, "BTC above $100k by Dec?" 45% →. Color-code by probability (green >60%, red <40%, yellow middle). 24h change arrows. Sort by volume or relevance. Files: `tui/views/economy.rs`
 - [ ] **F17.3: `pftui predictions` CLI** — `pftui predictions` (top markets), `--category crypto`, `--search "recession"`, `--json`. Files: new `src/commands/predictions.rs`, `cli.rs`
 - [ ] **F17.4: Prediction sparklines in Markets tab** — For key tracked predictions (recession, rate cuts, BTC price), show probability sparkline over 30 days alongside traditional asset charts. Files: `tui/views/markets.rs`

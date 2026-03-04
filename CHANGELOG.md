@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-04 21:10 UTC — F17.1: Prediction market data module
+
+- What: Zero-config prediction market data from Polymarket Gamma API (free, no key). SQLite `prediction_cache` table: market_id (PK), question, outcome_yes_price, outcome_no_price, volume, category, end_date, fetched_at. Indexes on category and volume for fast filtering. Data module: `polymarket::fetch_markets(category_filter, limit)` uses reqwest blocking client (10s timeout). DB module: `prediction_cache::{upsert_prediction, get_all_predictions, get_predictions_by_category, clear_predictions}`. Added reqwest `blocking` feature to Cargo.toml.
+- Why: pftui is the first zero-config terminal for macro-aware investors. Real-money probability data (recession odds, rate cut predictions, BTC price targets) directly in the TUI. No API key, no auth, instant value. Differentiates from all other portfolio TUIs — none have prediction markets.
+- Files: `src/db/schema.rs` (+prediction_cache table), `src/data/polymarket.rs` (new, 107 lines), `src/db/prediction_cache.rs` (new, 161 lines), `src/data/mod.rs`, `src/db/mod.rs`, `Cargo.toml` (+reqwest blocking feature)
+- Tests: 6 new tests (upsert_prediction, get_all_predictions, get_by_category, clear, live API fetch basic, live API fetch crypto category). Total: 996 passing.
+- TODO: F17.1 (prediction market data module)
+
 ### 2026-03-04 20:45 UTC — F8.1: Journal DB schema + CLI command suite
 
 - What: Implemented SQLite-backed journal with full CLI suite. Table schema: timestamp, content, tag (trade/thesis/prediction/reflection/alert/lesson/call), symbol, conviction (high/medium/low), status (open/validated/invalidated/closed), indexed on timestamp/tag/symbol/status. CLI commands: `pftui journal add "content" [--date] [--tag] [--symbol] [--conviction]`, `list [--limit] [--since 7d/30d/YYYY-MM-DD] [--tag] [--symbol] [--status]`, `search "query" [--since] [--limit]`, `update --id N [--content "..."] [--status ...]`, `remove --id N`, `tags` (list all tags with counts), `stats` (total entries, by tag, by month). All commands support `--json` for agent consumption.
