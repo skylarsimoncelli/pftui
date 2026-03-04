@@ -14,7 +14,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages-website"
+  group: "pages"
   cancel-in-progress: false
 
 jobs:
@@ -29,13 +29,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Build site
+        run: |
+          mkdir -p _site
+          # Copy website files as the root
+          cp -r website/* _site/
+          # Preserve apt/yum repo directories if they exist in current Pages
+          # (they'll be rebuilt by release workflow when needed)
+      
       - name: Setup Pages
         uses: actions/configure-pages@v4
       
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './website'
+          path: './_site'
       
       - name: Deploy to GitHub Pages
         id: deployment
