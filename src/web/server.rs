@@ -39,7 +39,7 @@ pub async fn run_server(
         .route("/transactions", get(get_transactions))
         .route("/macro", get(get_macro))
         .route("/alerts", get(get_alerts))
-        .route("/chart/:symbol", get(get_chart_data))
+        .route("/chart/{symbol}", get(get_chart_data))
         .route("/performance", get(get_performance))
         .route("/summary", get(get_summary))
         .with_state(app_state.clone());
