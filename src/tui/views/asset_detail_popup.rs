@@ -876,6 +876,80 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         }
     }
 
+    // ── COMEX Supply Data (metals only) ──
+    if symbol == "GC=F" || symbol == "SI=F" {
+        if let Ok(conn) = rusqlite::Connection::open(&app.db_path) {
+            if let Ok(Some(latest)) = crate::db::comex_cache::get_latest_inventory(&conn, symbol) {
+                lines.push(section_header("  COMEX Supply", t.text_accent));
+                lines.push(sep_line(t.border_subtle, 80));
+
+                // Registered inventory
+                let reg_oz = latest.registered;
+                let reg_str = if reg_oz >= 1_000_000.0 {
+                    format!("{:.1}M oz", reg_oz / 1_000_000.0)
+                } else {
+                    format!("{:.0}k oz", reg_oz / 1_000.0)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("  Registered    ", Style::default().fg(t.text_secondary)),
+                    Span::styled(reg_str.clone(), Style::default().fg(t.text_primary).bold()),
+                ]));
+
+                // Eligible inventory
+                let elig_oz = latest.eligible;
+                let elig_str = if elig_oz >= 1_000_000.0 {
+                    format!("{:.1}M oz", elig_oz / 1_000_000.0)
+                } else {
+                    format!("{:.0}k oz", elig_oz / 1_000.0)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("  Eligible      ", Style::default().fg(t.text_secondary)),
+                    Span::styled(elig_str, Style::default().fg(t.text_primary)),
+                ]));
+
+                // Registered/Eligible ratio
+                let reg_ratio = latest.reg_ratio;
+                let ratio_color = if reg_ratio < 30.0 {
+                    t.loss_red  // Low registered = tight supply
+                } else if reg_ratio < 50.0 {
+                    t.text_accent
+                } else {
+                    t.text_muted
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("  Reg/Total     ", Style::default().fg(t.text_secondary)),
+                    Span::styled(
+                        format!("{:.1}%", reg_ratio),
+                        Style::default().fg(ratio_color),
+                    ),
+                ]));
+
+                // Trend vs previous day
+                if let Ok(Some(prev)) = crate::db::comex_cache::get_previous_inventory(&conn, symbol, &latest.date) {
+                    let trend = if (latest.registered - prev.registered) / prev.registered < -0.02 {
+                        ("drawing down", t.loss_red)
+                    } else if (latest.registered - prev.registered) / prev.registered > 0.02 {
+                        ("building", t.gain_green)
+                    } else {
+                        ("stable", t.text_muted)
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled("  Trend         ", Style::default().fg(t.text_secondary)),
+                        Span::styled(trend.0.to_string(), Style::default().fg(trend.1)),
+                    ]));
+                }
+
+                // Data date
+                lines.push(Line::from(vec![
+                    Span::styled("  As of         ", Style::default().fg(t.text_secondary)),
+                    Span::styled(latest.date.clone(), Style::default().fg(t.text_muted)),
+                ]));
+
+                lines.push(Line::from(""));
+            }
+        }
+    }
+
     // ── Recent News ──
     if !app.news_entries.is_empty() {
         let asset_name = lookup_name(symbol);
