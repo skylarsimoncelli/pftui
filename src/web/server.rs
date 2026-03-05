@@ -113,8 +113,11 @@ fn stream_event_type_and_message(i: usize) -> (&'static str, &'static str) {
 
 async fn get_stream() -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let ticker = tokio::time::interval(StdDuration::from_secs(5));
-    let stream = IntervalStream::new(ticker).enumerate().map(|(i, _)| {
-        let (event_name, message) = stream_event_type_and_message(i);
+    let mut i: usize = 0;
+    let stream = IntervalStream::new(ticker).map(move |_| {
+        let tick = i;
+        i += 1;
+        let (event_name, message) = stream_event_type_and_message(tick);
         let payload = StreamPayload {
             ts: Utc::now().to_rfc3339(),
             message: message.to_string(),
