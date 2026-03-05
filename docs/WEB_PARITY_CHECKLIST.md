@@ -42,10 +42,10 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - [ ] 26. Add visual polish parity: panel hierarchy, border emphasis, selected-row treatment, muted/active text states.
 
 ## Detail Panels and Overlays
-- [ ] 27. Detail panels and overlays parity.
-- [ ] 28. Asset detail drawer/modal matching TUI details (core stats, technicals, ranges, context).
-- [ ] 29. Alerts overlay and indicator badges.
-- [ ] 30. Search overlay behavior equivalent to TUI search/filter patterns.
+- [x] 27. Detail panels and overlays parity.
+- [x] 28. Asset detail drawer/modal matching TUI details (core stats, technicals, ranges, context).
+- [x] 29. Alerts overlay and indicator badges.
+- [x] 30. Search overlay behavior equivalent to TUI search/filter patterns.
 - [x] 31. Add loading/skeleton/error states for each panel.
 
 ## Data Refresh Model
@@ -72,10 +72,11 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 ## Rollout Sequence
 - [ ] 47. Rollout sequence.
 - [x] 48. Milestone A: complete tab data parity and shared view-model API.
-- [ ] 49. Milestone B: complete UX/navigation parity and persistence.
-- [ ] 50. Milestone C: complete chart parity fallback and detail overlays.
+- [x] 49. Milestone B: complete UX/navigation parity and persistence.
+- [x] 50. Milestone C: complete chart parity fallback and detail overlays.
 - [ ] 51. Milestone D: harden auth, tests, and publish as stable `pftui web`.
 
 ## Progress Notes
 - 2026-03-05: Phase A baseline fix landed for new `Config.home_tab` field by updating explicit `Config { ... }` initializers in tests (`src/app.rs`, `src/commands/export.rs`).
 - 2026-03-05: Phase B landed session auth (`/auth/login`, `/auth/logout`, `/auth/session`, `/auth/csrf`), middleware CSRF enforcement for mutating `/api/*`, and unauthenticated/expired-session UI flow in web frontend.
+- 2026-03-05: Phase C landed overlay stack + keyboard parity for search/alerts/asset details (single active overlay, Esc-close priority, focus return), plus alert badges in header/tab.

@@ -18,6 +18,14 @@
 - Files: `src/web/auth.rs`, `src/web/server.rs`, `src/web/static/index.html`, `src/web/view_model.rs`, `docs/WEB_API_SCHEMA_v1.md`, `docs/WEB_PARITY_CHECKLIST.md`
 - Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
 
+### 2026-03-05 20:00 UTC — Web parity Phase C: overlay/detail parity
+
+- What: Added centralized overlay controller in web UI with single-active-overlay behavior across search, alerts, and asset detail drawer. `Esc` now closes the top overlay first with focus restoration. Added global search overlay (`/` shortcut) with keyboard nav (`j/k`, `Enter`, `Esc`) and symbol/news routing.
+- Detail parity: Added asset detail drawer opening from positions/watchlist/markets interactions, with symbol context, gain/allocation stats, watchlist/alerts chips, and loaded-history range summary.
+- Alerts parity: Added header/tab alert badge counts and alerts overlay toggle (mouse + keyboard `a`/`A`).
+- Files: `src/web/static/index.html`, `docs/WEB_PARITY_CHECKLIST.md`
+- Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
+
 ### 2026-03-05 14:45 UTC — F25.3: `pftui global` CLI for World Bank data
 
 - What: New `pftui global` command displays World Bank structural macro data for major economies. Shows GDP growth, Debt/GDP, Current Account, and Reserves for 8 tracked countries (USA, EU, UK, China, India, Russia, Brazil, South Africa). Terminal output: country-grouped panels with formatted values (percentages, trillions USD). Filters: `--country` (e.g. USA, CHN, IND), `--indicator` (gdp, debt, current-account, reserves). JSON output via `--json` flag for agent consumption. Reads from worldbank_cache (built in F25.1), outputs "No data found" if cache empty with refresh hint.

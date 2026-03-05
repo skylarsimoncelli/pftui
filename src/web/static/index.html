@@ -101,6 +101,86 @@
             cursor: pointer;
             font-weight: 600;
         }
+        .overlay-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 8, 20, 0.72);
+            z-index: 24;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .overlay-backdrop.active { display: flex; }
+        .overlay-card {
+            width: min(760px, 100%);
+            max-height: 82vh;
+            overflow: auto;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.9rem;
+        }
+        .overlay-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.7rem;
+            gap: 0.6rem;
+        }
+        .overlay-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        .overlay-close {
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-radius: 8px;
+            padding: 0.32rem 0.5rem;
+            cursor: pointer;
+        }
+        .search-results { display: grid; gap: 0.45rem; }
+        .search-row {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.55rem;
+            background: var(--bg-tertiary);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.8rem;
+        }
+        .search-row.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent) inset;
+        }
+        .asset-drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            height: 100vh;
+            width: min(460px, 100%);
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            box-shadow: -10px 0 24px rgba(0,0,0,0.32);
+            z-index: 26;
+            transform: translateX(100%);
+            transition: transform 150ms ease;
+            padding: 1rem;
+            overflow: auto;
+        }
+        .asset-drawer.active { transform: translateX(0%); }
+        .drawer-metric {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem;
+            background: var(--bg-tertiary);
+            margin-bottom: 0.45rem;
+        }
+        .drawer-label { color: var(--text-muted); font-size: 0.78rem; }
+        .drawer-value { color: var(--text-primary); font-size: 0.92rem; font-weight: 600; }
 
         .tabs {
             display: flex;
@@ -334,6 +414,8 @@
                         <div class="total-gain" id="total-gain"></div>
                         <div class="freshness" id="freshness-status">Refreshing...</div>
                     </div>
+                    <button class="theme-btn" id="search-overlay-toggle">Search (/)</button>
+                    <button class="theme-btn" id="alerts-overlay-toggle">Alerts (0)</button>
                     <button class="theme-btn" id="theme-cycle">Theme</button>
                     <button class="theme-btn" id="auth-logout" style="display:none;">Logout</button>
                 </div>
@@ -528,6 +610,37 @@
         </section>
     </main>
 
+    <div class="overlay-backdrop" id="search-overlay">
+        <div class="overlay-card">
+            <div class="overlay-header">
+                <div class="overlay-title">Global Search</div>
+                <button class="overlay-close" id="search-overlay-close">Esc</button>
+            </div>
+            <input class="search" id="global-search-input" placeholder="Search symbols, watchlist, markets, news" />
+            <div class="search-results" id="global-search-results"></div>
+        </div>
+    </div>
+
+    <div class="overlay-backdrop" id="alerts-overlay">
+        <div class="overlay-card">
+            <div class="overlay-header">
+                <div class="overlay-title">Alerts</div>
+                <button class="overlay-close" id="alerts-overlay-close">Esc</button>
+            </div>
+            <div class="list" id="alerts-overlay-list"></div>
+        </div>
+    </div>
+
+    <aside class="asset-drawer" id="asset-detail-drawer">
+        <div class="overlay-header">
+            <div class="overlay-title">Asset Detail</div>
+            <button class="overlay-close" id="asset-drawer-close">Esc</button>
+        </div>
+        <div id="asset-detail-body" class="detail-pane">
+            <div class="empty">Select an asset to inspect details.</div>
+        </div>
+    </aside>
+
     <script src="https://s3.tradingview.com/tv.js"></script>
     <script>
         const storageKey = 'pftui-web-ui-state-v1';
@@ -559,6 +672,13 @@
                 csrfToken: null,
                 authMode: 'session',
                 refreshTimer: null,
+            },
+            overlay: {
+                active: null,
+                previousFocus: null,
+                searchResults: [],
+                searchIndex: 0,
+                detail: null,
             },
         };
 
@@ -649,6 +769,30 @@
             showAuthOverlay(expired ? 'Your session expired. Log in again.' : 'Authentication required.');
         }
 
+        function setOverlayState(name) {
+            state.overlay.active = name;
+            document.getElementById('search-overlay')?.classList.toggle('active', name === 'search');
+            document.getElementById('alerts-overlay')?.classList.toggle('active', name === 'alerts');
+            document.getElementById('asset-detail-drawer')?.classList.toggle('active', name === 'assetDetail');
+        }
+
+        function openOverlay(name) {
+            state.overlay.previousFocus = document.activeElement;
+            setOverlayState(name);
+            if (name === 'search') {
+                const input = document.getElementById('global-search-input');
+                input?.focus();
+                input?.select();
+            }
+        }
+
+        function closeOverlay() {
+            setOverlayState(null);
+            if (state.overlay.previousFocus && typeof state.overlay.previousFocus.focus === 'function') {
+                state.overlay.previousFocus.focus();
+            }
+        }
+
         async function apiFetch(path) {
             const res = await fetch(path, { credentials: 'same-origin' });
             if (res.status === 401) {
@@ -722,7 +866,11 @@
             state.tabs.forEach(tab => {
                 const btn = document.createElement('button');
                 btn.className = `tab-btn ${tab === state.activeTab ? 'active' : ''}`;
-                btn.textContent = tab;
+                if (tab === 'Alerts') {
+                    btn.textContent = `Alerts (${(state.alerts || []).length})`;
+                } else {
+                    btn.textContent = tab;
+                }
                 btn.addEventListener('click', () => setActiveTab(tab));
                 tabs.appendChild(btn);
             });
@@ -872,10 +1020,21 @@
                     <td class="right">${fmtCurrency(pos.current_value)}</td>
                     <td class="right ${gp >= 0 ? 'positive' : 'negative'}">${fmtPct(pos.gain_pct)}</td>
                 `;
-                tr.addEventListener('click', () => {
+                tr.addEventListener('click', async () => {
                     document.querySelectorAll('#positions-table tbody tr').forEach(r => r.classList.remove('selected'));
                     tr.classList.add('selected');
                     loadChart(pos.symbol, 'tradingview-chart', 'chart-placeholder');
+                    await openAssetDetail({
+                        symbol: pos.symbol,
+                        name: pos.name,
+                        category: pos.category,
+                        current_price: pos.current_price,
+                        current_value: pos.current_value,
+                        gain: pos.gain,
+                        gain_pct: pos.gain_pct,
+                        allocation_pct: pos.allocation_pct,
+                        source: 'positions',
+                    });
                 });
                 tbody.appendChild(tr);
             });
@@ -899,7 +1058,7 @@
                     ? `<div class="name">Target ${item.target_direction || ''} ${fmtCurrency(item.target_price)}</div>`
                     : '';
                 row.innerHTML = `<div><div class="symbol">${item.symbol}</div><div class="name">${item.name || ''}</div>${target}${proximity}</div><div>${fmtCurrency(item.current_price)}</div>`;
-                row.addEventListener('click', () => {
+                row.addEventListener('click', async () => {
                     document.querySelectorAll(`#${targetId} .list-item`).forEach(n => n.classList.remove('active'));
                     row.classList.add('active');
                     if (targetId === 'watchlist-full') {
@@ -907,6 +1066,17 @@
                     } else {
                         loadChart(item.symbol, 'tradingview-chart', 'chart-placeholder');
                     }
+                    await openAssetDetail({
+                        symbol: item.symbol,
+                        name: item.name,
+                        category: item.category,
+                        current_price: item.current_price,
+                        current_value: null,
+                        gain: null,
+                        gain_pct: item.day_change_pct,
+                        allocation_pct: null,
+                        source: 'watchlist',
+                    });
                 });
                 el.appendChild(row);
             });
@@ -924,7 +1094,20 @@
                 const div = document.createElement('div');
                 div.className = `macro-item ${state.selectedSymbol === ind.symbol ? 'active' : ''}`;
                 div.innerHTML = `<div class="label">${ind.name}</div><div class="value">${fmtNum(ind.value)}</div>`;
-                div.addEventListener('click', () => loadChart(ind.symbol, chartContainer, placeholder));
+                div.addEventListener('click', async () => {
+                    loadChart(ind.symbol, chartContainer, placeholder);
+                    await openAssetDetail({
+                        symbol: ind.symbol,
+                        name: ind.name,
+                        category: 'macro',
+                        current_price: ind.value,
+                        current_value: null,
+                        gain: null,
+                        gain_pct: ind.change_pct,
+                        allocation_pct: null,
+                        source: 'markets',
+                    });
+                });
                 panel.appendChild(div);
             });
         }
@@ -966,30 +1149,179 @@
                     </div>
                     <div class="${gp >= 0 ? 'positive' : 'negative'}">${fmtPct(m.gain_pct)}</div>
                 `;
-                row.addEventListener('click', () => loadChart(m.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets'));
+                row.addEventListener('click', async () => {
+                    loadChart(m.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets');
+                    await openAssetDetail({
+                        symbol: m.symbol,
+                        name: m.name,
+                        category: m.category || 'asset',
+                        current_price: m.current_price,
+                        current_value: m.current_value,
+                        gain: m.gain,
+                        gain_pct: m.gain_pct,
+                        allocation_pct: m.allocation_pct,
+                        source: 'markets',
+                    });
+                });
                 el.appendChild(row);
             });
         }
 
         function renderAlerts(items) {
             const panel = document.getElementById('alerts-list');
+            const overlay = document.getElementById('alerts-overlay-list');
             if (!panel) return;
             panel.innerHTML = '';
+            if (overlay) overlay.innerHTML = '';
             if (!items || !items.length) {
                 panel.innerHTML = '<div class="empty">No active alerts</div>';
+                if (overlay) overlay.innerHTML = '<div class="empty">No active alerts</div>';
                 return;
             }
             items.forEach(a => {
-                const el = document.createElement('div');
-                el.className = 'list-item';
-                el.innerHTML = `
+                const rowHtml = `
                     <div>
                         <div class="symbol">${a.symbol} ${a.direction} ${a.threshold}</div>
                         <div class="name">${a.rule_text}</div>
                     </div>
                     <div class="${a.status === 'triggered' ? 'positive' : 'subtle'}">${a.status}</div>
                 `;
-                panel.appendChild(el);
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = rowHtml;
+                panel.appendChild(item);
+                if (overlay) {
+                    const overlayItem = document.createElement('div');
+                    overlayItem.className = 'list-item';
+                    overlayItem.innerHTML = rowHtml;
+                    overlay.appendChild(overlayItem);
+                }
+            });
+        }
+
+        async function openAssetDetail(detail) {
+            if (!detail?.symbol) return;
+            state.overlay.detail = detail;
+            const alertCount = (state.alerts || []).filter(a => a.symbol === detail.symbol).length;
+            const inWatchlist = (state.watchlist || []).some(w => w.symbol === detail.symbol);
+            let history = [];
+            try {
+                const chart = await apiFetch(`/api/chart/${encodeURIComponent(detail.symbol)}`);
+                history = chart.history || [];
+            } catch (_) {}
+            const closes = history.map(h => Number(h.close || 0)).filter(v => Number.isFinite(v) && v > 0);
+            const rangeLow = closes.length ? Math.min(...closes) : null;
+            const rangeHigh = closes.length ? Math.max(...closes) : null;
+            const body = document.getElementById('asset-detail-body');
+            body.innerHTML = `
+                <h3>${detail.symbol} ${detail.name ? `· ${detail.name}` : ''}</h3>
+                <div style="margin:0.5rem 0 0.7rem 0;">
+                    <span class="badge">${detail.category || detail.source || 'asset'}</span>
+                    ${inWatchlist ? '<span class="badge">watchlist</span>' : ''}
+                    <span class="badge">alerts: ${alertCount}</span>
+                </div>
+                <div class="drawer-metric"><div class="drawer-label">Price</div><div class="drawer-value">${fmtCurrency(detail.current_price)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Position Value</div><div class="drawer-value">${fmtCurrency(detail.current_value)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Gain</div><div class="drawer-value ${Number(detail.gain || 0) >= 0 ? 'positive' : 'negative'}">${fmtCurrency(detail.gain)} (${fmtPct(detail.gain_pct)})</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Allocation</div><div class="drawer-value">${fmtPct(detail.allocation_pct)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Range (loaded history)</div><div class="drawer-value">${rangeLow === null ? '-' : `${fmtCurrency(rangeLow)} - ${fmtCurrency(rangeHigh)}`}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">History Points</div><div class="drawer-value">${history.length}</div></div>
+            `;
+            openOverlay('assetDetail');
+        }
+
+        function buildSearchResults(query) {
+            const q = (query || '').trim().toLowerCase();
+            if (!q) return [];
+            const out = [];
+            (state.positions || []).forEach(p => {
+                if (p.symbol?.toLowerCase().includes(q) || p.name?.toLowerCase().includes(q)) {
+                    out.push({ kind: 'symbol', source: 'positions', tab: 'Positions', symbol: p.symbol, label: p.name || p.symbol });
+                }
+            });
+            (state.watchlist || []).forEach(w => {
+                if (w.symbol?.toLowerCase().includes(q) || w.name?.toLowerCase().includes(q)) {
+                    out.push({ kind: 'symbol', source: 'watchlist', tab: 'Watchlist', symbol: w.symbol, label: w.name || w.symbol });
+                }
+            });
+            (state.macro || []).forEach(m => {
+                if (m.symbol?.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q)) {
+                    out.push({ kind: 'symbol', source: 'markets', tab: 'Markets', symbol: m.symbol, label: m.name || m.symbol });
+                }
+            });
+            (state.news || []).forEach(n => {
+                if (n.title?.toLowerCase().includes(q)) {
+                    out.push({ kind: 'news', source: 'news', tab: 'News', id: n.id, symbol: null, label: n.title });
+                }
+            });
+            const deduped = [];
+            const seen = new Set();
+            out.forEach(item => {
+                const key = `${item.kind}:${item.symbol || item.id}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                deduped.push(item);
+            });
+            return deduped.slice(0, 60);
+        }
+
+        async function selectSearchResult(item) {
+            if (!item) return;
+            if (item.kind === 'news') {
+                await setActiveTab('News');
+                state.selectedNewsId = item.id;
+                renderNews(state.news);
+                closeOverlay();
+                return;
+            }
+            await setActiveTab(item.tab || 'Positions');
+            if (item.tab === 'Watchlist') {
+                loadChart(item.symbol, 'tradingview-chart-watchlist', 'chart-placeholder-watchlist');
+            } else if (item.tab === 'Markets' || item.tab === 'Economy') {
+                loadChart(item.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets');
+            } else {
+                loadChart(item.symbol, 'tradingview-chart', 'chart-placeholder');
+            }
+            const pos = (state.positions || []).find(p => p.symbol === item.symbol);
+            const watch = (state.watchlist || []).find(w => w.symbol === item.symbol);
+            const macro = (state.macro || []).find(m => m.symbol === item.symbol);
+            await openAssetDetail({
+                symbol: item.symbol,
+                name: pos?.name || watch?.name || macro?.name || item.label,
+                category: pos?.category || watch?.category || 'asset',
+                current_price: pos?.current_price ?? watch?.current_price ?? macro?.value ?? null,
+                current_value: pos?.current_value ?? null,
+                gain: pos?.gain ?? null,
+                gain_pct: pos?.gain_pct ?? null,
+                allocation_pct: pos?.allocation_pct ?? null,
+                source: item.source,
+            });
+        }
+
+        function renderSearchResults() {
+            const target = document.getElementById('global-search-results');
+            if (!target) return;
+            target.innerHTML = '';
+            if (!state.overlay.searchResults.length) {
+                target.innerHTML = '<div class="empty">No matching symbols or headlines.</div>';
+                return;
+            }
+            state.overlay.searchResults.forEach((result, idx) => {
+                const row = document.createElement('div');
+                row.className = `search-row ${idx === state.overlay.searchIndex ? 'active' : ''}`;
+                row.innerHTML = `
+                    <div>
+                        <div class="symbol">${result.symbol || result.label}</div>
+                        <div class="name">${result.label}</div>
+                    </div>
+                    <div class="badge">${result.source}</div>
+                `;
+                row.addEventListener('click', async () => {
+                    state.overlay.searchIndex = idx;
+                    renderSearchResults();
+                    await selectSearchResult(result);
+                });
+                target.appendChild(row);
             });
         }
 
@@ -1099,6 +1431,8 @@
             updateFreshness(data.meta);
             state.alerts = data.alerts || [];
             renderAlerts(state.alerts);
+            document.getElementById('alerts-overlay-toggle').textContent = `Alerts (${state.alerts.length})`;
+            renderTabs();
         }
 
         async function loadNews() {
@@ -1175,6 +1509,29 @@
 
         function bindInteractions() {
             document.getElementById('theme-cycle').addEventListener('click', () => cycleTheme());
+            document.getElementById('search-overlay-toggle').addEventListener('click', () => {
+                openOverlay('search');
+                state.overlay.searchResults = buildSearchResults(document.getElementById('global-search-input').value);
+                state.overlay.searchIndex = 0;
+                renderSearchResults();
+            });
+            document.getElementById('alerts-overlay-toggle').addEventListener('click', () => {
+                if (state.overlay.active === 'alerts') closeOverlay(); else openOverlay('alerts');
+            });
+            document.getElementById('search-overlay-close').addEventListener('click', closeOverlay);
+            document.getElementById('alerts-overlay-close').addEventListener('click', closeOverlay);
+            document.getElementById('asset-drawer-close').addEventListener('click', closeOverlay);
+            document.getElementById('search-overlay').addEventListener('click', (e) => {
+                if (e.target.id === 'search-overlay') closeOverlay();
+            });
+            document.getElementById('alerts-overlay').addEventListener('click', (e) => {
+                if (e.target.id === 'alerts-overlay') closeOverlay();
+            });
+            document.getElementById('global-search-input').addEventListener('input', (e) => {
+                state.overlay.searchResults = buildSearchResults(e.target.value);
+                state.overlay.searchIndex = 0;
+                renderSearchResults();
+            });
             document.getElementById('auth-logout').addEventListener('click', async () => {
                 try {
                     await apiPost('/auth/logout', {});
@@ -1239,13 +1596,49 @@
             });
 
             document.addEventListener('keydown', async (e) => {
+                if (e.key === 'Escape' && state.overlay.active) {
+                    e.preventDefault();
+                    closeOverlay();
+                    return;
+                }
+                if (state.overlay.active === 'search') {
+                    if (e.key === 'j' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        state.overlay.searchIndex = Math.min(state.overlay.searchResults.length - 1, state.overlay.searchIndex + 1);
+                        renderSearchResults();
+                        return;
+                    }
+                    if (e.key === 'k' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        state.overlay.searchIndex = Math.max(0, state.overlay.searchIndex - 1);
+                        renderSearchResults();
+                        return;
+                    }
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const selected = state.overlay.searchResults[state.overlay.searchIndex];
+                        await selectSearchResult(selected);
+                        return;
+                    }
+                }
+                if (state.overlay.active && state.overlay.active !== 'search') {
+                    return;
+                }
                 if (e.key === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
                     await cycleTheme();
                 }
+                if ((e.key === 'A' || e.key === 'a') && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+                    e.preventDefault();
+                    if (state.overlay.active === 'alerts') closeOverlay(); else openOverlay('alerts');
+                    return;
+                }
                 if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
                     e.preventDefault();
-                    const target = state.activeTab === 'Journal' ? document.getElementById('journal-search') : document.getElementById('position-search');
-                    target?.focus();
+                    openOverlay('search');
+                    const input = document.getElementById('global-search-input');
+                    state.overlay.searchResults = buildSearchResults(input.value);
+                    state.overlay.searchIndex = 0;
+                    renderSearchResults();
                 }
                 if ((e.key === 'j' || e.key === 'k') && state.activeTab === 'Positions') {
                     const rows = Array.from(document.querySelectorAll('#positions-table tbody tr')).filter(r => r.style.display !== 'none');
