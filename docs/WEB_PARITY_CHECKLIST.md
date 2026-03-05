@@ -2,6 +2,9 @@
 
 Source: user-provided parity checklist. This file is the implementation tracker and is updated as items are completed.
 
+Note (2026-03-05): Active multi-session execution tracking has moved to
+`docs/WEB_REBUILD_CHECKLIST.md`. This checklist remains as historical context.
+
 ## Target
 - [x] Full TUI parity in web: same information architecture, same mental model, web-native interactions, and shared Rust domain logic.
 

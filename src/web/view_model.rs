@@ -1,10 +1,15 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
+use rusqlite::Connection;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::config::Config;
+use crate::models::asset::AssetCategory;
 use crate::models::transaction::Transaction;
+use crate::tui::views::{economy, markets, watchlist};
 
 pub const WEB_TABS_FULL: &[&str] = &[
     "Positions",
@@ -52,6 +57,96 @@ pub fn fresh_meta(stale_after_sec: u64) -> ResponseMeta {
         auth_required: true,
         transport: "polling".to_string(),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolSpec {
+    pub symbol: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EconomySectionSpec {
+    pub id: String,
+    pub label: String,
+    pub symbols: Vec<SymbolSpec>,
+}
+
+/// Shared market overview contract for web and TUI.
+/// Symbol values use Yahoo-compatible symbols for chart/data lookups.
+pub fn market_overview_symbols() -> Vec<SymbolSpec> {
+    markets::market_symbols()
+        .into_iter()
+        .map(|item| SymbolSpec {
+            symbol: item.yahoo_symbol,
+            name: item.name,
+        })
+        .collect()
+}
+
+/// Shared economy sections contract for web and TUI.
+pub fn economy_sections() -> Vec<EconomySectionSpec> {
+    let items = economy::economy_symbols();
+    let groups: [(
+        economy::EconomyGroup,
+        &str,
+        &str,
+    ); 4] = [
+        (economy::EconomyGroup::Yields, "yields", "Yields"),
+        (economy::EconomyGroup::Currency, "currency", "Currency"),
+        (economy::EconomyGroup::Commodities, "commodities", "Commodities"),
+        (economy::EconomyGroup::Volatility, "volatility", "Volatility"),
+    ];
+
+    groups
+        .iter()
+        .map(|(group, id, label)| EconomySectionSpec {
+            id: (*id).to_string(),
+            label: (*label).to_string(),
+            symbols: items
+                .iter()
+                .filter(|item| item.group == *group)
+                .map(|item| SymbolSpec {
+                    symbol: item.yahoo_symbol.clone(),
+                    name: item.name.clone(),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+pub fn day_change_pct(conn: &Connection, symbol: &str) -> Option<Decimal> {
+    let history = crate::db::price_history::get_history(conn, symbol, 2).ok()?;
+    if history.len() < 2 {
+        return None;
+    }
+    let prev = history[history.len() - 2].close;
+    let latest = history[history.len() - 1].close;
+    if prev == dec!(0) {
+        return None;
+    }
+    Some((latest - prev) / prev * dec!(100))
+}
+
+pub fn watchlist_quote_symbol(symbol: &str, category: AssetCategory) -> String {
+    watchlist::yahoo_symbol_for(symbol, category)
+}
+
+pub fn top_movers_from_map(
+    changes: &HashMap<String, Decimal>,
+    limit: usize,
+) -> Vec<(String, Decimal)> {
+    let mut entries: Vec<(String, Decimal)> = changes
+        .iter()
+        .map(|(symbol, change)| (symbol.clone(), *change))
+        .collect();
+    entries.sort_by(|a, b| {
+        b.1.abs()
+            .partial_cmp(&a.1.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    entries.truncate(limit);
+    entries
 }
 
 pub fn compute_watchlist_proximity(
@@ -202,6 +297,8 @@ fn tx_fee(tx: &Transaction) -> Decimal {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::models::asset::AssetCategory;
     use crate::models::transaction::TxType;
@@ -247,5 +344,27 @@ mod tests {
         let filtered = apply_transaction_filters(txs, Some("AAPL"), Some("sell"), None, None);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].tx_type, TxType::Sell);
+    }
+
+    #[test]
+    fn market_contract_uses_tui_market_universe() {
+        let symbols = market_overview_symbols();
+        assert!(symbols.len() >= 20);
+        assert_eq!(symbols[0].symbol, "^GSPC");
+        assert!(symbols.iter().any(|s| s.symbol == "BTC-USD"));
+    }
+
+    #[test]
+    fn economy_sections_match_expected_order() {
+        let sections = economy_sections();
+        let ids: Vec<&str> = sections.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["yields", "currency", "commodities", "volatility"]);
+    }
+
+    #[test]
+    fn market_contract_symbols_are_unique() {
+        let symbols = market_overview_symbols();
+        let set: HashSet<&str> = symbols.iter().map(|s| s.symbol.as_str()).collect();
+        assert_eq!(set.len(), symbols.len());
     }
 }

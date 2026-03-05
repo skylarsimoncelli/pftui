@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::{get, post},
+    routing::{delete, get, patch, post},
     Router,
     response::sse::{Event, KeepAlive, Sse},
 };
@@ -8,19 +8,26 @@ use chrono::Utc;
 use serde::Serialize;
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 use tokio_stream::wrappers::IntervalStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::commands;
 use super::api::{
-    get_alerts, get_chart_data, get_home_tab, get_journal, get_macro, get_news, get_performance,
-    get_portfolio, get_positions, get_summary, get_transactions, get_ui_config, get_watchlist,
-    set_home_tab, set_theme, AppState,
+    delete_alert, delete_watchlist, get_alerts, get_asset_detail, get_chart_data, get_home_tab,
+    delete_journal, delete_transaction, get_journal, get_macro, get_news, get_performance,
+    get_portfolio, get_positions, get_search, get_summary, get_transactions, get_ui_config,
+    get_watchlist, patch_journal, patch_transaction, post_alert, post_alert_ack,
+    post_alert_rearm, post_journal, post_transaction, post_watchlist, set_home_tab, set_theme,
+    AppState,
 };
 use super::auth::{auth_middleware, get_csrf, get_session, login, logout, AuthState};
 use crate::config::Config;
+use crate::data::rss::{self, NewsCategory, RssFeed};
+use crate::db;
 
 pub async fn run_server(
     db_path: String,
@@ -29,8 +36,12 @@ pub async fn run_server(
     port: u16,
     enable_auth: bool,
 ) -> anyhow::Result<()> {
-    let app_state = Arc::new(AppState { db_path, config });
+    let app_state = Arc::new(AppState {
+        db_path: db_path.clone(),
+        config: config.clone(),
+    });
     let auth_state = Arc::new(AuthState::new(enable_auth, bind_addr));
+    spawn_background_workers(db_path.clone(), config.clone());
 
     // CORS configuration for local development
     let cors = CorsLayer::new()
@@ -43,11 +54,25 @@ pub async fn run_server(
         .route("/portfolio", get(get_portfolio))
         .route("/positions", get(get_positions))
         .route("/watchlist", get(get_watchlist))
+        .route("/watchlist", post(post_watchlist))
+        .route("/watchlist/{symbol}", delete(delete_watchlist))
         .route("/transactions", get(get_transactions))
+        .route("/transactions", post(post_transaction))
+        .route("/transactions/{id}", patch(patch_transaction))
+        .route("/transactions/{id}", delete(delete_transaction))
+        .route("/search", get(get_search))
         .route("/macro", get(get_macro))
         .route("/alerts", get(get_alerts))
+        .route("/alerts", post(post_alert))
+        .route("/alerts/{id}", delete(delete_alert))
+        .route("/alerts/{id}/ack", post(post_alert_ack))
+        .route("/alerts/{id}/rearm", post(post_alert_rearm))
         .route("/news", get(get_news))
         .route("/journal", get(get_journal))
+        .route("/journal", post(post_journal))
+        .route("/journal/{id}", patch(patch_journal))
+        .route("/journal/{id}", delete(delete_journal))
+        .route("/asset/{symbol}", get(get_asset_detail))
         .route("/chart/{symbol}", get(get_chart_data))
         .route("/performance", get(get_performance))
         .route("/summary", get(get_summary))
@@ -87,6 +112,137 @@ pub async fn run_server(
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+fn spawn_background_workers(db_path: String, config: Config) {
+    let refresh_db_path = db_path.clone();
+    let refresh_config = config.clone();
+    tokio::spawn(async move {
+        run_price_refresh_loop(refresh_db_path, refresh_config).await;
+    });
+
+    tokio::spawn(async move {
+        run_rss_ingest_loop(db_path, config).await;
+    });
+}
+
+async fn run_price_refresh_loop(db_path: String, config: Config) {
+    let refresh_interval = normalize_interval(config.refresh_interval, 60);
+    println!(
+        "   [bg] price refresh loop enabled (every {}s)",
+        refresh_interval
+    );
+    let mut ticker = tokio::time::interval(StdDuration::from_secs(refresh_interval));
+    loop {
+        ticker.tick().await;
+        let db_path = db_path.clone();
+        let config = config.clone();
+        let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let conn = db::open_db(Path::new(&db_path))?;
+            commands::refresh::run(&conn, &config, false)?;
+            Ok(())
+        })
+        .await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => eprintln!("   [bg] refresh failed: {}", e),
+            Err(e) => eprintln!("   [bg] refresh worker join failed: {}", e),
+        }
+    }
+}
+
+async fn run_rss_ingest_loop(db_path: String, config: Config) {
+    let feeds = configured_rss_feeds(&config);
+    if feeds.is_empty() {
+        eprintln!("   [bg] RSS loop disabled: no valid feeds configured");
+        return;
+    }
+
+    let poll_interval = normalize_interval(config.news_poll_interval, 600);
+    println!(
+        "   [bg] RSS ingest loop enabled (every {}s, {} feeds)",
+        poll_interval,
+        feeds.len()
+    );
+
+    let mut ticker = tokio::time::interval(StdDuration::from_secs(poll_interval));
+    loop {
+        ticker.tick().await;
+        let items = rss::fetch_all_feeds(&feeds).await;
+        let item_count = items.len();
+        if item_count == 0 {
+            continue;
+        }
+
+        let db_path = db_path.clone();
+        let result = tokio::task::spawn_blocking(move || -> anyhow::Result<usize> {
+            let conn = db::open_db(Path::new(&db_path))?;
+            for item in items {
+                db::news_cache::insert_news(
+                    &conn,
+                    &item.title,
+                    &item.url,
+                    &item.source,
+                    item.category.as_str(),
+                    item.published_at,
+                )?;
+            }
+            let deleted = db::news_cache::cleanup_old_news(&conn)?;
+            Ok(deleted)
+        })
+        .await;
+
+        match result {
+            Ok(Ok(deleted)) => {
+                if deleted > 0 {
+                    println!(
+                        "   [bg] RSS ingested {} item(s), cleaned {} stale item(s)",
+                        item_count, deleted
+                    );
+                }
+            }
+            Ok(Err(e)) => eprintln!("   [bg] RSS ingest failed: {}", e),
+            Err(e) => eprintln!("   [bg] RSS worker join failed: {}", e),
+        }
+    }
+}
+
+fn normalize_interval(value: u64, fallback: u64) -> u64 {
+    if value == 0 { fallback } else { value }
+}
+
+fn parse_news_category(raw: &str) -> Option<NewsCategory> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "macro" => Some(NewsCategory::Macro),
+        "crypto" => Some(NewsCategory::Crypto),
+        "commodities" => Some(NewsCategory::Commodities),
+        "geopolitics" => Some(NewsCategory::Geopolitics),
+        "markets" => Some(NewsCategory::Markets),
+        _ => None,
+    }
+}
+
+fn configured_rss_feeds(config: &Config) -> Vec<RssFeed> {
+    if config.custom_news_feeds.is_empty() {
+        return rss::default_feeds();
+    }
+
+    let mut feeds = Vec::new();
+    for feed in &config.custom_news_feeds {
+        let Some(category) = parse_news_category(&feed.category) else {
+            eprintln!(
+                "   [bg] skipping feed '{}' due to unknown category '{}'",
+                feed.name, feed.category
+            );
+            continue;
+        };
+        feeds.push(RssFeed {
+            name: feed.name.clone(),
+            url: feed.url.clone(),
+            category,
+        });
+    }
+    feeds
 }
 
 async fn serve_index() -> axum::response::Html<String> {
@@ -135,7 +291,8 @@ async fn get_stream() -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infa
 
 #[cfg(test)]
 mod tests {
-    use super::stream_event_type_and_message;
+    use super::{configured_rss_feeds, parse_news_category, stream_event_type_and_message};
+    use crate::config::{Config, CustomNewsFeed};
 
     #[test]
     fn stream_event_mapping_contract() {
@@ -149,5 +306,41 @@ mod tests {
         );
         assert_eq!(stream_event_type_and_message(2), ("health", "stream_ok"));
         assert_eq!(stream_event_type_and_message(1), ("heartbeat", "alive"));
+    }
+
+    #[test]
+    fn parse_news_category_contract() {
+        assert!(parse_news_category("markets").is_some());
+        assert!(parse_news_category("Crypto").is_some());
+        assert!(parse_news_category("unknown").is_none());
+    }
+
+    #[test]
+    fn configured_rss_feeds_uses_defaults_when_empty() {
+        let config = Config::default();
+        let feeds = configured_rss_feeds(&config);
+        assert!(!feeds.is_empty());
+    }
+
+    #[test]
+    fn configured_rss_feeds_filters_invalid_custom_categories() {
+        let config = Config {
+            custom_news_feeds: vec![
+                CustomNewsFeed {
+                    name: "Good".to_string(),
+                    url: "https://example.com/rss.xml".to_string(),
+                    category: "markets".to_string(),
+                },
+                CustomNewsFeed {
+                    name: "Bad".to_string(),
+                    url: "https://example.com/bad.xml".to_string(),
+                    category: "invalid".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let feeds = configured_rss_feeds(&config);
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].name, "Good");
     }
 }

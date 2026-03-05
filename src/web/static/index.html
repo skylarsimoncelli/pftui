@@ -351,6 +351,15 @@
         }
 
         .macro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+        .snapshot-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; }
+        .snapshot-item {
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 0.6rem;
+        }
+        .snapshot-item .label { color: var(--text-muted); font-size: 0.74rem; }
+        .snapshot-item .value { color: var(--text-primary); font-size: 1rem; font-weight: 700; }
         .macro-item {
             border: 1px solid var(--border);
             background: var(--bg-tertiary);
@@ -410,6 +419,7 @@
             .layout { grid-template-columns: 1fr; }
             #tradingview-chart, #tradingview-chart-markets, #tradingview-chart-watchlist, .chart-placeholder { height: 280px; }
             #portfolio-canvas { height: 190px; }
+            .snapshot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
     </style>
 </head>
@@ -492,14 +502,9 @@
 
                 <div class="right-col">
                     <div class="card">
-                        <h2>Asset Chart (TradingView)</h2>
-                        <div id="chart-placeholder" class="chart-placeholder">Select an asset from Positions, Watchlist, or Market Overview</div>
+                        <h2 id="positions-asset-title">Asset Overview</h2>
+                        <div id="chart-placeholder" class="chart-placeholder">Select an asset from Positions or Watchlist</div>
                         <div id="tradingview-chart" style="display:none;"></div>
-                    </div>
-
-                    <div class="card">
-                        <h2>Market Overview</h2>
-                        <div id="macro-panel" class="macro-grid"></div>
                     </div>
 
                     <div class="card">
@@ -521,6 +526,28 @@
                         <option value="sell">Sell</option>
                     </select>
                 </div>
+                <div class="controls-inline">
+                    <input class="control-input" id="tx-form-symbol" placeholder="Symbol" />
+                    <select class="control-select" id="tx-form-category">
+                        <option value="equity">equity</option>
+                        <option value="crypto">crypto</option>
+                        <option value="forex">forex</option>
+                        <option value="cash">cash</option>
+                        <option value="commodity">commodity</option>
+                        <option value="fund">fund</option>
+                    </select>
+                    <select class="control-select" id="tx-form-type">
+                        <option value="buy">buy</option>
+                        <option value="sell">sell</option>
+                    </select>
+                    <input class="control-input" id="tx-form-qty" placeholder="Qty" />
+                    <input class="control-input" id="tx-form-price" placeholder="Price" />
+                    <input class="control-input" id="tx-form-date" placeholder="YYYY-MM-DD" />
+                    <input class="control-input" id="tx-form-notes" placeholder="Notes (optional)" />
+                    <button class="tf-btn" id="tx-create-btn">Add</button>
+                    <button class="tf-btn" id="tx-update-btn">Update</button>
+                    <button class="tf-btn" id="tx-cancel-btn">Cancel</button>
+                </div>
                 <div class="table-wrap">
                     <table id="transactions-table">
                         <thead>
@@ -531,6 +558,7 @@
                                 <th class="right" data-sort="qty">Qty</th>
                                 <th class="right" data-sort="price">Price</th>
                                 <th class="right" data-sort="fee">Fee</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -542,6 +570,10 @@
         <section class="view" id="view-markets">
             <div class="layout">
                 <div class="left-col">
+                    <div class="card">
+                        <h2>Market Breadth</h2>
+                        <div id="market-breadth" class="snapshot-grid"></div>
+                    </div>
                     <div class="card">
                         <h2>Market Overview</h2>
                         <div id="macro-panel-markets" class="macro-grid"></div>
@@ -564,6 +596,7 @@
         <section class="view" id="view-economy">
             <div class="card">
                 <h2>Economy</h2>
+                <div id="economy-snapshot"></div>
                 <div id="economy-sections"></div>
             </div>
         </section>
@@ -589,6 +622,10 @@
         <section class="view" id="view-alerts">
             <div class="card">
                 <h2>Alerts</h2>
+                <div class="controls-inline">
+                    <input class="control-input" id="alert-rule-input" placeholder="Rule: BTC below 55000" />
+                    <button class="tf-btn" id="alert-create-btn">Create Alert</button>
+                </div>
                 <div id="alerts-list" class="list"></div>
             </div>
         </section>
@@ -618,6 +655,18 @@
                 <div class="left-col">
                     <div class="card">
                         <h2>Journal</h2>
+                        <div class="controls-inline">
+                            <input class="control-input" id="journal-symbol-input" placeholder="Symbol (optional)" />
+                            <input class="control-input" id="journal-tag-input" placeholder="Tag (optional)" />
+                            <select class="control-select" id="journal-status-input">
+                                <option value="open">open</option>
+                                <option value="validated">validated</option>
+                                <option value="invalidated">invalidated</option>
+                                <option value="closed">closed</option>
+                            </select>
+                        </div>
+                        <input class="search" id="journal-create-input" placeholder="Add journal note..." />
+                        <button class="tf-btn" id="journal-create-btn">Add Entry</button>
                         <input class="search" id="journal-search" placeholder="Search journal notes" />
                         <div id="journal-list" class="list"></div>
                     </div>
@@ -691,6 +740,7 @@
             txSortOrder: 'desc',
             txSymbol: '',
             txType: '',
+            txEditId: null,
             auth: {
                 status: 'unknown',
                 csrfToken: null,
@@ -702,6 +752,7 @@
                 previousFocus: null,
                 searchResults: [],
                 searchIndex: 0,
+                searchReqId: 0,
                 detail: null,
             },
             stream: {
@@ -931,6 +982,39 @@
             if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
             return res.json();
         }
+        async function apiDelete(path) {
+            const headers = {};
+            if (state.auth.csrfToken) headers['X-CSRF-Token'] = state.auth.csrfToken;
+            const res = await fetch(path, {
+                method: 'DELETE',
+                headers,
+                credentials: 'same-origin',
+            });
+            if (res.status === 401) {
+                const payload = await res.json().catch(() => ({}));
+                handleUnauthorized(payload.code === 'session_expired');
+                throw new Error('Unauthorized');
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            return res.json();
+        }
+        async function apiPatch(path, body) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (state.auth.csrfToken) headers['X-CSRF-Token'] = state.auth.csrfToken;
+            const res = await fetch(path, {
+                method: 'PATCH',
+                headers,
+                credentials: 'same-origin',
+                body: JSON.stringify(body || {}),
+            });
+            if (res.status === 401) {
+                const payload = await res.json().catch(() => ({}));
+                handleUnauthorized(payload.code === 'session_expired');
+                throw new Error('Unauthorized');
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            return res.json();
+        }
 
         function applyTheme(theme) {
             if (!theme || !theme.colors) return;
@@ -1115,7 +1199,9 @@
         function renderPositions(positions) {
             state.positions = positions || [];
             const tbody = document.querySelector('#positions-table tbody');
+            const title = document.getElementById('positions-asset-title');
             tbody.innerHTML = '';
+            if (title) title.textContent = 'Asset Overview';
             if (!state.positions.length) {
                 tbody.innerHTML = '<tr><td colspan="5" class="empty">No positions available</td></tr>';
                 return;
@@ -1134,6 +1220,7 @@
                 tr.addEventListener('click', async () => {
                     document.querySelectorAll('#positions-table tbody tr').forEach(r => r.classList.remove('selected'));
                     tr.classList.add('selected');
+                    if (title) title.textContent = `${pos.symbol} · Asset Overview`;
                     loadChart(pos.symbol, 'tradingview-chart', 'chart-placeholder');
                     await openAssetDetail({
                         symbol: pos.symbol,
@@ -1250,15 +1337,16 @@
                 return;
             }
             items.forEach(m => {
-                const gp = Number(m.gain_pct || 0);
+                const move = m.change_pct ?? m.gain_pct;
+                const moveNum = Number(move || 0);
                 const row = document.createElement('div');
                 row.className = 'list-item';
                 row.innerHTML = `
                     <div>
                         <div class="symbol">${m.symbol}</div>
-                        <div class="name">${m.name || ''}</div>
+                        <div class="name">${m.name || ''} · ${fmtNum(m.value ?? m.current_price)}</div>
                     </div>
-                    <div class="${gp >= 0 ? 'positive' : 'negative'}">${fmtPct(m.gain_pct)}</div>
+                    <div class="${moveNum >= 0 ? 'positive' : 'negative'}">${fmtPct(move)}</div>
                 `;
                 row.addEventListener('click', async () => {
                     loadChart(m.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets');
@@ -1266,16 +1354,86 @@
                         symbol: m.symbol,
                         name: m.name,
                         category: m.category || 'asset',
-                        current_price: m.current_price,
+                        current_price: m.current_price ?? m.value,
                         current_value: m.current_value,
                         gain: m.gain,
-                        gain_pct: m.gain_pct,
+                        gain_pct: move,
                         allocation_pct: m.allocation_pct,
                         source: 'markets',
                     });
                 });
                 el.appendChild(row);
             });
+        }
+
+        function renderMarketBreadth(breadth) {
+            const el = document.getElementById('market-breadth');
+            if (!el) return;
+            if (!breadth) {
+                el.innerHTML = '<div class="empty">Breadth unavailable</div>';
+                return;
+            }
+            const strongest = breadth.strongest ? `${breadth.strongest.symbol} ${fmtPct(breadth.strongest.change_pct)}` : '--';
+            const weakest = breadth.weakest ? `${breadth.weakest.symbol} ${fmtPct(breadth.weakest.change_pct)}` : '--';
+            el.innerHTML = `
+                <div class="snapshot-item"><div class="label">Up / Down / Flat</div><div class="value">${breadth.up} / ${breadth.down} / ${breadth.flat}</div></div>
+                <div class="snapshot-item"><div class="label">Average Move</div><div class="value">${fmtPct(breadth.avg_change_pct)}</div></div>
+                <div class="snapshot-item"><div class="label">Strongest</div><div class="value">${strongest}</div></div>
+                <div class="snapshot-item"><div class="label">Weakest</div><div class="value">${weakest}</div></div>
+            `;
+        }
+
+        function renderEconomySnapshot(snapshot) {
+            const el = document.getElementById('economy-snapshot');
+            if (!el) return;
+            if (!snapshot) {
+                el.innerHTML = '<div class="empty">No economy snapshot available</div>';
+                return;
+            }
+            const blsRows = (snapshot.bls_metrics || []).slice(0, 4).map(m =>
+                `<div class="list-item"><div><div class="symbol">${m.label}</div><div class="name">${m.date}</div></div><div>${fmtNum(m.value)}</div></div>`
+            ).join('') || '<div class="empty">No BLS metrics cached</div>';
+            const sentimentRows = (snapshot.sentiment || []).map(s =>
+                `<div class="list-item"><div><div class="symbol">${s.index_type}</div><div class="name">${s.classification}</div></div><div>${s.value}</div></div>`
+            ).join('') || '<div class="empty">No sentiment cached</div>';
+            const calendarRows = (snapshot.upcoming_events || []).slice(0, 5).map(e =>
+                `<div class="list-item"><div><div class="symbol">${e.name}</div><div class="name">${e.date} · ${e.impact}</div></div><div>${e.forecast || '-'}</div></div>`
+            ).join('') || '<div class="empty">No calendar events cached</div>';
+            const predictionRows = (snapshot.predictions || []).slice(0, 5).map(p =>
+                `<div class="list-item"><div><div class="symbol">${p.category}</div><div class="name">${p.question}</div></div><div>${fmtPct(p.probability_pct)}</div></div>`
+            ).join('') || '<div class="empty">No predictions cached</div>';
+
+            el.innerHTML = `
+                <div class="layout" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:0.85rem;">
+                    <div class="card"><h2>BLS Pulse</h2><div class="list">${blsRows}</div></div>
+                    <div class="card"><h2>Sentiment</h2><div class="list">${sentimentRows}</div></div>
+                    <div class="card"><h2>Upcoming Calendar</h2><div class="list">${calendarRows}</div></div>
+                    <div class="card"><h2>Predictions</h2><div class="list">${predictionRows}</div></div>
+                </div>
+            `;
+        }
+
+        async function runAlertAction(action, id) {
+            if (action === 'remove') {
+                await apiDelete(`/api/alerts/${id}`);
+            } else if (action === 'ack') {
+                await apiPost(`/api/alerts/${id}/ack`, {});
+            } else if (action === 'rearm') {
+                await apiPost(`/api/alerts/${id}/rearm`, {});
+            }
+            await loadAlerts();
+        }
+
+        function alertActionButtons(alert) {
+            const parts = [];
+            if (alert.status === 'triggered') {
+                parts.push(`<button class="tf-btn" data-alert-action="ack" data-alert-id="${alert.id}">Ack</button>`);
+            }
+            if (alert.status === 'triggered' || alert.status === 'acknowledged') {
+                parts.push(`<button class="tf-btn" data-alert-action="rearm" data-alert-id="${alert.id}">Rearm</button>`);
+            }
+            parts.push(`<button class="tf-btn" data-alert-action="remove" data-alert-id="${alert.id}">Remove</button>`);
+            return parts.join(' ');
         }
 
         function renderAlerts(items) {
@@ -1295,7 +1453,10 @@
                         <div class="symbol">${a.symbol} ${a.direction} ${a.threshold}</div>
                         <div class="name">${a.rule_text}</div>
                     </div>
-                    <div class="${a.status === 'triggered' ? 'positive' : 'subtle'}">${a.status}</div>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
+                        <div class="${a.status === 'triggered' ? 'positive' : 'subtle'}">${a.status}</div>
+                        <div class="controls-inline" style="margin:0;">${alertActionButtons(a)}</div>
+                    </div>
                 `;
                 const item = document.createElement('div');
                 item.className = 'list-item';
@@ -1308,104 +1469,132 @@
                     overlay.appendChild(overlayItem);
                 }
             });
+
+            document.querySelectorAll('[data-alert-action]').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const action = btn.getAttribute('data-alert-action');
+                    const id = Number(btn.getAttribute('data-alert-id'));
+                    btn.disabled = true;
+                    try {
+                        await runAlertAction(action, id);
+                    } catch (_) {
+                        btn.disabled = false;
+                    }
+                });
+            });
         }
 
         async function openAssetDetail(detail) {
             if (!detail?.symbol) return;
-            state.overlay.detail = detail;
-            const alertCount = (state.alerts || []).filter(a => a.symbol === detail.symbol).length;
-            const inWatchlist = (state.watchlist || []).some(w => w.symbol === detail.symbol);
-            let history = [];
+            const seed = detail;
+            let payload = null;
             try {
-                const chart = await apiFetch(`/api/chart/${encodeURIComponent(detail.symbol)}`);
-                history = chart.history || [];
+                payload = await apiFetch(`/api/asset/${encodeURIComponent(detail.symbol)}`);
             } catch (_) {}
-            const closes = history.map(h => Number(h.close || 0)).filter(v => Number.isFinite(v) && v > 0);
-            const rangeLow = closes.length ? Math.min(...closes) : null;
-            const rangeHigh = closes.length ? Math.max(...closes) : null;
+            const history = payload?.history || [];
+            const pos = payload?.position || {};
+            const isWatchlisted = Boolean(payload?.is_watchlisted);
+            const symbol = payload?.symbol || seed.symbol;
+            const name = payload?.name || seed.name || symbol;
+            const category = payload?.category || seed.category || 'asset';
+            const currentPrice = payload?.current_price ?? seed.current_price ?? null;
+            const currentValue = pos.current_value ?? seed.current_value ?? null;
+            const gain = pos.gain ?? seed.gain ?? null;
+            const gainPct = pos.gain_pct ?? seed.gain_pct ?? null;
+            const allocationPct = pos.allocation_pct ?? seed.allocation_pct ?? null;
+            const recentCloses = history.slice(-5).map(p => `${p.date}: ${fmtCurrency(p.close)}`).reverse();
             const body = document.getElementById('asset-detail-body');
             body.innerHTML = `
-                <h3>${detail.symbol} ${detail.name ? `· ${detail.name}` : ''}</h3>
+                <h3>${symbol} ${name ? `· ${name}` : ''}</h3>
                 <div style="margin:0.5rem 0 0.7rem 0;">
-                    <span class="badge">${detail.category || detail.source || 'asset'}</span>
-                    ${inWatchlist ? '<span class="badge">watchlist</span>' : ''}
-                    <span class="badge">alerts: ${alertCount}</span>
+                    <span class="badge">${category}</span>
+                    ${isWatchlisted ? '<span class="badge">watchlist</span>' : ''}
+                    <span class="badge">alerts: ${payload?.alert_count ?? 0}</span>
+                    <span class="badge">history: ${payload?.history_symbol || symbol}</span>
                 </div>
-                <div class="drawer-metric"><div class="drawer-label">Price</div><div class="drawer-value">${fmtCurrency(detail.current_price)}</div></div>
-                <div class="drawer-metric"><div class="drawer-label">Position Value</div><div class="drawer-value">${fmtCurrency(detail.current_value)}</div></div>
-                <div class="drawer-metric"><div class="drawer-label">Gain</div><div class="drawer-value ${Number(detail.gain || 0) >= 0 ? 'positive' : 'negative'}">${fmtCurrency(detail.gain)} (${fmtPct(detail.gain_pct)})</div></div>
-                <div class="drawer-metric"><div class="drawer-label">Allocation</div><div class="drawer-value">${fmtPct(detail.allocation_pct)}</div></div>
-                <div class="drawer-metric"><div class="drawer-label">Range (loaded history)</div><div class="drawer-value">${rangeLow === null ? '-' : `${fmtCurrency(rangeLow)} - ${fmtCurrency(rangeHigh)}`}</div></div>
-                <div class="drawer-metric"><div class="drawer-label">History Points</div><div class="drawer-value">${history.length}</div></div>
+                <button class="theme-btn" id="asset-watch-toggle">${isWatchlisted ? 'Unstar Watchlist' : 'Star Watchlist'}</button>
+                <div class="drawer-metric"><div class="drawer-label">Price</div><div class="drawer-value">${fmtCurrency(currentPrice)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Position Value</div><div class="drawer-value">${fmtCurrency(currentValue)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Gain</div><div class="drawer-value ${Number(gain || 0) >= 0 ? 'positive' : 'negative'}">${fmtCurrency(gain)} (${fmtPct(gainPct)})</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Allocation</div><div class="drawer-value">${fmtPct(allocationPct)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">1D Change</div><div class="drawer-value ${Number(payload?.day_change_pct || 0) >= 0 ? 'positive' : 'negative'}">${fmtPct(payload?.day_change_pct)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">1W Change</div><div class="drawer-value ${Number(payload?.week_change_pct || 0) >= 0 ? 'positive' : 'negative'}">${fmtPct(payload?.week_change_pct)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">1M Change</div><div class="drawer-value ${Number(payload?.month_change_pct || 0) >= 0 ? 'positive' : 'negative'}">${fmtPct(payload?.month_change_pct)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">1Y Change</div><div class="drawer-value ${Number(payload?.year_change_pct || 0) >= 0 ? 'positive' : 'negative'}">${fmtPct(payload?.year_change_pct)}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">52W Range</div><div class="drawer-value">${payload?.range_52w_low === null || payload?.range_52w_low === undefined ? '-' : `${fmtCurrency(payload.range_52w_low)} - ${fmtCurrency(payload.range_52w_high)}`}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Volume</div><div class="drawer-value">latest ${payload?.latest_volume?.toLocaleString?.() || '-'} · avg30 ${payload?.avg_volume_30d?.toLocaleString?.() || '-'}</div></div>
+                <div class="drawer-metric"><div class="drawer-label">Recent Closes</div><div class="drawer-value">${recentCloses.length ? recentCloses.join('<br/>') : '-'}</div></div>
             `;
+            const watchBtn = document.getElementById('asset-watch-toggle');
+            if (watchBtn) {
+                watchBtn.addEventListener('click', async () => {
+                    watchBtn.disabled = true;
+                    try {
+                        if (isWatchlisted) {
+                            await apiDelete(`/api/watchlist/${encodeURIComponent(symbol)}`);
+                        } else {
+                            await apiPost('/api/watchlist', {
+                                symbol,
+                                category: String(category || 'equity').toLowerCase(),
+                            });
+                        }
+                        await loadWatchlist();
+                        await openAssetDetail({ ...seed, symbol });
+                    } catch (_) {
+                        watchBtn.disabled = false;
+                    }
+                });
+            }
+            state.overlay.detail = payload || seed;
             openOverlay('assetDetail');
         }
 
-        function buildSearchResults(query) {
-            const q = (query || '').trim().toLowerCase();
-            if (!q) return [];
-            const out = [];
-            (state.positions || []).forEach(p => {
-                if (p.symbol?.toLowerCase().includes(q) || p.name?.toLowerCase().includes(q)) {
-                    out.push({ kind: 'symbol', source: 'positions', tab: 'Positions', symbol: p.symbol, label: p.name || p.symbol });
-                }
-            });
-            (state.watchlist || []).forEach(w => {
-                if (w.symbol?.toLowerCase().includes(q) || w.name?.toLowerCase().includes(q)) {
-                    out.push({ kind: 'symbol', source: 'watchlist', tab: 'Watchlist', symbol: w.symbol, label: w.name || w.symbol });
-                }
-            });
-            (state.macro || []).forEach(m => {
-                if (m.symbol?.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q)) {
-                    out.push({ kind: 'symbol', source: 'markets', tab: 'Markets', symbol: m.symbol, label: m.name || m.symbol });
-                }
-            });
-            (state.news || []).forEach(n => {
-                if (n.title?.toLowerCase().includes(q)) {
-                    out.push({ kind: 'news', source: 'news', tab: 'News', id: n.id, symbol: null, label: n.title });
-                }
-            });
-            const deduped = [];
-            const seen = new Set();
-            out.forEach(item => {
-                const key = `${item.kind}:${item.symbol || item.id}`;
-                if (seen.has(key)) return;
-                seen.add(key);
-                deduped.push(item);
-            });
-            return deduped.slice(0, 60);
+        function inferSearchTab(symbol) {
+            if ((state.positions || []).some(p => p.symbol === symbol)) return 'Positions';
+            if ((state.watchlist || []).some(w => w.symbol === symbol)) return 'Watchlist';
+            return 'Markets';
+        }
+
+        async function refreshSearchResults(query) {
+            const q = (query || '').trim();
+            const reqId = ++state.overlay.searchReqId;
+            if (!q) {
+                state.overlay.searchResults = [];
+                state.overlay.searchIndex = 0;
+                renderSearchResults();
+                return;
+            }
+            try {
+                const data = await apiFetch(`/api/search?q=${encodeURIComponent(q)}&limit=60`);
+                if (reqId !== state.overlay.searchReqId) return;
+                state.overlay.searchResults = data.results || [];
+                state.overlay.searchIndex = 0;
+            } catch (_) {
+                if (reqId !== state.overlay.searchReqId) return;
+                state.overlay.searchResults = [];
+                state.overlay.searchIndex = 0;
+            }
+            renderSearchResults();
         }
 
         async function selectSearchResult(item) {
-            if (!item) return;
-            if (item.kind === 'news') {
-                await setActiveTab('News');
-                state.selectedNewsId = item.id;
-                renderNews(state.news);
-                closeOverlay();
-                return;
-            }
-            await setActiveTab(item.tab || 'Positions');
-            if (item.tab === 'Watchlist') {
+            if (!item?.symbol) return;
+            const tab = inferSearchTab(item.symbol);
+            await setActiveTab(tab);
+            if (tab === 'Watchlist') {
                 loadChart(item.symbol, 'tradingview-chart-watchlist', 'chart-placeholder-watchlist');
-            } else if (item.tab === 'Markets' || item.tab === 'Economy') {
+            } else if (tab === 'Markets' || tab === 'Economy') {
                 loadChart(item.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets');
             } else {
                 loadChart(item.symbol, 'tradingview-chart', 'chart-placeholder');
             }
-            const pos = (state.positions || []).find(p => p.symbol === item.symbol);
-            const watch = (state.watchlist || []).find(w => w.symbol === item.symbol);
-            const macro = (state.macro || []).find(m => m.symbol === item.symbol);
             await openAssetDetail({
                 symbol: item.symbol,
-                name: pos?.name || watch?.name || macro?.name || item.label,
-                category: pos?.category || watch?.category || 'asset',
-                current_price: pos?.current_price ?? watch?.current_price ?? macro?.value ?? null,
-                current_value: pos?.current_value ?? null,
-                gain: pos?.gain ?? null,
-                gain_pct: pos?.gain_pct ?? null,
-                allocation_pct: pos?.allocation_pct ?? null,
-                source: item.source,
+                name: item.name || item.symbol,
+                category: item.category || 'asset',
+                current_price: item.current_price ?? null,
+                source: 'search',
             });
         }
 
@@ -1414,7 +1603,7 @@
             if (!target) return;
             target.innerHTML = '';
             if (!state.overlay.searchResults.length) {
-                target.innerHTML = '<div class="empty">No matching symbols or headlines.</div>';
+                target.innerHTML = '<div class="empty">No matching symbols.</div>';
                 return;
             }
             state.overlay.searchResults.forEach((result, idx) => {
@@ -1422,10 +1611,13 @@
                 row.className = `search-row ${idx === state.overlay.searchIndex ? 'active' : ''}`;
                 row.innerHTML = `
                     <div>
-                        <div class="symbol">${result.symbol || result.label}</div>
-                        <div class="name">${result.label}</div>
+                        <div class="symbol">${result.symbol}</div>
+                        <div class="name">${result.name || result.symbol} · ${result.category || 'asset'}</div>
                     </div>
-                    <div class="badge">${result.source}</div>
+                    <div style="text-align:right;">
+                        <div class="badge">${result.is_watchlisted ? 'watching' : 'global'}</div>
+                        <div class="${Number(result.day_change_pct || 0) >= 0 ? 'positive' : 'negative'}">${fmtPct(result.day_change_pct)}</div>
+                    </div>
                 `;
                 row.addEventListener('click', async () => {
                     state.overlay.searchIndex = idx;
@@ -1469,6 +1661,33 @@
             `;
         }
 
+        async function createJournalEntry() {
+            const contentEl = document.getElementById('journal-create-input');
+            const symbolEl = document.getElementById('journal-symbol-input');
+            const tagEl = document.getElementById('journal-tag-input');
+            const statusEl = document.getElementById('journal-status-input');
+            const content = (contentEl?.value || '').trim();
+            if (!content) return;
+            await apiPost('/api/journal', {
+                content,
+                symbol: (symbolEl?.value || '').trim() || null,
+                tag: (tagEl?.value || '').trim() || null,
+                status: statusEl?.value || 'open',
+            });
+            if (contentEl) contentEl.value = '';
+            await loadJournal();
+        }
+
+        async function updateJournalEntry(id, content, status) {
+            await apiPatch(`/api/journal/${id}`, { content, status });
+            await loadJournal();
+        }
+
+        async function removeJournalEntry(id) {
+            await apiDelete(`/api/journal/${id}`);
+            await loadJournal();
+        }
+
         function renderJournal(items) {
             const list = document.getElementById('journal-list');
             const detail = document.getElementById('journal-detail');
@@ -1504,9 +1723,40 @@
                     ${selected.tag ? `<span class="badge">${selected.tag}</span>` : ''}
                     ${selected.conviction ? `<span class="badge">conviction: ${selected.conviction}</span>` : ''}
                 </div>
-                <p style="margin-top:0.8rem; white-space: pre-wrap;">${selected.content}</p>
+                <textarea id="journal-edit-content" class="search" style="margin-top:0.8rem; min-height:140px;" placeholder="Journal content">${selected.content || ''}</textarea>
+                <div class="controls-inline">
+                    <select class="control-select" id="journal-edit-status">
+                        <option value="open" ${selected.status === 'open' ? 'selected' : ''}>open</option>
+                        <option value="validated" ${selected.status === 'validated' ? 'selected' : ''}>validated</option>
+                        <option value="invalidated" ${selected.status === 'invalidated' ? 'selected' : ''}>invalidated</option>
+                        <option value="closed" ${selected.status === 'closed' ? 'selected' : ''}>closed</option>
+                    </select>
+                    <button class="tf-btn" id="journal-save-btn">Save</button>
+                    <button class="tf-btn" id="journal-delete-btn">Delete</button>
+                </div>
                 <p style="margin-top:0.8rem;">${selected.timestamp || selected.created_at || ''}</p>
             `;
+            const saveBtn = document.getElementById('journal-save-btn');
+            const deleteBtn = document.getElementById('journal-delete-btn');
+            saveBtn?.addEventListener('click', async () => {
+                const content = (document.getElementById('journal-edit-content')?.value || '').trim();
+                const status = document.getElementById('journal-edit-status')?.value || selected.status;
+                if (!content) return;
+                saveBtn.disabled = true;
+                try {
+                    await updateJournalEntry(selected.id, content, status);
+                } catch (_) {
+                    saveBtn.disabled = false;
+                }
+            });
+            deleteBtn?.addEventListener('click', async () => {
+                deleteBtn.disabled = true;
+                try {
+                    await removeJournalEntry(selected.id);
+                } catch (_) {
+                    deleteBtn.disabled = false;
+                }
+            });
         }
 
         async function loadPortfolio() {
@@ -1532,9 +1782,11 @@
             const data = await apiFetch('/api/macro');
             updateFreshness(data.meta);
             state.macro = data.indicators || [];
-            renderMacro(data.indicators || [], 'macro-panel', 'tradingview-chart', 'chart-placeholder');
             renderMacro(data.indicators || [], 'macro-panel-markets', 'tradingview-chart-markets', 'chart-placeholder-markets');
+            renderMarketBreadth(data.market_breadth);
             renderEconomySections(data.sections || []);
+            renderEconomySnapshot(data.economy_snapshot);
+            renderTopMovers(data.top_movers || []);
         }
 
         async function loadAlerts() {
@@ -1564,6 +1816,86 @@
             renderJournal(state.journal);
         }
 
+        function txFormPayload() {
+            return {
+                symbol: (document.getElementById('tx-form-symbol')?.value || '').trim().toUpperCase(),
+                category: (document.getElementById('tx-form-category')?.value || 'equity').trim(),
+                tx_type: (document.getElementById('tx-form-type')?.value || 'buy').trim(),
+                quantity: (document.getElementById('tx-form-qty')?.value || '').trim(),
+                price_per: (document.getElementById('tx-form-price')?.value || '').trim(),
+                date: (document.getElementById('tx-form-date')?.value || '').trim(),
+                notes: (document.getElementById('tx-form-notes')?.value || '').trim() || null,
+                currency: 'USD',
+            };
+        }
+
+        function resetTxForm() {
+            state.txEditId = null;
+            const symbol = document.getElementById('tx-form-symbol');
+            const category = document.getElementById('tx-form-category');
+            const txType = document.getElementById('tx-form-type');
+            const qty = document.getElementById('tx-form-qty');
+            const price = document.getElementById('tx-form-price');
+            const date = document.getElementById('tx-form-date');
+            const notes = document.getElementById('tx-form-notes');
+            if (symbol) symbol.value = '';
+            if (category) category.value = 'equity';
+            if (txType) txType.value = 'buy';
+            if (qty) qty.value = '';
+            if (price) price.value = '';
+            if (date) date.value = '';
+            if (notes) notes.value = '';
+            const createBtn = document.getElementById('tx-create-btn');
+            const updateBtn = document.getElementById('tx-update-btn');
+            const cancelBtn = document.getElementById('tx-cancel-btn');
+            if (createBtn) createBtn.disabled = false;
+            if (updateBtn) updateBtn.disabled = true;
+            if (cancelBtn) cancelBtn.disabled = true;
+        }
+
+        function fillTxForm(tx) {
+            state.txEditId = tx.id;
+            document.getElementById('tx-form-symbol').value = tx.symbol || '';
+            document.getElementById('tx-form-category').value = tx.category || 'equity';
+            document.getElementById('tx-form-type').value = tx.tx_type || tx.type || 'buy';
+            document.getElementById('tx-form-qty').value = tx.quantity || '';
+            document.getElementById('tx-form-price').value = tx.price_per || '';
+            document.getElementById('tx-form-date').value = tx.date || '';
+            document.getElementById('tx-form-notes').value = tx.notes || '';
+            document.getElementById('tx-create-btn').disabled = true;
+            document.getElementById('tx-update-btn').disabled = false;
+            document.getElementById('tx-cancel-btn').disabled = false;
+        }
+
+        async function createTransaction() {
+            const payload = txFormPayload();
+            if (!payload.symbol || !payload.quantity || !payload.price_per || !payload.date) return;
+            await apiPost('/api/transactions', payload);
+            resetTxForm();
+            await loadTransactions();
+            await loadPortfolio();
+            await loadSummary();
+        }
+
+        async function updateTransaction() {
+            if (!state.txEditId) return;
+            const payload = txFormPayload();
+            if (!payload.symbol || !payload.quantity || !payload.price_per || !payload.date) return;
+            await apiPatch(`/api/transactions/${state.txEditId}`, payload);
+            resetTxForm();
+            await loadTransactions();
+            await loadPortfolio();
+            await loadSummary();
+        }
+
+        async function removeTransaction(id) {
+            await apiDelete(`/api/transactions/${id}`);
+            if (state.txEditId === id) resetTxForm();
+            await loadTransactions();
+            await loadPortfolio();
+            await loadSummary();
+        }
+
         async function loadTransactions() {
             const tbody = document.querySelector('#transactions-table tbody');
             tbody.innerHTML = '';
@@ -1578,7 +1910,7 @@
                 updateFreshness(data.meta);
                 const txs = data.transactions || [];
                 if (!txs.length) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="empty">No transactions</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty">No transactions</td></tr>';
                     return;
                 }
                 txs.forEach(tx => {
@@ -1590,17 +1922,31 @@
                         <td class="right">${fmtNum(tx.quantity, 4)}</td>
                         <td class="right">${fmtCurrency(tx.price_per)}</td>
                         <td class="right">-</td>
+                        <td><div class="controls-inline" style="margin:0;"><button class="tf-btn" data-tx-edit="${tx.id}">Edit</button><button class="tf-btn" data-tx-delete="${tx.id}">Delete</button></div></td>
                     `;
                     tbody.appendChild(tr);
                 });
+                document.querySelectorAll('[data-tx-edit]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const id = Number(btn.getAttribute('data-tx-edit'));
+                        const tx = txs.find(t => Number(t.id) === id);
+                        if (tx) fillTxForm(tx);
+                    });
+                });
+                document.querySelectorAll('[data-tx-delete]').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const id = Number(btn.getAttribute('data-tx-delete'));
+                        btn.disabled = true;
+                        try { await removeTransaction(id); } catch (_) { btn.disabled = false; }
+                    });
+                });
             } catch (e) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty">Transactions unavailable in percentage mode or failed to load</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">Transactions unavailable in percentage mode or failed to load</td></tr>';
             }
         }
 
         async function loadSummary() {
-            const data = await apiFetch('/api/summary');
-            renderTopMovers(data.top_movers || []);
+            await apiFetch('/api/summary');
         }
 
         async function loadPerformance() {
@@ -1620,11 +1966,9 @@
 
         function bindInteractions() {
             document.getElementById('theme-cycle').addEventListener('click', () => cycleTheme());
-            document.getElementById('search-overlay-toggle').addEventListener('click', () => {
+            document.getElementById('search-overlay-toggle').addEventListener('click', async () => {
                 openOverlay('search');
-                state.overlay.searchResults = buildSearchResults(document.getElementById('global-search-input').value);
-                state.overlay.searchIndex = 0;
-                renderSearchResults();
+                await refreshSearchResults(document.getElementById('global-search-input').value);
             });
             document.getElementById('alerts-overlay-toggle').addEventListener('click', () => {
                 if (state.overlay.active === 'alerts') closeOverlay(); else openOverlay('alerts');
@@ -1638,10 +1982,23 @@
             document.getElementById('alerts-overlay').addEventListener('click', (e) => {
                 if (e.target.id === 'alerts-overlay') closeOverlay();
             });
-            document.getElementById('global-search-input').addEventListener('input', (e) => {
-                state.overlay.searchResults = buildSearchResults(e.target.value);
-                state.overlay.searchIndex = 0;
-                renderSearchResults();
+            document.getElementById('alert-create-btn').addEventListener('click', async () => {
+                const input = document.getElementById('alert-rule-input');
+                const rule = (input?.value || '').trim();
+                if (!rule) return;
+                try {
+                    await apiPost('/api/alerts', { rule_text: rule });
+                    input.value = '';
+                    await loadAlerts();
+                } catch (_) {}
+            });
+            document.getElementById('alert-rule-input').addEventListener('keydown', async (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                document.getElementById('alert-create-btn').click();
+            });
+            document.getElementById('global-search-input').addEventListener('input', async (e) => {
+                await refreshSearchResults(e.target.value);
             });
             document.getElementById('auth-logout').addEventListener('click', async () => {
                 try {
@@ -1680,6 +2037,14 @@
             document.getElementById('news-search').addEventListener('input', async () => {
                 await loadNews();
             });
+            document.getElementById('journal-create-btn').addEventListener('click', async () => {
+                try { await createJournalEntry(); } catch (_) {}
+            });
+            document.getElementById('journal-create-input').addEventListener('keydown', async (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                try { await createJournalEntry(); } catch (_) {}
+            });
             document.getElementById('journal-search').addEventListener('input', async () => {
                 await loadJournal();
             });
@@ -1690,6 +2055,15 @@
             document.getElementById('tx-type-filter').addEventListener('change', async (e) => {
                 state.txType = e.target.value;
                 await loadTransactions();
+            });
+            document.getElementById('tx-create-btn').addEventListener('click', async () => {
+                try { await createTransaction(); } catch (_) {}
+            });
+            document.getElementById('tx-update-btn').addEventListener('click', async () => {
+                try { await updateTransaction(); } catch (_) {}
+            });
+            document.getElementById('tx-cancel-btn').addEventListener('click', () => {
+                resetTxForm();
             });
             document.querySelectorAll('#transactions-table thead th[data-sort]').forEach(th => {
                 th.style.cursor = 'pointer';
@@ -1747,9 +2121,7 @@
                     e.preventDefault();
                     openOverlay('search');
                     const input = document.getElementById('global-search-input');
-                    state.overlay.searchResults = buildSearchResults(input.value);
-                    state.overlay.searchIndex = 0;
-                    renderSearchResults();
+                    await refreshSearchResults(input.value);
                 }
                 if ((e.key === 'j' || e.key === 'k') && state.activeTab === 'Positions') {
                     const rows = Array.from(document.querySelectorAll('#positions-table tbody tr')).filter(r => r.style.display !== 'none');
@@ -1902,6 +2274,7 @@
             bindInteractions();
             document.getElementById('tx-symbol-filter').value = state.txSymbol || '';
             document.getElementById('tx-type-filter').value = state.txType || '';
+            resetTxForm();
             document.querySelector(`#performance-timeframes .tf-btn[data-tf="${state.performanceTf}"]`)?.classList.add('active');
             document.querySelectorAll('#performance-timeframes .tf-btn').forEach(b => {
                 if (b.dataset.tf !== state.performanceTf) b.classList.remove('active');

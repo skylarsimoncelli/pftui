@@ -28,6 +28,26 @@ pub fn delete_transaction(conn: &Connection, id: i64) -> Result<bool> {
     Ok(affected > 0)
 }
 
+pub fn update_transaction(conn: &Connection, id: i64, tx: &NewTransaction) -> Result<bool> {
+    let affected = conn.execute(
+        "UPDATE transactions
+         SET symbol = ?1, category = ?2, tx_type = ?3, quantity = ?4, price_per = ?5, currency = ?6, date = ?7, notes = ?8
+         WHERE id = ?9",
+        params![
+            tx.symbol,
+            tx.category.to_string(),
+            tx.tx_type.to_string(),
+            tx.quantity.to_string(),
+            tx.price_per.to_string(),
+            tx.currency,
+            tx.date,
+            tx.notes,
+            id,
+        ],
+    )?;
+    Ok(affected > 0)
+}
+
 pub fn list_transactions(conn: &Connection) -> Result<Vec<Transaction>> {
     let mut stmt = conn.prepare(
         "SELECT id, symbol, category, tx_type, quantity, price_per, currency, date, notes, created_at
@@ -142,6 +162,21 @@ mod tests {
         assert!(delete_transaction(&conn, id).unwrap());
         assert!(!delete_transaction(&conn, id).unwrap());
         assert_eq!(list_transactions(&conn).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_update() {
+        let conn = open_in_memory();
+        let id = insert_transaction(&conn, &sample_tx()).unwrap();
+        let mut updated = sample_tx();
+        updated.symbol = "MSFT".to_string();
+        updated.tx_type = TxType::Sell;
+        updated.quantity = dec!(5);
+        assert!(update_transaction(&conn, id, &updated).unwrap());
+        let tx = get_transaction(&conn, id).unwrap().unwrap();
+        assert_eq!(tx.symbol, "MSFT");
+        assert_eq!(tx.tx_type, TxType::Sell);
+        assert_eq!(tx.quantity, dec!(5));
     }
 
     #[test]
