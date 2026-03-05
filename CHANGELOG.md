@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 14:11 UTC — F25.2: Global macro panel in Economy tab
+
+- What: Added global macro panel to Economy tab showing World Bank structural data for BRICS + US. New panel at bottom of left column displays compact table with 5 countries (US, China, India, Russia, Brazil) and 3 indicators: GDP Growth (annual %), Debt/GDP (%), Reserves (in trillions USD). Color-coded values: GDP growth green/red for positive/negative, Debt/GDP green (<60%), yellow (60-100%), red (>100%), Reserves neutral. Loads from worldbank_data HashMap populated on init. Layout adjusted to split left column: macro table (top, min 10 rows) + global macro panel (bottom, 10 rows).
+- Why: F25.2 from TODO.md (P0 — Free Data Integration). Visual comparison of BRICS vs US structural health. Supports macro-aware portfolio positioning. Data refreshes monthly from World Bank cache (built in F25.1).
+- Files: src/app.rs (worldbank_data HashMap field, load_worldbank_data method), src/tui/views/economy.rs (render_global_macro_panel function, layout split)
+- Tests: 1055 passing, clippy clean
+- TODO: F25.2 (P0) — COMPLETED. Next: F25.3 (`pftui global` CLI command)
+
 ### 2026-03-05 13:41 UTC — F25.1: World Bank data module and cache
 
 - What: Integrated World Bank Open Data API for structural macro indicators. Created `worldbank.rs` data module with `fetch_worldbank_indicator()` and `fetch_all_indicators()` functions. Fetches 4 key indicators: GDP growth (annual %), debt/GDP (%), current account (% of GDP), total reserves (USD). Tracks 8 countries: US, China, India, Russia, Brazil, South Africa, UK, EU. Last 5 years of data per request. Created `worldbank_cache.rs` DB module with upsert, get by country/indicator, get all, get latest (most recent year per country/indicator), and 30-day freshness checks. Added `worldbank_cache` table to schema with composite PK (country_code, indicator_code, year). Data updates quarterly, cache monthly refresh.
