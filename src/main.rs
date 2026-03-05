@@ -211,6 +211,10 @@ fn main() -> Result<()> {
             commands::predictions::run(&conn, category.as_deref(), search.as_deref(), limit, json)
         }
 
+        Some(Command::News { source, search, hours, limit, json }) => {
+            commands::news::run(&conn, source.as_deref(), search.as_deref(), hours, limit, json)
+        }
+
         Some(Command::Sentiment { symbol, history, json }) => {
             commands::sentiment::run(symbol.as_deref(), history, json)
         }

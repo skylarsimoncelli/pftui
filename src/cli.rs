@@ -228,6 +228,29 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show latest financial news from RSS feeds
+    News {
+        /// Filter by source (e.g. "Reuters", "CoinDesk", "ZeroHedge")
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Search title text (case-insensitive substring match)
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Show only news from last N hours
+        #[arg(long)]
+        hours: Option<i64>,
+
+        /// Maximum number of articles to show (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show market sentiment: Fear & Greed indices + COT positioning
     Sentiment {
         /// Symbol to show COT detail (GC=F, SI=F, CL=F, BTC). Omit for overview.

@@ -12,6 +12,7 @@ pub mod import;
 pub mod journal;
 pub mod macro_cmd;
 pub mod movers;
+pub mod news;
 pub mod performance;
 pub mod predictions;
 pub mod refresh;
