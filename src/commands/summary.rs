@@ -16,33 +16,74 @@ use crate::db::transactions::list_transactions;
 use crate::indicators::macd::{compute_macd, MacdResult};
 use crate::indicators::rsi::compute_rsi;
 use crate::indicators::sma::compute_sma;
+use crate::analytics::scenarios::{apply_preset, apply_selector_pct_shock, parse_preset};
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
-/// Parse a what-if override string like "GC=F:5500,BTC:55000" into symbol→price pairs.
-fn parse_what_if(input: &str) -> Result<HashMap<String, Decimal>> {
+/// Parse what-if input into symbol→price overrides.
+///
+/// Supported forms:
+/// - absolute prices: `GC=F:5500,BTC:55000`
+/// - percent shocks: `gold:-10%,btc:-20%,equity:-5%`
+/// - named presets: `Oil $100`, `BTC 40k`, `Gold $6000`, `2008 GFC`, `1973 Oil Crisis`
+fn parse_what_if(input: &str, prices: &HashMap<String, Decimal>) -> Result<HashMap<String, Decimal>> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("--what-if requires a scenario/preset or SYMBOL:VALUE pairs");
+    }
+
+    if let Some(preset) = parse_preset(trimmed) {
+        let overrides = apply_preset(preset, prices);
+        if overrides.is_empty() {
+            anyhow::bail!("Named scenario '{}' matched no cached symbols", trimmed);
+        }
+        return Ok(overrides);
+    }
+
     let mut overrides = HashMap::new();
-    for pair in input.split(',') {
+    for pair in trimmed.split(',') {
         let pair = pair.trim();
         if pair.is_empty() {
             continue;
         }
         // Split on last ':' to handle symbols containing '=' etc.
         let colon_pos = pair.rfind(':').ok_or_else(|| {
-            anyhow::anyhow!("Invalid --what-if pair '{}': expected SYMBOL:PRICE", pair)
+            anyhow::anyhow!(
+                "Invalid --what-if pair '{}': expected KEY:VALUE (VALUE can be PRICE or +/-PCT%)",
+                pair
+            )
         })?;
-        let symbol = pair[..colon_pos].trim().to_uppercase();
-        let price_str = pair[colon_pos + 1..].trim();
-        let price = Decimal::from_str(price_str).map_err(|_| {
-            anyhow::anyhow!("Invalid price '{}' for symbol '{}' in --what-if", price_str, symbol)
+        let key = pair[..colon_pos].trim().to_uppercase();
+        let value_str = pair[colon_pos + 1..].trim();
+
+        if let Some(pct_str) = value_str.strip_suffix('%') {
+            let pct = Decimal::from_str(pct_str).map_err(|_| {
+                anyhow::anyhow!(
+                    "Invalid percent '{}' for key '{}' in --what-if",
+                    value_str,
+                    key
+                )
+            })?;
+            let matched = apply_selector_pct_shock(&mut overrides, prices, &key, pct);
+            if matched == 0 {
+                anyhow::bail!(
+                    "Key '{}' in --what-if matched no symbols (try a symbol or selector like equity/crypto/gold/btc/oil)",
+                    key
+                );
+            }
+            continue;
+        }
+
+        let price = Decimal::from_str(value_str).map_err(|_| {
+            anyhow::anyhow!("Invalid price '{}' for symbol '{}' in --what-if", value_str, key)
         })?;
         if price < dec!(0) {
-            anyhow::bail!("Negative price '{}' for symbol '{}' in --what-if", price, symbol);
+            anyhow::bail!("Negative price '{}' for symbol '{}' in --what-if", price, key);
         }
-        overrides.insert(symbol, price);
+        overrides.insert(key, price);
     }
     if overrides.is_empty() {
-        anyhow::bail!("--what-if requires at least one SYMBOL:PRICE pair");
+        anyhow::bail!("--what-if produced no overrides");
     }
     Ok(overrides)
 }
@@ -64,7 +105,7 @@ pub fn run(
     // Apply hypothetical price overrides
     let overrides = match what_if {
         Some(input) => {
-            let ov = parse_what_if(input)?;
+            let ov = parse_what_if(input, &prices)?;
             for (sym, price) in &ov {
                 prices.insert(sym.clone(), *price);
             }
@@ -1200,14 +1241,20 @@ mod tests {
 
     #[test]
     fn test_parse_what_if_single() {
-        let overrides = parse_what_if("BTC:55000").unwrap();
+        let prices = HashMap::from([("BTC".to_string(), dec!(85000))]);
+        let overrides = parse_what_if("BTC:55000", &prices).unwrap();
         assert_eq!(overrides.len(), 1);
         assert_eq!(overrides.get("BTC"), Some(&dec!(55000)));
     }
 
     #[test]
     fn test_parse_what_if_multiple() {
-        let overrides = parse_what_if("GC=F:5500,BTC:55000,AAPL:250.50").unwrap();
+        let prices = HashMap::from([
+            ("GC=F".to_string(), dec!(2200)),
+            ("BTC".to_string(), dec!(85000)),
+            ("AAPL".to_string(), dec!(200)),
+        ]);
+        let overrides = parse_what_if("GC=F:5500,BTC:55000,AAPL:250.50", &prices).unwrap();
         assert_eq!(overrides.len(), 3);
         assert_eq!(overrides.get("GC=F"), Some(&dec!(5500)));
         assert_eq!(overrides.get("BTC"), Some(&dec!(55000)));
@@ -1216,13 +1263,18 @@ mod tests {
 
     #[test]
     fn test_parse_what_if_case_insensitive() {
-        let overrides = parse_what_if("btc:50000").unwrap();
+        let prices = HashMap::from([("BTC".to_string(), dec!(85000))]);
+        let overrides = parse_what_if("btc:50000", &prices).unwrap();
         assert_eq!(overrides.get("BTC"), Some(&dec!(50000)));
     }
 
     #[test]
     fn test_parse_what_if_with_spaces() {
-        let overrides = parse_what_if(" BTC : 55000 , AAPL : 200 ").unwrap();
+        let prices = HashMap::from([
+            ("BTC".to_string(), dec!(85000)),
+            ("AAPL".to_string(), dec!(180)),
+        ]);
+        let overrides = parse_what_if(" BTC : 55000 , AAPL : 200 ", &prices).unwrap();
         assert_eq!(overrides.len(), 2);
         assert_eq!(overrides.get("BTC"), Some(&dec!(55000)));
         assert_eq!(overrides.get("AAPL"), Some(&dec!(200)));
@@ -1230,28 +1282,52 @@ mod tests {
 
     #[test]
     fn test_parse_what_if_empty_fails() {
-        assert!(parse_what_if("").is_err());
+        assert!(parse_what_if("", &HashMap::new()).is_err());
     }
 
     #[test]
     fn test_parse_what_if_no_colon_fails() {
-        assert!(parse_what_if("BTC55000").is_err());
+        assert!(parse_what_if("BTC55000", &HashMap::new()).is_err());
     }
 
     #[test]
     fn test_parse_what_if_bad_price_fails() {
-        assert!(parse_what_if("BTC:notanumber").is_err());
+        assert!(parse_what_if("BTC:notanumber", &HashMap::new()).is_err());
     }
 
     #[test]
     fn test_parse_what_if_negative_price_fails() {
-        assert!(parse_what_if("BTC:-100").is_err());
+        assert!(parse_what_if("BTC:-100", &HashMap::new()).is_err());
     }
 
     #[test]
     fn test_parse_what_if_zero_price() {
-        let overrides = parse_what_if("BTC:0").unwrap();
+        let prices = HashMap::from([("BTC".to_string(), dec!(85000))]);
+        let overrides = parse_what_if("BTC:0", &prices).unwrap();
         assert_eq!(overrides.get("BTC"), Some(&dec!(0)));
+    }
+
+    #[test]
+    fn test_parse_what_if_percent_selector() {
+        let prices = HashMap::from([
+            ("BTC".to_string(), dec!(80000)),
+            ("ETH".to_string(), dec!(4000)),
+            ("AAPL".to_string(), dec!(200)),
+        ]);
+        let overrides = parse_what_if("crypto:-20%", &prices).unwrap();
+        assert_eq!(overrides.get("BTC"), Some(&dec!(64000)));
+        assert_eq!(overrides.get("ETH"), Some(&dec!(3200)));
+        assert!(!overrides.contains_key("AAPL"));
+    }
+
+    #[test]
+    fn test_parse_what_if_named_preset() {
+        let prices = HashMap::from([
+            ("BTC".to_string(), dec!(90000)),
+            ("AAPL".to_string(), dec!(200)),
+        ]);
+        let overrides = parse_what_if("BTC 40k", &prices).unwrap();
+        assert_eq!(overrides.get("BTC"), Some(&dec!(28000)));
     }
 
     #[test]

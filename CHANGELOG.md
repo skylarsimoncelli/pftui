@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:08 UTC — F4.2: Scenario engine + `summary --what-if` expansion
+
+- What: Added new scenario engine module `src/analytics/scenarios.rs` with named macro presets and reusable selector-based shock helpers.
+- Presets: Implemented support for `"Oil $100"`, `"BTC 40k"`, `"Gold $6000"`, `"2008 GFC"`, and `"1973 Oil Crisis"` via `parse_preset()` + `apply_preset()`.
+- Summary integration: Extended `pftui summary --what-if` parser to accept: (1) absolute overrides (`SYMBOL:PRICE`), (2) selector percent shocks (`gold:-10%,btc:-20%,equity:-5%`), and (3) named presets. Existing absolute override behavior remains supported.
+- Files: `src/analytics/{mod.rs,scenarios.rs}`, `src/commands/summary.rs`, `TODO.md`
+- Tests: Added/updated scenario and parser tests; execution could not be run in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F4.2 (P1 promoted) — COMPLETED.
+
 ### 2026-03-05 21:04 UTC — F4.1: Portfolio risk metrics module
 
 - What: Added new analytics module with core risk calculations in `src/analytics/risk.rs`: annualized volatility (252-day scaling), max drawdown, Sharpe ratio using Fed Funds Rate as risk-free input, historical VaR (95%), and Herfindahl concentration index.
