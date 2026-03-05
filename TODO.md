@@ -18,7 +18,7 @@
 > **Source:** CFTC Socrata API (`publicreporting.cftc.gov`, free, no key, JSON)
 > **Data:** Net positions by trader type (commercial, non-commercial/managed money), open interest, week-over-week changes
 
-- [ ] **F18.4: `pftui cot` CLI** — `pftui cot` (all tracked), `--symbol gold`, `--weeks 12` (historical), `--json`. Files: new `src/commands/cot.rs`, `cli.rs`
+
 
 ### F19: Fear & Greed Index Integration
 > **Goal:** Crypto + traditional market sentiment gauges, natively in the TUI.
