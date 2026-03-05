@@ -183,7 +183,7 @@ The homepage a finance enthusiast opens every morning:
 > F15 (Configurable Homepage) and F16 (Full Chart Search) are defined in P1.
 
 ### Other P2
-- [ ] **[Feedback] Fix USD/JPY and USD/CNY in macro dashboard** — Both showing 1.0000 instead of actual FX rates. Data source issue — verify Yahoo symbols (JPY=X, CNY=X) are fetched and cached correctly. Files: `src/commands/macro_cmd.rs`, `src/commands/refresh.rs`, `src/price/yahoo.rs`
+- [ ] **[Feedback] Fix USD/JPY and USD/CNY in macro dashboard** — Yahoo Finance FX feed for JPY=X and CNY=X is broken (returns 1.00). Upgraded yahoo_finance_api to v4 (didn't fix it). Solution: add fallback FX API module using exchangerate-api.com (free, 1500/mo) or frankfurter.app (free, unlimited). Files: new `src/data/fx_fallback.rs`, `src/price/mod.rs` (fallback logic), `src/commands/refresh.rs`
 - [ ] **[Feedback] Alerts in `brief` output** — Show any triggered or near-threshold alerts in the brief command output. Connects alert engine to the primary agent-consumed command. Files: `commands/brief.rs`, `alerts/engine.rs`
 - [ ] **[Feedback] After-hours / pre-market prices** — Show AH/pre-market prices in watchlist and brief for market close routines. Yahoo Finance provides extended hours data. Files: `src/price/yahoo.rs`, `commands/brief.rs`, `commands/watchlist_cli.rs`
 - [ ] **[Feedback] `pftui sector` command** — Show sector ETF performance (XLE, ITA, XLF, IGV, etc.) for tracking sector-level moves and capital flow identification during regime shifts. Files: new `src/commands/sector.rs`, `cli.rs`
