@@ -227,6 +227,8 @@ mod tests {
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
             fred_api_key: None,
+            news_poll_interval: 600,
+            custom_news_feeds: Vec::new(),
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");

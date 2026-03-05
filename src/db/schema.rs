@@ -185,6 +185,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (index_type, date)
         );
         CREATE INDEX IF NOT EXISTS idx_sentiment_history_date ON sentiment_history(date);
+
+        CREATE TABLE IF NOT EXISTS news_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL UNIQUE,
+            source TEXT NOT NULL,
+            category TEXT NOT NULL,
+            published_at INTEGER NOT NULL,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_news_source ON news_cache(source);
+        CREATE INDEX IF NOT EXISTS idx_news_category ON news_cache(category);
+        CREATE INDEX IF NOT EXISTS idx_news_published_at ON news_cache(published_at);
         ",
     )?;
 

@@ -24,6 +24,12 @@ pub struct Config {
     /// Register at: https://fred.stlouisfed.org/docs/api/api_key.html
     #[serde(default)]
     pub fred_api_key: Option<String>,
+    /// RSS news feed polling interval in seconds (default: 600 = 10 minutes)
+    #[serde(default = "default_news_poll_interval")]
+    pub news_poll_interval: u64,
+    /// Custom RSS feeds (name, url, category). If empty, uses default feeds.
+    #[serde(default)]
+    pub custom_news_feeds: Vec<CustomNewsFeed>,
 }
 
 fn default_base_currency() -> String {
@@ -38,6 +44,17 @@ fn default_theme() -> String {
     "midnight".to_string()
 }
 
+fn default_news_poll_interval() -> u64 {
+    600 // 10 minutes
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomNewsFeed {
+    pub name: String,
+    pub url: String,
+    pub category: String,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -46,6 +63,8 @@ impl Default for Config {
             portfolio_mode: PortfolioMode::default(),
             theme: default_theme(),
             fred_api_key: None,
+            news_poll_interval: default_news_poll_interval(),
+            custom_news_feeds: Vec::new(),
         }
     }
 }
@@ -181,6 +200,8 @@ mod tests {
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
             fred_api_key: None,
+            news_poll_interval: 600,
+            custom_news_feeds: Vec::new(),
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();

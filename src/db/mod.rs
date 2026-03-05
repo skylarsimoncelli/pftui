@@ -9,6 +9,8 @@ pub mod cot_cache;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod economic_cache;
 pub mod journal;
+#[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
+pub mod news_cache;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
 pub mod predictions_cache;
