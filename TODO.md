@@ -25,8 +25,6 @@
 > **Sources:** Alternative.me Crypto F&G (free, no key), CNN F&G (scrape — public page)
 > **Data:** Index value (0-100), classification (Extreme Fear/Fear/Neutral/Greed/Extreme Greed), historical values
 
-- [ ] **F19.4: Unified `pftui sentiment` CLI** — Merge COT positioning + Fear & Greed into one command. `pftui sentiment` shows: (1) Crypto F&G index + classification, (2) Traditional F&G, (3) COT smart money positioning for tracked commodities (gold, silver, oil, BTC). Subcommands: `pftui sentiment` (overview), `pftui sentiment --history 30` (trend), `pftui sentiment GC=F` (detailed positioning for one asset), `--json`. Rename existing `pftui cot` → absorbed into this. Files: new `src/commands/sentiment.rs`, refactor `src/commands/cot.rs` into it, `cli.rs`
-
 ### F20: Live News Feed (RSS)
 > **Goal:** Zero-cost, zero-key financial news aggregation from the best sources. Filterable by topic, searchable, in a dedicated News view.
 > **Sources:** RSS feeds — completely free, no auth, no rate limits.
