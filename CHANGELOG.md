@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 03:40 UTC — F19.3: Sentiment history sparklines in Economy tab
+
+- What: New sentiment panel in Economy tab right column showing Fear & Greed index history as 30-day sparklines. Panel displays Crypto F&G and TradFi F&G with current value, classification, and trend visualization. Sparklines color-coded by sentiment level: red (extreme fear 0-24) → orange (fear 25-39) → gray (neutral 40-59) → green (greed 60+). Panel size: 7 rows, positioned between yield curve chart (top) and prediction markets (bottom) in right column layout.
+- Why: F19.3 from TODO.md (P0 — Free Data Integration). Sentiment trend visualization enables correlation analysis with portfolio value sparkline. Seeing 30-day trajectory provides context for current reading (e.g., "sentiment at 10 but trending up from 5 last week" vs "sentiment at 10 and plummeting from 60"). Completes sentiment integration in TUI: header ticker (F19.2), Economy tab history (F19.3), next up is unified CLI (F19.4).
+- Files: `src/tui/views/economy.rs` (new render_sentiment_panel function fetches cached sentiment + history from SQLite, new build_sentiment_sparkline generates braille sparklines from 30-day value history, new sentiment_color maps classifications to theme colors, modified render to split right panel into 3 sections with sentiment between yield curve and predictions)
+- Tests: 1019 passing, clippy clean
+- TODO: F19.3 (P0) — COMPLETED
+
 ### 2026-03-05 03:10 UTC — F19.2: Sentiment gauges in header ticker
 
 - What: Fear & Greed indices (crypto + traditional) now display in the scrolling ticker tape on the header's second line. Sentiment data appears FIRST in the ticker (before market symbols) with emoji indicators and color coding: 🔴 (red) for Extreme Fear (0-24) and Fear (25-44), 🟡 (neutral) for Neutral (45-55), 🟢 (green) for Greed (56-75) and Extreme Greed (76-100). Format: `Crypto F&G 🔴10 Extreme Fear │ TradFi F&G 🟡42 Fear │ SPX ▲+1.2%`. Sentiment loads from cache on app init (via load_sentiment()), fetches live data on startup and periodic refresh (request_sentiment_data() spawns background thread to fetch from Alternative.me API for crypto and placeholder for traditional), and reloads from cache after fetch completes. Ticker seamlessly scrolls both sentiment and market data.
