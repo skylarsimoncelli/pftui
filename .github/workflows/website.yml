@@ -1,5 +1,9 @@
 name: Deploy Website to GitHub Pages
 
+# This workflow deploys the website files only.
+# Note: The release.yml workflow copies website/* into its deployment
+# to ensure apt/yum repos and website files coexist on GitHub Pages.
+
 on:
   push:
     branches: [master]
