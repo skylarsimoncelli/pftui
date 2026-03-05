@@ -114,18 +114,20 @@ pftui works headless too. Every feature is accessible from the command line.
 pftui refresh                    # Fetch latest prices
 pftui value                      # Quick portfolio value
 pftui brief                      # Markdown brief (great for scripts & agents)
-pftui summary --period 1m        # Monthly P&L breakdown
+pftui brief --agent              # Structured JSON for agent consumption
+pftui summary                    # Detailed breakdown
 pftui macro                      # Macro dashboard (DXY, VIX, yields, CPI)
-pftui performance --vs SPY       # Portfolio vs benchmark returns
-pftui calendar --impact high     # Upcoming market-moving events
+pftui performance                # Portfolio performance over time
+pftui movers                     # Biggest daily movers
 pftui alerts list                # Check price & allocation alerts
-pftui journal search "gold"      # Search your trade journal
-pftui watch TSLA --target 300    # Watch with entry target
+pftui journal list               # View your trade journal
+pftui watch TSLA                 # Add to watchlist
+pftui watchlist                  # Show watchlist with prices
 pftui export json                # Full portfolio export
 pftui snapshot                   # Render TUI to stdout (for sharing)
 ```
 
-All commands support `--json` for programmatic access.
+Most data commands support JSON output via `--json` or `export json`. Run `pftui <command> --help` for details.
 
 ---
 
