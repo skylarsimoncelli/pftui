@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:27 UTC — F16.1: `/` search live price enrichment
+
+- What: Enhanced global `/` search overlay to fetch live data for matched symbols not already in portfolio/watchlist.
+- Data flow: Search typing now triggers batched background requests through `PriceService` for missing quotes and 52-week history windows (via `FetchAll` + `FetchHistoryBatch`), with per-overlay symbol request dedupe.
+- UI: Search result rows now include current price, daily change %, and 52-week range (`low-high`) using live quote/history data when available.
+- Overlay lifecycle: Clearing/dismissing the overlay now resets pending query/selection/request tracking state.
+- Files: `src/app.rs`, `src/tui/views/search_overlay.rs`, `TODO.md`
+- Tests: Could not run in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F16.1 (P1) — COMPLETED.
+
 ### 2026-03-05 21:26 UTC — F15.2: Dual homepage sub-tabs on tab `[1]`
 
 - What: Added home sub-tab behavior so the default home view and secondary view (Positions/Watchlist) can be swapped in-place from tab `[1]`.

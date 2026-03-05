@@ -383,6 +383,7 @@ pub struct App {
     pub search_overlay_open: bool,
     pub search_overlay_query: String,
     pub search_overlay_selected: usize,
+    pub search_overlay_requested_symbols: std::collections::HashSet<String>,
 
     // Sorting
     pub sort_field: SortField,
@@ -624,6 +625,7 @@ impl App {
             search_overlay_open: false,
             search_overlay_query: String::new(),
             search_overlay_selected: 0,
+            search_overlay_requested_symbols: std::collections::HashSet::new(),
             sort_field: SortField::Allocation,
             sort_ascending: false,
             category_filter: None,
@@ -2160,6 +2162,7 @@ impl App {
                 self.search_overlay_open = true;
                 self.search_overlay_query.clear();
                 self.search_overlay_selected = 0;
+                self.search_overlay_requested_symbols.clear();
             }
 
             // Refresh
@@ -2237,6 +2240,9 @@ impl App {
                 // If search overlay is open, click outside to dismiss
                 if self.search_overlay_open {
                     self.search_overlay_open = false;
+                    self.search_overlay_query.clear();
+                    self.search_overlay_selected = 0;
+                    self.search_overlay_requested_symbols.clear();
                     return;
                 }
                 // If detail popup is open, click outside to dismiss
@@ -3197,14 +3203,17 @@ impl App {
                 self.search_overlay_open = false;
                 self.search_overlay_query.clear();
                 self.search_overlay_selected = 0;
+                self.search_overlay_requested_symbols.clear();
             }
             KeyCode::Backspace => {
                 self.search_overlay_query.pop();
                 self.search_overlay_selected = 0;
+                self.request_search_overlay_live_data();
             }
             KeyCode::Char(c) => {
                 self.search_overlay_query.push(c);
                 self.search_overlay_selected = 0;
+                self.request_search_overlay_live_data();
             }
             KeyCode::Down => {
                 // Navigate results (capped at max 19 since results are limited to 20)
@@ -3247,6 +3256,45 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn request_search_overlay_live_data(&mut self) {
+        use crate::tui::views::search_overlay::build_results;
+
+        if self.search_overlay_query.trim().is_empty() {
+            return;
+        }
+        let Some(svc) = &self.price_service else { return };
+
+        let mut quote_batch: Vec<(String, AssetCategory)> = Vec::new();
+        let mut history_batch: Vec<(String, AssetCategory, u32)> = Vec::new();
+
+        let results = build_results(self, &self.search_overlay_query);
+        for result in results.into_iter().take(8) {
+            if result.in_portfolio || result.in_watchlist {
+                continue;
+            }
+            if self.search_overlay_requested_symbols.contains(&result.symbol) {
+                continue;
+            }
+
+            let category = crate::models::asset_names::infer_category(&result.symbol);
+            if !self.prices.contains_key(&result.symbol) {
+                quote_batch.push((result.symbol.clone(), category));
+            }
+            if !self.price_history.contains_key(&result.symbol) {
+                history_batch.push((result.symbol.clone(), category, 370));
+            }
+            self.search_overlay_requested_symbols
+                .insert(result.symbol.clone());
+        }
+
+        if !quote_batch.is_empty() {
+            svc.send_command(PriceCommand::FetchAll(quote_batch));
+        }
+        if !history_batch.is_empty() {
+            svc.send_command(PriceCommand::FetchHistoryBatch(history_batch));
         }
     }
 

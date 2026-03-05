@@ -127,7 +127,7 @@ The homepage a finance enthusiast opens every morning:
 ### F16: Full Chart Search (Enhanced `/` Search)
 > **Goal:** The `/` search overlay becomes the primary interface for looking up ANY symbol — not just held/watched assets. Searching "TSLA" should show a full chart + key data even if TSLA isn't in your portfolio or watchlist. Think Bloomberg's `TSLA <GO>`.
 
-- [ ] **F16.1: Search with live price fetch** — When `/` search matches a symbol not in portfolio or watchlist, fetch price data on-the-fly from Yahoo Finance. Show: current price, day change, 52W range. Files: `src/tui/views/search_overlay.rs`, `src/price/mod.rs`
+- [x] **F16.1: Search with live price fetch** — When `/` search matches a symbol not in portfolio or watchlist, fetch price data on-the-fly from Yahoo Finance. Show: current price, day change, 52W range. Files: `src/tui/views/search_overlay.rs`, `src/price/mod.rs`
 - [ ] **F16.2: Search result chart popup** — After selecting a search result, open a full-screen chart popup (reuse existing price_chart widget) with braille price history, RSI, volume if available. Same quality as the chart shown for held positions. `Esc` returns to previous view. Files: `src/tui/views/search_overlay.rs`, new `src/tui/views/search_chart_popup.rs`, `src/tui/widgets/price_chart.rs`
 - [ ] **F16.3: Quick-add from search** — From the search chart popup, `w` to add to watchlist, `a` to add a transaction. Seamless flow: search → chart → decide → add. Files: `src/tui/views/search_chart_popup.rs`, `src/db/watchlist.rs`, `src/commands/add_tx.rs`
 

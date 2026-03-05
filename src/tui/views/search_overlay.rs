@@ -17,6 +17,8 @@ pub struct SearchResult {
     pub in_watchlist: bool,
     pub price: Option<Decimal>,
     pub day_change_pct: Option<Decimal>,
+    pub week_52_low: Option<Decimal>,
+    pub week_52_high: Option<Decimal>,
 }
 
 /// Build search results from the query, enriched with portfolio/price data.
@@ -50,7 +52,7 @@ pub fn build_results(app: &App, query: &str) -> Vec<SearchResult> {
             // Compute day change % from price history if available
             let day_change_pct = app.price_history.get(symbol).and_then(|history| {
                 if history.len() >= 2 {
-                    let latest = history.last().map(|h| h.close)?;
+                    let latest = price.or_else(|| history.last().map(|h| h.close))?;
                     let prev = history.get(history.len() - 2).map(|h| h.close)?;
                     if prev > Decimal::ZERO {
                         Some(((latest - prev) / prev) * Decimal::from(100))
@@ -62,6 +64,24 @@ pub fn build_results(app: &App, query: &str) -> Vec<SearchResult> {
                 }
             });
 
+            let (week_52_low, week_52_high) = app
+                .price_history
+                .get(symbol)
+                .and_then(|history| {
+                    if history.is_empty() {
+                        return None;
+                    }
+                    let window = if history.len() > 365 {
+                        &history[history.len() - 365..]
+                    } else {
+                        history.as_slice()
+                    };
+                    let low = window.iter().map(|h| h.close).min()?;
+                    let high = window.iter().map(|h| h.close).max()?;
+                    Some((Some(low), Some(high)))
+                })
+                .unwrap_or((None, None));
+
             SearchResult {
                 symbol: symbol.to_string(),
                 name: name.to_string(),
@@ -70,6 +90,8 @@ pub fn build_results(app: &App, query: &str) -> Vec<SearchResult> {
                 in_watchlist,
                 price,
                 day_change_pct,
+                week_52_low,
+                week_52_high,
             }
         })
         .collect()
@@ -225,13 +247,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         };
 
         // Compute column widths within available space
-        // Layout: " ◆ SYMBOL    Name                 Category   Price   Change"
+        // Layout: " ◆ SYMBOL  Name   Category  Price  Change  52W range"
         let sym_width = 10;
-        let cat_width = 10;
+        let cat_width = 8;
         let price_width = 10;
         let change_width = 8;
+        let range_width = 18;
         let name_width = (inner.width as usize)
-            .saturating_sub(2 + sym_width + cat_width + price_width + change_width + 2);
+            .saturating_sub(2 + sym_width + cat_width + price_width + change_width + range_width + 2);
 
         let row_bg = if is_selected { t.surface_3 } else { t.surface_2 };
 
@@ -239,6 +262,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             format!("{}…", &result.name[..name_width.saturating_sub(1)])
         } else {
             result.name.clone()
+        };
+        let range_str = match (result.week_52_low, result.week_52_high) {
+            (Some(lo), Some(hi)) => format!("{:.0}-{:.0}", lo, hi),
+            _ => "—".to_string(),
         };
 
         let line = Line::from(vec![
@@ -265,6 +292,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(
                 format!("{:>width$} ", change_str, width = change_width),
                 Style::default().fg(change_color).bg(row_bg),
+            ),
+            Span::styled(
+                format!("{:>width$}", range_str, width = range_width),
+                Style::default().fg(t.text_secondary).bg(row_bg),
             ),
         ]);
 
