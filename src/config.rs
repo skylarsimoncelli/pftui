@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,6 +167,46 @@ pub fn load_config() -> Result<Config> {
     }
 }
 
+/// Load config, prompting first-run users for home tab preference.
+///
+/// Prompt appears only when `config.toml` does not exist yet.
+pub fn load_config_with_first_run_prompt() -> Result<Config> {
+    let path = config_path();
+    if path.exists() {
+        return load_config();
+    }
+
+    let mut config = Config::default();
+    config.home_tab = prompt_first_run_home_tab()?;
+    save_config(&config)?;
+    Ok(config)
+}
+
+fn prompt_first_run_home_tab() -> Result<String> {
+    println!();
+    println!("  First launch setup");
+    println!("  Default homepage: [P]ortfolio or [W]atchlist?");
+
+    loop {
+        print!("  Choose [P/w] (default: P): ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        if let Some(home_tab) = parse_home_tab_input(&input) {
+            return Ok(home_tab.to_string());
+        }
+        println!("  Please enter P or W.");
+    }
+}
+
+fn parse_home_tab_input(input: &str) -> Option<&'static str> {
+    match input.trim().to_lowercase().as_str() {
+        "" | "p" | "portfolio" => Some("positions"),
+        "w" | "watchlist" => Some("watchlist"),
+        _ => None,
+    }
+}
+
 pub fn save_config(config: &Config) -> Result<()> {
     let path = config_path();
     if let Some(parent) = path.parent() {
@@ -296,5 +337,23 @@ mod tests {
         assert!(codes.contains(&"EUR"));
         assert!(codes.contains(&"GBP"));
         assert!(codes.contains(&"JPY"));
+    }
+
+    #[test]
+    fn parse_home_tab_input_accepts_portfolio_variants() {
+        assert_eq!(parse_home_tab_input(""), Some("positions"));
+        assert_eq!(parse_home_tab_input("p"), Some("positions"));
+        assert_eq!(parse_home_tab_input("Portfolio"), Some("positions"));
+    }
+
+    #[test]
+    fn parse_home_tab_input_accepts_watchlist_variants() {
+        assert_eq!(parse_home_tab_input("w"), Some("watchlist"));
+        assert_eq!(parse_home_tab_input("Watchlist"), Some("watchlist"));
+    }
+
+    #[test]
+    fn parse_home_tab_input_rejects_invalid() {
+        assert_eq!(parse_home_tab_input("x"), None);
     }
 }

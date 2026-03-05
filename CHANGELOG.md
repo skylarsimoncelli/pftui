@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:24 UTC — F15.1: First-run homepage prompt
+
+- What: Added first-run prompt for homepage preference when `config.toml` does not yet exist: `Default homepage: [P]ortfolio or [W]atchlist?`
+- Behavior: Introduced `load_config_with_first_run_prompt()` in config module. Existing config files load normally; only first launch prompts and persists selected home tab (`positions`/`watchlist`) into config.
+- Wiring: Updated app startup in `main.rs` to use prompted loader, including post-setup config reload path.
+- Reliability: Added parser tests for accepted prompt inputs and invalid handling.
+- Files: `src/config.rs`, `src/main.rs`, `TODO.md`
+- Tests: Could not run in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F15.1 (P1) — COMPLETED.
+
 ### 2026-03-05 21:14 UTC — F4.4: Risk summary line in `brief`
 
 - What: Added 1-line risk summary output in both full and percentage brief modes: annualized volatility, historical VaR 95, and concentration flag.

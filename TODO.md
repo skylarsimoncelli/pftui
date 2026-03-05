@@ -121,7 +121,7 @@ The homepage a finance enthusiast opens every morning:
 ### F15: Configurable Homepage & Tab Layout
 > **Goal:** First-run setup lets user choose their default homepage (Portfolio or Watchlist). The non-default view becomes a sub-tab on tab [1]. Not all users are portfolio-first — some want a watchlist/market scanner as their primary view.
 
-- [ ] **F15.1: First-run homepage prompt** — On first launch (no config exists), prompt: "Default homepage: [P]ortfolio or [W]atchlist?" Store choice in config.toml or SQLite settings table. Files: `src/config.rs` or `src/db/settings.rs`, `src/app.rs`
+- [x] **F15.1: First-run homepage prompt** — On first launch (no config exists), prompt: "Default homepage: [P]ortfolio or [W]atchlist?" Store choice in config.toml or SQLite settings table. Files: `src/config.rs` or `src/db/settings.rs`, `src/app.rs`
 - [ ] **F15.2: Dual sub-tabs on homepage** — Tab [1] gets two sub-views accessible via `Tab` key or left/right arrows: the default view (Portfolio or Watchlist) and the secondary view. Both share the same tab position but swap content. Header shows active sub-tab indicator. Files: `src/app.rs`, `src/tui/ui.rs`, `src/tui/views/positions.rs`, `src/tui/views/watchlist.rs`
 
 ### F16: Full Chart Search (Enhanced `/` Search)

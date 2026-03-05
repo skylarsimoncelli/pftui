@@ -18,12 +18,12 @@ use anyhow::{bail, Result};
 use clap::Parser;
 
 use crate::cli::{Cli, Command};
-use crate::config::load_config;
+use crate::config::load_config_with_first_run_prompt;
 use crate::db::{default_db_path, open_db};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config = load_config()?;
+    let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
     let conn = open_db(&db_path)?;
 
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
             if !commands::setup::has_portfolio_data(&conn) {
                 commands::setup::run(&conn, &config, false)?;
                 // Reload config (setup may have changed portfolio_mode)
-                let config = load_config()?;
+                let config = load_config_with_first_run_prompt()?;
                 drop(conn);
                 let mut app = app::App::new(&config, db_path);
                 app.init();
