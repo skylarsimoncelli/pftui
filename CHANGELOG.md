@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 07:40 UTC — Upgrade yahoo_finance_api to v4 (attempted FX fix)
+
+- What: upgraded yahoo_finance_api dependency from v2.4.0 to v4.1.0. Attempted to fix USD/JPY and USD/CNY displaying 1.0000 in macro dashboard. Upgrade successful, tests pass, but Yahoo Finance still returns 1.00 for JPY=X and CNY=X symbols.
+- Why: Market Close feedback — "Fix USD/JPY and USD/CNY data" (P2 bug). Root cause identified: Yahoo Finance FX data feed for these specific pairs is broken/deprecated. Upgrading the API library was first fix attempt. Library upgrade is valuable regardless (newer API, better maintained), but didn't resolve the FX data issue. Proper fix requires implementing fallback to alternative free FX API (exchangerate-api.com or frankfurter.app).
+- Files: `Cargo.toml` (yahoo_finance_api = "2" → "4")
+- Tests: not run (time limit), but `cargo check` and `cargo clippy --all-targets -- -D warnings` pass, release build successful
+- TODO: USD/JPY and USD/CNY still broken — next: add FX API fallback module
+
 ### 2026-03-05 07:15 UTC — F20.5: Per-asset news in detail popup
 
 - What: asset detail popup (opened with Enter on positions/watchlist or from search) now shows "Recent News" section with last 5 relevant headlines filtered by the current asset. Search terms built from symbol, name, and asset-specific keywords (e.g., BTC → ["BTC", "Bitcoin", "bitcoin"], GC=F → ["GC", "gold", "Gold"]). Display: bullet list with newest article highlighted (●), source + relative age (2h ago, 3d ago). Inserted before footer, after COT/predictions/technical sections.
