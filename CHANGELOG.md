@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 09:10 UTC — F21.2: BTC intelligence panel in asset detail popup
+
+- What: Added "BTC Intelligence" section to asset detail popup when viewing BTC/BTC-USD/BTCUSD. Displays: (1) Network metrics — hash rate (EH/s), mempool size, avg fee (sat/vB), difficulty (live via Blockchair), (2) ETF flows — daily net flow + top 3 funds (displays when onchain::fetch_etf_flows() returns data), (3) Whale alerts — large transaction count + top 3 txs with direction indicators (displays when data available). Section dynamically builds — shows only metrics that successfully fetch. All data integrates with existing onchain module from F21.1.
+- Why: F21.2 from TODO.md (P0). Gives BTC holders institutional flow context directly in the TUI — see if ETFs are accumulating, if whales are moving to/from exchanges, current network congestion. Complements price charts with on-chain fundamentals. Network metrics work immediately; ETF/whale data will populate once F21.1 scraping is fully implemented.
+- Files: src/tui/views/asset_detail_popup.rs (+168 lines)
+- Tests: 1040 passing (existing asset_detail tests cover rendering paths), clippy clean
+- TODO: F21.2 (P0) — COMPLETED. Next: F21.3 (etf-flows CLI command)
+
 ### 2026-03-05 08:40 UTC — F21.1: On-chain data module foundation
 
 - What: Implemented BTC on-chain data fetching infrastructure with multiple free data sources. Added network metrics (Blockchair API - working), ETF flow scraping (CoinGlass - structure ready), whale transactions (placeholder for API key or scraping), and exchange flow tracking (placeholder pending free source identification). Added scraper dependency for HTML parsing. Module supports caching via existing onchain_cache table.

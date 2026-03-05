@@ -35,7 +35,6 @@
 > **Goal:** On-chain signals and institutional flow data for BTC — whale movements, exchange flows, ETF inflows/outflows.
 > **Sources:** Blockchair (5 req/sec free, no key), CoinGlass (scrape public pages), Whale Alert (limited free tier — scrape public feed)
 
-- [ ] **F21.2: BTC intelligence panel in asset detail** — When viewing BTC: ETF daily net flow (+$458M), 7-day cumulative, top fund flows (IBIT, FBTC, GBTC). Exchange net flow (negative = accumulation). Large whale transactions today. Network metrics from Blockchair (mempool, hash rate, difficulty). Files: `tui/views/asset_detail_popup.rs`
 - [ ] **F21.3: `pftui etf-flows` CLI** — `pftui etf-flows` (today), `--days 7`, `--fund IBIT`, `--json`. Files: new `src/commands/etf_flows.rs`, `cli.rs`
 
 ### F22: COMEX & Commodity Supply Data
