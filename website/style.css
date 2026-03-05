@@ -663,6 +663,8 @@ footer {
 }
 
 /* ===== RESPONSIVE ===== */
+
+/* Tablet */
 @media (max-width: 1024px) {
     .hero .container {
         grid-template-columns: 1fr;
@@ -683,80 +685,306 @@ footer {
     .hero-badges {
         justify-content: center;
     }
+    
+    .terminal-body {
+        min-height: 300px;
+    }
 }
 
+/* Mobile landscape / small tablet */
 @media (max-width: 768px) {
     :root {
-        --spacing-lg: 3rem;
-        --spacing-xl: 4rem;
+        --spacing-lg: 2.5rem;
+        --spacing-xl: 3.5rem;
+        --spacing-md: 1.5rem;
+    }
+    
+    .container {
+        padding: 0 var(--spacing-sm);
+    }
+    
+    .hero {
+        min-height: auto;
+        padding: var(--spacing-lg) 0;
     }
     
     .hero-title {
         font-size: 2rem;
     }
     
+    .hero-subtitle {
+        font-size: 1.1rem;
+    }
+    
+    .install-command {
+        padding: var(--spacing-xs) var(--spacing-sm);
+    }
+    
     .install-command code {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
     }
     
-    .footer-content {
-        grid-template-columns: 1fr;
-    }
-    
-    .footer-links {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 480px) {
-    .comparison-table {
+    .terminal-body {
+        padding: var(--spacing-sm);
+        min-height: 250px;
         font-size: 0.8rem;
     }
     
-    .comparison-table th,
-    .comparison-table td {
-        padding: var(--spacing-xs);
+    .section-title {
+        font-size: 1.75rem;
     }
     
-    /* Improved mobile touch targets and readability */
+    .section-subtitle {
+        font-size: 1rem;
+    }
+    
+    /* Features: single column */
+    .features-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+    
+    /* CLI: single column */
+    .cli-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+    
+    /* Install: single column */
+    .install-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+    
+    /* Feature grid: single column */
+    .feature-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+    
+    /* Footer */
+    .footer-content {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-md);
+    }
+    
+    .footer-links {
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--spacing-sm);
+    }
+    
+    /* Comparison table: horizontal scroll with hints */
+    .comparison-table-wrapper {
+        position: relative;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .comparison-table {
+        font-size: 0.85rem;
+    }
+    
+    /* OSS stats */
+    .oss-stats {
+        gap: var(--spacing-md);
+    }
+    
+    .cta-buttons {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .btn-primary, .btn-secondary {
+        width: 100%;
+        max-width: 300px;
+        justify-content: center;
+    }
+}
+
+/* Mobile portrait */
+@media (max-width: 480px) {
+    :root {
+        --spacing-lg: 2rem;
+        --spacing-xl: 2.5rem;
+        --spacing-md: 1rem;
+    }
+    
+    .container {
+        padding: 0 0.75rem;
+    }
+    
+    .hero-title {
+        font-size: 1.75rem;
+    }
+    
+    .hero-subtitle {
+        font-size: 1rem;
+    }
+    
+    /* Install command: wrap on mobile */
+    .install-command {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .install-command code {
+        font-size: 0.65rem;
+        white-space: normal;
+        word-break: break-all;
+        width: 100%;
+    }
+    
+    /* Copy buttons: proper touch targets (44px min) */
     .copy-btn {
         min-width: 44px;
         min-height: 44px;
         padding: 12px;
     }
     
-    .cli-grid {
-        grid-template-columns: 1fr;
-        gap: var(--spacing-sm);
+    .copy-btn-small {
+        min-width: 44px;
+        min-height: 36px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
     }
     
-    .cli-example {
-        padding: var(--spacing-sm);
+    /* Terminal mockup */
+    .terminal-body {
+        padding: 0.75rem;
+        min-height: 200px;
+        font-size: 0.7rem;
     }
     
-    .cli-command {
-        font-size: 0.875rem;
-        word-break: break-all;
+    .terminal-header {
+        padding: 0.5rem 0.75rem;
     }
     
-    .cli-output {
-        font-size: 0.875rem;
+    .terminal-title {
+        font-size: 0.75rem;
     }
     
+    /* Feature cards */
     .feature-card {
-        padding: var(--spacing-md) var(--spacing-sm);
+        padding: var(--spacing-sm);
     }
     
     .feature-icon {
         font-size: 2rem;
     }
     
-    .install-method h4 {
-        font-size: 1rem;
+    .feature-card h3 {
+        font-size: 1.1rem;
     }
     
-    .install-method code {
+    .feature-card p {
+        font-size: 0.9rem;
+    }
+    
+    /* CLI examples */
+    .cli-example {
+        padding: var(--spacing-sm);
+    }
+    
+    .cli-command {
+        font-size: 0.8rem;
+    }
+    
+    .cli-output {
+        font-size: 0.8rem;
+        word-break: break-word;
+    }
+    
+    /* Code blocks */
+    .code-block {
+        padding: var(--spacing-sm);
+        padding-right: 3.5rem;
+    }
+    
+    .code-block code {
+        font-size: 0.7rem;
+        word-break: break-all;
+    }
+    
+    /* Comparison table: make scrollable with visual cue */
+    .comparison-table-wrapper {
+        margin: 0 -0.75rem;
+        padding: 0 0.75rem;
+    }
+    
+    .comparison-table {
         font-size: 0.75rem;
-        padding: var(--spacing-xs);
+        min-width: 500px;
+    }
+    
+    .comparison-table th,
+    .comparison-table td {
+        padding: 0.5rem 0.4rem;
+    }
+    
+    /* Feature categories */
+    .feature-category {
+        padding: var(--spacing-sm);
+    }
+    
+    .feature-category h3 {
+        font-size: 1.1rem;
+    }
+    
+    .feature-category li {
+        font-size: 0.9rem;
+    }
+    
+    /* Footer */
+    .footer-links {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+    
+    .footer-bottom p {
+        font-size: 0.8rem;
+    }
+    
+    /* Section spacing tighter on mobile */
+    .features,
+    .demo,
+    .cli,
+    .installation,
+    .comparison,
+    .feature-grid-section,
+    .open-source {
+        padding: var(--spacing-lg) 0;
+    }
+    
+    /* Badges wrap nicely */
+    .hero-badges {
+        gap: 0.5rem;
+    }
+    
+    /* Demo image */
+    .demo-terminal {
+        border-radius: var(--radius-sm);
+    }
+    
+    .demo-terminal img {
+        border-radius: var(--radius-sm);
+    }
+}
+
+/* Small phones (iPhone SE, etc) */
+@media (max-width: 375px) {
+    .hero-title {
+        font-size: 1.5rem;
+    }
+    
+    .section-title {
+        font-size: 1.5rem;
+    }
+    
+    .install-command code {
+        font-size: 0.6rem;
+    }
+    
+    .terminal-body {
+        font-size: 0.6rem;
+        min-height: 180px;
     }
 }
