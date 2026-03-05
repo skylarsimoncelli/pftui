@@ -1,12 +1,11 @@
 //! Economic calendar data source.
 //!
-//! Provides upcoming market-moving events: economic releases (FOMC, CPI, NFP) and earnings.
-//! Current implementation uses curated sample data. Future: integrate Finnhub free tier API.
-//!
-//! Sample data covers Mar-Apr 2026 with realistic high-impact events.
+//! Scrapes TradingEconomics calendar for upcoming market-moving events.
+//! Free, no API key required. Falls back to sample data on scrape failure.
 
-use anyhow::Result;
-use chrono::{Duration, Utc};
+use anyhow::{Context, Result};
+use chrono::{Datelike, Duration, NaiveDate, Utc};
+use scraper::{Html, Selector};
 
 /// A calendar event (economic or earnings).
 #[derive(Debug, Clone)]
@@ -20,27 +19,183 @@ pub struct Event {
     pub symbol: Option<String>,
 }
 
-/// Fetch upcoming calendar events from data source.
+/// Fetch upcoming calendar events from TradingEconomics.
 /// Returns events from today through `days_ahead` days.
+/// Falls back to sample data on scrape failure.
 pub fn fetch_events(days_ahead: i64) -> Result<Vec<Event>> {
+    match scrape_tradingeconomics_calendar(days_ahead) {
+        Ok(events) if !events.is_empty() => Ok(events),
+        Ok(_) | Err(_) => {
+            // Fallback to sample data
+            let today = Utc::now().date_naive();
+            let cutoff = today + Duration::days(days_ahead);
+
+            let filtered: Vec<Event> = get_sample_events()
+                .into_iter()
+                .filter(|e| {
+                    if let Ok(event_date) = NaiveDate::parse_from_str(&e.date, "%Y-%m-%d") {
+                        event_date >= today && event_date <= cutoff
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+
+            Ok(filtered)
+        }
+    }
+}
+
+/// Scrape TradingEconomics calendar page for economic events.
+fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
     let today = Utc::now().date_naive();
     let cutoff = today + Duration::days(days_ahead);
 
-    let all_events = get_sample_events();
+    // TradingEconomics calendar page for US events
+    let url = "https://tradingeconomics.com/united-states/calendar";
+    
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
 
-    // Filter to requested date range
-    let filtered: Vec<Event> = all_events
-        .into_iter()
-        .filter(|e| {
-            if let Ok(event_date) = chrono::NaiveDate::parse_from_str(&e.date, "%Y-%m-%d") {
-                event_date >= today && event_date <= cutoff
-            } else {
-                false
+    let response = client.get(url).send().context("Failed to fetch TradingEconomics calendar")?;
+    let html_content = response.text()?;
+    let document = Html::parse_document(&html_content);
+
+    // Selectors for calendar table rows
+    let row_selector = Selector::parse("table#calendar tbody tr").unwrap();
+    let date_selector = Selector::parse("td:nth-child(1)").unwrap();
+    let name_selector = Selector::parse("td:nth-child(4) a").unwrap();
+    let actual_selector = Selector::parse("td:nth-child(5)").unwrap();
+    let previous_selector = Selector::parse("td:nth-child(6)").unwrap();
+    let forecast_selector = Selector::parse("td:nth-child(7)").unwrap();
+
+    let mut events = Vec::new();
+    let mut current_date = today;
+
+    for row in document.select(&row_selector) {
+        // Extract date (may be empty if same as previous row)
+        if let Some(date_cell) = row.select(&date_selector).next() {
+            let date_text = date_cell.text().collect::<String>().trim().to_string();
+            if !date_text.is_empty() && date_text != "Time" {
+                if let Ok(parsed) = parse_te_date(&date_text, today.year()) {
+                    current_date = parsed;
+                }
             }
-        })
-        .collect();
+        }
 
-    Ok(filtered)
+        // Skip if beyond our date range
+        if current_date > cutoff {
+            break;
+        }
+        if current_date < today {
+            continue;
+        }
+
+        // Extract event name
+        let name = row
+            .select(&name_selector)
+            .next()
+            .map(|e| e.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        if name.is_empty() {
+            continue;
+        }
+
+        // Extract actual, previous, forecast
+        let _actual = row
+            .select(&actual_selector)
+            .next()
+            .and_then(|e| {
+                let text = e.text().collect::<String>().trim().to_string();
+                if text.is_empty() { None } else { Some(text) }
+            });
+
+        let previous = row
+            .select(&previous_selector)
+            .next()
+            .and_then(|e| {
+                let text = e.text().collect::<String>().trim().to_string();
+                if text.is_empty() { None } else { Some(text) }
+            });
+
+        let forecast = row
+            .select(&forecast_selector)
+            .next()
+            .and_then(|e| {
+                let text = e.text().collect::<String>().trim().to_string();
+                if text.is_empty() { None } else { Some(text) }
+            });
+
+        // Determine impact based on event type
+        let impact = classify_impact(&name);
+
+        events.push(Event {
+            date: current_date.format("%Y-%m-%d").to_string(),
+            name,
+            impact,
+            previous,
+            forecast,
+            event_type: "economic".into(),
+            symbol: None,
+        });
+    }
+
+    Ok(events)
+}
+
+/// Parse TradingEconomics date format (e.g., "2026-03-05", "Mar 5", etc.)
+fn parse_te_date(date_str: &str, year: i32) -> Result<NaiveDate> {
+    // Try YYYY-MM-DD first
+    if let Ok(d) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        return Ok(d);
+    }
+
+    // Try "Mar 5" format
+    if let Ok(d) = NaiveDate::parse_from_str(&format!("{} {}", date_str, year), "%b %d %Y") {
+        return Ok(d);
+    }
+
+    // Try "3/5" format
+    if let Ok(d) = NaiveDate::parse_from_str(&format!("{}/{}", date_str, year), "%m/%d/%Y") {
+        return Ok(d);
+    }
+
+    anyhow::bail!("Failed to parse date: {}", date_str)
+}
+
+/// Classify event impact based on event name.
+fn classify_impact(name: &str) -> String {
+    let name_lower = name.to_lowercase();
+    
+    // High impact events
+    let high_impact = [
+        "fomc", "federal funds", "interest rate", "nonfarm payroll", "nfp",
+        "unemployment", "cpi", "inflation", "gdp", "pce", "retail sales",
+        "jobless claims", "ism", "pmi", "jolts", "adp", "consumer confidence",
+    ];
+
+    // Medium impact events
+    let medium_impact = [
+        "housing", "durable goods", "factory orders", "wholesale",
+        "trade balance", "business inventories", "capacity utilization",
+    ];
+
+    for keyword in &high_impact {
+        if name_lower.contains(keyword) {
+            return "high".into();
+        }
+    }
+
+    for keyword in &medium_impact {
+        if name_lower.contains(keyword) {
+            return "medium".into();
+        }
+    }
+
+    "low".into()
 }
 
 /// Hardcoded sample calendar events for Mar-Apr 2026.
