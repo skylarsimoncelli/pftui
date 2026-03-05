@@ -420,7 +420,7 @@ body {
 
 .agent-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
     gap: var(--spacing-md);
 }
 
@@ -441,6 +441,19 @@ body {
 .agent-card p {
     color: var(--text-secondary);
     margin-top: var(--spacing-sm);
+}
+
+.agent-card .cli-command {
+    display: block;
+    background: rgba(22, 27, 34, 0.8);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.7rem;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 /* ===== CLI SECTION ===== */
