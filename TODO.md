@@ -26,7 +26,6 @@
 > **Data:** Index value (0-100), classification (Extreme Fear/Fear/Neutral/Greed/Extreme Greed), historical values
 
 
-- [ ] **F19.2: Sentiment gauges in header/status bar** — Compact display: `F&G: 🔴10 Extreme Fear | TradFi: 🟡42 Fear`. Always visible. Color-coded. Files: `tui/widgets/status_bar.rs` or `tui/widgets/header.rs`
 - [ ] **F19.3: Sentiment history in Economy tab** — 30-day sparkline of both indices. Overlay with portfolio value sparkline to show correlation/divergence. Files: `tui/views/economy.rs`
 - [ ] **F19.4: `pftui sentiment` CLI** — `pftui sentiment` (current), `--history 30` (days), `--json`. Files: new `src/commands/sentiment.rs`, `cli.rs`
 
