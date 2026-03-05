@@ -717,4 +717,46 @@ footer {
     .comparison-table td {
         padding: var(--spacing-xs);
     }
+    
+    /* Improved mobile touch targets and readability */
+    .copy-btn {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 12px;
+    }
+    
+    .cli-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+    
+    .cli-example {
+        padding: var(--spacing-sm);
+    }
+    
+    .cli-command {
+        font-size: 0.875rem;
+        word-break: break-all;
+    }
+    
+    .cli-output {
+        font-size: 0.875rem;
+    }
+    
+    .feature-card {
+        padding: var(--spacing-md) var(--spacing-sm);
+    }
+    
+    .feature-icon {
+        font-size: 2rem;
+    }
+    
+    .install-method h4 {
+        font-size: 1rem;
+    }
+    
+    .install-method code {
+        font-size: 0.75rem;
+        padding: var(--spacing-xs);
+    }
 }
