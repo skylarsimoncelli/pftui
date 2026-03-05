@@ -455,6 +455,8 @@ pub struct App {
 
     // Asset detail popup (opened from search overlay)
     pub asset_detail: Option<crate::tui::views::asset_detail_popup::AssetDetailState>,
+    /// Full-screen chart popup opened from search overlay.
+    pub search_chart_popup: Option<crate::tui::views::search_chart_popup::SearchChartPopupState>,
 
     // BLS economic data (CPI, unemployment, NFP, earnings)
     pub bls_data: HashMap<String, crate::data::bls::BlsDataPoint>,
@@ -659,6 +661,7 @@ impl App {
             delete_confirm: None,
             context_menu: None,
             asset_detail: None,
+            search_chart_popup: None,
             alerts_open: false,
             alerts_scroll: 0,
             triggered_alert_count: 0,
@@ -1761,7 +1764,13 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        // Asset detail popup (sits on top of search overlay)
+        // Search chart popup (sits on top of search overlay)
+        if self.search_chart_popup.is_some() {
+            self.handle_search_chart_popup_key(key);
+            return;
+        }
+
+        // Asset detail popup (legacy, sits on top of search overlay)
         if self.asset_detail.is_some() {
             self.handle_asset_detail_key(key);
             return;
@@ -2163,6 +2172,7 @@ impl App {
                 self.search_overlay_query.clear();
                 self.search_overlay_selected = 0;
                 self.search_overlay_requested_symbols.clear();
+                self.search_chart_popup = None;
             }
 
             // Refresh
@@ -2243,6 +2253,7 @@ impl App {
                     self.search_overlay_query.clear();
                     self.search_overlay_selected = 0;
                     self.search_overlay_requested_symbols.clear();
+                    self.search_chart_popup = None;
                     return;
                 }
                 // If detail popup is open, click outside to dismiss
@@ -3204,6 +3215,7 @@ impl App {
                 self.search_overlay_query.clear();
                 self.search_overlay_selected = 0;
                 self.search_overlay_requested_symbols.clear();
+                self.search_chart_popup = None;
             }
             KeyCode::Backspace => {
                 self.search_overlay_query.pop();
@@ -3225,7 +3237,7 @@ impl App {
                 self.search_overlay_selected = self.search_overlay_selected.saturating_sub(1);
             }
             KeyCode::Enter => {
-                // Open full asset detail popup for the selected result
+                // Open full-screen search chart popup for the selected result
                 let results = build_results(self, &self.search_overlay_query.clone());
                 if let Some(result) = results.get(self.search_overlay_selected) {
                     let symbol = result.symbol.clone();
@@ -3242,20 +3254,23 @@ impl App {
                             svc.send_command(PriceCommand::FetchHistory(
                                 symbol.clone(),
                                 category,
-                                self.chart_timeframe.days(),
+                                370,
                             ));
                         }
                     }
-                    self.asset_detail = Some(
-                        crate::tui::views::asset_detail_popup::AssetDetailState {
-                            symbol,
-                            scroll: 0,
-                        },
+                    self.search_chart_popup = Some(
+                        crate::tui::views::search_chart_popup::SearchChartPopupState { symbol },
                     );
                     // Keep search overlay open underneath so Esc returns to it
                 }
             }
             _ => {}
+        }
+    }
+
+    fn handle_search_chart_popup_key(&mut self, key: KeyEvent) {
+        if key.code == KeyCode::Esc {
+            self.search_chart_popup = None;
         }
     }
 
@@ -4305,7 +4320,7 @@ mod search_tests {
     }
 
     #[test]
-    fn test_search_overlay_enter_opens_asset_detail() {
+    fn test_search_overlay_enter_opens_search_chart_popup() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
@@ -4314,10 +4329,10 @@ mod search_tests {
         app.handle_key(key('c'));
         app.handle_key(enter_key());
 
-        // Enter now opens asset detail popup, keeping search overlay open underneath
+        // Enter opens chart popup, keeping search overlay open underneath
         assert!(app.search_overlay_open);
-        assert!(app.asset_detail.is_some());
-        assert_eq!(app.asset_detail.as_ref().unwrap().symbol, "BTC");
+        assert!(app.search_chart_popup.is_some());
+        assert_eq!(app.search_chart_popup.as_ref().unwrap().symbol, "BTC");
     }
 
     #[test]
@@ -4381,7 +4396,7 @@ mod search_tests {
     }
 
     #[test]
-    fn test_search_overlay_enter_opens_detail_for_portfolio_position() {
+    fn test_search_overlay_enter_opens_chart_for_portfolio_position() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
@@ -4390,15 +4405,15 @@ mod search_tests {
         app.handle_key(key('C'));
         app.handle_key(enter_key());
 
-        // BTC is in portfolio — asset detail popup should open
-        assert!(app.asset_detail.is_some());
-        assert_eq!(app.asset_detail.as_ref().unwrap().symbol, "BTC");
+        // BTC is in portfolio — chart popup still opens
+        assert!(app.search_chart_popup.is_some());
+        assert_eq!(app.search_chart_popup.as_ref().unwrap().symbol, "BTC");
         // Search overlay stays open underneath
         assert!(app.search_overlay_open);
     }
 
     #[test]
-    fn test_asset_detail_esc_returns_to_search() {
+    fn test_search_chart_popup_esc_returns_to_search() {
         let mut app = make_search_app();
 
         app.handle_key(key('/'));
@@ -4407,43 +4422,13 @@ mod search_tests {
         app.handle_key(key('c'));
         app.handle_key(enter_key());
 
-        assert!(app.asset_detail.is_some());
+        assert!(app.search_chart_popup.is_some());
         assert!(app.search_overlay_open);
 
-        // Esc closes asset detail, returns to search overlay
+        // Esc closes chart popup, returns to search overlay
         app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        assert!(app.asset_detail.is_none());
+        assert!(app.search_chart_popup.is_none());
         assert!(app.search_overlay_open);
-    }
-
-    #[test]
-    fn test_asset_detail_j_k_scrolls() {
-        let mut app = make_search_app();
-
-        app.handle_key(key('/'));
-        app.handle_key(key('b'));
-        app.handle_key(key('t'));
-        app.handle_key(key('c'));
-        app.handle_key(enter_key());
-
-        assert!(app.asset_detail.is_some());
-        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 0);
-
-        // j scrolls down
-        app.handle_key(key('j'));
-        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 1);
-
-        app.handle_key(key('j'));
-        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 2);
-
-        // k scrolls up
-        app.handle_key(key('k'));
-        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 1);
-
-        // k at 0 stays at 0
-        app.handle_key(key('k'));
-        app.handle_key(key('k'));
-        assert_eq!(app.asset_detail.as_ref().unwrap().scroll, 0);
     }
 
     #[test]

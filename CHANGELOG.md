@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:39 UTC — F16.2: Full-screen search chart popup
+
+- What: Search result `Enter` now opens a dedicated full-screen chart popup (`search_chart_popup`) instead of the old asset detail overlay.
+- Charting: Popup renders braille price chart content via existing `price_chart::render_braille_lines` and shows key stats: current price, 1D change, 52W range, RSI(14), and latest volume when available.
+- Flow: Search overlay remains open underneath; `Esc` closes the chart popup and returns to search context.
+- Fetch behavior: Search-enter history request expanded to ~52W (`370` days) so chart + range/RSI have enough data.
+- Files: `src/tui/views/search_chart_popup.rs` (new), `src/tui/views/mod.rs`, `src/tui/ui.rs`, `src/app.rs`, `TODO.md`
+- Tests: Updated search-overlay interaction tests for chart popup behavior. Could not execute tests in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F16.2 (P1) — COMPLETED.
+
 ### 2026-03-05 21:27 UTC — F16.1: `/` search live price enrichment
 
 - What: Enhanced global `/` search overlay to fetch live data for matched symbols not already in portfolio/watchlist.

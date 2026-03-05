@@ -9,6 +9,7 @@ pub mod markets;
 pub mod news;
 pub mod position_detail;
 pub mod positions;
+pub mod search_chart_popup;
 pub mod search_overlay;
 pub mod transactions;
 pub mod watchlist;

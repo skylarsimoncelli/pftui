@@ -60,6 +60,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         views::search_overlay::render(frame, size, app);
     }
 
+    if app.search_chart_popup.is_some() {
+        views::search_chart_popup::render(frame, size, app);
+    }
+
     if app.asset_detail.is_some() {
         views::asset_detail_popup::render(frame, size, app);
     }
