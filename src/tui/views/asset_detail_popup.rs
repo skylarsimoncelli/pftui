@@ -613,6 +613,174 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         lines.push(Line::from(""));
     }
 
+    // ── BTC Intelligence (ETF flows, Exchange flows, Network metrics) ──
+    if symbol == "BTC" || symbol == "BTC-USD" || symbol == "BTCUSD" {
+        let mut btc_section_added = false;
+
+        // Try to fetch network metrics
+        if let Ok(metrics) = crate::data::onchain::fetch_network_metrics() {
+            if !btc_section_added {
+                lines.push(section_header("  BTC Intelligence", t.text_accent));
+                lines.push(sep_line(t.border_subtle, 80));
+                btc_section_added = true;
+            }
+
+            // Network metrics
+            lines.push(Line::from(vec![
+                Span::styled("  Network       ", Style::default().fg(t.text_secondary)),
+            ]));
+
+            // Hash rate (convert to EH/s)
+            let hash_rate_eh = metrics.hash_rate / 1_000_000_000_000_000_000.0;
+            lines.push(Line::from(vec![
+                Span::styled("    Hash Rate   ", Style::default().fg(t.text_muted)),
+                Span::styled(
+                    format!("{:.2} EH/s", hash_rate_eh),
+                    Style::default().fg(t.text_primary),
+                ),
+            ]));
+
+            // Mempool size
+            lines.push(Line::from(vec![
+                Span::styled("    Mempool     ", Style::default().fg(t.text_muted)),
+                Span::styled(
+                    format!("{} txs", metrics.mempool_size),
+                    Style::default().fg(t.text_primary),
+                ),
+            ]));
+
+            // Average fee
+            lines.push(Line::from(vec![
+                Span::styled("    Avg Fee     ", Style::default().fg(t.text_muted)),
+                Span::styled(
+                    format!("{:.0} sat/vB", metrics.avg_fee_sat_b),
+                    Style::default().fg(t.text_primary),
+                ),
+            ]));
+
+            // Difficulty (format as scientific notation or human-readable)
+            let difficulty_t = metrics.difficulty / 1_000_000_000_000.0; // Convert to trillion
+            lines.push(Line::from(vec![
+                Span::styled("    Difficulty  ", Style::default().fg(t.text_muted)),
+                Span::styled(
+                    format!("{:.2}T", difficulty_t),
+                    Style::default().fg(t.text_primary),
+                ),
+            ]));
+        }
+
+        // Try to fetch ETF flows (placeholder - will show when implemented)
+        if let Ok(etf_flows) = crate::data::onchain::fetch_etf_flows() {
+            if !etf_flows.is_empty() {
+                if !btc_section_added {
+                    lines.push(section_header("  BTC Intelligence", t.text_accent));
+                    lines.push(sep_line(t.border_subtle, 80));
+                    btc_section_added = true;
+                }
+
+                // Calculate total daily net flow
+                let total_flow_btc: f64 = etf_flows.iter()
+                    .filter(|f| f.date == etf_flows[0].date) // Today's flows
+                    .map(|f| f.net_flow_btc)
+                    .sum();
+                let total_flow_usd: f64 = etf_flows.iter()
+                    .filter(|f| f.date == etf_flows[0].date)
+                    .map(|f| f.net_flow_usd)
+                    .sum();
+
+                let flow_color = if total_flow_btc > 0.0 { t.gain_green } else { t.loss_red };
+                let sign = if total_flow_btc > 0.0 { "+" } else { "" };
+
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("  ETF Flows     ", Style::default().fg(t.text_secondary)),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("    Daily Net   ", Style::default().fg(t.text_muted)),
+                    Span::styled(
+                        format!("{}{:.0} BTC", sign, total_flow_btc),
+                        Style::default().fg(flow_color).bold(),
+                    ),
+                    Span::styled(
+                        format!(" (${:.0}M)", total_flow_usd / 1_000_000.0),
+                        Style::default().fg(t.text_muted),
+                    ),
+                ]));
+
+                // Show top 3 funds
+                let mut fund_flows: Vec<_> = etf_flows.iter()
+                    .filter(|f| f.date == etf_flows[0].date)
+                    .collect();
+                fund_flows.sort_by(|a, b| b.net_flow_usd.abs().partial_cmp(&a.net_flow_usd.abs()).unwrap());
+
+                for fund in fund_flows.iter().take(3) {
+                    let fund_color = if fund.net_flow_btc > 0.0 { t.gain_green } else { t.loss_red };
+                    let sign = if fund.net_flow_btc > 0.0 { "+" } else { "" };
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("    {:6}      ", fund.fund),
+                            Style::default().fg(t.text_muted),
+                        ),
+                        Span::styled(
+                            format!("{}{:.0} BTC", sign, fund.net_flow_btc),
+                            Style::default().fg(fund_color),
+                        ),
+                    ]));
+                }
+            }
+        }
+
+        // Try to fetch whale transactions
+        if let Ok(whale_txs) = crate::data::onchain::fetch_whale_transactions() {
+            if !whale_txs.is_empty() {
+                if !btc_section_added {
+                    lines.push(section_header("  BTC Intelligence", t.text_accent));
+                    lines.push(sep_line(t.border_subtle, 80));
+                    btc_section_added = true;
+                }
+
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("  Whale Alerts  ", Style::default().fg(t.text_secondary)),
+                    Span::styled(
+                        format!("{} large txs today", whale_txs.len()),
+                        Style::default().fg(t.text_accent),
+                    ),
+                ]));
+
+                // Show top 3 largest transactions
+                for (i, tx) in whale_txs.iter().take(3).enumerate() {
+                    let direction = if tx.from_owner.contains("exchange") && !tx.to_owner.contains("exchange") {
+                        "⬆ Withdrawal"
+                    } else if !tx.from_owner.contains("exchange") && tx.to_owner.contains("exchange") {
+                        "⬇ Deposit"
+                    } else {
+                        "➜ Transfer"
+                    };
+
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("    {} ", if i == 0 { "●" } else { "○" }),
+                            Style::default().fg(if i == 0 { t.chart_line } else { t.text_muted }),
+                        ),
+                        Span::styled(
+                            format!("{:.0} BTC ", tx.amount_btc),
+                            Style::default().fg(t.text_primary).bold(),
+                        ),
+                        Span::styled(
+                            direction,
+                            Style::default().fg(t.text_muted),
+                        ),
+                    ]));
+                }
+            }
+        }
+
+        if btc_section_added {
+            lines.push(Line::from(""));
+        }
+    }
+
     // ── COT (Commitments of Traders) ──
     if let Some(cftc_code) = crate::data::cot::symbol_to_cftc_code(symbol) {
         // Check if COT data is available in the cache
