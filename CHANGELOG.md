@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 00:10 UTC — F18.2: COT positioning section in asset detail popup
+
+- What: display CFTC Commitments of Traders (COT) data in asset detail popup for tracked commodities. COT section appears when viewing gold (GC=F), silver (SI=F), WTI crude oil (CL=F), or Bitcoin (BTC) — only if COT cache data exists. Shows: managed money net position (formatted with k/M suffix: "Net 142k Long"), week-over-week change in managed money positioning ("+8k WoW" in green/red), commercials net position, week-over-week change in commercials positioning, open interest (total contracts), report date. Section inserted between Portfolio/Watchlist section and Footer in build_lines(). Reads data via db::cot_cache::get_latest() and get_history() with 2-week lookback for WoW calculations. Positions color-coded: green for net long, red for net short. Changes color-coded by direction.
+- Why: F18.2 from TODO.md (P0 — Free Data Integration). Surfaces institutional positioning data for macro-aware decision making. Managed money (speculative) vs commercials (producers/hedgers) positioning reveals crowded trades, trend confirmation/divergence, and extreme positioning signals that price action alone misses. No API keys required — data flows from existing cot_cache table (populated by F18.1 infrastructure, will be refreshed by future F18+ tasks). This is the most differentiated feature in the COT integration — no other portfolio TUI shows smart money positioning inline with asset charts and technicals.
+- Files: `src/tui/views/asset_detail_popup.rs` (+COT section in build_lines() before Footer, +format_contracts() helper function)
+- Tests: all 1011 tests passing, clippy clean. No new tests needed — display-only feature reading from existing infrastructure.
+- TODO: F18.2 (P0) — COMPLETED. Next: F18.3 (COT summary in Markets tab).
+
 ### 2026-03-04 23:40 UTC — F17.4: Prediction market sparklines in Markets tab
 
 - What: Markets tab now shows prediction market probability sparklines over 30 days. Split Markets tab into two panels: 70% traditional markets (top), 30% prediction markets (bottom). Prediction panel displays top 6 markets (by volume) with: question (truncated to 40 chars), current probability % (color-coded: green >60%, red <40%, yellow 40-60%), 30-day change in percentage points (format: +5pp / -3pp), 30-day probability sparkline (8 braille characters, green if rising trend, red if falling), category (Crypto/Econ/Geo/AI/Other with category colors). Sparkline shows normalized probability trend over last 30 days using existing braille characters (▁▂▃▄▅▆▇█). Historical data queried from new predictions_history table. Panel uses skeleton loading state while predictions_cache is empty.
