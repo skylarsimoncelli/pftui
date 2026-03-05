@@ -385,6 +385,14 @@
         }
         .list-item:hover { background: var(--state-hover-bg); }
         .list-item.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+        .timeline-group { margin-bottom: 0.8rem; }
+        .timeline-heading {
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            margin: 0.35rem 0;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
         .detail-pane {
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -634,14 +642,32 @@
             <div class="layout">
                 <div class="left-col">
                     <div class="card">
-                        <h2>News</h2>
+                        <h2>News Timeline</h2>
+                        <div class="controls-inline">
+                            <select class="control-select" id="news-category-filter">
+                                <option value="">All Categories</option>
+                                <option value="markets">Markets</option>
+                                <option value="macro">Macro</option>
+                                <option value="crypto">Crypto</option>
+                                <option value="commodities">Commodities</option>
+                                <option value="geopolitics">Geopolitics</option>
+                            </select>
+                            <input class="control-input" id="news-source-filter" placeholder="Source (e.g. Reuters)" />
+                            <select class="control-select" id="news-hours-filter">
+                                <option value="">All Time</option>
+                                <option value="6">Last 6h</option>
+                                <option value="24">Last 24h</option>
+                                <option value="72">Last 72h</option>
+                                <option value="168">Last 7d</option>
+                            </select>
+                        </div>
                         <input class="search" id="news-search" placeholder="Search headlines" />
                         <div id="news-list" class="list"></div>
                     </div>
                 </div>
                 <div class="right-col">
                     <div class="card">
-                        <h2>Selected Story</h2>
+                        <h2>Story Detail</h2>
                         <div id="news-detail" class="detail-pane">
                             <div class="empty">Select a story from the list.</div>
                         </div>
@@ -1638,25 +1664,54 @@
                 detail.innerHTML = '<div class="empty">No story selected</div>';
                 return;
             }
-            items.forEach(item => {
-                const row = document.createElement('div');
-                row.className = `list-item ${state.selectedNewsId === item.id ? 'active' : ''}`;
-                row.innerHTML = `<div><div class="symbol">${item.title}</div><div class="name">${item.source} · ${item.category}</div></div>`;
-                row.addEventListener('click', () => {
-                    state.selectedNewsId = item.id;
-                    renderNews(items);
-                });
-                list.appendChild(row);
+            const sorted = [...items].sort((a, b) => Number(b.published_at || 0) - Number(a.published_at || 0));
+            const groups = new Map();
+            sorted.forEach(item => {
+                const ts = Number(item.published_at || 0);
+                const d = new Date((ts > 1e12 ? ts : ts * 1000) || Date.now());
+                const key = d.toISOString().slice(0, 10);
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(item);
             });
-            const selected = items.find(n => n.id === state.selectedNewsId) || items[0];
+
+            for (const [day, dayItems] of groups.entries()) {
+                const group = document.createElement('div');
+                group.className = 'timeline-group';
+                const heading = document.createElement('div');
+                heading.className = 'timeline-heading';
+                heading.textContent = day;
+                group.appendChild(heading);
+                dayItems.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = `list-item ${state.selectedNewsId === item.id ? 'active' : ''}`;
+                    const ts = Number(item.published_at || 0);
+                    const published = new Date((ts > 1e12 ? ts : ts * 1000) || Date.now()).toLocaleString();
+                    row.innerHTML = `
+                        <div>
+                            <div class="symbol">${item.title}</div>
+                            <div class="name">${published} · ${item.source} · ${item.category}</div>
+                        </div>
+                    `;
+                    row.addEventListener('click', () => {
+                        state.selectedNewsId = item.id;
+                        renderNews(items);
+                    });
+                    group.appendChild(row);
+                });
+                list.appendChild(group);
+            }
+
+            const selected = sorted.find(n => n.id === state.selectedNewsId) || sorted[0];
             state.selectedNewsId = selected.id;
+            const selectedTs = Number(selected.published_at || 0);
+            const selectedPublished = new Date((selectedTs > 1e12 ? selectedTs : selectedTs * 1000) || Date.now()).toLocaleString();
             detail.innerHTML = `
                 <h3>${selected.title}</h3>
                 <div>
                     <span class="badge">${selected.source}</span>
                     <span class="badge">${selected.category}</span>
                 </div>
-                <p style="margin-top:0.65rem;">Published timestamp: ${selected.published_at}</p>
+                <p style="margin-top:0.65rem;">Published: ${selectedPublished}</p>
                 <p style="margin-top:0.9rem;"><a href="${selected.url}" target="_blank" rel="noopener noreferrer" style="color:var(--text-accent);">Open source article</a></p>
             `;
         }
@@ -1800,7 +1855,15 @@
 
         async function loadNews() {
             const q = document.getElementById('news-search')?.value?.trim() || '';
-            const path = q ? `/api/news?limit=120&search=${encodeURIComponent(q)}` : '/api/news?limit=120';
+            const source = document.getElementById('news-source-filter')?.value?.trim() || '';
+            const category = document.getElementById('news-category-filter')?.value || '';
+            const hours = document.getElementById('news-hours-filter')?.value || '';
+            const params = new URLSearchParams({ limit: '200' });
+            if (q) params.set('search', q);
+            if (source) params.set('source', source);
+            if (category) params.set('category', category);
+            if (hours) params.set('hours', hours);
+            const path = `/api/news?${params.toString()}`;
             const data = await apiFetch(path);
             updateFreshness(data.meta);
             state.news = data.entries || [];
@@ -2035,6 +2098,15 @@
             });
 
             document.getElementById('news-search').addEventListener('input', async () => {
+                await loadNews();
+            });
+            document.getElementById('news-source-filter').addEventListener('input', async () => {
+                await loadNews();
+            });
+            document.getElementById('news-category-filter').addEventListener('change', async () => {
+                await loadNews();
+            });
+            document.getElementById('news-hours-filter').addEventListener('change', async () => {
                 await loadNews();
             });
             document.getElementById('journal-create-btn').addEventListener('click', async () => {

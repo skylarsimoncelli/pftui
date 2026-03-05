@@ -13,6 +13,7 @@ Purpose: authoritative implementation tracker for all web parity sessions.
 - Phase 6: `completed` (all P6-* tasks `done`)
 - Phase 7: `completed` (all P7-* tasks `done`)
 - Phase 8: `completed` (all P8-* tasks `done`)
+- Phase 9: `completed` (all P9-* tasks `done`)
 - Verification snapshot (2026-03-05):
   - `/Users/skylar/.cargo/bin/cargo test web::view_model -- --nocapture` => pass
   - `/Users/skylar/.cargo/bin/cargo test web:: -- --nocapture` => pass
@@ -59,7 +60,7 @@ Purpose: authoritative implementation tracker for all web parity sessions.
 | 7 | P7-03 | Add transaction delete endpoint + UI | done | session-phase7-1 | P7-01 | Transaction deletion works | `/Users/skylar/.cargo/bin/cargo test web:: -- --nocapture` + `npx playwright test tests/web.integration.spec.ts` | `src/db/transactions.rs`, `src/web/api.rs`, `src/web/server.rs`, `src/web/static/index.html`, `tests/web.mocks.ts`, `tests/web.integration.spec.ts`, `docs/WEB_API_SCHEMA_v1.md`, `docs/WEB_PARITY_MATRIX.md` |
 | 8 | P8-01 | Expand markets tab density (movers, richer metrics) | done | session-phase8-1 | P2-01 | Markets tab no longer sparse | `/Users/skylar/.cargo/bin/cargo test web:: -- --nocapture` + `npx playwright test tests/web.integration.spec.ts` | `src/web/api.rs`, `src/web/static/index.html`, `tests/web.mocks.ts`, `tests/web.integration.spec.ts`, `docs/WEB_API_SCHEMA_v1.md`, `docs/WEB_PARITY_MATRIX.md` |
 | 8 | P8-02 | Expand economy tab depth (macro, calendar, sentiment) | done | session-phase8-1 | P2-01 | Economy tab presents available macro datasets | `/Users/skylar/.cargo/bin/cargo test web:: -- --nocapture` + `npx playwright test tests/web.integration.spec.ts` | `src/web/api.rs`, `src/web/static/index.html`, `tests/web.mocks.ts`, `tests/web.integration.spec.ts`, `docs/WEB_API_SCHEMA_v1.md`, `docs/WEB_PARITY_MATRIX.md` |
-| 9 | P9-01 | Build timeline-first news UI | todo | unassigned | P2-02 | News renders chronological timeline with filters | E2E | parity matrix |
+| 9 | P9-01 | Build timeline-first news UI | done | session-phase9-1 | P2-02 | News renders chronological timeline with filters | `/Users/skylar/.cargo/bin/cargo test web:: -- --nocapture` + `npx playwright test tests/web.integration.spec.ts` | `src/web/static/index.html`, `tests/web.mocks.ts`, `tests/web.integration.spec.ts`, `docs/WEB_PARITY_MATRIX.md` |
 | 10 | P10-01 | Complete keyboard navigation parity hardening | todo | unassigned | P3-03,P4-02 | Web key behavior aligned to frozen key intents | E2E keyboard tests | parity matrix |
 | 11 | P11-01 | Add API contract tests for all new mutating endpoints | todo | unassigned | P5-03,P6-03,P7-03 | Contract coverage complete | test suite | tests docs |
 | 11 | P11-02 | Add E2E flows for CRUD/search/navigation parity | todo | unassigned | P11-01 | Playwright covers core battlestation flows | test suite | tests docs |
@@ -79,3 +80,4 @@ Purpose: authoritative implementation tracker for all web parity sessions.
 - 2026-03-05 — `session-phase6-1`: Implemented journal create/update/delete API endpoints and Journal tab create/edit/delete controls; validated via Rust web tests and Playwright integration flow.
 - 2026-03-05 — `session-phase7-1`: Implemented transaction create/update/delete across DB + API + Transactions tab UI form/actions; validated with Rust web tests and Playwright integration flow.
 - 2026-03-05 — `session-phase8-1`: Implemented Markets density upgrades (macro-sourced movers + breadth stats) and Economy depth snapshot cards (BLS/sentiment/calendar/predictions) via `/api/macro`, with web UI rendering and Playwright integration assertions.
+- 2026-03-05 — `session-phase9-1`: Implemented timeline-first News tab UX with grouped chronological rendering and source/category/hours/search filters backed by `/api/news` query parameters; validated via web tests and Playwright integration flow.

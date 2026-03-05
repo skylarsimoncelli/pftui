@@ -497,22 +497,46 @@ export async function installWebMocks(page: Page) {
     return routeJson(route, { alerts, meta: meta() });
   });
 
-  await page.route("**/api/news**", async (route) =>
-    routeJson(route, {
-      entries: [
-        {
-          id: 1,
-          title: "Apple gains on strong iPhone demand",
-          url: "https://example.com/apple",
-          source: "Reuters",
-          category: "Markets",
-          published_at: 1700000000,
-          fetched_at: "2026-03-05T19:55:00Z",
-        },
-      ],
-      meta: meta(),
-    }),
-  );
+  await page.route("**/api/news**", async (route) => {
+    const url = new URL(route.request().url());
+    const q = (url.searchParams.get("search") || "").toLowerCase();
+    const source = (url.searchParams.get("source") || "").toLowerCase();
+    const category = (url.searchParams.get("category") || "").toLowerCase();
+    const all = [
+      {
+        id: 1,
+        title: "Apple gains on strong iPhone demand",
+        url: "https://example.com/apple",
+        source: "Reuters",
+        category: "markets",
+        published_at: 1772726400,
+        fetched_at: "2026-03-05T19:55:00Z",
+      },
+      {
+        id: 2,
+        title: "Fed officials signal caution on early cuts",
+        url: "https://example.com/fed",
+        source: "Bloomberg",
+        category: "macro",
+        published_at: 1772812800,
+        fetched_at: "2026-03-05T20:05:00Z",
+      },
+      {
+        id: 3,
+        title: "Bitcoin options skew flips toward calls",
+        url: "https://example.com/btc",
+        source: "CoinDesk",
+        category: "crypto",
+        published_at: 1772816400,
+        fetched_at: "2026-03-05T20:10:00Z",
+      },
+    ];
+    const entries = all
+      .filter((item) => (q ? item.title.toLowerCase().includes(q) : true))
+      .filter((item) => (source ? item.source.toLowerCase().includes(source) : true))
+      .filter((item) => (category ? item.category === category : true));
+    return routeJson(route, { entries, meta: meta() });
+  });
 
   await page.route("**/api/journal**", async (route) => {
     const method = route.request().method();

@@ -45,7 +45,7 @@ Source of truth: TUI behavior and domain contracts (`src/app.rs`, `src/tui/views
 | MKT-02 | Markets movers | meaningful movers (change-based) | Markets tab now uses `/api/macro` movers, change-based sorting, and breadth stats (up/down/flat + strongest/weakest) | implemented | P1 | 8 | Top movers from actual change values |
 | ECO-01 | Economy sections | Yields/Currency/Commodities/Volatility structure | Previously narrow grouping | implemented | P0 | 1 | Sections derive from shared economy contract |
 | ECO-02 | Economy depth | BLS/sentiment/calendar/predictions richness | Economy tab now renders cache-backed BLS pulse, sentiment snapshot, upcoming calendar events, and prediction markets alongside grouped sections | implemented | P0 | 8 | Data-dense economy panels with key macro cards |
-| NEWS-01 | News timeline | Chronological, filterable feed | Present list/detail with background ingest; timeline UX still pending | partial | P0 | 2/9 | Timeline-first UX + reliable feed ingestion |
+| NEWS-01 | News timeline | Chronological, filterable feed | News tab now renders grouped timeline-by-date with source/category/hour/search filters over `/api/news` and preserves selected-story detail panel | implemented | P0 | 9 | Timeline-first UX + reliable feed ingestion |
 | DATA-01 | Refresh runtime | TUI refresh + cached population | Web now runs background refresh and RSS loops | implemented | P0 | 2 | `pftui web` self-populates core caches |
 | DATA-02 | Freshness indicators | Live/stale/source status | Present | implemented | P2 | 2 | Metadata reflects actual pipeline status |
 | AUTH-01 | Session/CSRF | secure session auth | Present | implemented | P1 | done | No regression |

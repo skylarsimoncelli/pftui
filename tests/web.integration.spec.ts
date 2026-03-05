@@ -91,6 +91,21 @@ test.describe("web integration flows", () => {
     await expect(page.locator("#journal-list .list-item")).toHaveCount(before - 1);
   });
 
+  test("news timeline renders chronologically and filters", async ({ page }) => {
+    await page.locator("#tabs").getByRole("button", { name: "News" }).click();
+    await expect(page.locator("#view-news")).toHaveClass(/active/);
+    await expect(page.locator("#view-news")).toContainText("News Timeline");
+    await expect(page.locator("#news-list .timeline-heading")).toHaveCount(2);
+    await expect(page.locator("#news-list")).toContainText("CoinDesk");
+
+    await page.locator("#news-category-filter").selectOption("macro");
+    await expect(page.locator("#news-list")).toContainText("Fed officials signal caution on early cuts");
+    await expect(page.locator("#news-list")).not.toContainText("Bitcoin options skew flips toward calls");
+
+    await page.locator("#news-source-filter").fill("Bloom");
+    await expect(page.locator("#news-list")).toContainText("Bloomberg");
+  });
+
   test("transactions create, edit, and delete", async ({ page }) => {
     await page.locator("#tabs").getByRole("button", { name: "Transactions" }).click();
     await expect(page.locator("#view-transactions")).toHaveClass(/active/);
