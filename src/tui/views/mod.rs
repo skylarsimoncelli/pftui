@@ -5,6 +5,7 @@ pub mod economy;
 pub mod help;
 pub mod journal;
 pub mod markets;
+pub mod news;
 pub mod position_detail;
 pub mod positions;
 pub mod search_overlay;

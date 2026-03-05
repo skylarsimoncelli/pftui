@@ -36,6 +36,7 @@ pub enum ViewMode {
     Markets,
     Economy,
     Watchlist,
+    News,
     Journal,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -366,6 +367,11 @@ pub struct App {
     pub journal_selected_index: usize,
     pub journal_entries: Vec<crate::db::journal::JournalEntry>,
     pub journal_search_query: String,
+    pub news_selected_index: usize,
+    pub news_entries: Vec<crate::db::news_cache::NewsEntry>,
+    pub news_filter_source: Option<String>,
+    pub news_filter_category: Option<String>,
+    pub news_search_query: String,
     pub g_pending: bool,
     pub terminal_height: u16,
     pub terminal_width: u16,
@@ -587,6 +593,11 @@ impl App {
             journal_selected_index: 0,
             journal_entries: Vec::new(),
             journal_search_query: String::new(),
+            news_selected_index: 0,
+            news_entries: Vec::new(),
+            news_filter_source: None,
+            news_filter_category: None,
+            news_search_query: String::new(),
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
@@ -744,6 +755,24 @@ impl App {
         if let Ok(conn) = Connection::open(&self.db_path) {
             self.journal_entries = crate::db::journal::list_entries(&conn, Some(100), None, None, None, None)
                 .unwrap_or_default();
+        }
+    }
+
+    fn load_news(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            self.news_entries = crate::db::news_cache::get_latest_news(
+                &conn,
+                100, // limit
+                self.news_filter_source.as_deref(),
+                self.news_filter_category.as_deref(),
+                if self.news_search_query.is_empty() {
+                    None
+                } else {
+                    Some(&self.news_search_query)
+                },
+                Some(48), // last 48 hours
+            )
+            .unwrap_or_default();
         }
     }
 
@@ -1279,6 +1308,7 @@ impl App {
             ViewMode::Markets => "Markets",
             ViewMode::Economy => "Economy",
             ViewMode::Watchlist => "Watchlist",
+            ViewMode::News => "News",
             ViewMode::Journal => "Journal",
         };
 
@@ -1769,6 +1799,12 @@ impl App {
                 self.load_watchlist();
                 self.request_watchlist_data();
             }
+            KeyCode::Char('6') => {
+                self.view_mode = ViewMode::News;
+                self.detail_open = false;
+                self.detail_popup_open = false;
+                self.load_news();
+            }
             KeyCode::Char('7') => {
                 self.view_mode = ViewMode::Journal;
                 self.detail_open = false;
@@ -1814,6 +1850,16 @@ impl App {
             KeyCode::Enter if matches!(self.view_mode, ViewMode::Positions) => {
                 if self.selected_position().is_some() {
                     self.detail_popup_open = !self.detail_popup_open;
+                }
+            }
+
+            // Open URL in browser from News view
+            KeyCode::Enter if matches!(self.view_mode, ViewMode::News) => {
+                if self.news_selected_index < self.news_entries.len() {
+                    let url = &self.news_entries[self.news_selected_index].url;
+                    let _ = std::process::Command::new("xdg-open")
+                        .arg(url)
+                        .spawn();
                 }
             }
 
@@ -2383,6 +2429,11 @@ impl App {
                     self.economy_selected_index = clicked_row;
                 }
             }
+            ViewMode::News => {
+                if clicked_row < self.news_entries.len() {
+                    self.news_selected_index = clicked_row;
+                }
+            }
             ViewMode::Journal => {
                 if clicked_row < self.journal_entries.len() {
                     self.journal_selected_index = clicked_row;
@@ -2508,6 +2559,12 @@ impl App {
                         (self.economy_selected_index + 1).min(count - 1);
                 }
             }
+            ViewMode::News => {
+                if !self.news_entries.is_empty() {
+                    self.news_selected_index =
+                        (self.news_selected_index + 1).min(self.news_entries.len() - 1);
+                }
+            }
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index =
@@ -2540,6 +2597,9 @@ impl App {
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(1);
             }
+            ViewMode::News => {
+                self.news_selected_index = self.news_selected_index.saturating_sub(1);
+            }
             ViewMode::Journal => {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(1);
             }
@@ -2568,6 +2628,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = 0;
+            }
+            ViewMode::News => {
+                self.news_selected_index = 0;
             }
             ViewMode::Journal => {
                 self.journal_selected_index = 0;
@@ -2608,6 +2671,11 @@ impl App {
                 let count = economy::economy_symbols().len();
                 if count > 0 {
                     self.economy_selected_index = count - 1;
+                }
+            }
+            ViewMode::News => {
+                if !self.news_entries.is_empty() {
+                    self.news_selected_index = self.news_entries.len() - 1;
                 }
             }
             ViewMode::Journal => {
@@ -2670,6 +2738,12 @@ impl App {
                         (self.economy_selected_index + step).min(count - 1);
                 }
             }
+            ViewMode::News => {
+                if !self.news_entries.is_empty() {
+                    self.news_selected_index =
+                        (self.news_selected_index + step).min(self.news_entries.len() - 1);
+                }
+            }
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index =
@@ -2702,6 +2776,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(step);
+            }
+            ViewMode::News => {
+                self.news_selected_index = self.news_selected_index.saturating_sub(step);
             }
             ViewMode::Journal => {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(step);

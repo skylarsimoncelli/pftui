@@ -71,6 +71,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("3", "Markets overview", kc, tc));
     lines.push(key_line("4", "Economy dashboard", kc, tc));
     lines.push(key_line("5 / w", "Watchlist", kc, tc));
+    lines.push(key_line("6", "News feed", kc, tc));
     lines.push(key_line("7", "Journal", kc, tc));
     lines.push(key_line("Enter", "Position detail / chart", kc, tc));
     lines.push(key_line("Esc", "Close chart / help", kc, tc));
