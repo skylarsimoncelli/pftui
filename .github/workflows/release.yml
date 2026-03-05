@@ -193,11 +193,19 @@ jobs:
       pages: write
       id-token: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           pattern: "*-package"
         continue-on-error: true
+
+      - name: Copy website files to site root
+        run: |
+          mkdir -p site
+          cp -r website/* site/
 
       - name: Build APT repository
         run: |
@@ -224,19 +232,6 @@ jobs:
           mkdir -p site/rpm/packages
           cp artifacts/rpm-package/*.rpm site/rpm/packages/ 2>/dev/null || true
           cd site/rpm && createrepo_c . && cd ../..
-
-      - name: Build index page
-        run: |
-          cat > site/index.html << 'HTML'
-          <!DOCTYPE html><html><head><title>pftui packages</title></head>
-          <body><h1>pftui</h1><p>Package repository for <a href="https://github.com/skylarsimoncelli/pftui">pftui</a>.</p>
-          <h2>APT (Debian/Ubuntu)</h2>
-          <pre>echo "deb [trusted=yes] https://skylarsimoncelli.github.io/pftui/apt stable main" | sudo tee /etc/apt/sources.list.d/pftui.list
-          sudo apt update && sudo apt install pftui</pre>
-          <h2>YUM/DNF (Fedora/RHEL)</h2>
-          <pre>sudo dnf config-manager --add-repo https://skylarsimoncelli.github.io/pftui/rpm
-          sudo dnf install pftui</pre></body></html>
-          HTML
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
