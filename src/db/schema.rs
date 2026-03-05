@@ -168,6 +168,23 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (id, date)
         );
         CREATE INDEX IF NOT EXISTS idx_predictions_history_date ON predictions_history(date);
+
+        CREATE TABLE IF NOT EXISTS sentiment_cache (
+            index_type TEXT PRIMARY KEY,
+            value INTEGER NOT NULL,
+            classification TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS sentiment_history (
+            index_type TEXT NOT NULL,
+            date TEXT NOT NULL,
+            value INTEGER NOT NULL,
+            classification TEXT NOT NULL,
+            PRIMARY KEY (index_type, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_sentiment_history_date ON sentiment_history(date);
         ",
     )?;
 

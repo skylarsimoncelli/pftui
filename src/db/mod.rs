@@ -14,6 +14,8 @@ pub mod prediction_cache;
 pub mod predictions_cache;
 pub mod predictions_history;
 pub mod price_cache;
+#[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)
+pub mod sentiment_cache;
 pub mod price_history;
 pub mod schema;
 pub mod snapshots;
