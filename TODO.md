@@ -25,13 +25,11 @@
 > **Sources:** Alternative.me Crypto F&G (free, no key), CNN F&G (scrape — public page)
 > **Data:** Index value (0-100), classification (Extreme Fear/Fear/Neutral/Greed/Extreme Greed), historical values
 
-### F20: Live News Feed (RSS)
+### F20: Live News Feed (RSS) ✅ COMPLETE
 > **Goal:** Zero-cost, zero-key financial news aggregation from the best sources. Filterable by topic, searchable, in a dedicated News view.
 > **Sources:** RSS feeds — completely free, no auth, no rate limits.
 > **Feeds:** Reuters (`reuters.com/rssfeed/`), CoinDesk (`coindesk.com/arc/outboundfeeds/rss/`), ZeroHedge (`zerohedge.com/fullrss.xml`), The Block, Yahoo Finance, MarketWatch, CNBC, Seeking Alpha, Bloomberg (headlines)
-
-
-- [ ] **F20.5: Per-asset news in detail popup** — When viewing a position or watchlist item, filter news by asset name/ticker. Show last 5 relevant headlines. Files: `tui/views/asset_detail_popup.rs`
+> **Status:** F20.1-F20.5 complete. News data module, News tab, header ticker, CLI, and per-asset filtering all shipped.
 
 ### F21: BTC On-Chain & ETF Flow Data
 > **Goal:** On-chain signals and institutional flow data for BTC — whale movements, exchange flows, ETF inflows/outflows.

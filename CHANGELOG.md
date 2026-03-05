@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 07:15 UTC — F20.5: Per-asset news in detail popup
+
+- What: asset detail popup (opened with Enter on positions/watchlist or from search) now shows "Recent News" section with last 5 relevant headlines filtered by the current asset. Search terms built from symbol, name, and asset-specific keywords (e.g., BTC → ["BTC", "Bitcoin", "bitcoin"], GC=F → ["GC", "gold", "Gold"]). Display: bullet list with newest article highlighted (●), source + relative age (2h ago, 3d ago). Inserted before footer, after COT/predictions/technical sections.
+- Why: F20.5 from TODO.md (P0 — Free Data Integration). Users want contextual news for the asset they're viewing, not a generic feed. When investigating a position or researching a new symbol, relevant headlines provide immediate macro/event context. Completes the news integration suite: F20.1 (RSS data module), F20.2 (News tab), F20.3 (header ticker), F20.4 (CLI), F20.5 (this feature).
+- Files: `src/tui/views/asset_detail_popup.rs` (build_lines: added news filtering block, new build_search_terms() and format_news_age() helper functions — 119 lines added)
+- Tests: 1033 passing (unchanged — news filtering is presentation logic), clippy clean with --all-targets -- -D warnings
+- TODO: F20.5 completed — F20 (Live News Feed) fully implemented
+
 ### 2026-03-05 06:44 UTC — Fix movers 1D change calculation
 
 - What: `pftui movers` now shows true daily change (current price vs yesterday's close) instead of change between last 2 historical records. Previously, if history data was stale or had gaps, movers would show multi-day changes labeled as "1D Chg %", misleading users. Now: get current cached price, compare to most recent historical close, compute accurate % change. Example: CCJ showing -6.58% (03-02 → 03-03) when current price was $120.24; now correctly shows +2.36% (03-03 close $117.47 → current $120.24).
