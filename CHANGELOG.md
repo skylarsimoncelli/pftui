@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 13:10 UTC — F24.2: BLS economic indicators panel in Economy tab
+
+- What: Added BLS economic indicators panel to Economy tab right column. Shows CPI, unemployment rate, NFP (nonfarm payrolls), and average hourly earnings with latest values and release dates. Loads data from BLS cache on startup via `load_bls_data()` method. New panel placed above yield curve chart in right column (9 lines). Replaces conceptual "sample economic data" with live government data from BLS API. Simple display format: indicator name, value, release date. Ready for future enhancement: YoY%, MoM%, trend arrows (requires historical comparison logic).
+- Why: F24.2 from TODO.md (P0). Completes BLS integration started in F24.1. Provides at-a-glance view of key economic indicators directly in the Economy tab. Zero-config, no API key required. Data updates monthly from BLS cache.
+- Files: src/app.rs (bls_data HashMap field, load_bls_data method, init/init_offline calls), src/tui/views/economy.rs (render_bls_indicators function, layout adjustment)
+- Tests: 1051 passing, clippy clean
+- TODO: F24.2 (P0) — COMPLETED. F24 BLS integration fully shipped (data module + TUI panel).
+
 ### 2026-03-05 12:45 UTC — F24.1: BLS data module (no-key mode)
 
 - What: Created BLS API integration for direct government economic data. Implemented src/data/bls.rs module to fetch key series from BLS API v1 (no registration required, 10 calls/day limit): CPI-U (CUUR0000SA0), unemployment rate (LNS14000000), nonfarm payrolls (CES0000000001), average hourly earnings (CES0500000003). Fetches last 2 years of data in single request. Created src/db/bls_cache.rs with SQLite cache (series_id + year + period PK), date range filtering, freshness checks, latest value queries. Cache is mandatory due to rate limits — data only updates monthly. Added bls_cache table to schema.rs.
