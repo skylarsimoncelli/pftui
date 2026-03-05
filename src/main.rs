@@ -1,4 +1,5 @@
 mod alerts;
+mod analytics;
 mod app;
 mod cli;
 mod commands;

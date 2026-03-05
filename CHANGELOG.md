@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:04 UTC — F4.1: Portfolio risk metrics module
+
+- What: Added new analytics module with core risk calculations in `src/analytics/risk.rs`: annualized volatility (252-day scaling), max drawdown, Sharpe ratio using Fed Funds Rate as risk-free input, historical VaR (95%), and Herfindahl concentration index.
+- API: Added `compute_risk_metrics()` bundle function plus reusable helpers (`daily_returns`, `annualized_volatility_pct`, `max_drawdown_pct`, `sharpe_ratio_vs_ffr`, `historical_var_95_pct`, `herfindahl_index`) for reuse by upcoming scenario engine/TUI phases.
+- Reliability: Added focused unit coverage for each metric and for the combined bundle.
+- Files: `src/analytics/mod.rs` (new), `src/analytics/risk.rs` (new), `src/main.rs`, `TODO.md`
+- Tests: Added new unit tests under `analytics::risk`; execution could not be run in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F4.1 (P1 promoted) — COMPLETED.
+
 ### 2026-03-05 15:15 UTC — F8.3: `pftui migrate-journal` one-time JOURNAL.md migration
 
 - What: Added new CLI command `pftui migrate-journal` to seed SQLite journal entries from legacy markdown logs (`JOURNAL.md` by default). Parser supports heading dates, list-item extraction, inline metadata (`[tag:...]`, `[symbol:...]`, `[status:...]`, `[conviction:...]`, `[date:...]`), symbol inference (`$TICKER` and ratio-like symbols), configurable defaults, JSON output, and `--dry-run`.
