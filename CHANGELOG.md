@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 14:45 UTC — F25.3: `pftui global` CLI for World Bank data
+
+- What: New `pftui global` command displays World Bank structural macro data for major economies. Shows GDP growth, Debt/GDP, Current Account, and Reserves for 8 tracked countries (USA, EU, UK, China, India, Russia, Brazil, South Africa). Terminal output: country-grouped panels with formatted values (percentages, trillions USD). Filters: `--country` (e.g. USA, CHN, IND), `--indicator` (gdp, debt, current-account, reserves). JSON output via `--json` flag for agent consumption. Reads from worldbank_cache (built in F25.1), outputs "No data found" if cache empty with refresh hint.
+- Why: F25.3 from TODO.md (P0 — Free Data Integration). Completes World Bank integration. Enables agent-driven BRICS/global analysis, CLI-based scenario modeling, and structured macro data export. No API key required.
+- Files: new `src/commands/global.rs` (270 lines), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: 1055 passing, clippy clean
+- TODO: F25.3 (P0) — COMPLETED. F25 World Bank integration fully shipped (data module + cache + TUI panel + CLI).
+
 ### 2026-03-05 14:11 UTC — F25.2: Global macro panel in Economy tab
 
 - What: Added global macro panel to Economy tab showing World Bank structural data for BRICS + US. New panel at bottom of left column displays compact table with 5 countries (US, China, India, Russia, Brazil) and 3 indicators: GDP Growth (annual %), Debt/GDP (%), Reserves (in trillions USD). Color-coded values: GDP growth green/red for positive/negative, Debt/GDP green (<60%), yellow (60-100%), red (>100%), Reserves neutral. Loads from worldbank_data HashMap populated on init. Layout adjusted to split left column: macro table (top, min 10 rows) + global macro panel (bottom, 10 rows).

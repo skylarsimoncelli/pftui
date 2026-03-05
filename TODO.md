@@ -51,12 +51,10 @@
 > **Sources:** BLS API v1 (no key, 10 calls/day)
 > **Status:** F24.1-F24.2 complete. BLS data module + Economy tab indicators panel shipped.
 
-### F25: World Bank & Global Macro ✅ PARTIAL
+### F25: World Bank & Global Macro ✅ COMPLETE
 > **Goal:** Structural macro data for BRICS and major economies. GDP growth, debt/GDP, trade balances, reserves.
 > **Source:** World Bank Open Data API (free, no key, unlimited)
-> **Status:** F25.1 (data module + cache) and F25.2 (Economy tab panel) complete. F25.3 (CLI) remains.
-
-- [ ] **F25.3: `pftui global` CLI** — `pftui global` (all tracked countries), `--country US`, `--indicator gdp`, `--json`. Files: new `src/commands/global.rs`, `cli.rs`
+> **Status:** F25.1-F25.3 complete. Data module, cache, Economy tab panel, and CLI all shipped.
 
 ---
 
