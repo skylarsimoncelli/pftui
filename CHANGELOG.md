@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:40 UTC — F16.3: Quick-add actions from search chart popup
+
+- What: Added direct decision actions in the search chart popup: `w` adds symbol to watchlist, `a` opens transaction form prefilled for that symbol/category.
+- Flow: `search -> enter -> chart popup -> (w|a)` now supports immediate action without navigating away.
+- UX: Popup title hint updated to show action shortcuts (`w:watch`, `a:add-tx`, `Esc:back`).
+- Files: `src/app.rs`, `src/tui/views/search_chart_popup.rs`, `TODO.md`
+- Tests: Added chart-popup action test (`a` opens tx form). Could not run tests in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F16.3 (P1) — COMPLETED.
+
 ### 2026-03-05 21:39 UTC — F16.2: Full-screen search chart popup
 
 - What: Search result `Enter` now opens a dedicated full-screen chart popup (`search_chart_popup`) instead of the old asset detail overlay.

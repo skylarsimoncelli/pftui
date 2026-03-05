@@ -45,7 +45,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         ))
         .title(
             Line::from(Span::styled(
-                " Esc: back to search ",
+                " w:watch  a:add-tx  Esc:back ",
                 Style::default().fg(t.text_muted),
             ))
             .alignment(Alignment::Right),
@@ -167,4 +167,3 @@ fn build_summary_lines<'a>(
 
     out
 }
-

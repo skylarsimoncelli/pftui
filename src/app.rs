@@ -3205,6 +3205,11 @@ impl App {
         }
     }
 
+    fn open_tx_form_for_symbol(&mut self, symbol: String) {
+        let category = crate::models::asset_names::infer_category(&symbol);
+        self.tx_form = Some(TxFormState::new(symbol, category));
+    }
+
     /// Handle key input in the global asset search overlay.
     fn handle_search_overlay_key(&mut self, key: KeyEvent) {
         use crate::tui::views::search_overlay::build_results;
@@ -3269,8 +3274,33 @@ impl App {
     }
 
     fn handle_search_chart_popup_key(&mut self, key: KeyEvent) {
-        if key.code == KeyCode::Esc {
-            self.search_chart_popup = None;
+        match key.code {
+            KeyCode::Esc => {
+                self.search_chart_popup = None;
+            }
+            KeyCode::Char('w') | KeyCode::Char('W') => {
+                if let Some(state) = &self.search_chart_popup {
+                    let symbol = state.symbol.clone();
+                    let category = crate::models::asset_names::infer_category(&symbol);
+                    if let Ok(conn) = Connection::open(&self.db_path) {
+                        let _ = db_watchlist::add_to_watchlist(&conn, &symbol, category);
+                    }
+                    self.load_watchlist();
+                    self.request_watchlist_data();
+                }
+            }
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                if let Some(state) = &self.search_chart_popup {
+                    let symbol = state.symbol.clone();
+                    self.search_chart_popup = None;
+                    self.search_overlay_open = false;
+                    self.search_overlay_query.clear();
+                    self.search_overlay_selected = 0;
+                    self.search_overlay_requested_symbols.clear();
+                    self.open_tx_form_for_symbol(symbol);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -4429,6 +4459,24 @@ mod search_tests {
         app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(app.search_chart_popup.is_none());
         assert!(app.search_overlay_open);
+    }
+
+    #[test]
+    fn test_search_chart_popup_a_opens_tx_form() {
+        let mut app = make_search_app();
+
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+        app.handle_key(enter_key());
+        assert!(app.search_chart_popup.is_some());
+
+        app.handle_key(key('a'));
+        assert!(app.search_chart_popup.is_none());
+        assert!(!app.search_overlay_open);
+        assert!(app.tx_form.is_some());
+        assert_eq!(app.tx_form.as_ref().unwrap().symbol, "BTC");
     }
 
     #[test]
