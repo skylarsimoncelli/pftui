@@ -211,6 +211,10 @@ fn main() -> Result<()> {
             commands::predictions::run(&conn, category.as_deref(), search.as_deref(), limit, json)
         }
 
+        Some(Command::Cot { symbol, weeks, json }) => {
+            commands::cot::run(symbol.as_deref(), weeks, json)
+        }
+
         Some(Command::Alerts { action, value, json, status }) => {
             // Parse value as either a rule string (for add) or an ID (for remove/ack/rearm)
             let id = value.as_deref().and_then(|v| v.parse::<i64>().ok());

@@ -228,6 +228,20 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show CFTC Commitments of Traders positioning data
+    Cot {
+        /// Symbol to show (GC=F, SI=F, CL=F, BTC). Omit to show all tracked contracts.
+        symbol: Option<String>,
+
+        /// Number of weeks of historical data (default: 1, latest report only)
+        #[arg(long, default_value = "1")]
+        weeks: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage price, allocation, and indicator alerts
     Alerts {
         /// Action: add, list, remove, check, ack, rearm

@@ -1,6 +1,7 @@
 pub mod alerts;
 pub mod brief;
 pub mod add_tx;
+pub mod cot;
 pub mod target;
 pub mod demo;
 pub mod drift;
