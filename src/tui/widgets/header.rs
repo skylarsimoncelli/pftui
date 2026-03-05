@@ -97,14 +97,20 @@ fn is_us_eastern_dst(utc: chrono::DateTime<Utc>, year: i32) -> bool {
 }
 
 /// Returns the total header height in rows (including bottom border).
-/// 3 when the ticker tape is active (Positions view, non-compact),
+/// 4 when both ticker tape and news ticker are active (Positions/Watchlist, non-compact, has news),
+/// 3 when only ticker tape is active,
 /// 2 otherwise.
 pub fn header_height(app: &App) -> u16 {
     let compact = app.terminal_width < COMPACT_WIDTH;
-    if !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist) {
-        3
+    let show_market_ticker = !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist);
+    let has_news = !app.news_entries.is_empty();
+    
+    if show_market_ticker && has_news {
+        4  // line1 + market_ticker + news_ticker + border
+    } else if show_market_ticker {
+        3  // line1 + market_ticker + border
     } else {
-        2
+        2  // line1 + border
     }
 }
 
@@ -311,6 +317,48 @@ fn build_ticker_spans(app: &App, width: usize) -> Vec<Span<'static>> {
     }
 
     spans
+}
+
+/// Build news ticker line showing one headline at a time, cycling every 10 seconds.
+/// Returns a styled Line with news emoji prefix + headline + source.
+fn build_news_ticker_line<'a>(app: &App, width: usize) -> Option<Line<'a>> {
+    if app.news_entries.is_empty() || width < 20 {
+        return None;
+    }
+
+    let t = &app.theme;
+    
+    // Cycle through latest 3 headlines every 10 seconds (600 ticks at 60fps)
+    const CYCLE_TICKS: u64 = 600;
+    let num_headlines = app.news_entries.len().min(3);
+    let current_index = ((app.tick_count / CYCLE_TICKS) % num_headlines as u64) as usize;
+    
+    let entry = &app.news_entries[current_index];
+    
+    // Format: 📰 [Source] Headline title (truncated to fit)
+    let prefix = " 📰 ";
+    let source_part = format!("[{}] ", entry.source);
+    let prefix_len = prefix.chars().count() + source_part.chars().count();
+    
+    if width <= prefix_len {
+        return None;
+    }
+    
+    let available = width.saturating_sub(prefix_len);
+    let title = if entry.title.chars().count() > available {
+        let truncated: String = entry.title.chars().take(available.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    } else {
+        entry.title.clone()
+    };
+    
+    let spans = vec![
+        Span::styled(prefix, Style::default().fg(t.text_muted)),
+        Span::styled(source_part, Style::default().fg(t.text_accent)),
+        Span::styled(title, Style::default().fg(t.text_secondary)),
+    ];
+    
+    Some(Line::from(spans))
 }
 
 /// Get next high-impact calendar event and format countdown.
@@ -555,7 +603,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
     // Build lines for the paragraph
     let show_ticker = !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist);
-    let lines = if show_ticker {
+    let mut lines = if show_ticker {
         // Ticker tape line: scrolling market data marquee
         // Available width is the full area width minus 3 for the leading " ▸ " prefix
         let ticker_width = area.width.saturating_sub(3) as usize;
@@ -577,6 +625,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         vec![line1]
     };
+    
+    // Add news ticker line if we have news and are showing tickers
+    if show_ticker {
+        if let Some(news_line) = build_news_ticker_line(app, area.width as usize) {
+            lines.push(news_line);
+        }
+    }
 
     // Tint header border based on daily portfolio performance.
     // Subtle 15% blend toward green (up) or red (down) for ambient mood.
