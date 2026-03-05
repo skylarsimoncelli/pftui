@@ -45,7 +45,6 @@
 > **Goal:** Upgrade F12 calendar from sample data to live free sources. Show upcoming releases with countdown, impact ratings, previous/forecast/actual.
 > **Sources:** Scrape TradingEconomics calendar (public page), or FRED release schedule API (free), or Finnhub (if user has free key — optional)
 
-- [ ] **F23.1: Calendar scraper** — Scrape public economic calendar pages for upcoming releases (FOMC, CPI, NFP, PPI, GDP, PMI, JOLTS, jobless claims). Parse: date, event name, previous value, forecast, impact level. Store in SQLite calendar_events table (F12.1 schema already exists). Files: `src/data/calendar.rs` (upgrade from sample data)
 - [ ] **F23.3: Calendar view in Economy tab** — 7-day forward view. Impact color-coded. Countdown timers. Previous/forecast columns. Actual filled in post-release. Files: `tui/views/economy.rs`
 
 ### F24: Government Data Direct (BLS + BEA)

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 11:40 UTC — F23.1: TradingEconomics calendar scraper
+
+- What: Upgraded economic calendar from sample data to live scraping from TradingEconomics. Scrapes US calendar page for upcoming economic releases (FOMC, CPI, NFP, PPI, GDP, PMI, JOLTS, jobless claims, retail sales, housing, ISM). Parses event date, name, previous value, forecast, and classifies impact (high/medium/low) based on keywords. Supports multiple date formats (YYYY-MM-DD, "Mar 5", "3/5"). Falls back to sample data on scrape failure (network issues, HTML changes). Free data source, no API key required.
+- Why: F23.1 from TODO.md (P0 — Free Data Integration). Real-time calendar data for agents and Economy tab calendar view (F23.3). No more hardcoded sample events — pulls live data every request.
+- Files: src/data/calendar.rs
+- Tests: 1045 passing, clippy clean
+- TODO: F23.1 (P0) — COMPLETED. Next: F23.3 (calendar view in Economy tab)
+
 ### 2026-03-05 11:10 UTC — F22.3: `pftui supply` CLI command
 
 - What: Added CLI command for querying COMEX warehouse inventory. Supports `pftui supply` (all metals: gold + silver), `pftui supply GC=F` (gold only), `pftui supply SI=F` (silver only), `--json` (structured output for agents). Human-readable output shows metal name, date, registered/eligible/total stocks (troy oz with thousands separators), and registered ratio (%). 24-hour cache policy — refreshes stale data automatically. JSON output provides full details per metal.
