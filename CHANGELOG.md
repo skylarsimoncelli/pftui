@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 01:10 UTC — F19.1: Sentiment data module (Fear & Greed indices)
+
+- What: data fetching module + SQLite cache for crypto (Alternative.me) and traditional (placeholder) Fear & Greed indices. `fetch_crypto_fng()` calls Alternative.me free API (`https://api.alternative.me/fng/?limit=1`), returns index value (0-100), classification (Extreme Fear/Fear/Neutral/Greed/Extreme Greed), timestamp. `fetch_traditional_fng()` currently returns placeholder neutral (50) — will be derived from VIX + market indicators in follow-up. `sentiment_cache` table stores latest reading per index_type (1-hour TTL). `sentiment_history` table stores daily snapshots for trend tracking. Cache API: `upsert_reading()`, `get_latest()` (returns None if >1h old), `get_history(days)`, `prune_old(days)`.
+- Why: F19.1 from TODO.md (P0 — Free Data Integration). Foundation for F19.2 (sentiment gauges in header/status bar), F19.3 (30-day history sparklines in Economy tab), F19.4 (`pftui sentiment` CLI). Real-money sentiment indices provide macro context that price action alone misses. Crypto F&G is the most widely-watched crypto sentiment gauge (Bitcoin community standard). Traditional F&G derived from actual market indicators (VIX, put/call, breadth) will complement it. No API keys required — completely free data. This is the beginning of the intelligence layer differentiator: pftui will show market sentiment gauges that no other portfolio TUI surfaces.
+- Files: `src/data/sentiment.rs` (fetch functions), `src/db/sentiment_cache.rs` (cache CRUD), `src/db/schema.rs` (sentiment_cache + sentiment_history tables), `src/data/mod.rs`, `src/db/mod.rs` (module exposure)
+- Tests: 6 tests passing (crypto F&G fetch live API, traditional placeholder, cache upsert/get, stale cache rejection, history retrieval, pruning). All 1017 tests passing, clippy clean.
+- TODO: F19.1 (P0) — COMPLETED. Next: F19.2 (sentiment gauges in header/status bar).
+
 ### 2026-03-05 00:40 UTC — F18.3: COT signal column in Markets tab
 
 - What: Markets tab now displays COT positioning signals in a new COT column. Shows emoji indicators for commodities with CFTC data (Gold, Silver, Oil, Bitcoin). Signal logic: 🟢 Aligned (managed money and price trend agree — both up or both down over last week), 🔴 Divergence (managed money and price trend disagree), ⚠️ Extreme (managed money net position >2 standard deviations from 52-week mean). Uses statistical analysis of 52-week COT history to detect extreme positioning. Compares week-over-week managed money change vs 7-day price momentum. Empty cell for assets without COT data (indices, forex, bonds, non-futures crypto).
