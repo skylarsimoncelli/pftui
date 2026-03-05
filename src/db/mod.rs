@@ -2,6 +2,8 @@
 pub mod alerts;
 pub mod allocation_targets;
 pub mod allocations;
+#[allow(dead_code)] // Infrastructure for F24.1+ consumers (BLS indicators, Economy tab)
+pub mod bls_cache;
 #[allow(dead_code)] // Infrastructure for F12.1+ consumers (calendar CLI, Economy tab)
 pub mod calendar_cache;
 #[allow(dead_code)] // Infrastructure for F22.1+ consumers (COMEX supply panel, CLI)

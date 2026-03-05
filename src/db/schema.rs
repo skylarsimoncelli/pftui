@@ -222,6 +222,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_comex_date ON comex_cache(date);
         CREATE INDEX IF NOT EXISTS idx_comex_symbol ON comex_cache(symbol);
+
+        CREATE TABLE IF NOT EXISTS bls_cache (
+            series_id TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            period TEXT NOT NULL,
+            value TEXT NOT NULL,
+            date TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (series_id, year, period)
+        );
+        CREATE INDEX IF NOT EXISTS idx_bls_series_date ON bls_cache(series_id, date);
         ",
     )?;
 
