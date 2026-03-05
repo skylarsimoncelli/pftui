@@ -198,6 +198,21 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show BTC ETF flow data (inflows/outflows by fund)
+    EtfFlows {
+        /// Number of days to show (default: 1, today only)
+        #[arg(long, default_value = "1")]
+        days: u16,
+
+        /// Filter to a specific fund (e.g. IBIT, FBTC, GBTC)
+        #[arg(long)]
+        fund: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show biggest daily movers across held + watchlist symbols
     Movers {
         /// Minimum absolute daily change % to include (default: 3)

@@ -203,6 +203,10 @@ fn main() -> Result<()> {
             commands::performance::run(&conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
         }
 
+        Some(Command::EtfFlows { days, fund, json }) => {
+            commands::etf_flows::run(days, fund, json)
+        }
+
         Some(Command::Movers { threshold, json }) => {
             commands::movers::run(&conn, &config, Some(&threshold), json)
         }
