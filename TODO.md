@@ -185,8 +185,6 @@ The homepage a finance enthusiast opens every morning:
 > F15 (Configurable Homepage) and F16 (Full Chart Search) are defined in P1.
 
 ### Other P2
-
-- [ ] **[Feedback] Fix movers 1D calculation** — `pftui movers` shows multi-day changes for some symbols instead of true 1D change. Ensure change % is always computed from most recent close vs prior close, not from stale cache entries. Files: `src/commands/movers.rs`
 - [ ] **[Feedback] Fix USD/JPY and USD/CNY in macro dashboard** — Both showing 1.0000 instead of actual FX rates. Data source issue — verify Yahoo symbols (JPY=X, CNY=X) are fetched and cached correctly. Files: `src/commands/macro_cmd.rs`, `src/commands/refresh.rs`, `src/price/yahoo.rs`
 - [ ] **[Feedback] Alerts in `brief` output** — Show any triggered or near-threshold alerts in the brief command output. Connects alert engine to the primary agent-consumed command. Files: `commands/brief.rs`, `alerts/engine.rs`
 - [ ] **[Feedback] After-hours / pre-market prices** — Show AH/pre-market prices in watchlist and brief for market close routines. Yahoo Finance provides extended hours data. Files: `src/price/yahoo.rs`, `commands/brief.rs`, `commands/watchlist_cli.rs`
@@ -234,8 +232,8 @@ The homepage a finance enthusiast opens every morning:
 
 **Top 3 priorities from feedback:**
 1. **F19 Sentiment gauges (F&G indices)** (P0) — F19.1 data module done, need F19.2 (header display), F19.3 (history sparklines), F19.4 (CLI). Requested by Market Research and Evening Planner.
-2. **Fix movers 1D calculation** (P2, bug) — Market Research reports multi-day changes shown instead of true 1D. Confusing when cross-referencing with other data sources.
-3. **Fix USD/JPY and USD/CNY data** (P2, bug) — Market Close reports both showing 1.0000 in macro dashboard. Broken data source needs investigation.
+2. **Fix USD/JPY and USD/CNY data** (P2, bug) — Market Close reports both showing 1.0000 in macro dashboard. Broken data source needs investigation.
+3. **Add RSI/MACD/SMA indicators to CLI commands** — Market Research and Evening Planner both requested technicals for watchlist/macro symbols.
 
 **Completed since last review:** F17.2-F17.4 (predictions panel + sparklines + CLI), F18.1-F18.4 (COT data + popup + Markets column + CLI), F19.1 (sentiment data module), F23.2 (calendar countdown in header), F8.2 (journal tab), UX overhaul (unified timeframe control, clickable selector, P&L/Value columns), web dashboard
 

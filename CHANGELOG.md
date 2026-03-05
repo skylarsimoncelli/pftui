@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 06:44 UTC — Fix movers 1D change calculation
+
+- What: `pftui movers` now shows true daily change (current price vs yesterday's close) instead of change between last 2 historical records. Previously, if history data was stale or had gaps, movers would show multi-day changes labeled as "1D Chg %", misleading users. Now: get current cached price, compare to most recent historical close, compute accurate % change. Example: CCJ showing -6.58% (03-02 → 03-03) when current price was $120.24; now correctly shows +2.36% (03-03 close $117.47 → current $120.24).
+- Why: Market Research feedback — "movers shows multi-day changes for some symbols instead of true 1D change." Root cause: displaying current price alongside stale historical change created disconnect. Users expect "1D Chg" to mean change from yesterday to now, not change from N days ago.
+- Files: `src/commands/movers.rs` (rewrote compute_change_pct to take current_price parameter and compute current vs last history close, updated call site to pass cached price, updated 2 tests + added 1 new test for missing price case)
+- Tests: 1033 passing (was 1032: +1 change_pct_no_current_price test), clippy clean
+- TODO: Fix movers 1D calculation (P2, feedback bug)
+
 ### 2026-03-05 06:15 UTC — F20.4: `pftui news` CLI command
 
 - What: CLI interface to the cached RSS news feed. Usage: `pftui news` (latest 20 articles), `pftui news --source Reuters` (filter by source), `pftui news --search bitcoin` (search titles), `pftui news --hours 4` (last 4 hours only), `pftui news --json` (agent-consumable JSON). Output: formatted table with title (truncated at 80 chars), source, and relative time (e.g. "2h ago", "1d ago", "2026-03-04"). JSON mode outputs full details including URL, category, and timestamps.
