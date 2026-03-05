@@ -116,9 +116,24 @@ struct TickerEntry {
 
 /// Build ticker entries from the market symbols that have price data.
 fn build_ticker_entries(app: &App) -> Vec<TickerEntry> {
-    let items = markets::market_symbols();
     let mut entries = Vec::new();
 
+    // Add sentiment gauges FIRST (always visible, high priority)
+    if let Some((value, _classification)) = &app.crypto_fng {
+        entries.push(TickerEntry {
+            symbol: "Crypto F&G".to_string(),
+            change_pct: *value as f64, // repurpose change_pct for FnG value
+        });
+    }
+    if let Some((value, _classification)) = &app.traditional_fng {
+        entries.push(TickerEntry {
+            symbol: "TradFi F&G".to_string(),
+            change_pct: *value as f64,
+        });
+    }
+
+    // Then market data
+    let items = markets::market_symbols();
     for item in &items {
         // Need both current price and history to compute change
         if !app.prices.contains_key(&item.yahoo_symbol) {
@@ -196,26 +211,45 @@ fn build_ticker_spans(app: &App, width: usize) -> Vec<Span<'static>> {
             color: t.text_secondary,
             bold: true,
         });
-        // Space + arrow + change
-        let change_color = if e.change_pct > 0.0 {
-            t.gain_green
-        } else if e.change_pct < 0.0 {
-            t.loss_red
+        
+        // Handle F&G indices specially
+        if e.symbol.contains("F&G") {
+            let value = e.change_pct as u8; // value is 0-100
+            let (emoji, classification, color) = match value {
+                0..=24 => ("🔴", "Extreme Fear", t.loss_red),
+                25..=44 => ("🟠", "Fear", t.loss_red),
+                45..=55 => ("🟡", "Neutral", t.neutral),
+                56..=75 => ("🟢", "Greed", t.gain_green),
+                _ => ("🟢", "Extreme Greed", t.gain_green),
+            };
+            segments.push(Segment {
+                text: format!(" {}{} {}", emoji, value, classification),
+                color,
+                bold: false,
+            });
         } else {
-            t.neutral
-        };
-        let arrow = if e.change_pct > 0.0 {
-            "▲"
-        } else if e.change_pct < 0.0 {
-            "▼"
-        } else {
-            "―"
-        };
-        segments.push(Segment {
-            text: format!(" {}{:+.1}%", arrow, e.change_pct),
-            color: change_color,
-            bold: false,
-        });
+            // Normal market data: space + arrow + change%
+            let change_color = if e.change_pct > 0.0 {
+                t.gain_green
+            } else if e.change_pct < 0.0 {
+                t.loss_red
+            } else {
+                t.neutral
+            };
+            let arrow = if e.change_pct > 0.0 {
+                "▲"
+            } else if e.change_pct < 0.0 {
+                "▼"
+            } else {
+                "―"
+            };
+            segments.push(Segment {
+                text: format!(" {}{:+.1}%", arrow, e.change_pct),
+                color: change_color,
+                bold: false,
+            });
+        }
+        
         // Separator (always, for seamless wrapping)
         if i < entries.len() - 1 {
             segments.push(Segment {

@@ -464,6 +464,10 @@ pub struct App {
     /// Regime intelligence — composite risk-on/risk-off score from cross-asset signals.
     pub regime_score: crate::regime::RegimeScore,
 
+    // Sentiment (Fear & Greed indices)
+    pub crypto_fng: Option<(u8, String)>, // (value, classification)
+    pub traditional_fng: Option<(u8, String)>,
+
     // Header click targets (column ranges set during render)
     /// Column range for the theme name indicator in the header (for mouse click cycling).
     pub header_theme_col_range: Option<(u16, u16)>,
@@ -640,6 +644,8 @@ impl App {
                 total: 0,
                 active_count: 0,
             },
+            crypto_fng: None,
+            traditional_fng: None,
             db_path,
         }
     }
@@ -655,6 +661,7 @@ impl App {
         self.load_predictions();
         self.load_allocation_targets();
         self.load_alerts();
+        self.load_sentiment();
         self.recompute();
         self.recompute_regime();
     }
@@ -668,6 +675,7 @@ impl App {
         self.load_predictions();
         self.load_allocation_targets();
         self.load_alerts();
+        self.load_sentiment();
         self.recompute();
         self.recompute_regime();
 
@@ -685,6 +693,7 @@ impl App {
         self.price_service = Some(service);
         self.request_market_data();
         self.request_economy_data();
+        self.request_sentiment_data();
     }
 
     fn load_data(&mut self) {
@@ -761,6 +770,17 @@ impl App {
                     .iter()
                     .filter(|r| r.newly_triggered || r.rule.status == crate::alerts::AlertStatus::Triggered)
                     .count();
+            }
+        }
+    }
+
+    fn load_sentiment(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            if let Ok(Some(reading)) = crate::db::sentiment_cache::get_latest(&conn, "crypto") {
+                self.crypto_fng = Some((reading.value, reading.classification));
+            }
+            if let Ok(Some(reading)) = crate::db::sentiment_cache::get_latest(&conn, "traditional") {
+                self.traditional_fng = Some((reading.value, reading.classification));
             }
         }
     }
@@ -892,6 +912,46 @@ impl App {
                 service.send_command(PriceCommand::FetchHistoryBatch(batch));
             }
         }
+    }
+
+    /// Fetch Fear & Greed sentiment indices and cache them.
+    fn request_sentiment_data(&mut self) {
+        use std::thread;
+        use std::time::Duration;
+        
+        let db_path = self.db_path.clone();
+        
+        // Spawn thread to fetch sentiment without blocking
+        thread::spawn(move || {
+            // Fetch crypto F&G
+            if let Ok(index) = crate::data::sentiment::fetch_crypto_fng() {
+                if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                    let reading = crate::db::sentiment_cache::SentimentReading {
+                        index_type: index.index_type,
+                        value: index.value,
+                        classification: index.classification,
+                        timestamp: index.timestamp,
+                        fetched_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                    };
+                    let _ = crate::db::sentiment_cache::upsert_reading(&conn, &reading);
+                }
+            }
+            
+            // Fetch traditional F&G
+            thread::sleep(Duration::from_millis(500)); // rate limiting
+            if let Ok(index) = crate::data::sentiment::fetch_traditional_fng() {
+                if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                    let reading = crate::db::sentiment_cache::SentimentReading {
+                        index_type: index.index_type,
+                        value: index.value,
+                        classification: index.classification,
+                        timestamp: index.timestamp,
+                        fetched_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                    };
+                    let _ = crate::db::sentiment_cache::upsert_reading(&conn, &reading);
+                }
+            }
+        });
     }
 
     /// Fetch spot prices and short history for all watchlist symbols.
@@ -1513,6 +1573,8 @@ impl App {
         if let Some(ref service) = self.price_service {
             self.request_price_fetch(service);
         }
+        self.request_sentiment_data();
+        self.load_sentiment(); // reload from cache after background fetch
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
