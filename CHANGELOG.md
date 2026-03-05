@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 08:40 UTC — F21.1: On-chain data module foundation
+
+- What: Implemented BTC on-chain data fetching infrastructure with multiple free data sources. Added network metrics (Blockchair API - working), ETF flow scraping (CoinGlass - structure ready), whale transactions (placeholder for API key or scraping), and exchange flow tracking (placeholder pending free source identification). Added scraper dependency for HTML parsing. Module supports caching via existing onchain_cache table.
+- Why: F21.1 from TODO.md (P0 — Free Data Integration). Foundation for F21.2 (BTC intelligence panel in asset detail popup) and F21.3 (etf-flows CLI). On-chain data + institutional flow tracking is highly differentiated — no other portfolio TUI shows whale movements, ETF inflows, or exchange accumulation patterns. Critical for macro-aware BTC decision making.
+- Implementation: fetch_network_metrics() works immediately (Blockchair live API: mempool, hash rate, difficulty, fees, blocks/24h). fetch_etf_flows() has HTML parsing skeleton ready for selector implementation after manual CoinGlass page analysis. fetch_whale_transactions() and fetch_exchange_flows() documented with alternative free source options.
+- Files: src/data/onchain.rs (full rewrite), Cargo.toml (+scraper dependency), Cargo.lock
+- Tests: 1040 passing (+4 new on-chain tests), clippy clean with --all-targets -- -D warnings
+- TODO: F21.1 (P0) — COMPLETED (foundation ready, 1/4 sources live). Next: F21.2 (BTC intelligence panel in asset detail popup).
+
 ### 2026-03-05 08:10 UTC — F21.1: BTC on-chain data infrastructure (partial)
 
 - What: added SQLite table `onchain_cache` (metric, date, value, metadata) with full CRUD module in `src/db/onchain_cache.rs`. Created `src/data/onchain.rs` with Blockchair API client structure for BTC network metrics and exchange flows. Includes 3 unit tests: upsert_and_get_metric, get_metrics_by_type, prune_old_metrics. Also fixed 2 clippy warnings in yahoo.rs (unnecessary i64 casts removed).
