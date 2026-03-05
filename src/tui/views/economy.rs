@@ -98,14 +98,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     render_macro_table(frame, body[0], app);
 
-    // Right panel: yield curve chart (top) + predictions panel (bottom)
+    // Right panel: yield curve chart (top) + sentiment (middle) + predictions (bottom)
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Length(7),
+            Constraint::Min(10),
+        ])
         .split(body[1]);
 
     render_yield_curve_chart(frame, right[0], app);
-    render_predictions_panel(frame, right[1], app);
+    render_sentiment_panel(frame, right[1], app);
+    render_predictions_panel(frame, right[2], app);
 }
 
 /// Top strip: key macro numbers at a glance — DXY, VIX, 10Y, Gold, Oil, BTC.
@@ -579,6 +584,114 @@ fn render_yield_curve_chart(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/// Render sentiment gauges: Crypto F&G and Traditional F&G with 30-day sparklines.
+fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(theme::BORDER_INACTIVE)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(
+            " Sentiment ",
+            Style::default().fg(t.text_accent).bold(),
+        ))
+        .style(Style::default().bg(t.surface_0));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height < 3 || inner.width < 40 {
+        return;
+    }
+
+    // Fetch cached sentiment data
+    let conn = match rusqlite::Connection::open(&app.db_path) {
+        Ok(c) => c,
+        Err(_) => {
+            // If we can't open DB, show placeholder
+            let msg = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "No sentiment data cached",
+                    Style::default().fg(t.text_muted).italic(),
+                )),
+            ])
+            .alignment(ratatui::layout::Alignment::Center);
+            frame.render_widget(msg, inner);
+            return;
+        }
+    };
+
+    let crypto_sentiment = crate::db::sentiment_cache::get_latest(&conn, "crypto").ok().flatten();
+    let trad_sentiment = crate::db::sentiment_cache::get_latest(&conn, "traditional").ok().flatten();
+
+    // Fetch 30-day history for sparklines
+    let crypto_history = crate::db::sentiment_cache::get_history(&conn, "crypto", 30).unwrap_or_default();
+    let trad_history = crate::db::sentiment_cache::get_history(&conn, "traditional", 30).unwrap_or_default();
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Crypto F&G
+    lines.push(Line::from(""));
+    let mut crypto_line = vec![
+        Span::styled("  Crypto F&G: ", Style::default().fg(t.text_secondary)),
+    ];
+    
+    if let Some(sentiment) = crypto_sentiment {
+        let classification_color = sentiment_color(&sentiment.classification, t);
+        crypto_line.push(Span::styled(
+            format!("{} ", sentiment.value),
+            Style::default().fg(classification_color).bold(),
+        ));
+        crypto_line.push(Span::styled(
+            sentiment.classification.clone(),
+            Style::default().fg(classification_color).italic(),
+        ));
+        
+        // Add sparkline
+        if !crypto_history.is_empty() {
+            crypto_line.push(Span::styled("  ", Style::default()));
+            let sparkline = build_sentiment_sparkline(&crypto_history, t);
+            crypto_line.extend(sparkline);
+        }
+    } else {
+        crypto_line.push(Span::styled("---", Style::default().fg(t.text_muted).italic()));
+    }
+    lines.push(Line::from(crypto_line));
+
+    // Traditional F&G
+    lines.push(Line::from(""));
+    let mut trad_line = vec![
+        Span::styled("  TradFi F&G: ", Style::default().fg(t.text_secondary)),
+    ];
+    
+    if let Some(sentiment) = trad_sentiment {
+        let classification_color = sentiment_color(&sentiment.classification, t);
+        trad_line.push(Span::styled(
+            format!("{} ", sentiment.value),
+            Style::default().fg(classification_color).bold(),
+        ));
+        trad_line.push(Span::styled(
+            sentiment.classification.clone(),
+            Style::default().fg(classification_color).italic(),
+        ));
+        
+        // Add sparkline
+        if !trad_history.is_empty() {
+            trad_line.push(Span::styled("  ", Style::default()));
+            let sparkline = build_sentiment_sparkline(&trad_history, t);
+            trad_line.extend(sparkline);
+        }
+    } else {
+        trad_line.push(Span::styled("---", Style::default().fg(t.text_muted).italic()));
+    }
+    lines.push(Line::from(trad_line));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
 /// Render derived metrics panel: gold/silver ratio, real rate, yield curve spread.
 fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
@@ -848,6 +961,76 @@ fn format_value(p: Decimal, group: EconomyGroup) -> String {
             }
         }
     }
+}
+
+/// Map sentiment classification to color.
+fn sentiment_color(classification: &str, theme: &theme::Theme) -> Color {
+    match classification {
+        "Extreme Fear" => theme.loss_red,
+        "Fear" => theme.cat_commodity, // Orange/yellow
+        "Neutral" => theme.text_secondary,
+        "Greed" => theme.gain_green,
+        "Extreme Greed" => theme.gain_green,
+        _ => theme.text_muted,
+    }
+}
+
+/// Build a 30-day sparkline from sentiment history (date, value) tuples.
+fn build_sentiment_sparkline<'a>(
+    history: &[(String, u8)],
+    theme: &'a theme::Theme,
+) -> Vec<Span<'a>> {
+    if history.is_empty() {
+        return Vec::new();
+    }
+
+    // Take last 30 days, reverse to chronological order
+    let values: Vec<f64> = history
+        .iter()
+        .rev()
+        .take(30)
+        .map(|(_, v)| *v as f64)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    if values.is_empty() {
+        return Vec::new();
+    }
+
+    // Normalize to 0-100 range (sentiment is already 0-100, but we normalize for gradient)
+    let min = 0.0;
+    let max = 100.0;
+    let range = max - min;
+
+    values
+        .iter()
+        .map(|v| {
+            let position = if range > 0.0 {
+                ((v - min) / range) as f32
+            } else {
+                0.5
+            };
+            let idx = (position * 7.0).round() as usize;
+            
+            // Color: red (fear) -> yellow (neutral) -> green (greed)
+            let color = if *v < 25.0 {
+                theme.loss_red
+            } else if *v < 40.0 {
+                theme.cat_commodity // Orange
+            } else if *v < 60.0 {
+                theme.text_secondary // Neutral gray
+            } else {
+                theme.gain_green
+            };
+
+            Span::styled(
+                String::from(SPARKLINE_CHARS[idx.min(7)]),
+                Style::default().fg(color),
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
