@@ -452,6 +452,9 @@ pub struct App {
     // Asset detail popup (opened from search overlay)
     pub asset_detail: Option<crate::tui::views::asset_detail_popup::AssetDetailState>,
 
+    // BLS economic data (CPI, unemployment, NFP, earnings)
+    pub bls_data: HashMap<String, crate::data::bls::BlsDataPoint>,
+
     // Alerts overlay
     pub alerts_open: bool,
     pub alerts_scroll: usize,
@@ -661,6 +664,7 @@ impl App {
             crypto_fng: None,
             traditional_fng: None,
             calendar_events: Vec::new(),
+            bls_data: HashMap::new(),
             db_path,
         }
     }
@@ -678,6 +682,7 @@ impl App {
         self.load_alerts();
         self.load_sentiment();
         self.load_calendar();
+        self.load_bls_data();
         self.recompute();
         self.recompute_regime();
     }
@@ -693,6 +698,7 @@ impl App {
         self.load_alerts();
         self.load_sentiment();
         self.load_calendar();
+        self.load_bls_data();
         self.recompute();
         self.recompute_regime();
 
@@ -826,6 +832,24 @@ impl App {
         // Fetch 7 days ahead as per spec
         if let Ok(events) = crate::data::calendar::fetch_events(7) {
             self.calendar_events = events;
+        }
+    }
+
+    fn load_bls_data(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            // Load latest data for each BLS series
+            let series_ids = [
+                crate::data::bls::SERIES_CPI_U,
+                crate::data::bls::SERIES_UNEMPLOYMENT,
+                crate::data::bls::SERIES_NFP,
+                crate::data::bls::SERIES_HOURLY_EARNINGS,
+            ];
+            
+            for series_id in &series_ids {
+                if let Ok(Some(data)) = crate::db::bls_cache::get_latest_bls_data(&conn, series_id) {
+                    self.bls_data.insert(series_id.to_string(), data);
+                }
+            }
         }
     }
 

@@ -98,21 +98,110 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     render_macro_table(frame, body[0], app);
 
-    // Right panel: yield curve chart (top) + sentiment (middle) + calendar (middle) + predictions (bottom)
+    // Right panel: BLS indicators (top) + yield curve chart + sentiment + calendar + predictions
     let right = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(30),
+            Constraint::Length(9),  // BLS indicators panel
+            Constraint::Percentage(25),
             Constraint::Length(7),
             Constraint::Length(11), // Calendar panel: 7 days + header + borders
             Constraint::Min(8),
         ])
         .split(body[1]);
 
-    render_yield_curve_chart(frame, right[0], app);
-    render_sentiment_panel(frame, right[1], app);
-    render_calendar_panel(frame, right[2], app);
-    render_predictions_panel(frame, right[3], app);
+    render_bls_indicators(frame, right[0], app);
+    render_yield_curve_chart(frame, right[1], app);
+    render_sentiment_panel(frame, right[2], app);
+    render_calendar_panel(frame, right[3], app);
+    render_predictions_panel(frame, right[4], app);
+}
+
+/// BLS Economic Indicators panel — CPI, unemployment, NFP, hourly earnings.
+fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+
+    // Get latest BLS data points
+    let cpi = app.bls_data.get(crate::data::bls::SERIES_CPI_U);
+    let unemployment = app.bls_data.get(crate::data::bls::SERIES_UNEMPLOYMENT);
+    let nfp = app.bls_data.get(crate::data::bls::SERIES_NFP);
+    let earnings = app.bls_data.get(crate::data::bls::SERIES_HOURLY_EARNINGS);
+
+    let mut lines = Vec::new();
+
+    // CPI (YoY%, MoM%)
+    if let Some(cpi_latest) = cpi {
+        // For now just show the value — YoY/MoM calculation requires historical data
+        let cpi_str = format!("CPI: {:.1}", cpi_latest.value);
+        let date_str = format!(" ({})", cpi_latest.date.format("%b %Y"));
+        lines.push(Line::from(vec![
+            Span::styled("CPI ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(cpi_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled("CPI: ---", Style::default().fg(t.text_muted))));
+    }
+
+    // Unemployment Rate
+    if let Some(unemp) = unemployment {
+        let unemp_str = format!("{:.1}%", unemp.value);
+        let date_str = format!(" ({})", unemp.date.format("%b %Y"));
+        lines.push(Line::from(vec![
+            Span::styled("Unemp Rate ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(unemp_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled("Unemp Rate: ---", Style::default().fg(t.text_muted))));
+    }
+
+    // NFP (Nonfarm Payrolls) — show in thousands
+    if let Some(nfp_data) = nfp {
+        let nfp_k = nfp_data.value / rust_decimal_macros::dec!(1000);
+        let nfp_str = format!("{:.0}k", nfp_k);
+        let date_str = format!(" ({})", nfp_data.date.format("%b %Y"));
+        lines.push(Line::from(vec![
+            Span::styled("NFP ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(nfp_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled("NFP: ---", Style::default().fg(t.text_muted))));
+    }
+
+    // Average Hourly Earnings
+    if let Some(earn) = earnings {
+        let earn_str = format!("${:.2}", earn.value);
+        let date_str = format!(" ({})", earn.date.format("%b %Y"));
+        lines.push(Line::from(vec![
+            Span::styled("Avg Hrly Earnings ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(earn_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled("Avg Hrly Earnings: ---", Style::default().fg(t.text_muted))));
+    }
+
+    // Note about data refresh
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Monthly data from BLS",
+        Style::default().fg(t.text_muted).italic(),
+    )));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(theme::BORDER_ACTIVE)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(
+            " Economic Indicators ",
+            Style::default().fg(t.text_accent).bold(),
+        ))
+        .style(Style::default().bg(t.surface_0));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
 }
 
 /// Top strip: key macro numbers at a glance — DXY, VIX, 10Y, Gold, Oil, BTC.
