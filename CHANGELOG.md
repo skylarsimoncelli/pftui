@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 10:40 UTC — F22.2: COMEX supply data in metals detail popup
+
+- What: Added "COMEX Supply" section to asset detail popup when viewing GC=F (gold) or SI=F (silver). Displays: registered inventory (formatted as M oz or k oz), eligible inventory, registered/total ratio (color-coded: <30% red = tight supply, 30-50% accent, >50% muted), trend vs previous day (drawing down / building / stable based on >2% or <-2% registered change), data date. Uses existing comex_cache db module from F22.1.
+- Why: F22.2 from TODO.md (P0 — Free Data Integration). Physical supply context for metals holders. Low registered inventory signals tight physical market. Drawdowns during price strength = supply stress. Complements COT positioning data (futures sentiment) with actual warehouse inventory (physical availability).
+- Files: src/tui/views/asset_detail_popup.rs
+- Tests: 1045 passing (no new tests — section is display logic using existing db functions), clippy clean
+- TODO: F22.2 (P0) — COMPLETED. Next: F22.3 (`pftui supply` CLI command)
+
 ### 2026-03-05 10:15 UTC — F22.1: COMEX warehouse inventory data module
 
 - What: scrapes daily COMEX gold/silver registered/eligible inventory from CME Group XLS files (Gold_Stocks.xls, Silver_stocks.xls). Uses calamine to parse, sums TOTAL rows across all depository sheets. SQLite cache with (symbol, date) primary key. Helpers: coverage_days (registered / daily volume), trend_vs (drawing down / building / stable). Upsert/get/history/fresh_data cache functions.

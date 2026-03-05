@@ -39,9 +39,8 @@
 ### F22: COMEX & Commodity Supply Data
 > **Goal:** Physical market data — COMEX inventory, delivery reports, supply/demand signals for metals.
 > **Sources:** CME Group public pages (scrapable), World Gold Council public data (scrapable)
-> **Status:** F22.1 complete (COMEX data module + cache).
+> **Status:** F22.1-F22.2 complete (COMEX data module + metals detail popup).
 
-- [ ] **F22.2: Supply data in metals detail popup** — When viewing GC=F or SI=F: COMEX registered inventory (oz), registered/eligible ratio, daily delivery notices, trend (drawing down / building). For gold: CB net purchases last quarter. Files: `tui/views/asset_detail_popup.rs`
 - [ ] **F22.3: `pftui supply` CLI** — `pftui supply gold` (COMEX + CB data), `pftui supply silver`, `--json`. Files: new `src/commands/supply.rs`, `cli.rs`
 
 ### F23: Economic Release Calendar (Enhanced)
