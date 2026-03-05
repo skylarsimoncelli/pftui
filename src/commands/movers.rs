@@ -39,18 +39,23 @@ fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
     }
 }
 
-/// Compute daily change % from the last two price history records.
-fn compute_change_pct(conn: &Connection, yahoo_sym: &str) -> Option<Decimal> {
-    let history = get_history(conn, yahoo_sym, 2).ok()?;
-    if history.len() < 2 {
+/// Compute daily change % from current price vs most recent historical close.
+/// Returns None if no history exists or current price is not available.
+fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<Decimal>) -> Option<Decimal> {
+    let current = current_price?;
+    
+    // Get the most recent historical close (yesterday or last trading day)
+    let history = get_history(conn, yahoo_sym, 1).ok()?;
+    if history.is_empty() {
         return None;
     }
-    let prev = &history[history.len() - 2];
-    let latest = &history[history.len() - 1];
-    if prev.close == dec!(0) {
+    
+    let prev_close = history[0].close;
+    if prev_close == dec!(0) {
         return None;
     }
-    Some((latest.close - prev.close) / prev.close * dec!(100))
+    
+    Some((current - prev_close) / prev_close * dec!(100))
 }
 
 /// Format a decimal price with commas.
@@ -155,13 +160,15 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
     let mut movers: Vec<Mover> = Vec::new();
     for (sym, cat, source) in &symbols {
         let yahoo_sym = yahoo_symbol_for(sym, *cat);
-        if let Some(pct) = compute_change_pct(conn, &yahoo_sym) {
+        let current_price = price_map.get(sym).copied();
+        
+        if let Some(pct) = compute_change_pct(conn, &yahoo_sym, current_price) {
             let abs_pct = if pct < dec!(0) { -pct } else { pct };
             if abs_pct >= threshold_pct {
                 let name = resolve_name(sym);
                 let display_name = if name.is_empty() { sym.clone() } else { name };
-                let price_str = match price_map.get(sym) {
-                    Some(p) => format!("{}{}", csym, format_price(*p)),
+                let price_str = match current_price {
+                    Some(p) => format!("{}{}", csym, format_price(p)),
                     None => "N/A".to_string(),
                 };
                 let f: f64 = pct.to_string().parse().unwrap_or(0.0);
@@ -571,16 +578,12 @@ mod tests {
                     close: dec!(200),
                     volume: None,
                 },
-                HistoryRecord {
-                    date: "2026-03-03".to_string(),
-                    close: dec!(210),
-                    volume: None,
-                },
             ],
         )
         .unwrap();
 
-        let pct = compute_change_pct(&conn, "AAPL").unwrap();
+        // Current price is 210, previous close was 200 → 5% gain
+        let pct = compute_change_pct(&conn, "AAPL", Some(dec!(210))).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -600,15 +603,35 @@ mod tests {
                     close: dec!(0),
                     volume: None,
                 },
+            ],
+        )
+        .unwrap();
+
+        // Previous close was 0 → should return None (can't compute % change)
+        assert!(compute_change_pct(&conn, "AAPL", Some(dec!(100))).is_none());
+    }
+    
+    #[test]
+    fn change_pct_no_current_price() {
+        let conn = crate::db::open_in_memory();
+        use crate::db::price_history::upsert_history;
+        use crate::models::price::HistoryRecord;
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[
                 HistoryRecord {
-                    date: "2026-03-03".to_string(),
-                    close: dec!(100),
+                    date: "2026-03-02".to_string(),
+                    close: dec!(200),
                     volume: None,
                 },
             ],
         )
         .unwrap();
 
-        assert!(compute_change_pct(&conn, "AAPL").is_none());
+        // No current price provided → should return None
+        assert!(compute_change_pct(&conn, "AAPL", None).is_none());
     }
 }
