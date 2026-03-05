@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 05:10 UTC — F20.2: News tab [6] in TUI
+
+- What: New News tab accessible via [6] key, showing scrollable financial news feed with live RSS data. Displays headline, source, category, and relative time (2h ago, 1d ago). Navigate with j/k/gg/G (vim motions). Enter opens URL in browser via xdg-open. Category color-coded: crypto=orange, macro=blue, commodities=yellow, geopolitics=red, markets=white. Supports filtering by source, category, or search query (state fields present, filters applied in view). Mouse click support for row selection. Tab added to header bar as [6]News between Watchlist and Journal.
+- Why: F20.2 from TODO.md (P0 — Free Data Integration). First TUI view to consume RSS data module (F20.1). Eliminates agent dependency on external news scraping (fetch_prices.py). Market Research agent requested news integration for overnight catchup. The homepage a finance enthusiast opens every morning now includes news alongside positions, charts, and macro data. No other portfolio TUI has integrated news — this is the moat. Zero-config, zero-key data source. Next: F20.3 (news ticker in header), F20.4 (`pftui news` CLI), F20.5 (per-asset news in detail popup).
+- Files: `src/app.rs` (added ViewMode::News enum variant, news_selected_index/news_entries/news_filter_source/news_filter_category/news_search_query state fields, load_news() method, keybinding [6], j/k/gg/G/Ctrl+d/Ctrl+u navigation, Enter to open URL, mouse click handler), new `src/tui/views/news.rs` (news table view: scrollable list, category color-coding, relative time formatting, filter support, 188 lines), `src/tui/views/mod.rs` (export news module), `src/tui/ui.rs` (route ViewMode::News to news::render), `src/tui/views/help.rs` (added [6] keybinding to help overlay), `src/tui/widgets/header.rs` (added News tab [6] to header navigation bar with active/inactive styling)
+- Tests: 1031 passing, clippy clean with --all-targets -- -D warnings
+- TODO: Remove F20.2 from TODO.md
+
 ### 2026-03-05 04:40 UTC — F20.1: RSS aggregator module
 
 - What: RSS news feed aggregation infrastructure. `src/data/rss.rs` provides `fetch_feed()` and `fetch_all_feeds()` for polling configured RSS sources (Reuters, CoinDesk, ZeroHedge, Yahoo Finance, MarketWatch, Kitco Gold). Parses titles, links, published dates, and categorizes by NewsCategory (Macro, Crypto, Commodities, Geopolitics, Markets). Deduplicates by URL, sorts by timestamp descending. `src/db/news_cache.rs` provides SQLite storage with 48-hour retention, query filters by source/category/search term/time range. Config adds `news_poll_interval` (default 600s = 10 min) and `custom_news_feeds` (user can override default feed list).
