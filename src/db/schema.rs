@@ -209,6 +209,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_onchain_date ON onchain_cache(date);
         CREATE INDEX IF NOT EXISTS idx_onchain_metric ON onchain_cache(metric);
+
+        CREATE TABLE IF NOT EXISTS comex_cache (
+            symbol TEXT NOT NULL,
+            date TEXT NOT NULL,
+            registered REAL NOT NULL,
+            eligible REAL NOT NULL,
+            total REAL NOT NULL,
+            reg_ratio REAL NOT NULL,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (symbol, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_comex_date ON comex_cache(date);
+        CREATE INDEX IF NOT EXISTS idx_comex_symbol ON comex_cache(symbol);
         ",
     )?;
 

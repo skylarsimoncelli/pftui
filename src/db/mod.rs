@@ -4,6 +4,8 @@ pub mod allocation_targets;
 pub mod allocations;
 #[allow(dead_code)] // Infrastructure for F12.1+ consumers (calendar CLI, Economy tab)
 pub mod calendar_cache;
+#[allow(dead_code)] // Infrastructure for F22.1+ consumers (COMEX supply panel, CLI)
+pub mod comex_cache;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot_cache;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
