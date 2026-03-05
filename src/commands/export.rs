@@ -226,6 +226,7 @@ mod tests {
             refresh_interval: 30,
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
+            home_tab: "positions".to_string(),
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),

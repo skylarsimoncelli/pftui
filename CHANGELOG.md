@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 18:05 UTC — Web parity Phase A baseline fix (`Config.home_tab`)
+
+- What: Resolved compile break from newly added `Config.home_tab` by updating explicit `Config { ... }` initializers in test helpers to include `home_tab: "positions".to_string()`.
+- Why: Unblocks the web parity hardening round's baseline stage before auth/session and overlay/SSE work.
+- Files: `src/app.rs`, `src/commands/export.rs`, `docs/WEB_PARITY_CHECKLIST.md`
+- Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
+
 ### 2026-03-05 14:45 UTC — F25.3: `pftui global` CLI for World Bank data
 
 - What: New `pftui global` command displays World Bank structural macro data for major economies. Shows GDP growth, Debt/GDP, Current Account, and Reserves for 8 tracked countries (USA, EU, UK, China, India, Russia, Brazil, South Africa). Terminal output: country-grouped panels with formatted values (percentages, trillions USD). Filters: `--country` (e.g. USA, CHN, IND), `--indicator` (gdp, debt, current-account, reserves). JSON output via `--json` flag for agent consumption. Reads from worldbank_cache (built in F25.1), outputs "No data found" if cache empty with refresh hint.
