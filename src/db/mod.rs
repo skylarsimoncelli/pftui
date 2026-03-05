@@ -29,6 +29,8 @@ pub mod schema;
 pub mod snapshots;
 pub mod transactions;
 pub mod watchlist;
+#[allow(dead_code)] // Infrastructure for F25.1+ consumers (Global macro panel, CLI)
+pub mod worldbank_cache;
 
 use anyhow::Result;
 use rusqlite::Connection;

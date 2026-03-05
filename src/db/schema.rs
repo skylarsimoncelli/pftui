@@ -233,6 +233,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (series_id, year, period)
         );
         CREATE INDEX IF NOT EXISTS idx_bls_series_date ON bls_cache(series_id, date);
+
+        CREATE TABLE IF NOT EXISTS worldbank_cache (
+            country_code TEXT NOT NULL,
+            country_name TEXT NOT NULL,
+            indicator_code TEXT NOT NULL,
+            indicator_name TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            value TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (country_code, indicator_code, year)
+        );
+        CREATE INDEX IF NOT EXISTS idx_worldbank_country_indicator 
+            ON worldbank_cache(country_code, indicator_code, year);
         ",
     )?;
 
