@@ -198,6 +198,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_news_source ON news_cache(source);
         CREATE INDEX IF NOT EXISTS idx_news_category ON news_cache(category);
         CREATE INDEX IF NOT EXISTS idx_news_published_at ON news_cache(published_at);
+
+        CREATE TABLE IF NOT EXISTS onchain_cache (
+            metric TEXT NOT NULL,
+            date TEXT NOT NULL,
+            value TEXT NOT NULL,
+            metadata TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (metric, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_onchain_date ON onchain_cache(date);
+        CREATE INDEX IF NOT EXISTS idx_onchain_metric ON onchain_cache(metric);
         ",
     )?;
 

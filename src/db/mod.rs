@@ -11,6 +11,8 @@ pub mod economic_cache;
 pub mod journal;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod news_cache;
+#[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)
+pub mod onchain_cache;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
 pub mod predictions_cache;

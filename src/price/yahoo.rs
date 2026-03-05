@@ -57,7 +57,7 @@ async fn fetch_fx_history(
 
     let mut rates = std::collections::HashMap::new();
     for q in &quotes {
-        let ts = chrono::DateTime::from_timestamp(q.timestamp as i64, 0);
+        let ts = chrono::DateTime::from_timestamp(q.timestamp, 0);
         if let Some(dt) = ts {
             let date = dt.format("%Y-%m-%d").to_string();
             if let Ok(rate) = Decimal::try_from(q.close) {
@@ -148,7 +148,7 @@ pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>
 
     let mut records = Vec::new();
     for q in &quotes {
-        let ts = chrono::DateTime::from_timestamp(q.timestamp as i64, 0);
+        let ts = chrono::DateTime::from_timestamp(q.timestamp, 0);
         if let Some(dt) = ts {
             let date = dt.format("%Y-%m-%d").to_string();
             if let Ok(mut close) = Decimal::try_from(q.close) {
