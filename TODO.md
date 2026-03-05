@@ -31,7 +31,6 @@
 > **Feeds:** Reuters (`reuters.com/rssfeed/`), CoinDesk (`coindesk.com/arc/outboundfeeds/rss/`), ZeroHedge (`zerohedge.com/fullrss.xml`), The Block, Yahoo Finance, MarketWatch, CNBC, Seeking Alpha, Bloomberg (headlines)
 
 
-- [ ] **F20.3: News ticker in header** — Scrolling one-line news ticker below the market bar showing latest 3 headlines. Cycles every 10 seconds. Files: `tui/widgets/header.rs` or new `tui/widgets/news_ticker.rs`
 - [ ] **F20.4: `pftui news` CLI** — `pftui news` (latest 20), `--source coindesk`, `--search "bitcoin"`, `--hours 4`, `--json`. Files: new `src/commands/news.rs`, `cli.rs`
 - [ ] **F20.5: Per-asset news in detail popup** — When viewing a position or watchlist item, filter news by asset name/ticker. Show last 5 relevant headlines. Files: `tui/views/asset_detail_popup.rs`
 

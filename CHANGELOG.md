@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 05:40 UTC — F20.3: News ticker in header
+
+- What: scrolling news ticker below the market ticker showing latest 3 headlines, cycling every 10 seconds (600 ticks at ~60fps). Displays as "📰 [Source] Title" in header row 3. Only shown in Positions/Watchlist view when non-compact and news data exists. Header height dynamically adjusts: 4 rows when both market and news tickers active, 3 rows for market ticker only, 2 rows otherwise.
+- Why: F20.3 from TODO.md (P0 — Free Data Integration). Provides at-a-glance news awareness without switching to News tab. Complements market ticker (prices) with news headlines for full context. The homepage a finance enthusiast opens every morning shows portfolio + market data + news in one view. Low cognitive overhead — user sees breaking news cycling naturally as they review positions. Visual hierarchy: market data → news → positions/watchlist.
+- Files: `src/tui/widgets/header.rs` (header_height logic updated for 4-row mode, new build_news_ticker_line() function cycling through app.news_entries with 10-second intervals, integrated into render() as third line when conditions met)
+- Tests: all 1031 tests pass, cargo check clean, clippy clean with --all-targets -- -D warnings
+- TODO: F20.3 News ticker in header (P0)
+
 ### 2026-03-05 05:10 UTC — F20.2: News tab [6] in TUI
 
 - What: New News tab accessible via [6] key, showing scrollable financial news feed with live RSS data. Displays headline, source, category, and relative time (2h ago, 1d ago). Navigate with j/k/gg/G (vim motions). Enter opens URL in browser via xdg-open. Category color-coded: crypto=orange, macro=blue, commodities=yellow, geopolitics=red, markets=white. Supports filtering by source, category, or search query (state fields present, filters applied in view). Mouse click support for row selection. Tab added to header bar as [6]News between Watchlist and Journal.
