@@ -477,6 +477,12 @@ pub struct App {
     /// Index 0 = first bar line inside the block border.
     pub alloc_bar_categories: Vec<AssetCategory>,
 
+    // Timeframe selector click targets (set during portfolio_sparkline render)
+    /// List of (ChangeTimeframe, column_range) for each clickable timeframe button.
+    pub timeframe_selector_buttons: Vec<(ChangeTimeframe, (u16, u16))>,
+    /// Row where the timeframe selector is rendered (absolute screen coordinate).
+    pub timeframe_selector_row: Option<u16>,
+
     // DB
     pub db_path: std::path::PathBuf,
 }
@@ -627,6 +633,8 @@ impl App {
             header_privacy_col_range: None,
             alloc_bar_area: None,
             alloc_bar_categories: Vec::new(),
+            timeframe_selector_buttons: Vec::new(),
+            timeframe_selector_row: None,
             regime_score: crate::regime::RegimeScore {
                 signals: Vec::new(),
                 total: 0,
@@ -1981,6 +1989,11 @@ impl App {
                     return;
                 }
 
+                // Click in timeframe selector → change timeframe
+                if self.handle_timeframe_selector_click(col, row) {
+                    return;
+                }
+
                 // Click in main content area → row selection
                 let content_y = row.saturating_sub(header_h);
                 self.handle_content_click(col, content_y);
@@ -2195,6 +2208,45 @@ impl App {
             }
             self.recompute();
             return true;
+        }
+
+        false
+    }
+
+    /// Handle a click in the timeframe selector bar above the portfolio chart.
+    /// Returns true if the click was handled.
+    fn handle_timeframe_selector_click(&mut self, col: u16, row: u16) -> bool {
+        // Only in Positions view
+        if !matches!(self.view_mode, ViewMode::Positions) {
+            return false;
+        }
+
+        // Check if we have a timeframe selector row set
+        let selector_row = match self.timeframe_selector_row {
+            Some(r) => r,
+            None => return false,
+        };
+
+        // Must click on the selector row
+        if row != selector_row {
+            return false;
+        }
+
+        // Check each button's column range
+        for &(timeframe, (col_start, col_end)) in &self.timeframe_selector_buttons {
+            if col >= col_start && col <= col_end {
+                // Clicked this button - update both change_timeframe and sparkline_timeframe
+                self.change_timeframe = timeframe;
+                // Sync portfolio chart timeframe to match
+                self.sparkline_timeframe = match timeframe {
+                    ChangeTimeframe::OneHour => ChartTimeframe::OneWeek,
+                    ChangeTimeframe::TwentyFourHour => ChartTimeframe::OneWeek,
+                    ChangeTimeframe::SevenDay => ChartTimeframe::OneMonth,
+                    ChangeTimeframe::ThirtyDay => ChartTimeframe::ThreeMonths,
+                    ChangeTimeframe::YearToDate => ChartTimeframe::OneYear,
+                };
+                return true;
+            }
         }
 
         false

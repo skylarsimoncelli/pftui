@@ -20,8 +20,24 @@ const ALL_TIMEFRAME_PERIODS: &[(&str, usize)] = &[
     ("1Y", 365),
 ];
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    // Split area: 1 line for timeframe selector + rest for chart
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Timeframe selector bar
+            Constraint::Min(8),    // Chart area
+        ])
+        .split(area);
+    
+    // Render timeframe selector bar and store click targets
+    render_timeframe_selector(frame, chunks[0], app);
+    
+    // Now borrow theme and other fields (after mutable borrow above is done)
     let t = &app.theme;
+    
+    // Render chart in the remaining space
+    let chart_area = chunks[1];
     let timeframe_days = app.sparkline_timeframe.days() as usize;
 
     // Filter history to the selected sparkline timeframe
@@ -58,8 +74,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(t.text_primary).bold(),
         ));
 
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = block.inner(chart_area);
+    frame.render_widget(block, chart_area);
 
     if history.len() < 2 || inner.width < 4 || inner.height < 2 {
         let msg = Paragraph::new(Span::styled(
@@ -403,6 +419,68 @@ fn format_compact_short(f: f64) -> String {
     } else {
         format!("{:.0}", f)
     }
+}
+
+/// Render a clickable timeframe selector bar: [ 1h ] [ 24h ] [ 7d ] [ 30d ] [ YTD ]
+/// Stores click target coordinates in app.timeframe_selector_buttons.
+fn render_timeframe_selector(frame: &mut Frame, area: Rect, app: &mut App) {
+    use crate::app::ChangeTimeframe;
+    
+    let t = &app.theme;
+    
+    // Store the row for click detection
+    app.timeframe_selector_row = Some(area.y);
+    app.timeframe_selector_buttons.clear();
+    
+    // All available timeframes
+    let timeframes = [
+        ChangeTimeframe::OneHour,
+        ChangeTimeframe::TwentyFourHour,
+        ChangeTimeframe::SevenDay,
+        ChangeTimeframe::ThirtyDay,
+        ChangeTimeframe::YearToDate,
+    ];
+    
+    let mut spans = Vec::new();
+    let mut col = area.x;
+    
+    // Add spacing before first button
+    spans.push(Span::raw("  "));
+    col += 2;
+    
+    for (i, &tf) in timeframes.iter().enumerate() {
+        let is_active = app.change_timeframe == tf;
+        let label = tf.label();
+        
+        // Button format: [ 24h ] with spacing
+        let button_text = format!("[ {} ]", label);
+        let button_width = button_text.len() as u16;
+        
+        // Store click target (column range for this button)
+        let col_start = col;
+        let col_end = col + button_width - 1;
+        app.timeframe_selector_buttons.push((tf, (col_start, col_end)));
+        
+        // Style: active = bold + accent color, inactive = secondary
+        let style = if is_active {
+            Style::default().fg(t.text_accent).bold()
+        } else {
+            Style::default().fg(t.text_secondary)
+        };
+        
+        spans.push(Span::styled(button_text, style));
+        col += button_width;
+        
+        // Add spacing between buttons (except after last)
+        if i < timeframes.len() - 1 {
+            spans.push(Span::raw(" "));
+            col += 1;
+        }
+    }
+    
+    let line = Line::from(spans);
+    let paragraph = Paragraph::new(line).style(Style::default().bg(t.surface_1));
+    frame.render_widget(paragraph, area);
 }
 
 #[cfg(test)]

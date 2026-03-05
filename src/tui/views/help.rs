@@ -129,6 +129,10 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
         "  Changes both positions table % and portfolio chart",
         Style::default().fg(sc),
     )));
+    lines.push(Line::from(Span::styled(
+        "  Or click timeframe buttons above chart: [ 1h ] [ 24h ] [ 7d ] ...",
+        Style::default().fg(sc),
+    )));
     lines.push(key_line("D (Shift+d)", "Toggle drift columns", kc, tc));
     lines.push(key_line("t", "Cycle color theme", kc, tc));
     lines.push(key_line("A (Shift+a)", "Add transaction for position", kc, tc));
