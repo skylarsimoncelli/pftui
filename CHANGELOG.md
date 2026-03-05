@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 06:15 UTC — F20.4: `pftui news` CLI command
+
+- What: CLI interface to the cached RSS news feed. Usage: `pftui news` (latest 20 articles), `pftui news --source Reuters` (filter by source), `pftui news --search bitcoin` (search titles), `pftui news --hours 4` (last 4 hours only), `pftui news --json` (agent-consumable JSON). Output: formatted table with title (truncated at 80 chars), source, and relative time (e.g. "2h ago", "1d ago", "2026-03-04"). JSON mode outputs full details including URL, category, and timestamps.
+- Why: F20.4 from TODO.md (P0 — Free Data Integration). Agents can now query news without scraping external sources or reading webpage content. Evening Planner and Market Research agents requested CLI access for overnight/morning briefings. Completes the news suite: F20.1 (RSS aggregator), F20.2 (News tab [6]), F20.3 (header news ticker), F20.4 (this CLI). Next: F20.5 (per-asset news in detail popup).
+- Files: new `src/commands/news.rs` (125 lines: run(), print_table(), print_json(), format_timestamp(), 1 test), `src/commands/mod.rs` (export news module), `src/cli.rs` (add Command::News with source/search/hours/limit/json flags), `src/main.rs` (dispatch Command::News to commands::news::run)
+- Tests: 1032 passing (was 1031: +1 format_timestamp test), clippy clean with --all-targets -- -D warnings
+- TODO: F20.4: `pftui news` CLI (P0)
+
 ### 2026-03-05 05:40 UTC — F20.3: News ticker in header
 
 - What: scrolling news ticker below the market ticker showing latest 3 headlines, cycling every 10 seconds (600 ticks at ~60fps). Displays as "📰 [Source] Title" in header row 3. Only shown in Positions/Watchlist view when non-compact and news data exists. Header height dynamically adjusts: 4 rows when both market and news tickers active, 3 rows for market ticker only, 2 rows otherwise.
