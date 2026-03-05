@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 09:40 UTC — F21.3: `pftui etf-flows` CLI command
+
+- What: Added CLI command for querying BTC ETF flow data. Supports `pftui etf-flows` (default: today), `--days N` (last N days), `--fund FUND` (filter to specific fund like IBIT/FBTC/GBTC), `--json` (structured output for agents). Human-readable output shows daily totals and fund-level detail tables. JSON output provides date_range, total_flows array (date + BTC/USD totals), fund_flows array (fund + date + BTC/USD values).
+- Why: F21.3 from TODO.md (P0). Completes F21 ETF flow integration by exposing data module to CLI consumers. Agents and scripts can now query ETF flows programmatically without TUI.
+- Files: src/commands/etf_flows.rs (new), src/commands/mod.rs, src/cli.rs, src/main.rs
+- Tests: 1040 passing (no new tests — command is thin wrapper over existing data::onchain module which has tests), clippy clean
+- TODO: F21.3 (P0) — COMPLETED. F21 ETF flows integration fully shipped (data module + popup + CLI).
+
 ### 2026-03-05 09:10 UTC — F21.2: BTC intelligence panel in asset detail popup
 
 - What: Added "BTC Intelligence" section to asset detail popup when viewing BTC/BTC-USD/BTCUSD. Displays: (1) Network metrics — hash rate (EH/s), mempool size, avg fee (sat/vB), difficulty (live via Blockchair), (2) ETF flows — daily net flow + top 3 funds (displays when onchain::fetch_etf_flows() returns data), (3) Whale alerts — large transaction count + top 3 txs with direction indicators (displays when data available). Section dynamically builds — shows only metrics that successfully fetch. All data integrates with existing onchain module from F21.1.

@@ -31,11 +31,10 @@
 > **Feeds:** Reuters (`reuters.com/rssfeed/`), CoinDesk (`coindesk.com/arc/outboundfeeds/rss/`), ZeroHedge (`zerohedge.com/fullrss.xml`), The Block, Yahoo Finance, MarketWatch, CNBC, Seeking Alpha, Bloomberg (headlines)
 > **Status:** F20.1-F20.5 complete. News data module, News tab, header ticker, CLI, and per-asset filtering all shipped.
 
-### F21: BTC On-Chain & ETF Flow Data
+### F21: BTC On-Chain & ETF Flow Data ✅ COMPLETE
 > **Goal:** On-chain signals and institutional flow data for BTC — whale movements, exchange flows, ETF inflows/outflows.
 > **Sources:** Blockchair (5 req/sec free, no key), CoinGlass (scrape public pages), Whale Alert (limited free tier — scrape public feed)
-
-- [ ] **F21.3: `pftui etf-flows` CLI** — `pftui etf-flows` (today), `--days 7`, `--fund IBIT`, `--json`. Files: new `src/commands/etf_flows.rs`, `cli.rs`
+> **Status:** F21.1 (data module), F21.2 (popup panel), F21.3 (CLI) all shipped.
 
 ### F22: COMEX & Commodity Supply Data
 > **Goal:** Physical market data — COMEX inventory, delivery reports, supply/demand signals for metals.
