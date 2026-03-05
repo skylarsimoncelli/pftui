@@ -211,8 +211,8 @@ fn main() -> Result<()> {
             commands::predictions::run(&conn, category.as_deref(), search.as_deref(), limit, json)
         }
 
-        Some(Command::Cot { symbol, weeks, json }) => {
-            commands::cot::run(symbol.as_deref(), weeks, json)
+        Some(Command::Sentiment { symbol, history, json }) => {
+            commands::sentiment::run(symbol.as_deref(), history, json)
         }
 
         Some(Command::Alerts { action, value, json, status }) => {

@@ -228,14 +228,14 @@ pub enum Command {
         json: bool,
     },
 
-    /// Show CFTC Commitments of Traders positioning data
-    Cot {
-        /// Symbol to show (GC=F, SI=F, CL=F, BTC). Omit to show all tracked contracts.
+    /// Show market sentiment: Fear & Greed indices + COT positioning
+    Sentiment {
+        /// Symbol to show COT detail (GC=F, SI=F, CL=F, BTC). Omit for overview.
         symbol: Option<String>,
 
-        /// Number of weeks of historical data (default: 1, latest report only)
-        #[arg(long, default_value = "1")]
-        weeks: usize,
+        /// Show historical F&G trend over N days
+        #[arg(long)]
+        history: Option<usize>,
 
         /// Output as JSON for agent/script consumption
         #[arg(long)]

@@ -1,3 +1,9 @@
+//! DEPRECATED: This module has been superseded by `commands::sentiment`.
+//! The `pftui cot` command has been replaced by `pftui sentiment`.
+//! This file is kept for reference but is no longer used.
+
+#![allow(dead_code)]
+
 use anyhow::Result;
 use serde_json::json;
 
