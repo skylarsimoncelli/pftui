@@ -3,7 +3,7 @@
 Source: user-provided parity checklist. This file is the implementation tracker and is updated as items are completed.
 
 ## Target
-- [ ] Full TUI parity in web: same information architecture, same mental model, web-native interactions, and shared Rust domain logic.
+- [x] Full TUI parity in web: same information architecture, same mental model, web-native interactions, and shared Rust domain logic.
 
 ## Implementation Plan
 - [x] 1. Lock the shared contract first.
@@ -35,11 +35,11 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - [x] 21. Add TUI-like overlays: benchmark compare, drawdown, gain/loss coloring.
 
 ## Themes and Visual Design
-- [ ] 22. Theme parity and design tokens.
+- [x] 22. Theme parity and design tokens.
 - [x] 23. Keep all 11 TUI theme names and derive web CSS variables from Rust theme structs only.
 - [x] 24. Add theme cycle control and optional theme picker modal.
 - [x] 25. Ensure contrast/a11y checks per theme.
-- [ ] 26. Add visual polish parity: panel hierarchy, border emphasis, selected-row treatment, muted/active text states.
+- [x] 26. Add visual polish parity: panel hierarchy, border emphasis, selected-row treatment, muted/active text states.
 
 ## Detail Panels and Overlays
 - [x] 27. Detail panels and overlays parity.
@@ -64,17 +64,17 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 
 ## Testing and Release
 - [x] 42. Test parity and quality gates.
-- [ ] 43. Add backend API tests per endpoint payload contract.
-- [ ] 44. Add frontend integration tests for tab flows and chart loads.
+- [x] 43. Add backend API tests per endpoint payload contract.
+- [x] 44. Add frontend integration tests for tab flows and chart loads.
 - [x] 45. Add parity checklist against TUI for every release.
-- [ ] 46. Add visual regression snapshots across desktop/mobile and all themes.
+- [x] 46. Add visual regression snapshots across desktop/mobile and all themes.
 
 ## Rollout Sequence
-- [ ] 47. Rollout sequence.
+- [x] 47. Rollout sequence.
 - [x] 48. Milestone A: complete tab data parity and shared view-model API.
 - [x] 49. Milestone B: complete UX/navigation parity and persistence.
 - [x] 50. Milestone C: complete chart parity fallback and detail overlays.
-- [ ] 51. Milestone D: harden auth, tests, and publish as stable `pftui web`.
+- [x] 51. Milestone D: harden auth, tests, and publish as stable `pftui web`.
 
 ## Progress Notes
 - 2026-03-05: Phase A baseline fix landed for new `Config.home_tab` field by updating explicit `Config { ... }` initializers in tests (`src/app.rs`, `src/commands/export.rs`).
@@ -82,3 +82,4 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - 2026-03-05: Phase C landed overlay stack + keyboard parity for search/alerts/asset details (single active overlay, Esc-close priority, focus return), plus alert badges in header/tab.
 - 2026-03-05: Phase D landed `/api/stream` SSE events (`quote_update`, `panel_invalidate`, `health`, `heartbeat`) with frontend reconnect/backoff and automatic polling fallback status.
 - 2026-03-05: Phase E added CI quality gates: theme contrast regression test (`theme_contrast_guardrails`) and stable-web tag checklist enforcement via `scripts/check_web_parity_checklist.sh`.
+- 2026-03-05: Final hardening pass added backend auth/session/CSRF contract tests, Playwright integration flows + visual snapshots (desktop/mobile across all themes), explicit rollout runbook (`docs/WEB_STABLE_ROLLOUT.md`), and design-token/state polish in web CSS.

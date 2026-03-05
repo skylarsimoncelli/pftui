@@ -99,18 +99,22 @@ struct StreamPayload {
     message: String,
 }
 
+fn stream_event_type_and_message(i: usize) -> (&'static str, &'static str) {
+    if i % 6 == 0 {
+        ("panel_invalidate", "refresh_visible_panels")
+    } else if i % 3 == 0 {
+        ("quote_update", "quote_snapshot_updated")
+    } else if i % 2 == 0 {
+        ("health", "stream_ok")
+    } else {
+        ("heartbeat", "alive")
+    }
+}
+
 async fn get_stream() -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let ticker = tokio::time::interval(StdDuration::from_secs(5));
     let stream = IntervalStream::new(ticker).enumerate().map(|(i, _)| {
-        let (event_name, message) = if i % 6 == 0 {
-            ("panel_invalidate", "refresh_visible_panels")
-        } else if i % 3 == 0 {
-            ("quote_update", "quote_snapshot_updated")
-        } else if i % 2 == 0 {
-            ("health", "stream_ok")
-        } else {
-            ("heartbeat", "alive")
-        };
+        let (event_name, message) = stream_event_type_and_message(i);
         let payload = StreamPayload {
             ts: Utc::now().to_rfc3339(),
             message: message.to_string(),
@@ -124,4 +128,23 @@ async fn get_stream() -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infa
             .interval(StdDuration::from_secs(10))
             .text("keepalive"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stream_event_type_and_message;
+
+    #[test]
+    fn stream_event_mapping_contract() {
+        assert_eq!(
+            stream_event_type_and_message(0),
+            ("panel_invalidate", "refresh_visible_panels")
+        );
+        assert_eq!(
+            stream_event_type_and_message(3),
+            ("quote_update", "quote_snapshot_updated")
+        );
+        assert_eq!(stream_event_type_and_message(2), ("health", "stream_ok"));
+        assert_eq!(stream_event_type_and_message(1), ("heartbeat", "alive"));
+    }
 }

@@ -1,0 +1,13 @@
+{
+  "name": "pftui-web-tests",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "test:web": "playwright test",
+    "test:web:integration": "playwright test tests/web.integration.spec.ts",
+    "test:web:visual": "playwright test tests/web.visual.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.1"
+  }
+}

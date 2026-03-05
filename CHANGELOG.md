@@ -40,6 +40,17 @@
 - Files: `src/tui/theme.rs`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `scripts/check_web_parity_checklist.sh`, `docs/WEB_PARITY_CHECKLIST.md`
 - Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
 
+### 2026-03-05 21:45 UTC — Web parity final pass: contract tests + integration + visual snapshots
+
+- What: Added backend auth/session contract coverage in `src/web/auth.rs` (`/auth/login`, `/auth/session`, CSRF matrix, expired session denial). Added SSE event contract mapping test in `src/web/server.rs`.
+- Web tests: Added Playwright harness (`package.json`, `playwright.config.ts`) with mocked API coverage. New integration suite validates tab flow, chart/detail interactions, and search overlay keyboard path. New visual suite captures desktop/mobile snapshots across all 11 themes to artifacts.
+- CI/Release: Added dedicated CI web job to run Playwright and upload visual/report artifacts. Release workflow now runs Playwright in `test` and supports stable-web checklist gating.
+- UX polish: Added explicit design-token/state CSS variables and normalized hover/selected/focus/disabled styles for panel hierarchy and interaction parity.
+- Rollout: Added documented stable release sequence in `docs/WEB_STABLE_ROLLOUT.md`.
+- Status: Web parity checklist items 1-51 are now marked complete; release path uses `web-stable-*` tag gating.
+- Files: `src/web/auth.rs`, `src/web/server.rs`, `src/web/static/index.html`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `package.json`, `package-lock.json`, `playwright.config.ts`, `tests/web.mocks.ts`, `tests/web.integration.spec.ts`, `tests/web.visual.spec.ts`, `docs/WEB_STABLE_ROLLOUT.md`, `docs/WEB_PARITY_CHECKLIST.md`, `.gitignore`
+- Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
+
 ### 2026-03-05 14:45 UTC — F25.3: `pftui global` CLI for World Bank data
 
 - What: New `pftui global` command displays World Bank structural macro data for major economies. Shows GDP growth, Debt/GDP, Current Account, and Reserves for 8 tracked countries (USA, EU, UK, China, India, Russia, Brazil, South Africa). Terminal output: country-grouped panels with formatted values (percentages, trillions USD). Filters: `--country` (e.g. USA, CHN, IND), `--indicator` (gdp, debt, current-account, reserves). JSON output via `--json` flag for agent consumption. Reads from worldbank_cache (built in F25.1), outputs "No data found" if cache empty with refresh hint.

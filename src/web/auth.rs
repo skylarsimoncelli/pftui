@@ -394,6 +394,16 @@ fn is_localhost_bind(bind_addr: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::Body,
+        http::Request as HttpRequest,
+        middleware,
+        routing::{get, post},
+        Json as AxumJson,
+        Router,
+    };
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
 
     #[test]
     fn extract_cookie_value() {
@@ -427,5 +437,183 @@ mod tests {
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(body.0.code, "session_expired");
         assert!(body.0.relogin_required);
+    }
+
+    fn test_app(state: Arc<AuthState>) -> Router {
+        let auth_routes = Router::new()
+            .route("/login", post(login))
+            .route("/logout", post(logout))
+            .route("/session", get(get_session))
+            .route("/csrf", get(get_csrf))
+            .with_state(state.clone());
+
+        let api_routes = Router::new()
+            .route("/ping", get(|| async { AxumJson(json!({"ok": true})) }))
+            .route("/mutate", post(|| async { AxumJson(json!({"ok": true})) }));
+
+        Router::new()
+            .nest("/auth", auth_routes)
+            .nest("/api", api_routes)
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth_middleware,
+            ))
+            .with_state(state)
+    }
+
+    async fn parse_json_body(res: axum::response::Response) -> Value {
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice::<Value>(&body).unwrap_or_else(|_| json!({}))
+    }
+
+    #[tokio::test]
+    async fn auth_contract_session_and_csrf_matrix() {
+        let state = Arc::new(AuthState::new(true, "127.0.0.1"));
+        let token = state.login_token.clone().expect("login token");
+        let app = test_app(state.clone());
+
+        let unauth = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/ping")
+                    .method("GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauth.status(), StatusCode::UNAUTHORIZED);
+        let unauth_body = parse_json_body(unauth).await;
+        assert_eq!(unauth_body["code"], "session_missing");
+        assert_eq!(unauth_body["relogin_required"], true);
+
+        let login = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/auth/login")
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({ "token": token })).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(login.status(), StatusCode::OK);
+        let set_cookie = login
+            .headers()
+            .get("set-cookie")
+            .and_then(|v| v.to_str().ok())
+            .unwrap()
+            .to_string();
+        assert!(set_cookie.contains("pftui_session="));
+        let session_cookie = set_cookie
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
+
+        let session = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/auth/session")
+                    .method("GET")
+                    .header("cookie", session_cookie.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(session.status(), StatusCode::OK);
+        let session_body = parse_json_body(session).await;
+        let csrf = session_body["csrf_token"].as_str().unwrap().to_string();
+
+        let no_csrf = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/mutate")
+                    .method("POST")
+                    .header("cookie", session_cookie.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(no_csrf.status(), StatusCode::FORBIDDEN);
+        let no_csrf_body = parse_json_body(no_csrf).await;
+        assert_eq!(no_csrf_body["code"], "csrf_missing");
+
+        let bad_csrf = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/mutate")
+                    .method("POST")
+                    .header("cookie", session_cookie.clone())
+                    .header("X-CSRF-Token", "bad_token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bad_csrf.status(), StatusCode::FORBIDDEN);
+        let bad_csrf_body = parse_json_body(bad_csrf).await;
+        assert_eq!(bad_csrf_body["code"], "csrf_mismatch");
+
+        let good_csrf = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/mutate")
+                    .method("POST")
+                    .header("cookie", session_cookie.clone())
+                    .header("X-CSRF-Token", csrf)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(good_csrf.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn auth_contract_expired_session_denied() {
+        let state = Arc::new(AuthState::new(true, "127.0.0.1"));
+        let expired = Session {
+            session_id: "sid_expired".to_string(),
+            issued_at: Utc::now() - Duration::seconds(120),
+            expires_at: Utc::now() - Duration::seconds(1),
+            csrf_token: "csrf_expired".to_string(),
+            auth_mode: "session".to_string(),
+        };
+        state
+            .sessions
+            .lock()
+            .expect("session mutex")
+            .insert(expired.session_id.clone(), expired);
+
+        let app = test_app(state.clone());
+        let res = app
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/api/ping")
+                    .method("GET")
+                    .header("cookie", "pftui_session=sid_expired")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let body = parse_json_body(res).await;
+        assert_eq!(body["code"], "session_expired");
+        assert_eq!(body["relogin_required"], true);
     }
 }

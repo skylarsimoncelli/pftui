@@ -26,6 +26,13 @@ jobs:
         run: |
           scripts/check_web_parity_checklist.sh \
             22 25 26 27 28 29 30 34 37 38 40 41 42 43 44 45 46 47 49 50 51
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:web
       - run: cargo test --all-features
       - run: cargo clippy --all-targets -- -D warnings
 
