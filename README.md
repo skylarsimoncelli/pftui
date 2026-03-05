@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img width="1728" height="1049" alt="pftui" src="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b" />
+  <img width="1724" height="1085" alt="image" src="https://github.com/user-attachments/assets/351aba69-f659-42eb-9f18-6e791731431d" />
 </p>
 
 ---
