@@ -41,6 +41,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         ViewMode::Markets => views::markets::render(frame, chunks[1], app),
         ViewMode::Economy => views::economy::render(frame, chunks[1], app),
         ViewMode::Watchlist => render_watchlist_layout(frame, chunks[1], app),
+        ViewMode::Analytics => views::analytics::render(frame, chunks[1], app),
         ViewMode::News => views::news::render(frame, chunks[1], app),
         ViewMode::Journal => views::journal::render(frame, chunks[1], app),
     }

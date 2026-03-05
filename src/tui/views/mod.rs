@@ -1,4 +1,5 @@
 pub mod alerts_popup;
+pub mod analytics;
 pub mod asset_detail_popup;
 pub mod context_menu;
 pub mod economy;

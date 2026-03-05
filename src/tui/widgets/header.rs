@@ -459,6 +459,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "W" } else { "Watch" }, watch_style));
 
+    // Analytics tab — always visible
+    let analytics_style = if matches!(app.view_mode, ViewMode::Analytics) {
+        Style::default().fg(t.text_primary).bold().underlined()
+    } else {
+        Style::default().fg(t.text_muted)
+    };
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled("[6]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled(if compact { "An" } else { "Analytics" }, analytics_style));
+
     // News tab — always visible
     let news_style = if matches!(app.view_mode, ViewMode::News) {
         Style::default().fg(t.text_primary).bold().underlined()
@@ -466,7 +476,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Style::default().fg(t.text_muted)
     };
     spans.push(Span::raw(" "));
-    spans.push(Span::styled("[6]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled("[7]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "N" } else { "News" }, news_style));
 
     // Journal tab — always visible
@@ -476,7 +486,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Style::default().fg(t.text_muted)
     };
     spans.push(Span::raw(" "));
-    spans.push(Span::styled("[7]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled("[8]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "J" } else { "Journal" }, journal_style));
 
     // Calendar countdown — show next high-impact event

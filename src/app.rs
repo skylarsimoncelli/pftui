@@ -36,6 +36,7 @@ pub enum ViewMode {
     Markets,
     Economy,
     Watchlist,
+    Analytics,
     News,
     Journal,
 }
@@ -372,6 +373,8 @@ pub struct App {
     pub news_filter_source: Option<String>,
     pub news_filter_category: Option<String>,
     pub news_search_query: String,
+    pub analytics_selected_index: usize,
+    pub analytics_shock_scale_pct: i32,
     pub g_pending: bool,
     pub terminal_height: u16,
     pub terminal_width: u16,
@@ -613,6 +616,8 @@ impl App {
             news_filter_source: None,
             news_filter_category: None,
             news_search_query: String::new(),
+            analytics_selected_index: 0,
+            analytics_shock_scale_pct: 100,
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
@@ -1394,6 +1399,7 @@ impl App {
             ViewMode::Markets => "Markets",
             ViewMode::Economy => "Economy",
             ViewMode::Watchlist => "Watchlist",
+            ViewMode::Analytics => "Analytics",
             ViewMode::News => "News",
             ViewMode::Journal => "Journal",
         };
@@ -1909,12 +1915,17 @@ impl App {
                 self.request_watchlist_data();
             }
             KeyCode::Char('6') => {
+                self.view_mode = ViewMode::Analytics;
+                self.detail_open = false;
+                self.detail_popup_open = false;
+            }
+            KeyCode::Char('7') => {
                 self.view_mode = ViewMode::News;
                 self.detail_open = false;
                 self.detail_popup_open = false;
                 self.load_news();
             }
-            KeyCode::Char('7') => {
+            KeyCode::Char('8') => {
                 self.view_mode = ViewMode::Journal;
                 self.detail_open = false;
                 self.detail_popup_open = false;
@@ -2022,6 +2033,17 @@ impl App {
                     self.chart_timeframe = self.chart_timeframe.next();
                     self.refetch_chart_history();
                 }
+            }
+
+            // Analytics scenario scaling
+            KeyCode::Char('+') | KeyCode::Char('=') if matches!(self.view_mode, ViewMode::Analytics) => {
+                self.analytics_shock_scale_pct = (self.analytics_shock_scale_pct + 5).min(200);
+            }
+            KeyCode::Char('-') if matches!(self.view_mode, ViewMode::Analytics) => {
+                self.analytics_shock_scale_pct = (self.analytics_shock_scale_pct - 5).max(0);
+            }
+            KeyCode::Char('0') if matches!(self.view_mode, ViewMode::Analytics) => {
+                self.analytics_shock_scale_pct = 100;
             }
 
 
@@ -2288,7 +2310,7 @@ impl App {
 
     /// Handle a click in the header area. Detect which tab label was clicked.
     ///
-    /// Tab layout (non-compact): " pftui  [1]Pos [2]Tx [3]Mkt [4]Econ [5]Watch ..."
+    /// Tab layout (non-compact): " pftui  [1]Pos [2]Tx [3]Mkt [4]Econ [5]Watch [6]Analytics [7]News [8]Journal ..."
     /// Character offsets are approximate; we use generous hit zones.
     fn handle_header_click(&mut self, col: u16) {
         let col = col as usize;
@@ -2356,6 +2378,35 @@ impl App {
             self.detail_popup_open = false;
             self.load_watchlist();
             self.request_watchlist_data();
+            return;
+        }
+
+        let base4 = base3 + watch_label_len + 1;
+        let analytics_label_len: usize = if compact { 5 } else { 12 }; // "[6]An" or "[6]Analytics"
+        if (base4..base4 + analytics_label_len + 1).contains(&col) {
+            self.view_mode = ViewMode::Analytics;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            return;
+        }
+
+        let base5 = base4 + analytics_label_len + 1;
+        let news_label_len: usize = if compact { 4 } else { 7 }; // "[7]N" or "[7]News"
+        if (base5..base5 + news_label_len + 1).contains(&col) {
+            self.view_mode = ViewMode::News;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            self.load_news();
+            return;
+        }
+
+        let base6 = base5 + news_label_len + 1;
+        let journal_label_len: usize = if compact { 4 } else { 10 }; // "[8]J" or "[8]Journal"
+        if (base6..base6 + journal_label_len + 1).contains(&col) {
+            self.view_mode = ViewMode::Journal;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            self.load_journal();
             return;
         }
 
@@ -2538,6 +2589,12 @@ impl App {
                     self.economy_selected_index = clicked_row;
                 }
             }
+            ViewMode::Analytics => {
+                let count = self.analytics_scenario_count();
+                if clicked_row < count {
+                    self.analytics_selected_index = clicked_row;
+                }
+            }
             ViewMode::News => {
                 if clicked_row < self.news_entries.len() {
                     self.news_selected_index = clicked_row;
@@ -2668,6 +2725,13 @@ impl App {
                         (self.economy_selected_index + 1).min(count - 1);
                 }
             }
+            ViewMode::Analytics => {
+                let count = self.analytics_scenario_count();
+                if count > 0 {
+                    self.analytics_selected_index =
+                        (self.analytics_selected_index + 1).min(count - 1);
+                }
+            }
             ViewMode::News => {
                 if !self.news_entries.is_empty() {
                     self.news_selected_index =
@@ -2706,6 +2770,9 @@ impl App {
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(1);
             }
+            ViewMode::Analytics => {
+                self.analytics_selected_index = self.analytics_selected_index.saturating_sub(1);
+            }
             ViewMode::News => {
                 self.news_selected_index = self.news_selected_index.saturating_sub(1);
             }
@@ -2737,6 +2804,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = 0;
+            }
+            ViewMode::Analytics => {
+                self.analytics_selected_index = 0;
             }
             ViewMode::News => {
                 self.news_selected_index = 0;
@@ -2782,6 +2852,12 @@ impl App {
                     self.economy_selected_index = count - 1;
                 }
             }
+            ViewMode::Analytics => {
+                let count = self.analytics_scenario_count();
+                if count > 0 {
+                    self.analytics_selected_index = count - 1;
+                }
+            }
             ViewMode::News => {
                 if !self.news_entries.is_empty() {
                     self.news_selected_index = self.news_entries.len() - 1;
@@ -2809,6 +2885,10 @@ impl App {
     fn half_page(&self) -> usize {
         let content_rows = self.terminal_height.saturating_sub(4) as usize;
         (content_rows / 2).max(1)
+    }
+
+    fn analytics_scenario_count(&self) -> usize {
+        5
     }
 
     fn scroll_down_half_page(&mut self) {
@@ -2845,6 +2925,13 @@ impl App {
                 if count > 0 {
                     self.economy_selected_index =
                         (self.economy_selected_index + step).min(count - 1);
+                }
+            }
+            ViewMode::Analytics => {
+                let count = self.analytics_scenario_count();
+                if count > 0 {
+                    self.analytics_selected_index =
+                        (self.analytics_selected_index + step).min(count - 1);
                 }
             }
             ViewMode::News => {
@@ -2885,6 +2972,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(step);
+            }
+            ViewMode::Analytics => {
+                self.analytics_selected_index = self.analytics_selected_index.saturating_sub(step);
             }
             ViewMode::News => {
                 self.news_selected_index = self.news_selected_index.saturating_sub(step);

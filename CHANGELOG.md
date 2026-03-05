@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:12 UTC — F4.3: Analytics tab in TUI (`[6]`)
+
+- What: Added new Analytics view with risk + scenario panels and portfolio projection workflow.
+- UI: New tab routing `ViewMode::Analytics` with header/help keybinding updates (`[6] Analytics`, `[7] News`, `[8] Journal`). Added mouse and keyboard navigation support for analytics row selection and scenario-scale controls (`+`, `-`, `0`).
+- Panels: Risk panel (volatility, max drawdown, Sharpe, VaR, HHI), concentration chart (top-weight bars + HHI risk flag), scenario selector, and projected portfolio value panel with delta under selected preset + scale.
+- Files: `src/tui/views/analytics.rs` (new), `src/tui/views/mod.rs`, `src/tui/ui.rs`, `src/tui/widgets/header.rs`, `src/tui/views/help.rs`, `src/app.rs`, `TODO.md`
+- Tests: Could not run in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F4.3 (P1 promoted) — COMPLETED.
+
 ### 2026-03-05 21:08 UTC — F4.2: Scenario engine + `summary --what-if` expansion
 
 - What: Added new scenario engine module `src/analytics/scenarios.rs` with named macro presets and reusable selector-based shock helpers.
