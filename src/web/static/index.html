@@ -905,6 +905,17 @@
             }
         }
 
+        function isTypingTarget() {
+            const el = document.activeElement;
+            const tag = el?.tagName;
+            if (!(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')) return false;
+            if (el.disabled) return false;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        }
+
         function clearStreamReconnectTimer() {
             if (state.stream.reconnectTimer) {
                 clearTimeout(state.stream.reconnectTimer);
@@ -2181,15 +2192,32 @@
                 if (state.overlay.active && state.overlay.active !== 'search') {
                     return;
                 }
+                if (isTypingTarget()) {
+                    return;
+                }
                 if (e.key === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                    e.preventDefault();
                     await cycleTheme();
                 }
-                if ((e.key === 'A' || e.key === 'a') && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+                if (e.key >= '1' && e.key <= '8') {
+                    const idx = Number(e.key) - 1;
+                    if (idx >= 0 && idx < state.tabs.length) {
+                        e.preventDefault();
+                        await setActiveTab(state.tabs[idx]);
+                        return;
+                    }
+                }
+                if (e.key === 'w' || e.key === 'W') {
+                    e.preventDefault();
+                    if (state.tabs.includes('Watchlist')) await setActiveTab('Watchlist');
+                    return;
+                }
+                if (e.key === 'a' || e.key === 'A') {
                     e.preventDefault();
                     if (state.overlay.active === 'alerts') closeOverlay(); else openOverlay('alerts');
                     return;
                 }
-                if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+                if (e.key === '/') {
                     e.preventDefault();
                     openOverlay('search');
                     const input = document.getElementById('global-search-input');
@@ -2225,6 +2253,24 @@
                     const symbol = rows[next].querySelector('.label')?.textContent;
                     const item = state.macro.find(m => m.name === symbol);
                     if (item?.symbol) loadChart(item.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets');
+                }
+                if (e.key === 'Enter' && state.activeTab === 'Positions') {
+                    const row = document.querySelector('#positions-table tbody tr.selected')
+                        || document.querySelector('#positions-table tbody tr');
+                    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    return;
+                }
+                if (e.key === 'Enter' && state.activeTab === 'Watchlist') {
+                    const row = document.querySelector('#watchlist-full .list-item.active')
+                        || document.querySelector('#watchlist-full .list-item');
+                    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    return;
+                }
+                if (e.key === 'Enter' && state.activeTab === 'Markets') {
+                    const row = document.querySelector('#macro-panel-markets .macro-item.active')
+                        || document.querySelector('#macro-panel-markets .macro-item');
+                    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    return;
                 }
                 if (e.key === 'Enter' && state.activeTab === 'News' && state.selectedNewsId) {
                     const article = state.news.find(n => n.id === state.selectedNewsId);
@@ -2316,6 +2362,8 @@
 
         async function postAuthInit() {
             await setActiveTab(state.activeTab);
+            document.body.setAttribute('tabindex', '-1');
+            document.body.focus();
             try {
                 await refreshAll();
                 startAutoRefresh();

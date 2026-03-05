@@ -24,7 +24,7 @@ Source of truth: TUI behavior and domain contracts (`src/app.rs`, `src/tui/views
 | ID | Area | TUI Baseline | Web Current | Status | Severity | Owner Phase | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
 | NAV-01 | Tab model | 1-7 view parity | Present | implemented | P1 | 0 | Same tab names and availability rules |
-| NAV-02 | Keyboard parity | `/`, `j/k`, `Enter`, `Esc`, `t`, view switches | Partial | partial | P1 | 10 | All shared key intents match behaviorally |
+| NAV-02 | Keyboard parity | `/`, `j/k`, `Enter`, `Esc`, `t`, view switches | Keyboard intents now hardened across tabs: numeric view switching, slash overlay, j/k movement, Enter activation, Esc close order, and theme cycling | implemented | P1 | 10 | All shared key intents match behaviorally |
 | NAV-03 | Overlay stack | Search + asset detail + alerts layering | Present | implemented | P2 | 10 | Deterministic Esc close order + focus return |
 | POS-01 | Right pane context | Asset-specific overview in positions | Positions pane now uses asset-only overview context | implemented | P0 | 4 | Right pane always names selected asset and shows asset overview only |
 | POS-02 | Market overview placement | Markets domain lives in Markets tab | Market overview consolidated to Markets tab only | implemented | P1 | 4 | Market overview removed from positions and consolidated in markets |

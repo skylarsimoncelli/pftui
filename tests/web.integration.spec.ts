@@ -50,6 +50,36 @@ test.describe("web integration flows", () => {
     await expect(page.locator("#asset-detail-drawer")).not.toHaveClass(/active/);
   });
 
+  test("keyboard parity for navigation and activation", async ({ page }) => {
+    await expect(page.locator("#view-positions")).toHaveClass(/active/);
+    await expect(page.locator("#positions-table tbody tr").first()).toBeVisible();
+
+    await page.keyboard.press("j");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#asset-detail-drawer")).toHaveClass(/active/);
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#asset-detail-drawer")).not.toHaveClass(/active/);
+
+    await page.keyboard.press("t");
+    await expect(page.locator("#view-positions")).toHaveClass(/active/);
+
+    await page.keyboard.press("3");
+    await expect(page.locator("#view-markets")).toHaveClass(/active/);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#asset-detail-drawer")).toHaveClass(/active/);
+
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("5");
+    await expect(page.locator("#view-watchlist")).toHaveClass(/active/);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#asset-detail-drawer")).toHaveClass(/active/);
+
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("/");
+    await expect(page.locator("#search-overlay")).toHaveClass(/active/);
+  });
+
   test("alerts create, acknowledge, rearm, and remove", async ({ page }) => {
     await page.locator("#tabs").getByRole("button", { name: /Alerts/ }).click();
     await expect(page.locator("#view-alerts")).toHaveClass(/active/);
