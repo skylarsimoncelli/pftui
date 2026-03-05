@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 13:41 UTC — F25.1: World Bank data module and cache
+
+- What: Integrated World Bank Open Data API for structural macro indicators. Created `worldbank.rs` data module with `fetch_worldbank_indicator()` and `fetch_all_indicators()` functions. Fetches 4 key indicators: GDP growth (annual %), debt/GDP (%), current account (% of GDP), total reserves (USD). Tracks 8 countries: US, China, India, Russia, Brazil, South Africa, UK, EU. Last 5 years of data per request. Created `worldbank_cache.rs` DB module with upsert, get by country/indicator, get all, get latest (most recent year per country/indicator), and 30-day freshness checks. Added `worldbank_cache` table to schema with composite PK (country_code, indicator_code, year). Data updates quarterly, cache monthly refresh.
+- Why: F25.1 from TODO.md (P0 — Free Data Integration). Structural macro foundation for BRICS/global analysis. No API key, no rate limits. World Bank API is the authoritative source for cross-country comparisons. Infrastructure for F25.2 (global macro panel) and F25.3 (CLI).
+- Files: `src/data/worldbank.rs` (new, 205 lines, 2 tests), `src/db/worldbank_cache.rs` (new, 237 lines, 2 tests), `src/data/mod.rs`, `src/db/mod.rs`, `src/db/schema.rs`
+- Tests: 1055 passing (+2), clippy clean
+- TODO: F25.1 (P0) — COMPLETED. Next: F25.2 (global macro panel in Economy tab), F25.3 (`pftui global` CLI)
+
 ### 2026-03-05 13:10 UTC — F24.2: BLS economic indicators panel in Economy tab
 
 - What: Added BLS economic indicators panel to Economy tab right column. Shows CPI, unemployment rate, NFP (nonfarm payrolls), and average hourly earnings with latest values and release dates. Loads data from BLS cache on startup via `load_bls_data()` method. New panel placed above yield curve chart in right column (9 lines). Replaces conceptual "sample economic data" with live government data from BLS API. Simple display format: indicator name, value, release date. Ready for future enhancement: YoY%, MoM%, trend arrows (requires historical comparison logic).

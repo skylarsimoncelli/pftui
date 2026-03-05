@@ -55,7 +55,6 @@
 > **Goal:** Structural macro data for BRICS and major economies. GDP growth, debt/GDP, trade balances, reserves.
 > **Source:** World Bank Open Data API (free, no key, unlimited)
 
-- [~] **F25.1: World Bank data module** — Fetch key indicators: GDP growth (NY.GDP.MKTP.KD.ZG), debt/GDP (GC.DOD.TOTL.GD.ZS), current account (BN.CAB.XOKA.GD.ZS), reserves (FI.RES.TOTL.CD) for US, China, India, Russia, Brazil, SA, UK, EU. Cache in SQLite with monthly refresh (data updates quarterly). Files: new `src/data/worldbank.rs`, new `src/db/worldbank_cache.rs`
 - [ ] **F25.2: Global macro panel in Economy tab** — Compact table: Country, GDP Growth, Debt/GDP, Reserves trend. BRICS aggregate row. Color-code: green (expanding), red (contracting). Files: `tui/views/economy.rs`
 - [ ] **F25.3: `pftui global` CLI** — `pftui global` (all tracked countries), `--country US`, `--indicator gdp`, `--json`. Files: new `src/commands/global.rs`, `cli.rs`
 
