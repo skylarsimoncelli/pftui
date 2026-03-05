@@ -194,7 +194,11 @@ The homepage a finance enthusiast opens every morning:
 
 ### Other P2
 
-- [ ] **[Feedback] `pftui sector` command** — Show sector ETF performance (XLE, ITA, XLF, IGV, etc.) for tracking sector-level moves. Files: new `src/commands/sector.rs`, `cli.rs`
+- [ ] **[Feedback] Fix movers 1D calculation** — `pftui movers` shows multi-day changes for some symbols instead of true 1D change. Ensure change % is always computed from most recent close vs prior close, not from stale cache entries. Files: `src/commands/movers.rs`
+- [ ] **[Feedback] Fix USD/JPY and USD/CNY in macro dashboard** — Both showing 1.0000 instead of actual FX rates. Data source issue — verify Yahoo symbols (JPY=X, CNY=X) are fetched and cached correctly. Files: `src/commands/macro_cmd.rs`, `src/commands/refresh.rs`, `src/price/yahoo.rs`
+- [ ] **[Feedback] Alerts in `brief` output** — Show any triggered or near-threshold alerts in the brief command output. Connects alert engine to the primary agent-consumed command. Files: `commands/brief.rs`, `alerts/engine.rs`
+- [ ] **[Feedback] After-hours / pre-market prices** — Show AH/pre-market prices in watchlist and brief for market close routines. Yahoo Finance provides extended hours data. Files: `src/price/yahoo.rs`, `commands/brief.rs`, `commands/watchlist_cli.rs`
+- [ ] **[Feedback] `pftui sector` command** — Show sector ETF performance (XLE, ITA, XLF, IGV, etc.) for tracking sector-level moves and capital flow identification during regime shifts. Files: new `src/commands/sector.rs`, `cli.rs`
 - [ ] **[Feedback] Add "What Changed Today" section to `brief`** — Show largest daily movers, notable threshold crossings, and any triggered alerts in the brief output. Files: `commands/brief.rs`
 - [ ] **[Feedback] Benchmark comparison in `brief`** — Show portfolio performance vs SPY, Gold index, or custom benchmark. Files: `commands/brief.rs`, `price/mod.rs`
 - [ ] **News feed integration** — Free RSS/API source (Yahoo Finance RSS, Finnhub). Scrollable list with per-asset filtering. Files: new `src/news/`, new `views/news.rs`
@@ -223,26 +227,26 @@ The homepage a finance enthusiast opens every morning:
 
 ## Feedback Summary
 
-**Last reviewed:** 2026-03-04T03:00Z
+**Last reviewed:** 2026-03-05T03:00Z
 
 | Tester | Latest Score | Trend | Key Pain Point |
 |---|---|---|---|
-| Sentinel Main (TUI) | 82% | ↑↑ (40→78→82) | P&L dollar amounts, sector grouping, cost basis in positions |
-| Evening Planner (CLI) | 85% | ↑↑ (38→85) | Macro command, RSI/MACD for watchlist, correlations CLI |
-| Market Research (CLI) | 72% | → (single point) | FX support, U.UN data accuracy, daily P&L, technicals |
-| Market Close (CLI) | 68% | → (first review) | Macro dashboard, bulk watchlist, history cash, watchlist 1D% |
+| Sentinel Main (TUI) | 82% | ↑→ (40→78→82→82) | P&L dollar amounts, sector grouping, economy tab expansion |
+| Evening Planner (CLI) | 92% | ↑↑ (38→85→92) | RSI/MACD/SMA for watchlist, stress testing, sector rotation |
+| Market Research (CLI) | 78% | ↑ (40→72→78) | Movers 1D calc bug, RSI/MACD/SMA, F&G indices, news |
+| Market Close (CLI) | 80% | ↑ (68→80) | Expand watchlist (11→50+), technicals on macro, fix USD/JPY+CNY, after-hours |
 
-**Lowest scorer:** Market Close at 68% — top pain points: no macro dashboard (still using fetch_prices.py for DXY/VIX/10Y/oil/copper), no bulk watchlist add (20 separate calls needed), history omits cash (misleading totals), watchlist missing daily change column.
+**Lowest scorer:** Market Research at 78% — top pain points: movers command shows multi-day changes instead of true 1D (bug), no RSI/MACD/SMA50 (still using fetch_prices.py), missing F&G indices and news integration.
 
-**Score trajectory:** All testers now in 68-85% range. Evening Planner had the biggest jump (+47 points) after headless features shipped (brief, refresh, value, watchlist, what-if, history). Sentinel Main continues climbing with TUI polish.
+**Score trajectory:** All testers now in 78-92% range. Evening Planner hit 92% — highest score ever — driven by macro dashboard being "THE most useful feature." Market Close jumped +12 points after macro, movers, and history improvements shipped. Sentinel Main plateaued at 82% — needs P&L dollar amounts and economy tab enrichment to break through.
 
 **Top 3 priorities from feedback:**
-1. **Macro dashboard / `pftui macro`** (P1, F3.3-F3.4) — requested by 3 of 4 testers. Would eliminate fetch_prices.py dependency entirely. F3.1-F3.2 (FRED + refresh integration) already shipped.
-2. **History cash inclusion** (P0) — Market Close reports `history --date` shows $184k instead of $362k because cash is omitted. Misleading for portfolio value tracking.
-3. **Alert engine** (P1, F6) — all 4 testers want price/threshold alerts. Most impactful for workflow integration.
+1. **F19 Sentiment gauges (F&G indices)** (P0) — F19.1 data module done, need F19.2 (header display), F19.3 (history sparklines), F19.4 (CLI). Requested by Market Research and Evening Planner.
+2. **Fix movers 1D calculation** (P2, bug) — Market Research reports multi-day changes shown instead of true 1D. Confusing when cross-referencing with other data sources.
+3. **Fix USD/JPY and USD/CNY data** (P2, bug) — Market Close reports both showing 1.0000 in macro dashboard. Broken data source needs investigation.
 
-**Completed feedback items:** `pftui refresh`, `--period`, `--group-by`, day P&L (TUI + CLI), value/brief/watchlist/set-cash CLI, CSV rounding, base currency config, Markets tab enrichment, `--what-if`, `history --date`, snapshot, import, U.UN FX fix, `--technicals` flag, RSI column in positions/watchlist, MACD/RSI gauge in detail popup, rate limiting, macro symbols in refresh
+**Completed since last review:** F17.2-F17.4 (predictions panel + sparklines + CLI), F18.1-F18.4 (COT data + popup + Markets column + CLI), F19.1 (sentiment data module), F23.2 (calendar countdown in header), F8.2 (journal tab), UX overhaul (unified timeframe control, clickable selector, P&L/Value columns), web dashboard
 
-**Release status:** v0.2.0 is current. Since then: F1.3 (RSI columns), F1.4 (--technicals), F3.1 (FRED API), F3.2 (macro refresh), rate limiting fix, install.sh. Tests: 855 passing, clippy clean. **Ready to release as v0.3.0.**
+**Release status:** v0.4.1 is current. Since then: F17.2-F17.4 (predictions), F18.1-F18.4 (COT), F19.1 (sentiment), F23.2 (calendar countdown), F8.2 (journal tab), UX overhaul (timeframe selector, P&L/Value columns), website improvements. Tests: 1019 passing, clippy clean. **Significant feature work since v0.4.1 — ready to release as v0.5.0.**
 
 **Homebrew Core:** 1 star — needs 50+ for homebrew-core submission. Not eligible yet.
