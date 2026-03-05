@@ -85,14 +85,15 @@ fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Day %"),
         Cell::from("7D"),
         Cell::from("7D %"),
+        Cell::from("COT"),
     ])
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
 
     // Show skeleton placeholder rows while waiting for initial price data
     let rows: Vec<Row> = if !app.prices_live {
-        let col_widths = [6, 12, 8, 10, 7, 5, 6];
-        skeleton::skeleton_rows(t, app.tick_count, &col_widths, 7)
+        let col_widths = [6, 12, 8, 10, 7, 5, 6, 2];
+        skeleton::skeleton_rows(t, app.tick_count, &col_widths, 8)
     } else {
     items
         .iter()
@@ -147,6 +148,9 @@ fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {
                 None => ("---".to_string(), t.text_muted),
             };
 
+            // Compute COT signal
+            let cot_signal = compute_cot_signal(app, &item.yahoo_symbol);
+
             Row::new(vec![
                 Cell::from(Span::styled(
                     item.symbol.clone(),
@@ -173,6 +177,10 @@ fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {
                     mom_str,
                     Style::default().fg(mom_color),
                 )),
+                Cell::from(Span::styled(
+                    cot_signal,
+                    Style::default().fg(t.text_primary),
+                )),
             ])
             .style(Style::default().bg(row_bg))
             .height(1)
@@ -188,6 +196,7 @@ fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(9),   // Day %
         Constraint::Length(7),   // 7D sparkline
         Constraint::Length(8),   // 7D %
+        Constraint::Length(4),   // COT
     ];
 
     let table = Table::new(rows, widths)
@@ -292,6 +301,87 @@ fn compute_change_pct(app: &App, yahoo_symbol: &str) -> Option<Decimal> {
         return None;
     }
     Some((latest.close - prev.close) / prev.close * dec!(100))
+}
+
+/// Compute COT signal for a given yahoo symbol.
+/// Returns an emoji: 🟢 aligned, 🔴 divergence, ⚠️ extreme, or empty string if no COT data.
+///
+/// Signal logic:
+/// - 🟢 Aligned: managed money net position and price trend agree (both up or both down)
+/// - 🔴 Divergence: managed money and price trend disagree
+/// - ⚠️ Extreme: managed money net is >2 std devs from 52-week mean
+fn compute_cot_signal(app: &App, yahoo_symbol: &str) -> String {
+    // Map yahoo symbol to CFTC code
+    let cftc_code = match crate::data::cot::symbol_to_cftc_code(yahoo_symbol) {
+        Some(code) => code,
+        None => return String::new(),
+    };
+
+    // Open DB connection
+    let conn = match rusqlite::Connection::open(&app.db_path) {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+
+    // Fetch latest COT report
+    let latest = match crate::db::cot_cache::get_latest(&conn, cftc_code) {
+        Ok(Some(report)) => report,
+        _ => return String::new(),
+    };
+
+    // Fetch last 52 weeks of history for extremity check
+    let history = match crate::db::cot_cache::get_history(&conn, cftc_code, 52) {
+        Ok(h) if h.len() >= 10 => h, // Need at least 10 weeks for meaningful stats
+        _ => return String::new(),
+    };
+
+    // Check for extreme positioning (>2 std devs from mean)
+    let mm_nets: Vec<f64> = history
+        .iter()
+        .map(|r| r.managed_money_net as f64)
+        .collect();
+    if mm_nets.is_empty() {
+        return String::new();
+    }
+    let mean = mm_nets.iter().sum::<f64>() / mm_nets.len() as f64;
+    let variance = mm_nets.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / mm_nets.len() as f64;
+    let std_dev = variance.sqrt();
+    let current_mm = latest.managed_money_net as f64;
+    let z_score = if std_dev > 0.0 {
+        (current_mm - mean) / std_dev
+    } else {
+        0.0
+    };
+
+    if z_score.abs() > 2.0 {
+        return "⚠️".to_string();
+    }
+
+    // Check alignment with price trend
+    // Get 7-day price momentum
+    let price_momentum = compute_7d_momentum(app, yahoo_symbol);
+    
+    // Get managed money WoW change
+    let mm_change = if history.len() >= 2 {
+        let prev = &history[1];
+        latest.managed_money_net - prev.managed_money_net
+    } else {
+        return String::new();
+    };
+
+    match (price_momentum, mm_change) {
+        (Some(price_pct), mm_delta) => {
+            let price_up = price_pct > dec!(0);
+            let mm_up = mm_delta > 0;
+            
+            if price_up == mm_up {
+                "🟢".to_string() // Aligned
+            } else {
+                "🔴".to_string() // Divergence
+            }
+        }
+        _ => String::new(),
+    }
 }
 
 /// Compute 7-day momentum: (latest - 7d_ago) / 7d_ago × 100.
