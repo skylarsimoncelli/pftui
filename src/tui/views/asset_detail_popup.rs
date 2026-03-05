@@ -708,6 +708,56 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         }
     }
 
+    // ── Recent News ──
+    if !app.news_entries.is_empty() {
+        let asset_name = lookup_name(symbol);
+        let search_terms = build_search_terms(symbol, &asset_name);
+        
+        let relevant_news: Vec<_> = app.news_entries
+            .iter()
+            .filter(|entry| {
+                search_terms.iter().any(|term| {
+                    entry.title.to_lowercase().contains(&term.to_lowercase())
+                })
+            })
+            .take(5)
+            .collect();
+
+        if !relevant_news.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(section_header("  Recent News", t.text_accent));
+            lines.push(sep_line(t.border_subtle, 60));
+
+            for (idx, news) in relevant_news.iter().enumerate() {
+                let age = format_news_age(news.published_at);
+                
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", if idx == 0 { "●" } else { "○" }),
+                        Style::default().fg(if idx == 0 { t.chart_line } else { t.text_muted }),
+                    ),
+                    Span::styled(
+                        &news.title,
+                        Style::default().fg(t.text_primary),
+                    ),
+                ]));
+                
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("    {} · {}", news.source, age),
+                        Style::default().fg(t.text_muted),
+                    ),
+                ]));
+                
+                if idx < relevant_news.len() - 1 {
+                    lines.push(Line::from(""));
+                }
+            }
+
+            lines.push(Line::from(""));
+        }
+    }
+
     // ── Footer ──
     lines.push(Line::from(Span::styled(
         "  Esc to close · j/k to scroll",
@@ -716,6 +766,75 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     lines.push(Line::from(""));
 
     lines
+}
+
+/// Build search terms for news filtering based on symbol and asset name.
+fn build_search_terms(symbol: &str, asset_name: &str) -> Vec<String> {
+    let mut terms = vec![symbol.to_string()];
+    
+    // Add common symbol variations
+    if symbol.contains('=') {
+        // For futures like GC=F, search "gold" instead of just GC
+        if let Some(base) = symbol.split('=').next() {
+            terms.push(base.to_string());
+        }
+    }
+    
+    // Add asset name if it's meaningful (not empty and not just a symbol variant)
+    if !asset_name.is_empty() && asset_name.len() > 2 && asset_name != symbol {
+        // Split multi-word names (e.g., "Bitcoin ETF" -> ["Bitcoin", "ETF"])
+        for word in asset_name.split_whitespace() {
+            if word.len() > 2 {
+                terms.push(word.to_string());
+            }
+        }
+    }
+    
+    // Add specific high-value search terms for common assets
+    match symbol {
+        "BTC" | "BTC-USD" | "BTCUSD" => {
+            terms.extend(vec!["Bitcoin".to_string(), "BTC".to_string()]);
+        }
+        "ETH" | "ETH-USD" | "ETHUSD" => {
+            terms.extend(vec!["Ethereum".to_string(), "ETH".to_string()]);
+        }
+        "GC=F" => {
+            terms.extend(vec!["gold".to_string(), "Gold".to_string()]);
+        }
+        "SI=F" => {
+            terms.extend(vec!["silver".to_string(), "Silver".to_string()]);
+        }
+        "CL=F" => {
+            terms.extend(vec!["oil".to_string(), "crude".to_string(), "Oil".to_string()]);
+        }
+        _ => {}
+    }
+    
+    terms
+}
+
+/// Format news age in human-readable format.
+fn format_news_age(published_at: i64) -> String {
+    let now = chrono::Utc::now().timestamp();
+    let diff = now - published_at;
+    
+    if diff < 0 {
+        return "just now".to_string();
+    }
+    
+    let minutes = diff / 60;
+    let hours = minutes / 60;
+    let days = hours / 24;
+    
+    if days > 0 {
+        format!("{}d ago", days)
+    } else if hours > 0 {
+        format!("{}h ago", hours)
+    } else if minutes > 0 {
+        format!("{}m ago", minutes)
+    } else {
+        "just now".to_string()
+    }
 }
 
 fn section_header(title: &str, color: Color) -> Line<'static> {
