@@ -46,11 +46,11 @@
 > **Sources:** Scrape TradingEconomics calendar (public page), or FRED release schedule API (free), or Finnhub (if user has free key — optional)
 > **Status:** F23.1 (TradingEconomics scraper), F23.2 (header countdown), F23.3 (Economy tab panel) all shipped.
 
-### F24: Government Data Direct (BLS + BEA)
+### F24: Government Data Direct (BLS + BEA) ✅ PARTIAL
 > **Goal:** Pull employment, inflation, and GDP data directly from US government APIs. These are the actual source — not third-party repackaging.
 > **Sources:** BLS API v2 (no key for v1: 10 calls/day, or free key for v2: 500/day), BEA API (free key required — SKIP for no-key constraint, but v1 BLS works without)
+> **Status:** F24.1 complete (BLS data module shipped). F24.2 next (integrate into Economy tab).
 
-- [ ] **F24.1: BLS data module (no-key mode)** — BLS API v1 requires no registration. Fetch series: CPI-U (CUUR0000SA0), unemployment rate (LNS14000000), NFP (CES0000000001), average hourly earnings (CES0500000003). 10 calls/day limit — cache aggressively (data only changes monthly). Files: new `src/data/bls.rs`, new `src/db/bls_cache.rs`
 - [ ] **F24.2: Enhanced Economy tab indicators** — Replace "sample" economic data with live BLS data. Show: CPI (YoY%, MoM%), unemployment rate, NFP (last + revision), average hourly earnings. Trend arrows. Last release date + next release countdown. Files: `tui/views/economy.rs`
 
 ### F25: World Bank & Global Macro

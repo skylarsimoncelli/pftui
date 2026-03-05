@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 12:45 UTC — F24.1: BLS data module (no-key mode)
+
+- What: Created BLS API integration for direct government economic data. Implemented src/data/bls.rs module to fetch key series from BLS API v1 (no registration required, 10 calls/day limit): CPI-U (CUUR0000SA0), unemployment rate (LNS14000000), nonfarm payrolls (CES0000000001), average hourly earnings (CES0500000003). Fetches last 2 years of data in single request. Created src/db/bls_cache.rs with SQLite cache (series_id + year + period PK), date range filtering, freshness checks, latest value queries. Cache is mandatory due to rate limits — data only updates monthly. Added bls_cache table to schema.rs.
+- Why: F24.1 from TODO.md (P0 — Free Data Integration). BLS data is the authoritative source for inflation and employment — no third-party APIs. Zero-config integration (v1 API requires no key). Aggressive caching to stay under 10 calls/day. Foundation for F24.2 (live indicators in Economy tab).
+- Files: src/data/bls.rs (new, 179 lines, 2 tests), src/db/bls_cache.rs (new, 291 lines, 6 tests), src/data/mod.rs, src/db/mod.rs, src/db/schema.rs (bls_cache table)
+- Tests: 1051 passing (+8), clippy clean
+- TODO: F24.1 (P0) — COMPLETED. Next: F24.2 (integrate BLS data into Economy tab, replace sample indicators)
+
 ### 2026-03-05 12:10 UTC — F23.3: Economic calendar panel in Economy tab
 
 - What: Added economic calendar panel to Economy tab right panel, showing 7-day forward view with impact color-coding (high=🔴, medium=🟡, low=⚪) and countdown timers (Today, 1d, 2d, etc.). Integrated with existing calendar data module (F23.1). Loads calendar events on TUI startup via `load_calendar()`. Layout: yield curve chart (30%) + sentiment panel (7 lines) + calendar panel (11 lines) + predictions panel (remaining space).
