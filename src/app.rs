@@ -455,6 +455,9 @@ pub struct App {
     // BLS economic data (CPI, unemployment, NFP, earnings)
     pub bls_data: HashMap<String, crate::data::bls::BlsDataPoint>,
 
+    // World Bank global macro data (GDP growth, debt/GDP, reserves)
+    pub worldbank_data: HashMap<(String, String), crate::data::worldbank::WorldBankDataPoint>,
+
     // Alerts overlay
     pub alerts_open: bool,
     pub alerts_scroll: usize,
@@ -665,6 +668,7 @@ impl App {
             traditional_fng: None,
             calendar_events: Vec::new(),
             bls_data: HashMap::new(),
+            worldbank_data: HashMap::new(),
             db_path,
         }
     }
@@ -683,6 +687,7 @@ impl App {
         self.load_sentiment();
         self.load_calendar();
         self.load_bls_data();
+        self.load_worldbank_data();
         self.recompute();
         self.recompute_regime();
     }
@@ -699,6 +704,7 @@ impl App {
         self.load_sentiment();
         self.load_calendar();
         self.load_bls_data();
+        self.load_worldbank_data();
         self.recompute();
         self.recompute_regime();
 
@@ -848,6 +854,37 @@ impl App {
             for series_id in &series_ids {
                 if let Ok(Some(data)) = crate::db::bls_cache::get_latest_bls_data(&conn, series_id) {
                     self.bls_data.insert(series_id.to_string(), data);
+                }
+            }
+        }
+    }
+
+    fn load_worldbank_data(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            // Load latest data for tracked countries and indicators
+            let countries = [
+                crate::data::worldbank::COUNTRY_US,
+                crate::data::worldbank::COUNTRY_CHINA,
+                crate::data::worldbank::COUNTRY_INDIA,
+                crate::data::worldbank::COUNTRY_RUSSIA,
+                crate::data::worldbank::COUNTRY_BRAZIL,
+            ];
+            
+            let indicators = [
+                crate::data::worldbank::INDICATOR_GDP_GROWTH,
+                crate::data::worldbank::INDICATOR_DEBT_GDP,
+                crate::data::worldbank::INDICATOR_RESERVES,
+            ];
+            
+            for country in &countries {
+                for indicator in &indicators {
+                    if let Ok(data_points) = crate::db::worldbank_cache::get_cached_worldbank_data(&conn, &[country], indicator) {
+                        // Take the most recent year for this country+indicator
+                        if let Some(latest) = data_points.first() {
+                            let key = (country.to_string(), indicator.to_string());
+                            self.worldbank_data.insert(key, latest.clone());
+                        }
+                    }
                 }
             }
         }

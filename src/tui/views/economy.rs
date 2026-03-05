@@ -96,7 +96,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
         .split(outer[1]);
 
-    render_macro_table(frame, body[0], app);
+    // Left side: macro table (top) + global macro panel (bottom ~10 rows)
+    let left = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(10), Constraint::Length(10)])
+        .split(body[0]);
+
+    render_macro_table(frame, left[0], app);
+    render_global_macro_panel(frame, left[1], app);
 
     // Right panel: BLS indicators (top) + yield curve chart + sentiment + calendar + predictions
     let right = Layout::default()
@@ -1213,6 +1220,128 @@ fn build_sentiment_sparkline<'a>(
             )
         })
         .collect()
+}
+
+/// Global Macro Panel — World Bank structural data for major economies.
+/// Shows: Country, GDP Growth, Debt/GDP, Reserves trend for BRICS + US.
+fn render_global_macro_panel(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::data::worldbank::{
+        COUNTRY_BRAZIL, COUNTRY_CHINA, COUNTRY_INDIA, COUNTRY_RUSSIA, COUNTRY_US,
+        INDICATOR_DEBT_GDP, INDICATOR_GDP_GROWTH, INDICATOR_RESERVES,
+    };
+    use ratatui::widgets::{Block, Borders, Row, Table};
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    let t = &app.theme;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(" Global Macro ")
+        .title_style(Style::default().fg(t.text_accent).bold());
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Define countries to display (BRICS + US)
+    let countries = [
+        (COUNTRY_US, "US"),
+        (COUNTRY_CHINA, "China"),
+        (COUNTRY_INDIA, "India"),
+        (COUNTRY_RUSSIA, "Russia"),
+        (COUNTRY_BRAZIL, "Brazil"),
+    ];
+
+    let mut rows = Vec::new();
+
+    for (country_code, country_name) in &countries {
+        let gdp_key = (country_code.to_string(), INDICATOR_GDP_GROWTH.to_string());
+        let debt_key = (country_code.to_string(), INDICATOR_DEBT_GDP.to_string());
+        let reserves_key = (country_code.to_string(), INDICATOR_RESERVES.to_string());
+
+        let gdp_growth = app.worldbank_data.get(&gdp_key);
+        let debt_gdp = app.worldbank_data.get(&debt_key);
+        let reserves = app.worldbank_data.get(&reserves_key);
+
+        // Format GDP Growth with color coding
+        let gdp_str = if let Some(data) = gdp_growth {
+            if let Some(value) = data.value {
+                let color = if value > Decimal::ZERO {
+                    t.gain_green
+                } else if value < Decimal::ZERO {
+                    t.loss_red
+                } else {
+                    t.text_muted
+                };
+                let formatted = format!("{:+.1}%", value);
+                Span::styled(formatted, Style::default().fg(color))
+            } else {
+                Span::styled("---", Style::default().fg(t.text_muted))
+            }
+        } else {
+            Span::styled("---", Style::default().fg(t.text_muted))
+        };
+
+        // Format Debt/GDP
+        let debt_str = if let Some(data) = debt_gdp {
+            if let Some(value) = data.value {
+                let formatted = format!("{:.0}%", value);
+                // Color code: >100% red, 60-100% yellow, <60% green
+                let color = if value > Decimal::from_str("100").unwrap() {
+                    t.loss_red
+                } else if value > Decimal::from_str("60").unwrap() {
+                    t.stale_yellow
+                } else {
+                    t.gain_green
+                };
+                Span::styled(formatted, Style::default().fg(color))
+            } else {
+                Span::styled("---", Style::default().fg(t.text_muted))
+            }
+        } else {
+            Span::styled("---", Style::default().fg(t.text_muted))
+        };
+
+        // Format Reserves (show in trillions with trend indicator)
+        // For now just show the value — trend requires historical data
+        let reserves_str = if let Some(data) = reserves {
+            if let Some(value) = data.value {
+                let trillions = value / Decimal::from_str("1000000000000").unwrap();
+                let formatted = format!("${:.2}T", trillions);
+                Span::styled(formatted, Style::default().fg(t.text_primary))
+            } else {
+                Span::styled("---", Style::default().fg(t.text_muted))
+            }
+        } else {
+            Span::styled("---", Style::default().fg(t.text_muted))
+        };
+
+        rows.push(Row::new(vec![
+            Span::styled(*country_name, Style::default().fg(t.text_secondary)),
+            gdp_str,
+            debt_str,
+            reserves_str,
+        ]));
+    }
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(8),  // Country
+            Constraint::Length(8),  // GDP Growth
+            Constraint::Length(8),  // Debt/GDP
+            Constraint::Length(10), // Reserves
+        ],
+    )
+    .header(
+        Row::new(vec!["Country", "GDP Grow", "Debt/GDP", "Reserves"])
+            .style(Style::default().fg(t.text_accent).bold())
+            .bottom_margin(0),
+    )
+    .style(Style::default().fg(t.text_primary));
+
+    frame.render_widget(table, inner);
 }
 
 #[cfg(test)]
