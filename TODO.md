@@ -30,7 +30,6 @@
 > **Sources:** RSS feeds — completely free, no auth, no rate limits.
 > **Feeds:** Reuters (`reuters.com/rssfeed/`), CoinDesk (`coindesk.com/arc/outboundfeeds/rss/`), ZeroHedge (`zerohedge.com/fullrss.xml`), The Block, Yahoo Finance, MarketWatch, CNBC, Seeking Alpha, Bloomberg (headlines)
 
-- [ ] **F20.1: RSS aggregator module** — Poll configured RSS feeds on 10-min interval. Parse titles, links, published dates, source. Deduplicate by URL. Store in SQLite with 48-hour retention. Default feed list ships with pftui (user can add/remove via config). Files: new `src/data/rss.rs`, new `src/db/news_cache.rs`, `src/config.rs`
 - [ ] **F20.2: News tab [6] in TUI** — New tab. Scrollable list: timestamp, source icon/tag, headline. Color-code by source category (macro=blue, crypto=orange, commodities=yellow, geopolitics=red). `Enter` to open URL in browser. `/` to search headlines. `f` to filter by source or category. Files: new `src/tui/views/news.rs`, `src/app.rs` (add ViewMode::News, bind key `6`)
 - [ ] **F20.3: News ticker in header** — Scrolling one-line news ticker below the market bar showing latest 3 headlines. Cycles every 10 seconds. Files: `tui/widgets/header.rs` or new `tui/widgets/news_ticker.rs`
 - [ ] **F20.4: `pftui news` CLI** — `pftui news` (latest 20), `--source coindesk`, `--search "bitcoin"`, `--hours 4`, `--json`. Files: new `src/commands/news.rs`, `cli.rs`
