@@ -1389,6 +1389,40 @@ impl App {
         self.display_positions.get(self.selected_index)
     }
 
+    fn home_views(&self) -> (ViewMode, ViewMode) {
+        if self.last_saved_home_tab == ViewMode::Watchlist {
+            (ViewMode::Watchlist, ViewMode::Positions)
+        } else {
+            (ViewMode::Positions, ViewMode::Watchlist)
+        }
+    }
+
+    fn switch_to_home_default(&mut self) {
+        let (default_view, _) = self.home_views();
+        self.view_mode = default_view;
+        self.detail_open = false;
+        self.detail_popup_open = false;
+        if matches!(self.view_mode, ViewMode::Watchlist) {
+            self.load_watchlist();
+            self.request_watchlist_data();
+        }
+    }
+
+    fn toggle_home_subtab(&mut self) {
+        let (default_view, secondary_view) = self.home_views();
+        self.view_mode = if self.view_mode == default_view {
+            secondary_view
+        } else {
+            default_view
+        };
+        self.detail_open = false;
+        self.detail_popup_open = false;
+        if matches!(self.view_mode, ViewMode::Watchlist) {
+            self.load_watchlist();
+            self.request_watchlist_data();
+        }
+    }
+
     /// Returns a context-aware breadcrumb string for the status bar.
     /// Shows the navigation path based on current view, selection, and chart state.
     /// Examples: "Positions › AAPL › 3M Chart › AAPL/SPX", "Positions › AAPL › Detail"
@@ -1885,7 +1919,7 @@ impl App {
         match key.code {
             // View switching
             KeyCode::Char('1') => {
-                self.view_mode = ViewMode::Positions;
+                self.switch_to_home_default();
             }
             KeyCode::Char('2') => {
                 // Transactions view not available in percentage mode
@@ -1973,6 +2007,13 @@ impl App {
                 }
             }
 
+            // Home sub-tabs (default + secondary)
+            KeyCode::Tab | KeyCode::Left | KeyCode::Right
+                if matches!(self.view_mode, ViewMode::Positions | ViewMode::Watchlist) =>
+            {
+                self.toggle_home_subtab();
+            }
+
             // Open URL in browser from News view
             KeyCode::Enter if matches!(self.view_mode, ViewMode::News) => {
                 if self.news_selected_index < self.news_entries.len() {
@@ -2017,7 +2058,7 @@ impl App {
             }
 
             // Timeframe cycling with h/l — or crosshair movement when active
-            KeyCode::Char('h') | KeyCode::Left if matches!(self.view_mode, ViewMode::Positions) => {
+            KeyCode::Char('h') if matches!(self.view_mode, ViewMode::Positions) => {
                 if self.crosshair_mode {
                     self.crosshair_x = self.crosshair_x.saturating_sub(1);
                 } else {
@@ -2025,7 +2066,7 @@ impl App {
                     self.refetch_chart_history();
                 }
             }
-            KeyCode::Char('l') | KeyCode::Right if matches!(self.view_mode, ViewMode::Positions) => {
+            KeyCode::Char('l') if matches!(self.view_mode, ViewMode::Positions) => {
                 if self.crosshair_mode {
                     self.crosshair_x = self.crosshair_x.saturating_add(1);
                     // clamped during render
@@ -2332,7 +2373,7 @@ impl App {
 
         // [1]Pos — always starts around col 8
         if (8..14).contains(&col) {
-            self.view_mode = ViewMode::Positions;
+            self.switch_to_home_default();
             return;
         }
 

@@ -404,7 +404,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = &app.theme;
     let compact = app.terminal_width < COMPACT_WIDTH;
 
-    let pos_style = if matches!(app.view_mode, ViewMode::Positions) {
+    let home_sub_label = if matches!(app.view_mode, ViewMode::Watchlist) { "W" } else { "P" };
+    let pos_style = if matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist) {
         Style::default().fg(t.text_primary).bold().underlined()
     } else {
         Style::default().fg(t.text_muted)
@@ -415,7 +416,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled("tui", Style::default().fg(t.text_primary).bold()),
         Span::raw("  "),
         Span::styled("[1]", Style::default().fg(t.key_hint)),
-        Span::styled("Pos", pos_style),
+        Span::styled(
+            if compact {
+                format!("H:{home_sub_label}")
+            } else {
+                format!("Home({home_sub_label})")
+            },
+            pos_style,
+        ),
     ];
 
     if !pct_mode {

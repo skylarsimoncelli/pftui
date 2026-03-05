@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:26 UTC — F15.2: Dual homepage sub-tabs on tab `[1]`
+
+- What: Added home sub-tab behavior so the default home view and secondary view (Positions/Watchlist) can be swapped in-place from tab `[1]`.
+- Controls: `Tab`, `←`, and `→` now toggle between home sub-views when on Positions/Watchlist. Pressing `1` jumps to the configured default home view.
+- Header: `[1]` now shows active home sub-tab indicator (`Home(P)` or `Home(W)`).
+- Help: Updated keybinding help text for home sub-tab switching.
+- Files: `src/app.rs`, `src/tui/widgets/header.rs`, `src/tui/views/help.rs`, `TODO.md`
+- Tests: Could not run in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F15.2 (P1) — COMPLETED.
+
 ### 2026-03-05 21:24 UTC — F15.1: First-run homepage prompt
 
 - What: Added first-run prompt for homepage preference when `config.toml` does not yet exist: `Default homepage: [P]ortfolio or [W]atchlist?`
