@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 10:15 UTC — F22.1: COMEX warehouse inventory data module
+
+- What: scrapes daily COMEX gold/silver registered/eligible inventory from CME Group XLS files (Gold_Stocks.xls, Silver_stocks.xls). Uses calamine to parse, sums TOTAL rows across all depository sheets. SQLite cache with (symbol, date) primary key. Helpers: coverage_days (registered / daily volume), trend_vs (drawing down / building / stable). Upsert/get/history/fresh_data cache functions.
+- Why: F22.1 from TODO.md (P0 — Free Data Integration). Physical supply data foundation for metals intelligence. Tight registered inventory (low coverage ratio) signals supply stress. Foundation for F22.2 (metals detail popup supply section) and F22.3 (supply CLI).
+- Files: src/data/comex.rs (new, 7.6KB), src/db/comex_cache.rs (new, 7.7KB), src/db/schema.rs (comex_cache table + indexes), Cargo.toml (calamine 0.33 dep)
+- Tests: 6 new unit tests (coverage_days, trend_vs, upsert/get_latest, get_previous, history, has_fresh_data). Total: 1045 passing, clippy clean.
+- TODO: F22.1 COMEX data module (P0) — COMPLETED. Next: F22.2 (supply data in metals detail popup)
+
 ### 2026-03-05 09:40 UTC — F21.3: `pftui etf-flows` CLI command
 
 - What: Added CLI command for querying BTC ETF flow data. Supports `pftui etf-flows` (default: today), `--days N` (last N days), `--fund FUND` (filter to specific fund like IBIT/FBTC/GBTC), `--json` (structured output for agents). Human-readable output shows daily totals and fund-level detail tables. JSON output provides date_range, total_flows array (date + BTC/USD totals), fund_flows array (fund + date + BTC/USD values).
