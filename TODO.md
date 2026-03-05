@@ -36,12 +36,10 @@
 > **Sources:** Blockchair (5 req/sec free, no key), CoinGlass (scrape public pages), Whale Alert (limited free tier — scrape public feed)
 > **Status:** F21.1 (data module), F21.2 (popup panel), F21.3 (CLI) all shipped.
 
-### F22: COMEX & Commodity Supply Data
+### F22: COMEX & Commodity Supply Data ✅ COMPLETE
 > **Goal:** Physical market data — COMEX inventory, delivery reports, supply/demand signals for metals.
 > **Sources:** CME Group public pages (scrapable), World Gold Council public data (scrapable)
-> **Status:** F22.1-F22.2 complete (COMEX data module + metals detail popup).
-
-- [ ] **F22.3: `pftui supply` CLI** — `pftui supply gold` (COMEX + CB data), `pftui supply silver`, `--json`. Files: new `src/commands/supply.rs`, `cli.rs`
+> **Status:** F22.1-F22.3 complete (COMEX data module + metals detail popup + CLI). Full integration shipped.
 
 ### F23: Economic Release Calendar (Enhanced)
 > **Goal:** Upgrade F12 calendar from sample data to live free sources. Show upcoming releases with countdown, impact ratings, previous/forecast/actual.

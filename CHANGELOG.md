@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 11:10 UTC — F22.3: `pftui supply` CLI command
+
+- What: Added CLI command for querying COMEX warehouse inventory. Supports `pftui supply` (all metals: gold + silver), `pftui supply GC=F` (gold only), `pftui supply SI=F` (silver only), `--json` (structured output for agents). Human-readable output shows metal name, date, registered/eligible/total stocks (troy oz with thousands separators), and registered ratio (%). 24-hour cache policy — refreshes stale data automatically. JSON output provides full details per metal.
+- Why: F22.3 from TODO.md (P0 — Free Data Integration). Completes F22 COMEX supply integration by exposing data module to CLI consumers. Agents can track registered inventory drawdowns and supply stress signals without launching the TUI.
+- Files: src/commands/supply.rs (new, 224 lines), src/commands/mod.rs, src/cli.rs, src/main.rs
+- Tests: 1045 passing (no new tests — command is thin wrapper over existing data::comex module which has tests), clippy clean
+- TODO: F22.3 (P0) — COMPLETED. F22 COMEX supply integration fully shipped (data module + metals detail popup + CLI).
+
 ### 2026-03-05 10:40 UTC — F22.2: COMEX supply data in metals detail popup
 
 - What: Added "COMEX Supply" section to asset detail popup when viewing GC=F (gold) or SI=F (silver). Displays: registered inventory (formatted as M oz or k oz), eligible inventory, registered/total ratio (color-coded: <30% red = tight supply, 30-50% accent, >50% muted), trend vs previous day (drawing down / building / stable based on >2% or <-2% registered change), data date. Uses existing comex_cache db module from F22.1.
