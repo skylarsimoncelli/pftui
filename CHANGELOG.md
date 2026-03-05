@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 08:10 UTC — F21.1: BTC on-chain data infrastructure (partial)
+
+- What: added SQLite table `onchain_cache` (metric, date, value, metadata) with full CRUD module in `src/db/onchain_cache.rs`. Created `src/data/onchain.rs` with Blockchair API client structure for BTC network metrics and exchange flows. Includes 3 unit tests: upsert_and_get_metric, get_metrics_by_type, prune_old_metrics. Also fixed 2 clippy warnings in yahoo.rs (unnecessary i64 casts removed).
+- Why: F21.1 from TODO.md (P0 — Free Data Integration). BTC on-chain intelligence (exchange flows, whale transactions, ETF flows) is a differentiating feature — no other portfolio TUI shows this. This lays the data layer foundation. Note: Blockchair's free tier doesn't provide direct exchange flow endpoints — needs additional API research or alternative free sources (potentially Glassnode's free tier or on-chain explorers). Core caching infrastructure is ready for when we identify the right data source.
+- Files: `src/data/{onchain,mod}.rs`, `src/db/{onchain_cache,schema,mod}.rs`, `src/price/yahoo.rs`
+- Tests: 1036 passing (+3 new tests for onchain_cache), clippy clean with --all-targets -- -D warnings
+- TODO: F21.1 needs completion (find free exchange flow data source), then F21.2 (BTC intelligence panel), F21.3 (CLI)
+
 ### 2026-03-05 07:40 UTC — Upgrade yahoo_finance_api to v4 (attempted FX fix)
 
 - What: upgraded yahoo_finance_api dependency from v2.4.0 to v4.1.0. Attempted to fix USD/JPY and USD/CNY displaying 1.0000 in macro dashboard. Upgrade successful, tests pass, but Yahoo Finance still returns 1.00 for JPY=X and CNY=X symbols.
