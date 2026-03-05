@@ -2,9 +2,16 @@ use axum::{
     middleware,
     routing::{get, post},
     Router,
+    response::sse::{Event, KeepAlive, Sse},
 };
+use chrono::Utc;
+use serde::Serialize;
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
+use tokio_stream::wrappers::IntervalStream;
+use tokio_stream::StreamExt;
 use tower_http::cors::{Any, CorsLayer};
 
 use super::api::{
@@ -45,6 +52,7 @@ pub async fn run_server(
         .route("/performance", get(get_performance))
         .route("/summary", get(get_summary))
         .route("/ui-config", get(get_ui_config))
+        .route("/stream", get(get_stream))
         .route("/home-tab", get(get_home_tab))
         .route("/home-tab", post(set_home_tab))
         .route("/theme", post(set_theme))
@@ -83,4 +91,37 @@ pub async fn run_server(
 
 async fn serve_index() -> axum::response::Html<String> {
     axum::response::Html(include_str!("static/index.html").to_string())
+}
+
+#[derive(Serialize)]
+struct StreamPayload {
+    ts: String,
+    message: String,
+}
+
+async fn get_stream() -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
+    let ticker = tokio::time::interval(StdDuration::from_secs(5));
+    let stream = IntervalStream::new(ticker).enumerate().map(|(i, _)| {
+        let (event_name, message) = if i % 6 == 0 {
+            ("panel_invalidate", "refresh_visible_panels")
+        } else if i % 3 == 0 {
+            ("quote_update", "quote_snapshot_updated")
+        } else if i % 2 == 0 {
+            ("health", "stream_ok")
+        } else {
+            ("heartbeat", "alive")
+        };
+        let payload = StreamPayload {
+            ts: Utc::now().to_rfc3339(),
+            message: message.to_string(),
+        };
+        let data = serde_json::to_string(&payload)
+            .unwrap_or_else(|_| "{\"ts\":\"\",\"message\":\"serialization_error\"}".to_string());
+        Ok(Event::default().event(event_name).data(data))
+    });
+    Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(StdDuration::from_secs(10))
+            .text("keepalive"),
+    )
 }

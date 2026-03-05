@@ -51,7 +51,7 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 ## Data Refresh Model
 - [x] 32. Data freshness and refresh model.
 - [x] 33. Match TUI refresh cadence and stale-data indicators.
-- [ ] 34. Add optional SSE/WebSocket push updates for quote/market changes.
+- [x] 34. Add optional SSE/WebSocket push updates for quote/market changes.
 - [x] 35. Keep fallback polling.
 - [x] 36. Surface last refresh timestamp and source health in UI.
 
@@ -80,3 +80,4 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - 2026-03-05: Phase A baseline fix landed for new `Config.home_tab` field by updating explicit `Config { ... }` initializers in tests (`src/app.rs`, `src/commands/export.rs`).
 - 2026-03-05: Phase B landed session auth (`/auth/login`, `/auth/logout`, `/auth/session`, `/auth/csrf`), middleware CSRF enforcement for mutating `/api/*`, and unauthenticated/expired-session UI flow in web frontend.
 - 2026-03-05: Phase C landed overlay stack + keyboard parity for search/alerts/asset details (single active overlay, Esc-close priority, focus return), plus alert badges in header/tab.
+- 2026-03-05: Phase D landed `/api/stream` SSE events (`quote_update`, `panel_invalidate`, `health`, `heartbeat`) with frontend reconnect/backoff and automatic polling fallback status.

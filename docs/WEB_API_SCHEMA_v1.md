@@ -104,7 +104,7 @@ Response also includes:
 - `meta.stale_after_sec`
 - `meta.source_status`
 - `meta.auth_required`
-- `meta.transport` (`polling` in `v1.1`; `sse` planned)
+- `meta.transport` (`polling` default; frontend shows `Live (SSE)` when stream connected)
 
 ### `GET /transactions?sort_by=&sort_order=&symbol=&tx_type=&from=&to=&limit=`
 Transaction history (full mode only).
@@ -121,6 +121,20 @@ Response includes:
 - `sort_by`
 - `sort_order`
 - `meta.*`
+
+### `GET /stream`
+Server-Sent Events stream for live updates.
+
+Event types:
+- `quote_update`
+- `panel_invalidate`
+- `health`
+- `heartbeat`
+
+Example payload:
+```json
+{ "ts": "2026-03-05T20:10:00Z", "message": "alive" }
+```
 
 ### `GET /macro`
 Macro/market indicator cards.

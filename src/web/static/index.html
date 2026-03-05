@@ -680,6 +680,14 @@
                 searchIndex: 0,
                 detail: null,
             },
+            stream: {
+                source: null,
+                reconnectTimer: null,
+                reconnectAttempt: 0,
+                connected: false,
+                mode: 'Polling',
+                repaintTimer: null,
+            },
         };
 
         function restoreUiState() {
@@ -727,7 +735,8 @@
             const staleSec = Number(meta.stale_after_sec || 60);
             const ageSec = Math.max(0, Math.floor((Date.now() - t.getTime()) / 1000));
             const stale = ageSec > staleSec;
-            el.textContent = `Last refresh: ${t.toLocaleTimeString()} · ${stale ? 'Stale' : 'Live'} · source: ${meta.source_status || 'ok'}`;
+            const transport = state.stream?.mode || (meta.transport === 'sse' ? 'Live (SSE)' : 'Polling');
+            el.textContent = `Last refresh: ${t.toLocaleTimeString()} · ${stale ? 'Stale' : 'Live'} · source: ${meta.source_status || 'ok'} · ${transport}`;
             el.className = `freshness ${stale ? 'negative' : 'subtle'}`;
         }
 
@@ -765,6 +774,8 @@
 
         function handleUnauthorized(expired = false) {
             state.auth.csrfToken = null;
+            clearStreamReconnectTimer();
+            disconnectStream();
             state.auth.status = expired ? 'expired' : 'unauthenticated';
             showAuthOverlay(expired ? 'Your session expired. Log in again.' : 'Authentication required.');
         }
@@ -791,6 +802,82 @@
             if (state.overlay.previousFocus && typeof state.overlay.previousFocus.focus === 'function') {
                 state.overlay.previousFocus.focus();
             }
+        }
+
+        function clearStreamReconnectTimer() {
+            if (state.stream.reconnectTimer) {
+                clearTimeout(state.stream.reconnectTimer);
+                state.stream.reconnectTimer = null;
+            }
+        }
+
+        function disconnectStream() {
+            if (state.stream.source) {
+                state.stream.source.close();
+                state.stream.source = null;
+            }
+            state.stream.connected = false;
+            state.stream.mode = 'Polling';
+        }
+
+        async function refreshVisiblePanels() {
+            if (state.stream.repaintTimer) return;
+            state.stream.repaintTimer = setTimeout(async () => {
+                state.stream.repaintTimer = null;
+                try {
+                    const tab = state.activeTab;
+                    await loadSummary();
+                    await loadPortfolio();
+                    if (tab === 'Watchlist') await loadWatchlist();
+                    if (tab === 'Markets' || tab === 'Economy') await loadMacro();
+                    if (tab === 'Alerts') await loadAlerts();
+                } catch (_) {}
+            }, 250);
+        }
+
+        function scheduleStreamReconnect() {
+            clearStreamReconnectTimer();
+            const backoffMs = Math.min(30000, 1000 * Math.pow(2, state.stream.reconnectAttempt));
+            state.stream.reconnectAttempt += 1;
+            state.stream.reconnectTimer = setTimeout(connectStream, backoffMs);
+        }
+
+        function connectStream() {
+            if (state.auth.status !== 'authenticated') return;
+            disconnectStream();
+            let source;
+            try {
+                source = new EventSource('/api/stream');
+            } catch (_) {
+                state.stream.mode = 'Polling';
+                scheduleStreamReconnect();
+                return;
+            }
+            state.stream.source = source;
+            state.stream.mode = 'Polling';
+            source.addEventListener('heartbeat', () => {
+                state.stream.connected = true;
+                state.stream.mode = 'Live (SSE)';
+                state.stream.reconnectAttempt = 0;
+            });
+            source.addEventListener('health', () => {
+                state.stream.connected = true;
+                state.stream.mode = 'Live (SSE)';
+            });
+            source.addEventListener('quote_update', () => {
+                state.stream.connected = true;
+                state.stream.mode = 'Live (SSE)';
+                refreshVisiblePanels();
+            });
+            source.addEventListener('panel_invalidate', () => {
+                state.stream.connected = true;
+                state.stream.mode = 'Live (SSE)';
+                refreshVisiblePanels();
+            });
+            source.onerror = () => {
+                disconnectStream();
+                scheduleStreamReconnect();
+            };
         }
 
         async function apiFetch(path) {
@@ -1764,6 +1851,7 @@
             try {
                 await refreshAll();
                 startAutoRefresh();
+                connectStream();
             } catch (e) {
                 console.error('Refresh failed after auth', e);
             }
