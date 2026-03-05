@@ -410,6 +410,29 @@ pub enum Command {
         json: bool,
     },
 
+    /// One-time migration from legacy JOURNAL.md into SQLite journal table
+    MigrateJournal {
+        /// Path to source markdown journal file
+        #[arg(long, default_value = "JOURNAL.md")]
+        path: String,
+
+        /// Parse and report but do not write to database
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Default tag for entries without explicit tag metadata
+        #[arg(long)]
+        default_tag: Option<String>,
+
+        /// Default status for entries without explicit status metadata
+        #[arg(long, default_value = "open")]
+        default_status: String,
+
+        /// Output summary as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Start the web dashboard server
     Web {
         /// Port to bind to (default: 8080)

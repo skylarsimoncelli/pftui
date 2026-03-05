@@ -106,7 +106,7 @@ The homepage a finance enthusiast opens every morning:
 > **Spec:** `docs/ANALYTICS-SPEC.md#f8`
 > **Rationale:** Agents currently read/write a 1000+ line JOURNAL.md with fragile `head`/`tail`/`sed` commands. Evening Planner has consecutive edit failures on large markdown files — same class of problem. SQLite-backed journal eliminates the biggest reliability risk in the agent system. Also enables structured querying (by tag, symbol, date range, conviction) that markdown can never provide.
 
-- [ ] **F8.3: JOURNAL.md migration script** — One-time parser that seeds SQLite from existing JOURNAL.md entries with correct timestamps, tags, statuses. Files: new `src/commands/migrate_journal.rs` or standalone script
+- [x] **F8.3: JOURNAL.md migration script** — One-time parser that seeds SQLite from existing JOURNAL.md entries with correct timestamps, tags, statuses. Files: `src/commands/migrate_journal.rs`, `src/cli.rs`, `src/main.rs`
 
 ### F4: Portfolio Risk & Scenario Engine (PROMOTED from P2)
 > **Goal:** Portfolio-level risk metrics + multi-asset "what-if" scenario modeling with cascading impacts.

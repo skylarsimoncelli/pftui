@@ -13,6 +13,7 @@ pub mod rebalance;
 pub mod history;
 pub mod import;
 pub mod journal;
+pub mod migrate_journal;
 pub mod macro_cmd;
 pub mod movers;
 pub mod news;

@@ -327,6 +327,20 @@ fn main() -> Result<()> {
                 action
             )),
         },
+        Some(Command::MigrateJournal {
+            path,
+            dry_run,
+            default_tag,
+            default_status,
+            json,
+        }) => commands::migrate_journal::run(
+            &conn,
+            &path,
+            dry_run,
+            default_tag.as_deref(),
+            &default_status,
+            json,
+        ),
 
         Some(Command::Web { port, bind, no_auth }) => {
             // Web server runs in async context

@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 15:15 UTC — F8.3: `pftui migrate-journal` one-time JOURNAL.md migration
+
+- What: Added new CLI command `pftui migrate-journal` to seed SQLite journal entries from legacy markdown logs (`JOURNAL.md` by default). Parser supports heading dates, list-item extraction, inline metadata (`[tag:...]`, `[symbol:...]`, `[status:...]`, `[conviction:...]`, `[date:...]`), symbol inference (`$TICKER` and ratio-like symbols), configurable defaults, JSON output, and `--dry-run`.
+- Reliability: Migration is idempotent by deduping on `(timestamp, content)` before insert, so repeated runs skip already imported entries.
+- Why: F8.3 from TODO.md (P1 — Journal & Decision Log). Completes migration bridge from markdown-based decision logs to structured SQLite journal storage.
+- Files: `src/commands/migrate_journal.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: Added parser/migration tests in `migrate_journal.rs` and ran command-focused test suites successfully.
+- TODO: F8.3 (P1) — COMPLETED.
+
 ### 2026-03-05 18:05 UTC — Web parity Phase A baseline fix (`Config.home_tab`)
 
 - What: Resolved compile break from newly added `Config.home_tab` by updating explicit `Config { ... }` initializers in test helpers to include `home_tab: "positions".to_string()`.
