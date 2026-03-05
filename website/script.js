@@ -9,7 +9,6 @@ function copyCode(button) {
     const text = codeBlock.textContent;
     copyToClipboard(text);
     
-    // Visual feedback
     const originalText = button.textContent;
     button.textContent = 'Copied!';
     button.style.background = 'var(--accent-green)';
@@ -26,65 +25,187 @@ function copyToClipboard(text) {
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text);
     } else {
-        // Fallback for older browsers
         const textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
         textArea.style.left = '-999999px';
         document.body.appendChild(textArea);
         textArea.select();
-        try {
-            document.execCommand('copy');
-        } catch (err) {
-            console.error('Copy failed:', err);
-        }
+        try { document.execCommand('copy'); } catch (e) {}
         document.body.removeChild(textArea);
     }
 }
 
-// ===== TERMINAL TYPING ANIMATION =====
-const terminalOutput = [
-    '$ pftui',
-    '',
-    'pftui v0.3.0',
-    '',
-    '┌─ Portfolio Overview ─────────────────────┐',
-    '│ $367.8k  +1.2%                          │',
-    '│                                         │',
-    '│ Cash      49%  ████████████░░░░░░░░░   │',
-    '│ Comd      31%  ███████░░░░░░░░░░░░░░   │',
-    '│ Crypto    20%  ████░░░░░░░░░░░░░░░░░   │',
-    '└─────────────────────────────────────────┘',
-    '',
-    '📊 Live prices  📈 Charts  🌍 Macro data',
+// ===== TERMINAL DEMO =====
+// Multi-scene terminal that cycles through pftui features
+
+const scenes = [
+    {
+        lines: [
+            { text: '$ pftui', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 300 },
+            { text: '┌─ Portfolio ──────────────────────────────┐', type: 'output', delay: 30 },
+            { text: '│  Total Value    $48,217    ▲ +2.4%       │', type: 'output', delay: 30 },
+            { text: '│  Day P&L        +$1,132                  │', type: 'output', delay: 30 },
+            { text: '│                                          │', type: 'output', delay: 30 },
+            { text: '│  Equity   45%  ██████████░░░░░░░░░░░░   │', type: 'output', delay: 30 },
+            { text: '│  Crypto   30%  ██████░░░░░░░░░░░░░░░░   │', type: 'output', delay: 30 },
+            { text: '│  Comd     25%  █████░░░░░░░░░░░░░░░░░   │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui macro', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ Market Intelligence ────────────────────┐', type: 'output', delay: 30 },
+            { text: '│  S&P 500   5,842   ▲ +0.8%    RSI 58    │', type: 'output', delay: 30 },
+            { text: '│  VIX         14.2   ▼ -10.3%             │', type: 'output', delay: 30 },
+            { text: '│  DXY         98.8   ▼ -0.1%    RSI 42    │', type: 'output', delay: 30 },
+            { text: '│  Gold      2,847   ▲ +1.2%    RSI 67    │', type: 'output', delay: 30 },
+            { text: '│  10Y Yield  4.21%  ▼ -3bps               │', type: 'output', delay: 30 },
+            { text: '│  Oil WTI    71.40   ▲ +0.6%              │', type: 'output', delay: 30 },
+            { text: '│  BTC       97,420   ▲ +3.1%    RSI 61    │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui brief --agent', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '{', type: 'json', delay: 20 },
+            { text: '  "portfolio_value": 48217.43,', type: 'json', delay: 20 },
+            { text: '  "daily_pnl": 1132.18,', type: 'json', delay: 20 },
+            { text: '  "daily_pnl_pct": 2.4,', type: 'json', delay: 20 },
+            { text: '  "top_movers": [', type: 'json', delay: 20 },
+            { text: '    {"symbol": "BTC", "change": 3.1},', type: 'json', delay: 20 },
+            { text: '    {"symbol": "GOLD", "change": 1.2}', type: 'json', delay: 20 },
+            { text: '  ],', type: 'json', delay: 20 },
+            { text: '  "alerts_triggered": 0', type: 'json', delay: 20 },
+            { text: '}', type: 'json', delay: 20 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui predictions', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ Prediction Markets ─────────────────────┐', type: 'output', delay: 30 },
+            { text: '│  Fed rate cut by June?        67%   ▲+4  │', type: 'output', delay: 30 },
+            { text: '│  BTC above $100k by Q2?       52%   ▼-3  │', type: 'output', delay: 30 },
+            { text: '│  US recession in 2026?        23%   ▲+2  │', type: 'output', delay: 30 },
+            { text: '│  Gold above $3,000?           78%   ▲+6  │', type: 'output', delay: 30 },
+            { text: '│  Trump tariffs expanded?      61%   →0   │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
 ];
 
-let lineIndex = 0;
-let charIndex = 0;
+let currentScene = 0;
+let terminal = null;
+let cursor = null;
+let isAnimating = false;
 
-function typeTerminal() {
-    const terminal = document.getElementById('terminal');
+function clearTerminal() {
+    const lines = terminal.querySelectorAll('.terminal-line');
+    lines.forEach(l => l.remove());
+}
+
+function createLine(text, type) {
+    const line = document.createElement('div');
+    line.className = 'terminal-line';
     
-    if (lineIndex < terminalOutput.length) {
-        const currentLine = terminalOutput[lineIndex];
+    if (type === 'command') {
+        line.style.color = 'var(--accent-cyan)';
+        line.style.fontWeight = '600';
+    } else if (type === 'json') {
+        line.style.color = 'var(--accent-yellow)';
+        line.style.fontSize = '0.85em';
+    }
+    
+    // Color code specific characters
+    if (type === 'output' || type === 'json') {
+        line.innerHTML = colorize(text);
+    }
+    
+    return line;
+}
+
+function colorize(text) {
+    return text
+        .replace(/▲ \+[\d.]+%?/g, '<span style="color:var(--accent-green)">$&</span>')
+        .replace(/▲\+\d+/g, '<span style="color:var(--accent-green)">$&</span>')
+        .replace(/▼ -[\d.]+%?/g, '<span style="color:var(--accent-red)">$&</span>')
+        .replace(/▼-\d+/g, '<span style="color:var(--accent-red)">$&</span>')
+        .replace(/→0/g, '<span style="color:var(--text-tertiary)">$&</span>')
+        .replace(/(RSI \d+)/g, '<span style="color:var(--accent-blue)">$1</span>')
+        .replace(/(█+)/g, '<span style="color:var(--accent-green)">$1</span>')
+        .replace(/(░+)/g, '<span style="color:var(--bg-tertiary)">$1</span>')
+        .replace(/(\d+%)\s/g, '<span style="color:var(--accent-cyan)">$1</span> ')
+        .replace(/([\d,]+\.\d+|\$[\d,]+)/g, '<span style="color:var(--text-primary);font-weight:500">$1</span>');
+}
+
+async function typeText(element, text, delay) {
+    for (let i = 0; i <= text.length; i++) {
+        element.textContent = text.slice(0, i);
+        await sleep(delay);
+    }
+}
+
+async function playScene(scene) {
+    clearTerminal();
+    cursor.style.display = 'inline-block';
+    
+    for (const line of scene.lines) {
+        const el = createLine('', line.type);
+        terminal.insertBefore(el, cursor);
         
-        if (charIndex <= currentLine.length) {
-            const lineElement = terminal.children[lineIndex];
-            if (!lineElement) {
-                const newLine = document.createElement('div');
-                newLine.className = 'terminal-line';
-                terminal.insertBefore(newLine, terminal.querySelector('.terminal-cursor'));
-            }
-            
-            terminal.children[lineIndex].textContent = currentLine.slice(0, charIndex);
-            charIndex++;
-            setTimeout(typeTerminal, 20);
+        if (line.type === 'command') {
+            // Type out commands character by character
+            await typeText(el, line.text, line.delay);
+            await sleep(400);
+            cursor.style.display = 'none';
+            await sleep(200);
         } else {
-            lineIndex++;
-            charIndex = 0;
-            setTimeout(typeTerminal, 100);
+            // Output lines appear instantly (like real terminal output)
+            if (line.type === 'json') {
+                el.innerHTML = line.text;
+                el.style.color = 'var(--accent-yellow)';
+            } else {
+                el.innerHTML = colorize(line.text);
+            }
+            await sleep(line.delay);
         }
     }
+    
+    // Show cursor blinking after scene completes
+    cursor.style.display = 'inline-block';
+    
+    // Hold the scene
+    await sleep(scene.hold);
+}
+
+async function runTerminalLoop() {
+    if (isAnimating) return;
+    isAnimating = true;
+    
+    while (true) {
+        await playScene(scenes[currentScene]);
+        
+        // Fade transition
+        terminal.style.opacity = '0.3';
+        await sleep(300);
+        terminal.style.opacity = '1';
+        
+        currentScene = (currentScene + 1) % scenes.length;
+    }
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ===== INTERSECTION OBSERVER FOR ANIMATIONS =====
@@ -107,39 +228,24 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         e.preventDefault();
         const target = document.querySelector(this.getAttribute('href'));
         if (target) {
-            target.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     });
 });
 
-// ===== INIT ON LOAD =====
+// ===== INIT =====
 window.addEventListener('DOMContentLoaded', () => {
-    // Start terminal animation
-    setTimeout(typeTerminal, 500);
+    terminal = document.getElementById('terminal');
+    cursor = terminal.querySelector('.terminal-cursor');
+    
+    // Add transition for fade effect
+    terminal.style.transition = 'opacity 0.3s ease';
+    
+    // Start terminal demo after a brief pause
+    setTimeout(runTerminalLoop, 800);
     
     // Observe fade-in elements
-    document.querySelectorAll('.fade-in').forEach(el => {
-        observer.observe(el);
-    });
-    
-    // Observe feature cards
-    document.querySelectorAll('.feature-card').forEach(el => {
+    document.querySelectorAll('.fade-in, .feature-card').forEach(el => {
         observer.observe(el);
     });
 });
-
-// ===== PERFORMANCE: Lazy load images =====
-if ('loading' in HTMLImageElement.prototype) {
-    const images = document.querySelectorAll('img[loading="lazy"]');
-    images.forEach(img => {
-        img.src = img.dataset.src || img.src;
-    });
-} else {
-    // Fallback for browsers that don't support lazy loading
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/lazysizes/5.3.2/lazysizes.min.js';
-    document.body.appendChild(script);
-}
