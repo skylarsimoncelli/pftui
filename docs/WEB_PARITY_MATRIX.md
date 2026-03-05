@@ -49,8 +49,8 @@ Source of truth: TUI behavior and domain contracts (`src/app.rs`, `src/tui/views
 | DATA-01 | Refresh runtime | TUI refresh + cached population | Web now runs background refresh and RSS loops | implemented | P0 | 2 | `pftui web` self-populates core caches |
 | DATA-02 | Freshness indicators | Live/stale/source status | Present | implemented | P2 | 2 | Metadata reflects actual pipeline status |
 | AUTH-01 | Session/CSRF | secure session auth | Present | implemented | P1 | done | No regression |
-| TEST-01 | Contract tests | endpoint contract coverage | Partial | partial | P1 | 11 | New mutating endpoints + contract guards covered |
-| TEST-02 | E2E parity flows | key workflows tested | Partial | partial | P1 | 11 | CRUD/search/nav critical paths covered in Playwright |
+| TEST-01 | Contract tests | endpoint contract coverage | Added direct API contract tests for watchlist/alerts/journal/transactions mutation handlers including lifecycle actions and validation errors | implemented | P1 | 11 | New mutating endpoints + contract guards covered |
+| TEST-02 | E2E parity flows | key workflows tested | Added battlestation parity flow test spanning search, watchlist, alerts, journal, transactions, news, and keyboard navigation | implemented | P1 | 11 | CRUD/search/nav critical paths covered in Playwright |
 
 ## Cross-Session Update Rule
 Any session changing behavior must update:

@@ -158,4 +158,47 @@ test.describe("web integration flows", () => {
     await page.getByRole("button", { name: "Delete" }).first().click();
     await expect(page.locator("#transactions-table tbody tr")).toHaveCount(before - 1);
   });
+
+  test("battlestation parity flow across CRUD, search, and navigation", async ({ page }) => {
+    await page.keyboard.press("/");
+    await page.locator("#global-search-input").fill("MSFT");
+    await expect(page.locator("#global-search-results .search-row").first()).toContainText("MSFT");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#asset-detail-drawer")).toHaveClass(/active/);
+    await page.getByRole("button", { name: "Star Watchlist" }).click();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#asset-detail-drawer")).not.toHaveClass(/active/);
+    await page.locator("body").click();
+
+    await page.locator("#tabs").getByRole("button", { name: "Watchlist" }).click();
+    await expect(page.locator("#view-watchlist")).toHaveClass(/active/);
+    await expect(page.locator("#watchlist-full")).toContainText("MSFT");
+
+    await page.locator("#tabs").getByRole("button", { name: /Alerts/ }).click();
+    await page.locator("#alert-rule-input").fill("MSFT below 390");
+    await page.getByRole("button", { name: "Create Alert" }).click();
+    await expect(page.locator("#alerts-list")).toContainText("MSFT below 390");
+
+    await page.locator("#tabs").getByRole("button", { name: "Journal" }).click();
+    await page.locator("#journal-create-input").fill("MSFT setup looks constructive");
+    await page.getByRole("button", { name: "Add Entry" }).click();
+    await expect(page.locator("#journal-list")).toContainText("MSFT setup looks constructive");
+
+    await page.locator("#tabs").getByRole("button", { name: "Transactions" }).click();
+    await page.keyboard.press("Escape");
+    await page.locator("#tx-form-symbol").fill("MSFT");
+    await page.locator("#tx-form-category").selectOption("equity");
+    await page.locator("#tx-form-type").selectOption("buy");
+    await page.locator("#tx-form-qty").fill("2");
+    await page.locator("#tx-form-price").fill("398");
+    await page.locator("#tx-form-date").fill("2026-03-06");
+    await page.getByRole("button", { name: "Add" }).click();
+    await expect(page.locator("#transactions-table")).toContainText("MSFT");
+
+    await page.locator("#tabs").getByRole("button", { name: "News" }).click();
+    await expect(page.locator("#view-news")).toHaveClass(/active/);
+    await page.locator("#news-category-filter").selectOption("macro");
+    await expect(page.locator("#news-list")).toContainText("Fed officials signal caution on early cuts");
+  });
 });

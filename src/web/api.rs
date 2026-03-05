@@ -2154,9 +2154,245 @@ pub async fn get_ui_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_limit, history_change_pct, normalized_symbol, range_from_history, volume_stats};
+    use std::future::Future;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use axum::extract::Path;
+    use axum::extract::State;
+    use axum::http::StatusCode;
+    use axum::Json;
     use crate::models::price::HistoryRecord;
+    use super::{
+        bounded_limit, delete_alert, delete_journal, delete_transaction, delete_watchlist,
+        history_change_pct, normalized_symbol, patch_journal, patch_transaction, post_alert,
+        post_alert_ack, post_alert_rearm, post_journal, post_transaction, post_watchlist,
+        range_from_history, volume_stats, AlertCreateRequest, AlertMutationResponse, AppState,
+        JournalCreateRequest, JournalMutationResponse, JournalUpdateRequest, TransactionMutationRequest,
+        TransactionMutationResponse, WatchlistMutationRequest, WatchlistMutationResponse,
+    };
     use rust_decimal_macros::dec;
+
+    struct TestCtx {
+        _tmp_dir: PathBuf,
+        state: Arc<AppState>,
+    }
+
+    static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn setup_test_ctx() -> TestCtx {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let ctr = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "pftui-web-api-tests-{}-{}-{}",
+            std::process::id(),
+            nonce,
+            ctr
+        ));
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let db_path = tmp_dir.join("test.db");
+        let _ = crate::db::open_db(&db_path).unwrap();
+        TestCtx {
+            _tmp_dir: tmp_dir,
+            state: Arc::new(AppState {
+                db_path: db_path.to_string_lossy().to_string(),
+                config: crate::config::Config::default(),
+            }),
+        }
+    }
+
+    fn run_async<F: Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    #[test]
+    fn watchlist_mutation_contract() {
+        run_async(async {
+            let ctx = setup_test_ctx();
+            let created: Json<WatchlistMutationResponse> = post_watchlist(
+                State(ctx.state.clone()),
+                Json(WatchlistMutationRequest {
+                    symbol: " msft ".to_string(),
+                    category: Some("equity".to_string()),
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(created.0.ok);
+            assert_eq!(created.0.symbol, "MSFT");
+            assert_eq!(created.0.action, "added");
+
+            let removed = delete_watchlist(State(ctx.state.clone()), Path("MSFT".to_string()))
+                .await
+                .unwrap();
+            assert!(removed.0.ok);
+            assert_eq!(removed.0.action, "removed");
+        });
+    }
+
+    #[test]
+    fn alert_mutation_contract() {
+        run_async(async {
+            let ctx = setup_test_ctx();
+            let created: Json<AlertMutationResponse> = post_alert(
+                State(ctx.state.clone()),
+                Json(AlertCreateRequest {
+                    rule_text: Some("MSFT above 400".to_string()),
+                    kind: None,
+                    symbol: None,
+                    direction: None,
+                    threshold: None,
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(created.0.ok);
+            assert_eq!(created.0.action, "created");
+            let id = created.0.id.unwrap();
+
+            let conn = ctx.state.get_conn().unwrap();
+            crate::db::alerts::update_alert_status(
+                &conn,
+                id,
+                crate::alerts::AlertStatus::Triggered,
+                Some("2026-03-05T12:00:00Z"),
+            )
+            .unwrap();
+            drop(conn);
+
+            let acked = post_alert_ack(State(ctx.state.clone()), Path(id)).await.unwrap();
+            assert!(acked.0.ok);
+            assert_eq!(acked.0.action, "acknowledged");
+
+            let rearmed = post_alert_rearm(State(ctx.state.clone()), Path(id)).await.unwrap();
+            assert!(rearmed.0.ok);
+            assert_eq!(rearmed.0.action, "rearmed");
+
+            let removed = delete_alert(State(ctx.state.clone()), Path(id)).await.unwrap();
+            assert!(removed.0.ok);
+            assert_eq!(removed.0.action, "removed");
+        });
+    }
+
+    #[test]
+    fn journal_mutation_contract() {
+        run_async(async {
+            let ctx = setup_test_ctx();
+            let created: Json<JournalMutationResponse> = post_journal(
+                State(ctx.state.clone()),
+                Json(JournalCreateRequest {
+                    timestamp: Some("2026-03-05T12:00:00Z".to_string()),
+                    content: "Test journal entry".to_string(),
+                    tag: Some("thesis".to_string()),
+                    symbol: Some("msft".to_string()),
+                    conviction: None,
+                    status: Some("open".to_string()),
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(created.0.ok);
+            assert_eq!(created.0.action, "created");
+            let id = created.0.id.unwrap();
+
+            let updated = patch_journal(
+                State(ctx.state.clone()),
+                Path(id),
+                Json(JournalUpdateRequest {
+                    content: Some("Updated entry".to_string()),
+                    status: Some("validated".to_string()),
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(updated.0.ok);
+            assert_eq!(updated.0.action, "updated");
+
+            let removed = delete_journal(State(ctx.state.clone()), Path(id)).await.unwrap();
+            assert!(removed.0.ok);
+            assert_eq!(removed.0.action, "removed");
+
+            let noop = delete_journal(State(ctx.state.clone()), Path(id)).await.unwrap();
+            assert!(!noop.0.ok);
+            assert_eq!(noop.0.action, "noop");
+        });
+    }
+
+    #[test]
+    fn transaction_mutation_contract() {
+        run_async(async {
+            let ctx = setup_test_ctx();
+            let created: Json<TransactionMutationResponse> = post_transaction(
+                State(ctx.state.clone()),
+                Json(TransactionMutationRequest {
+                    symbol: "MSFT".to_string(),
+                    category: "equity".to_string(),
+                    tx_type: "buy".to_string(),
+                    quantity: "3".to_string(),
+                    price_per: "400".to_string(),
+                    currency: Some("USD".to_string()),
+                    date: "2026-03-05".to_string(),
+                    notes: None,
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(created.0.ok);
+            assert_eq!(created.0.action, "created");
+            let id = created.0.id.unwrap();
+
+            let patched = patch_transaction(
+                State(ctx.state.clone()),
+                Path(id),
+                Json(TransactionMutationRequest {
+                    symbol: "MSFT".to_string(),
+                    category: "equity".to_string(),
+                    tx_type: "sell".to_string(),
+                    quantity: "1".to_string(),
+                    price_per: "410".to_string(),
+                    currency: Some("USD".to_string()),
+                    date: "2026-03-06".to_string(),
+                    notes: Some("take profit".to_string()),
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(patched.0.ok);
+            assert_eq!(patched.0.action, "updated");
+
+            let removed = delete_transaction(State(ctx.state.clone()), Path(id)).await.unwrap();
+            assert!(removed.0.ok);
+            assert_eq!(removed.0.action, "removed");
+
+            let bad = post_transaction(
+                State(ctx.state.clone()),
+                Json(TransactionMutationRequest {
+                    symbol: "AAPL".to_string(),
+                    category: "invalid-category".to_string(),
+                    tx_type: "buy".to_string(),
+                    quantity: "1".to_string(),
+                    price_per: "100".to_string(),
+                    currency: Some("USD".to_string()),
+                    date: "2026-03-06".to_string(),
+                    notes: None,
+                }),
+            )
+            .await;
+            match bad {
+                Ok(_) => panic!("expected BAD_REQUEST for invalid category"),
+                Err((status, _)) => assert_eq!(status, StatusCode::BAD_REQUEST),
+            }
+        });
+    }
 
     #[test]
     fn normalized_symbol_uppercases_and_trims() {
