@@ -613,6 +613,101 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         lines.push(Line::from(""));
     }
 
+    // ── COT (Commitments of Traders) ──
+    if let Some(cftc_code) = crate::data::cot::symbol_to_cftc_code(symbol) {
+        // Check if COT data is available in the cache
+        if let Ok(conn) = rusqlite::Connection::open(&app.db_path) {
+            if let Ok(Some(latest)) = crate::db::cot_cache::get_latest(&conn, cftc_code) {
+                if let Ok(history) = crate::db::cot_cache::get_history(&conn, cftc_code, 2) {
+                    lines.push(section_header("  COT Positioning", t.text_accent));
+                    lines.push(sep_line(t.border_subtle, 80));
+
+                    // Managed Money
+                    let mm_net = latest.managed_money_net;
+                    let mm_contracts = format_contracts(mm_net);
+                    let mm_color = if mm_net > 0 { t.gain_green } else { t.loss_red };
+                    
+                    lines.push(Line::from(vec![
+                        Span::styled("  Managed Money ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format!("Net {}", mm_contracts),
+                            Style::default().fg(mm_color).bold(),
+                        ),
+                    ]));
+
+                    // Week-over-week change
+                    if history.len() >= 2 {
+                        let prev = &history[1];
+                        let change = mm_net - prev.managed_money_net;
+                        if change != 0 {
+                            let change_str = format_contracts(change);
+                            let sign = if change > 0 { "+" } else { "" };
+                            let change_color = if change > 0 { t.gain_green } else { t.loss_red };
+                            lines.push(Line::from(vec![
+                                Span::styled("                ", Style::default().fg(t.text_secondary)),
+                                Span::styled(
+                                    format!("{}{} WoW", sign, change_str),
+                                    Style::default().fg(change_color),
+                                ),
+                            ]));
+                        }
+                    }
+
+                    // Commercials
+                    let comm_net = latest.commercial_net;
+                    let comm_contracts = format_contracts(comm_net);
+                    let comm_color = if comm_net > 0 { t.gain_green } else { t.loss_red };
+                    
+                    lines.push(Line::from(vec![
+                        Span::styled("  Commercials   ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format!("Net {}", comm_contracts),
+                            Style::default().fg(comm_color).bold(),
+                        ),
+                    ]));
+
+                    // Commercials WoW change
+                    if history.len() >= 2 {
+                        let prev = &history[1];
+                        let change = comm_net - prev.commercial_net;
+                        if change != 0 {
+                            let change_str = format_contracts(change);
+                            let sign = if change > 0 { "+" } else { "" };
+                            let change_color = if change > 0 { t.gain_green } else { t.loss_red };
+                            lines.push(Line::from(vec![
+                                Span::styled("                ", Style::default().fg(t.text_secondary)),
+                                Span::styled(
+                                    format!("{}{} WoW", sign, change_str),
+                                    Style::default().fg(change_color),
+                                ),
+                            ]));
+                        }
+                    }
+
+                    // Open Interest
+                    lines.push(Line::from(vec![
+                        Span::styled("  Open Interest ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format_contracts(latest.open_interest),
+                            Style::default().fg(t.text_primary),
+                        ),
+                    ]));
+
+                    // Report date
+                    lines.push(Line::from(vec![
+                        Span::styled("  As of         ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            latest.report_date.clone(),
+                            Style::default().fg(t.text_muted),
+                        ),
+                    ]));
+
+                    lines.push(Line::from(""));
+                }
+            }
+        }
+    }
+
     // ── Footer ──
     lines.push(Line::from(Span::styled(
         "  Esc to close · j/k to scroll",
@@ -653,6 +748,20 @@ fn format_qty(v: Decimal) -> String {
 /// Layout: `  [oversold |   neutral   | overbought]`
 /// 30 chars wide, position marker shows current RSI.
 /// Green zone: 0-30, neutral: 30-70, red zone: 70-100.
+/// Format COT contracts with thousands separators.
+fn format_contracts(count: i64) -> String {
+    let abs_count = count.abs();
+    let sign = if count < 0 { "-" } else { "" };
+    
+    if abs_count >= 1_000_000 {
+        format!("{}{}M", sign, abs_count / 1_000_000)
+    } else if abs_count >= 1_000 {
+        format!("{}{}k", sign, abs_count / 1_000)
+    } else {
+        format!("{}{}", sign, abs_count)
+    }
+}
+
 fn rsi_gauge_line<'a>(rsi: f64, t: &crate::tui::theme::Theme) -> Line<'a> {
     let gauge_width: usize = 30;
     let pos = ((rsi / 100.0) * gauge_width as f64).round() as usize;
