@@ -144,7 +144,7 @@ All commands support `--json` for programmatic access.
 
 ## 🎨 Themes
 
-Six built-in themes. Cycle with `t`. Your choice persists automatically.
+Eleven built-in themes. Cycle with `t`. Your choice persists automatically.
 
 | Theme | Vibe |
 |---|---|
@@ -154,6 +154,11 @@ Six built-in themes. Cycle with `t`. Your choice persists automatically.
 | **Dracula** | Purple-dark with vivid accents |
 | **Solarized** | Teal-tinted dark with warm/cool balance |
 | **Gruvbox** | Retro warm brown/orange |
+| **Inferno** | Ember-dark with fiery amber/orange contrast |
+| **Neon** | Cyberpunk electric cyan/pink on deep dark |
+| **Hacker** | Classic green-on-black terminal look |
+| **Pastel** | Soft muted palette for low visual fatigue |
+| **Miasma** | Atmospheric warm haze with smoky depth |
 
 ---
 
