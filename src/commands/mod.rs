@@ -8,6 +8,7 @@ pub mod target;
 pub mod demo;
 pub mod drift;
 pub mod etf_flows;
+pub mod global;
 pub mod rebalance;
 pub mod history;
 pub mod import;

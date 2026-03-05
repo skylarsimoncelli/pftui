@@ -199,6 +199,10 @@ fn main() -> Result<()> {
 
         Some(Command::Macro { json }) => commands::macro_cmd::run(&conn, &config, json),
 
+        Some(Command::Global { country, indicator, json }) => {
+            commands::global::run(&conn, country.as_deref(), indicator.as_deref(), json)
+        }
+
         Some(Command::Performance { since, period, vs, json }) => {
             commands::performance::run(&conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
         }

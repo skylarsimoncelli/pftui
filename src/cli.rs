@@ -179,6 +179,21 @@ pub enum Command {
         json: bool,
     },
 
+    /// Global macro dashboard: World Bank structural data for major economies
+    Global {
+        /// Filter to a specific country code (e.g. USA, CHN, IND, RUS, BRA, ZAF, GBR, EUU)
+        #[arg(long)]
+        country: Option<String>,
+
+        /// Filter to a specific indicator: gdp, debt, current-account, reserves
+        #[arg(long)]
+        indicator: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show portfolio performance: returns over time (MTD, QTD, YTD, since inception)
     Performance {
         /// Custom start date for return calculation (YYYY-MM-DD)
