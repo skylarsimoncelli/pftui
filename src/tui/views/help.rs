@@ -97,11 +97,11 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
         Style::default().fg(sc),
     )));
     lines.push(Line::from(Span::styled(
-        "  Day% column: daily price change percentage",
+        "  P&L column: total gain since purchase (bar viz)",
         Style::default().fg(sc),
     )));
     lines.push(Line::from(Span::styled(
-        "  52W column: range bar + distance from 52-week high",
+        "  Value column: position value (price × quantity)",
         Style::default().fg(sc),
     )));
     lines.push(Line::from(""));
@@ -124,6 +124,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("f", "Cycle category filter", kc, tc));
     lines.push(key_line("r", "Force refresh prices", kc, tc));
     lines.push(key_line("p", "Toggle privacy view", kc, tc));
+    lines.push(key_line("T (Shift+t)", "Cycle change timeframe (1h/24h/7d/30d/YTD)", kc, tc));
     lines.push(key_line("D (Shift+d)", "Toggle drift columns", kc, tc));
     lines.push(key_line("t", "Cycle color theme", kc, tc));
     lines.push(key_line("A (Shift+a)", "Add transaction for position", kc, tc));

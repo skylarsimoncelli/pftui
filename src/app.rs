@@ -94,6 +94,48 @@ impl ChartTimeframe {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeTimeframe {
+    OneHour,
+    TwentyFourHour,
+    SevenDay,
+    ThirtyDay,
+    YearToDate,
+}
+
+impl ChangeTimeframe {
+    pub fn label(self) -> &'static str {
+        match self {
+            ChangeTimeframe::OneHour => "1h",
+            ChangeTimeframe::TwentyFourHour => "24h",
+            ChangeTimeframe::SevenDay => "7d",
+            ChangeTimeframe::ThirtyDay => "30d",
+            ChangeTimeframe::YearToDate => "YTD",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            ChangeTimeframe::OneHour => ChangeTimeframe::TwentyFourHour,
+            ChangeTimeframe::TwentyFourHour => ChangeTimeframe::SevenDay,
+            ChangeTimeframe::SevenDay => ChangeTimeframe::ThirtyDay,
+            ChangeTimeframe::ThirtyDay => ChangeTimeframe::YearToDate,
+            ChangeTimeframe::YearToDate => ChangeTimeframe::OneHour,
+        }
+    }
+
+    /// Returns the number of days to look back for this timeframe.
+    /// For YTD, returns None (needs special handling).
+    pub fn lookback_days(self) -> Option<u32> {
+        match self {
+            ChangeTimeframe::OneHour => Some(1), // 1 hour within last day
+            ChangeTimeframe::TwentyFourHour => Some(2), // need 2 days to compute 24h change
+            ChangeTimeframe::SevenDay => Some(8),
+            ChangeTimeframe::ThirtyDay => Some(31),
+            ChangeTimeframe::YearToDate => None, // computed from Jan 1 of current year
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortField {
@@ -358,6 +400,7 @@ pub struct App {
     // Chart
     pub chart_index: usize, // which chart variant to show for current position
     pub chart_timeframe: ChartTimeframe,
+    pub change_timeframe: ChangeTimeframe, // timeframe for % change column in positions table
 
     // History fetch tracking: max days fetched per symbol (to avoid re-fetching)
     fetched_history_days: HashMap<String, u32>,
@@ -554,6 +597,7 @@ impl App {
             theme_name: config.theme.clone(),
             chart_index: 0,
             chart_timeframe: ChartTimeframe::ThreeMonths,
+            change_timeframe: ChangeTimeframe::TwentyFourHour,
             fetched_history_days: HashMap::new(),
             history_attempted: std::collections::HashSet::new(),
             tick_count: 0,
@@ -1679,6 +1723,11 @@ impl App {
             // Drift columns toggle
             KeyCode::Char('D') => {
                 self.show_drift_columns = !self.show_drift_columns;
+            }
+
+            // Change timeframe cycling
+            KeyCode::Char('T') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.change_timeframe = self.change_timeframe.next();
             }
 
             // Detail popup toggle (chart is always visible in right pane)

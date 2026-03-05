@@ -93,58 +93,6 @@ pub fn compute_52w_range(
 /// Build a visual range bar showing current price position within 52-week range.
 /// Returns spans like: `━━━●━━━ -5%`
 /// Bar width is 6 chars, then from-high percentage.
-pub fn build_52w_spans<'a>(theme: &'a theme::Theme, range: &Range52W) -> Vec<Span<'a>> {
-    const BAR_WIDTH: usize = 6;
-
-    // Compute dot position within bar (0..BAR_WIDTH-1)
-    let dot_pos = ((range.position * (BAR_WIDTH - 1) as f64).round() as usize).min(BAR_WIDTH - 1);
-
-    // Color: green near high, red near low, gradient in between
-    let pos_f32 = range.position as f32;
-    let dot_color = theme::gradient_3(
-        theme.loss_red,
-        theme.neutral,
-        theme.gain_green,
-        pos_f32,
-    );
-
-    let mut spans = Vec::new();
-
-    // Build bar characters
-    for i in 0..BAR_WIDTH {
-        if i == dot_pos {
-            spans.push(Span::styled(
-                "●",
-                Style::default().fg(dot_color).bold(),
-            ));
-        } else {
-            spans.push(Span::styled(
-                "━",
-                Style::default().fg(theme.text_muted),
-            ));
-        }
-    }
-
-    // From-high percentage
-    let pct_text = if range.from_high_pct.abs() < 0.05 {
-        " ATH".to_string()
-    } else {
-        format!("{:+.0}%", range.from_high_pct)
-    };
-
-    let pct_color = if range.from_high_pct.abs() < 0.05 {
-        theme.gain_green
-    } else if range.from_high_pct > -10.0 {
-        theme.text_secondary
-    } else {
-        theme.loss_red
-    };
-
-    spans.push(Span::styled(pct_text, Style::default().fg(pct_color)));
-
-    spans
-}
-
 /// Compute daily change % from price history: (latest - previous) / previous * 100.
 /// Uses the last two entries in the history for the given symbol.
 pub fn compute_change_pct(app: &App, symbol: &str) -> Option<Decimal> {
@@ -164,6 +112,75 @@ fn format_change_pct(change: Option<Decimal>) -> String {
     change
         .map(|v| format!("{:+.1}%", v))
         .unwrap_or_else(|| "---".to_string())
+}
+
+/// Compute percentage change over a specific timeframe.
+/// For YTD, computes from Jan 1 of current year to latest.
+/// For other periods, looks back N days from latest record.
+pub fn compute_period_change_pct(
+    app: &App,
+    symbol: &str,
+    timeframe: crate::app::ChangeTimeframe,
+) -> Option<Decimal> {
+    use crate::app::ChangeTimeframe;
+    
+    let history = app.price_history.get(symbol)?;
+    if history.is_empty() {
+        return None;
+    }
+
+    let latest = &history[history.len() - 1];
+    let latest_close = latest.close;
+
+    match timeframe {
+        ChangeTimeframe::YearToDate => {
+            // Find the first record of current year
+            let current_year = chrono::Utc::now().format("%Y").to_string();
+            let year_start = history
+                .iter()
+                .find(|r| r.date.starts_with(&current_year))?;
+            
+            if year_start.close == dec!(0) {
+                return None;
+            }
+            Some((latest_close - year_start.close) / year_start.close * dec!(100))
+        }
+        _ => {
+            // For other timeframes, look back N days
+            let lookback = timeframe.lookback_days()?;
+            
+            if history.len() < 2 {
+                return None;
+            }
+
+            // Find the record closest to lookback days ago
+            // History is sorted by date (oldest to newest)
+            let target_idx = history.len().saturating_sub(lookback as usize);
+            let base_record = &history[target_idx];
+            
+            if base_record.close == dec!(0) {
+                return None;
+            }
+            Some((latest_close - base_record.close) / base_record.close * dec!(100))
+        }
+    }
+}
+
+/// Format a value (price × quantity) compactly with appropriate suffix.
+/// Examples: $892, $12.4k, $1.2M
+pub fn format_value(value: Decimal) -> String {
+    let val_f64: f64 = value.to_string().parse().unwrap_or(0.0);
+    let abs_val = val_f64.abs();
+    
+    if abs_val >= 1_000_000.0 {
+        format!("${:.1}M", val_f64 / 1_000_000.0)
+    } else if abs_val >= 10_000.0 {
+        format!("${:.0}k", val_f64 / 1_000.0)
+    } else if abs_val >= 1_000.0 {
+        format!("${:.1}k", val_f64 / 1_000.0)
+    } else {
+        format!("${:.0}", val_f64)
+    }
 }
 
 /// Build compact RSI indicator spans for a position row.
@@ -285,12 +302,15 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     let positions = &app.display_positions;
     let t = &app.theme;
 
+    // New column layout: Asset, Price, 24h (or active timeframe), P&L, Value, Alloc%, RSI, Trend
+    let timeframe_label = app.change_timeframe.label();
+    
     let mut header_cells = vec![
         Cell::from("Asset"),
-        Cell::from("Qty"),
         Cell::from("Price"),
-        Cell::from("Day%"),
-        Cell::from("Gain%"),
+        Cell::from(timeframe_label),
+        Cell::from("P&L"),
+        Cell::from("Value"),
         Cell::from("Alloc%"),
     ];
     
@@ -302,7 +322,6 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     
     header_cells.extend(vec![
         Cell::from("RSI"),
-        Cell::from("52W"),
         Cell::from("Trend"),
     ]);
 
@@ -311,12 +330,13 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         .height(1);
 
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
-    let col_count = if app.show_drift_columns { 12 } else { 9 };
+    let col_count = if app.show_drift_columns { 11 } else { 8 };
     let mut rows: Vec<Row> = Vec::new();
 
     // Show skeleton placeholder rows while waiting for initial data
     if positions.is_empty() && !app.prices_live {
-        let col_widths = [12, 6, 10, 5, 6, 5, 5, 9, 6];
+        // New layout: Asset, Price, timeframe%, P&L, Value, Alloc%, RSI, Trend
+        let col_widths = [12, 16, 7, 8, 10, 5, 5, 6];
         rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, col_count);
     }
 
@@ -382,7 +402,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 3,
             );
 
-            let sparkline_spans = build_sparkline_spans(
+            let _sparkline_spans = build_sparkline_spans(
                 t,
                 app.price_history
                     .get(&pos.symbol)
@@ -391,27 +411,18 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 7,
             );
 
-            // 52-week range
-            let range_52w = compute_52w_range(
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-                pos.current_price,
-            );
-            let range_spans = match &range_52w {
-                Some(r) => build_52w_spans(t, r),
-                None => vec![Span::styled("---", Style::default().fg(t.text_muted))],
-            };
-
-            // Daily change %
-            let day_change = compute_change_pct(app, &pos.symbol);
-            let day_change_f: f64 = day_change
+            // Period change % using active timeframe
+            let period_change = compute_period_change_pct(app, &pos.symbol, app.change_timeframe);
+            let period_change_f: f64 = period_change
                 .unwrap_or(dec!(0))
                 .to_string()
                 .parse()
                 .unwrap_or(0.0);
-            let day_change_color = theme::gain_intensity_color(t, day_change_f);
+            let period_change_color = theme::gain_intensity_color(t, period_change_f);
+
+            // Position value (price × quantity)
+            let position_value = pos.current_price.map(|p| p * pos.quantity);
+            let value_text = position_value.map(format_value).unwrap_or_else(|| "---".to_string());
 
             // RSI indicator
             let rsi_line = build_rsi_spans(
@@ -422,10 +433,20 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                     .unwrap_or(&[]),
             );
 
+            // Trend sparkline matching active timeframe
+            // For now, use the full sparkline (7 bars). Future enhancement: adjust based on timeframe.
+            let trend_sparkline_spans = build_sparkline_spans(
+                t,
+                app.price_history
+                    .get(&pos.symbol)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]),
+                7,
+            );
+
+            // New column order: Asset, Price, timeframe%, P&L, Value, Alloc%, RSI, Trend
             let mut row_cells = vec![
                 Cell::from(asset_line),
-                Cell::from(format_qty(pos.quantity))
-                    .style(Style::default().fg(t.text_primary)),
                 Cell::from(Line::from({
                     let price_text = format_price_opt(pos.current_price);
                     let mut spans = match flash_direction {
@@ -445,9 +466,11 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                     }
                     spans
                 })),
-                Cell::from(format_change_pct(day_change))
-                    .style(Style::default().fg(day_change_color)),
+                Cell::from(format_change_pct(period_change))
+                    .style(Style::default().fg(period_change_color)),
                 Cell::from(build_gain_bar_spans(t, pos.gain_pct, 8)),
+                Cell::from(value_text)
+                    .style(Style::default().fg(t.text_primary)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
             ];
@@ -494,39 +517,37 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
 
             row_cells.extend(vec![
                 Cell::from(rsi_line),
-                Cell::from(Line::from(range_spans)),
-                Cell::from(Line::from(sparkline_spans)),
+                Cell::from(Line::from(trend_sparkline_spans)),
             ]);
 
             rows.push(Row::new(row_cells).style(style));
     }
 
+    // New column layout: Asset, Price, timeframe%, P&L, Value, Alloc%, [drift cols], RSI, Trend
     let widths = if app.show_drift_columns {
         vec![
             Constraint::Min(14),    // Asset
-            Constraint::Length(8),  // Qty
-            Constraint::Length(16), // Price
-            Constraint::Length(7),  // Day%
-            Constraint::Length(8),  // Gain%
+            Constraint::Length(16), // Price (with mini sparkline)
+            Constraint::Length(7),  // timeframe% (24h, 7d, etc.)
+            Constraint::Length(8),  // P&L (gain bar)
+            Constraint::Length(10), // Value (position value)
             Constraint::Length(7),  // Alloc%
             Constraint::Length(7),  // Target
             Constraint::Length(7),  // Drift
             Constraint::Length(6),  // Status
             Constraint::Length(6),  // RSI
-            Constraint::Length(11), // 52W
-            Constraint::Length(8),  // Trend
+            Constraint::Length(8),  // Trend (sparkline)
         ]
     } else {
         vec![
-            Constraint::Min(14),
-            Constraint::Length(8),
-            Constraint::Length(16),
-            Constraint::Length(7),
-            Constraint::Length(8),
-            Constraint::Length(7),
-            Constraint::Length(6),
-            Constraint::Length(11),
-            Constraint::Length(8),
+            Constraint::Min(14),    // Asset
+            Constraint::Length(16), // Price
+            Constraint::Length(7),  // timeframe%
+            Constraint::Length(8),  // P&L
+            Constraint::Length(10), // Value
+            Constraint::Length(7),  // Alloc%
+            Constraint::Length(6),  // RSI
+            Constraint::Length(8),  // Trend
         ]
     };
 
@@ -537,25 +558,26 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     let positions = &app.display_positions;
     let t = &app.theme;
 
+    let timeframe_label = app.change_timeframe.label();
+
     let header = Row::new(vec![
         Cell::from("Asset"),
         Cell::from("Price"),
-        Cell::from("Day%"),
+        Cell::from(timeframe_label),
         Cell::from("Alloc%"),
         Cell::from("RSI"),
-        Cell::from("52W"),
         Cell::from("Trend"),
     ])
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
 
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
-    let privacy_col_count = 7;
+    let privacy_col_count = 6;
     let mut rows: Vec<Row> = Vec::new();
 
     // Show skeleton placeholder rows while waiting for initial data
     if positions.is_empty() && !app.prices_live {
-        let col_widths = [14, 10, 5, 6, 5, 9, 6];
+        let col_widths = [14, 10, 7, 6, 5, 6];
         rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, privacy_col_count);
     }
 
@@ -602,27 +624,14 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                 7,
             );
 
-            // 52-week range (safe for privacy — shows price-relative data, not values)
-            let range_52w = compute_52w_range(
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-                pos.current_price,
-            );
-            let range_spans = match &range_52w {
-                Some(r) => build_52w_spans(t, r),
-                None => vec![Span::styled("---", Style::default().fg(t.text_muted))],
-            };
-
-            // Daily change % (privacy-safe — percentage only, no absolute values)
-            let day_change = compute_change_pct(app, &pos.symbol);
-            let day_change_f: f64 = day_change
+            // Period change % using active timeframe (privacy-safe — percentage only)
+            let period_change = compute_period_change_pct(app, &pos.symbol, app.change_timeframe);
+            let period_change_f: f64 = period_change
                 .unwrap_or(dec!(0))
                 .to_string()
                 .parse()
                 .unwrap_or(0.0);
-            let day_change_color = theme::gain_intensity_color(t, day_change_f);
+            let period_change_color = theme::gain_intensity_color(t, period_change_f);
 
             // RSI indicator (privacy-safe — derived from public price data)
             let rsi_line = build_rsi_spans(
@@ -637,24 +646,23 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
                 Cell::from(asset_line),
                 Cell::from(format_price_opt(pos.current_price))
                     .style(Style::default().fg(t.text_primary)),
-                Cell::from(format_change_pct(day_change))
-                    .style(Style::default().fg(day_change_color)),
+                Cell::from(format_change_pct(period_change))
+                    .style(Style::default().fg(period_change_color)),
                 Cell::from(format_alloc_pct(pos.allocation_pct))
                     .style(Style::default().fg(t.text_secondary)),
                 Cell::from(rsi_line),
-                Cell::from(Line::from(range_spans)),
                 Cell::from(Line::from(sparkline_spans)),
             ])
             .style(style));
     }
 
+    // Privacy table: Asset, Price, timeframe%, Alloc%, RSI, Trend
     let widths = [
         Constraint::Min(18),
         Constraint::Length(12),
         Constraint::Length(7),
         Constraint::Length(8),
         Constraint::Length(6),
-        Constraint::Length(11),
         Constraint::Length(8),
     ];
 
@@ -878,17 +886,6 @@ fn format_price(v: Decimal) -> String {
         format!("{:.2}", f)
     } else {
         format!("{:.4}", f)
-    }
-}
-
-fn format_qty(v: Decimal) -> String {
-    let f: f64 = v.to_string().parse().unwrap_or(0.0);
-    if f >= 100_000.0 {
-        format!("{:.1}k", f / 1000.0)
-    } else if f >= 1000.0 || f == f.floor() {
-        format!("{:.0}", f)
-    } else {
-        format!("{:.2}", f)
     }
 }
 
