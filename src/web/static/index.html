@@ -3,625 +3,698 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>pftui - Portfolio Dashboard</title>
+    <title>pftui web - The Portfolio TUI</title>
+    <meta name="pftui-auth-token" content="__PFTUI_AUTH_TOKEN__">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         :root {
-            --bg-primary: #0a0e27;
-            --bg-secondary: #151932;
-            --bg-tertiary: #1e2239;
-            --text-primary: #e4e8f0;
-            --text-secondary: #9ca3af;
-            --text-muted: #6b7280;
-            --accent: #60a5fa;
-            --accent-hover: #3b82f6;
-            --green: #10b981;
-            --red: #ef4444;
-            --yellow: #f59e0b;
-            --border: #2d3250;
-            --shadow: rgba(0, 0, 0, 0.3);
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --text-accent: #89dceb;
+            --border: #30363d;
+            --accent: #89b4fa;
+            --green: #a6e3a1;
+            --red: #f38ba8;
+            --yellow: #f9e2af;
         }
 
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: var(--bg-primary);
+            font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: radial-gradient(circle at 20% 0%, rgba(137,180,250,0.09) 0%, transparent 40%), var(--bg-primary);
             color: var(--text-primary);
-            line-height: 1.6;
-            overflow-x: hidden;
+            min-height: 100vh;
         }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 1rem;
-        }
+        .container { max-width: 1440px; margin: 0 auto; padding: 1rem; }
 
-        /* Header */
         header {
-            background: var(--bg-secondary);
-            border-bottom: 2px solid var(--border);
-            padding: 1rem 0;
-            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(22,27,34,0.95);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            backdrop-filter: blur(6px);
         }
 
-        .header-content {
+        .header-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 1rem;
+            padding: 0.85rem 0;
             flex-wrap: wrap;
+        }
+
+        .brand { display: flex; flex-direction: column; gap: 0.2rem; }
+        .brand h1 { font-size: 1.2rem; color: var(--text-primary); }
+        .brand small { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+        .header-right { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+
+        .total-value { font-size: 1.4rem; font-weight: 700; }
+        .total-gain { font-size: 0.95rem; }
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+
+        .theme-btn {
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-radius: 999px;
+            padding: 0.45rem 0.8rem;
+            cursor: pointer;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.78rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding-bottom: 0.8rem;
+            scrollbar-width: thin;
+        }
+
+        .tab-btn {
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 0.45rem 0.85rem;
+            cursor: pointer;
+            white-space: nowrap;
+            font-size: 0.84rem;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--accent), var(--text-accent));
+            color: #0a0e14;
+            border-color: transparent;
+            font-weight: 600;
+        }
+
+        .view { display: none; padding: 1rem 0; }
+        .view.active { display: block; }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
             gap: 1rem;
         }
 
-        h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--accent);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .portfolio-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--text-primary);
-        }
-
-        .gain {
-            font-size: 1.25rem;
-            margin-left: 1rem;
-        }
-
-        .gain.positive { color: var(--green); }
-        .gain.negative { color: var(--red); }
-
-        /* Grid Layout */
-        .dashboard {
+        .left-col, .right-col {
             display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 1.5rem;
-            margin-bottom: 1.5rem;
+            gap: 1rem;
+            align-content: start;
         }
 
-        @media (max-width: 1024px) {
-            .dashboard {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* Cards */
         .card {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 6px var(--shadow);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.25);
         }
 
-        .card-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
+        .card h2 {
+            font-size: 1rem;
+            margin-bottom: 0.8rem;
             color: var(--text-primary);
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 0.5rem;
         }
 
-        /* Positions Table */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
+        .subtle { color: var(--text-secondary); font-size: 0.86rem; }
+
+        .timeframes {
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.8rem;
         }
 
-        thead {
+        .tf-btn {
+            border: 1px solid var(--border);
             background: var(--bg-tertiary);
-        }
-
-        th {
-            padding: 0.75rem;
-            text-align: left;
-            font-weight: 600;
             color: var(--text-secondary);
-            border-bottom: 2px solid var(--border);
-        }
-
-        th.right, td.right {
-            text-align: right;
-        }
-
-        tbody tr {
-            border-bottom: 1px solid var(--border);
-            transition: background 0.2s;
+            border-radius: 6px;
+            padding: 0.3rem 0.5rem;
+            font-size: 0.78rem;
             cursor: pointer;
         }
 
-        tbody tr:hover {
-            background: var(--bg-tertiary);
-        }
-
-        td {
-            padding: 0.75rem;
-            color: var(--text-primary);
-        }
-
-        .symbol {
+        .tf-btn.active {
+            color: #0b1220;
+            background: var(--accent);
+            border-color: transparent;
             font-weight: 600;
-            color: var(--accent);
         }
 
-        .name {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-        }
-
-        .positive {
-            color: var(--green);
-        }
-
-        .negative {
-            color: var(--red);
-        }
-
-        /* Chart Container */
-        #chart-container {
+        #portfolio-canvas {
+            width: 100%;
+            height: 220px;
             background: var(--bg-tertiary);
             border-radius: 8px;
-            height: 500px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-muted);
-            position: relative;
+            border: 1px solid var(--border);
         }
 
-        #tradingview-chart {
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { padding: 0.6rem; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-secondary); font-weight: 600; text-align: left; }
+        td.right, th.right { text-align: right; }
+        tbody tr { cursor: pointer; }
+        tbody tr:hover { background: rgba(255,255,255,0.03); }
+        tbody tr.selected { background: rgba(137,180,250,0.12); }
+
+        .symbol { font-weight: 700; color: var(--text-accent); }
+        .name { font-size: 0.82rem; color: var(--text-muted); }
+
+        .search {
             width: 100%;
-            height: 100%;
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-radius: 8px;
+            padding: 0.55rem;
+            margin-bottom: 0.8rem;
         }
 
-        /* Watchlist */
-        .watchlist-item {
+        #tradingview-chart,
+        #tradingview-chart-markets {
+            width: 100%;
+            height: 360px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--bg-tertiary);
+        }
+
+        .chart-placeholder {
+            height: 360px;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+            font-size: 0.9rem;
+        }
+
+        .macro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+        .macro-item {
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 0.65rem;
+            cursor: pointer;
+        }
+        .macro-item .label { color: var(--text-muted); font-size: 0.76rem; }
+        .macro-item .value { color: var(--text-primary); font-weight: 600; font-size: 0.95rem; }
+
+        .list { display: grid; gap: 0.55rem; }
+        .list-item {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-tertiary);
+            padding: 0.6rem;
             display: flex;
             justify-content: space-between;
-            padding: 0.75rem;
-            border-bottom: 1px solid var(--border);
-            transition: background 0.2s;
-        }
-
-        .watchlist-item:hover {
-            background: var(--bg-tertiary);
-        }
-
-        .watchlist-symbol {
-            font-weight: 600;
-            color: var(--accent);
-        }
-
-        .watchlist-price {
-            color: var(--text-secondary);
-        }
-
-        /* Macro Panel */
-        .macro-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1rem;
-        }
-
-        .macro-item {
-            background: var(--bg-tertiary);
-            padding: 1rem;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-        }
-
-        .macro-label {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 0.25rem;
-        }
-
-        .macro-value {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        /* Loading State */
-        .loading {
-            display: flex;
             align-items: center;
-            justify-content: center;
-            padding: 2rem;
-            color: var(--text-muted);
+            cursor: pointer;
         }
 
-        .spinner {
-            border: 3px solid var(--border);
-            border-top: 3px solid var(--accent);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin-right: 1rem;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Search */
-        .search-box {
-            margin-bottom: 1rem;
-        }
-
-        .search-box input {
-            width: 100%;
-            padding: 0.75rem;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-primary);
-            font-size: 1rem;
-        }
-
-        .search-box input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        /* Footer */
-        footer {
+        .empty {
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 1rem;
             text-align: center;
-            padding: 2rem 0;
-            color: var(--text-muted);
-            font-size: 0.9rem;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+        }
+
+        @media (max-width: 1024px) {
+            .layout { grid-template-columns: 1fr; }
+            #tradingview-chart, #tradingview-chart-markets, .chart-placeholder { height: 280px; }
+            #portfolio-canvas { height: 190px; }
         }
     </style>
 </head>
 <body>
     <header>
         <div class="container">
-            <div class="header-content">
-                <h1>
-                    <span>📊</span>
-                    <span>pftui</span>
-                </h1>
-                <div>
-                    <span class="portfolio-value" id="total-value">Loading...</span>
-                    <span class="gain" id="total-gain"></span>
+            <div class="header-row">
+                <div class="brand">
+                    <h1>pftui web</h1>
+                    <small>PFTUI - The Portfolio TUI</small>
+                </div>
+                <div class="header-right">
+                    <div>
+                        <div class="total-value" id="total-value">--</div>
+                        <div class="total-gain" id="total-gain"></div>
+                    </div>
+                    <button class="theme-btn" id="theme-cycle">Theme</button>
                 </div>
             </div>
+            <div class="tabs" id="tabs"></div>
         </div>
     </header>
 
-    <div class="container">
-        <div class="dashboard">
-            <!-- Left Column: Positions & Chart -->
-            <div>
-                <!-- Positions Table -->
-                <div class="card">
-                    <h2 class="card-title">Positions</h2>
-                    <div class="search-box">
-                        <input type="text" id="search" placeholder="Search positions..." />
+    <main class="container">
+        <section class="view active" id="view-positions">
+            <div class="layout">
+                <div class="left-col">
+                    <div class="card">
+                        <h2>Portfolio Performance</h2>
+                        <div class="timeframes" id="performance-timeframes">
+                            <button class="tf-btn" data-tf="1w">1W</button>
+                            <button class="tf-btn" data-tf="1m">1M</button>
+                            <button class="tf-btn active" data-tf="3m">3M</button>
+                            <button class="tf-btn" data-tf="6m">6M</button>
+                            <button class="tf-btn" data-tf="1y">1Y</button>
+                            <button class="tf-btn" data-tf="5y">5Y</button>
+                        </div>
+                        <canvas id="portfolio-canvas" width="1200" height="260"></canvas>
+                        <p class="subtle" id="performance-meta">Loading performance...</p>
                     </div>
-                    <div style="overflow-x: auto;">
-                        <table id="positions-table">
-                            <thead>
-                                <tr>
-                                    <th>Asset</th>
-                                    <th class="right">Price</th>
-                                    <th class="right">Quantity</th>
-                                    <th class="right">Value</th>
-                                    <th class="right">Gain</th>
-                                    <th class="right">Gain %</th>
-                                    <th class="right">Allocation</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td colspan="7" class="loading">
-                                        <div class="spinner"></div>
-                                        Loading positions...
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
 
-                <!-- TradingView Chart -->
-                <div class="card" style="margin-top: 1.5rem;">
-                    <h2 class="card-title">Chart</h2>
-                    <div id="chart-container">
-                        <div id="tradingview-chart"></div>
-                        <div id="chart-placeholder">Select a position to view chart</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Column: Watchlist & Macro -->
-            <div>
-                <!-- Macro Indicators -->
-                <div class="card">
-                    <h2 class="card-title">Market Overview</h2>
-                    <div id="macro-panel" class="macro-grid">
-                        <div class="loading">
-                            <div class="spinner"></div>
-                            Loading...
+                    <div class="card">
+                        <h2>Positions</h2>
+                        <input class="search" id="position-search" placeholder="Search symbol or name" />
+                        <div class="table-wrap">
+                            <table id="positions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Asset</th>
+                                        <th class="right">Price</th>
+                                        <th class="right">Qty</th>
+                                        <th class="right">Value</th>
+                                        <th class="right">Gain %</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- Watchlist -->
-                <div class="card" style="margin-top: 1.5rem;">
-                    <h2 class="card-title">Watchlist</h2>
-                    <div id="watchlist">
-                        <div class="loading">
-                            <div class="spinner"></div>
-                            Loading watchlist...
-                        </div>
+                <div class="right-col">
+                    <div class="card">
+                        <h2>Asset Chart (TradingView)</h2>
+                        <div id="chart-placeholder" class="chart-placeholder">Select an asset from Positions, Watchlist, or Market Overview</div>
+                        <div id="tradingview-chart" style="display:none;"></div>
+                    </div>
+
+                    <div class="card">
+                        <h2>Market Overview</h2>
+                        <div id="macro-panel" class="macro-grid"></div>
+                    </div>
+
+                    <div class="card">
+                        <h2>Watchlist</h2>
+                        <div id="watchlist" class="list"></div>
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
+        </section>
 
-    <footer>
-        <p>pftui web dashboard · Data updates every 60 seconds</p>
-    </footer>
+        <section class="view" id="view-transactions">
+            <div class="card">
+                <h2>Transactions</h2>
+                <div class="table-wrap">
+                    <table id="transactions-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th class="right">Qty</th>
+                                <th class="right">Price</th>
+                                <th class="right">Fee</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
 
-    <!-- TradingView Widget Script -->
-    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <section class="view" id="view-markets">
+            <div class="layout">
+                <div class="left-col">
+                    <div class="card">
+                        <h2>Market Overview</h2>
+                        <div id="macro-panel-markets" class="macro-grid"></div>
+                    </div>
+                </div>
+                <div class="right-col">
+                    <div class="card">
+                        <h2>Market Chart (TradingView)</h2>
+                        <div id="chart-placeholder-markets" class="chart-placeholder">Click a market item to load chart</div>
+                        <div id="tradingview-chart-markets" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
+        <section class="view" id="view-economy">
+            <div class="card">
+                <h2>Economy</h2>
+                <div id="macro-panel-economy" class="macro-grid"></div>
+            </div>
+        </section>
+
+        <section class="view" id="view-watchlist">
+            <div class="card">
+                <h2>Watchlist</h2>
+                <div id="watchlist-full" class="list"></div>
+            </div>
+        </section>
+
+        <section class="view" id="view-news">
+            <div class="empty">News tab scaffolding is ready. API integration comes next.</div>
+        </section>
+
+        <section class="view" id="view-journal">
+            <div class="empty">Journal tab scaffolding is ready. API integration comes next.</div>
+        </section>
+    </main>
+
+    <script src="https://s3.tradingview.com/tv.js"></script>
     <script>
-        let chartWidget = null;
-        let currentSymbol = null;
+        const authToken = (document.querySelector('meta[name="pftui-auth-token"]')?.content || '').trim();
+        const state = {
+            tabs: ['Positions', 'Transactions', 'Markets', 'Economy', 'Watchlist', 'News', 'Journal'],
+            activeTab: 'Positions',
+            themes: [],
+            currentThemeIndex: 0,
+            performanceTf: '3m',
+            positions: [],
+            widgets: {},
+        };
 
-        // Format number as currency
-        function formatCurrency(value) {
-            if (value === null || value === undefined) return '-';
-            const num = parseFloat(value);
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }).format(num);
+        function fmtCurrency(v) {
+            if (v === null || v === undefined) return '-';
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(v));
+        }
+        function fmtNum(v, d = 2) {
+            if (v === null || v === undefined) return '-';
+            return Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+        }
+        function fmtPct(v) {
+            if (v === null || v === undefined) return '-';
+            const n = Number(v);
+            return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
         }
 
-        // Format number with commas
-        function formatNumber(value, decimals = 2) {
-            if (value === null || value === undefined) return '-';
-            const num = parseFloat(value);
-            return num.toLocaleString('en-US', {
-                minimumFractionDigits: decimals,
-                maximumFractionDigits: decimals
+        async function apiFetch(path) {
+            const headers = {};
+            if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+            const res = await fetch(path, { headers });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            return res.json();
+        }
+
+        function applyTheme(theme) {
+            if (!theme || !theme.colors) return;
+            const c = theme.colors;
+            const root = document.documentElement;
+            root.style.setProperty('--bg-primary', c.bg_primary);
+            root.style.setProperty('--bg-secondary', c.bg_secondary);
+            root.style.setProperty('--bg-tertiary', c.bg_tertiary);
+            root.style.setProperty('--text-primary', c.text_primary);
+            root.style.setProperty('--text-secondary', c.text_secondary);
+            root.style.setProperty('--text-muted', c.text_muted);
+            root.style.setProperty('--text-accent', c.text_accent);
+            root.style.setProperty('--border', c.border);
+            root.style.setProperty('--accent', c.accent);
+            root.style.setProperty('--green', c.green);
+            root.style.setProperty('--red', c.red);
+            root.style.setProperty('--yellow', c.yellow);
+            document.getElementById('theme-cycle').textContent = `Theme: ${theme.name}`;
+        }
+
+        function cycleTheme() {
+            if (!state.themes.length) return;
+            state.currentThemeIndex = (state.currentThemeIndex + 1) % state.themes.length;
+            applyTheme(state.themes[state.currentThemeIndex]);
+        }
+
+        function renderTabs() {
+            const tabs = document.getElementById('tabs');
+            tabs.innerHTML = '';
+            state.tabs.forEach(tab => {
+                const btn = document.createElement('button');
+                btn.className = `tab-btn ${tab === state.activeTab ? 'active' : ''}`;
+                btn.textContent = tab;
+                btn.addEventListener('click', () => setActiveTab(tab));
+                tabs.appendChild(btn);
             });
         }
 
-        // Format percentage
-        function formatPercent(value) {
-            if (value === null || value === undefined) return '-';
-            const num = parseFloat(value);
-            const sign = num >= 0 ? '+' : '';
-            return `${sign}${num.toFixed(2)}%`;
+        function setActiveTab(tab) {
+            state.activeTab = tab;
+            renderTabs();
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            const el = document.getElementById(`view-${tab.toLowerCase()}`);
+            if (el) el.classList.add('active');
         }
 
-        // Load TradingView chart
-        function loadChart(symbol) {
-            if (currentSymbol === symbol && chartWidget) return;
-            
-            currentSymbol = symbol;
-            document.getElementById('chart-placeholder')?.remove();
-            
-            // Destroy existing widget
-            if (chartWidget) {
-                try {
-                    chartWidget.remove();
-                } catch (e) {
-                    console.error('Error removing chart:', e);
-                }
+        function drawPortfolioChart(points) {
+            const canvas = document.getElementById('portfolio-canvas');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            if (!points || points.length < 2) {
+                ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-muted');
+                ctx.font = '14px sans-serif';
+                ctx.fillText('No portfolio snapshot history yet. Run refresh periodically to record snapshots.', 20, h / 2);
+                return;
             }
 
-            // Create new widget
-            chartWidget = new TradingView.widget({
+            const vals = points.map(p => Number(p.value));
+            const min = Math.min(...vals);
+            const max = Math.max(...vals);
+            const range = Math.max(max - min, 1);
+            const pad = 24;
+
+            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            points.forEach((p, i) => {
+                const x = pad + (i * (w - pad * 2)) / (points.length - 1);
+                const y = h - pad - ((Number(p.value) - min) / range) * (h - pad * 2);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        }
+
+        function loadChart(symbol, containerId, placeholderId) {
+            const container = document.getElementById(containerId);
+            const placeholder = document.getElementById(placeholderId);
+            if (!container || !window.TradingView) return;
+
+            if (placeholder) placeholder.style.display = 'none';
+            container.style.display = 'block';
+
+            if (state.widgets[containerId]) {
+                try { state.widgets[containerId].remove(); } catch (_) {}
+                state.widgets[containerId] = null;
+            }
+
+            state.widgets[containerId] = new TradingView.widget({
                 autosize: true,
-                symbol: symbol,
+                symbol,
                 interval: 'D',
                 timezone: 'Etc/UTC',
                 theme: 'dark',
                 style: '1',
                 locale: 'en',
-                toolbar_bg: '#1e2239',
+                toolbar_bg: '#111827',
                 enable_publishing: false,
-                hide_top_toolbar: false,
-                hide_legend: false,
                 save_image: false,
-                container_id: 'tradingview-chart',
-                backgroundColor: '#1e2239',
-                gridColor: '#2d3250',
-                studies: [],
-                disabled_features: ['use_localstorage_for_settings'],
-                enabled_features: ['study_templates'],
+                container_id: containerId,
+                disabled_features: ['use_localstorage_for_settings']
             });
         }
 
-        // Load portfolio data
-        async function loadPortfolio() {
-            try {
-                const response = await fetch('/api/portfolio');
-                const data = await response.json();
-
-                // Update header
-                const totalValue = data.total_value;
-                const totalGain = data.total_gain;
-                const totalGainPct = data.total_gain_pct;
-
-                document.getElementById('total-value').textContent = formatCurrency(totalValue);
-                
-                const gainEl = document.getElementById('total-gain');
-                if (totalGain !== null && totalGainPct !== null) {
-                    const gainClass = totalGain >= 0 ? 'positive' : 'negative';
-                    gainEl.className = `gain ${gainClass}`;
-                    gainEl.textContent = `${formatCurrency(totalGain)} (${formatPercent(totalGainPct)})`;
-                }
-
-                // Update positions table
-                updatePositionsTable(data.positions);
-            } catch (error) {
-                console.error('Error loading portfolio:', error);
-            }
-        }
-
-        // Update positions table
-        function updatePositionsTable(positions) {
+        function renderPositions(positions) {
+            state.positions = positions || [];
             const tbody = document.querySelector('#positions-table tbody');
             tbody.innerHTML = '';
-
-            if (!positions || positions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">No positions found</td></tr>';
+            if (!state.positions.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty">No positions available</td></tr>';
                 return;
             }
 
-            positions.forEach(pos => {
-                const row = document.createElement('tr');
-                row.dataset.symbol = pos.symbol;
-                
-                const gainPct = pos.gain_pct !== null ? parseFloat(pos.gain_pct) : 0;
-                const gainClass = gainPct >= 0 ? 'positive' : 'negative';
-                
-                row.innerHTML = `
-                    <td>
-                        <div class="symbol">${pos.symbol}</div>
-                        <div class="name">${pos.name || ''}</div>
-                    </td>
-                    <td class="right">${formatCurrency(pos.current_price)}</td>
-                    <td class="right">${formatNumber(pos.quantity, 4)}</td>
-                    <td class="right">${formatCurrency(pos.current_value)}</td>
-                    <td class="right ${gainClass}">${formatCurrency(pos.gain)}</td>
-                    <td class="right ${gainClass}">${formatPercent(pos.gain_pct)}</td>
-                    <td class="right">${formatNumber(pos.allocation_pct)}%</td>
+            state.positions.forEach(pos => {
+                const tr = document.createElement('tr');
+                const gp = Number(pos.gain_pct || 0);
+                tr.innerHTML = `
+                    <td><div class="symbol">${pos.symbol}</div><div class="name">${pos.name || ''}</div></td>
+                    <td class="right">${fmtCurrency(pos.current_price)}</td>
+                    <td class="right">${fmtNum(pos.quantity, 4)}</td>
+                    <td class="right">${fmtCurrency(pos.current_value)}</td>
+                    <td class="right ${gp >= 0 ? 'positive' : 'negative'}">${fmtPct(pos.gain_pct)}</td>
                 `;
-                
-                row.addEventListener('click', () => {
-                    // Highlight selected row
-                    document.querySelectorAll('#positions-table tbody tr').forEach(r => {
-                        r.style.background = '';
-                    });
-                    row.style.background = 'var(--bg-tertiary)';
-                    
-                    // Load chart
-                    loadChart(pos.symbol);
+                tr.addEventListener('click', () => {
+                    document.querySelectorAll('#positions-table tbody tr').forEach(r => r.classList.remove('selected'));
+                    tr.classList.add('selected');
+                    loadChart(pos.symbol, 'tradingview-chart', 'chart-placeholder');
                 });
-                
-                tbody.appendChild(row);
+                tbody.appendChild(tr);
             });
         }
 
-        // Load watchlist
+        function renderWatchlist(items, targetId) {
+            const el = document.getElementById(targetId);
+            if (!el) return;
+            el.innerHTML = '';
+            if (!items || !items.length) {
+                el.innerHTML = '<div class="empty">No watchlist entries</div>';
+                return;
+            }
+            items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'list-item';
+                row.innerHTML = `<div><div class="symbol">${item.symbol}</div><div class="name">${item.name || ''}</div></div><div>${fmtCurrency(item.current_price)}</div>`;
+                row.addEventListener('click', () => loadChart(item.symbol, 'tradingview-chart', 'chart-placeholder'));
+                el.appendChild(row);
+            });
+        }
+
+        function renderMacro(items, targetId, chartContainer = 'tradingview-chart', placeholder = 'chart-placeholder') {
+            const panel = document.getElementById(targetId);
+            if (!panel) return;
+            panel.innerHTML = '';
+            if (!items || !items.length) {
+                panel.innerHTML = '<div class="empty">No market data</div>';
+                return;
+            }
+            items.forEach(ind => {
+                const div = document.createElement('div');
+                div.className = 'macro-item';
+                div.innerHTML = `<div class="label">${ind.name}</div><div class="value">${fmtNum(ind.value)}</div>`;
+                div.addEventListener('click', () => loadChart(ind.symbol, chartContainer, placeholder));
+                panel.appendChild(div);
+            });
+        }
+
+        async function loadPortfolio() {
+            const data = await apiFetch('/api/portfolio');
+            document.getElementById('total-value').textContent = fmtCurrency(data.total_value);
+            const gainEl = document.getElementById('total-gain');
+            const gain = Number(data.total_gain || 0);
+            gainEl.className = `total-gain ${gain >= 0 ? 'positive' : 'negative'}`;
+            gainEl.textContent = `${fmtCurrency(data.total_gain)} (${fmtPct(data.total_gain_pct)})`;
+            renderPositions(data.positions || []);
+        }
+
         async function loadWatchlist() {
-            try {
-                const response = await fetch('/api/watchlist');
-                const data = await response.json();
-
-                const container = document.getElementById('watchlist');
-                container.innerHTML = '';
-
-                if (!data.symbols || data.symbols.length === 0) {
-                    container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No watchlist items</div>';
-                    return;
-                }
-
-                data.symbols.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'watchlist-item';
-                    div.innerHTML = `
-                        <div>
-                            <div class="watchlist-symbol">${item.symbol}</div>
-                            <div class="name">${item.name || ''}</div>
-                        </div>
-                        <div>
-                            <div class="watchlist-price">${formatCurrency(item.current_price)}</div>
-                        </div>
-                    `;
-                    div.addEventListener('click', () => loadChart(item.symbol));
-                    container.appendChild(div);
-                });
-            } catch (error) {
-                console.error('Error loading watchlist:', error);
-            }
+            const data = await apiFetch('/api/watchlist');
+            renderWatchlist(data.symbols || [], 'watchlist');
+            renderWatchlist(data.symbols || [], 'watchlist-full');
         }
 
-        // Load macro indicators
         async function loadMacro() {
+            const data = await apiFetch('/api/macro');
+            renderMacro(data.indicators || [], 'macro-panel', 'tradingview-chart', 'chart-placeholder');
+            renderMacro(data.indicators || [], 'macro-panel-markets', 'tradingview-chart-markets', 'chart-placeholder-markets');
+            renderMacro(data.indicators || [], 'macro-panel-economy', 'tradingview-chart-markets', 'chart-placeholder-markets');
+        }
+
+        async function loadTransactions() {
+            const tbody = document.querySelector('#transactions-table tbody');
+            tbody.innerHTML = '';
             try {
-                const response = await fetch('/api/macro');
-                const data = await response.json();
-
-                const panel = document.getElementById('macro-panel');
-                panel.innerHTML = '';
-
-                if (!data.indicators || data.indicators.length === 0) {
-                    panel.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No macro data</div>';
+                const data = await apiFetch('/api/transactions');
+                const txs = data.transactions || [];
+                if (!txs.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="empty">No transactions</td></tr>';
                     return;
                 }
-
-                data.indicators.forEach(ind => {
-                    const div = document.createElement('div');
-                    div.className = 'macro-item';
-                    div.innerHTML = `
-                        <div class="macro-label">${ind.name}</div>
-                        <div class="macro-value">${formatNumber(ind.value)}</div>
+                txs.forEach(tx => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${tx.date || '-'}</td>
+                        <td>${tx.symbol || '-'}</td>
+                        <td>${tx.tx_type || tx.type || '-'}</td>
+                        <td class="right">${fmtNum(tx.quantity, 4)}</td>
+                        <td class="right">${fmtCurrency(tx.price)}</td>
+                        <td class="right">${fmtCurrency(tx.fee)}</td>
                     `;
-                    div.addEventListener('click', () => loadChart(ind.symbol));
-                    div.style.cursor = 'pointer';
-                    panel.appendChild(div);
+                    tbody.appendChild(tr);
                 });
-            } catch (error) {
-                console.error('Error loading macro:', error);
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">Transactions unavailable in percentage mode or failed to load</td></tr>';
             }
         }
 
-        // Search positions
-        document.getElementById('search')?.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
-            const rows = document.querySelectorAll('#positions-table tbody tr');
-            
-            rows.forEach(row => {
-                const symbol = row.dataset.symbol?.toLowerCase() || '';
-                const name = row.querySelector('.name')?.textContent.toLowerCase() || '';
-                
-                if (symbol.includes(query) || name.includes(query)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-        });
-
-        // Initialize dashboard
-        async function init() {
-            await loadPortfolio();
-            await loadWatchlist();
-            await loadMacro();
-
-            // Auto-refresh every 60 seconds
-            setInterval(() => {
-                loadPortfolio();
-                loadWatchlist();
-                loadMacro();
-            }, 60000);
+        async function loadPerformance() {
+            const tf = state.performanceTf;
+            const data = await apiFetch(`/api/performance?timeframe=${tf}`);
+            drawPortfolioChart(data.daily_values || []);
+            const total = data.metrics?.total_return_pct;
+            const dd = data.metrics?.max_drawdown_pct;
+            document.getElementById('performance-meta').textContent = `Return: ${fmtPct(total)} · Max drawdown: ${fmtPct(dd)} · Timeframe: ${tf.toUpperCase()}`;
         }
 
-        // Start when page loads
+        function bindInteractions() {
+            document.getElementById('theme-cycle').addEventListener('click', cycleTheme);
+
+            document.querySelectorAll('#performance-timeframes .tf-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    state.performanceTf = btn.dataset.tf;
+                    document.querySelectorAll('#performance-timeframes .tf-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    await loadPerformance();
+                });
+            });
+
+            document.getElementById('position-search').addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase();
+                document.querySelectorAll('#positions-table tbody tr').forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(q) ? '' : 'none';
+                });
+            });
+        }
+
+        async function initConfig() {
+            try {
+                const cfg = await apiFetch('/api/ui-config');
+                if (Array.isArray(cfg.tabs) && cfg.tabs.length) state.tabs = cfg.tabs;
+                if (Array.isArray(cfg.themes)) state.themes = cfg.themes;
+                if (state.themes.length) {
+                    const idx = Math.max(0, state.themes.findIndex(t => t.name === cfg.current_theme));
+                    state.currentThemeIndex = idx;
+                    applyTheme(state.themes[idx]);
+                }
+            } catch (e) {
+                console.error('Failed loading UI config, using defaults', e);
+            }
+        }
+
+        async function refreshAll() {
+            await Promise.all([loadPortfolio(), loadWatchlist(), loadMacro(), loadTransactions(), loadPerformance()]);
+        }
+
+        async function init() {
+            await initConfig();
+            renderTabs();
+            bindInteractions();
+            try {
+                await refreshAll();
+            } catch (e) {
+                console.error('Init failed', e);
+            }
+            setInterval(refreshAll, 60000);
+        }
+
         document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>

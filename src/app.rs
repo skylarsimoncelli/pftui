@@ -504,6 +504,7 @@ pub struct App {
 
     // DB
     pub db_path: std::path::PathBuf,
+    last_saved_home_tab: ViewMode,
 }
 
 /// Returns true when the UI should hide value-sensitive data.
@@ -572,9 +573,14 @@ pub fn is_privacy_view(app: &App) -> bool {
 
 impl App {
     pub fn new(config: &Config, db_path: std::path::PathBuf) -> Self {
+        let initial_view = if config.home_tab == "watchlist" {
+            ViewMode::Watchlist
+        } else {
+            ViewMode::Positions
+        };
         App {
             should_quit: false,
-            view_mode: ViewMode::Positions,
+            view_mode: initial_view,
             show_help: false,
             help_scroll: 0,
             detail_open: false,
@@ -670,6 +676,7 @@ impl App {
             bls_data: HashMap::new(),
             worldbank_data: HashMap::new(),
             db_path,
+            last_saved_home_tab: initial_view,
         }
     }
 
@@ -714,6 +721,11 @@ impl App {
             refresh_interval: self.refresh_interval_secs,
             portfolio_mode: self.portfolio_mode,
             theme: self.theme_name.clone(),
+            home_tab: if self.view_mode == ViewMode::Watchlist {
+                "watchlist".to_string()
+            } else {
+                "positions".to_string()
+            },
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
@@ -1599,6 +1611,7 @@ impl App {
 
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
+        self.persist_home_tab_preference_if_needed();
 
         if let Some(ref service) = self.price_service {
             let mut updated = false;
@@ -1650,6 +1663,28 @@ impl App {
             if last.elapsed().as_secs() >= self.refresh_interval_secs {
                 self.force_refresh();
             }
+        }
+    }
+
+    fn persist_home_tab_preference_if_needed(&mut self) {
+        let desired = match self.view_mode {
+            ViewMode::Positions => Some(ViewMode::Positions),
+            ViewMode::Watchlist => Some(ViewMode::Watchlist),
+            _ => None,
+        };
+        let Some(desired) = desired else { return; };
+        if desired == self.last_saved_home_tab {
+            return;
+        }
+
+        if let Ok(mut cfg) = config::load_config() {
+            cfg.home_tab = if desired == ViewMode::Watchlist {
+                "watchlist".to_string()
+            } else {
+                "positions".to_string()
+            };
+            let _ = config::save_config(&cfg);
+            self.last_saved_home_tab = desired;
         }
     }
 
@@ -2888,6 +2923,11 @@ impl App {
         // Persist to config
         if let Ok(mut cfg) = config::load_config() {
             cfg.theme = self.theme_name.clone();
+            cfg.home_tab = if self.view_mode == ViewMode::Watchlist {
+                "watchlist".to_string()
+            } else {
+                "positions".to_string()
+            };
             let _ = config::save_config(&cfg);
         }
     }

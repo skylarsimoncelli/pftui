@@ -1,10 +1,13 @@
 use axum::{
     extract::Path,
+    extract::Query,
     extract::State,
     http::StatusCode,
     response::Json,
 };
+use chrono::{Duration, NaiveDate, Utc};
 use rusqlite::Connection;
+use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +16,8 @@ use crate::config::Config;
 use crate::db;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
+use crate::tui::theme::{self, THEME_NAMES};
+use ratatui::style::Color;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -139,6 +144,40 @@ pub struct SummaryResponse {
     pub total_value: Option<Decimal>,
     pub position_count: usize,
     pub top_movers: Vec<Position>,
+}
+
+#[derive(Serialize)]
+pub struct UiConfigResponse {
+    pub tabs: Vec<&'static str>,
+    pub themes: Vec<WebTheme>,
+    pub current_theme: String,
+}
+
+#[derive(Serialize)]
+pub struct WebTheme {
+    pub name: String,
+    pub colors: WebThemeColors,
+}
+
+#[derive(Serialize)]
+pub struct WebThemeColors {
+    pub bg_primary: String,
+    pub bg_secondary: String,
+    pub bg_tertiary: String,
+    pub text_primary: String,
+    pub text_secondary: String,
+    pub text_muted: String,
+    pub text_accent: String,
+    pub border: String,
+    pub accent: String,
+    pub green: String,
+    pub red: String,
+    pub yellow: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PerformanceQuery {
+    pub timeframe: Option<String>,
 }
 
 // Handlers
@@ -431,14 +470,85 @@ pub async fn get_chart_data(
 }
 
 pub async fn get_performance(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<PerformanceQuery>,
 ) -> Result<Json<PerformanceResponse>, (StatusCode, String)> {
-    // TODO: Implement portfolio value history computation
+    let conn = state.get_conn().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let mut snapshots = db::snapshots::get_all_portfolio_snapshots(&conn).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to load portfolio snapshots: {}", e),
+        )
+    })?;
+
+    let days = match query.timeframe.as_deref().unwrap_or("3m") {
+        "1w" => 7,
+        "1m" => 30,
+        "3m" => 90,
+        "6m" => 180,
+        "1y" => 365,
+        "5y" => 1825,
+        _ => 90,
+    };
+
+    if !snapshots.is_empty() {
+        let cutoff = Utc::now().date_naive() - Duration::days(days);
+        snapshots.retain(|s| {
+            NaiveDate::parse_from_str(&s.date, "%Y-%m-%d")
+                .map(|d| d >= cutoff)
+                .unwrap_or(true)
+        });
+    }
+
+    let daily_values: Vec<PortfolioValuePoint> = snapshots
+        .iter()
+        .map(|s| PortfolioValuePoint {
+            date: s.date.clone(),
+            value: s.total_value,
+        })
+        .collect();
+
+    let total_return_pct = if daily_values.len() >= 2 {
+        let start = daily_values.first().map(|p| p.value).unwrap_or(dec!(0));
+        let end = daily_values.last().map(|p| p.value).unwrap_or(dec!(0));
+        if start > dec!(0) {
+            Some(((end - start) / start) * dec!(100))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut max_drawdown_pct: Option<Decimal> = None;
+    if !daily_values.is_empty() {
+        let mut peak = daily_values[0].value;
+        let mut worst = dec!(0);
+        for point in &daily_values {
+            if point.value > peak {
+                peak = point.value;
+            }
+            if peak > dec!(0) {
+                let dd = ((point.value - peak) / peak) * dec!(100);
+                if dd < worst {
+                    worst = dd;
+                }
+            }
+        }
+        max_drawdown_pct = Some(worst);
+    }
+
     Ok(Json(PerformanceResponse {
-        daily_values: vec![],
+        daily_values,
         metrics: PerformanceMetrics {
-            total_return_pct: None,
-            max_drawdown_pct: None,
+            total_return_pct,
+            max_drawdown_pct,
         },
     }))
 }
@@ -498,5 +608,63 @@ pub async fn get_summary(
         total_value,
         position_count: positions.len(),
         top_movers: movers,
+    }))
+}
+
+fn color_to_hex(color: Color) -> String {
+    match color {
+        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+        Color::Black => "#000000".to_string(),
+        Color::White => "#ffffff".to_string(),
+        Color::Red => "#ff0000".to_string(),
+        Color::Green => "#00ff00".to_string(),
+        Color::Blue => "#0000ff".to_string(),
+        Color::Yellow => "#ffff00".to_string(),
+        Color::Magenta => "#ff00ff".to_string(),
+        Color::Cyan => "#00ffff".to_string(),
+        Color::Gray => "#808080".to_string(),
+        Color::DarkGray => "#404040".to_string(),
+        _ => "#7f7f7f".to_string(),
+    }
+}
+
+fn web_theme(name: &str) -> WebTheme {
+    let t = theme::theme_by_name(name);
+    WebTheme {
+        name: name.to_string(),
+        colors: WebThemeColors {
+            bg_primary: color_to_hex(t.surface_0),
+            bg_secondary: color_to_hex(t.surface_1),
+            bg_tertiary: color_to_hex(t.surface_2),
+            text_primary: color_to_hex(t.text_primary),
+            text_secondary: color_to_hex(t.text_secondary),
+            text_muted: color_to_hex(t.text_muted),
+            text_accent: color_to_hex(t.text_accent),
+            border: color_to_hex(t.border_inactive),
+            accent: color_to_hex(t.border_active),
+            green: color_to_hex(t.gain_green),
+            red: color_to_hex(t.loss_red),
+            yellow: color_to_hex(t.stale_yellow),
+        },
+    }
+}
+
+pub async fn get_ui_config(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<UiConfigResponse>, (StatusCode, String)> {
+    let tabs = vec![
+        "Positions",
+        "Transactions",
+        "Markets",
+        "Economy",
+        "Watchlist",
+        "News",
+        "Journal",
+    ];
+    let themes = THEME_NAMES.iter().map(|n| web_theme(n)).collect();
+    Ok(Json(UiConfigResponse {
+        tabs,
+        themes,
+        current_theme: state.config.theme.clone(),
     }))
 }

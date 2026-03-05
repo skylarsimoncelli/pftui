@@ -10,7 +10,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use super::api::{
     get_alerts, get_chart_data, get_macro, get_performance, get_portfolio, get_positions,
-    get_summary, get_transactions, get_watchlist, AppState,
+    get_summary, get_transactions, get_ui_config, get_watchlist, AppState,
 };
 use super::auth::{auth_middleware, AuthState};
 use crate::config::Config;
@@ -42,6 +42,7 @@ pub async fn run_server(
         .route("/chart/{symbol}", get(get_chart_data))
         .route("/performance", get(get_performance))
         .route("/summary", get(get_summary))
+        .route("/ui-config", get(get_ui_config))
         .with_state(app_state.clone());
 
     // Main app with auth middleware
@@ -68,7 +69,12 @@ pub async fn run_server(
 }
 
 async fn serve_index(
-    State(_state): State<Arc<AuthState>>,
-) -> axum::response::Html<&'static str> {
-    axum::response::Html(include_str!("static/index.html"))
+    State(state): State<Arc<AuthState>>,
+) -> axum::response::Html<String> {
+    // Inject auth token so the in-browser app can call protected /api endpoints.
+    // This keeps auth enabled by default while making `pftui web` usable out of the box.
+    let token = state.token.as_deref().unwrap_or("");
+    let html = include_str!("static/index.html")
+        .replace("__PFTUI_AUTH_TOKEN__", token);
+    axum::response::Html(html)
 }

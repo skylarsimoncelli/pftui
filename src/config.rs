@@ -20,6 +20,10 @@ pub struct Config {
     pub portfolio_mode: PortfolioMode,
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Preferred home tab when opening TUI/Web.
+    /// Allowed values: "positions" or "watchlist".
+    #[serde(default = "default_home_tab")]
+    pub home_tab: String,
     /// FRED API key for fetching economic indicators.
     /// Register at: https://fred.stlouisfed.org/docs/api/api_key.html
     #[serde(default)]
@@ -44,6 +48,10 @@ fn default_theme() -> String {
     "midnight".to_string()
 }
 
+fn default_home_tab() -> String {
+    "positions".to_string()
+}
+
 fn default_news_poll_interval() -> u64 {
     600 // 10 minutes
 }
@@ -62,6 +70,7 @@ impl Default for Config {
             refresh_interval: default_refresh_interval(),
             portfolio_mode: PortfolioMode::default(),
             theme: default_theme(),
+            home_tab: default_home_tab(),
             fred_api_key: None,
             news_poll_interval: default_news_poll_interval(),
             custom_news_feeds: Vec::new(),
@@ -178,6 +187,7 @@ mod tests {
         assert_eq!(config.refresh_interval, 60);
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
+        assert_eq!(config.home_tab, "positions");
     }
 
     #[test]
@@ -199,6 +209,7 @@ mod tests {
             refresh_interval: 30,
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
+            home_tab: "watchlist".to_string(),
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
@@ -209,6 +220,7 @@ mod tests {
         assert_eq!(loaded.refresh_interval, 30);
         assert_eq!(loaded.portfolio_mode, PortfolioMode::Percentage);
         assert_eq!(loaded.theme, "nord");
+        assert_eq!(loaded.home_tab, "watchlist");
     }
 
     #[test]
@@ -219,6 +231,7 @@ mod tests {
         assert_eq!(config.refresh_interval, 60);
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
+        assert_eq!(config.home_tab, "positions");
     }
 
     #[test]
@@ -228,6 +241,7 @@ mod tests {
         assert_eq!(config.refresh_interval, 60);
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
+        assert_eq!(config.home_tab, "positions");
     }
 
     #[test]
