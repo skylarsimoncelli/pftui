@@ -38,7 +38,7 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - [ ] 22. Theme parity and design tokens.
 - [x] 23. Keep all 11 TUI theme names and derive web CSS variables from Rust theme structs only.
 - [x] 24. Add theme cycle control and optional theme picker modal.
-- [ ] 25. Ensure contrast/a11y checks per theme.
+- [x] 25. Ensure contrast/a11y checks per theme.
 - [ ] 26. Add visual polish parity: panel hierarchy, border emphasis, selected-row treatment, muted/active text states.
 
 ## Detail Panels and Overlays
@@ -63,10 +63,10 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - [x] 41. Add explicit unauthenticated UI state.
 
 ## Testing and Release
-- [ ] 42. Test parity and quality gates.
+- [x] 42. Test parity and quality gates.
 - [ ] 43. Add backend API tests per endpoint payload contract.
 - [ ] 44. Add frontend integration tests for tab flows and chart loads.
-- [ ] 45. Add parity checklist against TUI for every release.
+- [x] 45. Add parity checklist against TUI for every release.
 - [ ] 46. Add visual regression snapshots across desktop/mobile and all themes.
 
 ## Rollout Sequence
@@ -81,3 +81,4 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - 2026-03-05: Phase B landed session auth (`/auth/login`, `/auth/logout`, `/auth/session`, `/auth/csrf`), middleware CSRF enforcement for mutating `/api/*`, and unauthenticated/expired-session UI flow in web frontend.
 - 2026-03-05: Phase C landed overlay stack + keyboard parity for search/alerts/asset details (single active overlay, Esc-close priority, focus return), plus alert badges in header/tab.
 - 2026-03-05: Phase D landed `/api/stream` SSE events (`quote_update`, `panel_invalidate`, `health`, `heartbeat`) with frontend reconnect/backoff and automatic polling fallback status.
+- 2026-03-05: Phase E added CI quality gates: theme contrast regression test (`theme_contrast_guardrails`) and stable-web tag checklist enforcement via `scripts/check_web_parity_checklist.sh`.

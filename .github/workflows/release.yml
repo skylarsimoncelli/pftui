@@ -21,6 +21,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Web parity checklist gate (stable web tags)
+        if: startsWith(github.ref_name, 'web-stable-')
+        run: |
+          scripts/check_web_parity_checklist.sh \
+            22 25 26 27 28 29 30 34 37 38 40 41 42 43 44 45 46 47 49 50 51
       - run: cargo test --all-features
       - run: cargo clippy --all-targets -- -D warnings
 

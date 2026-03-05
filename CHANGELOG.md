@@ -33,6 +33,13 @@
 - Files: `src/web/server.rs`, `src/web/static/index.html`, `docs/WEB_API_SCHEMA_v1.md`, `docs/WEB_PARITY_CHECKLIST.md`, `Cargo.toml`
 - Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
 
+### 2026-03-05 21:00 UTC — Web parity Phase E (partial): contrast + release gates
+
+- What: Added explicit theme contrast guardrail test (`theme_contrast_guardrails`) in `src/tui/theme.rs` and wired it into CI as a blocking gate. Added reusable checklist gate script (`scripts/check_web_parity_checklist.sh`) and hooked stable-web release tags to enforce required parity checklist items before release.
+- CI/Release: `.github/workflows/ci.yml` now runs the contrast gate; `.github/workflows/release.yml` now performs parity checklist validation for `web-stable-*` tags.
+- Files: `src/tui/theme.rs`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `scripts/check_web_parity_checklist.sh`, `docs/WEB_PARITY_CHECKLIST.md`
+- Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
+
 ### 2026-03-05 14:45 UTC — F25.3: `pftui global` CLI for World Bank data
 
 - What: New `pftui global` command displays World Bank structural macro data for major economies. Shows GDP growth, Debt/GDP, Current Account, and Reserves for 8 tracked countries (USA, EU, UK, China, India, Russia, Brazil, South Africa). Terminal output: country-grouped panels with formatted values (percentages, trillions USD). Filters: `--country` (e.g. USA, CHN, IND), `--indicator` (gdp, debt, current-account, reserves). JSON output via `--json` flag for agent consumption. Reads from worldbank_cache (built in F25.1), outputs "No data found" if cache empty with refresh hint.

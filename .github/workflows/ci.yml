@@ -42,5 +42,8 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Theme contrast gate
+        run: cargo test theme_contrast_guardrails -- --exact
+
       - name: Build release
         run: cargo build --release

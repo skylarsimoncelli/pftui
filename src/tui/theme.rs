@@ -1299,4 +1299,77 @@ mod tests {
             })
             .unwrap();
     }
+
+    fn rgb(color: Color) -> (u8, u8, u8) {
+        match color {
+            Color::Rgb(r, g, b) => (r, g, b),
+            Color::Black => (0, 0, 0),
+            Color::White => (255, 255, 255),
+            Color::Red => (255, 0, 0),
+            Color::Green => (0, 255, 0),
+            Color::Blue => (0, 0, 255),
+            Color::Yellow => (255, 255, 0),
+            Color::Magenta => (255, 0, 255),
+            Color::Cyan => (0, 255, 255),
+            Color::Gray => (128, 128, 128),
+            Color::DarkGray => (64, 64, 64),
+            _ => (127, 127, 127),
+        }
+    }
+
+    fn srgb_to_linear(v: u8) -> f64 {
+        let x = v as f64 / 255.0;
+        if x <= 0.04045 {
+            x / 12.92
+        } else {
+            ((x + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn luminance(color: Color) -> f64 {
+        let (r, g, b) = rgb(color);
+        0.2126 * srgb_to_linear(r) + 0.7152 * srgb_to_linear(g) + 0.0722 * srgb_to_linear(b)
+    }
+
+    fn contrast_ratio(fg: Color, bg: Color) -> f64 {
+        let l1 = luminance(fg);
+        let l2 = luminance(bg);
+        let (bright, dark) = if l1 >= l2 { (l1, l2) } else { (l2, l1) };
+        (bright + 0.05) / (dark + 0.05)
+    }
+
+    #[test]
+    fn theme_contrast_guardrails() {
+        for name in THEME_NAMES {
+            let t = theme_by_name(name);
+            let p1 = contrast_ratio(t.text_primary, t.surface_1);
+            let p2 = contrast_ratio(t.text_primary, t.surface_0);
+            let s1 = contrast_ratio(t.text_secondary, t.surface_1);
+            let a1 = contrast_ratio(t.text_accent, t.surface_1);
+            assert!(
+                p1 >= 4.0,
+                "theme={} text_primary/surface_1 contrast too low: {:.2}",
+                name,
+                p1
+            );
+            assert!(
+                p2 >= 4.5,
+                "theme={} text_primary/surface_0 contrast too low: {:.2}",
+                name,
+                p2
+            );
+            assert!(
+                s1 >= 3.0,
+                "theme={} text_secondary/surface_1 contrast too low: {:.2}",
+                name,
+                s1
+            );
+            assert!(
+                a1 >= 3.0,
+                "theme={} text_accent/surface_1 contrast too low: {:.2}",
+                name,
+                a1
+            );
+        }
+    }
 }
