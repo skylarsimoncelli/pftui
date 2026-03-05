@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 00:40 UTC — F18.3: COT signal column in Markets tab
+
+- What: Markets tab now displays COT positioning signals in a new COT column. Shows emoji indicators for commodities with CFTC data (Gold, Silver, Oil, Bitcoin). Signal logic: 🟢 Aligned (managed money and price trend agree — both up or both down over last week), 🔴 Divergence (managed money and price trend disagree), ⚠️ Extreme (managed money net position >2 standard deviations from 52-week mean). Uses statistical analysis of 52-week COT history to detect extreme positioning. Compares week-over-week managed money change vs 7-day price momentum. Empty cell for assets without COT data (indices, forex, bonds, non-futures crypto).
+- Why: F18.3 from TODO.md (P0 — Free Data Integration). Surfaces smart money positioning signals at-a-glance in the Markets overview. Divergence (🔴) flags potential reversals when speculators and price action disagree. Extreme (⚠️) flags crowded trades that may be vulnerable. Aligned (🟢) confirms trend strength. Complements F18.2 (COT detail popup) with compact summary view. No other portfolio TUI shows real-time COT signals in a market overview table.
+- Files: `src/tui/views/markets.rs` (+COT header column, +compute_cot_signal() function with z-score extremity check + alignment logic, +COT cell in row construction, updated column widths and skeleton placeholders)
+- Tests: all 1011 tests passing, clippy clean. No new tests — display-only feature reading from existing cot_cache infrastructure.
+- TODO: F18.3 (P0) — COMPLETED. Next: F18.4 (`pftui cot` CLI command).
+
 ### 2026-03-05 00:10 UTC — F18.2: COT positioning section in asset detail popup
 
 - What: display CFTC Commitments of Traders (COT) data in asset detail popup for tracked commodities. COT section appears when viewing gold (GC=F), silver (SI=F), WTI crude oil (CL=F), or Bitcoin (BTC) — only if COT cache data exists. Shows: managed money net position (formatted with k/M suffix: "Net 142k Long"), week-over-week change in managed money positioning ("+8k WoW" in green/red), commercials net position, week-over-week change in commercials positioning, open interest (total contracts), report date. Section inserted between Portfolio/Watchlist section and Footer in build_lines(). Reads data via db::cot_cache::get_latest() and get_history() with 2-week lookback for WoW calculations. Positions color-coded: green for net long, red for net short. Changes color-coded by direction.
