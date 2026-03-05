@@ -56,11 +56,11 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 - [x] 36. Surface last refresh timestamp and source health in UI.
 
 ## Auth and Session Hardening
-- [ ] 37. Auth/session hardening.
-- [ ] 38. Replace injected static token pattern with secure session auth for web mode.
+- [x] 37. Auth/session hardening.
+- [x] 38. Replace injected static token pattern with secure session auth for web mode.
 - [x] 39. Keep `--no-auth` local dev shortcut.
-- [ ] 40. Add CSRF/session expiry handling if browser auth is enabled.
-- [ ] 41. Add explicit unauthenticated UI state.
+- [x] 40. Add CSRF/session expiry handling if browser auth is enabled.
+- [x] 41. Add explicit unauthenticated UI state.
 
 ## Testing and Release
 - [ ] 42. Test parity and quality gates.
@@ -78,3 +78,4 @@ Source: user-provided parity checklist. This file is the implementation tracker 
 
 ## Progress Notes
 - 2026-03-05: Phase A baseline fix landed for new `Config.home_tab` field by updating explicit `Config { ... }` initializers in tests (`src/app.rs`, `src/commands/export.rs`).
+- 2026-03-05: Phase B landed session auth (`/auth/login`, `/auth/logout`, `/auth/session`, `/auth/csrf`), middleware CSRF enforcement for mutating `/api/*`, and unauthenticated/expired-session UI flow in web frontend.

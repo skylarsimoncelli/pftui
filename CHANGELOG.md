@@ -10,6 +10,14 @@
 - Files: `src/app.rs`, `src/commands/export.rs`, `docs/WEB_PARITY_CHECKLIST.md`
 - Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
 
+### 2026-03-05 19:10 UTC — Web parity Phase B: session auth + CSRF
+
+- What: Replaced injected static bearer token model with cookie-based browser sessions and explicit auth endpoints: `POST /auth/login`, `POST /auth/logout`, `GET /auth/session`, `GET /auth/csrf`. Added middleware enforcement for `/api/*` session validation and CSRF checks on mutating methods. Added standardized auth failure JSON payload (`code`, `message`, `relogin_required`).
+- Frontend: Removed token meta injection, added boot-time session probe, unauthenticated/expired-session login overlay, CSRF header propagation for `POST`, and logout flow. Background polling now stops on auth loss and resumes after re-auth.
+- Contract: Added `meta.auth_required` and `meta.transport` fields (`polling`) to API response metadata and documented schema `v1.1` updates in `WEB_API_SCHEMA_v1.md`.
+- Files: `src/web/auth.rs`, `src/web/server.rs`, `src/web/static/index.html`, `src/web/view_model.rs`, `docs/WEB_API_SCHEMA_v1.md`, `docs/WEB_PARITY_CHECKLIST.md`
+- Tests: Could not run in this environment (`cargo` binary is not installed in current shell).
+
 ### 2026-03-05 14:45 UTC — F25.3: `pftui global` CLI for World Bank data
 
 - What: New `pftui global` command displays World Bank structural macro data for major economies. Shows GDP growth, Debt/GDP, Current Account, and Reserves for 8 tracked countries (USA, EU, UK, China, India, Russia, Brazil, South Africa). Terminal output: country-grouped panels with formatted values (percentages, trillions USD). Filters: `--country` (e.g. USA, CHN, IND), `--indicator` (gdp, debt, current-account, reserves). JSON output via `--json` flag for agent consumption. Reads from worldbank_cache (built in F25.1), outputs "No data found" if cache empty with refresh hint.

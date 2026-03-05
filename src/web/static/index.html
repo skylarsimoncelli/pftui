@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>pftui web - The Portfolio TUI</title>
-    <meta name="pftui-auth-token" content="__PFTUI_AUTH_TOKEN__">
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -57,6 +56,7 @@
 
         .total-value { font-size: 1.4rem; font-weight: 700; }
         .total-gain { font-size: 0.95rem; }
+        .freshness { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem; }
         .positive { color: var(--green); }
         .negative { color: var(--red); }
 
@@ -69,6 +69,37 @@
             cursor: pointer;
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             font-size: 0.78rem;
+        }
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            z-index: 30;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .auth-overlay.active { display: flex; }
+        .auth-card {
+            width: min(460px, 100%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 16px 36px rgba(0,0,0,0.35);
+        }
+        .auth-title { font-size: 1rem; margin-bottom: 0.55rem; }
+        .auth-message { font-size: 0.86rem; color: var(--text-secondary); margin-bottom: 0.7rem; }
+        .auth-actions { display: flex; gap: 0.6rem; align-items: center; }
+        .auth-btn {
+            border: 1px solid var(--border);
+            background: var(--accent);
+            color: #0b1220;
+            border-radius: 8px;
+            padding: 0.45rem 0.7rem;
+            cursor: pointer;
+            font-weight: 600;
         }
 
         .tabs {
@@ -134,6 +165,20 @@
             flex-wrap: wrap;
             margin-bottom: 0.8rem;
         }
+        .controls-inline {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.8rem;
+        }
+        .control-input, .control-select {
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-radius: 6px;
+            padding: 0.35rem 0.45rem;
+            font-size: 0.8rem;
+        }
 
         .tf-btn {
             border: 1px solid var(--border);
@@ -183,7 +228,8 @@
         }
 
         #tradingview-chart,
-        #tradingview-chart-markets {
+        #tradingview-chart-markets,
+        #tradingview-chart-watchlist {
             width: 100%;
             height: 360px;
             border: 1px solid var(--border);
@@ -225,6 +271,27 @@
             align-items: center;
             cursor: pointer;
         }
+        .list-item.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+        .detail-pane {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-tertiary);
+            padding: 0.8rem;
+            min-height: 280px;
+            overflow: auto;
+        }
+        .detail-pane h3 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+        .detail-pane p { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.4; }
+        .badge {
+            display: inline-block;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.15rem 0.45rem;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-right: 0.35rem;
+            margin-bottom: 0.25rem;
+        }
 
         .empty {
             border: 1px dashed var(--border);
@@ -237,12 +304,23 @@
 
         @media (max-width: 1024px) {
             .layout { grid-template-columns: 1fr; }
-            #tradingview-chart, #tradingview-chart-markets, .chart-placeholder { height: 280px; }
+            #tradingview-chart, #tradingview-chart-markets, #tradingview-chart-watchlist, .chart-placeholder { height: 280px; }
             #portfolio-canvas { height: 190px; }
         }
     </style>
 </head>
 <body>
+    <div class="auth-overlay" id="auth-overlay">
+        <form class="auth-card" id="auth-login-form">
+            <h2 class="auth-title">Authentication Required</h2>
+            <p class="auth-message" id="auth-message">Enter the login token printed by `pftui web` to start a session.</p>
+            <input class="search" id="auth-token-input" placeholder="Login token" autocomplete="off" />
+            <div class="auth-actions">
+                <button type="submit" class="auth-btn">Login</button>
+                <span class="subtle" id="auth-status"></span>
+            </div>
+        </form>
+    </div>
     <header>
         <div class="container">
             <div class="header-row">
@@ -254,8 +332,10 @@
                     <div>
                         <div class="total-value" id="total-value">--</div>
                         <div class="total-gain" id="total-gain"></div>
+                        <div class="freshness" id="freshness-status">Refreshing...</div>
                     </div>
                     <button class="theme-btn" id="theme-cycle">Theme</button>
+                    <button class="theme-btn" id="auth-logout" style="display:none;">Logout</button>
                 </div>
             </div>
             <div class="tabs" id="tabs"></div>
@@ -275,6 +355,10 @@
                             <button class="tf-btn" data-tf="6m">6M</button>
                             <button class="tf-btn" data-tf="1y">1Y</button>
                             <button class="tf-btn" data-tf="5y">5Y</button>
+                        </div>
+                        <div class="controls-inline">
+                            <button class="tf-btn" id="overlay-benchmark">Benchmark: SPX</button>
+                            <button class="tf-btn" id="overlay-drawdown">Drawdown Overlay</button>
                         </div>
                         <canvas id="portfolio-canvas" width="1200" height="260"></canvas>
                         <p class="subtle" id="performance-meta">Loading performance...</p>
@@ -323,16 +407,24 @@
         <section class="view" id="view-transactions">
             <div class="card">
                 <h2>Transactions</h2>
+                <div class="controls-inline">
+                    <input class="control-input" id="tx-symbol-filter" placeholder="Symbol" />
+                    <select class="control-select" id="tx-type-filter">
+                        <option value="">All Types</option>
+                        <option value="buy">Buy</option>
+                        <option value="sell">Sell</option>
+                    </select>
+                </div>
                 <div class="table-wrap">
                     <table id="transactions-table">
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Symbol</th>
-                                <th>Type</th>
-                                <th class="right">Qty</th>
-                                <th class="right">Price</th>
-                                <th class="right">Fee</th>
+                                <th data-sort="date">Date</th>
+                                <th data-sort="symbol">Symbol</th>
+                                <th data-sort="type">Type</th>
+                                <th class="right" data-sort="qty">Qty</th>
+                                <th class="right" data-sort="price">Price</th>
+                                <th class="right" data-sort="fee">Fee</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -348,6 +440,10 @@
                         <h2>Market Overview</h2>
                         <div id="macro-panel-markets" class="macro-grid"></div>
                     </div>
+                    <div class="card">
+                        <h2>Top Movers</h2>
+                        <div id="market-movers" class="list"></div>
+                    </div>
                 </div>
                 <div class="right-col">
                     <div class="card">
@@ -362,38 +458,133 @@
         <section class="view" id="view-economy">
             <div class="card">
                 <h2>Economy</h2>
-                <div id="macro-panel-economy" class="macro-grid"></div>
+                <div id="economy-sections"></div>
             </div>
         </section>
 
         <section class="view" id="view-watchlist">
+            <div class="layout">
+                <div class="left-col">
+                    <div class="card">
+                        <h2>Watchlist</h2>
+                        <div id="watchlist-full" class="list"></div>
+                    </div>
+                </div>
+                <div class="right-col">
+                    <div class="card">
+                        <h2>Asset Chart (TradingView)</h2>
+                        <div id="chart-placeholder-watchlist" class="chart-placeholder">Click a watchlist symbol to load chart</div>
+                        <div id="tradingview-chart-watchlist" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="view" id="view-alerts">
             <div class="card">
-                <h2>Watchlist</h2>
-                <div id="watchlist-full" class="list"></div>
+                <h2>Alerts</h2>
+                <div id="alerts-list" class="list"></div>
             </div>
         </section>
 
         <section class="view" id="view-news">
-            <div class="empty">News tab scaffolding is ready. API integration comes next.</div>
+            <div class="layout">
+                <div class="left-col">
+                    <div class="card">
+                        <h2>News</h2>
+                        <input class="search" id="news-search" placeholder="Search headlines" />
+                        <div id="news-list" class="list"></div>
+                    </div>
+                </div>
+                <div class="right-col">
+                    <div class="card">
+                        <h2>Selected Story</h2>
+                        <div id="news-detail" class="detail-pane">
+                            <div class="empty">Select a story from the list.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <section class="view" id="view-journal">
-            <div class="empty">Journal tab scaffolding is ready. API integration comes next.</div>
+            <div class="layout">
+                <div class="left-col">
+                    <div class="card">
+                        <h2>Journal</h2>
+                        <input class="search" id="journal-search" placeholder="Search journal notes" />
+                        <div id="journal-list" class="list"></div>
+                    </div>
+                </div>
+                <div class="right-col">
+                    <div class="card">
+                        <h2>Selected Entry</h2>
+                        <div id="journal-detail" class="detail-pane">
+                            <div class="empty">Select a journal entry from the list.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </section>
     </main>
 
     <script src="https://s3.tradingview.com/tv.js"></script>
     <script>
-        const authToken = (document.querySelector('meta[name="pftui-auth-token"]')?.content || '').trim();
+        const storageKey = 'pftui-web-ui-state-v1';
         const state = {
-            tabs: ['Positions', 'Transactions', 'Markets', 'Economy', 'Watchlist', 'News', 'Journal'],
+            tabs: ['Positions', 'Transactions', 'Markets', 'Economy', 'Watchlist', 'Alerts', 'News', 'Journal'],
             activeTab: 'Positions',
             themes: [],
             currentThemeIndex: 0,
             performanceTf: '3m',
+            performanceBenchmark: false,
+            performanceDrawdown: false,
             positions: [],
+            watchlist: [],
+            macro: [],
+            news: [],
+            journal: [],
+            alerts: [],
+            selectedSymbol: null,
+            selectedNewsId: null,
+            selectedJournalId: null,
             widgets: {},
+            refreshTick: null,
+            txSortBy: 'date',
+            txSortOrder: 'desc',
+            txSymbol: '',
+            txType: '',
+            auth: {
+                status: 'unknown',
+                csrfToken: null,
+                authMode: 'session',
+                refreshTimer: null,
+            },
         };
+
+        function restoreUiState() {
+            try {
+                const raw = localStorage.getItem(storageKey);
+                if (!raw) return;
+                const saved = JSON.parse(raw);
+                if (saved.activeTab) state.activeTab = saved.activeTab;
+                if (saved.performanceTf) state.performanceTf = saved.performanceTf;
+                if (saved.selectedSymbol) state.selectedSymbol = saved.selectedSymbol;
+                if (saved.txSortBy) state.txSortBy = saved.txSortBy;
+                if (saved.txSortOrder) state.txSortOrder = saved.txSortOrder;
+            } catch (_) {}
+        }
+        function persistUiState() {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify({
+                    activeTab: state.activeTab,
+                    performanceTf: state.performanceTf,
+                    selectedSymbol: state.selectedSymbol,
+                    txSortBy: state.txSortBy,
+                    txSortOrder: state.txSortOrder,
+                }));
+            } catch (_) {}
+        }
 
         function fmtCurrency(v) {
             if (v === null || v === undefined) return '-';
@@ -408,11 +599,80 @@
             const n = Number(v);
             return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
         }
+        function updateFreshness(meta) {
+            if (!meta?.last_refresh_at) return;
+            const el = document.getElementById('freshness-status');
+            if (!el) return;
+            const t = new Date(meta.last_refresh_at);
+            const staleSec = Number(meta.stale_after_sec || 60);
+            const ageSec = Math.max(0, Math.floor((Date.now() - t.getTime()) / 1000));
+            const stale = ageSec > staleSec;
+            el.textContent = `Last refresh: ${t.toLocaleTimeString()} · ${stale ? 'Stale' : 'Live'} · source: ${meta.source_status || 'ok'}`;
+            el.className = `freshness ${stale ? 'negative' : 'subtle'}`;
+        }
+
+        function stopAutoRefresh() {
+            if (state.auth.refreshTimer) {
+                clearInterval(state.auth.refreshTimer);
+                state.auth.refreshTimer = null;
+            }
+        }
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            state.auth.refreshTimer = setInterval(() => {
+                refreshAll().catch(() => {});
+            }, 60000);
+        }
+
+        function showAuthOverlay(message) {
+            stopAutoRefresh();
+            document.getElementById('auth-overlay')?.classList.add('active');
+            if (message) document.getElementById('auth-message').textContent = message;
+            document.getElementById('auth-status').textContent = '';
+            document.getElementById('auth-logout').style.display = 'none';
+        }
+
+        function hideAuthOverlay() {
+            document.getElementById('auth-overlay')?.classList.remove('active');
+            document.getElementById('auth-status').textContent = '';
+            if (state.auth.authMode === 'session') {
+                document.getElementById('auth-logout').style.display = '';
+            } else {
+                document.getElementById('auth-logout').style.display = 'none';
+            }
+        }
+
+        function handleUnauthorized(expired = false) {
+            state.auth.csrfToken = null;
+            state.auth.status = expired ? 'expired' : 'unauthenticated';
+            showAuthOverlay(expired ? 'Your session expired. Log in again.' : 'Authentication required.');
+        }
 
         async function apiFetch(path) {
-            const headers = {};
-            if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-            const res = await fetch(path, { headers });
+            const res = await fetch(path, { credentials: 'same-origin' });
+            if (res.status === 401) {
+                const payload = await res.json().catch(() => ({}));
+                handleUnauthorized(payload.code === 'session_expired');
+                throw new Error('Unauthorized');
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            return res.json();
+        }
+        async function apiPost(path, body) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (state.auth.csrfToken) headers['X-CSRF-Token'] = state.auth.csrfToken;
+            const res = await fetch(path, {
+                method: 'POST',
+                headers,
+                credentials: 'same-origin',
+                body: JSON.stringify(body || {}),
+            });
+            if (res.status === 401) {
+                const payload = await res.json().catch(() => ({}));
+                handleUnauthorized(payload.code === 'session_expired');
+                throw new Error('Unauthorized');
+            }
             if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
             return res.json();
         }
@@ -436,10 +696,24 @@
             document.getElementById('theme-cycle').textContent = `Theme: ${theme.name}`;
         }
 
-        function cycleTheme() {
+        async function cycleTheme() {
             if (!state.themes.length) return;
             state.currentThemeIndex = (state.currentThemeIndex + 1) % state.themes.length;
-            applyTheme(state.themes[state.currentThemeIndex]);
+            const chosen = state.themes[state.currentThemeIndex];
+            applyTheme(chosen);
+            try { await apiPost('/api/theme', { theme: chosen.name }); } catch (_) {}
+            redrawActiveCharts();
+            persistUiState();
+        }
+
+        function tradingViewTheme() {
+            const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim();
+            if (!bg.startsWith('#') || bg.length !== 7) return 'dark';
+            const r = parseInt(bg.slice(1, 3), 16);
+            const g = parseInt(bg.slice(3, 5), 16);
+            const b = parseInt(bg.slice(5, 7), 16);
+            const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+            return luminance > 0.55 ? 'light' : 'dark';
         }
 
         function renderTabs() {
@@ -454,15 +728,22 @@
             });
         }
 
-        function setActiveTab(tab) {
+        async function setActiveTab(tab) {
             state.activeTab = tab;
             renderTabs();
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             const el = document.getElementById(`view-${tab.toLowerCase()}`);
             if (el) el.classList.add('active');
+            if (tab === 'Positions' || tab === 'Watchlist') {
+                try {
+                    await apiPost('/api/home-tab', { home_tab: tab.toLowerCase() });
+                } catch (_) {}
+            }
+            redrawActiveCharts();
+            persistUiState();
         }
 
-        function drawPortfolioChart(points) {
+        function drawPortfolioChart(points, benchmarkPoints = []) {
             const canvas = document.getElementById('portfolio-canvas');
             const ctx = canvas.getContext('2d');
             const w = canvas.width;
@@ -476,13 +757,18 @@
                 return;
             }
 
-            const vals = points.map(p => Number(p.value));
+            const vals = points.map(p => Number(p.value)).concat((benchmarkPoints || []).map(p => Number(p.value)));
             const min = Math.min(...vals);
             const max = Math.max(...vals);
             const range = Math.max(max - min, 1);
             const pad = 24;
+            const start = Number(points[0].value);
+            const end = Number(points[points.length - 1].value);
+            const lineColor = end >= start
+                ? getComputedStyle(document.documentElement).getPropertyValue('--green')
+                : getComputedStyle(document.documentElement).getPropertyValue('--red');
 
-            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+            ctx.strokeStyle = lineColor;
             ctx.lineWidth = 2;
             ctx.beginPath();
             points.forEach((p, i) => {
@@ -491,12 +777,44 @@
                 if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
             });
             ctx.stroke();
+
+            if (state.performanceDrawdown) {
+                let peak = Number(points[0].value);
+                ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--yellow');
+                ctx.lineWidth = 1.25;
+                ctx.beginPath();
+                points.forEach((p, i) => {
+                    const pv = Number(p.value);
+                    if (pv > peak) peak = pv;
+                    const dd = peak > 0 ? ((pv - peak) / peak) * 100 : 0;
+                    const x = pad + (i * (w - pad * 2)) / (points.length - 1);
+                    const y = h - pad - ((dd - (-40)) / 50) * (h - pad * 2);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+
+            if (benchmarkPoints && benchmarkPoints.length >= 2) {
+                ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-accent');
+                ctx.setLineDash([6, 4]);
+                ctx.lineWidth = 1.75;
+                ctx.beginPath();
+                benchmarkPoints.forEach((p, i) => {
+                    const x = pad + (i * (w - pad * 2)) / (benchmarkPoints.length - 1);
+                    const y = h - pad - ((Number(p.value) - min) / range) * (h - pad * 2);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
         }
 
         function loadChart(symbol, containerId, placeholderId) {
             const container = document.getElementById(containerId);
             const placeholder = document.getElementById(placeholderId);
             if (!container || !window.TradingView) return;
+            state.selectedSymbol = symbol;
+            persistUiState();
 
             if (placeholder) placeholder.style.display = 'none';
             container.style.display = 'block';
@@ -511,7 +829,7 @@
                 symbol,
                 interval: 'D',
                 timezone: 'Etc/UTC',
-                theme: 'dark',
+                theme: tradingViewTheme(),
                 style: '1',
                 locale: 'en',
                 toolbar_bg: '#111827',
@@ -520,6 +838,19 @@
                 container_id: containerId,
                 disabled_features: ['use_localstorage_for_settings']
             });
+        }
+
+        function redrawActiveCharts() {
+            if (!state.selectedSymbol) return;
+            if (state.activeTab === 'Markets' || state.activeTab === 'Economy') {
+                loadChart(state.selectedSymbol, 'tradingview-chart-markets', 'chart-placeholder-markets');
+                return;
+            }
+            if (state.activeTab === 'Watchlist') {
+                loadChart(state.selectedSymbol, 'tradingview-chart-watchlist', 'chart-placeholder-watchlist');
+                return;
+            }
+            loadChart(state.selectedSymbol, 'tradingview-chart', 'chart-placeholder');
         }
 
         function renderPositions(positions) {
@@ -561,8 +892,22 @@
             items.forEach(item => {
                 const row = document.createElement('div');
                 row.className = 'list-item';
-                row.innerHTML = `<div><div class="symbol">${item.symbol}</div><div class="name">${item.name || ''}</div></div><div>${fmtCurrency(item.current_price)}</div>`;
-                row.addEventListener('click', () => loadChart(item.symbol, 'tradingview-chart', 'chart-placeholder'));
+                const proximity = item.distance_pct !== null && item.distance_pct !== undefined
+                    ? `<div class="name">${item.target_hit ? 'Target hit' : 'Distance'}: ${fmtPct(item.distance_pct)}</div>`
+                    : '';
+                const target = item.target_price !== null && item.target_price !== undefined
+                    ? `<div class="name">Target ${item.target_direction || ''} ${fmtCurrency(item.target_price)}</div>`
+                    : '';
+                row.innerHTML = `<div><div class="symbol">${item.symbol}</div><div class="name">${item.name || ''}</div>${target}${proximity}</div><div>${fmtCurrency(item.current_price)}</div>`;
+                row.addEventListener('click', () => {
+                    document.querySelectorAll(`#${targetId} .list-item`).forEach(n => n.classList.remove('active'));
+                    row.classList.add('active');
+                    if (targetId === 'watchlist-full') {
+                        loadChart(item.symbol, 'tradingview-chart-watchlist', 'chart-placeholder-watchlist');
+                    } else {
+                        loadChart(item.symbol, 'tradingview-chart', 'chart-placeholder');
+                    }
+                });
                 el.appendChild(row);
             });
         }
@@ -577,15 +922,153 @@
             }
             items.forEach(ind => {
                 const div = document.createElement('div');
-                div.className = 'macro-item';
+                div.className = `macro-item ${state.selectedSymbol === ind.symbol ? 'active' : ''}`;
                 div.innerHTML = `<div class="label">${ind.name}</div><div class="value">${fmtNum(ind.value)}</div>`;
                 div.addEventListener('click', () => loadChart(ind.symbol, chartContainer, placeholder));
                 panel.appendChild(div);
             });
         }
 
+        function renderEconomySections(sections) {
+            const el = document.getElementById('economy-sections');
+            if (!el) return;
+            el.innerHTML = '';
+            if (!sections || !sections.length) {
+                el.innerHTML = '<div class="empty">No economy sections available</div>';
+                return;
+            }
+            sections.forEach(section => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.style.marginBottom = '0.85rem';
+                card.innerHTML = `<h2>${section.label}</h2><div class="macro-grid" id="eco-${section.id}"></div>`;
+                el.appendChild(card);
+                renderMacro(section.indicators || [], `eco-${section.id}`, 'tradingview-chart-markets', 'chart-placeholder-markets');
+            });
+        }
+
+        function renderTopMovers(items) {
+            const el = document.getElementById('market-movers');
+            if (!el) return;
+            el.innerHTML = '';
+            if (!items || !items.length) {
+                el.innerHTML = '<div class="empty">No movers yet</div>';
+                return;
+            }
+            items.forEach(m => {
+                const gp = Number(m.gain_pct || 0);
+                const row = document.createElement('div');
+                row.className = 'list-item';
+                row.innerHTML = `
+                    <div>
+                        <div class="symbol">${m.symbol}</div>
+                        <div class="name">${m.name || ''}</div>
+                    </div>
+                    <div class="${gp >= 0 ? 'positive' : 'negative'}">${fmtPct(m.gain_pct)}</div>
+                `;
+                row.addEventListener('click', () => loadChart(m.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets'));
+                el.appendChild(row);
+            });
+        }
+
+        function renderAlerts(items) {
+            const panel = document.getElementById('alerts-list');
+            if (!panel) return;
+            panel.innerHTML = '';
+            if (!items || !items.length) {
+                panel.innerHTML = '<div class="empty">No active alerts</div>';
+                return;
+            }
+            items.forEach(a => {
+                const el = document.createElement('div');
+                el.className = 'list-item';
+                el.innerHTML = `
+                    <div>
+                        <div class="symbol">${a.symbol} ${a.direction} ${a.threshold}</div>
+                        <div class="name">${a.rule_text}</div>
+                    </div>
+                    <div class="${a.status === 'triggered' ? 'positive' : 'subtle'}">${a.status}</div>
+                `;
+                panel.appendChild(el);
+            });
+        }
+
+        function renderNews(items) {
+            const list = document.getElementById('news-list');
+            const detail = document.getElementById('news-detail');
+            if (!list || !detail) return;
+            list.innerHTML = '';
+            if (!items || !items.length) {
+                list.innerHTML = '<div class="empty">No news in cache</div>';
+                detail.innerHTML = '<div class="empty">No story selected</div>';
+                return;
+            }
+            items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = `list-item ${state.selectedNewsId === item.id ? 'active' : ''}`;
+                row.innerHTML = `<div><div class="symbol">${item.title}</div><div class="name">${item.source} · ${item.category}</div></div>`;
+                row.addEventListener('click', () => {
+                    state.selectedNewsId = item.id;
+                    renderNews(items);
+                });
+                list.appendChild(row);
+            });
+            const selected = items.find(n => n.id === state.selectedNewsId) || items[0];
+            state.selectedNewsId = selected.id;
+            detail.innerHTML = `
+                <h3>${selected.title}</h3>
+                <div>
+                    <span class="badge">${selected.source}</span>
+                    <span class="badge">${selected.category}</span>
+                </div>
+                <p style="margin-top:0.65rem;">Published timestamp: ${selected.published_at}</p>
+                <p style="margin-top:0.9rem;"><a href="${selected.url}" target="_blank" rel="noopener noreferrer" style="color:var(--text-accent);">Open source article</a></p>
+            `;
+        }
+
+        function renderJournal(items) {
+            const list = document.getElementById('journal-list');
+            const detail = document.getElementById('journal-detail');
+            if (!list || !detail) return;
+            list.innerHTML = '';
+            if (!items || !items.length) {
+                list.innerHTML = '<div class="empty">No journal entries</div>';
+                detail.innerHTML = '<div class="empty">No entry selected</div>';
+                return;
+            }
+            items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = `list-item ${state.selectedJournalId === item.id ? 'active' : ''}`;
+                row.innerHTML = `
+                    <div>
+                        <div class="symbol">${item.symbol || 'General'} · ${item.status}</div>
+                        <div class="name">${item.content.slice(0, 110)}</div>
+                    </div>
+                    <div class="subtle">${item.timestamp || ''}</div>
+                `;
+                row.addEventListener('click', () => {
+                    state.selectedJournalId = item.id;
+                    renderJournal(items);
+                });
+                list.appendChild(row);
+            });
+            const selected = items.find(n => n.id === state.selectedJournalId) || items[0];
+            state.selectedJournalId = selected.id;
+            detail.innerHTML = `
+                <h3>${selected.symbol || 'General Note'}</h3>
+                <div>
+                    <span class="badge">${selected.status}</span>
+                    ${selected.tag ? `<span class="badge">${selected.tag}</span>` : ''}
+                    ${selected.conviction ? `<span class="badge">conviction: ${selected.conviction}</span>` : ''}
+                </div>
+                <p style="margin-top:0.8rem; white-space: pre-wrap;">${selected.content}</p>
+                <p style="margin-top:0.8rem;">${selected.timestamp || selected.created_at || ''}</p>
+            `;
+        }
+
         async function loadPortfolio() {
             const data = await apiFetch('/api/portfolio');
+            updateFreshness(data.meta);
             document.getElementById('total-value').textContent = fmtCurrency(data.total_value);
             const gainEl = document.getElementById('total-gain');
             const gain = Number(data.total_gain || 0);
@@ -596,22 +1079,58 @@
 
         async function loadWatchlist() {
             const data = await apiFetch('/api/watchlist');
+            updateFreshness(data.meta);
+            state.watchlist = data.symbols || [];
             renderWatchlist(data.symbols || [], 'watchlist');
             renderWatchlist(data.symbols || [], 'watchlist-full');
         }
 
         async function loadMacro() {
             const data = await apiFetch('/api/macro');
+            updateFreshness(data.meta);
+            state.macro = data.indicators || [];
             renderMacro(data.indicators || [], 'macro-panel', 'tradingview-chart', 'chart-placeholder');
             renderMacro(data.indicators || [], 'macro-panel-markets', 'tradingview-chart-markets', 'chart-placeholder-markets');
-            renderMacro(data.indicators || [], 'macro-panel-economy', 'tradingview-chart-markets', 'chart-placeholder-markets');
+            renderEconomySections(data.sections || []);
+        }
+
+        async function loadAlerts() {
+            const data = await apiFetch('/api/alerts');
+            updateFreshness(data.meta);
+            state.alerts = data.alerts || [];
+            renderAlerts(state.alerts);
+        }
+
+        async function loadNews() {
+            const q = document.getElementById('news-search')?.value?.trim() || '';
+            const path = q ? `/api/news?limit=120&search=${encodeURIComponent(q)}` : '/api/news?limit=120';
+            const data = await apiFetch(path);
+            updateFreshness(data.meta);
+            state.news = data.entries || [];
+            renderNews(state.news);
+        }
+
+        async function loadJournal() {
+            const q = document.getElementById('journal-search')?.value?.trim() || '';
+            const path = q ? `/api/journal?limit=120&search=${encodeURIComponent(q)}` : '/api/journal?limit=120';
+            const data = await apiFetch(path);
+            updateFreshness(data.meta);
+            state.journal = data.entries || [];
+            renderJournal(state.journal);
         }
 
         async function loadTransactions() {
             const tbody = document.querySelector('#transactions-table tbody');
             tbody.innerHTML = '';
             try {
-                const data = await apiFetch('/api/transactions');
+                const qs = new URLSearchParams({
+                    sort_by: state.txSortBy,
+                    sort_order: state.txSortOrder,
+                });
+                if (state.txSymbol) qs.set('symbol', state.txSymbol);
+                if (state.txType) qs.set('tx_type', state.txType);
+                const data = await apiFetch(`/api/transactions?${qs.toString()}`);
+                updateFreshness(data.meta);
                 const txs = data.transactions || [];
                 if (!txs.length) {
                     tbody.innerHTML = '<tr><td colspan="6" class="empty">No transactions</td></tr>';
@@ -624,8 +1143,8 @@
                         <td>${tx.symbol || '-'}</td>
                         <td>${tx.tx_type || tx.type || '-'}</td>
                         <td class="right">${fmtNum(tx.quantity, 4)}</td>
-                        <td class="right">${fmtCurrency(tx.price)}</td>
-                        <td class="right">${fmtCurrency(tx.fee)}</td>
+                        <td class="right">${fmtCurrency(tx.price_per)}</td>
+                        <td class="right">-</td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -634,17 +1153,44 @@
             }
         }
 
+        async function loadSummary() {
+            const data = await apiFetch('/api/summary');
+            renderTopMovers(data.top_movers || []);
+        }
+
         async function loadPerformance() {
             const tf = state.performanceTf;
-            const data = await apiFetch(`/api/performance?timeframe=${tf}`);
-            drawPortfolioChart(data.daily_values || []);
+            const qs = new URLSearchParams({ timeframe: tf });
+            if (state.performanceBenchmark) qs.set('benchmark', 'spx');
+            const data = await apiFetch(`/api/performance?${qs.toString()}`);
+            updateFreshness(data.meta);
+            drawPortfolioChart(data.daily_values || [], data.benchmark_values || []);
             const total = data.metrics?.total_return_pct;
             const dd = data.metrics?.max_drawdown_pct;
-            document.getElementById('performance-meta').textContent = `Return: ${fmtPct(total)} · Max drawdown: ${fmtPct(dd)} · Timeframe: ${tf.toUpperCase()}`;
+            const estimate = data.estimated ? ` · Estimated (${Number(data.coverage_pct || 0).toFixed(0)}% coverage)` : '';
+            const bench = state.performanceBenchmark ? ' · Benchmark: SPX' : '';
+            document.getElementById('performance-meta').textContent = `Return: ${fmtPct(total)} · Max drawdown: ${fmtPct(dd)} · Timeframe: ${tf.toUpperCase()}${estimate}${bench}`;
+            persistUiState();
         }
 
         function bindInteractions() {
-            document.getElementById('theme-cycle').addEventListener('click', cycleTheme);
+            document.getElementById('theme-cycle').addEventListener('click', () => cycleTheme());
+            document.getElementById('auth-logout').addEventListener('click', async () => {
+                try {
+                    await apiPost('/auth/logout', {});
+                } catch (_) {}
+                handleUnauthorized();
+            });
+            document.getElementById('overlay-benchmark').addEventListener('click', async () => {
+                state.performanceBenchmark = !state.performanceBenchmark;
+                document.getElementById('overlay-benchmark').classList.toggle('active', state.performanceBenchmark);
+                await loadPerformance();
+            });
+            document.getElementById('overlay-drawdown').addEventListener('click', async () => {
+                state.performanceDrawdown = !state.performanceDrawdown;
+                document.getElementById('overlay-drawdown').classList.toggle('active', state.performanceDrawdown);
+                await loadPerformance();
+            });
 
             document.querySelectorAll('#performance-timeframes .tf-btn').forEach(btn => {
                 btn.addEventListener('click', async () => {
@@ -662,6 +1208,113 @@
                     row.style.display = text.includes(q) ? '' : 'none';
                 });
             });
+
+            document.getElementById('news-search').addEventListener('input', async () => {
+                await loadNews();
+            });
+            document.getElementById('journal-search').addEventListener('input', async () => {
+                await loadJournal();
+            });
+            document.getElementById('tx-symbol-filter').addEventListener('input', async (e) => {
+                state.txSymbol = e.target.value.trim();
+                await loadTransactions();
+            });
+            document.getElementById('tx-type-filter').addEventListener('change', async (e) => {
+                state.txType = e.target.value;
+                await loadTransactions();
+            });
+            document.querySelectorAll('#transactions-table thead th[data-sort]').forEach(th => {
+                th.style.cursor = 'pointer';
+                th.addEventListener('click', async () => {
+                    const clicked = th.dataset.sort;
+                    if (state.txSortBy === clicked) {
+                        state.txSortOrder = state.txSortOrder === 'desc' ? 'asc' : 'desc';
+                    } else {
+                        state.txSortBy = clicked;
+                        state.txSortOrder = 'desc';
+                    }
+                    persistUiState();
+                    await loadTransactions();
+                });
+            });
+
+            document.addEventListener('keydown', async (e) => {
+                if (e.key === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                    await cycleTheme();
+                }
+                if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+                    e.preventDefault();
+                    const target = state.activeTab === 'Journal' ? document.getElementById('journal-search') : document.getElementById('position-search');
+                    target?.focus();
+                }
+                if ((e.key === 'j' || e.key === 'k') && state.activeTab === 'Positions') {
+                    const rows = Array.from(document.querySelectorAll('#positions-table tbody tr')).filter(r => r.style.display !== 'none');
+                    if (!rows.length) return;
+                    const idx = rows.findIndex(r => r.classList.contains('selected'));
+                    const next = e.key === 'j' ? Math.min(rows.length - 1, idx + 1) : Math.max(0, idx <= 0 ? 0 : idx - 1);
+                    rows.forEach(r => r.classList.remove('selected'));
+                    rows[next].classList.add('selected');
+                    const symbol = rows[next].querySelector('.symbol')?.textContent?.trim();
+                    if (symbol) loadChart(symbol, 'tradingview-chart', 'chart-placeholder');
+                }
+                if ((e.key === 'j' || e.key === 'k') && state.activeTab === 'Watchlist') {
+                    const rows = Array.from(document.querySelectorAll('#watchlist-full .list-item'));
+                    if (!rows.length) return;
+                    const idx = rows.findIndex(r => r.classList.contains('active'));
+                    const next = e.key === 'j' ? Math.min(rows.length - 1, idx + 1) : Math.max(0, idx <= 0 ? 0 : idx - 1);
+                    rows.forEach(r => r.classList.remove('active'));
+                    rows[next].classList.add('active');
+                    const symbol = rows[next].querySelector('.symbol')?.textContent?.trim();
+                    if (symbol) loadChart(symbol, 'tradingview-chart-watchlist', 'chart-placeholder-watchlist');
+                }
+                if ((e.key === 'j' || e.key === 'k') && state.activeTab === 'Markets') {
+                    const rows = Array.from(document.querySelectorAll('#macro-panel-markets .macro-item'));
+                    if (!rows.length) return;
+                    const idx = rows.findIndex(r => r.classList.contains('active'));
+                    const next = e.key === 'j' ? Math.min(rows.length - 1, idx + 1) : Math.max(0, idx <= 0 ? 0 : idx - 1);
+                    rows.forEach(r => r.classList.remove('active'));
+                    rows[next].classList.add('active');
+                    const symbol = rows[next].querySelector('.label')?.textContent;
+                    const item = state.macro.find(m => m.name === symbol);
+                    if (item?.symbol) loadChart(item.symbol, 'tradingview-chart-markets', 'chart-placeholder-markets');
+                }
+                if (e.key === 'Enter' && state.activeTab === 'News' && state.selectedNewsId) {
+                    const article = state.news.find(n => n.id === state.selectedNewsId);
+                    if (article?.url) window.open(article.url, '_blank', 'noopener,noreferrer');
+                }
+            });
+
+            const loginForm = document.getElementById('auth-login-form');
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const status = document.getElementById('auth-status');
+                const input = document.getElementById('auth-token-input');
+                const token = (input.value || '').trim();
+                status.textContent = 'Signing in...';
+                try {
+                    const res = await fetch('/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ token }),
+                    });
+                    if (!res.ok) {
+                        const body = await res.json().catch(() => ({}));
+                        status.textContent = body.message || 'Login failed';
+                        return;
+                    }
+                    const body = await res.json();
+                    state.auth.status = 'authenticated';
+                    state.auth.authMode = body.auth_mode || 'session';
+                    state.auth.csrfToken = body.csrf_token || null;
+                    await initConfig();
+                    renderTabs();
+                    hideAuthOverlay();
+                    await postAuthInit();
+                } catch (_) {
+                    status.textContent = 'Login failed';
+                }
+            });
         }
 
         async function initConfig() {
@@ -669,6 +1322,9 @@
                 const cfg = await apiFetch('/api/ui-config');
                 if (Array.isArray(cfg.tabs) && cfg.tabs.length) state.tabs = cfg.tabs;
                 if (Array.isArray(cfg.themes)) state.themes = cfg.themes;
+                if (cfg.home_tab === 'watchlist' && !localStorage.getItem(storageKey)) {
+                    state.activeTab = 'Watchlist';
+                }
                 if (state.themes.length) {
                     const idx = Math.max(0, state.themes.findIndex(t => t.name === cfg.current_theme));
                     state.currentThemeIndex = idx;
@@ -679,20 +1335,77 @@
             }
         }
 
+        async function ensureAuthSession() {
+            try {
+                const res = await fetch('/auth/session', { credentials: 'same-origin' });
+                if (res.status === 401) {
+                    state.auth.status = 'unauthenticated';
+                    showAuthOverlay('Enter the login token printed by `pftui web` to start a session.');
+                    return false;
+                }
+                if (!res.ok) {
+                    showAuthOverlay('Authentication check failed.');
+                    return false;
+                }
+                const session = await res.json();
+                state.auth.status = 'authenticated';
+                state.auth.authMode = session.auth_mode || 'session';
+                state.auth.csrfToken = session.csrf_token || null;
+                if (!state.auth.csrfToken && state.auth.authMode === 'session') {
+                    const csrfRes = await fetch('/auth/csrf', { credentials: 'same-origin' });
+                    if (csrfRes.ok) {
+                        const csrfBody = await csrfRes.json();
+                        state.auth.csrfToken = csrfBody.csrf_token || null;
+                    }
+                }
+                hideAuthOverlay();
+                return true;
+            } catch (_) {
+                showAuthOverlay('Authentication check failed.');
+                return false;
+            }
+        }
+
+        async function postAuthInit() {
+            await setActiveTab(state.activeTab);
+            try {
+                await refreshAll();
+                startAutoRefresh();
+            } catch (e) {
+                console.error('Refresh failed after auth', e);
+            }
+        }
+
         async function refreshAll() {
-            await Promise.all([loadPortfolio(), loadWatchlist(), loadMacro(), loadTransactions(), loadPerformance()]);
+            await Promise.all([
+                loadPortfolio(),
+                loadWatchlist(),
+                loadMacro(),
+                loadTransactions(),
+                loadPerformance(),
+                loadSummary(),
+                loadAlerts(),
+                loadNews(),
+                loadJournal(),
+            ]);
+            state.refreshTick = new Date();
         }
 
         async function init() {
-            await initConfig();
+            restoreUiState();
             renderTabs();
             bindInteractions();
-            try {
-                await refreshAll();
-            } catch (e) {
-                console.error('Init failed', e);
-            }
-            setInterval(refreshAll, 60000);
+            document.getElementById('tx-symbol-filter').value = state.txSymbol || '';
+            document.getElementById('tx-type-filter').value = state.txType || '';
+            document.querySelector(`#performance-timeframes .tf-btn[data-tf="${state.performanceTf}"]`)?.classList.add('active');
+            document.querySelectorAll('#performance-timeframes .tf-btn').forEach(b => {
+                if (b.dataset.tf !== state.performanceTf) b.classList.remove('active');
+            });
+            const authed = await ensureAuthSession();
+            if (!authed) return;
+            await initConfig();
+            renderTabs();
+            await postAuthInit();
         }
 
         document.addEventListener('DOMContentLoaded', init);

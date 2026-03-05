@@ -1,7 +1,6 @@
 use axum::{
-    extract::State,
     middleware,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use std::net::SocketAddr;
@@ -9,10 +8,11 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 use super::api::{
-    get_alerts, get_chart_data, get_macro, get_performance, get_portfolio, get_positions,
-    get_summary, get_transactions, get_ui_config, get_watchlist, AppState,
+    get_alerts, get_chart_data, get_home_tab, get_journal, get_macro, get_news, get_performance,
+    get_portfolio, get_positions, get_summary, get_transactions, get_ui_config, get_watchlist,
+    set_home_tab, set_theme, AppState,
 };
-use super::auth::{auth_middleware, AuthState};
+use super::auth::{auth_middleware, get_csrf, get_session, login, logout, AuthState};
 use crate::config::Config;
 
 pub async fn run_server(
@@ -23,7 +23,7 @@ pub async fn run_server(
     enable_auth: bool,
 ) -> anyhow::Result<()> {
     let app_state = Arc::new(AppState { db_path, config });
-    let auth_state = Arc::new(AuthState::new(enable_auth));
+    let auth_state = Arc::new(AuthState::new(enable_auth, bind_addr));
 
     // CORS configuration for local development
     let cors = CorsLayer::new()
@@ -39,15 +39,28 @@ pub async fn run_server(
         .route("/transactions", get(get_transactions))
         .route("/macro", get(get_macro))
         .route("/alerts", get(get_alerts))
+        .route("/news", get(get_news))
+        .route("/journal", get(get_journal))
         .route("/chart/{symbol}", get(get_chart_data))
         .route("/performance", get(get_performance))
         .route("/summary", get(get_summary))
         .route("/ui-config", get(get_ui_config))
+        .route("/home-tab", get(get_home_tab))
+        .route("/home-tab", post(set_home_tab))
+        .route("/theme", post(set_theme))
         .with_state(app_state.clone());
 
     // Main app with auth middleware
+    let auth_routes = Router::new()
+        .route("/login", post(login))
+        .route("/logout", post(logout))
+        .route("/session", get(get_session))
+        .route("/csrf", get(get_csrf))
+        .with_state(auth_state.clone());
+
     let app = Router::new()
         .route("/", get(serve_index))
+        .nest("/auth", auth_routes)
         .nest("/api", api_routes)
         .layer(middleware::from_fn_with_state(
             auth_state.clone(),
@@ -68,13 +81,6 @@ pub async fn run_server(
     Ok(())
 }
 
-async fn serve_index(
-    State(state): State<Arc<AuthState>>,
-) -> axum::response::Html<String> {
-    // Inject auth token so the in-browser app can call protected /api endpoints.
-    // This keeps auth enabled by default while making `pftui web` usable out of the box.
-    let token = state.token.as_deref().unwrap_or("");
-    let html = include_str!("static/index.html")
-        .replace("__PFTUI_AUTH_TOKEN__", token);
-    axum::response::Html(html)
+async fn serve_index() -> axum::response::Html<String> {
+    axum::response::Html(include_str!("static/index.html").to_string())
 }
