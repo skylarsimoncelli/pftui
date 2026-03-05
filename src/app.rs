@@ -1725,9 +1725,17 @@ impl App {
                 self.show_drift_columns = !self.show_drift_columns;
             }
 
-            // Change timeframe cycling
+            // Change timeframe cycling (updates both table % and portfolio chart)
             KeyCode::Char('T') if matches!(self.view_mode, ViewMode::Positions) => {
                 self.change_timeframe = self.change_timeframe.next();
+                // Sync portfolio chart timeframe to match
+                self.sparkline_timeframe = match self.change_timeframe {
+                    ChangeTimeframe::OneHour => ChartTimeframe::OneWeek, // 1h fits in 1W context
+                    ChangeTimeframe::TwentyFourHour => ChartTimeframe::OneWeek, // 24h = 1D fits in 1W
+                    ChangeTimeframe::SevenDay => ChartTimeframe::OneMonth, // 7d fits in 1M
+                    ChangeTimeframe::ThirtyDay => ChartTimeframe::ThreeMonths, // 30d fits in 3M
+                    ChangeTimeframe::YearToDate => ChartTimeframe::OneYear, // YTD uses 1Y view
+                };
             }
 
             // Detail popup toggle (chart is always visible in right pane)

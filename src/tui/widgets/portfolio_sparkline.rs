@@ -77,8 +77,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Compute timeframe gains for display below the chart
     let timeframe_gains = compute_timeframe_gains(history, &timeframe_periods);
+    // Determine which timeframe to highlight based on active change_timeframe
+    let active_label = match app.change_timeframe {
+        crate::app::ChangeTimeframe::OneHour => "1D", // 1h uses 1D display
+        crate::app::ChangeTimeframe::TwentyFourHour => "1D",
+        crate::app::ChangeTimeframe::SevenDay => "1W",
+        crate::app::ChangeTimeframe::ThirtyDay => "1M",
+        crate::app::ChangeTimeframe::YearToDate => "1Y",
+    };
     // Reserve lines: 1 separator + gain rows (up to 2 lines for timeframes)
-    let gain_lines = build_gain_lines(&timeframe_gains, inner.width as usize, t, csym);
+    let gain_lines = build_gain_lines(&timeframe_gains, inner.width as usize, t, csym, active_label);
     let reserved_lines = 1 + gain_lines.len(); // separator + gain display
 
     let chart_height = inner.height.saturating_sub(reserved_lines as u16) as usize;
@@ -220,7 +228,8 @@ fn compute_timeframe_gains<'a>(history: &[(String, Decimal)], periods: &[(&'a st
 
 /// Build styled gain/loss lines that fit within the given width.
 /// Tries to fit all timeframes on one line; wraps to two if needed.
-fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tui::theme::Theme, csym: &str) -> Vec<Line<'a>> {
+/// The active_label timeframe is highlighted with bold text.
+fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tui::theme::Theme, csym: &str, active_label: &str) -> Vec<Line<'a>> {
     if gains.is_empty() {
         return vec![Line::from(Span::styled(
             "No period data yet",
@@ -230,6 +239,8 @@ fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tu
 
     let mut items: Vec<Vec<Span<'a>>> = Vec::new();
     for g in gains {
+        let is_active = g.label == active_label;
+        
         let change_color = if g.pct > dec!(0) {
             t.gain_green
         } else if g.pct < dec!(0) {
@@ -242,18 +253,37 @@ fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tu
         let change_str = format_compact_change(g.change, csym);
         let pct_str = format!("{:+.1}%", g.pct);
 
+        // Highlight active timeframe with bold and brighter colors
+        let label_style = if is_active {
+            Style::default().fg(t.text_primary).bold()
+        } else {
+            Style::default().fg(t.text_secondary)
+        };
+
+        let value_style = if is_active {
+            Style::default().fg(change_color).bold()
+        } else {
+            Style::default().fg(change_color)
+        };
+
+        let pct_style = if is_active {
+            Style::default().fg(change_color).bold()
+        } else {
+            Style::default().fg(change_color).dim()
+        };
+
         items.push(vec![
             Span::styled(
                 format!("{} ", g.label),
-                Style::default().fg(t.text_secondary),
+                label_style,
             ),
             Span::styled(
                 format!("{}{} ", arrow, change_str),
-                Style::default().fg(change_color),
+                value_style,
             ),
             Span::styled(
                 pct_str,
-                Style::default().fg(change_color).dim(),
+                pct_style,
             ),
         ]);
     }
