@@ -1,9 +1,9 @@
 <h1 align="center">pftui</h1>
 
 <p align="center">
-  <b>Your portfolio's command center.</b><br>
-  Live prices. Charts. Macro data. Technical analysis. All in your terminal.<br>
-  No API keys. No account. No browser tabs.<br>
+  <b>PFTUI - The Portfolio TUI.</b><br>
+  Agent-native financial battle station for equities, crypto, forex, macro, sentiment, and news.<br>
+  Terminal-native. Vim-fast. Fully scriptable.<br>
 </p>
 
 <p align="center">
@@ -18,9 +18,9 @@
 
 ---
 
-**pftui** is a terminal-based portfolio intelligence dashboard. Track stocks, crypto, commodities, forex, and funds — with real-time prices, braille charts, macro indicators, and technical analysis. One binary. Works everywhere. Looks incredible.
+**pftui** is an agent-native financial battle station built for the terminal. Track equities, crypto, commodities, forex, and funds with real-time pricing, technical overlays, macro context, sentiment signals, and event/news awareness.
 
-Think Bloomberg Terminal, but it runs in your terminal and costs nothing.
+Think Bloomberg Terminal ergonomics with vim-speed workflows, local-first privacy, and zero-friction automation.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
@@ -32,21 +32,21 @@ Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
 
 ## ✨ What You Get
 
-- **📊 Live Portfolio Tracking** — Add your positions once. Prices update automatically from Yahoo Finance and CoinGecko. See your allocation, daily P&L, total gain, and 52-week range at a glance.
+- **📊 Portfolio Command Core** — Live positions, allocation, P&L, transaction history, watchlists, and alert-ready monitoring in one screen.
 
-- **📈 Beautiful Charts** — High-resolution braille charts with SMA overlays, volume bars, and gain-aware coloring. Six timeframes from 1 week to 5 years. Compare any asset against benchmarks — BTC vs S&P, Gold vs DXY, anything vs anything.
+- **📈 High-density Technical Visualization** — Braille charts with multi-timeframe views, SMA overlays, ratio analysis, volume bars, and momentum context.
 
-- **🌍 Market & Economy Views** — 18 major market symbols and 14 macro indicators built in. Treasury yields, VIX, DXY, oil, gold, currencies — the numbers that move your portfolio, always one keypress away.
+- **🌍 Full Market Coverage** — Equities, crypto, forex, rates, commodities, volatility, and macro indicators side by side.
 
-- **🔍 Watchlist** — Track assets you don't own yet. Set entry targets. See when they're approaching your buy zone.
+- **🧠 Sentiment + Event Context** — Prediction-market style probabilities and market-moving context integrated with portfolio state.
 
-- **📋 Journal** — Log your trade thesis, track predictions, search your decision history. Your future self will thank you.
+- **🤖 Agent-native Outputs** — Generate structured JSON and markdown briefs for scripts, cron jobs, and LLM/agent pipelines.
 
-- **🎨 6 Stunning Themes** — Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox. Every pixel themed. Cycle with `t`.
+- **⌨️ Vim-native TUI UX** — `j/k`, `gg/G`, `/` filtering, keyboard-first navigation, and optional mouse support.
 
-- **🔒 Privacy First** — Percentage-only mode stores zero dollar amounts. Toggle `p` to hide values instantly. Your portfolio stays on your machine, in a local SQLite database. Nothing is sent anywhere.
+- **🔒 Local-first Privacy** — SQLite on your machine, percentage-only mode, and instant value masking with `p`.
 
-- **⌨️ Vim-Native** — `j`/`k` to navigate, `/` to search, `gg`/`G` to jump. If you've used vim, you already know pftui. If you haven't — you'll learn in 30 seconds.
+- **🎨 Polished Interface** — Multiple production-ready themes with persistent preferences.
 
 ---
 
@@ -91,6 +91,19 @@ pftui value          # Quick total value + gain
 pftui brief          # Formatted portfolio brief
 pftui summary        # Detailed breakdown
 ```
+
+## 🤖 Agent-native Workflows
+
+Use pftui as a financial data plane for autonomous systems and scripted ops.
+
+```bash
+pftui brief --agent --json         # structured state for agents
+pftui macro                        # macro regime and risk context
+pftui predictions --limit 10       # sentiment/probability context
+pftui export json                  # downstream automation payload
+```
+
+Everything above can be chained into shell scripts, CI jobs, local automations, or LLM tool loops.
 
 ---
 
@@ -237,22 +250,13 @@ cd pftui && cargo build --release
 
 ## 🗺️ Roadmap
 
-pftui is under active development. Here's what's coming:
+pftui is under active development. Upcoming expansions include:
 
-- [x] Live portfolio tracking with cost basis
-- [x] Braille charts with SMA overlays and ratio analysis
-- [x] Markets & Economy views with 30+ indicators
-- [x] 6 themes, vim keys, mouse support, privacy mode
-- [x] Headless CLI (refresh, brief, summary, export, snapshot)
-- [ ] Technical indicators (RSI, MACD, Bollinger Bands) on every position
-- [ ] Unified alert engine (price targets, allocation drift, indicator thresholds)
-- [ ] Portfolio performance tracking with benchmark comparison
-- [ ] Economic calendar with impact ratings
-- [ ] Correlation matrix and risk analytics
-- [ ] Scenario stress testing ("what if oil hits $100?")
-- [ ] Central bank & sovereign holdings tracker
-- [ ] Web interface with TradingView charts
-- [ ] Native OS notifications
+- Unified alert engine (price targets, allocation drift, indicator thresholds)
+- Expanded performance attribution and benchmark analytics
+- Scenario stress testing and correlation tooling
+- Broader event/news intelligence and macro signal depth
+- Optional notification and automation integrations
 
 Full roadmap: [TODO.md](TODO.md) · Feature specs: [docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md)
 
@@ -271,6 +275,6 @@ MIT — do whatever you want with it.
 ---
 
 <p align="center">
-  <b>Stop alt-tabbing between Yahoo Finance, TradingView, and your spreadsheet.</b><br>
-  <code>pftui</code> — everything in one terminal.
+  <b>PFTUI - The Portfolio TUI.</b><br>
+  <code>pftui</code> — your terminal-native financial battle station.
 </p>

@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>pftui — Your portfolio's command center</title>
-    <meta name="description" content="Terminal-based portfolio intelligence dashboard. Track stocks, crypto, commodities with live prices, braille charts, technical indicators. Bloomberg Terminal for your terminal.">
+    <title>pftui — Agent-native financial battle station</title>
+    <meta name="description" content="PFTUI - The Portfolio TUI. Agent-native financial battle station for equities, crypto, forex, commodities, macro, sentiment, and news in your terminal.">
     
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://pftui.com/">
-    <meta property="og:title" content="pftui — Your portfolio's command center">
-    <meta property="og:description" content="Terminal-based portfolio intelligence dashboard. Live prices, charts, macro data, technical analysis. All in your terminal.">
+    <meta property="og:title" content="pftui — Agent-native financial battle station">
+    <meta property="og:description" content="PFTUI - The Portfolio TUI. Equities, crypto, forex, macro, sentiment, and news in a sleek terminal-native command center.">
     <meta property="og:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://pftui.com/">
-    <meta property="twitter:title" content="pftui — Your portfolio's command center">
-    <meta property="twitter:description" content="Terminal-based portfolio intelligence dashboard. Live prices, charts, macro data, technical analysis.">
+    <meta property="twitter:title" content="pftui — Agent-native financial battle station">
+    <meta property="twitter:description" content="PFTUI - The Portfolio TUI. Terminal-native intelligence for macro, sentiment, crypto, forex, equities, and news.">
     <meta property="twitter:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
     <!-- Favicon -->
@@ -35,8 +35,9 @@
     <section class="hero">
         <div class="container">
             <div class="hero-content">
-                <h1 class="hero-title">Your portfolio's <span class="gradient-text">command center</span></h1>
-                <p class="hero-subtitle">Live prices. Charts. Macro data. Technical analysis. All in your terminal.</p>
+                <p class="hero-kicker">PFTUI - The Portfolio TUI</p>
+                <h1 class="hero-title">Agent-native <span class="gradient-text">financial battle station</span></h1>
+                <p class="hero-subtitle">Equities. Crypto. Forex. Macro. Sentiment. News. Vim-native workflows and headless automation in one sleek terminal.</p>
                 <div class="hero-install">
                     <div class="install-command">
                         <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
@@ -58,6 +59,15 @@
                         <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
                     </a>
                 </div>
+                <div class="market-pills">
+                    <span>Equities</span>
+                    <span>Crypto</span>
+                    <span>Forex</span>
+                    <span>Commodities</span>
+                    <span>Macro</span>
+                    <span>Sentiment</span>
+                    <span>News</span>
+                </div>
             </div>
             <div class="hero-terminal">
                 <div class="terminal-window">
@@ -78,29 +88,70 @@
         </div>
     </section>
 
-    <!-- Features Grid -->
-    <section class="features">
+    <!-- Highlights Marquee -->
+    <section class="highlights">
         <div class="container">
-            <div class="features-grid">
-                <div class="feature-card fade-in">
-                    <div class="feature-icon">📊</div>
-                    <h3>Real-time Portfolio Tracking</h3>
-                    <p>Live prices from Yahoo Finance & CoinGecko. See allocation, P&L, 52-week range. No API keys required.</p>
-                </div>
-                <div class="feature-card fade-in">
-                    <div class="feature-icon">📈</div>
-                    <h3>Beautiful Braille Charts</h3>
-                    <p>High-resolution Unicode charts with SMA overlays, ratio analysis, 6 timeframes. Compare any asset vs SPX, BTC, Gold.</p>
-                </div>
-                <div class="feature-card fade-in">
-                    <div class="feature-icon">🔍</div>
-                    <h3>Technical Indicators</h3>
-                    <p>RSI, MACD, Bollinger Bands on every position. Track momentum, spot divergences, identify entries.</p>
-                </div>
-                <div class="feature-card fade-in">
-                    <div class="feature-icon">🌍</div>
-                    <h3>Macro Intelligence</h3>
-                    <p>Treasury yields, VIX, DXY, oil, gold — 18 market symbols & 14 macro indicators. The numbers that move your portfolio.</p>
+            <h2 class="section-title">Real-time Portfolio + Market Intelligence</h2>
+            <p class="section-subtitle">A full command center for operators who want Bloomberg-class context in a terminal-native workflow.</p>
+            <div class="highlights-marquee" id="highlights-marquee">
+                <div class="highlights-scroller" id="highlights-scroller">
+                    <div class="highlights-track">
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">📊</div>
+                            <h3>Live Price Engine</h3>
+                            <p>Stocks, crypto, commodities, forex, and funds with no API keys.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">📈</div>
+                            <h3>Braille Charting</h3>
+                            <p>High-resolution Unicode charts with SMA overlays and volume bars.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">🔍</div>
+                            <h3>Technical Stack</h3>
+                            <p>RSI, MACD, Bollinger Bands, momentum, and 52-week range context.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">🌍</div>
+                            <h3>Macro Intelligence</h3>
+                            <p>VIX, DXY, yields, metals, energy, and key FRED indicators.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">🎯</div>
+                            <h3>Watchlists &amp; Targets</h3>
+                            <p>Track target prices, daily movers, and fast scenario checks.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">🧠</div>
+                            <h3>Prediction Markets</h3>
+                            <p>Integrate sentiment from market probabilities into portfolio context.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">📰</div>
+                            <h3>Headline Awareness</h3>
+                            <p>Monitor market-moving news and event risk alongside your positions.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">⌨️</div>
+                            <h3>Power Interface</h3>
+                            <p>Vim-native keybindings, mouse support, search, and 6 themes.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">🛠️</div>
+                            <h3>CLI Automation</h3>
+                            <p>Headless refresh, JSON export, markdown brief, and history snapshots.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">🔒</div>
+                            <h3>Privacy by Design</h3>
+                            <p>Local SQLite storage and percentage-only view for safer screen sharing.</p>
+                        </article>
+                        <article class="highlight-card fade-in">
+                            <div class="highlight-icon">📡</div>
+                            <h3>Multi-Timeframe View</h3>
+                            <p>Scan 1W to 5Y across assets to spot structural trend shifts quickly.</p>
+                        </article>
+                    </div>
                 </div>
             </div>
         </div>
@@ -116,11 +167,36 @@
         </div>
     </section>
 
+    <!-- Agent Workflows -->
+    <section class="agent-workflows">
+        <div class="container">
+            <h2 class="section-title">Agent-native by design</h2>
+            <p class="section-subtitle">Built for autonomous workflows: fetch context, score risk, and ship structured outputs to agents.</p>
+            <div class="agent-grid">
+                <div class="agent-card">
+                    <h3>Morning Risk Scan</h3>
+                    <div class="cli-command">$ pftui brief --agent --json</div>
+                    <p>Generate machine-readable portfolio state for your daily decision loop.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Macro + Sentiment Pulse</h3>
+                    <div class="cli-command">$ pftui macro && pftui predictions --limit 10</div>
+                    <p>Combine rates, volatility, dollar strength, and crowd probabilities in seconds.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Export for Automation</h3>
+                    <div class="cli-command">$ pftui export json && pftui summary --period 1m</div>
+                    <p>Push clean data to scripts, cron jobs, or LLM pipelines without UI overhead.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- CLI Showcase -->
     <section class="cli">
         <div class="container">
-            <h2 class="section-title">Headless too</h2>
-            <p class="section-subtitle">Every feature accessible from the command line</p>
+            <h2 class="section-title">Headless command surface</h2>
+            <p class="section-subtitle">Everything in the TUI, available as composable CLI primitives.</p>
             <div class="cli-grid">
                 <div class="cli-example">
                     <div class="cli-command">$ pftui value</div>
@@ -138,6 +214,22 @@
                     <div class="cli-command">$ pftui predictions --limit 2</div>
                     <div class="cli-output">BTC >$100k by Dec? 42% <span class="green">↑</span><br>Fed cut before July? 18% <span class="red">↓</span></div>
                 </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui alloc</div>
+                    <div class="cli-output">Tech 41% | Crypto 30% | Commodities 16% | Cash 13%</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui chart NVDA --tf 6M --sma 20,50</div>
+                    <div class="cli-output">Rendered braille chart with overlays and volume in 82ms</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui brief --agent --json</div>
+                    <div class="cli-output">{"risk_state":"neutral","alerts":0,"top_contributor":"BTC"}</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui watchlist --alerts</div>
+                    <div class="cli-output">AAPL near target <span class="green">+1.1%</span> | TSLA drawdown <span class="red">-2.0%</span></div>
+                </div>
             </div>
         </div>
     </section>
@@ -146,48 +238,22 @@
     <section class="installation">
         <div class="container">
             <h2 class="section-title">Install anywhere</h2>
-            <div class="install-grid">
-                <div class="install-method">
-                    <h3>curl</h3>
-                    <div class="code-block">
-                        <code>curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
-                        <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
-                    </div>
-                </div>
-                <div class="install-method">
-                    <h3>Homebrew</h3>
-                    <div class="code-block">
-                        <code>brew tap skylarsimoncelli/pftui<br>brew install pftui</code>
-                        <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
-                    </div>
-                </div>
-                <div class="install-method">
-                    <h3>Cargo</h3>
-                    <div class="code-block">
-                        <code>cargo install pftui</code>
-                        <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
-                    </div>
-                </div>
-                <div class="install-method">
-                    <h3>Docker</h3>
-                    <div class="code-block">
-                        <code>docker run -it ghcr.io/skylarsimoncelli/pftui:latest</code>
-                        <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
-                    </div>
-                </div>
-                <div class="install-method">
-                    <h3>apt (Debian/Ubuntu)</h3>
-                    <div class="code-block">
-                        <code>echo "deb [trusted=yes] https://skylarsimoncelli.github.io/pftui/apt stable main" | sudo tee /etc/apt/sources.list.d/pftui.list<br>sudo apt update && sudo apt install pftui</code>
-                        <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
-                    </div>
-                </div>
-                <div class="install-method">
-                    <h3>dnf (Fedora/RHEL)</h3>
-                    <div class="code-block">
-                        <code>sudo tee /etc/yum.repos.d/pftui.repo << 'EOF'<br>[pftui]<br>name=pftui<br>baseurl=https://skylarsimoncelli.github.io/pftui/rpm<br>enabled=1<br>gpgcheck=0<br>EOF<br>sudo dnf install pftui</code>
-                        <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
-                    </div>
+            <p class="section-subtitle">Pick your install medium and copy the exact command.</p>
+            <div class="install-tabs" role="tablist" aria-label="Installation methods">
+                <button class="install-tab active" role="tab" aria-selected="true" data-install="curl">curl</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="brew">Homebrew</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="cargo">Cargo</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="docker">Docker</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="nix">Nix</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="apt">apt</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="dnf">dnf</button>
+            </div>
+            <div class="install-panel">
+                <h3 id="install-method-title">curl install script</h3>
+                <p id="install-method-description">Fastest path for Linux/macOS.</p>
+                <div class="code-block">
+                    <code id="install-method-code">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
+                    <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
                 </div>
             </div>
         </div>
@@ -196,7 +262,7 @@
     <!-- Comparison -->
     <section class="comparison">
         <div class="container">
-            <h2 class="section-title">How it stacks up</h2>
+            <h2 class="section-title">Why operators switch</h2>
             <div class="comparison-table-wrapper">
                 <table class="comparison-table">
                     <thead>
@@ -260,81 +326,6 @@
                         </tr>
                     </tbody>
                 </table>
-            </div>
-        </div>
-    </section>
-
-    <!-- Feature Grid -->
-    <section class="feature-grid-section">
-        <div class="container">
-            <h2 class="section-title">Full feature set</h2>
-            <div class="feature-grid">
-                <div class="feature-category">
-                    <h3>📊 Data & Tracking</h3>
-                    <ul>
-                        <li>Live prices (Yahoo Finance + CoinGecko)</li>
-                        <li>Multi-asset support (stocks, crypto, commodities, forex, funds)</li>
-                        <li>Cost basis tracking with P&L</li>
-                        <li>Percentage-only privacy mode</li>
-                        <li>Transaction history</li>
-                        <li>Watchlist with price targets</li>
-                    </ul>
-                </div>
-                <div class="feature-category">
-                    <h3>📈 Charts & Visualization</h3>
-                    <ul>
-                        <li>High-resolution braille charts</li>
-                        <li>6 timeframes (1W to 5Y)</li>
-                        <li>SMA(20) and SMA(50) overlays</li>
-                        <li>Ratio analysis (vs SPX, QQQ, BTC, Gold)</li>
-                        <li>Volume bars</li>
-                        <li>Portfolio sparklines</li>
-                    </ul>
-                </div>
-                <div class="feature-category">
-                    <h3>🔍 Analytics</h3>
-                    <ul>
-                        <li>RSI, MACD, Bollinger Bands</li>
-                        <li>Allocation tracking</li>
-                        <li>52-week range indicators</li>
-                        <li>Daily movers detection</li>
-                        <li>Risk metrics (coming soon)</li>
-                        <li>Scenario modeling (coming soon)</li>
-                    </ul>
-                </div>
-                <div class="feature-category">
-                    <h3>🌍 Market Intelligence</h3>
-                    <ul>
-                        <li>18 major market symbols</li>
-                        <li>14 macro indicators (FRED)</li>
-                        <li>Treasury yields (2Y, 10Y, 30Y)</li>
-                        <li>Commodities (Gold, Silver, Oil, Copper)</li>
-                        <li>Currencies (DXY, EUR, JPY, Yuan)</li>
-                        <li>Volatility (VIX)</li>
-                    </ul>
-                </div>
-                <div class="feature-category">
-                    <h3>⌨️ Interface</h3>
-                    <ul>
-                        <li>6 gorgeous themes</li>
-                        <li>Vim-native keybindings</li>
-                        <li>Mouse support</li>
-                        <li>Search & filter</li>
-                        <li>Privacy toggle (hide values instantly)</li>
-                        <li>Responsive layout</li>
-                    </ul>
-                </div>
-                <div class="feature-category">
-                    <h3>🛠️ CLI & Automation</h3>
-                    <ul>
-                        <li>Headless refresh</li>
-                        <li>JSON export</li>
-                        <li>Markdown brief (agent-friendly)</li>
-                        <li>Portfolio summary</li>
-                        <li>Historical snapshots</li>
-                        <li>Web interface (TradingView charts)</li>
-                    </ul>
-                </div>
             </div>
         </div>
     </section>

@@ -36,6 +36,89 @@ function copyToClipboard(text) {
     }
 }
 
+// ===== INSTALLATION TABS =====
+const installMethods = {
+    curl: {
+        title: 'curl install script',
+        description: 'Fastest path for Linux/macOS.',
+        command: 'curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash'
+    },
+    brew: {
+        title: 'Homebrew',
+        description: 'Preferred on macOS.',
+        command: 'brew tap skylarsimoncelli/pftui\nbrew install pftui'
+    },
+    cargo: {
+        title: 'Cargo',
+        description: 'Install directly from Rust crates.',
+        command: 'cargo install pftui'
+    },
+    docker: {
+        title: 'Docker',
+        description: 'Run in an isolated container.',
+        command: 'docker run -it ghcr.io/skylarsimoncelli/pftui:latest'
+    },
+    nix: {
+        title: 'Nix',
+        description: 'Run directly from the GitHub source with Nix.',
+        command: 'nix run github:skylarsimoncelli/pftui'
+    },
+    apt: {
+        title: 'apt (Debian/Ubuntu)',
+        description: 'Install from the project package repository.',
+        command: 'echo "deb [trusted=yes] https://skylarsimoncelli.github.io/pftui/apt stable main" | sudo tee /etc/apt/sources.list.d/pftui.list\nsudo apt update && sudo apt install pftui'
+    },
+    dnf: {
+        title: 'dnf (Fedora/RHEL)',
+        description: 'Install from the project RPM repository.',
+        command: "sudo tee /etc/yum.repos.d/pftui.repo << 'EOF'\n[pftui]\nname=pftui\nbaseurl=https://skylarsimoncelli.github.io/pftui/rpm\nenabled=1\ngpgcheck=0\nEOF\nsudo dnf install pftui"
+    }
+};
+
+function setInstallMethod(methodKey) {
+    const method = installMethods[methodKey];
+    if (!method) return;
+
+    const title = document.getElementById('install-method-title');
+    const description = document.getElementById('install-method-description');
+    const code = document.getElementById('install-method-code');
+
+    if (!title || !description || !code) return;
+
+    title.textContent = method.title;
+    description.textContent = method.description;
+    code.textContent = method.command;
+
+    document.querySelectorAll('.install-tab').forEach(tab => {
+        const active = tab.dataset.install === methodKey;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+}
+
+function initInstallTabs() {
+    const tabs = document.querySelectorAll('.install-tab');
+    if (!tabs.length) return;
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            setInstallMethod(tab.dataset.install);
+        });
+    });
+}
+
+function initHighlightsMarquee() {
+    const scroller = document.getElementById('highlights-scroller');
+    if (!scroller || scroller.children.length > 1) return;
+
+    const firstTrack = scroller.firstElementChild;
+    if (!firstTrack) return;
+
+    const clone = firstTrack.cloneNode(true);
+    clone.setAttribute('aria-hidden', 'true');
+    scroller.appendChild(clone);
+}
+
 // ===== TERMINAL DEMO =====
 // Multi-scene terminal that cycles through pftui features
 
@@ -60,13 +143,13 @@ const scenes = [
             { text: '$ pftui macro', type: 'command', delay: 60 },
             { text: '', type: 'output', delay: 200 },
             { text: '┌─ Market Intelligence ────────────────────┐', type: 'output', delay: 30 },
-            { text: '│  S&P 500   5,842   ▲ +0.8%    RSI 58    │', type: 'output', delay: 30 },
-            { text: '│  VIX         14.2   ▼ -10.3%             │', type: 'output', delay: 30 },
-            { text: '│  DXY         98.8   ▼ -0.1%    RSI 42    │', type: 'output', delay: 30 },
-            { text: '│  Gold      2,847   ▲ +1.2%    RSI 67    │', type: 'output', delay: 30 },
-            { text: '│  10Y Yield  4.21%  ▼ -3bps               │', type: 'output', delay: 30 },
-            { text: '│  Oil WTI    71.40   ▲ +0.6%              │', type: 'output', delay: 30 },
-            { text: '│  BTC       97,420   ▲ +3.1%    RSI 61    │', type: 'output', delay: 30 },
+            { text: '│  S&P 500    ▲ +0.8%            RSI 58    │', type: 'output', delay: 30 },
+            { text: '│  VIX        ▼ -10.3%                      │', type: 'output', delay: 30 },
+            { text: '│  DXY        ▼ -0.1%            RSI 42    │', type: 'output', delay: 30 },
+            { text: '│  Gold       ▲ +1.2%            RSI 67    │', type: 'output', delay: 30 },
+            { text: '│  10Y Yield  ▼ -3bps                       │', type: 'output', delay: 30 },
+            { text: '│  Oil WTI    ▲ +0.6%                       │', type: 'output', delay: 30 },
+            { text: '│  BTC        ▲ +3.1%            RSI 61    │', type: 'output', delay: 30 },
             { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
         ],
         hold: 3000,
@@ -93,11 +176,11 @@ const scenes = [
             { text: '$ pftui predictions', type: 'command', delay: 60 },
             { text: '', type: 'output', delay: 200 },
             { text: '┌─ Prediction Markets ─────────────────────┐', type: 'output', delay: 30 },
-            { text: '│  Fed rate cut by June?        67%   ▲+4  │', type: 'output', delay: 30 },
-            { text: '│  BTC above $100k by Q2?       52%   ▼-3  │', type: 'output', delay: 30 },
-            { text: '│  US recession in 2026?        23%   ▲+2  │', type: 'output', delay: 30 },
-            { text: '│  Gold above $3,000?           78%   ▲+6  │', type: 'output', delay: 30 },
-            { text: '│  Trump tariffs expanded?      61%   →0   │', type: 'output', delay: 30 },
+            { text: '│  Fed rate cut next meeting?   67%   ▲+4  │', type: 'output', delay: 30 },
+            { text: '│  BTC breaks resistance soon?  52%   ▼-3  │', type: 'output', delay: 30 },
+            { text: '│  Recession odds rise?         23%   ▲+2  │', type: 'output', delay: 30 },
+            { text: '│  Gold extends trend?          78%   ▲+6  │', type: 'output', delay: 30 },
+            { text: '│  Risk regime shift this week? 61%   →0   │', type: 'output', delay: 30 },
             { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
         ],
         hold: 3000,
@@ -243,9 +326,13 @@ window.addEventListener('DOMContentLoaded', () => {
     
     // Start terminal demo after a brief pause
     setTimeout(runTerminalLoop, 800);
+
+    initHighlightsMarquee();
+    initInstallTabs();
+    setInstallMethod('curl');
     
     // Observe fade-in elements
-    document.querySelectorAll('.fade-in, .feature-card').forEach(el => {
+    document.querySelectorAll('.fade-in, .highlight-card').forEach(el => {
         observer.observe(el);
     });
 });
