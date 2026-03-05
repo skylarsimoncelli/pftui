@@ -36,6 +36,7 @@ pub enum ViewMode {
     Markets,
     Economy,
     Watchlist,
+    Journal,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartTimeframe {
@@ -320,6 +321,9 @@ pub struct App {
     pub watchlist_selected_index: usize,
     pub watchlist_entries: Vec<db_watchlist::WatchlistEntry>,
     pub prediction_markets: Vec<crate::data::predictions::PredictionMarket>,
+    pub journal_selected_index: usize,
+    pub journal_entries: Vec<crate::db::journal::JournalEntry>,
+    pub journal_search_query: String,
     pub g_pending: bool,
     pub terminal_height: u16,
     pub terminal_width: u16,
@@ -527,6 +531,9 @@ impl App {
             watchlist_selected_index: 0,
             watchlist_entries: Vec::new(),
             prediction_markets: Vec::new(),
+            journal_selected_index: 0,
+            journal_entries: Vec::new(),
+            journal_search_query: String::new(),
             g_pending: false,
             terminal_height: 24, // sensible default, updated on resize
             terminal_width: 120, // sensible default, updated on resize
@@ -592,6 +599,7 @@ impl App {
         self.load_cached_prices();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_journal();
         self.load_predictions();
         self.load_allocation_targets();
         self.load_alerts();
@@ -604,6 +612,7 @@ impl App {
         self.load_cached_prices();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_journal();
         self.load_predictions();
         self.load_allocation_targets();
         self.load_alerts();
@@ -665,6 +674,13 @@ impl App {
     fn load_watchlist(&mut self) {
         if let Ok(conn) = Connection::open(&self.db_path) {
             self.watchlist_entries = db_watchlist::list_watchlist(&conn).unwrap_or_default();
+        }
+    }
+
+    fn load_journal(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            self.journal_entries = crate::db::journal::list_entries(&conn, Some(100), None, None, None, None)
+                .unwrap_or_default();
         }
     }
 
@@ -1149,6 +1165,7 @@ impl App {
             ViewMode::Markets => "Markets",
             ViewMode::Economy => "Economy",
             ViewMode::Watchlist => "Watchlist",
+            ViewMode::Journal => "Journal",
         };
 
         // Only positions view has deeper navigation context
@@ -1635,6 +1652,12 @@ impl App {
                 self.detail_popup_open = false;
                 self.load_watchlist();
                 self.request_watchlist_data();
+            }
+            KeyCode::Char('7') => {
+                self.view_mode = ViewMode::Journal;
+                self.detail_open = false;
+                self.detail_popup_open = false;
+                self.load_journal();
             }
 
             // Alerts overlay toggle (Ctrl+A)
@@ -2187,6 +2210,11 @@ impl App {
                     self.economy_selected_index = clicked_row;
                 }
             }
+            ViewMode::Journal => {
+                if clicked_row < self.journal_entries.len() {
+                    self.journal_selected_index = clicked_row;
+                }
+            }
         }
     }
 
@@ -2307,6 +2335,12 @@ impl App {
                         (self.economy_selected_index + 1).min(count - 1);
                 }
             }
+            ViewMode::Journal => {
+                if !self.journal_entries.is_empty() {
+                    self.journal_selected_index =
+                        (self.journal_selected_index + 1).min(self.journal_entries.len() - 1);
+                }
+            }
         }
         if matches!(self.view_mode, ViewMode::Positions)
             && self.selected_index != old_pos_idx
@@ -2333,6 +2367,9 @@ impl App {
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(1);
             }
+            ViewMode::Journal => {
+                self.journal_selected_index = self.journal_selected_index.saturating_sub(1);
+            }
         }
         if matches!(self.view_mode, ViewMode::Positions)
             && self.selected_index != old_pos_idx
@@ -2358,6 +2395,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = 0;
+            }
+            ViewMode::Journal => {
+                self.journal_selected_index = 0;
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)
@@ -2395,6 +2435,11 @@ impl App {
                 let count = economy::economy_symbols().len();
                 if count > 0 {
                     self.economy_selected_index = count - 1;
+                }
+            }
+            ViewMode::Journal => {
+                if !self.journal_entries.is_empty() {
+                    self.journal_selected_index = self.journal_entries.len() - 1;
                 }
             }
         }
@@ -2452,6 +2497,12 @@ impl App {
                         (self.economy_selected_index + step).min(count - 1);
                 }
             }
+            ViewMode::Journal => {
+                if !self.journal_entries.is_empty() {
+                    self.journal_selected_index =
+                        (self.journal_selected_index + step).min(self.journal_entries.len() - 1);
+                }
+            }
         }
         if matches!(self.view_mode, ViewMode::Positions)
             && self.selected_index != old_pos_idx
@@ -2478,6 +2529,9 @@ impl App {
             }
             ViewMode::Economy => {
                 self.economy_selected_index = self.economy_selected_index.saturating_sub(step);
+            }
+            ViewMode::Journal => {
+                self.journal_selected_index = self.journal_selected_index.saturating_sub(step);
             }
         }
         if matches!(self.view_mode, ViewMode::Positions)

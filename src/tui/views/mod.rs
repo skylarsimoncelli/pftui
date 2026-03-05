@@ -3,6 +3,7 @@ pub mod asset_detail_popup;
 pub mod context_menu;
 pub mod economy;
 pub mod help;
+pub mod journal;
 pub mod markets;
 pub mod position_detail;
 pub mod positions;

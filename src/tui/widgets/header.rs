@@ -377,6 +377,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "W" } else { "Watch" }, watch_style));
 
+    // Journal tab — always visible
+    let journal_style = if matches!(app.view_mode, ViewMode::Journal) {
+        Style::default().fg(t.text_primary).bold().underlined()
+    } else {
+        Style::default().fg(t.text_muted)
+    };
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled("[7]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled(if compact { "J" } else { "Journal" }, journal_style));
+
     // Calendar countdown — show next high-impact event
     if !compact {
         if let Some((event_name, countdown)) = get_next_event_countdown(app) {
