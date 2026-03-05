@@ -27,7 +27,7 @@
 
 
 - [ ] **F19.3: Sentiment history in Economy tab** — 30-day sparkline of both indices. Overlay with portfolio value sparkline to show correlation/divergence. Files: `tui/views/economy.rs`
-- [ ] **F19.4: `pftui sentiment` CLI** — `pftui sentiment` (current), `--history 30` (days), `--json`. Files: new `src/commands/sentiment.rs`, `cli.rs`
+- [ ] **F19.4: Unified `pftui sentiment` CLI** — Merge COT positioning + Fear & Greed into one command. `pftui sentiment` shows: (1) Crypto F&G index + classification, (2) Traditional F&G, (3) COT smart money positioning for tracked commodities (gold, silver, oil, BTC). Subcommands: `pftui sentiment` (overview), `pftui sentiment --history 30` (trend), `pftui sentiment GC=F` (detailed positioning for one asset), `--json`. Rename existing `pftui cot` → absorbed into this. Files: new `src/commands/sentiment.rs`, refactor `src/commands/cot.rs` into it, `cli.rs`
 
 ### F20: Live News Feed (RSS)
 > **Goal:** Zero-cost, zero-key financial news aggregation from the best sources. Filterable by topic, searchable, in a dedicated News view.
