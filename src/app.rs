@@ -474,6 +474,9 @@ pub struct App {
     pub crypto_fng: Option<(u8, String)>, // (value, classification)
     pub traditional_fng: Option<(u8, String)>,
 
+    // Economic calendar
+    pub calendar_events: Vec<crate::data::calendar::Event>,
+
     // Header click targets (column ranges set during render)
     /// Column range for the theme name indicator in the header (for mouse click cycling).
     pub header_theme_col_range: Option<(u16, u16)>,
@@ -657,6 +660,7 @@ impl App {
             },
             crypto_fng: None,
             traditional_fng: None,
+            calendar_events: Vec::new(),
             db_path,
         }
     }
@@ -673,6 +677,7 @@ impl App {
         self.load_allocation_targets();
         self.load_alerts();
         self.load_sentiment();
+        self.load_calendar();
         self.recompute();
         self.recompute_regime();
     }
@@ -687,6 +692,7 @@ impl App {
         self.load_allocation_targets();
         self.load_alerts();
         self.load_sentiment();
+        self.load_calendar();
         self.recompute();
         self.recompute_regime();
 
@@ -813,6 +819,13 @@ impl App {
             if let Ok(Some(reading)) = crate::db::sentiment_cache::get_latest(&conn, "traditional") {
                 self.traditional_fng = Some((reading.value, reading.classification));
             }
+        }
+    }
+
+    fn load_calendar(&mut self) {
+        // Fetch 7 days ahead as per spec
+        if let Ok(events) = crate::data::calendar::fetch_events(7) {
+            self.calendar_events = events;
         }
     }
 

@@ -98,19 +98,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     render_macro_table(frame, body[0], app);
 
-    // Right panel: yield curve chart (top) + sentiment (middle) + predictions (bottom)
+    // Right panel: yield curve chart (top) + sentiment (middle) + calendar (middle) + predictions (bottom)
     let right = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(40),
+            Constraint::Percentage(30),
             Constraint::Length(7),
-            Constraint::Min(10),
+            Constraint::Length(11), // Calendar panel: 7 days + header + borders
+            Constraint::Min(8),
         ])
         .split(body[1]);
 
     render_yield_curve_chart(frame, right[0], app);
     render_sentiment_panel(frame, right[1], app);
-    render_predictions_panel(frame, right[2], app);
+    render_calendar_panel(frame, right[2], app);
+    render_predictions_panel(frame, right[3], app);
 }
 
 /// Top strip: key macro numbers at a glance — DXY, VIX, 10Y, Gold, Oil, BTC.
@@ -693,6 +695,97 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Render derived metrics panel: gold/silver ratio, real rate, yield curve spread.
+/// Calendar panel: 7-day economic event calendar with countdown timers and impact ratings.
+fn render_calendar_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(theme::BORDER_INACTIVE)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(
+            " Economic Calendar (7D) ",
+            Style::default().fg(t.text_accent).bold(),
+        ))
+        .style(Style::default().bg(t.surface_0));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height < 3 || inner.width < 40 {
+        return;
+    }
+
+    if app.calendar_events.is_empty() {
+        let msg = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "No calendar events loaded",
+                Style::default().fg(t.text_muted).italic(),
+            )),
+        ])
+        .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    let mut lines: Vec<Line> = Vec::new();
+    let max_visible = (inner.height as usize).saturating_sub(1);
+
+    for (i, event) in app.calendar_events.iter().take(max_visible).enumerate() {
+        if i >= max_visible {
+            break;
+        }
+
+        // Impact color coding: high=red, medium=yellow, low=white/muted
+        let impact_symbol = match event.impact.as_str() {
+            "high" => "🔴",
+            "medium" => "🟡",
+            _ => "⚪",
+        };
+
+        // Parse date for countdown
+        let countdown = if let Ok(event_date) = chrono::NaiveDate::parse_from_str(&event.date, "%Y-%m-%d") {
+            let now = chrono::Utc::now().date_naive();
+            let days_until = (event_date - now).num_days();
+            if days_until == 0 {
+                "Today".to_string()
+            } else if days_until == 1 {
+                "1d".to_string()
+            } else {
+                format!("{}d", days_until)
+            }
+        } else {
+            "---".to_string()
+        };
+
+        // Truncate event name to fit width (leave ~15 chars for date/countdown/impact)
+        let max_name_len = (inner.width as usize).saturating_sub(20);
+        let name = if event.name.len() > max_name_len {
+            format!("{}...", &event.name[..max_name_len.saturating_sub(3)])
+        } else {
+            event.name.clone()
+        };
+
+        let line = Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(impact_symbol, Style::default()),
+            Span::styled(" ", Style::default()),
+            Span::styled(
+                format!("{:<4}", countdown),
+                Style::default().fg(t.text_secondary),
+            ),
+            Span::styled(" ", Style::default()),
+            Span::styled(name, Style::default().fg(t.text_primary)),
+        ]);
+
+        lines.push(line);
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
 fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
 
