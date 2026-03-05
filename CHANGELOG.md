@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 21:14 UTC — F4.4: Risk summary line in `brief`
+
+- What: Added 1-line risk summary output in both full and percentage brief modes: annualized volatility, historical VaR 95, and concentration flag.
+- Data sources: Uses portfolio snapshot history (`portfolio_snapshots`) for return-based risk metrics and current position values/allocation weights for concentration. Uses cached `FEDFUNDS` when available for Sharpe risk-free input.
+- Output: New markdown line under the brief header: `**Risk:** vol ... · VaR95 ... · concentration ...`.
+- Files: `src/commands/brief.rs`, `TODO.md`
+- Tests: Could not run in this shell because `cargo 1.68.1` cannot parse lockfile v4.
+- TODO: F4.4 (P1 promoted) — COMPLETED.
+
 ### 2026-03-05 21:12 UTC — F4.3: Analytics tab in TUI (`[6]`)
 
 - What: Added new Analytics view with risk + scenario panels and portfolio projection workflow.

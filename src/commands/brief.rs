@@ -7,10 +7,13 @@ use rust_decimal_macros::dec;
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::analytics::risk;
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
+use crate::db::economic_cache;
 use crate::db::price_cache::get_all_cached_prices;
 use crate::db::price_history::{get_history, get_prices_at_date};
+use crate::db::snapshots::get_all_portfolio_snapshots;
 use crate::db::transactions::list_transactions;
 use crate::indicators::macd::{compute_macd, MacdResult};
 use crate::indicators::rsi::compute_rsi;
@@ -602,6 +605,7 @@ fn run_full(
             day_pct.round_dp(2),
         );
     }
+    print_risk_summary(conn, &positions);
     println!();
 
     // Category allocation
@@ -658,6 +662,8 @@ fn run_percentage(
     let date_str = Utc::now().format("%Y-%m-%d").to_string();
     println!("# Portfolio Brief — {}\n", date_str);
     println!("*Percentage mode (allocation-based)*\n");
+    print_risk_summary(conn, &positions);
+    println!();
 
     // Category allocation (use raw pct since no total value)
     print_category_allocation_pct(&positions);
@@ -716,6 +722,47 @@ fn run_percentage(
     }
 
     Ok(())
+}
+
+fn print_risk_summary(conn: &Connection, positions: &[Position]) {
+    let snapshots = get_all_portfolio_snapshots(conn).unwrap_or_default();
+    let portfolio_values: Vec<Decimal> = snapshots.iter().map(|s| s.total_value).collect();
+
+    let live_values: Vec<Decimal> = positions.iter().filter_map(|p| p.current_value).collect();
+    let concentration_values: Vec<Decimal> = if live_values.is_empty() {
+        positions
+            .iter()
+            .filter_map(|p| p.allocation_pct)
+            .collect()
+    } else {
+        live_values
+    };
+
+    let ffr_pct = economic_cache::get_latest(conn, "FEDFUNDS")
+        .ok()
+        .flatten()
+        .map(|o| o.value);
+
+    let metrics = risk::compute_risk_metrics(&portfolio_values, &concentration_values, ffr_pct);
+    let vol = metrics
+        .annualized_volatility_pct
+        .map(|v| format!("{:.1}%", v))
+        .unwrap_or_else(|| "N/A".to_string());
+    let var95 = metrics
+        .historical_var_95_pct
+        .map(|v| format!("{:.1}%", v))
+        .unwrap_or_else(|| "N/A".to_string());
+    let concentration = match metrics.herfindahl_index {
+        Some(h) if h >= dec!(0.25) => format!("HIGH ({:.3})", h),
+        Some(h) if h >= dec!(0.15) => format!("MODERATE ({:.3})", h),
+        Some(h) => format!("LOW ({:.3})", h),
+        None => "N/A".to_string(),
+    };
+
+    println!(
+        "**Risk:** vol {} · VaR95 {} · concentration {}",
+        vol, var95, concentration
+    );
 }
 
 // ──────────────────────────────────────────────────────────────
