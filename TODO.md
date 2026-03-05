@@ -41,11 +41,10 @@
 > **Sources:** CME Group public pages (scrapable), World Gold Council public data (scrapable)
 > **Status:** F22.1-F22.3 complete (COMEX data module + metals detail popup + CLI). Full integration shipped.
 
-### F23: Economic Release Calendar (Enhanced)
+### F23: Economic Release Calendar (Enhanced) ✅ COMPLETE
 > **Goal:** Upgrade F12 calendar from sample data to live free sources. Show upcoming releases with countdown, impact ratings, previous/forecast/actual.
 > **Sources:** Scrape TradingEconomics calendar (public page), or FRED release schedule API (free), or Finnhub (if user has free key — optional)
-
-- [ ] **F23.3: Calendar view in Economy tab** — 7-day forward view. Impact color-coded. Countdown timers. Previous/forecast columns. Actual filled in post-release. Files: `tui/views/economy.rs`
+> **Status:** F23.1 (TradingEconomics scraper), F23.2 (header countdown), F23.3 (Economy tab panel) all shipped.
 
 ### F24: Government Data Direct (BLS + BEA)
 > **Goal:** Pull employment, inflation, and GDP data directly from US government APIs. These are the actual source — not third-party repackaging.

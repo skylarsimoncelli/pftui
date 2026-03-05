@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-05 12:10 UTC — F23.3: Economic calendar panel in Economy tab
+
+- What: Added economic calendar panel to Economy tab right panel, showing 7-day forward view with impact color-coding (high=🔴, medium=🟡, low=⚪) and countdown timers (Today, 1d, 2d, etc.). Integrated with existing calendar data module (F23.1). Loads calendar events on TUI startup via `load_calendar()`. Layout: yield curve chart (30%) + sentiment panel (7 lines) + calendar panel (11 lines) + predictions panel (remaining space).
+- Why: F23.3 from TODO.md (P0 — Free Data Integration). Completes economic calendar integration by surfacing events natively in the TUI. At-a-glance visibility of upcoming market-moving events (FOMC, CPI, NFP, GDP) with impact ratings. No need to check external calendars.
+- Files: src/app.rs (calendar_events field, load_calendar method, init/init_offline calls), src/tui/views/economy.rs (render_calendar_panel function)
+- Tests: 1045 passing, clippy clean
+- TODO: F23.3 (P0) — COMPLETED. F23 economic calendar integration fully shipped (scraper + header countdown + tab view).
+
 ### 2026-03-05 11:40 UTC — F23.1: TradingEconomics calendar scraper
 
 - What: Upgraded economic calendar from sample data to live scraping from TradingEconomics. Scrapes US calendar page for upcoming economic releases (FOMC, CPI, NFP, PPI, GDP, PMI, JOLTS, jobless claims, retail sales, housing, ISM). Parses event date, name, previous value, forecast, and classifies impact (high/medium/low) based on keywords. Supports multiple date formats (YYYY-MM-DD, "Mar 5", "3/5"). Falls back to sample data on scrape failure (network issues, HTML changes). Free data source, no API key required.
