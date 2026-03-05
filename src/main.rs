@@ -223,6 +223,10 @@ fn main() -> Result<()> {
             commands::sentiment::run(symbol.as_deref(), history, json)
         }
 
+        Some(Command::Supply { symbol, json }) => {
+            commands::supply::run(symbol, json)
+        }
+
         Some(Command::Alerts { action, value, json, status }) => {
             // Parse value as either a rule string (for add) or an ID (for remove/ack/rearm)
             let id = value.as_deref().and_then(|v| v.parse::<i64>().ok());

@@ -280,6 +280,16 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show COMEX warehouse inventory (gold, silver)
+    Supply {
+        /// Specific metal symbol (GC=F for gold, SI=F for silver). Omit for all.
+        symbol: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage price, allocation, and indicator alerts
     Alerts {
         /// Action: add, list, remove, check, ack, rearm

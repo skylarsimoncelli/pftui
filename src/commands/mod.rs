@@ -3,6 +3,7 @@ pub mod brief;
 pub mod add_tx;
 pub mod cot;
 pub mod sentiment;
+pub mod supply;
 pub mod target;
 pub mod demo;
 pub mod drift;
