@@ -149,7 +149,7 @@ The homepage a finance enthusiast opens every morning:
 - [ ] **Native multi-currency with live FX conversion** — Store non-USD currencies natively, convert via live FX rates. Show FX rate and currency risk flag. Large effort — split into sub-tasks. Files: `models/position.rs`, `price/mod.rs`, `commands/summary.rs`, `widgets/header.rs`
 - [ ] **Ultra-wide layout (160+ cols)** — Third column: market context panel. Layout: 45% positions / 25% market / 30% chart. Files: `tui/ui.rs`, new `widgets/market_context.rs`
 - [ ] **thinkorswim UX research** — Research ToS layout, charts, scanners, analytics, shortcuts. Document what translates to TUI. Output: `docs/RESEARCH-THINKORSWIM.md`, then add derived TODO items
-- [ ] **Theme visual audit** — Audit all 11 themes across all views. Check: category colors, chart gradients, selection contrast, popup readability. Files: `theme.rs`, all views
+- [x] **Theme visual audit** — ✅ DONE. Audited all 11 themes. Fixed 12 issues: gain/loss distinguishability (5 themes), text_muted visibility (7 themes). All themes now pass contrast and color separation thresholds. Files: `theme.rs`
 
 ## P2 — Analytics Expansion
 

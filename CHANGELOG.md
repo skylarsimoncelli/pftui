@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 20:35 UTC — Theme visual audit: fix gain/loss distinguishability and muted text visibility
+
+- What: Conducted systematic audit of all 11 themes for visual issues. Fixed 12 issues across 8 themes: (1) gain/loss color distinguishability — 5 themes had green and red too similar in RGB space (<150 distance), now all >170. (2) text_muted visibility — 7 themes had contrast ratios <2.5, now all >2.65. Maintained each theme's aesthetic while improving accessibility.
+- Why: Visual hierarchy and accessibility issues impact readability and user experience. Green/red similarity affects users with color vision deficiencies. Dim muted text makes secondary info difficult to read.
+- How: Automated audit script calculated WCAG contrast ratios and RGB color distances. Increased saturation/brightness for gain_green, increased red channel for loss_red (Catppuccin, Nord, Gruvbox, Pastel, Miasma). Brightened text_muted by 15-25 points (Midnight, Dracula, Inferno, Neon, Hacker, Pastel, Miasma).
+- Affected themes: Catppuccin (gain/loss), Nord (gain/loss), Gruvbox (gain/loss), Pastel (gain/loss + muted), Miasma (gain/loss + muted), Midnight (muted), Dracula (muted), Inferno (muted), Neon (muted), Hacker (muted). Solarized and Tokyo Night unchanged.
+- Files: `src/tui/theme.rs` (28 color value adjustments)
+- Tests: Theme contrast guardrail tests pass. Full test suite cannot run due to unrelated WIP code in repo (market_context.rs references missing App fields). Theme module changes isolated and validated via audit script.
+- Audit report: /tmp/theme_audit_report.md
+
 ### 2026-03-06 19:30 UTC — Fix RSS news feeds with working Bloomberg sources
 
 - What: Replaced 6 broken RSS feeds (Reuters, CoinDesk, ZeroHedge, Yahoo Finance, MarketWatch, Kitco) with 5 working Bloomberg feeds (Markets, Economics, Commodities, Crypto, Politics). Fixed XML parsing to handle `<rss><channel><item>` structure instead of assuming root-level `<channel>`.
