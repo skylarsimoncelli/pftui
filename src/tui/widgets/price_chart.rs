@@ -259,6 +259,36 @@ fn render_single_chart(
         .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
         .collect();
     let mut sma_overlays: Vec<(Vec<Option<f64>>, Color)> = Vec::new();
+
+    // Benchmark overlay: when enabled, show SPY normalized to same percentage scale
+    if app.benchmark_overlay {
+        // Fetch SPY history for same timeframe
+        if let Some(spy_records) = app.price_history.get("^GSPC") {
+            let spy_sliced = slice_history(spy_records, tf_days);
+            if spy_sliced.len() >= 2 {
+                let spy_first = spy_sliced.first().map(|r| r.close).unwrap_or(dec!(1));
+                let primary_first = records.first().map(|r| r.close).unwrap_or(dec!(1));
+                
+                // Normalize both to percentage change from first value, then scale SPY to match primary's price scale
+                let spy_normalized: Vec<Option<f64>> = spy_sliced
+                    .iter()
+                    .map(|r| {
+                        if spy_first > dec!(0) && primary_first > dec!(0) {
+                            let spy_pct_change = (r.close - spy_first) / spy_first;
+                            let spy_in_primary_scale = primary_first * (dec!(1) + spy_pct_change);
+                            Some(spy_in_primary_scale.to_string().parse::<f64>().unwrap_or(0.0))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                
+                // Add SPY as gray overlay (distinct from indicators)
+                sma_overlays.push((spy_normalized, Color::DarkGray));
+            }
+        }
+    }
+
     let sma20 = compute_sma(&raw_values, SMA_SHORT_PERIOD);
     if sma20.iter().any(|v| v.is_some()) {
         sma_overlays.push((sma20, t.text_accent));

@@ -1164,6 +1164,10 @@ impl App {
             for (sym, cat) in &fetch_syms {
                 self.request_history_if_needed(sym, *cat, needed_days);
             }
+            // Also fetch SPY benchmark when overlay is enabled
+            if self.benchmark_overlay {
+                self.request_history_if_needed("^GSPC", AssetCategory::Equity, needed_days);
+            }
         }
     }
 
