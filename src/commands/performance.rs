@@ -21,6 +21,17 @@ fn snapshot_at_or_before<'a>(snapshots: &'a [PortfolioSnapshot], target: &str) -
     snapshots.iter().rev().find(|s| s.date.as_str() <= target)
 }
 
+/// Find the snapshot for period-based returns (MTD, QTD, YTD).
+/// If no snapshot exists at or before the period start, return the earliest snapshot >= period_start.
+fn snapshot_for_period<'a>(snapshots: &'a [PortfolioSnapshot], period_start: &str) -> Option<&'a PortfolioSnapshot> {
+    // First try to find a snapshot at or before period start
+    if let Some(snap) = snapshot_at_or_before(snapshots, period_start) {
+        return Some(snap);
+    }
+    // No snapshot before period start — use the earliest available snapshot >= period_start
+    snapshots.iter().find(|s| s.date.as_str() >= period_start)
+}
+
 /// Format a return percentage for display.
 fn fmt_return(pct: Option<Decimal>) -> String {
     match pct {
@@ -126,9 +137,9 @@ fn print_standard_returns(
     let val_1d = snapshot_at_or_before(snapshots, &d1).map(|s| s.total_value);
     let val_1w = snapshot_at_or_before(snapshots, &w1).map(|s| s.total_value);
     let val_1m = snapshot_at_or_before(snapshots, &m1).map(|s| s.total_value);
-    let val_mtd = snapshot_at_or_before(snapshots, &mtd).map(|s| s.total_value);
-    let val_qtd = snapshot_at_or_before(snapshots, &qtd).map(|s| s.total_value);
-    let val_ytd = snapshot_at_or_before(snapshots, &ytd).map(|s| s.total_value);
+    let val_mtd = snapshot_for_period(snapshots, &mtd).map(|s| s.total_value);
+    let val_qtd = snapshot_for_period(snapshots, &qtd).map(|s| s.total_value);
+    let val_ytd = snapshot_for_period(snapshots, &ytd).map(|s| s.total_value);
     let val_inception = Some(earliest.total_value);
 
     println!("╔══════════════════════════════════════════════════════════════╗");

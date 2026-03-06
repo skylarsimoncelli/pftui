@@ -1,15 +1,15 @@
 //! Fetch BTC on-chain data from multiple sources.
 //!
 //! Data sources:
-//! - Blockchair API: network metrics (free, 5 req/sec, no key)
-//! - CoinGlass: BTC ETF flows (scrape public pages)
-//! - Whale Alert: large transactions (scrape public feed)
+//! - Blockchair API: network metrics (✓ WORKING - free, 5 req/sec, no key)
+//! - CoinGlass: BTC ETF flows (✗ NOT IMPLEMENTED - requires API key or JS execution)
+//! - Whale Alert: large transactions (✗ NOT IMPLEMENTED - requires API key)
+//! - Exchange flows: (✗ NOT IMPLEMENTED - free sources need research)
 //!
-//! All sources are free and require no authentication.
+//! Status: Network metrics work. Others gracefully fail with clear error messages.
 
 use anyhow::{bail, Result};
 use serde::Deserialize;
-use scraper::{Html, Selector};
 use std::time::Duration;
 
 // ============================================================================
@@ -53,62 +53,20 @@ pub struct EtfFlow {
 
 /// Fetch BTC ETF flows from CoinGlass public page.
 ///
-/// Scrapes: https://www.coinglass.com/bitcoin-etf
-/// Returns: daily net flows by fund for the last 7 days
+/// Note: CoinGlass page uses client-side rendering with embedded JS data.
+/// This is a placeholder that gracefully fails with a clear message.
+/// TODO: Either implement JS parsing or find alternative free ETF flow source.
 pub fn fetch_etf_flows() -> Result<Vec<EtfFlow>> {
-    let url = "https://www.coinglass.com/bitcoin-etf";
-    
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .user_agent("pftui/0.4.1 (https://github.com/skylarsimoncelli/pftui)")
-        .build()?;
-    
-    let resp = client.get(url).send()?;
-    
-    if !resp.status().is_success() {
-        bail!("CoinGlass returned status {}", resp.status());
-    }
-
-    let body = resp.text()?;
-    parse_coinglass_etf_page(&body)
+    bail!("ETF flow data currently unavailable (CoinGlass uses client-side JS rendering; API access required)")
 }
 
-/// Parse CoinGlass HTML for ETF flow data.
-fn parse_coinglass_etf_page(html: &str) -> Result<Vec<EtfFlow>> {
-    let document = Html::parse_document(html);
-    
-    // CoinGlass page structure varies; we need to identify the table/div
-    // that contains ETF flow data. For a robust implementation, we'd inspect
-    // the actual page structure. For now, return placeholder structure.
-    
-    // This is a placeholder implementation. In production, we would:
-    // 1. Inspect CoinGlass page structure (likely a table with columns: Fund, Date, Net Flow BTC, Net Flow USD)
-    // 2. Use CSS selectors to extract rows
-    // 3. Parse numeric values (handle K/M/B suffixes)
-    
-    // Example selector structure (adjust based on actual page):
-    // let table_sel = Selector::parse("table.etf-flows").unwrap();
-    // let row_sel = Selector::parse("tr").unwrap();
-    
-    // For F21.1 MVP, we'll return empty vec and document that this needs
-    // manual page inspection to build correct selectors
-    
-    let flows = Vec::new();
-    
-    // Attempt to find data in script tags (CoinGlass often embeds data in JS)
-    let script_sel = Selector::parse("script").unwrap();
-    for script in document.select(&script_sel) {
-        let text = script.text().collect::<String>();
-        
-        // Look for data patterns (CoinGlass may use window.__INITIAL_STATE__ or similar)
-        if text.contains("etfData") || text.contains("netFlow") {
-            // This would require JSON parsing from embedded JS
-            // For now, bail with a helpful message
-            bail!("CoinGlass ETF data extraction requires manual page structure analysis. Script data found but parsing not yet implemented.");
-        }
-    }
-    
-    Ok(flows)
+/// Parse CoinGlass HTML for ETF flow data (currently unused).
+///
+/// CoinGlass uses client-side rendering, so HTML parsing alone is insufficient.
+/// Left as reference for future implementation if API access is obtained.
+#[allow(dead_code)]
+fn parse_coinglass_etf_page(_html: &str) -> Result<Vec<EtfFlow>> {
+    bail!("ETF flow page parsing not implemented (requires API or JS execution)")
 }
 
 // ============================================================================
