@@ -89,9 +89,17 @@ pub async fn fetch_bls_data(series_ids: &[&str]) -> Result<Vec<BlsDataPoint>> {
 
     for series in results.series {
         for item in series.data {
-            // Parse value
-            let value = Decimal::from_str(&item.value)
-                .with_context(|| format!("Failed to parse BLS value: {}", item.value))?;
+            // Parse value (skip if "-" or other non-numeric placeholder)
+            let value = match Decimal::from_str(&item.value.trim()) {
+                Ok(v) => v,
+                Err(_) => {
+                    // Skip missing/invalid data points (BLS uses "-" for missing data)
+                    if item.value.trim() == "-" || item.value.trim().is_empty() {
+                        continue;
+                    }
+                    return Err(anyhow::anyhow!("Failed to parse BLS value: {}", item.value));
+                }
+            };
 
             // Parse year
             let year: i32 = item

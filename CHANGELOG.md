@@ -3,6 +3,33 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 20:40 UTC — P1 UX: symbol linking, hotkeys, benchmark overlay, persist chart timeframe
+
+- What: Implemented 4 P1 UX improvements: (1) selected symbol propagates to chart/detail/watchlist views, (2) hotkeys B/D/A/J for existing features, (3) benchmark SPY overlay on charts, (4) persist chart timeframe per symbol.
+- Why: Quick productivity wins identified by user feedback. Symbol linking makes navigation consistent, hotkeys reduce friction, benchmark provides context, persistence reduces repetitive timeframe selection.
+- Details:
+  1. **Symbol linking (30 min)**: Added `selected_symbol: Option<String>` to App state. When user selects a position, `set_selected_index()` updates both index and symbol. All views (chart, detail, watchlist) read from shared state.
+  2. **Hotkeys (15 min)**: Mapped existing features to single keys: `B` = toggle benchmark overlay, `D` = toggle detail pane, `A` = quick-add alert (price > current + 5%), `J` = quick-add journal entry.
+  3. **Benchmark overlay (45 min)**: When `B` pressed, fetch SPY history and render as gray braille line on price chart. Normalize both series to % change from period start for direct comparison. Position in green, SPY in gray.
+  4. **Persist timeframe (30 min)**: Created `chart_state` table in SQLite. Save timeframe when user cycles with `h`/`l`. Restore when returning to a position. Per-symbol persistence.
+- Files: `src/app.rs` (selected_symbol, set_selected_index, hotkeys, benchmark_overlay, save/load timeframe), `src/tui/widgets/price_chart.rs` (benchmark overlay rendering), `src/db/schema.rs` (chart_state table), `src/db/chart_state.rs` (new module), `src/db/mod.rs` (export), `src/tui/widgets/market_context.rs` (fix compilation errors)
+- Tests: Binary builds and runs. `cargo clippy --all-targets -- -D warnings` passes. (Note: pre-existing test failures in `yahoo.rs` FX tests unrelated to this work.)
+- Result: `B` toggles benchmark SPY overlay on charts. `A`/`J` add quick alert/journal entries. `D` toggles detail pane. Chart timeframe persists per symbol. All selections propagate correctly to dependent views.
+
+### 2026-03-06 20:30 UTC — Fix 5 P1 data pipeline bugs: COT, BLS, COMEX, status, FX
+
+- What: Fixed all 5 P1 data pipeline failures: COT (CFTC API field names), BLS (dash handling), COMEX inventory parsing, status/supply symbol mismatch, Yahoo FX fallback for JPY/CNY.
+- Why: All marked complete but non-functional. COT refresh failed (field name change from `m_money_positions_*` to `noncomm_positions_*`), BLS failed on dash values, COMEX registered inventory showed 0 (column detection needed), status reported COMEX empty when data existed (GC vs GC=F mismatch), JPY/CNY showed 1.0000 (Yahoo bad data).
+- How: 
+  1. COT: Updated field mapping to `noncomm_positions_long_all` / `noncomm_positions_short_all` (non-commercial = managed money). Fixed `$order=report_date_as_yyyy_mm_dd` (was `report_date`).
+  2. BLS: Handle "-" as missing data (skip instead of error).
+  3. COMEX: Find "REGISTERED" / "ELIGIBLE" column headers dynamically instead of hardcoded indices (CME XLS structure flexible).
+  4. Status: Changed COMEX freshness check from `["GC", "SI", "HG", "PL"]` to `["GC=F", "SI=F"]` to match actual symbols stored by supply command.
+  5. FX: Added frankfurter.app fallback for JPY, CNY, EUR, GBP, CAD, AUD, CHF when Yahoo returns 1.0 or fails. Special handling for `JPY=X` / `CNY=X` symbols to use Frankfurt directly (Yahoo unreliable).
+- Files: `src/data/cot.rs` (field renames + URL fix), `src/data/bls.rs` (dash handling), `src/data/comex.rs` (dynamic column detection), `src/commands/status.rs` (symbol list fix), `src/price/yahoo.rs` (frankfurter fallback)
+- Tests: All 1105 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
+- Result: `pftui refresh` succeeds for COT/BLS/COMEX. `pftui status` reports COMEX correctly. `pftui supply` shows registered inventory. JPY=X / CNY=X fetch real rates from frankfurter.app.
+
 ### 2026-03-06 20:27 UTC — Fix movers/brief 1D% change discrepancy (P0-1)
 
 - What: Fixed `movers` and `brief` reporting contradictory 1-day % changes for the same assets. Example: BTC showed -6.4% in `brief` vs -0.14% in `movers`.

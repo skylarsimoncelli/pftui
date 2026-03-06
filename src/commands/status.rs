@@ -383,7 +383,7 @@ fn check_comex(conn: &Connection) -> Result<DataSourceStatus> {
     let mut is_stale = false;
     let now = chrono::Utc::now();
     
-    for symbol in &["GC", "SI", "HG", "PL"] {
+    for symbol in &["GC=F", "SI=F"] {
         if let Ok(Some(inv)) = comex_cache::get_latest_inventory(conn, symbol) {
             count += 1;
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&inv.fetched_at) {

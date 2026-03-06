@@ -88,9 +88,9 @@ struct SocrataRecord {
     report_date: String,
     #[serde(rename = "open_interest_all")]
     open_interest: String,
-    #[serde(rename = "m_money_positions_long_all")]
+    #[serde(rename = "noncomm_positions_long_all")]
     managed_money_long: String,
-    #[serde(rename = "m_money_positions_short_all")]
+    #[serde(rename = "noncomm_positions_short_all")]
     managed_money_short: String,
     #[serde(rename = "comm_positions_long_all")]
     commercial_long: String,
@@ -107,7 +107,7 @@ struct SocrataRecord {
 /// This is a blocking call — run in a background thread if called from TUI.
 pub fn fetch_latest_report(cftc_code: &str) -> Result<CotReport> {
     let url = format!(
-        "https://publicreporting.cftc.gov/resource/jun7-fc8e.json?cftc_contract_market_code={}&$order=report_date%20DESC&$limit=1",
+        "https://publicreporting.cftc.gov/resource/jun7-fc8e.json?cftc_contract_market_code={}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit=1",
         cftc_code
     );
 
@@ -134,7 +134,7 @@ pub fn fetch_latest_report(cftc_code: &str) -> Result<CotReport> {
 /// This is a blocking call — run in a background thread if called from TUI.
 pub fn fetch_historical_reports(cftc_code: &str, weeks: usize) -> Result<Vec<CotReport>> {
     let url = format!(
-        "https://publicreporting.cftc.gov/resource/jun7-fc8e.json?cftc_contract_market_code={}&$order=report_date%20DESC&$limit={}",
+        "https://publicreporting.cftc.gov/resource/jun7-fc8e.json?cftc_contract_market_code={}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit={}",
         cftc_code, weeks
     );
 

@@ -70,13 +70,79 @@ async fn fetch_fx_history(
     Ok(rates)
 }
 
+/// Fetch FX rate from frankfurter.app API (free, no key required).
+/// Returns rate to convert from_currency → USD.
+async fn fetch_fx_rate_frankfurter(from_currency: &str) -> Result<Decimal> {
+    let url = format!("https://api.frankfurter.app/latest?from={}&to=USD", from_currency);
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    
+    let resp = client.get(&url).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Frankfurter API returned {}", resp.status());
+    }
+    
+    let json: serde_json::Value = resp.json().await?;
+    let rate_val = json["rates"]["USD"]
+        .as_f64()
+        .ok_or_else(|| anyhow::anyhow!("Frankfurter API missing USD rate"))?;
+    
+    let rate = Decimal::try_from(rate_val)?;
+    if rate <= dec!(0) {
+        anyhow::bail!("Invalid FX rate from Frankfurter for {}: {}", from_currency, rate);
+    }
+    
+    Ok(rate)
+}
+
 pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
     let yahoo_sym = normalize_yahoo_symbol(symbol);
+    
+    // Special handling for FX pairs that Yahoo often gets wrong
+    if symbol == "JPY=X" || symbol == "CNY=X" {
+        let currency = symbol.strip_suffix("=X").unwrap();
+        match fetch_fx_rate_frankfurter(currency).await {
+            Ok(rate) => {
+                // Frankfurter gives us FROM→USD, but JPY=X quote should be USD→JPY
+                // So we need the inverse
+                let inverse_rate = if rate > dec!(0) {
+                    dec!(1.0) / rate
+                } else {
+                    anyhow::bail!("Invalid FX rate")
+                };
+                
+                return Ok(PriceQuote {
+                    symbol: symbol.to_string(),
+                    price: inverse_rate,
+                    currency: "USD".to_string(),
+                    source: "frankfurter".to_string(),
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                });
+            }
+            Err(_) => {
+                // Fall through to Yahoo
+            }
+        }
+    }
+    
     let provider = yahoo::YahooConnector::new()?;
     let response = provider.get_latest_quotes(&yahoo_sym, "1d").await?;
     let quote = response.last_quote()?;
 
     let mut price = Decimal::try_from(quote.close)?;
+    
+    // Check if Yahoo returned a bogus 1.0 for FX pairs
+    if (symbol.ends_with("=X") || symbol.contains("USD")) && (price - dec!(1.0)).abs() < dec!(0.001) {
+        // Try fallback
+        if let Some(currency) = symbol.strip_suffix("=X") {
+            if let Ok(rate) = fetch_fx_rate_frankfurter(currency).await {
+                price = dec!(1.0) / rate; // Inverse for USD→currency quote
+            }
+        }
+    }
+    
     let now = chrono::Utc::now().to_rfc3339();
 
     // Check if the security trades in a non-USD currency and convert

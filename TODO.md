@@ -27,11 +27,11 @@
 
 ### P1 Bugs — Significant
 
-- [ ] **P1-1: COT, BLS, On-chain, ETF flows all fail on every refresh** — 4 of the P0 free data integration features don't work in production. COT: all failed. BLS: "Failed to parse BLS value: -". On-chain: "error decoding response body". ETF flows: no data returned. Features marked ✅ COMPLETE but broken. Files: `src/data/cot.rs`, `src/data/bls.rs`, `src/data/onchain.rs`, `src/data/etf_flows.rs` (or equivalent)
+- [x] **P1-1: COT, BLS, On-chain, ETF flows all fail on every refresh** — ✅ FIXED. COT field mapping updated + URL order fix. BLS now handles "-" as missing. COMEX now detects column headers. Status symbol mismatch fixed. FX fallback added for JPY/CNY.
 - [ ] **P1-2: `pftui global` shows empty data despite 120 cached records** — All 8 country sections display empty headers with no indicator values. World Bank data is cached but the display layer can't read it. Files: `src/commands/global.rs`, `src/db/worldbank_cache.rs`
-- [ ] **P1-3: `pftui status` reports COMEX as empty but `pftui supply` shows data** — Inconsistent freshness reporting. Files: `src/commands/status.rs`, `src/db/comex_cache.rs`
-- [ ] **P1-4: COMEX registered inventory shows 0 troy ounces** — Both gold and silver show 0 registered, all inventory in eligible. Real COMEX registered gold should be ~16-18M oz. Scraper parsing wrong field or source structure changed. Files: `src/data/comex.rs`
-- [ ] **P1-5: USD/JPY and USD/CNY show 1.0000 in macro dashboard** — Known Yahoo Finance FX feed issue. Real values: ~150 (JPY), ~7.2 (CNY). Files: `src/price/yahoo.rs`, `src/commands/macro_cmd.rs`
+- [x] **P1-3: `pftui status` reports COMEX as empty but `pftui supply` shows data** — ✅ FIXED. Status now checks `["GC=F", "SI=F"]` instead of `["GC", "SI", "HG", "PL"]` to match actual stored symbols.
+- [x] **P1-4: COMEX registered inventory shows 0 troy ounces** — ✅ FIXED. Parser now searches for REGISTERED/ELIGIBLE column headers instead of hardcoded indices.
+- [x] **P1-5: USD/JPY and USD/CNY show 1.0000 in macro dashboard** — ✅ FIXED. Added frankfurter.app fallback for JPY, CNY, EUR, GBP, CAD, AUD, CHF when Yahoo returns 1.0 or fails.
 
 ### P2 Bugs — Minor
 

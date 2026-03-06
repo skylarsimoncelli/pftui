@@ -109,16 +109,38 @@ pub fn fetch_inventory(symbol: &str) -> Result<ComexInventory> {
     // Iterate through all sheets, sum TOTAL rows
     for sheet_name in workbook.sheet_names() {
         if let Ok(range) = workbook.worksheet_range(&sheet_name) {
-            // Look for row with "TOTAL" in first column
+            // Find header row to determine column indices
+            let mut reg_col: Option<usize> = None;
+            let mut elig_col: Option<usize> = None;
+            
             for row in range.rows() {
+                // Check if this is a header row
+                if reg_col.is_none() {
+                    for (idx, cell) in row.iter().enumerate() {
+                        let cell_str = format!("{:?}", cell).to_uppercase();
+                        if cell_str.contains("REGISTERED") {
+                            reg_col = Some(idx);
+                        }
+                        if cell_str.contains("ELIGIBLE") {
+                            elig_col = Some(idx);
+                        }
+                    }
+                }
+                
+                // Look for TOTAL row
                 if let Some(cell) = row.first() {
                     let cell_str = format!("{:?}", cell).to_uppercase();
                     if cell_str.contains("TOTAL") {
-                        // Registered typically in col 1, Eligible in col 2
-                        if let (Some(reg_cell), Some(elig_cell)) = (row.get(1), row.get(2)) {
+                        // Use discovered columns or fall back to 1, 2
+                        let r_idx = reg_col.unwrap_or(1);
+                        let e_idx = elig_col.unwrap_or(2);
+                        
+                        if let Some(reg_cell) = row.get(r_idx) {
                             if let Ok(reg_val) = parse_cell_as_float(reg_cell) {
                                 total_registered += reg_val;
                             }
+                        }
+                        if let Some(elig_cell) = row.get(e_idx) {
                             if let Ok(elig_val) = parse_cell_as_float(elig_cell) {
                                 total_eligible += elig_val;
                             }
