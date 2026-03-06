@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::config::Config;
 use crate::db::allocations::get_unique_allocation_symbols;
 use crate::db::price_cache::get_all_cached_prices;
-use crate::db::price_history::get_history;
+use crate::db::price_history::get_price_at_date;
 use crate::db::transactions::get_unique_symbols;
 use crate::db::watchlist::list_watchlist;
 use crate::models::asset::AssetCategory;
@@ -39,18 +39,20 @@ fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
     }
 }
 
-/// Compute daily change % from current price vs most recent historical close.
-/// Returns None if no history exists or current price is not available.
+/// Compute daily change % from current price vs yesterday's close.
+/// Returns None if no yesterday price exists or current price is not available.
+/// Uses same logic as brief.rs to ensure consistency.
 fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<Decimal>) -> Option<Decimal> {
+    use chrono::Utc;
+    
     let current = current_price?;
     
-    // Get the most recent historical close (yesterday or last trading day)
-    let history = get_history(conn, yahoo_sym, 1).ok()?;
-    if history.is_empty() {
-        return None;
-    }
+    // Get yesterday's close (same approach as brief.rs)
+    let today = Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     
-    let prev_close = history[0].close;
+    let prev_close = get_price_at_date(conn, yahoo_sym, &yesterday_str).ok()??;
     if prev_close == dec!(0) {
         return None;
     }
