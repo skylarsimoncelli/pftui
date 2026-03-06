@@ -18,7 +18,6 @@
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [ ] **Ultra-wide layout (160+ cols)** — 3-column: 45% positions / 25% market context / 30% chart. Code written but lost to rebase — needs reimplementation. Files: `tui/ui.rs`, new `widgets/market_context.rs`
 - [ ] **Split-pane view** — `D` toggles bottom 30% showing chart + transactions + news for selected position. Files: `tui/ui.rs`, new `views/position_detail_pane.rs`
 - [ ] **Candlestick chart variant** — OHLC braille/block candlesticks. Requires OHLC in HistoryRecord. Files: `models/price.rs`, `price/yahoo.rs`, `widgets/price_chart.rs`
 - [ ] **SMA overlay on charts** — Configurable `chart_sma = [20, 50, 200]`. Faint braille lines. Files: `widgets/price_chart.rs`, `config.rs`

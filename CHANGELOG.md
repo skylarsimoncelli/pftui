@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 22:27 UTC — Ultra-wide layout (160+ cols) with 3-column design
+
+- What: implemented ultra-wide 3-column layout for terminal widths >= 160 columns. Left (45%): positions table + portfolio overview. Middle (25%): market context panel (top movers, macro indicators, F&G, events, active alerts). Right (30%): asset overview + price chart. Refactored render_positions_layout into reusable helper functions render_left_pane and render_right_pane to reduce duplication.
+- Why: ultra-wide monitors (1440p+, 21:9) can display more context simultaneously. Market context panel provides at-a-glance portfolio movers and macro signals without switching tabs. Mirrors Bloomberg Terminal multi-pane design.
+- Files: `src/tui/ui.rs` (ULTRA_WIDE_WIDTH constant, 3-column layout logic, refactored helpers), `src/tui/widgets/mod.rs` (export market_context), `src/tui/widgets/market_context.rs` (fixed borrow/comparison errors)
+- Tests: all 1114 tests pass, no new tests needed (layout change only)
+- TODO: Ultra-wide layout (160+ cols) (P1)
+
 ### 2026-03-06 21:05 UTC — P1 UX: symbol linking, benchmark overlay, persist chart timeframe
 
 - What: Implemented 4 P1 UX improvements from thinkorswim research: (1) symbol linking across views, (2) benchmark overlay hotkey, (3) SPY benchmark comparison chart, (4) persist chart timeframe per symbol.
