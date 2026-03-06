@@ -170,6 +170,7 @@ The homepage a finance enthusiast opens every morning:
 > F15 (Configurable Homepage) and F16 (Full Chart Search) are defined in P1.
 
 ### Other P2
+- [ ] **[Feedback] Fix movers vs watchlist sign discrepancy (CRITICAL)** — Market Close reports BKSY +3.7% in movers but -3.3% in watchlist; LUNR +3.48% in movers vs -8.3% in watchlist. The Mar 5 movers 1D fix didn't fully resolve this — different price comparison windows or stale cache between commands. Trust-breaking data integrity issue. Files: `src/commands/movers.rs`, `src/commands/watchlist_cli.rs`
 - [ ] **[Feedback] Fix USD/JPY and USD/CNY in macro dashboard** — Yahoo Finance FX feed for JPY=X and CNY=X is broken (returns 1.00). Upgraded yahoo_finance_api to v4 (didn't fix it). Solution: add fallback FX API module using exchangerate-api.com (free, 1500/mo) or frankfurter.app (free, unlimited). Files: new `src/data/fx_fallback.rs`, `src/price/mod.rs` (fallback logic), `src/commands/refresh.rs`
 - [ ] **[Feedback] Alerts in `brief` output** — Show any triggered or near-threshold alerts in the brief command output. Connects alert engine to the primary agent-consumed command. Files: `commands/brief.rs`, `alerts/engine.rs`
 - [ ] **[Feedback] After-hours / pre-market prices** — Show AH/pre-market prices in watchlist and brief for market close routines. Yahoo Finance provides extended hours data. Files: `src/price/yahoo.rs`, `commands/brief.rs`, `commands/watchlist_cli.rs`
@@ -179,6 +180,13 @@ The homepage a finance enthusiast opens every morning:
 - [ ] **News feed integration** — Free RSS/API source (Yahoo Finance RSS, Finnhub). Scrollable list with per-asset filtering. Files: new `src/news/`, new `views/news.rs`
 - [ ] **Candlestick chart variant** — OHLC braille/block candlesticks. Requires OHLC in HistoryRecord. Files: `models/price.rs`, `price/yahoo.rs`, `price_chart.rs`
 - [x] **Web interface (`pftui web`)** — axum server with REST API, lightweight vanilla JS/HTML/CSS frontend embedded in binary. TradingView Advanced Chart Widget for interactive charting. Bearer token auth (auto-generated, optional --no-auth). Dark theme, responsive layout, 9 API endpoints, click-to-chart, auto-refresh. Completed 2026-03-04. Files: `src/web/{mod,api,auth,server}.rs`, `src/web/static/index.html`, `Cargo.toml`, `cli.rs`, `main.rs`. **Note:** Core layer was NOT extracted — web API directly uses existing db/models functions. No code duplication. Future: Add API endpoint tests, PID file management, systemd service template.
+- [ ] **[Feedback] Fix data pipeline for "complete" P0 features** — Predictions (F17), news (F20), etf-flows (F21), COT (F18) all return empty after `pftui refresh`. Features are marked complete but don't populate real data end-to-end. Must audit each: verify fetch → parse → cache → display works with live data sources. This is the #1 score regression driver. Files: `src/commands/refresh.rs`, `src/data/predictions.rs`, `src/data/rss.rs`, `src/data/onchain.rs`, `src/data/cot.rs`
+- [ ] **[Feedback] Standardize CLI `--json` flag** — Three different conventions exist: `--json` (export, macro), `--agent` (brief), and no JSON support (summary, value, performance). Unify all data-output commands to support `--json` with consistent structure (top-level `data`, `meta`, `timestamp` keys). Deprecate `--agent` in favor of `--json`. Files: `src/cli.rs`, `src/commands/brief.rs`, `src/commands/summary.rs`, `src/commands/value.rs`, `src/commands/performance.rs`
+- [ ] **[Feedback] `pftui status` or `pftui refresh --status`** — Show data health: last refresh timestamp, cached data age per source (prices, predictions, news, COT, BLS, calendar), pending alerts count. Agent health check. Files: new `src/commands/status.rs`, `cli.rs`
+- [ ] **[Feedback] Stale data indicator in TUI header** — Show ⚠ Stale (Xh ago) if cached data >1h old, with hint 'Press r to refresh'. Files: `src/tui/widgets/header.rs`
+- [ ] **[Feedback] `pftui close` / `pftui eod` command** — Purpose-built market close command combining brief + movers + macro + sentiment in one output. Files: new `src/commands/eod.rs`, `cli.rs`
+- [ ] **[Feedback] Brent crude alongside WTI in macro dashboard** — Add Brent-WTI spread as key metric during geopolitical crises. Files: `src/commands/macro_cmd.rs`, `src/tui/views/economy.rs`
+- [ ] **[Feedback] Portfolio stress testing via CLI** — `pftui stress-test` showing portfolio impact under named scenarios (DXY 100, oil $90, BTC $40k). Builds on F4.2 scenario engine. Files: new `src/commands/stress_test.rs`, `src/analytics/scenarios.rs`
 - [ ] **Snap/AUR/Scoop publishing** — Snap: needs Snapcraft account + SNAPCRAFT_TOKEN. AUR: needs account + AUR_SSH_KEY. Scoop: needs Windows binary first. Files: `snap/snapcraft.yaml`, `.github/workflows/release.yml`
 - [ ] **Windows build support** — Add x86_64-pc-windows-msvc to release matrix. Files: `.github/workflows/release.yml`
 
@@ -202,26 +210,27 @@ The homepage a finance enthusiast opens every morning:
 
 ## Feedback Summary
 
-**Last reviewed:** 2026-03-05T03:00Z
+**Last reviewed:** 2026-03-06T03:00Z
 
 | Tester | Latest Score | Trend | Key Pain Point |
 |---|---|---|---|
-| Sentinel Main (TUI) | 82% | ↑→ (40→78→82→82) | P&L dollar amounts, sector grouping, economy tab expansion |
-| Evening Planner (CLI) | 92% | ↑↑ (38→85→92) | RSI/MACD/SMA for watchlist, stress testing, sector rotation |
-| Market Research (CLI) | 78% | ↑ (40→72→78) | Movers 1D calc bug, RSI/MACD/SMA, F&G indices, news |
-| Market Close (CLI) | 80% | ↑ (68→80) | Expand watchlist (11→50+), technicals on macro, fix USD/JPY+CNY, after-hours |
+| Sentinel Main (TUI) | 78% | ↑↓ (40→78→82→82→78) | P&L dollar amounts, economy tab expansion, data loading issues |
+| Evening Planner (CLI) | 85% | ↑↓ (38→85→92→85) | BTC ETF flow data, stress testing, FRED integration |
+| Market Research (CLI) | 78% | → (40→72→78→78) | RSI/MACD/SMA, etf-flows/news/predictions not populating |
+| Market Close (CLI) | 72% | ↑↓ (68→80→72) | Movers/watchlist sign discrepancy (BUG), RSI/MACD, stub features empty |
+| UX Analyst (NEW) | 68% | NEW | Data availability gap, CLI JSON flag inconsistency, stub features |
 
-**Lowest scorer:** Market Research at 78% — top pain points: movers command shows multi-day changes instead of true 1D (bug), no RSI/MACD/SMA50 (still using fetch_prices.py), missing F&G indices and news integration.
+**Lowest scorer:** UX Analyst at 68% — new tester focused on UX cohesion. Primary concern: features marked "complete" (predictions, news, etf-flows, COT, performance) don't populate with real data in practice, creating a trust gap.
 
-**Score trajectory:** All testers now in 78-92% range. Evening Planner hit 92% — highest score ever — driven by macro dashboard being "THE most useful feature." Market Close jumped +12 points after macro, movers, and history improvements shipped. Sentinel Main plateaued at 82% — needs P&L dollar amounts and economy tab enrichment to break through.
+**Score trajectory:** REGRESSION across the board. Sentinel Main dropped 82→78, Evening Planner dropped 92→85, Market Close dropped 80→72. Root cause: data availability gap. Many P0 features are marked complete but don't actually populate data reliably (predictions empty, news empty, etf-flows empty, COT unavailable, performance N/A). Testers hit "No cached data. Run pftui refresh" loops where refresh doesn't fix the issue. The movers vs watchlist sign discrepancy is a trust-breaking bug. Scores will not recover until data actually flows through the features that were shipped.
 
 **Top 3 priorities from feedback:**
-1. **F19 Sentiment gauges (F&G indices)** (P0) — F19.1 data module done, need F19.2 (header display), F19.3 (history sparklines), F19.4 (CLI). Requested by Market Research and Evening Planner.
-2. **Fix USD/JPY and USD/CNY data** (P2, bug) — Market Close reports both showing 1.0000 in macro dashboard. Broken data source needs investigation.
-3. **Add RSI/MACD/SMA indicators to CLI commands** — Market Research and Evening Planner both requested technicals for watchlist/macro symbols.
+1. **FIX DATA PIPELINE** (P0, critical) — Predictions, news, etf-flows, COT all return empty after `pftui refresh`. These are marked ✅ COMPLETE but don't work end-to-end. Trust-breaking. Must verify data flows from source → cache → display for every "complete" P0 feature.
+2. **Fix movers vs watchlist sign discrepancy** (P0, bug) — Market Close reports BKSY showing +3.7% in movers but -3.3% in watchlist; LUNR +3.48% in movers vs -8.3% in watchlist. Same symbol, same day, opposite signs. Data integrity issue.
+3. **Standardize CLI JSON output** (P1) — UX Analyst flagged three different conventions: `--json` (export, macro), `--agent` (brief), and no JSON support (summary, value, performance). Standardize all data-output commands to `--json`.
 
-**Completed since last review:** F17.2-F17.4 (predictions panel + sparklines + CLI), F18.1-F18.4 (COT data + popup + Markets column + CLI), F19.1 (sentiment data module), F23.2 (calendar countdown in header), F8.2 (journal tab), UX overhaul (unified timeframe control, clickable selector, P&L/Value columns), web dashboard
+**Completed since last review:** F19.2-F19.4 (sentiment header + sparklines + CLI), F20.1-F20.5 (RSS news full stack), F21.1-F21.3 (on-chain + ETF flows), F22.1-F22.3 (COMEX supply), F23.1-F23.3 (economic calendar), F24.1-F24.2 (BLS data), F25.1-F25.3 (World Bank data), F4.1-F4.4 (risk + scenarios + analytics tab), F15.1-F15.2 (configurable homepage), F16.1-F16.3 (full chart search), F8.3 (journal migration), F2.1 (correlation math), web parity phases, movers 1D fix, UX overhaul
 
-**Release status:** v0.4.1 is current. Since then: F17.2-F17.4 (predictions), F18.1-F18.4 (COT), F19.1 (sentiment), F23.2 (calendar countdown), F8.2 (journal tab), UX overhaul (timeframe selector, P&L/Value columns), website improvements. Tests: 1019 passing, clippy clean. **Significant feature work since v0.4.1 — ready to release as v0.5.0.**
+**Release status:** v0.5.0 already tagged and released. Since then: 86 commits including F2.1 (correlations), F4.1-F4.4 (analytics), F15-F16 (homepage + search), F8.3 (journal migration), web parity (auth + SSE + overlays + contract tests). However, 2 test failures and 7 clippy warnings currently block a release. **Not release-ready — fix tests and clippy first, then release as v0.6.0.**
 
 **Homebrew Core:** 1 star — needs 50+ for homebrew-core submission. Not eligible yet.
