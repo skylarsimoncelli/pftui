@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 19:30 UTC — Fix RSS news feeds with working Bloomberg sources
+
+- What: Replaced 6 broken RSS feeds (Reuters, CoinDesk, ZeroHedge, Yahoo Finance, MarketWatch, Kitco) with 5 working Bloomberg feeds (Markets, Economics, Commodities, Crypto, Politics). Fixed XML parsing to handle `<rss><channel><item>` structure instead of assuming root-level `<channel>`.
+- Why: All existing RSS feeds failed (Cloudflare captcha, 404s, redirects), causing `News (0 articles)` on every refresh. #1 data pipeline regression flagged by 5 testers.
+- Result: `pftui refresh` now fetches 90+ news articles successfully. DB verification: `SELECT COUNT(*) FROM news_cache` returns 92.
+- Files: `src/data/rss.rs` (default_feeds, deserializer Rss/RssChannel structs, test assertions)
+- Tests: Updated `test_default_feeds` to expect 5 feeds + Bloomberg feed names. All 1105 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
+
 ### 2026-03-06 18:42 UTC — Fix predictions data pipeline
 
 - What: Fixed Polymarket Gamma API response parsing to match actual JSON structure. Predictions now populate correctly after `pftui refresh`.
