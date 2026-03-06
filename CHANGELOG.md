@@ -40,14 +40,18 @@
 - Tests: All 1105 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
 - Result: `movers` and `brief` now report identical day-change percentages. Resolves P0-1.
 
-### 2026-03-06 21:15 UTC — Native multi-currency support with live FX conversion
+### 2026-03-06 22:00 UTC — Native multi-currency support with live FX conversion
 
-- What: Implemented full multi-currency support with live FX rate fetching and conversion to USD base currency. Positions stored in native currency (GBP, CAD, EUR, etc.) now convert to USD for portfolio totals using Yahoo Finance FX pairs (GBPUSD=X, etc.). Added `fx_cache` table for 15-minute rate freshness.
-- Why: Users with international holdings (UK trusts, Canadian stocks, European equities) previously saw unconverted foreign prices, breaking portfolio math. This enables accurate multi-currency portfolios.
-- How: Created `src/data/fx.rs` (fetch rates for USD, GBP, EUR, CAD, AUD, JPY, CHF) and `src/db/fx_cache.rs` (cache with 15-min TTL). Added FX rate fetching to `refresh.rs` (step 2 after prices). Modified `models/position.rs` to accept `fx_rates` HashMap and apply conversion during position computation (added `compute_positions_with_fx`). Updated `app.rs` to load FX rates on init and pass to recompute. Added `[GBP]`, `[CAD]` currency indicators in positions table for non-USD assets (both full and privacy views).
-- Files: `src/data/fx.rs` (new), `src/db/fx_cache.rs` (new), `src/db/schema.rs` (fx_cache table migration), `src/data/mod.rs` + `src/db/mod.rs` (module registration), `src/commands/refresh.rs` (FX fetch step 2), `src/models/position.rs` (FX conversion logic), `src/app.rs` (fx_rates field, load_fx_rates, recompute), `src/tui/views/positions.rs` (currency indicator display)
-- Tests: All 1109 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
-- Supported currencies: USD (base), GBP, EUR, CAD, AUD, JPY, CHF
+- What: Implemented full multi-currency support with live FX rate fetching and conversion to USD base currency. Positions stored in native currency (GBP, EUR, CAD, AUD, JPY, CHF) now convert to USD for portfolio totals using Yahoo Finance FX pairs (GBPUSD=X, etc.). Added `fx_cache` table with 15-minute TTL. Display shows currency symbols (£, €, ¥) and FX exposure summary in header.
+- Why: Users with international holdings (UK trusts, Canadian stocks, European equities) previously saw unconverted foreign prices, breaking portfolio math. Multi-currency support was the #1 missing feature blocking real-world use.
+- How: Three-phase implementation:
+  1. **Infrastructure (commit de9ec36)**: Created `src/data/fx.rs` (fetch all major FX pairs from Yahoo) and `src/db/fx_cache.rs` (SQLite cache with 15-min TTL). Added `fx_cache` table to schema. Registered modules in `data/mod.rs` and `db/mod.rs`. Added FX rate fetching to `refresh.rs` as step 1 (before prices) to fetch GBP, EUR, CAD, AUD, JPY, CHF rates.
+  2. **Core refactor (commit be41020)**: Added `native_currency: Option<String>` and `fx_rate: Option<Decimal>` fields to Position struct. Modified `compute_positions()` to accept `fx_rates: &HashMap<String, Decimal>` parameter. When position has non-USD currency, apply conversion: `current_value = price × quantity × fx_rate`. Updated all 19 call sites across commands, web API, and TUI. Added `fx_rates` field to App state and `load_fx_rates()` to initialization. Updated 30+ test Position struct literals.
+  3. **Display integration (commit 4dd0a30)**: Show currency symbols (£, €, ¥, C$, A$, ₣) before prices for non-USD positions in TUI positions table. Added FX exposure summary to header widget (e.g., "FX: 12% GBP, 8% CAD") when any non-USD positions exist. Include `currency`, `native_currency`, and `fx_rate` in JSON output for `summary` and `brief` commands. Add currency prefix to position symbols in brief CLI output.
+- Files: `src/data/fx.rs` (new), `src/db/fx_cache.rs` (new), `src/db/schema.rs` (fx_cache table), `src/data/mod.rs`, `src/db/mod.rs`, `src/commands/refresh.rs` (FX fetch step), `src/models/position.rs` (FX conversion logic), `src/app.rs` (fx_rates field + load), `src/commands/{export,value,drift,rebalance,history,summary,brief}.rs` (pass fx_rates), `src/web/api.rs` (pass fx_rates), `src/tui/views/positions.rs` (currency symbols), `src/tui/widgets/header.rs` (FX exposure summary), `src/commands/{summary,brief}.rs` (JSON output)
+- Tests: All 1112 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
+- Supported currencies: USD (base), GBP (£), EUR (€), JPY (¥), CAD (C$), AUD (A$), CHF (₣)
+- Removes: All 3 multi-currency TODO items from TODO.md
 - Result: `pftui refresh` now fetches FX rates and caches them. Positions display currency tags. Portfolio totals accurate across currencies.
 
 ### 2026-03-06 20:35 UTC — Theme visual audit: fix gain/loss distinguishability and muted text visibility

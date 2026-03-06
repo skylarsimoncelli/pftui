@@ -18,9 +18,6 @@
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [ ] **Multi-currency FX: schema + load (10 min)** — Add `fx_cache` table to schema.rs migration, register `data/fx.rs` + `db/fx_cache.rs` in mod.rs, add FX rate loading to refresh command. Files: `db/schema.rs`, `data/mod.rs`, `db/mod.rs`, `commands/refresh.rs`
-- [ ] **Multi-currency FX: Position struct (90 min)** — Add `display_currency` + `fx_rate` fields to Position. Update `compute_positions()` to accept FX rates HashMap and apply conversion. Update all 19 call sites + 30 test struct literals. Files: `models/position.rs`, `commands/*.rs`, `app.rs`
-- [ ] **Multi-currency FX: display (30 min)** — Show currency indicator for non-USD positions in TUI + CLI. FX exposure summary in header. Files: `views/positions.rs`, `commands/summary.rs`, `widgets/header.rs`
 - [ ] **Ultra-wide layout (160+ cols)** — 3-column: 45% positions / 25% market context / 30% chart. Code written but lost to rebase — needs reimplementation. Files: `tui/ui.rs`, new `widgets/market_context.rs`
 - [ ] **Split-pane view** — `D` toggles bottom 30% showing chart + transactions + news for selected position. Files: `tui/ui.rs`, new `views/position_detail_pane.rs`
 - [ ] **Candlestick chart variant** — OHLC braille/block candlesticks. Requires OHLC in HistoryRecord. Files: `models/price.rs`, `price/yahoo.rs`, `widgets/price_chart.rs`
