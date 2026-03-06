@@ -9,7 +9,7 @@
 > **Goal:** Every shipped feature must actually populate with real data on `pftui refresh`. Scores dropped across all testers because 40% of tabs/commands show empty states. No new features until these are fixed.
 
 - [x] **`pftui refresh` fetches ALL data sources** — ✅ DONE. Rewritten to fetch all 10 sources with freshness checks.
-- [ ] **Auto-refresh on TUI launch** — Opening `pftui` (TUI mode) automatically runs a background refresh on startup. Non-blocking — TUI renders immediately from cache, status bar shows "Refreshing..." while data updates arrive. No manual refresh needed. Files: `src/app.rs` (init), `src/data/*.rs`
+- [x] **Auto-refresh on TUI launch** — ✅ DONE. Background refresh runs on startup with pulsing status indicator.
 - [x] **`pftui status`** — ✅ DONE. Shows freshness for all 10 data sources.
 - [x] **Fix movers/watchlist sign discrepancy** — ✅ DONE. Both use (current - yesterday_close) / yesterday_close.
 - [x] **Stale data indicator in TUI header** — ✅ DONE. Shows `⚠ Stale (Xh ago)` when >1h old.

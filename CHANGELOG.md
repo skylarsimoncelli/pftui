@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 14:41 UTC — Auto-refresh on TUI launch
+
+- What: Opening `pftui` (TUI mode) now automatically runs a background refresh on startup. Non-blocking — TUI renders immediately from cache, status bar shows pulsing `↻ Refreshing...` indicator while data updates arrive. No manual refresh needed.
+- Why: P0 data availability gap fix. Users no longer need to manually run `pftui refresh` before opening TUI. Cached data loads instantly for immediate interaction, fresh data populates in background.
+- How: `App::init` spawns background thread running `commands::refresh::run`. `App::tick` polls completion channel, reloads all cached data (prices, history, watchlist, predictions, sentiment, calendar, BLS, World Bank) on completion.
+- Files: `src/app.rs` (added `is_background_refreshing` field, `background_refresh_complete_rx` channel, `start_background_refresh()` method, completion check in `tick()`), `src/tui/widgets/status_bar.rs` (refresh indicator with pulsing animation)
+- Tests: All app tests pass. 1104/1105 total tests pass (1 pre-existing onchain_cache test failure unrelated to this change).
+
 ### 2026-03-06 04:30 UTC — P0: Data Pipeline Reliability (ALL 6 tasks complete)
 
 **What:** Fixed all P0 data pipeline reliability issues — the highest priority work for pftui.
