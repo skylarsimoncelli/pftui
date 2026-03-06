@@ -5954,6 +5954,8 @@ mod sort_flash_tests {
     #[test]
     fn test_sort_flash_updates_on_tab_toggle() {
         let mut app = make_test_app();
+        // Set view to Transactions so Tab toggles sort (not home sub-tabs)
+        app.view_mode = ViewMode::Transactions;
         let was_ascending = app.sort_ascending;
         app.tick_count = 100;
         app.handle_key(tab_key()); // toggle sort direction
@@ -6626,14 +6628,15 @@ mod mouse_tests {
         let mut app = make_app();
         assert!(!app.show_percentages_only);
         // Simulate header render setting the privacy click range
-        app.header_privacy_col_range = Some((50, 60));
+        // Use column 100 which is past all tabs (safer for click handling)
+        app.header_privacy_col_range = Some((100, 110));
 
         // Click within the privacy indicator range
-        app.handle_header_click(55);
+        app.handle_header_click(105);
         assert!(app.show_percentages_only, "Privacy should be toggled on");
 
         // Click again to toggle off
-        app.handle_header_click(55);
+        app.handle_header_click(105);
         assert!(!app.show_percentages_only, "Privacy should be toggled off");
     }
 
