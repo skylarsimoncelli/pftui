@@ -1101,10 +1101,24 @@ fn print_position_table_full(
 
     for pos in positions {
         let name = resolve_name(&pos.symbol);
-        let symbol_display = if name.is_empty() {
-            pos.symbol.clone()
+        let currency_prefix = if let Some(ref curr) = pos.native_currency {
+            let symbol = match curr.as_str() {
+                "GBP" => "£",
+                "EUR" => "€",
+                "JPY" => "¥",
+                "CAD" => "C$",
+                "AUD" => "A$",
+                "CHF" => "₣",
+                _ => curr.as_str(),
+            };
+            format!("[{}] ", symbol)
         } else {
-            format!("{} ({})", pos.symbol, name)
+            String::new()
+        };
+        let symbol_display = if name.is_empty() {
+            format!("{}{}", currency_prefix, pos.symbol)
+        } else {
+            format!("{}{} ({})", currency_prefix, pos.symbol, name)
         };
         let price_str = pos
             .current_price

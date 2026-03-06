@@ -448,8 +448,22 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             let mut row_cells = vec![
                 Cell::from(asset_line),
                 Cell::from(Line::from({
+                    let mut spans = vec![];
+                    // Currency indicator for non-USD positions
+                    if let Some(ref curr) = pos.native_currency {
+                        let symbol = match curr.as_str() {
+                            "GBP" => "£",
+                            "EUR" => "€",
+                            "JPY" => "¥",
+                            "CAD" => "C$",
+                            "AUD" => "A$",
+                            "CHF" => "₣",
+                            _ => curr.as_str(),
+                        };
+                        spans.push(Span::styled(symbol, Style::default().fg(app.theme.text_muted)));
+                    }
                     let price_text = format_price_opt(pos.current_price);
-                    let mut spans = match flash_direction {
+                    let price_spans = match flash_direction {
                         Some(PriceFlashDirection::Up) => vec![
                             Span::styled(price_text, price_style),
                             Span::styled(" ▲", price_style),
@@ -460,6 +474,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                         ],
                         _ => vec![Span::styled(price_text, price_style)],
                     };
+                    spans.extend(price_spans);
                     if !mini_sparkline_spans.is_empty() {
                         spans.push(Span::raw(" "));
                         spans.extend(mini_sparkline_spans);

@@ -576,6 +576,30 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 Style::default().fg(day_color),
             ));
         }
+        
+        // FX exposure summary
+        let mut fx_exposure = std::collections::HashMap::new();
+        for pos in &app.positions {
+            if let (Some(ref curr), Some(val)) = (&pos.native_currency, pos.current_value) {
+                *fx_exposure.entry(curr.clone()).or_insert(dec!(0)) += val;
+            }
+        }
+        if !fx_exposure.is_empty() && total > dec!(0) {
+            let mut fx_parts = vec![];
+            let mut currencies: Vec<_> = fx_exposure.keys().collect();
+            currencies.sort();
+            for curr in currencies {
+                let val = fx_exposure[curr];
+                let pct = (val / total) * dec!(100);
+                if pct >= dec!(1) {
+                    fx_parts.push(format!("{:.0}% {}", pct, curr));
+                }
+            }
+            if !fx_parts.is_empty() {
+                spans.push(Span::styled("  FX: ", Style::default().fg(t.text_muted)));
+                spans.push(Span::styled(fx_parts.join(", "), Style::default().fg(t.text_accent)));
+            }
+        }
     } else {
         // Privacy/percentage-view indicator — track position for click target
         let privacy_col_start: u16 = spans.iter().map(|s| s.content.chars().count() as u16).sum();

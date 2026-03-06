@@ -1055,6 +1055,9 @@ fn run_full_json(
             "gain": p.gain.map(format_decimal_4),
             "gain_pct": p.gain_pct.map(format_decimal_4),
             "allocation_pct": p.allocation_pct.map(format_decimal_4),
+            "currency": &p.currency,
+            "native_currency": p.native_currency.as_ref(),
+            "fx_rate": p.fx_rate.map(format_decimal_4),
         })
     }).collect();
 
@@ -1085,6 +1088,9 @@ fn run_percentage_json(
             "category": format_category(&p.category),
             "allocation_pct": p.allocation_pct.map(format_decimal_4),
             "current_price": p.current_price.map(format_decimal_4),
+            "currency": &p.currency,
+            "native_currency": p.native_currency.as_ref(),
+            "fx_rate": p.fx_rate.map(format_decimal_4),
         })
     }).collect();
 
