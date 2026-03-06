@@ -75,7 +75,8 @@ fn run_full(
         return Ok(());
     }
 
-    let positions = compute_positions(&txs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         if json {
             println!("{{\"error\": \"No open positions\"}}");
@@ -179,7 +180,8 @@ fn run_percentage(
         return Ok(());
     }
 
-    let positions = compute_positions_from_allocations(&allocs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
 
     let priced: Vec<_> = positions
         .iter()

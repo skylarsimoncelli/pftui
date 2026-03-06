@@ -21,6 +21,7 @@ pub fn upsert_fx_rate(conn: &Connection, currency: &str, rate: Decimal) -> Resul
 }
 
 /// Retrieve a cached FX rate if it's fresh (less than 15 minutes old).
+#[allow(dead_code)]
 pub fn get_fx_rate(conn: &Connection, currency: &str) -> Result<Option<Decimal>> {
     let result = conn.query_row(
         "SELECT rate, fetched_at FROM fx_cache WHERE currency = ?1",

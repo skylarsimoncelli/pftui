@@ -374,6 +374,8 @@ mod tests {
             gain: None,
             gain_pct: None,
             allocation_pct: None,
+            native_currency: None,
+            fx_rate: None,
         });
         let results = build_results(&app, "BTC");
         assert!(!results.is_empty());

@@ -23,11 +23,14 @@ pub struct Position {
     pub gain: Option<Decimal>,
     pub gain_pct: Option<Decimal>,
     pub allocation_pct: Option<Decimal>,
+    pub native_currency: Option<String>,
+    pub fx_rate: Option<Decimal>,
 }
 
 pub fn compute_positions(
     transactions: &[Transaction],
     prices: &HashMap<String, Decimal>,
+    fx_rates: &HashMap<String, Decimal>,
 ) -> Vec<Position> {
     // Group transactions by symbol
     let mut groups: HashMap<String, Vec<&Transaction>> = HashMap::new();
@@ -72,7 +75,23 @@ pub fn compute_positions(
         } else {
             prices.get(symbol.as_str()).copied()
         };
-        let current_value = current_price.map(|p| p * qty);
+        
+        // Apply FX conversion if currency is non-USD
+        let (native_currency, fx_rate, current_value) = if currency != "USD" {
+            if let Some(rate) = fx_rates.get(&currency) {
+                let value = current_price.map(|p| p * qty * rate);
+                (Some(currency.clone()), Some(*rate), value)
+            } else {
+                // No FX rate available, fallback to native currency display
+                let value = current_price.map(|p| p * qty);
+                (Some(currency.clone()), None, value)
+            }
+        } else {
+            // USD positions
+            let value = current_price.map(|p| p * qty);
+            (None, None, value)
+        };
+        
         let gain = current_value.map(|v| v - total_cost);
         let gain_pct = if total_cost > dec!(0) {
             gain.map(|g| (g / total_cost) * dec!(100))
@@ -93,6 +112,8 @@ pub fn compute_positions(
             gain,
             gain_pct,
             allocation_pct: None, // computed after all positions
+            native_currency,
+            fx_rate,
         });
     }
 
@@ -116,6 +137,7 @@ pub fn compute_positions(
 pub fn compute_positions_from_allocations(
     allocations: &[Allocation],
     prices: &HashMap<String, Decimal>,
+    _fx_rates: &HashMap<String, Decimal>,
 ) -> Vec<Position> {
     allocations
         .iter()
@@ -138,6 +160,8 @@ pub fn compute_positions_from_allocations(
                 gain: None,
                 gain_pct: None,
                 allocation_pct: Some(alloc.allocation_pct),
+                native_currency: None,
+                fx_rate: None,
             }
         })
         .collect()
@@ -167,7 +191,8 @@ mod tests {
     fn test_single_buy() {
         let txs = vec![make_tx("AAPL", TxType::Buy, dec!(10), dec!(150))];
         let prices = HashMap::from([("AAPL".to_string(), dec!(200))]);
-        let positions = compute_positions(&txs, &prices);
+        let fx_rates = HashMap::new();
+        let positions = compute_positions(&txs, &prices, &fx_rates);
 
         assert_eq!(positions.len(), 1);
         let p = &positions[0];
@@ -185,7 +210,8 @@ mod tests {
             make_tx("AAPL", TxType::Sell, dec!(5), dec!(150)),
         ];
         let prices = HashMap::from([("AAPL".to_string(), dec!(200))]);
-        let positions = compute_positions(&txs, &prices);
+        let fx_rates = HashMap::new();
+        let positions = compute_positions(&txs, &prices, &fx_rates);
 
         assert_eq!(positions.len(), 1);
         let p = &positions[0];
@@ -201,7 +227,8 @@ mod tests {
             make_tx("AAPL", TxType::Sell, dec!(10), dec!(150)),
         ];
         let prices = HashMap::from([("AAPL".to_string(), dec!(200))]);
-        let positions = compute_positions(&txs, &prices);
+        let fx_rates = HashMap::new();
+        let positions = compute_positions(&txs, &prices, &fx_rates);
 
         assert_eq!(positions.len(), 0);
     }
@@ -216,7 +243,8 @@ mod tests {
             ("AAPL".to_string(), dec!(100)),
             ("GOOG".to_string(), dec!(300)),
         ]);
-        let positions = compute_positions(&txs, &prices);
+        let fx_rates = HashMap::new();
+        let positions = compute_positions(&txs, &prices, &fx_rates);
 
         assert_eq!(positions.len(), 2);
         let total_alloc: Decimal = positions

@@ -261,6 +261,8 @@ mod tests {
             gain: Some(dec!(0)),
             gain_pct: Some(dec!(0)),
             allocation_pct: None,
+            native_currency: None,
+            fx_rate: None,
         }
     }
 

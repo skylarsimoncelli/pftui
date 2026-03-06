@@ -122,15 +122,17 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let base = &config.base_currency;
     let timestamp = Utc::now().to_rfc3339();
 
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+
     // Compute positions
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
             let txs = list_transactions(conn)?;
-            compute_positions(&txs, &prices)
+            compute_positions(&txs, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
             let allocs = list_allocations(conn)?;
-            compute_positions_from_allocations(&allocs, &prices)
+            compute_positions_from_allocations(&allocs, &prices, &fx_rates)
         }
     };
 
@@ -409,7 +411,8 @@ fn get_drift_json(conn: &Connection) -> Result<serde_json::Value> {
         .map(|q| (q.symbol, q.price))
         .collect();
     
-    let positions = compute_positions_from_allocations(&allocs, &prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
     let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
     
     if total_value <= dec!(0) {
@@ -537,7 +540,8 @@ fn run_full(
         return Ok(());
     }
 
-    let positions = compute_positions(&txs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         println!("# Portfolio Brief\n\nNo open positions.");
         return Ok(());
@@ -650,7 +654,8 @@ fn run_percentage(
         return Ok(());
     }
 
-    let positions = compute_positions_from_allocations(&allocs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
     let base = &config.base_currency;
 
     let priced: Vec<_> = positions.iter().filter(|p| p.current_price.is_some()).collect();
@@ -1408,6 +1413,8 @@ mod tests {
             gain,
             gain_pct,
             allocation_pct,
+            native_currency: None,
+            fx_rate: None,
         }
     }
 

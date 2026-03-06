@@ -194,7 +194,8 @@ fn run_full(
         return Ok(());
     }
 
-    let positions = compute_positions(&txs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         println!("No open positions.");
         return Ok(());
@@ -235,7 +236,8 @@ fn run_percentage(
         return Ok(());
     }
 
-    let positions = compute_positions_from_allocations(&allocs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
 
     let result = match (group_by, period) {
         (Some(SummaryGroupBy::Category), Some(p)) => {
@@ -1035,7 +1037,8 @@ fn run_full_json(
         return Ok(());
     }
 
-    let positions = compute_positions(&txs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         println!("{{\"error\": \"No positions\"}}");
         return Ok(());
@@ -1073,7 +1076,8 @@ fn run_percentage_json(
         return Ok(());
     }
 
-    let positions = compute_positions_from_allocations(&allocs, prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
 
     let data: Vec<_> = positions.iter().map(|p| {
         serde_json::json!({
@@ -1121,6 +1125,8 @@ mod tests {
             gain,
             gain_pct,
             allocation_pct: None,
+            native_currency: None,
+            fx_rate: None,
         }
     }
 

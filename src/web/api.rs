@@ -32,6 +32,10 @@ fn get_price_map(conn: &Connection) -> anyhow::Result<HashMap<String, Decimal>> 
     Ok(cached.into_iter().map(|q| (q.symbol, q.price)).collect())
 }
 
+fn get_fx_rates(conn: &Connection) -> HashMap<String, Decimal> {
+    crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default()
+}
+
 pub struct AppState {
     pub db_path: String,
     pub config: Config,
@@ -564,6 +568,8 @@ pub async fn get_portfolio(
         )
     })?;
 
+    let fx_rates = get_fx_rates(&conn);
+
     let positions = if state.config.is_percentage_mode() {
         let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
             (
@@ -577,7 +583,7 @@ pub async fn get_portfolio(
                 format!("Failed to load prices: {}", e),
             )
         })?;
-        compute_positions_from_allocations(&allocations, &prices)
+        compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
         let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
             (
@@ -591,7 +597,7 @@ pub async fn get_portfolio(
                 format!("Failed to load prices: {}", e),
             )
         })?;
-        compute_positions(&transactions, &prices)
+        compute_positions(&transactions, &prices, &fx_rates)
     };
 
     let total_value: Option<Decimal> = positions.iter().filter_map(|p| p.current_value).sum::<Decimal>().into();
@@ -629,6 +635,8 @@ pub async fn get_positions(
         )
     })?;
 
+    let fx_rates = get_fx_rates(&conn);
+
     let positions = if state.config.is_percentage_mode() {
         let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
             (
@@ -642,7 +650,7 @@ pub async fn get_positions(
                 format!("Failed to load prices: {}", e),
             )
         })?;
-        compute_positions_from_allocations(&allocations, &prices)
+        compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
         let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
             (
@@ -656,7 +664,7 @@ pub async fn get_positions(
                 format!("Failed to load prices: {}", e),
             )
         })?;
-        compute_positions(&transactions, &prices)
+        compute_positions(&transactions, &prices, &fx_rates)
     };
 
     Ok(Json(PositionsResponse {
@@ -910,6 +918,8 @@ pub async fn get_asset_detail(
         .count();
     let is_watchlisted = db::watchlist::is_watched(&conn, &symbol).unwrap_or(false);
 
+    let fx_rates = get_fx_rates(&conn);
+
     let positions = if state.config.is_percentage_mode() {
         let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
             (
@@ -917,7 +927,7 @@ pub async fn get_asset_detail(
                 format!("Failed to load allocations: {}", e),
             )
         })?;
-        compute_positions_from_allocations(&allocations, &prices)
+        compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
         let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
             (
@@ -925,7 +935,7 @@ pub async fn get_asset_detail(
                 format!("Failed to load transactions: {}", e),
             )
         })?;
-        compute_positions(&transactions, &prices)
+        compute_positions(&transactions, &prices, &fx_rates)
     };
     let pos = positions
         .iter()
@@ -1612,6 +1622,7 @@ pub async fn get_performance(
     if daily_values.len() < 2 {
         source = "estimated_history".to_string();
         estimated = true;
+        let fx_rates = get_fx_rates(&conn);
         let positions = if state.config.is_percentage_mode() {
             let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
                 (
@@ -1625,7 +1636,7 @@ pub async fn get_performance(
                     format!("Failed to load prices: {}", e),
                 )
             })?;
-            compute_positions_from_allocations(&allocations, &prices)
+            compute_positions_from_allocations(&allocations, &prices, &fx_rates)
         } else {
             let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
                 (
@@ -1639,7 +1650,7 @@ pub async fn get_performance(
                     format!("Failed to load prices: {}", e),
                 )
             })?;
-            compute_positions(&transactions, &prices)
+            compute_positions(&transactions, &prices, &fx_rates)
         };
 
         let mut by_date: BTreeMap<String, Decimal> = BTreeMap::new();
@@ -2051,6 +2062,8 @@ pub async fn get_summary(
         )
     })?;
 
+    let fx_rates = get_fx_rates(&conn);
+
     let positions = if state.config.is_percentage_mode() {
         let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
             (
@@ -2064,7 +2077,7 @@ pub async fn get_summary(
                 format!("Failed to load prices: {}", e),
             )
         })?;
-        compute_positions_from_allocations(&allocations, &prices)
+        compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
         let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
             (
@@ -2078,7 +2091,7 @@ pub async fn get_summary(
                 format!("Failed to load prices: {}", e),
             )
         })?;
-        compute_positions(&transactions, &prices)
+        compute_positions(&transactions, &prices, &fx_rates)
     };
 
     let total_value: Option<Decimal> = positions.iter().filter_map(|p| p.current_value).sum::<Decimal>().into();

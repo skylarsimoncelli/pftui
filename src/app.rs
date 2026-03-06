@@ -358,6 +358,7 @@ pub struct App {
     pub allocations: Vec<Allocation>,
     pub positions: Vec<Position>,
     pub prices: HashMap<String, Decimal>,
+    pub fx_rates: HashMap<String, Decimal>,
     pub base_currency: String,
     pub allocation_targets: HashMap<String, crate::db::allocation_targets::AllocationTarget>,
 
@@ -616,6 +617,7 @@ impl App {
             allocations: Vec::new(),
             positions: Vec::new(),
             prices: HashMap::new(),
+            fx_rates: HashMap::new(),
             base_currency: config.base_currency.clone(),
             allocation_targets: HashMap::new(),
             price_history: HashMap::new(),
@@ -717,6 +719,7 @@ impl App {
     pub fn init_offline(&mut self) {
         self.load_data();
         self.load_cached_prices();
+        self.load_fx_rates();
         self.load_cached_history();
         self.load_watchlist();
         self.load_journal();
@@ -734,6 +737,7 @@ impl App {
     pub fn init(&mut self) {
         self.load_data();
         self.load_cached_prices();
+        self.load_fx_rates();
         self.load_cached_history();
         self.load_watchlist();
         self.load_journal();
@@ -826,6 +830,14 @@ impl App {
                 for quote in cached {
                     self.prices.insert(quote.symbol, quote.price);
                 }
+            }
+        }
+    }
+
+    fn load_fx_rates(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            if let Ok(rates) = crate::db::fx_cache::get_all_fx_rates(&conn) {
+                self.fx_rates = rates;
             }
         }
     }
@@ -1224,11 +1236,11 @@ impl App {
     pub fn recompute(&mut self) {
         match self.portfolio_mode {
             PortfolioMode::Full => {
-                self.positions = compute_positions(&self.transactions, &self.prices);
+                self.positions = compute_positions(&self.transactions, &self.prices, &self.fx_rates);
             }
             PortfolioMode::Percentage => {
                 self.positions =
-                    compute_positions_from_allocations(&self.allocations, &self.prices);
+                    compute_positions_from_allocations(&self.allocations, &self.prices, &self.fx_rates);
             }
         }
         self.apply_filter_and_sort();
@@ -3701,6 +3713,8 @@ mod tests {
             gain: None,
             gain_pct: None,
             allocation_pct: None,
+            native_currency: None,
+            fx_rate: None,
         }
     }
 
@@ -4145,6 +4159,8 @@ mod vim_motion_tests {
                 gain: Some(dec!(10)),
                 gain_pct: Some(dec!(10)),
                 allocation_pct: Some(Decimal::from(100u64 / num_positions as u64)),
+                native_currency: None,
+                fx_rate: None,
             });
         }
         app
@@ -4381,6 +4397,8 @@ mod search_tests {
                 gain: Some(dec!(250)),
                 gain_pct: Some(dec!(16.67)),
                 allocation_pct: Some(dec!(25)),
+                native_currency: None,
+                fx_rate: None,
             },
             Position {
                 symbol: "BTC".to_string(),
@@ -4395,6 +4413,8 @@ mod search_tests {
                 gain: Some(dec!(20000)),
                 gain_pct: Some(dec!(66.67)),
                 allocation_pct: Some(dec!(50)),
+                native_currency: None,
+                fx_rate: None,
             },
             Position {
                 symbol: "GOOGL".to_string(),
@@ -4409,6 +4429,8 @@ mod search_tests {
                 gain: Some(dec!(200)),
                 gain_pct: Some(dec!(40)),
                 allocation_pct: Some(dec!(25)),
+                native_currency: None,
+                fx_rate: None,
             },
         ];
         // Set display_positions directly (no DB, so recompute would clear them)
@@ -4711,6 +4733,8 @@ mod timeframe_tests {
             gain: Some(dec!(250)),
             gain_pct: Some(dec!(16.67)),
             allocation_pct: Some(dec!(100)),
+            native_currency: None,
+            fx_rate: None,
         });
         app
     }
@@ -4885,6 +4909,8 @@ mod crosshair_tests {
                 gain_pct: Some(rust_decimal_macros::dec!(20)),
                 allocation_pct: Some(rust_decimal_macros::dec!(50)),
                 category: crate::models::asset::AssetCategory::Crypto,
+                native_currency: None,
+                fx_rate: None,
             },
             crate::models::position::Position {
                 symbol: "ETH".to_string(),
@@ -4899,6 +4925,8 @@ mod crosshair_tests {
                 gain_pct: Some(rust_decimal_macros::dec!(33)),
                 allocation_pct: Some(rust_decimal_macros::dec!(50)),
                 category: crate::models::asset::AssetCategory::Crypto,
+                native_currency: None,
+                fx_rate: None,
             },
         ];
         app.selected_index = 0;
@@ -5065,6 +5093,8 @@ mod daily_change_tests {
             gain: price.map(|p| p * qty - qty * dec!(100)),
             gain_pct: None,
             allocation_pct: None,
+            native_currency: None,
+            fx_rate: None,
         }
     }
 
@@ -5196,6 +5226,8 @@ mod portfolio_value_history_tests {
             gain: None,
             gain_pct: None,
             allocation_pct: None,
+            native_currency: None,
+            fx_rate: None,
         }
     }
 
@@ -5518,6 +5550,8 @@ mod breadcrumb_tests {
             gain: Some(dec!(10)),
             gain_pct: Some(dec!(10)),
             allocation_pct: Some(dec!(100)),
+            native_currency: None,
+            fx_rate: None,
         }
     }
 
@@ -5734,6 +5768,8 @@ mod tx_form_tests {
             gain: Some(dec!(50)),
             gain_pct: Some(dec!(3.33)),
             allocation_pct: Some(dec!(100)),
+            native_currency: None,
+            fx_rate: None,
         }];
         app.display_positions = app.positions.clone();
         app.selected_index = 0;
@@ -5954,6 +5990,8 @@ mod tx_form_tests {
             gain: None,
             gain_pct: None,
             allocation_pct: Some(dec!(50)),
+            native_currency: None,
+            fx_rate: None,
         }];
         app.selected_index = 0;
 
@@ -6043,6 +6081,8 @@ mod sort_flash_tests {
                 gain: Some(dec!(10)),
                 gain_pct: Some(dec!(10)),
                 allocation_pct: Some(dec!(33)),
+                native_currency: None,
+                fx_rate: None,
             });
         }
         app
@@ -6135,6 +6175,8 @@ mod prev_day_alloc_tests {
             gain: None,
             gain_pct: None,
             allocation_pct: None,
+            native_currency: None,
+            fx_rate: None,
         }
     }
 
@@ -6300,6 +6342,8 @@ mod mouse_tests {
             gain: Some(dec!(500)),
             gain_pct: Some(dec!(50)),
             allocation_pct: Some(dec!(50)),
+            native_currency: None,
+            fx_rate: None,
         }
     }
 

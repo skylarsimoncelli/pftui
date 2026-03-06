@@ -55,6 +55,7 @@ async fn fetch_fx_rate(from_currency: &str) -> Result<Decimal> {
 
 /// Fetch historical FX rates for a given currency to USD.
 /// Returns a map of date string (YYYY-MM-DD) → FX rate.
+#[allow(dead_code)]
 pub async fn fetch_fx_history(
     from_currency: &str,
     days: u32,

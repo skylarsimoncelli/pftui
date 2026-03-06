@@ -705,20 +705,22 @@ fn store_portfolio_snapshot(conn: &Connection, config: &Config) -> Result<()> {
         .map(|q| (q.symbol, q.price))
         .collect();
 
+    let fx_rates = fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
             let transactions = list_transactions(conn)?;
             if transactions.is_empty() {
                 return Ok(());
             }
-            compute_positions(&transactions, &prices)
+            compute_positions(&transactions, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
             let allocations = list_allocations(conn)?;
             if allocations.is_empty() {
                 return Ok(());
             }
-            compute_positions_from_allocations(&allocations, &prices)
+            compute_positions_from_allocations(&allocations, &prices, &fx_rates)
         }
     };
 

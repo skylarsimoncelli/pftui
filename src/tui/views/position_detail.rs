@@ -403,6 +403,8 @@ mod tests {
             gain: Some(dec!(250)),
             gain_pct: Some(dec!(16.67)),
             allocation_pct: Some(dec!(25)),
+            native_currency: None,
+            fx_rate: None,
         }
     }
 

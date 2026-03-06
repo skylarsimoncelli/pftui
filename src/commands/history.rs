@@ -85,7 +85,8 @@ fn run_full(
         }
     }
 
-    let positions = compute_positions(&txs_at_date, &prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions(&txs_at_date, &prices, &fx_rates);
     if positions.is_empty() {
         println!("No open positions as of {}.", date);
         return Ok(());
@@ -122,7 +123,8 @@ fn run_percentage(
         }
     }
 
-    let positions = compute_positions_from_allocations(&allocs, &prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
 
     print_date_banner(date);
 

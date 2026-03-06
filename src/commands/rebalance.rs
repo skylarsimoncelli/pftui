@@ -35,7 +35,8 @@ pub fn run(db_path: &std::path::Path, json: bool) -> Result<()> {
         }
     }
     
-    let positions = compute_positions(&txs, &prices);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(&conn).unwrap_or_default();
+    let positions = compute_positions(&txs, &prices, &fx_rates);
 
     let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
     

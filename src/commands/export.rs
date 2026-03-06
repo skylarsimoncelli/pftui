@@ -77,14 +77,16 @@ pub fn run(conn: &Connection, format: &ExportFormat, config: &Config, output: Op
         .map(|q| (q.symbol, q.price))
         .collect();
 
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
             let txs = list_transactions(conn)?;
-            compute_positions(&txs, &prices)
+            compute_positions(&txs, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
             let allocs = list_allocations(conn)?;
-            compute_positions_from_allocations(&allocs, &prices)
+            compute_positions_from_allocations(&allocs, &prices, &fx_rates)
         }
     };
 
@@ -298,6 +300,8 @@ mod tests {
             gain: Some(dec!(247.50)),
             gain_pct: Some(dec!(16.44)),
             allocation_pct: Some(dec!(100)),
+            native_currency: None,
+            fx_rate: None,
         }];
         let mut buf = Vec::new();
         {
