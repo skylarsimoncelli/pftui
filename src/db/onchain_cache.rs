@@ -128,17 +128,20 @@ mod tests {
     fn test_upsert_and_get_metric() {
         let conn = setup_test_db();
         
+        // Use current timestamp to avoid TTL expiry
+        let now = chrono::Utc::now().to_rfc3339();
+        
         let metric = OnchainMetric {
             metric: "exchange_net_flow".to_string(),
-            date: "2026-03-05".to_string(),
+            date: "2026-03-06".to_string(),
             value: "-1250.5".to_string(),
             metadata: Some(r#"{"inflow": 2000, "outflow": 3250.5}"#.to_string()),
-            fetched_at: "2026-03-05T08:00:00Z".to_string(),
+            fetched_at: now.clone(),
         };
 
         upsert_metric(&conn, &metric).unwrap();
         
-        let retrieved = get_metric(&conn, "exchange_net_flow", "2026-03-05").unwrap();
+        let retrieved = get_metric(&conn, "exchange_net_flow", "2026-03-06").unwrap();
         assert!(retrieved.is_some());
         
         let m = retrieved.unwrap();
