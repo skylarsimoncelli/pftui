@@ -319,16 +319,21 @@ pub fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
 
 /// Compute daily change % from price history.
 fn compute_change_pct(app: &App, yahoo_symbol: &str) -> Option<Decimal> {
+    // Get current price from cache
+    let current_price = app.prices.get(yahoo_symbol)?;
+    
+    // Get yesterday's close from history
     let history = app.price_history.get(yahoo_symbol)?;
-    if history.len() < 2 {
+    if history.is_empty() {
         return None;
     }
-    let latest = &history[history.len() - 1];
-    let prev = &history[history.len() - 2];
-    if prev.close == dec!(0) {
+    
+    let prev_close = history[0].close;
+    if prev_close == dec!(0) {
         return None;
     }
-    Some((latest.close - prev.close) / prev.close * dec!(100))
+    
+    Some((current_price - prev_close) / prev_close * dec!(100))
 }
 
 fn format_price(p: Decimal) -> String {
