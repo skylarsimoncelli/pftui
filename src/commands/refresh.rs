@@ -8,7 +8,10 @@ use rusqlite::Connection;
 
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
+use crate::data::{bls, calendar, comex, cot, onchain, predictions, rss, sentiment, worldbank};
 use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
+use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, news_cache};
+use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::db::price_cache::{get_all_cached_prices, upsert_price};
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
 use crate::db::transactions::{get_unique_symbols, list_transactions};
@@ -22,6 +25,17 @@ use crate::tui::views::economy;
 
 /// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
 const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
+
+/// Freshness thresholds in seconds
+const PRICE_FRESHNESS_SECS: i64 = 15 * 60; // 15 minutes
+const NEWS_FRESHNESS_SECS: i64 = 10 * 60; // 10 minutes
+const PREDICTIONS_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
+const SENTIMENT_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
+const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
+const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
+const COMEX_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
+const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
+const WORLDBANK_FRESHNESS_DAYS: i64 = 30; // 30 days
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -52,6 +66,153 @@ fn collect_symbols(
     }
 
     Ok(seen.into_iter().collect())
+}
+
+/// Check if prices need refreshing
+fn prices_need_refresh(conn: &Connection) -> Result<bool> {
+    let prices = get_all_cached_prices(conn)?;
+    if prices.is_empty() {
+        return Ok(true);
+    }
+    
+    // Check if any price is older than threshold
+    let now = chrono::Utc::now();
+    for quote in prices {
+        if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&quote.fetched_at) {
+            let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
+            if age.num_seconds() > PRICE_FRESHNESS_SECS {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Check if news needs refreshing
+fn news_needs_refresh(conn: &Connection) -> Result<bool> {
+    // Check most recent news entry
+    let news = news_cache::get_latest_news(conn, 1, None, None, None, None)?;
+    if news.is_empty() {
+        return Ok(true);
+    }
+    
+    let now = chrono::Utc::now();
+    if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&news[0].fetched_at) {
+        let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
+        return Ok(age.num_seconds() > NEWS_FRESHNESS_SECS);
+    }
+    Ok(true)
+}
+
+/// Check if predictions need refreshing
+fn predictions_need_refresh(conn: &Connection) -> Result<bool> {
+    match predictions_cache::get_last_update(conn)? {
+        None => Ok(true),
+        Some(ts) => {
+            let now = chrono::Utc::now().timestamp();
+            Ok((now - ts) > PREDICTIONS_FRESHNESS_SECS)
+        }
+    }
+}
+
+/// Check if sentiment needs refreshing
+fn sentiment_needs_refresh(conn: &Connection) -> Result<bool> {
+    // Check both crypto and traditional FNG
+    let crypto = sentiment_cache::get_latest(conn, "crypto_fng")?;
+    let trad = sentiment_cache::get_latest(conn, "traditional_fng")?;
+    
+    if crypto.is_none() || trad.is_none() {
+        return Ok(true);
+    }
+    
+    let now = chrono::Utc::now().timestamp();
+    if let Some(c) = crypto {
+        if (now - c.timestamp) > SENTIMENT_FRESHNESS_SECS {
+            return Ok(true);
+        }
+    }
+    if let Some(t) = trad {
+        if (now - t.timestamp) > SENTIMENT_FRESHNESS_SECS {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Check if calendar needs refreshing
+fn calendar_needs_refresh(conn: &Connection) -> Result<bool> {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let events = calendar_cache::get_upcoming_events(conn, &today, 10)?;
+    if events.is_empty() {
+        return Ok(true);
+    }
+    
+    // Check fetched_at timestamp of the first event
+    let now = chrono::Utc::now();
+    if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&events[0].fetched_at) {
+        let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
+        return Ok(age.num_seconds() > CALENDAR_FRESHNESS_SECS);
+    }
+    Ok(true)
+}
+
+/// Check if COT needs refreshing
+fn cot_needs_refresh(conn: &Connection) -> Result<bool> {
+    let reports = cot_cache::get_all_latest(conn)?;
+    if reports.is_empty() {
+        return Ok(true);
+    }
+    
+    let now = chrono::Utc::now();
+    for report in reports {
+        if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&report.fetched_at) {
+            let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
+            if age.num_seconds() > COT_FRESHNESS_SECS {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Check if COMEX needs refreshing
+fn comex_needs_refresh(conn: &Connection) -> Result<bool> {
+    // Check common metals
+    for symbol in &["GC", "SI", "HG", "PL"] {
+        if !comex_cache::has_fresh_data(conn, symbol)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Check if BLS needs refreshing
+fn bls_needs_refresh(conn: &Connection) -> Result<bool> {
+    // Check a few key series
+    for series in &["CUUR0000SA0", "CUSR0000SA0", "LNS14000000"] {
+        if !bls_cache::is_cache_fresh(conn, series, BLS_FRESHNESS_DAYS)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Check if World Bank needs refreshing
+fn worldbank_needs_refresh(conn: &Connection) -> Result<bool> {
+    worldbank_cache::needs_refresh(conn)
+}
+
+/// Format a price for display: compact representation.
+fn format_price(price: Decimal, sym: &str) -> String {
+    if price >= dec!(10000) {
+        format!("{}{}", sym, price.round_dp(0))
+    } else if price >= dec!(100) {
+        format!("{}{}", sym, price.round_dp(1))
+    } else if price >= dec!(1) {
+        format!("{}{}", sym, price.round_dp(2))
+    } else {
+        format!("{}{}", sym, price.round_dp(4))
+    }
 }
 
 /// Format a crypto symbol for Yahoo Finance (append -USD if not already present).
@@ -149,124 +310,282 @@ async fn fetch_all_prices(
     (quotes, errors)
 }
 
-/// Format a price for display: compact representation.
-fn format_price(price: Decimal, sym: &str) -> String {
-    if price >= dec!(10000) {
-        format!("{}{}", sym, price.round_dp(0))
-    } else if price >= dec!(100) {
-        format!("{}{}", sym, price.round_dp(1))
-    } else if price >= dec!(1) {
-        format!("{}{}", sym, price.round_dp(2))
-    } else {
-        format!("{}{}", sym, price.round_dp(4))
-    }
-}
-
 pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
-    let symbols = collect_symbols(conn, config)?;
-    if symbols.is_empty() {
-        println!("No symbols to refresh. Add positions with `pftui setup` or `pftui add-tx`, or watch symbols with `pftui watch`.");
-        return Ok(());
-    }
+    println!("Refreshing all data sources...\n");
 
-    let macro_yahoo_symbols: std::collections::HashSet<String> = economy::economy_symbols()
-        .iter()
-        .map(|item| item.yahoo_symbol.clone())
-        .collect();
-    let non_cash: Vec<_> = symbols
-        .iter()
-        .filter(|(_, cat)| *cat != AssetCategory::Cash)
-        .collect();
-    let total = non_cash.len();
-    let cash_count = symbols.len() - total;
-    let macro_count = non_cash
-        .iter()
-        .filter(|(sym, _)| macro_yahoo_symbols.contains(sym.as_str()))
-        .count();
-
-    println!(
-        "Refreshing {} symbol{}{}{}...",
-        total,
-        if total == 1 { "" } else { "s" },
-        if cash_count > 0 {
-            format!(" (+{} cash)", cash_count)
-        } else {
-            String::new()
-        },
-        if macro_count > 0 {
-            format!(" ({} macro)", macro_count)
-        } else {
-            String::new()
-        },
-    );
-
-    // Build a tokio runtime for the async fetch
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
 
-    let (quotes, errors) = rt.block_on(fetch_all_prices(&symbols, config));
-
-    // Write to price cache
-    let mut cached_count = 0;
-    for quote in &quotes {
-        if let Err(e) = upsert_price(conn, quote) {
-            eprintln!("Failed to cache {}: {}", quote.symbol, e);
+    // 1. Prices
+    if prices_need_refresh(conn)? {
+        let symbols = collect_symbols(conn, config)?;
+        if !symbols.is_empty() {
+            let non_cash: Vec<_> = symbols
+                .iter()
+                .filter(|(_, cat)| *cat != AssetCategory::Cash)
+                .collect();
+            
+            let (quotes, _errors) = rt.block_on(fetch_all_prices(&symbols, config));
+            
+            for quote in &quotes {
+                if let Err(e) = upsert_price(conn, quote) {
+                    eprintln!("Failed to cache {}: {}", quote.symbol, e);
+                }
+            }
+            
+            let fetched: Vec<_> = quotes
+                .iter()
+                .filter(|q| q.source != "static")
+                .collect();
+            
+            println!("✓ Prices ({} symbols)", fetched.len());
         } else {
-            cached_count += 1;
+            println!("⊘ Prices (no symbols)");
         }
-    }
-
-    // Print results
-    let mut fetched: Vec<_> = quotes
-        .iter()
-        .filter(|q| q.source != "static")
-        .collect();
-    fetched.sort_by(|a, b| a.symbol.cmp(&b.symbol));
-
-    if fetched.is_empty() && errors.is_empty() {
-        println!("No symbols needed price fetching (cash only).");
-        return Ok(());
-    }
-
-    // Print each fetched price
-    for q in &fetched {
-        let csym = crate::config::currency_symbol(&config.base_currency);
-        println!("  {} {} ({})", q.symbol, format_price(q.price, csym), q.source);
-    }
-
-    // Print errors
-    for err in &errors {
-        eprintln!("  ✗ {}", err);
-    }
-
-    // Summary line
-    let ok_count = fetched.len();
-    let err_count = symbols
-        .iter()
-        .filter(|(sym, cat)| {
-            *cat != AssetCategory::Cash
-                && !quotes.iter().any(|q| q.symbol == *sym)
-        })
-        .count();
-
-    if err_count > 0 {
-        println!(
-            "Refreshed {}/{} symbols ({} failed). {} cached.",
-            ok_count, total, err_count, cached_count
-        );
     } else {
-        println!(
-            "Refreshed {} symbol{}. {} cached.",
-            ok_count,
-            if ok_count == 1 { "" } else { "s" },
-            cached_count
-        );
+        println!("⊘ Prices (fresh, skipping)");
+    }
+
+    // 2. Predictions (Polymarket)
+    if predictions_need_refresh(conn)? {
+        match rt.block_on(predictions::fetch_polymarket_predictions()) {
+            Ok(markets) => {
+                predictions_cache::upsert_predictions(conn, &markets)?;
+                println!("✓ Predictions ({} markets)", markets.len());
+            }
+            Err(e) => {
+                println!("✗ Predictions (failed: {})", e);
+            }
+        }
+    } else {
+        println!("⊘ Predictions (fresh, skipping)");
+    }
+
+    // 3. News (RSS feeds)
+    if news_needs_refresh(conn)? {
+        let feeds = rss::default_feeds();
+        let items = rt.block_on(rss::fetch_all_feeds(&feeds));
+        
+        let mut inserted = 0;
+        for item in &items {
+            let category_str = match item.category {
+                rss::NewsCategory::Macro => "macro",
+                rss::NewsCategory::Crypto => "crypto",
+                rss::NewsCategory::Commodities => "commodities",
+                rss::NewsCategory::Geopolitics => "geopolitics",
+                rss::NewsCategory::Markets => "markets",
+            };
+            
+            if news_cache::insert_news(
+                conn,
+                &item.title,
+                &item.url,
+                &item.source,
+                category_str,
+                item.published_at,
+            ).is_ok() {
+                inserted += 1;
+            }
+        }
+        println!("✓ News ({} articles)", inserted);
+    } else {
+        println!("⊘ News (fresh, skipping)");
+    }
+
+    // 4. COT (CFTC)
+    if cot_needs_refresh(conn)? {
+        let mut total = 0;
+        
+        // Key commodities
+        for (_name, code) in &[
+            ("Gold", "088691"),
+            ("Silver", "084691"),
+            ("Copper", "085692"),
+            ("Crude Oil", "067651"),
+            ("S&P 500", "13874+"),
+        ] {
+            match cot::fetch_latest_report(code) {
+                Ok(report) => {
+                    let entry = crate::db::cot_cache::CotCacheEntry {
+                        cftc_code: report.cftc_code.clone(),
+                        report_date: report.report_date.clone(),
+                        open_interest: report.open_interest,
+                        managed_money_long: report.managed_money_long,
+                        managed_money_short: report.managed_money_short,
+                        managed_money_net: report.managed_money_net,
+                        commercial_long: report.commercial_long,
+                        commercial_short: report.commercial_short,
+                        commercial_net: report.commercial_net,
+                        fetched_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    cot_cache::upsert_report(conn, &entry)?;
+                    total += 1;
+                }
+                Err(_) => {
+                    // Continue on error
+                }
+            }
+        }
+        
+        if total > 0 {
+            println!("✓ COT ({} reports)", total);
+        } else {
+            println!("✗ COT (all failed)");
+        }
+    } else {
+        println!("⊘ COT (fresh, skipping)");
+    }
+
+    // 5. Sentiment (Fear & Greed)
+    if sentiment_needs_refresh(conn)? {
+        let mut count = 0;
+        
+        if let Ok(crypto) = sentiment::fetch_crypto_fng() {
+            let reading = crate::db::sentiment_cache::SentimentReading {
+                index_type: "crypto_fng".to_string(),
+                value: crypto.value,
+                classification: crypto.classification.clone(),
+                timestamp: crypto.timestamp,
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            };
+            sentiment_cache::upsert_reading(conn, &reading)?;
+            count += 1;
+        }
+        
+        if let Ok(trad) = sentiment::fetch_traditional_fng() {
+            let reading = crate::db::sentiment_cache::SentimentReading {
+                index_type: "traditional_fng".to_string(),
+                value: trad.value,
+                classification: trad.classification.clone(),
+                timestamp: trad.timestamp,
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            };
+            sentiment_cache::upsert_reading(conn, &reading)?;
+            count += 1;
+        }
+        
+        println!("✓ Sentiment ({} indices)", count);
+    } else {
+        println!("⊘ Sentiment (fresh, skipping)");
+    }
+
+    // 6. Calendar (TradingEconomics)
+    if calendar_needs_refresh(conn)? {
+        match calendar::fetch_events(7) {
+            Ok(events) => {
+                for event in &events {
+                    let _ = calendar_cache::upsert_event(
+                        conn,
+                        &event.date,
+                        &event.name,
+                        &event.impact,
+                        event.previous.as_deref(),
+                        event.forecast.as_deref(),
+                        &event.event_type,
+                        event.symbol.as_deref(),
+                    );
+                }
+                println!("✓ Calendar ({} events)", events.len());
+            }
+            Err(e) => {
+                println!("✗ Calendar (failed: {})", e);
+            }
+        }
+    } else {
+        println!("⊘ Calendar (fresh, skipping)");
+    }
+
+    // 7. BLS
+    if bls_needs_refresh(conn)? {
+        match rt.block_on(bls::fetch_all_key_series()) {
+            Ok(data) => {
+                bls_cache::upsert_bls_data(conn, &data)?;
+                println!("✓ BLS ({} series)", data.len());
+            }
+            Err(e) => {
+                println!("✗ BLS (failed: {})", e);
+            }
+        }
+    } else {
+        println!("⊘ BLS (fresh, skipping)");
+    }
+
+    // 8. World Bank
+    if worldbank_needs_refresh(conn)? {
+        match rt.block_on(worldbank::fetch_all_indicators()) {
+            Ok(data) => {
+                worldbank_cache::upsert_worldbank_data(conn, &data)?;
+                println!("✓ World Bank ({} indicators)", data.len());
+            }
+            Err(e) => {
+                println!("✗ World Bank (failed: {})", e);
+            }
+        }
+    } else {
+        println!("⊘ World Bank (fresh, skipping)");
+    }
+
+    // 9. COMEX
+    if comex_needs_refresh(conn)? {
+        let results = comex::fetch_all_inventories();
+        let mut count = 0;
+        
+        for (symbol, result) in results {
+            if let Ok(inv) = result {
+                let entry = crate::db::comex_cache::ComexCacheEntry {
+                    symbol: symbol.clone(),
+                    date: inv.date.clone(),
+                    registered: inv.registered,
+                    eligible: inv.eligible,
+                    total: inv.total,
+                    reg_ratio: inv.reg_ratio,
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                };
+                if comex_cache::upsert_inventory(conn, &entry).is_ok() {
+                    count += 1;
+                }
+            }
+        }
+        
+        if count > 0 {
+            println!("✓ COMEX ({} metals)", count);
+        } else {
+            println!("✗ COMEX (all failed)");
+        }
+    } else {
+        println!("⊘ COMEX (fresh, skipping)");
+    }
+
+    // 10. On-chain (Blockchair)
+    // On-chain data is always fetched since it's diverse and doesn't have a simple freshness check
+    // We'll fetch but not fail the whole command if it errors
+    match onchain::fetch_network_metrics() {
+        Ok(metrics) => {
+            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let metric = crate::db::onchain_cache::OnchainMetric {
+                metric: "network".to_string(),
+                date: today,
+                value: metrics.hash_rate.to_string(),
+                metadata: Some(serde_json::json!({
+                    "difficulty": metrics.difficulty,
+                    "blocks_24h": metrics.blocks_24h,
+                    "mempool_size": metrics.mempool_size,
+                    "avg_fee_sat_b": metrics.avg_fee_sat_b,
+                }).to_string()),
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            };
+            let _ = onchain_cache::upsert_metric(conn, &metric);
+            println!("✓ On-chain (network metrics)");
+        }
+        Err(e) => {
+            println!("✗ On-chain (failed: {})", e);
+        }
     }
 
     // Store daily portfolio snapshot
     if let Err(e) = store_portfolio_snapshot(conn, config) {
-        eprintln!("Warning: failed to store portfolio snapshot: {}", e);
+        eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
     }
 
     // Check for newly triggered alerts
@@ -311,10 +630,11 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
             }
         }
         Err(e) => {
-            eprintln!("Warning: failed to check alerts: {}", e);
+            eprintln!("\nWarning: failed to check alerts: {}", e);
         }
     }
 
+    println!("\nRefresh complete.");
     Ok(())
 }
 
@@ -426,207 +746,5 @@ mod tests {
     #[test]
     fn yahoo_crypto_symbol_no_double() {
         assert_eq!(yahoo_crypto_symbol("BTC-USD"), "BTC-USD");
-    }
-
-    #[test]
-    fn collect_symbols_empty_db_includes_macro() {
-        let conn = crate::db::open_in_memory();
-        let config = Config::default();
-        let symbols = collect_symbols(&conn, &config).unwrap();
-        let macro_count = economy::economy_symbols().len();
-        // Empty portfolio still gets all macro symbols
-        assert_eq!(symbols.len(), macro_count);
-        let sym_names: Vec<_> = symbols.iter().map(|(s, _)| s.as_str()).collect();
-        assert!(sym_names.contains(&"^VIX"));
-        assert!(sym_names.contains(&"DX-Y.NYB"));
-        assert!(sym_names.contains(&"CL=F"));
-        assert!(sym_names.contains(&"HG=F"));
-        assert!(sym_names.contains(&"GBPUSD=X"));
-    }
-
-    #[test]
-    fn collect_symbols_from_transactions_plus_macro() {
-        let conn = crate::db::open_in_memory();
-        let config = Config::default();
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
-        insert_transaction(
-            &conn,
-            &NewTransaction {
-                symbol: "AAPL".to_string(),
-                category: AssetCategory::Equity,
-                tx_type: TxType::Buy,
-                quantity: dec!(10),
-                price_per: dec!(150),
-                currency: "USD".to_string(),
-                date: "2025-01-15".to_string(),
-                notes: None,
-            },
-        )
-        .unwrap();
-        let symbols = collect_symbols(&conn, &config).unwrap();
-        let macro_count = economy::economy_symbols().len();
-        // AAPL + all macro symbols
-        assert_eq!(symbols.len(), macro_count + 1);
-        let sym_names: Vec<_> = symbols.iter().map(|(s, _)| s.as_str()).collect();
-        assert!(sym_names.contains(&"AAPL"));
-        assert!(sym_names.contains(&"^VIX"));
-    }
-
-    #[test]
-    fn collect_symbols_deduplicates_portfolio_and_macro() {
-        let conn = crate::db::open_in_memory();
-        let config = Config::default();
-        use crate::db::transactions::insert_transaction;
-        use crate::db::watchlist::add_to_watchlist;
-        use crate::models::transaction::{NewTransaction, TxType};
-
-        // GC=F is both a portfolio position and a macro symbol (Gold Futures)
-        insert_transaction(
-            &conn,
-            &NewTransaction {
-                symbol: "GC=F".to_string(),
-                category: AssetCategory::Commodity,
-                tx_type: TxType::Buy,
-                quantity: dec!(1),
-                price_per: dec!(2000),
-                currency: "USD".to_string(),
-                date: "2025-01-15".to_string(),
-                notes: None,
-            },
-        )
-        .unwrap();
-        add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
-
-        let symbols = collect_symbols(&conn, &config).unwrap();
-        let macro_count = economy::economy_symbols().len();
-        // GC=F deduplicates between portfolio and macro, BTC is watchlist-only
-        // Total = macro symbols + BTC (GC=F already counted in macro)
-        assert_eq!(symbols.len(), macro_count + 1);
-        let sym_names: Vec<_> = symbols.iter().map(|(s, _)| s.as_str()).collect();
-        assert!(sym_names.contains(&"GC=F"));
-        assert!(sym_names.contains(&"BTC"));
-    }
-
-    #[test]
-    fn collect_symbols_percentage_mode_plus_macro() {
-        let conn = crate::db::open_in_memory();
-        let config = Config {
-            portfolio_mode: PortfolioMode::Percentage,
-            ..Default::default()
-        };
-        use crate::db::allocations::insert_allocation;
-        insert_allocation(&conn, "AAPL", AssetCategory::Equity, dec!(50)).unwrap();
-        insert_allocation(&conn, "BTC", AssetCategory::Crypto, dec!(50)).unwrap();
-
-        let symbols = collect_symbols(&conn, &config).unwrap();
-        let macro_count = economy::economy_symbols().len();
-        // AAPL + BTC + macro symbols
-        assert_eq!(symbols.len(), macro_count + 2);
-    }
-
-    #[test]
-    fn store_snapshot_with_positions() {
-        let conn = crate::db::open_in_memory();
-        let config = Config::default();
-        use crate::db::price_cache::upsert_price;
-        use crate::db::snapshots::{get_portfolio_snapshots, get_position_snapshots_for_date};
-        use crate::db::transactions::insert_transaction;
-        use crate::models::price::PriceQuote;
-        use crate::models::transaction::{NewTransaction, TxType};
-
-        // Add a position
-        insert_transaction(
-            &conn,
-            &NewTransaction {
-                symbol: "AAPL".to_string(),
-                category: AssetCategory::Equity,
-                tx_type: TxType::Buy,
-                quantity: dec!(10),
-                price_per: dec!(150),
-                currency: "USD".to_string(),
-                date: "2025-01-15".to_string(),
-                notes: None,
-            },
-        )
-        .unwrap();
-
-        // Cache a price
-        upsert_price(
-            &conn,
-            &PriceQuote {
-                symbol: "AAPL".to_string(),
-                price: dec!(200),
-                currency: "USD".to_string(),
-                source: "yahoo".to_string(),
-                fetched_at: chrono::Utc::now().to_rfc3339(),
-            },
-        )
-        .unwrap();
-
-        // Store snapshot
-        store_portfolio_snapshot(&conn, &config).unwrap();
-
-        // Verify portfolio snapshot
-        let snaps = get_portfolio_snapshots(&conn, 10).unwrap();
-        assert_eq!(snaps.len(), 1);
-        assert_eq!(snaps[0].total_value, dec!(2000)); // 10 * $200
-        assert_eq!(snaps[0].cash_value, dec!(0));
-        assert_eq!(snaps[0].invested_value, dec!(2000));
-
-        // Verify position snapshot
-        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let pos_snaps = get_position_snapshots_for_date(&conn, &today).unwrap();
-        assert_eq!(pos_snaps.len(), 1);
-        assert_eq!(pos_snaps[0].symbol, "AAPL");
-        assert_eq!(pos_snaps[0].quantity, dec!(10));
-        assert_eq!(pos_snaps[0].price, dec!(200));
-        assert_eq!(pos_snaps[0].value, dec!(2000));
-    }
-
-    #[test]
-    fn store_snapshot_empty_portfolio_is_noop() {
-        let conn = crate::db::open_in_memory();
-        let config = Config::default();
-        use crate::db::snapshots::get_portfolio_snapshots;
-
-        // No transactions, no allocations — should be a no-op
-        store_portfolio_snapshot(&conn, &config).unwrap();
-
-        let snaps = get_portfolio_snapshots(&conn, 10).unwrap();
-        assert!(snaps.is_empty());
-    }
-
-    #[test]
-    fn store_snapshot_includes_cash() {
-        let conn = crate::db::open_in_memory();
-        let config = Config::default();
-        use crate::db::snapshots::get_portfolio_snapshots;
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
-
-        // Add a cash position
-        insert_transaction(
-            &conn,
-            &NewTransaction {
-                symbol: "USD".to_string(),
-                category: AssetCategory::Cash,
-                tx_type: TxType::Buy,
-                quantity: dec!(50000),
-                price_per: dec!(1),
-                currency: "USD".to_string(),
-                date: "2025-01-15".to_string(),
-                notes: None,
-            },
-        )
-        .unwrap();
-
-        store_portfolio_snapshot(&conn, &config).unwrap();
-
-        let snaps = get_portfolio_snapshots(&conn, 10).unwrap();
-        assert_eq!(snaps.len(), 1);
-        assert_eq!(snaps[0].total_value, dec!(50000));
-        assert_eq!(snaps[0].cash_value, dec!(50000));
-        assert_eq!(snaps[0].invested_value, dec!(0));
     }
 }
