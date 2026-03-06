@@ -55,8 +55,8 @@ Key change: **one new tab [6] Analytics** absorbs portfolio-level analysis. Ever
 - **Asset detail popup:** Full technicals panel with: RSI gauge, MACD histogram (braille), price vs SMA50/200 relationship, BB width.
 
 **CLI integration:**
-- Enhance `pftui brief` with optional `--technicals` flag. Adds RSI/MACD/SMA to each position.
-- `pftui summary --technicals` for quick terminal glance.
+- `pftui brief` always includes technicals section with RSI/MACD/SMA for each position (no flag needed).
+- `pftui summary` does not include technicals (use brief for that).
 - No new standalone command — technicals are a property of assets, not a separate domain.
 
 **Agent output (`--json`):**
@@ -357,8 +357,8 @@ Key change: **one new tab [6] Analytics** absorbs portfolio-level analysis. Ever
 - `pftui watch` / `pftui unwatch` / `pftui setup`
 
 **Enhanced (flags added):**
-- `pftui brief --technicals --correlations --agent`
-- `pftui summary --technicals --what-if "scenario-name"`
+- `pftui brief --correlations --agent` (technicals always included)
+- `pftui summary --what-if "scenario-name"`
 - `pftui refresh` (now also fetches macro + checks alerts)
 
 **New (3 commands, each for a genuinely distinct domain):**

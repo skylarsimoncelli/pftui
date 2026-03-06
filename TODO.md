@@ -9,10 +9,7 @@
 
 > Broken existing functionality. Fix before shipping.
 
-- [ ] **Drift decimal formatting** — `drift` shows 30+ decimal places (`18.718814357195681326649469110`). Format to 2dp in display, 4dp in JSON. Files: `commands/drift.rs`, `commands/summary.rs`
-- [ ] **Global command empty** — `pftui global` shows empty despite 120 cached World Bank records. Key mismatch between cache and display layer. Files: `commands/global.rs`, `db/worldbank_cache.rs`
-- [ ] **Performance MTD shows N/A** — Requires snapshot from 1st of month. Should use earliest available snapshot in period. Files: `commands/performance.rs`
-- [ ] **Brief --technicals in README** — README references flag that was removed. Update docs. Files: `README.md`
+
 
 ---
 
