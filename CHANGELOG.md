@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 18:42 UTC — Fix predictions data pipeline
+
+- What: Fixed Polymarket Gamma API response parsing to match actual JSON structure. Predictions now populate correctly after `pftui refresh`.
+- Why: #1 score regression driver. Tester feedback: "predictions empty after refresh". Feature was marked complete but didn't work end-to-end.
+- How: Changed `outcome_prices` from `Vec<String>` to `String` (API returns JSON array string `"[\"0.42\", \"0.58\"]"`). Changed `volume` to `volume_24hr` (f64) to match actual response. Added `&closed=false` URL parameter to filter out resolved markets. Parse outcome prices JSON string to extract first element (Yes probability).
+- Files: `src/data/predictions.rs` (GammaMarket struct, fetch function, removed unused infer_category_from_api)
+- Tests: All 1105 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
+- Verified: `pftui refresh` now shows `✓ Predictions (50 markets)`. `pftui predictions` shows real data.
+
 ### 2026-03-06 18:27 UTC — Fix onchain_cache test timestamp
 
 - What: Fixed flaky test `db::onchain_cache::tests::test_upsert_and_get_metric` that failed when test data exceeded 24-hour TTL. Test was inserting metric with hardcoded `2026-03-05T08:00:00Z` timestamp, which became stale when current time advanced beyond 24 hours.
