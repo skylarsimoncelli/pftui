@@ -125,6 +125,7 @@ fn main() -> Result<()> {
             }
 
             let mut added = 0;
+            let runtime = tokio::runtime::Runtime::new()?;
             for upper in &symbols {
                 let cat = match &category {
                     Some(c) => c.parse().unwrap_or_else(|_| infer_category(upper)),
@@ -134,6 +135,27 @@ fn main() -> Result<()> {
                 let name = crate::models::asset_names::resolve_name(upper);
                 let display = if name.is_empty() { upper.clone() } else { name };
                 println!("Added {} ({}) to watchlist as {}", upper, display, cat);
+
+                // Validate symbol by attempting price fetch
+                let yahoo_sym = match cat {
+                    crate::models::asset::AssetCategory::Crypto => {
+                        if upper.ends_with("-USD") {
+                            upper.clone()
+                        } else {
+                            format!("{}-USD", upper)
+                        }
+                    }
+                    _ => upper.clone(),
+                };
+                
+                match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
+                    Ok(_) => {
+                        // Price fetch succeeded, symbol is valid
+                    }
+                    Err(_) => {
+                        eprintln!("Warning: could not fetch price for {} — symbol may be invalid", upper);
+                    }
+                }
 
                 // Set target if provided
                 if let Some(ref t) = target {
