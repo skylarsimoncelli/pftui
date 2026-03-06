@@ -396,7 +396,7 @@ pub struct App {
     // Price service
     price_service: Option<PriceService>,
     pub prices_live: bool,
-    last_refresh: Option<Instant>,
+    pub last_refresh: Option<Instant>,
     refresh_interval_secs: u64,
 
     // Totals

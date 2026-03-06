@@ -604,6 +604,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             spans.push(Span::styled("CLOSED", Style::default().fg(t.text_muted)));
         }
 
+        // Stale data indicator (if >1 hour since last refresh)
+        if let Some(last_refresh) = app.last_refresh {
+            let elapsed = last_refresh.elapsed();
+            if elapsed.as_secs() > 3600 {
+                let hours = elapsed.as_secs() / 3600;
+                spans.push(Span::styled("  ⚠ ", Style::default().fg(t.stale_yellow)));
+                spans.push(Span::styled(
+                    format!("Stale ({}h ago)", hours),
+                    Style::default().fg(t.stale_yellow),
+                ));
+            }
+        }
+
         // Theme indicator — track position for click target
         let theme_text = format!("  {}", app.theme_name);
         let theme_col_start: u16 = spans.iter().map(|s| s.content.chars().count() as u16).sum();
