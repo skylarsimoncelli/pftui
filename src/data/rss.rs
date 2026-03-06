@@ -54,36 +54,36 @@ pub struct RssFeed {
 pub fn default_feeds() -> Vec<RssFeed> {
     vec![
         RssFeed {
-            name: "Reuters Business".to_string(),
-            url: "https://www.reuters.com/rssfeed/businessNews".to_string(),
+            name: "Bloomberg Markets".to_string(),
+            url: "https://feeds.bloomberg.com/markets/news.rss".to_string(),
+            category: NewsCategory::Markets,
+        },
+        RssFeed {
+            name: "Bloomberg Economics".to_string(),
+            url: "https://feeds.bloomberg.com/economics/news.rss".to_string(),
             category: NewsCategory::Macro,
         },
         RssFeed {
-            name: "CoinDesk".to_string(),
-            url: "https://www.coindesk.com/arc/outboundfeeds/rss/".to_string(),
+            name: "Bloomberg Commodities".to_string(),
+            url: "https://feeds.bloomberg.com/commodities/news.rss".to_string(),
+            category: NewsCategory::Commodities,
+        },
+        RssFeed {
+            name: "Bloomberg Crypto".to_string(),
+            url: "https://feeds.bloomberg.com/crypto/news.rss".to_string(),
             category: NewsCategory::Crypto,
         },
         RssFeed {
-            name: "ZeroHedge".to_string(),
-            url: "https://www.zerohedge.com/fullrss2.xml".to_string(),
+            name: "Bloomberg Politics".to_string(),
+            url: "https://feeds.bloomberg.com/politics/news.rss".to_string(),
             category: NewsCategory::Geopolitics,
         },
-        RssFeed {
-            name: "Yahoo Finance".to_string(),
-            url: "https://finance.yahoo.com/news/rssindex".to_string(),
-            category: NewsCategory::Markets,
-        },
-        RssFeed {
-            name: "MarketWatch".to_string(),
-            url: "https://feeds.marketwatch.com/marketwatch/marketpulse/".to_string(),
-            category: NewsCategory::Markets,
-        },
-        RssFeed {
-            name: "Kitco Gold News".to_string(),
-            url: "https://www.kitco.com/rss/KitcoNews.xml".to_string(),
-            category: NewsCategory::Commodities,
-        },
     ]
+}
+
+#[derive(Debug, Deserialize)]
+struct Rss {
+    channel: RssChannel,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,11 +116,11 @@ pub async fn fetch_feed(feed: &RssFeed) -> Result<Vec<NewsItem>> {
         .text()
         .await?;
 
-    let channel: RssChannel = quick_xml::de::from_str(&body)
+    let rss: Rss = quick_xml::de::from_str(&body)
         .context("Failed to parse RSS XML")?;
 
     let mut items = Vec::new();
-    for item in channel.item {
+    for item in rss.channel.item {
         let published_at = parse_rfc2822(&item.pub_date.unwrap_or_default())
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
@@ -187,9 +187,9 @@ mod tests {
     #[test]
     fn test_default_feeds() {
         let feeds = default_feeds();
-        assert_eq!(feeds.len(), 6);
-        assert!(feeds.iter().any(|f| f.name == "Reuters Business"));
-        assert!(feeds.iter().any(|f| f.name == "CoinDesk"));
+        assert_eq!(feeds.len(), 5);
+        assert!(feeds.iter().any(|f| f.name == "Bloomberg Markets"));
+        assert!(feeds.iter().any(|f| f.name == "Bloomberg Crypto"));
         assert!(feeds.iter().any(|f| f.category == NewsCategory::Crypto));
     }
 
