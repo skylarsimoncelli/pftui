@@ -4,6 +4,18 @@
 > Format: `- [ ] **Short title** — Brief description. Files: relevant_file.rs`
 > Full analytics spec: `docs/ANALYTICS-SPEC.md`
 
+## P0 — Data Pipeline Reliability (CRITICAL)
+
+> **Goal:** Every shipped feature must actually populate with real data on `pftui refresh`. Scores dropped across all testers because 40% of tabs/commands show empty states. No new features until these are fixed.
+
+- [ ] **Data pipeline audit** — Test every data source end-to-end: fetch → cache → display. Create `pftui status --data` showing freshness of each source (predictions, news, COT, sentiment, calendar, BLS, World Bank, COMEX, on-chain). Files: new `src/commands/status.rs`
+- [ ] **Fix `pftui refresh` to populate ALL data sources** — Currently only fetches prices. Must also trigger: predictions (Polymarket), news (RSS), COT (CFTC), sentiment (F&G), calendar (TradingEconomics), BLS, World Bank. Add progress bar showing each source. Files: `src/commands/refresh.rs`, all `src/data/*.rs` modules
+- [ ] **Fix movers/watchlist sign discrepancy** — BKSY shows +3.7% in movers but -3.3% in watchlist. Trust-breaking data integrity bug. Files: `src/commands/movers.rs`, `src/tui/views/watchlist.rs`
+- [ ] **Stale data indicator in TUI header** — Show `⚠ Stale (Xh ago)` in header when price data is >1h old. Files: `src/tui/widgets/header.rs`
+- [ ] **Standardize `--json` flag across all CLI commands** — Replace `--agent` (brief only) with `--json`. Add `--json` to: summary, value, performance, movers. Every data command gets consistent JSON output. Files: `src/cli.rs`, `src/commands/*.rs`
+- [ ] **Fix 2 test failures** — `click_privacy_indicator_toggles_privacy`, `sort_flash_updates_on_tab_toggle`. Must fix before next release. Files: `src/tui/app.rs` (tests section)
+- [ ] **Fix 7 clippy warnings** — Must be clean before next release. Run `cargo clippy --all-targets -- -D warnings`
+
 ## P0 — Free Data Integration (No API Keys)
 
 > **Goal:** pftui ships as a zero-config, zero-key terminal for macro-aware investors. Every data source below is completely free and requires NO authentication. A finance enthusiast installs pftui and immediately has prediction markets, COT positioning, sentiment, news, on-chain data, and economic releases — all in one terminal. This is the moat.
