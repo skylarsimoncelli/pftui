@@ -309,7 +309,52 @@ async fn fetch_all_prices(
     (quotes, errors)
 }
 
+struct RefreshLock {
+    path: std::path::PathBuf,
+}
+
+impl RefreshLock {
+    fn acquire() -> Result<Self> {
+        let lock_path = std::path::Path::new(&std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+            .join(".local/share/pftui/refresh.lock");
+        
+        // Ensure parent directory exists
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        
+        // Check if lock exists and is recent
+        if lock_path.exists() {
+            if let Ok(metadata) = std::fs::metadata(&lock_path) {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(elapsed) = modified.elapsed() {
+                        if elapsed.as_secs() < 300 {
+                            // Lock is less than 5 minutes old
+                            anyhow::bail!("Refresh already in progress");
+                        }
+                    }
+                }
+            }
+            // Stale lock, remove it
+            let _ = std::fs::remove_file(&lock_path);
+        }
+        
+        // Create lock file
+        std::fs::write(&lock_path, "")?;
+        
+        Ok(RefreshLock { path: lock_path })
+    }
+}
+
+impl Drop for RefreshLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
+    let _lock = RefreshLock::acquire()?;
+
     println!("Refreshing all data sources...\n");
 
     let rt = tokio::runtime::Builder::new_current_thread()

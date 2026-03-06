@@ -147,7 +147,7 @@ pub fn needs_refresh(conn: &Connection) -> Result<bool> {
     Ok(count == 0)
 }
 
-/// Get latest indicators for all tracked countries (most recent year per country/indicator).
+/// Get latest indicators for all tracked countries (most recent year per country/indicator with actual data).
 pub fn get_latest_indicators(conn: &Connection) -> Result<Vec<WorldBankDataPoint>> {
     let mut stmt = conn.prepare(
         "SELECT wb.country_code, wb.country_name, wb.indicator_code, wb.indicator_name, wb.year, wb.value
@@ -155,6 +155,7 @@ pub fn get_latest_indicators(conn: &Connection) -> Result<Vec<WorldBankDataPoint
          INNER JOIN (
              SELECT country_code, indicator_code, MAX(year) as max_year
              FROM worldbank_cache
+             WHERE value IS NOT NULL AND value != ''
              GROUP BY country_code, indicator_code
          ) latest
          ON wb.country_code = latest.country_code 
