@@ -50,11 +50,17 @@ pub fn run(
         Some(q) => q.parse()?,
         None => prompt("Quantity")?.parse()?,
     };
+    if quantity <= Decimal::ZERO {
+        bail!("Quantity must be greater than zero (got {})", quantity);
+    }
 
     let price_per: Decimal = match price {
         Some(p) => p.parse()?,
         None => prompt("Price per unit")?.parse()?,
     };
+    if price_per < Decimal::ZERO {
+        bail!("Price per unit cannot be negative (got {})", price_per);
+    }
 
     let date = match date {
         Some(d) => d,

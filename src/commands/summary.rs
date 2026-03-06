@@ -1014,6 +1014,11 @@ fn format_category(cat: &AssetCategory) -> &'static str {
 // JSON output mode
 // ──────────────────────────────────────────────────────────────
 
+/// Format a Decimal to a string with exactly 4 decimal places for JSON output.
+fn format_decimal_4(d: Decimal) -> String {
+    format!("{:.4}", d)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_full_json(
     conn: &Connection,
@@ -1040,13 +1045,13 @@ fn run_full_json(
         serde_json::json!({
             "symbol": p.symbol,
             "category": format_category(&p.category),
-            "quantity": p.quantity.to_string(),
-            "avg_cost": p.avg_cost.to_string(),
-            "current_price": p.current_price.map(|x| x.to_string()),
-            "current_value": p.current_value.map(|x| x.to_string()),
-            "gain": p.gain.map(|x| x.to_string()),
-            "gain_pct": p.gain_pct.map(|x| x.to_string()),
-            "allocation_pct": p.allocation_pct.map(|x| x.to_string()),
+            "quantity": format_decimal_4(p.quantity),
+            "avg_cost": format_decimal_4(p.avg_cost),
+            "current_price": p.current_price.map(format_decimal_4),
+            "current_value": p.current_value.map(format_decimal_4),
+            "gain": p.gain.map(format_decimal_4),
+            "gain_pct": p.gain_pct.map(format_decimal_4),
+            "allocation_pct": p.allocation_pct.map(format_decimal_4),
         })
     }).collect();
 
@@ -1074,8 +1079,8 @@ fn run_percentage_json(
         serde_json::json!({
             "symbol": p.symbol,
             "category": format_category(&p.category),
-            "allocation_pct": p.allocation_pct.map(|x| x.to_string()),
-            "current_price": p.current_price.map(|x| x.to_string()),
+            "allocation_pct": p.allocation_pct.map(format_decimal_4),
+            "current_price": p.current_price.map(format_decimal_4),
         })
     }).collect();
 
