@@ -95,6 +95,7 @@ pub fn run(
     period: Option<&SummaryPeriod>,
     what_if: Option<&str>,
     technicals: bool,
+    json: bool,
 ) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
     let mut prices: HashMap<String, Decimal> = cached
@@ -147,6 +148,14 @@ pub fn run(
     } else {
         HashMap::new()
     };
+
+    if json {
+        // JSON output mode
+        return match config.portfolio_mode {
+            PortfolioMode::Full => run_full_json(conn, config, &prices, group_by, period, &historical_prices, &hist_1d),
+            PortfolioMode::Percentage => run_percentage_json(conn, &prices, group_by, period, &historical_prices, &hist_1d),
+        };
+    }
 
     match config.portfolio_mode {
         PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices, &hist_1d, &technicals_data),
@@ -1001,6 +1010,79 @@ fn format_category(cat: &AssetCategory) -> &'static str {
     }
 }
 
+// ──────────────────────────────────────────────────────────────
+// JSON output mode
+// ──────────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn run_full_json(
+    conn: &Connection,
+    config: &Config,
+    prices: &HashMap<String, Decimal>,
+    _group_by: Option<&SummaryGroupBy>,
+    _period: Option<&SummaryPeriod>,
+    _historical_prices: &Option<HashMap<String, Decimal>>,
+    _hist_1d: &HashMap<String, Decimal>,
+) -> Result<()> {
+    let txs = list_transactions(conn)?;
+    if txs.is_empty() {
+        println!("{{\"error\": \"No transactions\"}}");
+        return Ok(());
+    }
+
+    let positions = compute_positions(&txs, prices);
+    if positions.is_empty() {
+        println!("{{\"error\": \"No positions\"}}");
+        return Ok(());
+    }
+
+    let data: Vec<_> = positions.iter().map(|p| {
+        serde_json::json!({
+            "symbol": p.symbol,
+            "category": format_category(&p.category),
+            "quantity": p.quantity.to_string(),
+            "avg_cost": p.avg_cost.to_string(),
+            "current_price": p.current_price.map(|x| x.to_string()),
+            "current_value": p.current_value.map(|x| x.to_string()),
+            "gain": p.gain.map(|x| x.to_string()),
+            "gain_pct": p.gain_pct.map(|x| x.to_string()),
+            "allocation_pct": p.allocation_pct.map(|x| x.to_string()),
+        })
+    }).collect();
+
+    println!("{}", serde_json::to_string_pretty(&data)?);
+    Ok(())
+}
+
+fn run_percentage_json(
+    conn: &Connection,
+    prices: &HashMap<String, Decimal>,
+    _group_by: Option<&SummaryGroupBy>,
+    _period: Option<&SummaryPeriod>,
+    _historical_prices: &Option<HashMap<String, Decimal>>,
+    _hist_1d: &HashMap<String, Decimal>,
+) -> Result<()> {
+    let allocs = list_allocations(conn)?;
+    if allocs.is_empty() {
+        println!("{{\"error\": \"No allocations\"}}");
+        return Ok(());
+    }
+
+    let positions = compute_positions_from_allocations(&allocs, prices);
+
+    let data: Vec<_> = positions.iter().map(|p| {
+        serde_json::json!({
+            "symbol": p.symbol,
+            "category": format_category(&p.category),
+            "allocation_pct": p.allocation_pct.map(|x| x.to_string()),
+            "current_price": p.current_price.map(|x| x.to_string()),
+        })
+    }).collect();
+
+    println!("{}", serde_json::to_string_pretty(&data)?);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1161,7 +1243,7 @@ mod tests {
         }).unwrap();
 
         // Should succeed even with no history data
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false);
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1201,7 +1283,7 @@ mod tests {
         ]).unwrap();
 
         // Should succeed with historical data available
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false);
+        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1235,7 +1317,7 @@ mod tests {
         }).unwrap();
 
         // Both --group-by category and --period together
-        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false);
+        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1360,7 +1442,7 @@ mod tests {
         }).unwrap();
 
         // With what-if override, should succeed and use hypothetical price
-        let result = run(&conn, &config, None, None, Some("AAPL:300"), false);
+        let result = run(&conn, &config, None, None, Some("AAPL:300"), false, false);
         assert!(result.is_ok());
     }
 
@@ -1394,7 +1476,7 @@ mod tests {
         }).unwrap();
 
         // What-if + group-by should work together
-        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false);
+        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false, false);
         assert!(result.is_ok());
     }
 }

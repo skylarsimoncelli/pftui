@@ -23,6 +23,9 @@ pub enum Command {
         #[arg(long, value_name = "OVERRIDES")]
         what_if: Option<String>,
 
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
     },
 
     /// Export portfolio data (JSON exports full snapshot; CSV exports positions only)
@@ -112,7 +115,11 @@ pub enum Command {
         json: bool,
     },
     /// Show total portfolio value with gain/loss (uses cached prices)
-    Value,
+    Value {
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Display watchlist symbols with current cached prices
     Watchlist {

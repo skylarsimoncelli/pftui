@@ -46,7 +46,7 @@ fn format_with_commas(value: Decimal, dp: u32) -> String {
     }
 }
 
-pub fn run(conn: &Connection, config: &Config) -> Result<()> {
+pub fn run(conn: &Connection, config: &Config, json: bool) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
@@ -54,8 +54,8 @@ pub fn run(conn: &Connection, config: &Config) -> Result<()> {
         .collect();
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, &prices),
-        PortfolioMode::Percentage => run_percentage(conn, config, &prices),
+        PortfolioMode::Full => run_full(conn, config, &prices, json),
+        PortfolioMode::Percentage => run_percentage(conn, config, &prices, json),
     }
 }
 
@@ -63,16 +63,25 @@ fn run_full(
     conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
+    json: bool,
 ) -> Result<()> {
     let txs = list_transactions(conn)?;
     if txs.is_empty() {
-        println!("No positions. Add one with: pftui add-tx");
+        if json {
+            println!("{{\"error\": \"No positions\"}}");
+        } else {
+            println!("No positions. Add one with: pftui add-tx");
+        }
         return Ok(());
     }
 
     let positions = compute_positions(&txs, prices);
     if positions.is_empty() {
-        println!("No open positions.");
+        if json {
+            println!("{{\"error\": \"No open positions\"}}");
+        } else {
+            println!("No open positions.");
+        }
         return Ok(());
     }
 
@@ -98,6 +107,15 @@ fn run_full(
         .filter(|p| p.current_price.is_some())
         .count();
     let total_count = positions.len();
+    
+    if json {
+        let value_f64: f64 = total_value.to_string().parse().unwrap_or(0.0);
+        let change_abs_f64: f64 = total_gain.to_string().parse().unwrap_or(0.0);
+        let change_pct_f64: f64 = total_gain_pct.to_string().parse().unwrap_or(0.0);
+        println!("{{\"value\": {:.2}, \"change_pct\": {:.2}, \"change_abs\": {:.2}}}", 
+            value_f64, change_pct_f64, change_abs_f64);
+        return Ok(());
+    }
 
     // Single compact output line
     let csym = config.currency_symbol();
@@ -149,10 +167,15 @@ fn run_percentage(
     conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
+    json: bool,
 ) -> Result<()> {
     let allocs = list_allocations(conn)?;
     if allocs.is_empty() {
-        println!("No allocations. Run: pftui setup");
+        if json {
+            println!("{{\"error\": \"No allocations\"}}");
+        } else {
+            println!("No allocations. Run: pftui setup");
+        }
         return Ok(());
     }
 
@@ -164,7 +187,24 @@ fn run_percentage(
         .collect();
 
     if priced.is_empty() {
-        println!("No prices cached. Run `pftui refresh` first.");
+        if json {
+            println!("{{\"error\": \"No prices cached\"}}");
+        } else {
+            println!("No prices cached. Run `pftui refresh` first.");
+        }
+        return Ok(());
+    }
+    
+    if json {
+        // In percentage mode, we don't have absolute value, just allocations
+        let alloc_data: Vec<_> = positions.iter().map(|p| {
+            serde_json::json!({
+                "symbol": p.symbol,
+                "allocation_pct": p.allocation_pct.map(|a| a.to_string().parse::<f64>().unwrap_or(0.0)),
+                "current_price": p.current_price.map(|p| p.to_string().parse::<f64>().unwrap_or(0.0)),
+            })
+        }).collect();
+        println!("{}", serde_json::to_string_pretty(&alloc_data)?);
         return Ok(());
     }
 
@@ -245,7 +285,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
         // Should not panic, just prints "No positions"
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -272,7 +312,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -313,7 +353,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 
@@ -329,7 +369,7 @@ mod tests {
         insert_allocation(&conn, "BTC", AssetCategory::Crypto, dec!(50)).unwrap();
         insert_allocation(&conn, "GC=F", AssetCategory::Commodity, dec!(50)).unwrap();
 
-        let result = run(&conn, &config);
+        let result = run(&conn, &config, false);
         assert!(result.is_ok());
     }
 }

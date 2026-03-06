@@ -55,7 +55,7 @@ fn main() -> Result<()> {
             commands::setup::run(&conn, &config, true)
         }
 
-        Some(Command::Summary { group_by, period, what_if }) => commands::summary::run(&conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref(), true),
+        Some(Command::Summary { group_by, period, what_if, json }) => commands::summary::run(&conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref(), true, json),
         Some(Command::Export { format, output }) => commands::export::run(&conn, &format, &config, output.as_deref()),
 
         Some(Command::ListTx { notes }) => {
@@ -168,7 +168,7 @@ fn main() -> Result<()> {
 
         Some(Command::Refresh { notify }) => commands::refresh::run(&conn, &config, notify),
         Some(Command::Status) => commands::status::run(&conn),
-        Some(Command::Value) => commands::value::run(&conn, &config),
+        Some(Command::Value { json }) => commands::value::run(&conn, &config, json),
         Some(Command::Brief { json }) => commands::brief::run(&conn, &config, true, json),
         Some(Command::Watchlist { approaching }) => commands::watchlist_cli::run(&conn, &config, approaching.as_deref()),
 
