@@ -36,8 +36,8 @@
         <div class="container">
             <div class="hero-content">
                 <p class="hero-kicker">PFTUI - The Portfolio TUI</p>
-                <h1 class="hero-title">Agent-native <span class="gradient-text">financial battle station</span></h1>
-                <p class="hero-subtitle">Equities. Crypto. Forex. Macro. Sentiment. News. Vim-native workflows and headless automation in one sleek terminal.</p>
+                <h1 class="hero-title">Your portfolio's <span class="gradient-text">command center</span></h1>
+                <p class="hero-subtitle">Live prices, charts, macro data, and technical analysis. All in your terminal. Bloomberg-class intelligence with zero API keys.</p>
                 <div class="hero-install">
                     <div class="install-command">
                         <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
@@ -200,35 +200,35 @@
             <div class="cli-grid">
                 <div class="cli-example">
                     <div class="cli-command">$ pftui value</div>
-                    <div class="cli-output">$48,234.09 <span class="green">+2.4%</span></div>
+                    <div class="cli-output">$287,345.82 <span class="green">+1.4%</span></div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui movers</div>
-                    <div class="cli-output"><span class="green">📈 NVDA +4.8%</span> | <span class="red">📉 TSLA -3.2%</span></div>
+                    <div class="cli-command">$ pftui movers --threshold 3</div>
+                    <div class="cli-output"><span class="green">📈 MSTR +7.2%</span> | <span class="green">📈 NVDA +4.1%</span> | <span class="red">📉 XLE -5.8%</span></div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui macro</div>
-                    <div class="cli-output">VIX 21.1 <span class="red">▼-10.3%</span> | Gold $5,171 <span class="green">▲+1.2%</span></div>
+                    <div class="cli-output">DXY 98.6 │ VIX 19.4 │ 10Y 4.21% │ Gold $5,092 │ Oil $73.45</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui predictions --limit 2</div>
-                    <div class="cli-output">BTC >$100k by Dec? 42% <span class="green">↑</span><br>Fed cut before July? 18% <span class="red">↓</span></div>
+                    <div class="cli-command">$ pftui sentiment</div>
+                    <div class="cli-output">Crypto F&G: 🔴 14 Extreme Fear | Traditional: 🟡 48 Neutral</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui alloc</div>
-                    <div class="cli-output">Tech 41% | Crypto 30% | Commodities 16% | Cash 13%</div>
+                    <div class="cli-command">$ pftui brief --json</div>
+                    <div class="cli-output">{"value":287345.82,"change_pct":1.38,"positions":8,"risk":"neutral"}</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui chart NVDA --tf 6M --sma 20,50</div>
-                    <div class="cli-output">Rendered braille chart with overlays and volume in 82ms</div>
+                    <div class="cli-command">$ pftui performance</div>
+                    <div class="cli-output">MTD +2.8% | QTD +8.4% | YTD +18.2% | Since Incept. +32.1%</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui brief --agent --json</div>
-                    <div class="cli-output">{"risk_state":"neutral","alerts":0,"top_contributor":"BTC"}</div>
+                    <div class="cli-command">$ pftui watchlist</div>
+                    <div class="cli-output">TSLA $412 <span class="green">+2.4%</span> | PLTR $148 <span class="green">+3.7%</span> | AAPL $201 <span class="red">-0.8%</span></div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui watchlist --alerts</div>
-                    <div class="cli-output">AAPL near target <span class="green">+1.1%</span> | TSLA drawdown <span class="red">-2.0%</span></div>
+                    <div class="cli-command">$ pftui journal list --limit 3</div>
+                    <div class="cli-output">2026-03-04: Gold thesis intact despite pullback<br>2026-03-01: Exited tech - risk/reward compressed<br>2026-02-28: Added uranium exposure</div>
                 </div>
             </div>
         </div>
