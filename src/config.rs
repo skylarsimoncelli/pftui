@@ -176,8 +176,10 @@ pub fn load_config_with_first_run_prompt() -> Result<Config> {
         return load_config();
     }
 
-    let mut config = Config::default();
-    config.home_tab = prompt_first_run_home_tab()?;
+    let config = Config {
+        home_tab: prompt_first_run_home_tab()?,
+        ..Config::default()
+    };
     save_config(&config)?;
     Ok(config)
 }

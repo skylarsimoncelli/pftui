@@ -23,9 +23,6 @@ pub enum Command {
         #[arg(long, value_name = "OVERRIDES")]
         what_if: Option<String>,
 
-        /// Show technical indicators (RSI, MACD, SMA) for each position
-        #[arg(long)]
-        technicals: bool,
     },
 
     /// Export portfolio data (JSON exports full snapshot; CSV exports positions only)
@@ -107,13 +104,9 @@ pub enum Command {
 
     /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
     Brief {
-        /// Show technical indicators (RSI, MACD, SMA) for each position
+        /// Output structured JSON (includes all available data)
         #[arg(long)]
-        technicals: bool,
-
-        /// Output structured JSON for agent consumption (includes all available data)
-        #[arg(long)]
-        agent: bool,
+        json: bool,
     },
     /// Show total portfolio value with gain/loss (uses cached prices)
     Value,

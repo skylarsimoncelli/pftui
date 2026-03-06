@@ -1698,7 +1698,7 @@ pub async fn get_performance(
         dec!(0)
     } else {
         let pct = (daily_values.len() as i64 * 100) / expected_points as i64;
-        Decimal::from(std::cmp::min(100, std::cmp::max(0, pct)))
+        Decimal::from(pct.clamp(0, 100))
     };
 
     let benchmark_values = if query.benchmark.as_deref() == Some("spx") && !daily_values.is_empty() {
@@ -2014,7 +2014,7 @@ pub async fn set_theme(
     Json(body): Json<ThemeRequest>,
 ) -> Result<Json<ThemeResponse>, (StatusCode, String)> {
     let selected = body.theme.trim();
-    if !THEME_NAMES.iter().any(|name| *name == selected) {
+    if !THEME_NAMES.contains(&selected) {
         return Err((
             StatusCode::BAD_REQUEST,
             format!("unknown theme '{}'", selected),

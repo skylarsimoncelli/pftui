@@ -33,8 +33,7 @@ pub fn run(
     let report = migrate_from_markdown(conn, &markdown, dry_run, default_tag, default_status)?;
     if json_output {
         println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        if dry_run {
+    } else if dry_run {
             println!(
                 "Dry run for '{}': parsed {}, would insert {}, skipped {}",
                 path, report.parsed, report.inserted, report.skipped
@@ -44,7 +43,6 @@ pub fn run(
                 "Migration from '{}': parsed {}, inserted {}, skipped {}",
                 path, report.parsed, report.inserted, report.skipped
             );
-        }
     }
     Ok(())
 }

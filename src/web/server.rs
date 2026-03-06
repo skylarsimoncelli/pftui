@@ -256,11 +256,11 @@ struct StreamPayload {
 }
 
 fn stream_event_type_and_message(i: usize) -> (&'static str, &'static str) {
-    if i % 6 == 0 {
+    if i.is_multiple_of(6) {
         ("panel_invalidate", "refresh_visible_panels")
-    } else if i % 3 == 0 {
+    } else if i.is_multiple_of(3) {
         ("quote_update", "quote_snapshot_updated")
-    } else if i % 2 == 0 {
+    } else if i.is_multiple_of(2) {
         ("health", "stream_ok")
     } else {
         ("heartbeat", "alive")
