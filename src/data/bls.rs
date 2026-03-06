@@ -90,7 +90,7 @@ pub async fn fetch_bls_data(series_ids: &[&str]) -> Result<Vec<BlsDataPoint>> {
     for series in results.series {
         for item in series.data {
             // Parse value (skip if "-" or other non-numeric placeholder)
-            let value = match Decimal::from_str(&item.value.trim()) {
+            let value = match Decimal::from_str(item.value.trim()) {
                 Ok(v) => v,
                 Err(_) => {
                     // Skip missing/invalid data points (BLS uses "-" for missing data)

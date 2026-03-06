@@ -1173,6 +1173,8 @@ impl App {
             self.crosshair_mode = false;
             self.crosshair_x = 0;
             self.last_selection_change_tick = self.tick_count;
+            // Update selected_symbol to propagate selection across views
+            self.selected_symbol = self.display_positions.get(self.selected_index).map(|p| p.symbol.clone());
             self.refetch_chart_history();
         }
     }
