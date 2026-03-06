@@ -38,32 +38,29 @@ impl std::fmt::Display for MarketCategory {
     }
 }
 
-/// Response from Polymarket Gamma API.
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)] // Used by fetch_polymarket_predictions (F17.3+)
-struct GammaResponse {
-    #[serde(default)]
-    data: Vec<GammaMarket>,
-}
+/// Polymarket Gamma API returns a flat array, not a wrapped object.
+type GammaResponse = Vec<GammaMarket>;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)] // Used by fetch_polymarket_predictions (F17.3+)
 struct GammaMarket {
-    #[serde(rename = "condition_id")]
+    #[serde(rename = "conditionId")]
     condition_id: String,
     question: String,
-    #[serde(rename = "outcome_prices")]
-    outcome_prices: Vec<String>,
-    volume_24h: Option<String>,
-    #[serde(default)]
-    tags: Vec<String>,
+    #[serde(rename = "outcomePrices")]
+    outcome_prices: String, // JSON string: "[\"0.42\", \"0.58\"]"
+    #[serde(rename = "volume24hr")]
+    volume_24hr: f64,
+    active: bool,
+    closed: bool,
 }
 
 /// Fetch top prediction markets from Polymarket Gamma API.
 /// Free, no auth required.
 #[allow(dead_code)] // Infrastructure for F17.3+ (predictions CLI, refresh integration)
 pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
-    let url = "https://gamma-api.polymarket.com/markets?limit=50&active=true";
+    // Fetch open markets (active=true, closed=false), sorted by volume
+    let url = "https://gamma-api.polymarket.com/markets?limit=100&active=true&closed=false";
     
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -83,39 +80,36 @@ pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
         );
     }
 
-    let gamma_resp: GammaResponse = resp
-        .json()
-        .await
-        .context("Failed to parse Polymarket response")?;
+    let text = resp.text().await?;
+    
+    let gamma_resp: GammaResponse = serde_json::from_str(&text)
+        .context(format!("Failed to parse Polymarket response. First 500 chars: {}", 
+            &text.chars().take(500).collect::<String>()))?;
 
     let now = chrono::Utc::now().timestamp();
 
     let markets: Vec<PredictionMarket> = gamma_resp
-        .data
         .into_iter()
+        // Filter out closed/resolved markets (redundant with URL param but defensive)
+        .filter(|m| m.active && !m.closed)
         .filter_map(|m| {
-            // Parse probability from first outcome price
-            let prob = m.outcome_prices.first()?
-                .parse::<f64>()
-                .ok()?;
+            // Parse outcome_prices JSON string: "[\"0.42\", \"0.58\"]"
+            let prices: Vec<String> = serde_json::from_str(&m.outcome_prices).ok()?;
+            let prob = prices.first()?.parse::<f64>().ok()?;
 
-            // Parse volume
-            let volume = m.volume_24h
-                .and_then(|v| v.parse::<f64>().ok())
-                .unwrap_or(0.0);
-
-            // Infer category from tags/question
-            let category = infer_category(&m.question, &m.tags);
+            // Infer category from question text
+            let category = infer_category_from_question(&m.question);
 
             Some(PredictionMarket {
                 id: m.condition_id,
                 question: m.question,
                 probability: prob,
-                volume_24h: volume,
+                volume_24h: m.volume_24hr,
                 category,
                 updated_at: now,
             })
         })
+        .take(50)  // Limit to top 50 by volume
         .collect();
 
     Ok(markets)
@@ -141,46 +135,43 @@ pub fn save_daily_snapshots(
     Ok(())
 }
 
-/// Infer market category from question text and tags.
-#[allow(dead_code)] // Used by fetch_polymarket_predictions (F17.3+)
-fn infer_category(question: &str, tags: &[String]) -> MarketCategory {
+/// Infer market category from question text.
+fn infer_category_from_question(question: &str) -> MarketCategory {
     let q_lower = question.to_lowercase();
-    let tags_str = tags.join(" ").to_lowercase();
-    let combined = format!("{} {}", q_lower, tags_str);
 
-    if combined.contains("bitcoin")
-        || combined.contains("btc")
-        || combined.contains("ethereum")
-        || combined.contains("eth")
-        || combined.contains("crypto")
-        || combined.contains("solana")
+    if q_lower.contains("bitcoin")
+        || q_lower.contains("btc")
+        || q_lower.contains("ethereum")
+        || q_lower.contains("eth")
+        || q_lower.contains("crypto")
+        || q_lower.contains("solana")
     {
         MarketCategory::Crypto
-    } else if combined.contains("recession")
-        || combined.contains("fed")
-        || combined.contains("rate cut")
-        || combined.contains("inflation")
-        || combined.contains("gdp")
-        || combined.contains("unemployment")
-        || combined.contains("economy")
+    } else if q_lower.contains("recession")
+        || q_lower.contains("fed")
+        || q_lower.contains("rate cut")
+        || q_lower.contains("inflation")
+        || q_lower.contains("gdp")
+        || q_lower.contains("unemployment")
+        || q_lower.contains("economy")
     {
         MarketCategory::Economics
-    } else if combined.contains("war")
-        || combined.contains("iran")
-        || combined.contains("russia")
-        || combined.contains("china")
-        || combined.contains("election")
-        || combined.contains("trump")
-        || combined.contains("biden")
-        || combined.contains("ukraine")
+    } else if q_lower.contains("war")
+        || q_lower.contains("iran")
+        || q_lower.contains("russia")
+        || q_lower.contains("china")
+        || q_lower.contains("election")
+        || q_lower.contains("trump")
+        || q_lower.contains("biden")
+        || q_lower.contains("ukraine")
     {
         MarketCategory::Geopolitics
-    } else if combined.contains(" ai ")
-        || combined.contains("artificial intelligence")
-        || combined.contains("chatgpt")
-        || combined.contains("openai")
-        || combined.starts_with("ai ")
-        || combined.ends_with(" ai")
+    } else if q_lower.contains(" ai ")
+        || q_lower.contains("artificial intelligence")
+        || q_lower.contains("chatgpt")
+        || q_lower.contains("openai")
+        || q_lower.starts_with("ai ")
+        || q_lower.ends_with(" ai")
     {
         MarketCategory::AI
     } else {
@@ -195,7 +186,7 @@ mod tests {
     #[test]
     fn test_infer_category_crypto() {
         assert_eq!(
-            infer_category("Will Bitcoin reach $100k by 2026?", &[]),
+            infer_category_from_question("Will Bitcoin reach $100k by 2026?"),
             MarketCategory::Crypto
         );
     }
@@ -203,7 +194,7 @@ mod tests {
     #[test]
     fn test_infer_category_economics() {
         assert_eq!(
-            infer_category("Will US enter recession in 2026?", &[]),
+            infer_category_from_question("Will US enter recession in 2026?"),
             MarketCategory::Economics
         );
     }
@@ -211,7 +202,7 @@ mod tests {
     #[test]
     fn test_infer_category_geopolitics() {
         assert_eq!(
-            infer_category("Will Russia and Ukraine reach ceasefire?", &[]),
+            infer_category_from_question("Will Russia and Ukraine reach ceasefire?"),
             MarketCategory::Geopolitics
         );
     }
@@ -219,7 +210,7 @@ mod tests {
     #[test]
     fn test_infer_category_default() {
         assert_eq!(
-            infer_category("Will it rain tomorrow?", &[]),
+            infer_category_from_question("Will it rain tomorrow?"),
             MarketCategory::Other
         );
     }
