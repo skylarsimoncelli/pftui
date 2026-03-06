@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 18:27 UTC — Fix onchain_cache test timestamp
+
+- What: Fixed flaky test `db::onchain_cache::tests::test_upsert_and_get_metric` that failed when test data exceeded 24-hour TTL. Test was inserting metric with hardcoded `2026-03-05T08:00:00Z` timestamp, which became stale when current time advanced beyond 24 hours.
+- Why: TTL logic in `get_metric()` filters out cached data older than 24 hours. Test failed when `current_time - fetched_at > 24h`.
+- How: Changed test to use `chrono::Utc::now().to_rfc3339()` for `fetched_at` field, ensuring test data is always fresh relative to current time.
+- Files: `src/db/onchain_cache.rs` (test function only)
+- Tests: All 1105 tests now pass. `cargo clippy --all-targets -- -D warnings` passes.
+
 ### 2026-03-06 17:27 UTC — Fix watchlist CLI day% sign discrepancy
 
 - What: Fixed `pftui watchlist` CLI command to match movers/TUI watchlist day% calculation. Previously CLI used `history[n-1]` vs `history[n-2]` while movers and TUI used `current_price` vs `yesterday_close`, causing sign disagreements (e.g., BKSY showing +3.7% in movers but -3.3% in watchlist).
