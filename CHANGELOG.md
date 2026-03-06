@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 02:46 UTC — F2.1: Correlation math module
+
+- What: Added pure-function correlation module for Pearson correlation on daily returns. Supports rolling windows (7/30/90 days) and correlation break detection (|Δ30d-90d| > threshold).
+- Why: Foundation for F2 Correlation Matrix (P2). Enables portfolio-level correlation analysis and crowded trade detection.
+- Files: new `src/indicators/correlation.rs` (274 lines), `src/indicators/mod.rs` (module registration)
+- Tests: 11 new tests — perfect positive/negative correlation, uncorrelated series, insufficient data, window edge cases, correlation breaks. All pass. No clippy warnings.
+- TODO: F2.1 (P2) — COMPLETED. Next: F2.2 (correlation grid in Markets tab), F2.3 (CLI correlations command).
+
 ### 2026-03-05 21:40 UTC — F16.3: Quick-add actions from search chart popup
 
 - What: Added direct decision actions in the search chart popup: `w` adds symbol to watchlist, `a` opens transaction form prefilled for that symbol/category.

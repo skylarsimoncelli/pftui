@@ -144,7 +144,7 @@ The homepage a finance enthusiast opens every morning:
 > **Goal:** Rolling Pearson correlation between assets. Identify diversification, crowded trades, correlation breaks.
 > **Spec:** `docs/ANALYTICS-SPEC.md#f2`
 
-- [ ] **F2.1: Correlation math module** — Pearson on daily returns. 7/30/90-day rolling windows. Break detection (|Δ30d-90d| > 0.3). Files: new `src/indicators/correlation.rs`
+
 - [ ] **F2.2: Correlation grid in Markets tab** — Color-coded matrix (green=positive, red=negative). Held assets + key macro indicators. Toggle 7d/30d/90d. Files: `tui/views/markets.rs`, new `tui/views/correlation_grid.rs`
 - [ ] **F2.3: Correlations in `brief --correlations`** — Top pairs + any active breaks. Files: `commands/brief.rs`
 
