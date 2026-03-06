@@ -42,7 +42,7 @@ Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
 
 **📋 Journal** — Log your trade thesis, track predictions, search your decision history. Your future self will thank you.
 
-**🎨 6 Stunning Themes** — Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox. Every pixel themed. Cycle with `t`.
+**🎨 11 Stunning Themes** — Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox, Inferno, Neon, Hacker, Pastel, Miasma. Every pixel themed. Cycle with `t`.
 
 **🔒 Privacy First** — Percentage-only mode stores zero dollar amounts. Toggle `p` to hide values instantly. Your portfolio stays on your machine, in a local SQLite database. Nothing is sent anywhere.
 
@@ -114,26 +114,27 @@ pftui works headless too. Every feature is accessible from the command line.
 pftui refresh                    # Fetch latest prices
 pftui value                      # Quick portfolio value
 pftui brief                      # Markdown brief (great for scripts & agents)
-pftui brief --agent              # Structured JSON for agent consumption
 pftui summary                    # Detailed breakdown
 pftui macro                      # Macro dashboard (DXY, VIX, yields, CPI)
 pftui performance                # Portfolio performance over time
 pftui movers                     # Biggest daily movers
+pftui watchlist                  # Show watchlist with prices
 pftui alerts list                # Check price & allocation alerts
 pftui journal list               # View your trade journal
 pftui watch TSLA                 # Add to watchlist
-pftui watchlist                  # Show watchlist with prices
 pftui export json                # Full portfolio export
 pftui snapshot                   # Render TUI to stdout (for sharing)
 ```
 
-Most data commands support JSON output via `--json` or `export json`. Run `pftui <command> --help` for details.
+Most data commands support JSON output via `--json`. Run `pftui <command> --help` for details.
+
+**Note:** Some features (prediction markets, news feeds, sentiment) are under active development and may show "no data" until their data sources are fully integrated. Core features (portfolio tracking, prices, macro, charts) work immediately.
 
 ---
 
 ## 🎨 Themes
 
-Six built-in themes. Cycle with `t`. Your choice persists automatically.
+Eleven built-in themes. Cycle with `t`. Your choice persists automatically.
 
 | Theme | Vibe |
 |---|---|
@@ -143,6 +144,11 @@ Six built-in themes. Cycle with `t`. Your choice persists automatically.
 | **Dracula** | Purple-dark with vivid accents |
 | **Solarized** | Teal-tinted dark with warm/cool balance |
 | **Gruvbox** | Retro warm brown/orange |
+| **Inferno** | Fire-inspired gradient |
+| **Neon** | Cyberpunk electric glow |
+| **Hacker** | Matrix green terminal |
+| **Pastel** | Soft muted colors |
+| **Miasma** | Earthy forest fog |
 
 ---
 
