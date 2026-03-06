@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 23:27 UTC — Split-pane detail view for positions (S key)
+
+- What: implemented split-pane toggle (`S` key) for Positions view. When active, screen splits 70% top (normal positions layout) + 30% bottom (detail pane showing chart, recent transactions, and news for selected position). Detail pane shows 3 horizontal sections: chart (50%), transactions (25%), news (25%).
+- Why: high-value multi-context view without full-screen popups. User can browse positions while keeping detail context visible. Mirrors multi-pane trading platforms.
+- Files: `src/app.rs` (added `split_pane_open` field, initialized false in `App::new()`, `S` keybinding toggle in Positions view), `src/tui/ui.rs` (split layout logic: vertical 70/30 split when `split_pane_open=true`, new helper `render_positions_layout_normal`), `src/tui/views/position_detail_pane.rs` (new module: renders chart via `price_chart::render`, last 10 transactions, last 5 news entries filtered by symbol), `src/tui/views/mod.rs` (export `position_detail_pane`)
+- Tests: all 1114 tests pass, no new tests needed (UI-only change)
+- TODO: Split-pane view (P1)
+
 ### 2026-03-06 22:27 UTC — Ultra-wide layout (160+ cols) with 3-column design
 
 - What: implemented ultra-wide 3-column layout for terminal widths >= 160 columns. Left (45%): positions table + portfolio overview. Middle (25%): market context panel (top movers, macro indicators, F&G, events, active alerts). Right (30%): asset overview + price chart. Refactored render_positions_layout into reusable helper functions render_left_pane and render_right_pane to reduce duplication.
