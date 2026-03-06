@@ -3,18 +3,18 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
-### 2026-03-06 20:40 UTC — P1 UX: symbol linking, hotkeys, benchmark overlay, persist chart timeframe
+### 2026-03-06 21:05 UTC — P1 UX: symbol linking, benchmark overlay, persist chart timeframe
 
-- What: Implemented 4 P1 UX improvements: (1) selected symbol propagates to chart/detail/watchlist views, (2) hotkeys B/D/A/J for existing features, (3) benchmark SPY overlay on charts, (4) persist chart timeframe per symbol.
-- Why: Quick productivity wins identified by user feedback. Symbol linking makes navigation consistent, hotkeys reduce friction, benchmark provides context, persistence reduces repetitive timeframe selection.
+- What: Implemented 4 P1 UX improvements from thinkorswim research: (1) symbol linking across views, (2) benchmark overlay hotkey, (3) SPY benchmark comparison chart, (4) persist chart timeframe per symbol.
+- Why: ToS users expect symbol selection to propagate, benchmark overlays for context, and persistent timeframe preferences. These are table-stakes UX features for serious portfolio tracking.
 - Details:
-  1. **Symbol linking (30 min)**: Added `selected_symbol: Option<String>` to App state. When user selects a position, `set_selected_index()` updates both index and symbol. All views (chart, detail, watchlist) read from shared state.
-  2. **Hotkeys (15 min)**: Mapped existing features to single keys: `B` = toggle benchmark overlay, `D` = toggle detail pane, `A` = quick-add alert (price > current + 5%), `J` = quick-add journal entry.
-  3. **Benchmark overlay (45 min)**: When `B` pressed, fetch SPY history and render as gray braille line on price chart. Normalize both series to % change from period start for direct comparison. Position in green, SPY in gray.
-  4. **Persist timeframe (30 min)**: Created `chart_state` table in SQLite. Save timeframe when user cycles with `h`/`l`. Restore when returning to a position. Per-symbol persistence.
-- Files: `src/app.rs` (selected_symbol, set_selected_index, hotkeys, benchmark_overlay, save/load timeframe), `src/tui/widgets/price_chart.rs` (benchmark overlay rendering), `src/db/schema.rs` (chart_state table), `src/db/chart_state.rs` (new module), `src/db/mod.rs` (export), `src/tui/widgets/market_context.rs` (fix compilation errors)
-- Tests: Binary builds and runs. `cargo clippy --all-targets -- -D warnings` passes. (Note: pre-existing test failures in `yahoo.rs` FX tests unrelated to this work.)
-- Result: `B` toggles benchmark SPY overlay on charts. `A`/`J` add quick alert/journal entries. `D` toggles detail pane. Chart timeframe persists per symbol. All selections propagate correctly to dependent views.
+  1. **Symbol linking (commit 02beb8d)**: Added `selected_symbol` update in `on_position_selection_changed()`. Navigation (j/k) and mouse clicks sync symbol across chart/detail/watchlist views. Builds on existing `selected_symbol` field from c5b2c65.
+  2. **Benchmark hotkey (commit c4af8c4)**: Added `benchmark_overlay: bool` to App state, initialized false. `B` key (Positions view only) toggles overlay. No D/A/J hotkeys implemented — Enter already handles detail, alerts/journal need full forms (deferred).
+  3. **Benchmark chart (commit 89dfe49)**: When `benchmark_overlay=true`, fetch ^GSPC history and normalize both primary and SPY to % change from period start. SPY rendered as DarkGray line, primary in green gradient. Automatically fetches SPY when overlay enabled.
+  4. **Persist timeframe (commit f06775f)**: New `chart_state` SQLite table with symbol -> timeframe mapping. `ChartTimeframe::from_label()` parses saved strings. Auto-save on h/l timeframe changes, auto-load on position selection. Per-symbol persistence.
+- Files: `src/app.rs` (selected_symbol sync, benchmark_overlay field + hotkey, chart persistence), `src/tui/widgets/price_chart.rs` (SPY overlay rendering), `src/db/schema.rs` (chart_state table), `src/db/chart_state.rs` (new module, 3 tests), `src/db/mod.rs` (export), `src/data/bls.rs` (clippy fix: needless_borrow)
+- Tests: All 1108 tests pass (3 new chart_state tests added). `cargo clippy --all-targets -- -D warnings` passes.
+- Result: Symbol selection propagates. `B` toggles SPY benchmark overlay on charts (normalized % change comparison). Chart timeframe persists per symbol.
 
 ### 2026-03-06 20:30 UTC — Fix 5 P1 data pipeline bugs: COT, BLS, COMEX, status, FX
 

@@ -181,10 +181,10 @@ The homepage a finance enthusiast opens every morning:
 > Research complete 2026-03-06. thinkorswim UX excellence: linked views, extreme customization, keyboard-first, filter-based discovery. Items ranked by impact × feasibility.
 
 **High Priority (Quick Wins — 3-4 hours total):**
-- [ ] **Symbol linking (30 min, P1)** — Selected position propagates to chart/detail/watchlist. Add `selected_symbol: Option<String>` to App state. All views read it. Files: `app.rs`, `views/positions.rs`, `widgets/price_chart.rs`, `views/watchlist.rs`
-- [ ] **Hotkeys for existing features (15 min, P1)** — `B`=benchmark overlay, `<`/`>`=cycle timeframes, `D`=detail pane, `A`=alert, `T`=target, `J`=journal. Files: `app.rs`
-- [ ] **Benchmark comparison chart (45 min, P1)** — Plot position vs SPY, dual braille lines (green + gray). Toggle with `B`. Files: `widgets/price_chart.rs`, `price/mod.rs`
-- [ ] **Persist chart timeframe (30 min, P1)** — Save per-position in `chart_state` table. Restore on next view. Files: `db/schema.rs`, `app.rs`
+- [x] **Symbol linking (30 min, P1)** — ✅ DONE (2026-03-06, commit 02beb8d). Selected_symbol syncs on j/k/mouse. Chart/detail/watchlist read shared state.
+- [x] **Hotkeys for existing features (15 min, P1)** — ✅ PARTIAL (2026-03-06, commit c4af8c4). B=benchmark overlay implemented. D/A/J deferred (Enter for detail, alerts/journal need forms).
+- [x] **Benchmark comparison chart (45 min, P1)** — ✅ DONE (2026-03-06, commit 89dfe49). SPY overlay with normalized % change. Toggle with B.
+- [x] **Persist chart timeframe (30 min, P1)** — ✅ DONE (2026-03-06, commit f06775f). chart_state table + save/load on h/l keys.
 - [ ] **Split-pane view (1 hr, P1)** — Bottom 30% = chart + txs + news for selected position. Toggle with `D`. Files: `tui/ui.rs`, new `views/position_detail_pane.rs`, `app.rs`
 
 **Medium Priority (High Value — 6-8 hours total):**
