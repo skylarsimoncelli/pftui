@@ -359,6 +359,7 @@ pub struct App {
 
     // Navigation
     pub selected_index: usize,
+    pub selected_symbol: Option<String>,
     pub tx_selected_index: usize,
     pub markets_selected_index: usize,
     pub economy_selected_index: usize,
@@ -609,6 +610,7 @@ impl App {
             display_positions: Vec::new(),
             display_transactions: Vec::new(),
             selected_index: 0,
+            selected_symbol: None,
             tx_selected_index: 0,
             markets_selected_index: 0,
             economy_selected_index: 0,
@@ -1253,11 +1255,10 @@ impl App {
 
         // Clamp selection indices
         if !self.display_positions.is_empty() {
-            self.selected_index = self
-                .selected_index
-                .min(self.display_positions.len() - 1);
+            let clamped = self.selected_index.min(self.display_positions.len() - 1);
+            self.set_selected_index(clamped);
         } else {
-            self.selected_index = 0;
+            self.set_selected_index(0);
         }
         if !self.display_transactions.is_empty() {
             self.tx_selected_index = self
@@ -1434,6 +1435,12 @@ impl App {
 
     pub fn selected_position(&self) -> Option<&Position> {
         self.display_positions.get(self.selected_index)
+    }
+
+    /// Update selected_index and sync selected_symbol to the position at that index.
+    pub fn set_selected_index(&mut self, new_index: usize) {
+        self.selected_index = new_index;
+        self.selected_symbol = self.display_positions.get(new_index).map(|p| p.symbol.clone());
     }
 
     fn home_views(&self) -> (ViewMode, ViewMode) {
