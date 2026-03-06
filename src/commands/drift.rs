@@ -65,7 +65,18 @@ pub fn run(db_path: &std::path::Path, json: bool) -> Result<()> {
     drift_data.sort_by(|a, b| b.drift.abs().cmp(&a.drift.abs()));
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&drift_data)?);
+        // Format decimals to 4 decimal places for JSON output
+        let formatted_data: Vec<DriftRowJson> = drift_data.iter().map(|row| {
+            DriftRowJson {
+                symbol: row.symbol.clone(),
+                target_pct: format!("{:.4}", row.target_pct),
+                actual_pct: format!("{:.4}", row.actual_pct),
+                drift: format!("{:.4}", row.drift),
+                drift_band: format!("{:.4}", row.drift_band),
+                over_band: row.over_band,
+            }
+        }).collect();
+        println!("{}", serde_json::to_string_pretty(&formatted_data)?);
     } else {
         println!(
             "{:<10} {:>10} {:>10} {:>10} {:>10}  Status",
@@ -80,8 +91,9 @@ pub fn run(db_path: &std::path::Path, json: bool) -> Result<()> {
                 "✓  In range"
             };
 
+            // Format to 2 decimal places for display
             println!(
-                "{:<10} {:>10} {:>10} {:>10.2} {:>10}  {}",
+                "{:<10} {:>10.2} {:>10.2} {:>10.2} {:>10.2}  {}",
                 row.symbol,
                 row.target_pct,
                 row.actual_pct,
@@ -108,5 +120,15 @@ struct DriftRow {
     actual_pct: Decimal,
     drift: Decimal,
     drift_band: Decimal,
+    over_band: bool,
+}
+
+#[derive(serde::Serialize)]
+struct DriftRowJson {
+    symbol: String,
+    target_pct: String,
+    actual_pct: String,
+    drift: String,
+    drift_band: String,
     over_band: bool,
 }
