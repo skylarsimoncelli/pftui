@@ -352,6 +352,7 @@ pub struct App {
     pub portfolio_mode: PortfolioMode,
     pub show_percentages_only: bool,
     pub show_drift_columns: bool,
+    pub split_pane_open: bool,
 
     // Data
     pub transactions: Vec<Transaction>,
@@ -613,6 +614,7 @@ impl App {
             portfolio_mode: config.portfolio_mode,
             show_percentages_only: config.portfolio_mode == PortfolioMode::Percentage,
             show_drift_columns: false,
+            split_pane_open: false,
             transactions: Vec::new(),
             allocations: Vec::new(),
             positions: Vec::new(),
@@ -2121,6 +2123,11 @@ impl App {
             // Drift columns toggle
             KeyCode::Char('D') => {
                 self.show_drift_columns = !self.show_drift_columns;
+            }
+
+            // Split-pane toggle (bottom 30% detail pane for selected position)
+            KeyCode::Char('S') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.split_pane_open = !self.split_pane_open;
             }
 
             // Change timeframe cycling (updates both table % and portfolio chart)

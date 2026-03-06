@@ -81,6 +81,28 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 }
 
 fn render_positions_layout(frame: &mut Frame, area: Rect, app: &mut App) {
+    // If split-pane is open, render 70% top + 30% bottom with detail pane
+    if app.split_pane_open {
+        let v_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(70),
+                Constraint::Percentage(30),
+            ])
+            .split(area);
+
+        // Top: normal positions layout
+        render_positions_layout_normal(frame, v_chunks[0], app);
+
+        // Bottom: detail pane
+        views::position_detail_pane::render(frame, v_chunks[1], app);
+        return;
+    }
+
+    render_positions_layout_normal(frame, area, app);
+}
+
+fn render_positions_layout_normal(frame: &mut Frame, area: Rect, app: &mut App) {
     use crate::tui::theme;
 
     let width = app.terminal_width;
