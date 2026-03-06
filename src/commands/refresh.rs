@@ -8,9 +8,9 @@ use rusqlite::Connection;
 
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
-use crate::data::{bls, calendar, comex, cot, onchain, predictions, rss, sentiment, worldbank};
+use crate::data::{bls, calendar, comex, cot, fx, onchain, predictions, rss, sentiment, worldbank};
 use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
-use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, news_cache};
+use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::db::price_cache::{get_all_cached_prices, upsert_price};
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
@@ -361,7 +361,22 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         .enable_all()
         .build()?;
 
-    // 1. Prices
+    // 1. FX Rates
+    match rt.block_on(fx::fetch_all_fx_rates()) {
+        Ok(rates) => {
+            for (currency, rate) in &rates {
+                if let Err(e) = fx_cache::upsert_fx_rate(conn, currency, *rate) {
+                    eprintln!("Failed to cache FX rate for {}: {}", currency, e);
+                }
+            }
+            println!("✓ FX rates ({} currencies)", rates.len());
+        }
+        Err(e) => {
+            println!("✗ FX rates (failed: {})", e);
+        }
+    }
+
+    // 2. Prices
     if prices_need_refresh(conn)? {
         let symbols = collect_symbols(conn, config)?;
         if !symbols.is_empty() {
@@ -391,7 +406,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ Prices (fresh, skipping)");
     }
 
-    // 2. Predictions (Polymarket)
+    // 3. Predictions (Polymarket)
     if predictions_need_refresh(conn)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => {
@@ -406,7 +421,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ Predictions (fresh, skipping)");
     }
 
-    // 3. News (RSS feeds)
+    // 4. News (RSS feeds)
     if news_needs_refresh(conn)? {
         let feeds = rss::default_feeds();
         let items = rt.block_on(rss::fetch_all_feeds(&feeds));
@@ -437,7 +452,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ News (fresh, skipping)");
     }
 
-    // 4. COT (CFTC)
+    // 5. COT (CFTC)
     if cot_needs_refresh(conn)? {
         let mut total = 0;
         
@@ -481,7 +496,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ COT (fresh, skipping)");
     }
 
-    // 5. Sentiment (Fear & Greed)
+    // 6. Sentiment (Fear & Greed)
     if sentiment_needs_refresh(conn)? {
         let mut count = 0;
         
@@ -514,7 +529,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ Sentiment (fresh, skipping)");
     }
 
-    // 6. Calendar (TradingEconomics)
+    // 7. Calendar (TradingEconomics)
     if calendar_needs_refresh(conn)? {
         match calendar::fetch_events(7) {
             Ok(events) => {
@@ -540,7 +555,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ Calendar (fresh, skipping)");
     }
 
-    // 7. BLS
+    // 8. BLS
     if bls_needs_refresh(conn)? {
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
@@ -555,7 +570,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ BLS (fresh, skipping)");
     }
 
-    // 8. World Bank
+    // 9. World Bank
     if worldbank_needs_refresh(conn)? {
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
@@ -570,7 +585,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ World Bank (fresh, skipping)");
     }
 
-    // 9. COMEX
+    // 10. COMEX
     if comex_needs_refresh(conn)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
@@ -601,7 +616,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ COMEX (fresh, skipping)");
     }
 
-    // 10. On-chain (Blockchair)
+    // 11. On-chain (Blockchair)
     // On-chain data is always fetched since it's diverse and doesn't have a simple freshness check
     // We'll fetch but not fail the whole command if it errors
     match onchain::fetch_network_metrics() {

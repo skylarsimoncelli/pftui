@@ -252,6 +252,12 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             timeframe TEXT NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS fx_cache (
+            currency TEXT PRIMARY KEY,
+            rate TEXT NOT NULL,
+            fetched_at TEXT NOT NULL
+        );
         ",
     )?;
 
