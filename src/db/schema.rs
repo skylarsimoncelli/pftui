@@ -246,6 +246,12 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_worldbank_country_indicator 
             ON worldbank_cache(country_code, indicator_code, year);
+
+        CREATE TABLE IF NOT EXISTS chart_state (
+            symbol TEXT PRIMARY KEY,
+            timeframe TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 

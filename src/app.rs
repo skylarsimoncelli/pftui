@@ -84,6 +84,18 @@ impl ChartTimeframe {
         }
     }
 
+    pub fn from_label(s: &str) -> Option<Self> {
+        match s {
+            "1W" | "1w" => Some(ChartTimeframe::OneWeek),
+            "1M" | "1m" => Some(ChartTimeframe::OneMonth),
+            "3M" | "3m" => Some(ChartTimeframe::ThreeMonths),
+            "6M" | "6m" => Some(ChartTimeframe::SixMonths),
+            "1Y" | "1y" => Some(ChartTimeframe::OneYear),
+            "5Y" | "5y" => Some(ChartTimeframe::FiveYears),
+            _ => None,
+        }
+    }
+
     pub fn prev(self) -> Self {
         match self {
             ChartTimeframe::OneWeek => ChartTimeframe::FiveYears,
@@ -1181,7 +1193,31 @@ impl App {
             self.last_selection_change_tick = self.tick_count;
             // Update selected_symbol to propagate selection across views
             self.selected_symbol = self.display_positions.get(self.selected_index).map(|p| p.symbol.clone());
+            // Load saved chart timeframe for this symbol
+            self.load_chart_timeframe();
             self.refetch_chart_history();
+        }
+    }
+
+    /// Load saved chart timeframe for currently selected symbol
+    fn load_chart_timeframe(&mut self) {
+        if let Some(pos) = self.selected_position() {
+            if let Ok(conn) = Connection::open(&self.db_path) {
+                if let Ok(Some(saved_tf)) = crate::db::chart_state::load_timeframe(&conn, &pos.symbol) {
+                    if let Some(tf) = ChartTimeframe::from_label(&saved_tf) {
+                        self.chart_timeframe = tf;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Save current chart timeframe for currently selected symbol
+    fn save_chart_timeframe(&mut self) {
+        if let Some(pos) = self.selected_position() {
+            if let Ok(conn) = Connection::open(&self.db_path) {
+                let _ = crate::db::chart_state::save_timeframe(&conn, &pos.symbol, self.chart_timeframe.label());
+            }
         }
     }
 
@@ -2151,6 +2187,7 @@ impl App {
                     self.crosshair_x = self.crosshair_x.saturating_sub(1);
                 } else {
                     self.chart_timeframe = self.chart_timeframe.prev();
+                    self.save_chart_timeframe();
                     self.refetch_chart_history();
                 }
             }
@@ -2160,6 +2197,7 @@ impl App {
                     // clamped during render
                 } else {
                     self.chart_timeframe = self.chart_timeframe.next();
+                    self.save_chart_timeframe();
                     self.refetch_chart_history();
                 }
             }
