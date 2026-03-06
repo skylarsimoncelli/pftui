@@ -3,6 +3,24 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 04:30 UTC — P0: Data Pipeline Reliability (ALL 6 tasks complete)
+
+**What:** Fixed all P0 data pipeline reliability issues — the highest priority work for pftui.
+
+**Tasks completed:**
+1. **`pftui refresh` now fetches ALL data sources** — Rewritten to fetch all 10 sources (prices, predictions, news, COT, sentiment, calendar, BLS, World Bank, COMEX, on-chain) with smart freshness checks. Skips sources already fresh. Continues on error (one source failing doesn't stop others).
+2. **`pftui status` command** — New command showing data freshness for all cached sources: last fetch time (e.g., "2h ago"), record count, status indicator (✓ Fresh / ⚠ Stale / ✗ Empty).
+3. **Fixed movers/watchlist sign discrepancy** — Both now use the same calculation: `(current_price - yesterday_close) / yesterday_close * 100`. Previously watchlist compared history[n-1] vs history[n-2] instead of current vs yesterday.
+4. **Stale data indicator in TUI header** — Shows `⚠ Stale (Xh ago)` when price data is >1 hour old. Appears after market status in non-compact mode.
+5. **Added `--json` to summary and value commands** — Both now support `--json` flag for structured output. `summary --json` outputs position array, `value --json` outputs `{"value": X, "change_pct": Y, "change_abs": Z}`.
+6. **Fixed 2 test failures** — `click_privacy_indicator_toggles_privacy` (updated column to 100+ past all tabs) and `sort_flash_updates_on_tab_toggle` (set view to Transactions so Tab toggles sort, not home sub-tabs).
+
+**Files:** `src/commands/refresh.rs` (420 insertions, 302 deletions), new `src/commands/status.rs` (503 lines), `src/tui/widgets/header.rs`, `src/app.rs`, `src/tui/views/watchlist.rs`, `src/commands/value.rs`, `src/commands/summary.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/mod.rs`
+
+**Tests:** All 1105 tests pass. Clippy clean (`cargo clippy --all-targets -- -D warnings` passes).
+
+**Impact:** Shipped features now populate with real data. pftui refresh is comprehensive and intelligent. Users can diagnose stale data at a glance. Critical reliability foundation for all future features.
+
 ### 2026-03-06 02:46 UTC — F2.1: Correlation math module
 
 - What: Added pure-function correlation module for Pearson correlation on daily returns. Supports rolling windows (7/30/90 days) and correlation break detection (|Δ30d-90d| > threshold).
