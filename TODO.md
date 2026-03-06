@@ -17,6 +17,33 @@
 - [x] **Fix 2 test failures** — ✅ DONE. Both tests now pass.
 - [x] **Fix clippy warnings** — ✅ DONE. `cargo clippy --all-targets -- -D warnings` passes.
 
+## P0 — QA Bugs (from 2026-03-06 QA Report)
+
+> **Source:** Opus QA agent ran 52 manual tests + 1105 unit tests. Full report: `QA-REPORT.md`
+
+### P0 Bugs — Critical
+
+- [ ] **P0-1: `brief` and `movers` report contradictory 1D% for same assets** — BTC shows -6.4% in `brief` vs -0.14% in `movers`. Root cause: `brief` uses Yahoo's `regularMarketChangePercent` (real day change from previous close) while `movers` compares last two cached `price_history` entries (which may be minutes apart after multiple refreshes). Fix: `movers` should use the same Yahoo day-change field as `brief`, or compare against the earliest same-day cache entry, not just the previous entry. This is the #1 trust issue — two primary commands show different numbers for the same thing. Files: `src/commands/brief.rs`, `src/commands/movers.rs`, `src/price/mod.rs`
+- [ ] **P0-2: `drift` displays raw Decimal values with 30+ decimal places** — Shows `18.718814357195681326649469110` instead of `18.72`. Also affects `summary --json` which outputs `allocation_pct` as raw high-precision strings. Fix: format to 2 decimal places in display, 4 in JSON. Files: `src/commands/drift.rs`, `src/commands/summary.rs`
+
+### P1 Bugs — Significant
+
+- [ ] **P1-1: COT, BLS, On-chain, ETF flows all fail on every refresh** — 4 of the P0 free data integration features don't work in production. COT: all failed. BLS: "Failed to parse BLS value: -". On-chain: "error decoding response body". ETF flows: no data returned. Features marked ✅ COMPLETE but broken. Files: `src/data/cot.rs`, `src/data/bls.rs`, `src/data/onchain.rs`, `src/data/etf_flows.rs` (or equivalent)
+- [ ] **P1-2: `pftui global` shows empty data despite 120 cached records** — All 8 country sections display empty headers with no indicator values. World Bank data is cached but the display layer can't read it. Files: `src/commands/global.rs`, `src/db/worldbank_cache.rs`
+- [ ] **P1-3: `pftui status` reports COMEX as empty but `pftui supply` shows data** — Inconsistent freshness reporting. Files: `src/commands/status.rs`, `src/db/comex_cache.rs`
+- [ ] **P1-4: COMEX registered inventory shows 0 troy ounces** — Both gold and silver show 0 registered, all inventory in eligible. Real COMEX registered gold should be ~16-18M oz. Scraper parsing wrong field or source structure changed. Files: `src/data/comex.rs`
+- [ ] **P1-5: USD/JPY and USD/CNY show 1.0000 in macro dashboard** — Known Yahoo Finance FX feed issue. Real values: ~150 (JPY), ~7.2 (CNY). Files: `src/price/yahoo.rs`, `src/commands/macro_cmd.rs`
+
+### P2 Bugs — Minor
+
+- [ ] **P2-1: `add-tx` accepts quantity=0 and price=0** — Zero-quantity buy is meaningless, zero-price corrupts cost basis. Add validation. Files: `src/commands/add_tx.rs`
+- [ ] **P2-2: `watch` accepts any string without validation** — No symbol lookup or warning for invalid tickers. At minimum warn if price fetch fails. Files: `src/commands/watch.rs`
+- [ ] **P2-3: No rate limiting on concurrent `pftui refresh`** — Two parallel refreshes hit all APIs twice. Add a lock file or deduplication. Files: `src/commands/refresh.rs`
+- [ ] **P2-4: Performance shows N/A for MTD despite having March snapshots** — Logic requires snapshot from period start (1st of month). Should calculate from earliest available snapshot in period. Files: `src/commands/performance.rs`
+- [ ] **P2-5: `brief --technicals` flag doesn't exist** — README/test plan expected it but brief always includes technicals. Either add the flag or update docs. Files: `src/commands/brief.rs`, `README.md`
+
+---
+
 ## P0 — Free Data Integration (No API Keys)
 
 > **Goal:** pftui ships as a zero-config, zero-key terminal for macro-aware investors. Every data source below is completely free and requires NO authentication. A finance enthusiast installs pftui and immediately has prediction markets, COT positioning, sentiment, news, on-chain data, and economic releases — all in one terminal. This is the moat.
@@ -148,8 +175,40 @@ The homepage a finance enthusiast opens every morning:
 
 - [ ] **Native multi-currency with live FX conversion** — Store non-USD currencies natively, convert via live FX rates. Show FX rate and currency risk flag. Large effort — split into sub-tasks. Files: `models/position.rs`, `price/mod.rs`, `commands/summary.rs`, `widgets/header.rs`
 - [ ] **Ultra-wide layout (160+ cols)** — Third column: market context panel. Layout: 45% positions / 25% market / 30% chart. Files: `tui/ui.rs`, new `widgets/market_context.rs`
-- [ ] **thinkorswim UX research** — Research ToS layout, charts, scanners, analytics, shortcuts. Document what translates to TUI. Output: `docs/RESEARCH-THINKORSWIM.md`, then add derived TODO items
+- [x] **thinkorswim UX research** — ✅ DONE. Research ToS layout, charts, scanners, analytics, shortcuts. Document what translates to TUI. Output: `docs/RESEARCH-THINKORSWIM.md` (2026-03-06)
 - [x] **Theme visual audit** — ✅ DONE. Audited all 11 themes. Fixed 12 issues: gain/loss distinguishability (5 themes), text_muted visibility (7 themes). All themes now pass contrast and color separation thresholds. Files: `theme.rs`
+
+### ToS-Inspired UX Improvements (from RESEARCH-THINKORSWIM.md)
+> Research complete 2026-03-06. thinkorswim UX excellence: linked views, extreme customization, keyboard-first, filter-based discovery. Items ranked by impact × feasibility.
+
+**High Priority (Quick Wins — 3-4 hours total):**
+- [ ] **Symbol linking (30 min, P1)** — Selected position propagates to chart/detail/watchlist. Add `selected_symbol: Option<String>` to App state. All views read it. Files: `app.rs`, `views/positions.rs`, `widgets/price_chart.rs`, `views/watchlist.rs`
+- [ ] **Hotkeys for existing features (15 min, P1)** — `B`=benchmark overlay, `<`/`>`=cycle timeframes, `D`=detail pane, `A`=alert, `T`=target, `J`=journal. Files: `app.rs`
+- [ ] **Benchmark comparison chart (45 min, P1)** — Plot position vs SPY, dual braille lines (green + gray). Toggle with `B`. Files: `widgets/price_chart.rs`, `price/mod.rs`
+- [ ] **Persist chart timeframe (30 min, P1)** — Save per-position in `chart_state` table. Restore on next view. Files: `db/schema.rs`, `app.rs`
+- [ ] **Split-pane view (1 hr, P1)** — Bottom 30% = chart + txs + news for selected position. Toggle with `D`. Files: `tui/ui.rs`, new `views/position_detail_pane.rs`, `app.rs`
+
+**Medium Priority (High Value — 6-8 hours total):**
+- [ ] **Scanner with filter DSL (1 hr, P2)** — `pftui scan --filter "allocation_pct > 10" --filter "day_change_pct > 2"`. Files: new `commands/scan.rs`, `cli.rs`
+- [ ] **Interactive scan builder (1 hr, P2)** — `:scan` opens modal, [A]dd/[R]emove/[S]ave/[L]oad filters. Files: new `views/scan_builder.rs`, `app.rs`
+- [ ] **Saveable scan queries (45 min, P2)** — Store in `scan_queries` table. `:scan save my_scan`, `:scan load my_scan`. Files: `db/schema.rs`, new `db/scan_queries.rs`, `commands/scan.rs`
+- [ ] **SMA overlay on charts (45 min, P2)** — Config: `chart_sma = [20, 50, 200]`. Faint braille lines. Files: `widgets/price_chart.rs`, `config.rs`
+- [ ] **Volume sub-chart (45 min, P2)** — Below price (3 rows), braille bars. Toggle with `V`. Files: `widgets/price_chart.rs`, `models/price.rs`
+- [ ] **Watchlist column customization (30 min, P2)** — Config: `watchlist.columns = [...]`. Files: `config.rs`, `views/watchlist.rs`
+- [ ] **Watchlist groups (45 min, P2)** — Multiple named watchlists, switch with `W` + 1/2/3. Files: `db/schema.rs`, new `db/watchlist_groups.rs`, `app.rs`
+- [ ] **Positions sub-modes (30 min, P2)** — `G`=group by category, `A`=sort by allocation, `P`=sort by performance. Files: `app.rs`, `views/positions.rs`
+- [ ] **Command palette (1 hr, P2)** — `:` opens vim-style command mode. Autocomplete. Files: new `views/command_palette.rs`, `app.rs`
+- [ ] **Context-sensitive hotkey hints (30 min, P2)** — Bottom bar shows available actions. Files: `widgets/status_bar.rs`, `app.rs`
+- [ ] **Breadcrumb nav (20 min, P2)** — Top shows `Positions → AAPL → Detail`. Files: `widgets/header.rs`, `app.rs`
+- [ ] **Auto-refresh timer (45 min, P2)** — Config: `auto_refresh = true`, `refresh_interval_secs = 300`. Files: `price/mod.rs`, `config.rs`
+
+**Low Priority (Nice-to-Have — 3-4 hours total):**
+- [ ] **Workspace presets (1 hr, P3)** — Config: `layout = "compact" | "split" | "analyst"`. Files: `config.rs`, `tui/ui.rs`
+- [ ] **"Chart All Positions" grid (1.5 hr, P3)** — Mini braille charts, 6-9 per screen. New view mode `8`. Files: new `views/chart_grid.rs`
+- [ ] **Link watchlist to main (30 min, P3)** — Select watchlist symbol → opens detail. Files: `views/watchlist.rs`, `app.rs`
+- [ ] **Inline watchlist actions (30 min, P3)** — `a`=alert, `c`=chart, `r`=remove. Files: `views/watchlist.rs`, `app.rs`
+- [ ] **Scan-triggered alerts (45 min, P3)** — Alert when scan results change. Files: `alerts/engine.rs`, `db/scan_queries.rs`
+- [ ] **Onboarding tour (1 hr, P3)** — First-run walkthrough. Check `~/.config/pftui/onboarding_complete`. Files: new `views/onboarding.rs`
 
 ## P2 — Analytics Expansion
 
