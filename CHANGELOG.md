@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 20:40 UTC — P0 fixes: movers/brief day-change consistency + summary JSON formatting
+
+- What: Fixed two P0 data consistency bugs: (1) `movers` and `brief` reported contradictory 1-day % changes (BTC: -6.4% in brief vs -0.14% in movers). (2) `summary --json` output raw Decimal values with 30+ decimal places.
+- Why: P0 trust-breaking issues. Users rely on day-change data for trading decisions — contradictory numbers undermine confidence. Raw Decimal JSON is unparseable for downstream tools.
+- How: **P0-1**: Changed `movers` to use same method as `brief` — `get_price_at_date()` for yesterday's close, not most recent `price_history` entry. **P0-2**: Format JSON Decimals with `format!("{:.4}", x)` instead of `.to_string()`.
+- Files: `src/commands/movers.rs` (compute_change_pct), `src/commands/summary.rs` (JSON formatting)
+- Tests: All 1105 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
+- Result: `movers` and `brief` now report identical day-change percentages. `summary --json` produces parseable 4dp values.
+
 ### 2026-03-06 21:15 UTC — Native multi-currency support with live FX conversion
 
 - What: Implemented full multi-currency support with live FX rate fetching and conversion to USD base currency. Positions stored in native currency (GBP, CAD, EUR, etc.) now convert to USD for portfolio totals using Yahoo Finance FX pairs (GBPUSD=X, etc.). Added `fx_cache` table for 15-minute rate freshness.
