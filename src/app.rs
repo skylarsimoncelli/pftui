@@ -511,6 +511,10 @@ pub struct App {
     // DB
     pub db_path: std::path::PathBuf,
     last_saved_home_tab: ViewMode,
+
+    // Background refresh state
+    pub is_background_refreshing: bool,
+    background_refresh_complete_rx: Option<std::sync::mpsc::Receiver<()>>,
 }
 
 /// Returns true when the UI should hide value-sensitive data.
@@ -687,6 +691,8 @@ impl App {
             worldbank_data: HashMap::new(),
             db_path,
             last_saved_home_tab: initial_view,
+            is_background_refreshing: false,
+            background_refresh_complete_rx: None,
         }
     }
 
@@ -747,6 +753,42 @@ impl App {
         self.request_market_data();
         self.request_economy_data();
         self.request_sentiment_data();
+
+        // Start background refresh
+        self.start_background_refresh();
+    }
+
+    /// Spawns a background thread to run `pftui refresh` on TUI startup.
+    /// Non-blocking — TUI renders immediately from cache, status bar shows "Refreshing..." while in progress.
+    fn start_background_refresh(&mut self) {
+        let db_path = self.db_path.clone();
+        let config = Config {
+            base_currency: self.base_currency.clone(),
+            refresh_interval: self.refresh_interval_secs,
+            portfolio_mode: self.portfolio_mode,
+            theme: self.theme_name.clone(),
+            home_tab: if self.view_mode == ViewMode::Watchlist {
+                "watchlist".to_string()
+            } else {
+                "positions".to_string()
+            },
+            fred_api_key: None,
+            news_poll_interval: 600,
+            custom_news_feeds: Vec::new(),
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.background_refresh_complete_rx = Some(rx);
+        self.is_background_refreshing = true;
+
+        std::thread::spawn(move || {
+            if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                // Run refresh silently (notify=false to avoid desktop notifications)
+                let _ = crate::commands::refresh::run(&conn, &config, false);
+            }
+            // Signal completion (ignore if receiver was dropped)
+            let _ = tx.send(());
+        });
     }
 
     fn load_data(&mut self) {
@@ -1657,6 +1699,26 @@ impl App {
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
         self.persist_home_tab_preference_if_needed();
+
+        // Check background refresh completion
+        if self.is_background_refreshing {
+            if let Some(ref rx) = self.background_refresh_complete_rx {
+                if rx.try_recv().is_ok() {
+                    self.is_background_refreshing = false;
+                    // Reload all data after refresh
+                    self.load_cached_prices();
+                    self.load_cached_history();
+                    self.load_watchlist();
+                    self.load_predictions();
+                    self.load_sentiment();
+                    self.load_calendar();
+                    self.load_bls_data();
+                    self.load_worldbank_data();
+                    self.recompute();
+                    self.recompute_regime();
+                }
+            }
+        }
 
         if let Some(ref service) = self.price_service {
             let mut updated = false;

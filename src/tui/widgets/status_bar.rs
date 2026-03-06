@@ -266,6 +266,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("View", Style::default().fg(t.text_secondary)));
     }
 
+    // Background refresh indicator
+    if app.is_background_refreshing {
+        spans.push(Span::raw("  "));
+        // Pulsing animation for refresh indicator
+        let refresh_color = theme::pulse_color(t.text_accent, t.text_muted, app.tick_count, 30);
+        spans.push(Span::styled("↻", Style::default().fg(refresh_color)));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled("Refreshing...", Style::default().fg(t.text_secondary)));
+    }
+
     spans.push(Span::raw("  "));
     spans.extend(live_indicator);
 
