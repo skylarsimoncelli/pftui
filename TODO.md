@@ -12,11 +12,7 @@
 - [ ] **Drift decimal formatting** — `drift` shows 30+ decimal places (`18.718814357195681326649469110`). Format to 2dp in display, 4dp in JSON. Files: `commands/drift.rs`, `commands/summary.rs`
 - [ ] **Global command empty** — `pftui global` shows empty despite 120 cached World Bank records. Key mismatch between cache and display layer. Files: `commands/global.rs`, `db/worldbank_cache.rs`
 - [ ] **Performance MTD shows N/A** — Requires snapshot from 1st of month. Should use earliest available snapshot in period. Files: `commands/performance.rs`
-- [ ] **add-tx accepts zero values** — quantity=0 and price=0 are accepted. Validate inputs. Files: `commands/add_tx.rs`
-- [ ] **watch accepts invalid symbols** — No validation or warning for nonsense tickers. Warn if price fetch fails. Files: `commands/watch.rs`
-- [ ] **Concurrent refresh race condition** — Two parallel refreshes hit all APIs twice. Add lock file. Files: `commands/refresh.rs`
 - [ ] **Brief --technicals in README** — README references flag that was removed. Update docs. Files: `README.md`
-- [ ] **Remaining broken data sources** — ETF flows, on-chain still return no data. Audit fetch → parse → cache → display. Files: `data/onchain.rs`, `data/etf_flows.rs`
 
 ---
 
