@@ -33,9 +33,7 @@ const PREDICTIONS_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const SENTIMENT_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
 const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
-const COMEX_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
 const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
-const WORLDBANK_FRESHNESS_DAYS: i64 = 30; // 30 days
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -203,6 +201,7 @@ fn worldbank_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Format a price for display: compact representation.
+#[cfg(test)]
 fn format_price(price: Decimal, sym: &str) -> String {
     if price >= dec!(10000) {
         format!("{}{}", sym, price.round_dp(0))

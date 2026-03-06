@@ -1017,7 +1017,7 @@ fn format_category(cat: &AssetCategory) -> &'static str {
 #[allow(clippy::too_many_arguments)]
 fn run_full_json(
     conn: &Connection,
-    config: &Config,
+    _config: &Config,
     prices: &HashMap<String, Decimal>,
     _group_by: Option<&SummaryGroupBy>,
     _period: Option<&SummaryPeriod>,

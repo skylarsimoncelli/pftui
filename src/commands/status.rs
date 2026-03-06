@@ -13,7 +13,6 @@ const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
 const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
 const COMEX_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
 const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
-const WORLDBANK_FRESHNESS_DAYS: i64 = 30; // 30 days
 
 #[derive(Debug)]
 struct DataSourceStatus {
@@ -125,7 +124,7 @@ fn check_predictions(conn: &Connection) -> Result<DataSourceStatus> {
     let (last_fetch_str, is_stale) = match last_update {
         Some(ts) => {
             let dt = chrono::DateTime::from_timestamp(ts, 0)
-                .unwrap_or_else(|| chrono::Utc::now());
+                .unwrap_or_else(chrono::Utc::now);
             let age = now - ts;
             (Some(dt.to_rfc3339()), age > PREDICTIONS_FRESHNESS_SECS)
         }
@@ -473,7 +472,7 @@ pub fn run(conn: &Connection) -> Result<()> {
     ];
     
     // Print header
-    println!("{:<16} {:<18} {:<8} {}", "Source", "Last Fetch", "Records", "Status");
+    println!("{:<16} {:<18} {:<8} Status", "Source", "Last Fetch", "Records");
     println!("{}", "─".repeat(60));
     
     // Print each source
