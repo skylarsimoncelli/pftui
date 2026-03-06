@@ -3,14 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
-### 2026-03-06 20:40 UTC — P0 fixes: movers/brief day-change consistency + summary JSON formatting
+### 2026-03-06 20:27 UTC — Fix movers/brief 1D% change discrepancy (P0-1)
 
-- What: Fixed two P0 data consistency bugs: (1) `movers` and `brief` reported contradictory 1-day % changes (BTC: -6.4% in brief vs -0.14% in movers). (2) `summary --json` output raw Decimal values with 30+ decimal places.
-- Why: P0 trust-breaking issues. Users rely on day-change data for trading decisions — contradictory numbers undermine confidence. Raw Decimal JSON is unparseable for downstream tools.
-- How: **P0-1**: Changed `movers` to use same method as `brief` — `get_price_at_date()` for yesterday's close, not most recent `price_history` entry. **P0-2**: Format JSON Decimals with `format!("{:.4}", x)` instead of `.to_string()`.
-- Files: `src/commands/movers.rs` (compute_change_pct), `src/commands/summary.rs` (JSON formatting)
+- What: Fixed `movers` and `brief` reporting contradictory 1-day % changes for the same assets. Example: BTC showed -6.4% in `brief` vs -0.14% in `movers`.
+- Why: P0 trust-breaking issue (#1 priority from QA report). Users rely on day-change data for trading decisions — contradictory numbers undermine confidence in all data.
+- Root cause: `brief.rs` used `get_prices_at_date()` to get yesterday's close, but `movers.rs` used `get_history(limit=1)` which returned the most recent cached entry. After multiple refreshes in one day, `movers` compared current price to an intraday cache entry instead of yesterday's close.
+- Fix: Changed `movers.rs` `compute_change_pct()` to use `get_price_at_date()` with yesterday's date string, matching `brief.rs` logic exactly.
+- Files: `src/commands/movers.rs` (compute_change_pct function, import change)
 - Tests: All 1105 tests pass. `cargo clippy --all-targets -- -D warnings` passes.
-- Result: `movers` and `brief` now report identical day-change percentages. `summary --json` produces parseable 4dp values.
+- Result: `movers` and `brief` now report identical day-change percentages. Resolves P0-1.
 
 ### 2026-03-06 21:15 UTC — Native multi-currency support with live FX conversion
 

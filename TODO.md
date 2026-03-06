@@ -23,7 +23,6 @@
 
 ### P0 Bugs — Critical
 
-- [ ] **P0-1: `brief` and `movers` report contradictory 1D% for same assets** — BTC shows -6.4% in `brief` vs -0.14% in `movers`. Root cause: `brief` uses Yahoo's `regularMarketChangePercent` (real day change from previous close) while `movers` compares last two cached `price_history` entries (which may be minutes apart after multiple refreshes). Fix: `movers` should use the same Yahoo day-change field as `brief`, or compare against the earliest same-day cache entry, not just the previous entry. This is the #1 trust issue — two primary commands show different numbers for the same thing. Files: `src/commands/brief.rs`, `src/commands/movers.rs`, `src/price/mod.rs`
 - [ ] **P0-2: `drift` displays raw Decimal values with 30+ decimal places** — Shows `18.718814357195681326649469110` instead of `18.72`. Also affects `summary --json` which outputs `allocation_pct` as raw high-precision strings. Fix: format to 2 decimal places in display, 4 in JSON. Files: `src/commands/drift.rs`, `src/commands/summary.rs`
 
 ### P1 Bugs — Significant
