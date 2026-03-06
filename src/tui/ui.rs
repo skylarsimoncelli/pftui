@@ -8,6 +8,9 @@ use crate::tui::widgets;
 /// Width threshold below which the sidebar is hidden and positions get full width.
 pub const COMPACT_WIDTH: u16 = 100;
 
+/// Width threshold at or above which the ultra-wide 3-column layout is enabled.
+pub const ULTRA_WIDE_WIDTH: u16 = 160;
+
 /// Minimum height for the portfolio overview panel (allocation bars + sparkline).
 const MIN_OVERVIEW_HEIGHT: u16 = 14;
 
@@ -85,6 +88,37 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &mut App) {
     if width < COMPACT_WIDTH {
         // Compact: full width, no right pane
         views::positions::render(frame, area, app);
+    } else if width >= ULTRA_WIDE_WIDTH {
+        // Ultra-wide 3-column layout:
+        //   Left (45%):   table (top) + portfolio overview (bottom)
+        //   Middle (25%): market context (top movers, macro, F&G, events, alerts)
+        //   Right (30%):  asset section header + asset header + price chart
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Percentage(25),
+                Constraint::Percentage(30),
+            ])
+            .split(area);
+
+        // Left pane: section header + table + portfolio overview
+        render_left_pane(frame, h_chunks[0], app);
+
+        // Middle pane: market context
+        let middle_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(theme::SECTION_HEADER_HEIGHT),
+                Constraint::Min(6),
+            ])
+            .split(h_chunks[1]);
+
+        theme::render_section_header(frame, middle_chunks[0], "MARKET CONTEXT", &app.theme);
+        widgets::market_context::render(frame, middle_chunks[1], app);
+
+        // Right pane: asset overview + chart
+        render_right_pane(frame, h_chunks[2], app);
     } else {
         // Standard two-column layout:
         //   Left (57%):  table (top) + portfolio overview (bottom)
@@ -97,86 +131,97 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &mut App) {
             ])
             .split(area);
 
-        // Left pane: section header + table + portfolio overview
-        let left_height = h_chunks[0].height;
-        if left_height > MIN_OVERVIEW_HEIGHT + 5 + theme::SECTION_HEADER_HEIGHT {
-            // Enough room: split left pane vertically with section header + overview
-            let overview_height = compute_overview_height(app, left_height);
-            let left_chunks = Layout::default()
+        render_left_pane(frame, h_chunks[0], app);
+        render_right_pane(frame, h_chunks[1], app);
+    }
+}
+
+/// Render the left pane: section header + positions table + portfolio overview.
+fn render_left_pane(frame: &mut Frame, area: Rect, app: &mut App) {
+    use crate::tui::theme;
+
+    let left_height = area.height;
+    if left_height > MIN_OVERVIEW_HEIGHT + 5 + theme::SECTION_HEADER_HEIGHT {
+        // Enough room: split left pane vertically with section header + overview
+        let overview_height = compute_overview_height(app, left_height);
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(theme::SECTION_HEADER_HEIGHT), // section header
+                Constraint::Min(5),                               // positions table
+                Constraint::Length(overview_height),               // portfolio overview
+            ])
+            .split(area);
+
+        theme::render_section_header(frame, left_chunks[0], "PORTFOLIO OVERVIEW", &app.theme);
+        views::positions::render(frame, left_chunks[1], app);
+        widgets::sidebar::render(frame, left_chunks[2], app);
+    } else if left_height > 5 + theme::SECTION_HEADER_HEIGHT {
+        // Enough for header + table, but no overview
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(theme::SECTION_HEADER_HEIGHT),
+                Constraint::Min(5),
+            ])
+            .split(area);
+
+        theme::render_section_header(frame, left_chunks[0], "PORTFOLIO OVERVIEW", &app.theme);
+        views::positions::render(frame, left_chunks[1], app);
+    } else {
+        // Too short: table only
+        views::positions::render(frame, area, app);
+    }
+}
+
+/// Render the right pane: section header + asset header + price chart.
+fn render_right_pane(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::tui::theme;
+
+    if app.selected_position().is_some() {
+        let header_h = widgets::asset_header::height();
+        if area.height > header_h + 6 + theme::SECTION_HEADER_HEIGHT {
+            // Enough room for section header + asset header + chart
+            let right_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(theme::SECTION_HEADER_HEIGHT), // section header
-                    Constraint::Min(5),                               // positions table
-                    Constraint::Length(overview_height),               // portfolio overview
+                    Constraint::Length(header_h),                     // asset info header
+                    Constraint::Min(4),                               // price chart
                 ])
-                .split(h_chunks[0]);
+                .split(area);
 
-            theme::render_section_header(frame, left_chunks[0], "PORTFOLIO OVERVIEW", &app.theme);
-            views::positions::render(frame, left_chunks[1], app);
-            widgets::sidebar::render(frame, left_chunks[2], app);
-        } else if left_height > 5 + theme::SECTION_HEADER_HEIGHT {
-            // Enough for header + table, but no overview
-            let left_chunks = Layout::default()
+            theme::render_section_header(frame, right_chunks[0], "ASSET OVERVIEW", &app.theme);
+            widgets::asset_header::render(frame, right_chunks[1], app);
+            widgets::price_chart::render(frame, right_chunks[2], app);
+        } else if area.height > 6 + theme::SECTION_HEADER_HEIGHT {
+            // Enough for section header + chart
+            let right_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(theme::SECTION_HEADER_HEIGHT),
-                    Constraint::Min(5),
+                    Constraint::Min(4),
                 ])
-                .split(h_chunks[0]);
+                .split(area);
 
-            theme::render_section_header(frame, left_chunks[0], "PORTFOLIO OVERVIEW", &app.theme);
-            views::positions::render(frame, left_chunks[1], app);
+            theme::render_section_header(frame, right_chunks[0], "ASSET OVERVIEW", &app.theme);
+            widgets::price_chart::render(frame, right_chunks[1], app);
         } else {
-            // Too short: table only
-            views::positions::render(frame, h_chunks[0], app);
+            // Too short: just show chart
+            widgets::price_chart::render(frame, area, app);
         }
+    } else {
+        // No position selected — show section header + empty state
+        if area.height > theme::SECTION_HEADER_HEIGHT {
+            let right_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(theme::SECTION_HEADER_HEIGHT),
+                    Constraint::Min(1),
+                ])
+                .split(area);
 
-        // Right pane: section header + asset header + price chart
-        if app.selected_position().is_some() {
-            let header_h = widgets::asset_header::height();
-            if h_chunks[1].height > header_h + 6 + theme::SECTION_HEADER_HEIGHT {
-                // Enough room for section header + asset header + chart
-                let right_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(theme::SECTION_HEADER_HEIGHT), // section header
-                        Constraint::Length(header_h),                     // asset info header
-                        Constraint::Min(4),                               // price chart
-                    ])
-                    .split(h_chunks[1]);
-
-                theme::render_section_header(frame, right_chunks[0], "ASSET OVERVIEW", &app.theme);
-                widgets::asset_header::render(frame, right_chunks[1], app);
-                widgets::price_chart::render(frame, right_chunks[2], app);
-            } else if h_chunks[1].height > 6 + theme::SECTION_HEADER_HEIGHT {
-                // Enough for section header + chart
-                let right_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(theme::SECTION_HEADER_HEIGHT),
-                        Constraint::Min(4),
-                    ])
-                    .split(h_chunks[1]);
-
-                theme::render_section_header(frame, right_chunks[0], "ASSET OVERVIEW", &app.theme);
-                widgets::price_chart::render(frame, right_chunks[1], app);
-            } else {
-                // Too short: just show chart
-                widgets::price_chart::render(frame, h_chunks[1], app);
-            }
-        } else {
-            // No position selected — show section header + empty state
-            if h_chunks[1].height > theme::SECTION_HEADER_HEIGHT {
-                let right_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(theme::SECTION_HEADER_HEIGHT),
-                        Constraint::Min(1),
-                    ])
-                    .split(h_chunks[1]);
-
-                theme::render_section_header(frame, right_chunks[0], "ASSET OVERVIEW", &app.theme);
-            }
+            theme::render_section_header(frame, right_chunks[0], "ASSET OVERVIEW", &app.theme);
         }
     }
 }

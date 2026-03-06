@@ -16,7 +16,6 @@ use rust_decimal_macros::dec;
 use crate::app::{is_privacy_view, App};
 use crate::models::asset::AssetCategory;
 use crate::models::position::Position;
-use crate::tui::theme;
 
 /// Render the market context panel.
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
@@ -62,12 +61,14 @@ fn render_privacy_placeholder(frame: &mut Frame, area: Rect, app: &App) {
         .border_style(Style::default().fg(app.theme.border_inactive))
         .style(Style::default().bg(app.theme.surface_1));
 
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
     let text = Paragraph::new("MARKET CONTEXT\n[Privacy mode]")
         .alignment(Alignment::Center)
         .style(Style::default().fg(app.theme.text_muted));
 
-    frame.render_widget(block, area);
-    frame.render_widget(text, block.inner(area));
+    frame.render_widget(text, inner);
 }
 
 /// Render top 3 movers (gainers/losers) from portfolio + watchlist.
@@ -159,7 +160,7 @@ fn compute_daily_change(pos: &Position, today: &str, app: &App) -> Option<Decima
     }
 
     let history = app.price_history.get(&pos.symbol)?;
-    let yesterday = history.iter().rev().find(|rec| rec.date < *today)?;
+    let yesterday = history.iter().rev().find(|rec| rec.date.as_str() < today)?;
 
     let close = yesterday.close;
     if close <= dec!(0) {
@@ -175,7 +176,7 @@ fn compute_watchlist_change(symbol: &str, current: Decimal, today: &str, app: &A
     }
 
     let history = app.price_history.get(symbol)?;
-    let yesterday = history.iter().rev().find(|rec| rec.date < *today)?;
+    let yesterday = history.iter().rev().find(|rec| rec.date.as_str() < today)?;
 
     let close = yesterday.close;
     if close <= dec!(0) {
