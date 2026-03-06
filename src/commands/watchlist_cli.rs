@@ -59,17 +59,21 @@ fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
 }
 
 /// Compute daily change % from price history for a symbol.
-fn compute_change_pct(conn: &Connection, yahoo_sym: &str) -> Option<Decimal> {
-    let history = get_history(conn, yahoo_sym, 2).ok()?;
-    if history.len() < 2 {
+fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<Decimal>) -> Option<Decimal> {
+    let current = current_price?;
+    
+    // Get yesterday's close from history
+    let history = get_history(conn, yahoo_sym, 1).ok()?;
+    if history.is_empty() {
         return None;
     }
-    let prev = &history[history.len() - 2];
-    let latest = &history[history.len() - 1];
-    if prev.close == dec!(0) {
+    
+    let prev_close = history[0].close;
+    if prev_close == dec!(0) {
         return None;
     }
-    Some((latest.close - prev.close) / prev.close * dec!(100))
+    
+    Some((current - prev_close) / prev_close * dec!(100))
 }
 
 pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Option<&str>) -> Result<()> {
@@ -132,7 +136,7 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
 
         // Compute daily change %
         let yahoo_sym = yahoo_symbol_for(&entry.symbol, cat);
-        let change_str = match compute_change_pct(conn, &yahoo_sym) {
+        let change_str = match compute_change_pct(conn, &yahoo_sym, current_price) {
             Some(pct) => {
                 let f: f64 = pct.to_string().parse().unwrap_or(0.0);
                 format!("{:+.2}%", f)
@@ -468,11 +472,11 @@ mod tests {
     #[test]
     fn change_pct_no_history() {
         let conn = crate::db::open_in_memory();
-        assert!(compute_change_pct(&conn, "AAPL").is_none());
+        assert!(compute_change_pct(&conn, "AAPL", Some(dec!(210))).is_none());
     }
 
     #[test]
-    fn change_pct_single_record() {
+    fn change_pct_no_current_price() {
         let conn = crate::db::open_in_memory();
         use crate::db::price_history::upsert_history;
         use crate::models::price::HistoryRecord;
@@ -489,11 +493,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(compute_change_pct(&conn, "AAPL").is_none());
+        assert!(compute_change_pct(&conn, "AAPL", None).is_none());
     }
 
     #[test]
-    fn change_pct_two_records() {
+    fn change_pct_current_vs_yesterday() {
         let conn = crate::db::open_in_memory();
         use crate::db::price_history::upsert_history;
         use crate::models::price::HistoryRecord;
@@ -504,20 +508,16 @@ mod tests {
             "yahoo",
             &[
                 HistoryRecord {
-                    date: "2026-03-02".to_string(),
-                    close: dec!(200),
-                    volume: None,
-                },
-                HistoryRecord {
                     date: "2026-03-03".to_string(),
-                    close: dec!(210),
+                    close: dec!(200),
                     volume: None,
                 },
             ],
         )
         .unwrap();
 
-        let pct = compute_change_pct(&conn, "AAPL").unwrap();
+        // Current price $210, yesterday close $200 → +5%
+        let pct = compute_change_pct(&conn, "AAPL", Some(dec!(210))).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -533,20 +533,16 @@ mod tests {
             "yahoo",
             &[
                 HistoryRecord {
-                    date: "2026-03-02".to_string(),
-                    close: dec!(200),
-                    volume: None,
-                },
-                HistoryRecord {
                     date: "2026-03-03".to_string(),
-                    close: dec!(190),
+                    close: dec!(200),
                     volume: None,
                 },
             ],
         )
         .unwrap();
 
-        let pct = compute_change_pct(&conn, "AAPL").unwrap();
+        // Current price $190, yesterday close $200 → -5%
+        let pct = compute_change_pct(&conn, "AAPL", Some(dec!(190))).unwrap();
         assert_eq!(pct, dec!(-5));
     }
 
@@ -562,20 +558,16 @@ mod tests {
             "yahoo",
             &[
                 HistoryRecord {
-                    date: "2026-03-02".to_string(),
-                    close: dec!(0),
-                    volume: None,
-                },
-                HistoryRecord {
                     date: "2026-03-03".to_string(),
-                    close: dec!(100),
+                    close: dec!(0),
                     volume: None,
                 },
             ],
         )
         .unwrap();
 
-        assert!(compute_change_pct(&conn, "AAPL").is_none());
+        // Yesterday close was 0 → should return None (can't compute % change)
+        assert!(compute_change_pct(&conn, "AAPL", Some(dec!(100))).is_none());
     }
 
     #[test]
