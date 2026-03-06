@@ -167,6 +167,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Refresh { notify }) => commands::refresh::run(&conn, &config, notify),
+        Some(Command::Status) => commands::status::run(&conn),
         Some(Command::Value) => commands::value::run(&conn, &config),
         Some(Command::Brief { json }) => commands::brief::run(&conn, &config, true, json),
         Some(Command::Watchlist { approaching }) => commands::watchlist_cli::run(&conn, &config, approaching.as_deref()),

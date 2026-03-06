@@ -102,6 +102,9 @@ pub enum Command {
         notify: bool,
     },
 
+    /// Show data freshness status for all cached sources
+    Status,
+
     /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
     Brief {
         /// Output structured JSON (includes all available data)

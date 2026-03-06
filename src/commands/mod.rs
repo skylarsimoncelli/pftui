@@ -26,6 +26,7 @@ pub mod remove_tx;
 pub mod set_cash;
 pub mod setup;
 pub mod snapshot;
+pub mod status;
 pub mod summary;
 pub mod value;
 pub mod watchlist_cli;

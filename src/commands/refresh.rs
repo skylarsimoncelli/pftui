@@ -321,7 +321,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
     if prices_need_refresh(conn)? {
         let symbols = collect_symbols(conn, config)?;
         if !symbols.is_empty() {
-            let non_cash: Vec<_> = symbols
+            let _non_cash: Vec<_> = symbols
                 .iter()
                 .filter(|(_, cat)| *cat != AssetCategory::Cash)
                 .collect();
