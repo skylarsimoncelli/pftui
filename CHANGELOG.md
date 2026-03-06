@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 20:45 UTC — Ultra-wide terminal layout (160+ columns)
+
+- What: Added 3-column layout for ultra-wide terminals (≥160 cols). When width ≥160, positions view now shows: Left (45%) positions table + portfolio overview, Middle (25%) market context panel, Right (30%) price chart. Gracefully degrades: <160 cols uses standard 2-column layout, <100 cols uses compact full-width layout.
+- Why: Users with ultra-wide monitors (34"+) had excessive whitespace. Market context panel utilizes that space by showing glanceable data: top 3 movers from portfolio+watchlist, contextual macro indicators (VIX for equities, DXY/gold-silver ratio for gold, BTC for crypto), Fear & Greed gauges, next high-impact economic event countdown, active alert count.
+- How: New widget `src/tui/widgets/market_context.rs` (400 lines, 2 tests). Modified `src/tui/ui.rs` to detect terminal width and apply 3-column layout when ≥160 cols. Added `ULTRA_WIDE_WIDTH` constant. Market context panel is contextual — content changes based on selected position's asset category.
+- Files: `src/tui/ui.rs` (layout logic), `src/tui/widgets/market_context.rs` (new widget), `src/tui/widgets/mod.rs` (export)
+- Tests: All 1105 tests pass. `cargo clippy --all-targets -- -D warnings` passes. Added 2 widget tests (days_until, truncate).
+- Design: Follows existing dark theme aesthetic, uses theme color hierarchy (text_secondary for headers, text_primary for values, gain_green/loss_red for changes, stale_yellow for alerts). Privacy mode supported (shows placeholder text).
+
 ### 2026-03-06 20:35 UTC — Theme visual audit: fix gain/loss distinguishability and muted text visibility
 
 - What: Conducted systematic audit of all 11 themes for visual issues. Fixed 12 issues across 8 themes: (1) gain/loss color distinguishability — 5 themes had green and red too similar in RGB space (<150 distance), now all >170. (2) text_muted visibility — 7 themes had contrast ratios <2.5, now all >2.65. Maintained each theme's aesthetic while improving accessibility.
