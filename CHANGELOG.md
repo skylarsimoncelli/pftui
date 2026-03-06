@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-06 17:27 UTC — Fix watchlist CLI day% sign discrepancy
+
+- What: Fixed `pftui watchlist` CLI command to match movers/TUI watchlist day% calculation. Previously CLI used `history[n-1]` vs `history[n-2]` while movers and TUI used `current_price` vs `yesterday_close`, causing sign disagreements (e.g., BKSY showing +3.7% in movers but -3.3% in watchlist).
+- Why: Trust-breaking data integrity issue. Same symbol, same day, opposite signs across different commands destroys user confidence.
+- How: Changed `compute_change_pct` in `watchlist_cli.rs` to accept `current_price` parameter and compare against `history[0].close` (yesterday), matching the logic in `movers.rs` and `tui/views/watchlist.rs`.
+- Files: `src/commands/watchlist_cli.rs` (function signature + 5 test updates)
+- Tests: All 23 watchlist tests pass. Renamed/simplified tests to reflect new semantics. `cargo clippy --all-targets -- -D warnings` passes.
+- TODO: Fix movers vs watchlist sign discrepancy (P2) — COMPLETE
+
 ### 2026-03-06 14:41 UTC — Auto-refresh on TUI launch
 
 - What: Opening `pftui` (TUI mode) now automatically runs a background refresh on startup. Non-blocking — TUI renders immediately from cache, status bar shows pulsing `↻ Refreshing...` indicator while data updates arrive. No manual refresh needed.

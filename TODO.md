@@ -183,7 +183,6 @@ The homepage a finance enthusiast opens every morning:
 > F15 (Configurable Homepage) and F16 (Full Chart Search) are defined in P1.
 
 ### Other P2
-- [ ] **[Feedback] Fix movers vs watchlist sign discrepancy (CRITICAL)** — Market Close reports BKSY +3.7% in movers but -3.3% in watchlist; LUNR +3.48% in movers vs -8.3% in watchlist. The Mar 5 movers 1D fix didn't fully resolve this — different price comparison windows or stale cache between commands. Trust-breaking data integrity issue. Files: `src/commands/movers.rs`, `src/commands/watchlist_cli.rs`
 - [ ] **[Feedback] Fix USD/JPY and USD/CNY in macro dashboard** — Yahoo Finance FX feed for JPY=X and CNY=X is broken (returns 1.00). Upgraded yahoo_finance_api to v4 (didn't fix it). Solution: add fallback FX API module using exchangerate-api.com (free, 1500/mo) or frankfurter.app (free, unlimited). Files: new `src/data/fx_fallback.rs`, `src/price/mod.rs` (fallback logic), `src/commands/refresh.rs`
 - [ ] **[Feedback] Alerts in `brief` output** — Show any triggered or near-threshold alerts in the brief command output. Connects alert engine to the primary agent-consumed command. Files: `commands/brief.rs`, `alerts/engine.rs`
 - [ ] **[Feedback] After-hours / pre-market prices** — Show AH/pre-market prices in watchlist and brief for market close routines. Yahoo Finance provides extended hours data. Files: `src/price/yahoo.rs`, `commands/brief.rs`, `commands/watchlist_cli.rs`
@@ -235,12 +234,12 @@ The homepage a finance enthusiast opens every morning:
 
 **Lowest scorer:** UX Analyst at 68% — new tester focused on UX cohesion. Primary concern: features marked "complete" (predictions, news, etf-flows, COT, performance) don't populate with real data in practice, creating a trust gap.
 
-**Score trajectory:** REGRESSION across the board. Sentinel Main dropped 82→78, Evening Planner dropped 92→85, Market Close dropped 80→72. Root cause: data availability gap. Many P0 features are marked complete but don't actually populate data reliably (predictions empty, news empty, etf-flows empty, COT unavailable, performance N/A). Testers hit "No cached data. Run pftui refresh" loops where refresh doesn't fix the issue. The movers vs watchlist sign discrepancy is a trust-breaking bug. Scores will not recover until data actually flows through the features that were shipped.
+**Score trajectory:** REGRESSION across the board. Sentinel Main dropped 82→78, Evening Planner dropped 92→85, Market Close dropped 80→72. Root cause: data availability gap. Many P0 features are marked complete but don't actually populate data reliably (predictions empty, news empty, etf-flows empty, COT unavailable, performance N/A). Testers hit "No cached data. Run pftui refresh" loops where refresh doesn't fix the issue. Scores will not recover until data actually flows through the features that were shipped.
 
 **Top 3 priorities from feedback:**
 1. **FIX DATA PIPELINE** (P0, critical) — Predictions, news, etf-flows, COT all return empty after `pftui refresh`. These are marked ✅ COMPLETE but don't work end-to-end. Trust-breaking. Must verify data flows from source → cache → display for every "complete" P0 feature.
-2. **Fix movers vs watchlist sign discrepancy** (P0, bug) — Market Close reports BKSY showing +3.7% in movers but -3.3% in watchlist; LUNR +3.48% in movers vs -8.3% in watchlist. Same symbol, same day, opposite signs. Data integrity issue.
-3. **Standardize CLI JSON output** (P1) — UX Analyst flagged three different conventions: `--json` (export, macro), `--agent` (brief), and no JSON support (summary, value, performance). Standardize all data-output commands to `--json`.
+2. **Standardize CLI JSON output** (P2) — UX Analyst flagged three different conventions: `--json` (export, macro), `--agent` (brief), and no JSON support (summary, value, performance). Standardize all data-output commands to `--json`.
+3. **Fix USD/JPY and USD/CNY in macro dashboard** (P2) — Yahoo Finance FX feed broken for these pairs, returns 1.00. Need fallback FX API.
 
 **Completed since last review:** F19.2-F19.4 (sentiment header + sparklines + CLI), F20.1-F20.5 (RSS news full stack), F21.1-F21.3 (on-chain + ETF flows), F22.1-F22.3 (COMEX supply), F23.1-F23.3 (economic calendar), F24.1-F24.2 (BLS data), F25.1-F25.3 (World Bank data), F4.1-F4.4 (risk + scenarios + analytics tab), F15.1-F15.2 (configurable homepage), F16.1-F16.3 (full chart search), F8.3 (journal migration), F2.1 (correlation math), web parity phases, movers 1D fix, UX overhaul
 
