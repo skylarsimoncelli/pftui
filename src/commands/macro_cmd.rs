@@ -115,6 +115,7 @@ fn print_json(
         ("gold", "GC=F", "USD"),
         ("silver", "SI=F", "USD"),
         ("oil_wti", "CL=F", "USD"),
+        ("oil_brent", "BZ=F", "USD"),
         ("copper", "HG=F", "USD"),
         ("nat_gas", "NG=F", "USD"),
         ("eur_usd", "EURUSD=X", "fx"),
@@ -237,6 +238,22 @@ fn print_json(
         }));
     }
 
+    // WTI-Brent spread
+    if let (Some(wti), Some(brent)) = (prices.get("CL=F"), prices.get("BZ=F")) {
+        let spread = *wti - *brent;
+        let context = if spread > dec!(5) {
+            "wti_premium"
+        } else if spread < dec!(-5) {
+            "brent_premium"
+        } else {
+            "converged"
+        };
+        derived.insert("wti_brent_spread".into(), json!({
+            "value": spread.round_dp(2).to_string().parse::<f64>().unwrap_or(0.0),
+            "context": context
+        }));
+    }
+
     if !derived.is_empty() {
         macro_obj.insert("derived".into(), Value::Object(derived));
     }
@@ -314,11 +331,30 @@ fn print_terminal(
         ("Gold", "GC=F", "$"),
         ("Silver", "SI=F", "$"),
         ("Oil (WTI)", "CL=F", "$"),
+        ("Oil (Brent)", "BZ=F", "$"),
         ("Copper", "HG=F", "$"),
         ("Natural Gas", "NG=F", "$"),
     ];
     for (name, symbol, unit) in commodities {
         print_indicator_row(name, symbol, unit, prices, conn);
+    }
+
+    // WTI-Brent spread
+    if let (Some(wti), Some(brent)) = (prices.get("CL=F"), prices.get("BZ=F")) {
+        let spread = *wti - *brent;
+        let context = if spread > dec!(5) {
+            "🇺🇸 WTI Premium"
+        } else if spread < dec!(-5) {
+            "🌍 Brent Premium"
+        } else {
+            "✓ Converged"
+        };
+        println!(
+            "  {:<22} {:>10}  ({})",
+            "WTI-Brent Spread",
+            format!("${:.2}", spread),
+            context
+        );
     }
     println!();
 
