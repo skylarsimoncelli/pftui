@@ -141,6 +141,9 @@ fn parse_price_response(
                 currency: "USD".to_string(),
                 source: "coingecko".to_string(),
                 fetched_at: now.clone(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
             });
         }
     }

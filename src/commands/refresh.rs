@@ -245,6 +245,9 @@ async fn fetch_all_prices(
                     currency: "USD".to_string(),
                     source: "static".to_string(),
                     fetched_at: chrono::Utc::now().to_rfc3339(),
+                    pre_market_price: None,
+                    post_market_price: None,
+                    post_market_change_percent: None,
                 });
             }
             AssetCategory::Crypto => crypto_symbols.push(sym.clone()),

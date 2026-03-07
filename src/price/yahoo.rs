@@ -119,6 +119,9 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
                     currency: "USD".to_string(),
                     source: "frankfurter".to_string(),
                     fetched_at: chrono::Utc::now().to_rfc3339(),
+                    pre_market_price: None,
+                    post_market_price: None,
+                    post_market_change_percent: None,
                 });
             }
             Err(_) => {
@@ -166,10 +169,17 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
                     source: format!("yahoo (unconverted {})", currency),
                     currency,
                     fetched_at: now,
+                    pre_market_price: None,
+                    post_market_price: None,
+                    post_market_change_percent: None,
                 });
             }
         }
     }
+
+    // Fetch extended hours data for US equities
+    let (pre_market_price, post_market_price, post_market_change_percent) = 
+        fetch_extended_hours(&yahoo_sym, &provider).await;
 
     Ok(PriceQuote {
         symbol: symbol.to_string(),
@@ -177,7 +187,76 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
         currency: "USD".to_string(),
         source: "yahoo".to_string(),
         fetched_at: now,
+        pre_market_price,
+        post_market_price,
+        post_market_change_percent,
     })
+}
+
+/// Fetch pre-market and post-market prices using Yahoo Finance v8 quote API.
+/// Returns (pre_market, post_market, post_change_pct).
+async fn fetch_extended_hours(
+    symbol: &str,
+    _provider: &yahoo::YahooConnector,
+) -> (Option<Decimal>, Option<Decimal>, Option<Decimal>) {
+    // Only attempt extended hours for US equities (no .TO, no =X, etc.)
+    if symbol.contains('.') || symbol.contains('=') {
+        return (None, None, None);
+    }
+
+    // Use Yahoo Finance v8 quote API which includes extended hours
+    let url = format!(
+        "https://query1.finance.yahoo.com/v8/finance/chart/{}?region=US&includePrePost=true&interval=1d&range=1d",
+        symbol
+    );
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return (None, None, None),
+    };
+
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(_) => return (None, None, None),
+    };
+
+    if !resp.status().is_success() {
+        return (None, None, None);
+    }
+
+    let json: serde_json::Value = match resp.json().await {
+        Ok(j) => j,
+        Err(_) => return (None, None, None),
+    };
+    
+    // Extract post-market price and change from the meta section
+    let meta = match json.get("chart")
+        .and_then(|c| c.get("result"))
+        .and_then(|r| r.get(0))
+        .and_then(|r0| r0.get("meta"))
+    {
+        Some(m) => m,
+        None => return (None, None, None),
+    };
+    
+    let post_market_price = meta.get("postMarketPrice")
+        .and_then(|v| v.as_f64())
+        .and_then(|p| Decimal::try_from(p).ok())
+        .filter(|&p| p > dec!(0));
+    
+    let post_market_change_percent = meta.get("postMarketChangePercent")
+        .and_then(|v| v.as_f64())
+        .and_then(|p| Decimal::try_from(p).ok());
+
+    let pre_market_price = meta.get("preMarketPrice")
+        .and_then(|v| v.as_f64())
+        .and_then(|p| Decimal::try_from(p).ok())
+        .filter(|&p| p > dec!(0));
+
+    (pre_market_price, post_market_price, post_market_change_percent)
 }
 
 pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>> {

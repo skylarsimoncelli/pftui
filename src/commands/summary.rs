@@ -1257,6 +1257,10 @@ mod tests {
             currency: "USD".to_string(),
             source: "test".to_string(),
             fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         }).unwrap();
 
         // Should succeed even with no history data
@@ -1292,6 +1296,10 @@ mod tests {
             currency: "USD".to_string(),
             source: "test".to_string(),
             fetched_at: "2025-06-15T00:00:00Z".to_string(),
+        
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         }).unwrap();
 
         upsert_history(&conn, "AAPL", "yahoo", &[
@@ -1331,6 +1339,10 @@ mod tests {
             currency: "USD".to_string(),
             source: "test".to_string(),
             fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         }).unwrap();
 
         // Both --group-by category and --period together
@@ -1456,6 +1468,10 @@ mod tests {
             currency: "USD".to_string(),
             source: "test".to_string(),
             fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         }).unwrap();
 
         // With what-if override, should succeed and use hypothetical price
@@ -1490,6 +1506,10 @@ mod tests {
             currency: "USD".to_string(),
             source: "test".to_string(),
             fetched_at: "2025-01-15T00:00:00Z".to_string(),
+        
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         }).unwrap();
 
         // What-if + group-by should work together

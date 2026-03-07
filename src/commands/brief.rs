@@ -1316,7 +1316,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            },
+            
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+        },
         )
         .unwrap();
 
@@ -1328,7 +1332,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            },
+            
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+        },
         )
         .unwrap();
 
@@ -1359,7 +1367,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            },
+            
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+        },
         )
         .unwrap();
 
@@ -1371,7 +1383,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            },
+            
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+        },
         )
         .unwrap();
 
@@ -1547,7 +1563,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            },
+            
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+        },
         )
         .unwrap();
 

@@ -17,6 +17,9 @@ pub fn get_cached_price(conn: &Connection, symbol: &str, currency: &str) -> Resu
             currency: row.get(2)?,
             fetched_at: row.get(3)?,
             source: row.get(4)?,
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         })
     })?;
     match rows.next() {
@@ -55,6 +58,9 @@ pub fn get_all_cached_prices(conn: &Connection) -> Result<Vec<PriceQuote>> {
             currency: row.get(2)?,
             fetched_at: row.get(3)?,
             source: row.get(4)?,
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         })
     })?;
     let mut result = Vec::new();
@@ -79,6 +85,9 @@ mod tests {
             currency: "USD".to_string(),
             fetched_at: "2025-01-15T12:00:00Z".to_string(),
             source: "yahoo".to_string(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
         };
         upsert_price(&conn, &quote).unwrap();
 

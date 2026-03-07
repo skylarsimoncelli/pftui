@@ -8,6 +8,15 @@ pub struct PriceQuote {
     pub currency: String,
     pub source: String,
     pub fetched_at: String,
+    /// Pre-market price (if available, US equities only)
+    #[serde(default)]
+    pub pre_market_price: Option<Decimal>,
+    /// Post-market price (if available, US equities only)
+    #[serde(default)]
+    pub post_market_price: Option<Decimal>,
+    /// Post-market change percentage (if available)
+    #[serde(default)]
+    pub post_market_change_percent: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
