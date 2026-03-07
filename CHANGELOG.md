@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 18:27 UTC — Add `pftui calendar` command
+
+- What: new `calendar` command displays upcoming economic calendar events from TradingEconomics (with sample fallback). Terminal output shows color-coded impact levels (red=HIGH, yellow=MED, green=LOW) in a table with date, impact, and event name columns. Supports filtering: `--days N` (lookahead period, default 7), `--impact high|medium|low` (filter by impact level), `--json` (structured output for agent consumption).
+- Why: #1 P1 CLI enhancement from TODO. Economic calendar awareness is critical for timing trades, avoiding volatility, and understanding why markets move. Currently users need to check external sites. This brings calendar data into pftui's data-dense terminal workflow. Particularly useful for agents/scripts with JSON output.
+- CLI examples: `pftui calendar` (next 7 days), `pftui calendar --days 30` (month ahead), `pftui calendar --impact high` (FOMC, NFP, CPI only), `pftui calendar --json` (agent-ready JSON array with date, name, impact, previous, forecast, event_type, symbol fields)
+- Files: `src/commands/calendar.rs` (new 106 lines: run function, print_table with color-coded impact, print_json), `src/cli.rs` (added Calendar command variant with days/impact/json args), `src/main.rs` (dispatch to commands::calendar::run), `src/commands/mod.rs` (pub mod calendar declaration)
+- Tests: all 1114 tests pass. Manual validation: `pftui calendar` shows 5 events for next 7 days with color-coded impact, `--impact high` filters to 3 events, `--json` outputs valid JSON array with all event fields
+- TODO: `pftui calendar` CLI (P1)
+
 ### 2026-03-07 17:27 UTC — Add `pftui sector` command
 
 - What: new `sector` command displays sector ETF performance for 18 major sector/thematic ETFs (XLE Energy, XLF Financials, XLK Tech, XLV Healthcare, XLY Consumer Discretionary, XLP Consumer Staples, XLI Industrials, XLU Utilities, XLB Materials, XLRE Real Estate, XLC Communications, IGV Software, SMH Semiconductors, XBI Biotech, XRT Retail, XHB Homebuilders, ITB Building Materials, GDX Gold Miners). Shows current price, daily change %, RSI(14), and MACD histogram. Terminal output is a bordered table sorted by daily performance (strongest first) with green/red color coding for gains/losses. JSON mode (--json) returns structured data with symbol, name, price, day_change_pct, and nested technicals object (rsi, macd_histogram).
