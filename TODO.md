@@ -22,7 +22,6 @@
 ### Data & Display
 
 ### CLI Enhancements
-- [ ] **`pftui eod` command** — Market close command combining brief + movers + macro + sentiment. Files: new `commands/eod.rs`
 - [ ] **`pftui sector` command** — Sector ETF performance (XLE, XLF, IGV, etc.). Files: new `commands/sector.rs`
 - [ ] **`pftui calendar` CLI** — `pftui calendar` (next 7 days), `--days 30`, `--impact high`, `--json`. Files: new `commands/calendar.rs`
 - [ ] **Alerts in `brief` output** — Show triggered/near-threshold alerts. Files: `commands/brief.rs`

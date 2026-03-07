@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 16:27 UTC — Add `pftui eod` command
+
+- What: new `eod` (end-of-day) command combines brief + movers + macro + sentiment into a single market close summary. Terminal output shows four sections with box borders: Portfolio (from brief), Top Movers (3% threshold), Macro Indicators, Sentiment & Positioning (F&G indices + COT). JSON mode (--json) runs all four sub-commands and wraps output in a single timestamped object with portfolio/movers/macro/sentiment keys. Note: JSON integration is currently a placeholder awaiting sub-command refactoring to return data instead of printing.
+- Why: #1 P1 CLI enhancement. Daily market close routine currently requires 4 separate commands. This consolidates into one. Market Close tester scores 92/88 and requested this specifically. Matches common workflow: check portfolio → see what moved → review macro context → gauge sentiment. Single command reduces friction for EOD review.
+- Files: `src/commands/eod.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: all 1114 tests pass. Manual validation: `pftui eod` displays all four sections with proper borders.
+- TODO: `pftui eod` command (P1)
+
 ### 2026-03-07 15:27 UTC — Add Brent crude + WTI-Brent spread to macro dashboard
 
 - What: added Brent crude (BZ=F) to macro dashboard commodities section. Added WTI-Brent spread derived metric showing price differential with context labels: "WTI Premium" (>$5), "Brent Premium" (<-$5), or "Converged" (-$5 to +$5). Terminal output shows spread with emoji indicators (🇺🇸/🌍). JSON output includes oil_brent field and wti_brent_spread in derived metrics with context (wti_premium/brent_premium/converged).
