@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 09:27 UTC — Add candlestick chart rendering mode
+
+- What: implemented OHLC candlestick chart visualization using braille/block characters, toggled with 'C' key. New `ChartRenderMode` enum (Line, Candlestick) with toggle method. Candlestick renderer uses open/high/low/close fields from `HistoryRecord`. Bullish candles (close >= open) rendered with hollow body (▒), bearish with filled (█). Wicks rendered as vertical bars (│) extending from body to high/low. Mode indicator shown in chart navigation hint ("C:Line" or "C:Candles"). Keybinding: C toggles between Line and Candlestick modes in Positions view.
+- Why: P1 feature request. OHLC data layer was added in v0.4.x but had no visualization. Candlestick charts provide richer price action context than line charts (open/close direction, intraday volatility via wicks). Tester feedback: "Love the braille charts, but need candles to see real price action". This completes the OHLC visualization suite alongside existing line/ratio/mini chart variants.
+- Files: `src/app.rs` (ChartRenderMode enum, chart_render_mode field, C toggle keybinding), `src/tui/widgets/price_chart.rs` (render_candlestick_chart(), mode dispatch in render_braille_chart()), `src/tui/views/help.rs` (C keybinding docs)
+- Tests: all 1114 tests pass, no new test failures. Candlestick rendering tested manually with BTC-USD, GC=F (gold), and equity positions.
+- TODO: Candlestick chart variant (P1)
+
 ### 2026-03-07 08:27 UTC — Fix CFTC contract codes for COT data
 
 - What: corrected Gold COT contract code from 067651 to 088691. The old code 067651 was actually WTI crude oil, causing "unavailable" errors when fetching Gold positioning data. Verified all four contract codes against CFTC API: Gold (088691), Silver (084691), WTI (067411), Bitcoin (133741).
