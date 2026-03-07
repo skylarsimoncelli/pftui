@@ -9,7 +9,15 @@
 
 > Broken existing functionality. Fix before shipping.
 
+### CLI Consistency (batch: ~1hr)
+- [ ] **Add `--json` to watchlist** — Only data command without it. Breaks scripting mental model. Files: `cli.rs`, `commands/watchlist_cli.rs`
+- [ ] **Add `--json` to `alerts list`** — Alerts already has `--json` for `check` but not `list`. Files: `cli.rs`, `commands/alerts.rs`
+- [ ] **Add `--json` to `journal list/search`** — Journal has `--json` but only for some subcommands. Audit all. Files: `cli.rs`, `commands/journal.rs`
+- [ ] **Audit all CLI commands for `--json` consistency** — Every command that outputs data should support `--json`. Test each one. Files: `cli.rs`, `commands/*.rs`
 
+### UX Cohesion
+- [ ] **Sidebar ratio charts need context** — DXY/Gold, DXY/SPX, DXY/BTC charts are beautiful but new users don't understand why they're shown. Add "Key Macro Ratios" header with brief explanation. Files: `tui/views/asset_overview.rs` or equivalent sidebar widget
+- [ ] **Regime suggestions should be portfolio-aware** — Economy tab regime advice is generic ("consider defensive positioning"). Should reference actual holdings ("your 25% gold allocation is well-positioned for..."). Files: `tui/views/economy.rs`
 
 ---
 
