@@ -464,6 +464,13 @@ pub enum Command {
         #[arg(long)]
         no_auth: bool,
     },
+
+    /// Show sector ETF performance (XLE, XLF, XLK, etc.)
+    Sector {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

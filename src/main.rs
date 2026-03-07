@@ -375,5 +375,7 @@ fn main() -> Result<()> {
                 web::run_server(db_path.to_string_lossy().to_string(), config, &bind, port, !no_auth).await
             })
         }
+
+        Some(Command::Sector { json }) => commands::sector::run(&conn, &config, json),
     }
 }

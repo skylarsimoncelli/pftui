@@ -21,6 +21,7 @@ pub mod news;
 pub mod performance;
 pub mod predictions;
 pub mod refresh;
+pub mod sector;
 pub mod export;
 pub mod list_tx;
 pub mod remove_tx;
