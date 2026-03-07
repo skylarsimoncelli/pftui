@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::db::price_cache::get_all_cached_prices;
 use crate::db::price_history::get_history;
 use crate::db::watchlist::list_watchlist;
+use crate::indicators;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 
@@ -101,7 +102,7 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
         .map(|q| (q.symbol, (q.price, q.fetched_at)))
         .collect();
 
-    // Row: symbol, name, category, price, change, target, proximity, fetched
+    // Row: symbol, name, category, price, change, rsi, sma50, macd, target, proximity, fetched
     #[derive(Serialize)]
     struct WatchRow {
         symbol: String,
@@ -109,6 +110,9 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
         category: String,
         price: String,
         change: String,
+        rsi: String,
+        sma50: String,
+        macd: String,
         target: String,
         proximity: String,
         fetched: String,
@@ -191,12 +195,64 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
             _ => ("---".to_string(), "---".to_string(), None),
         };
 
+        // Compute technical indicators from price history
+        let (rsi_str, sma50_str, macd_str) = {
+            let history = get_history(conn, &yahoo_sym, 90).ok();
+            match history {
+                Some(records) if !records.is_empty() => {
+                    let closes: Vec<f64> = records
+                        .iter()
+                        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+                        .collect();
+                    
+                    // RSI(14)
+                    let rsi_str = if closes.len() >= 15 {
+                        let rsi_series = indicators::compute_rsi(&closes, 14);
+                        match rsi_series.last().copied().flatten() {
+                            Some(rsi_val) => format!("{:.1}", rsi_val),
+                            None => "---".to_string(),
+                        }
+                    } else {
+                        "---".to_string()
+                    };
+
+                    // SMA(50)
+                    let sma50_str = if closes.len() >= 50 {
+                        let sma50_series = indicators::compute_sma(&closes, 50);
+                        match sma50_series.last().copied().flatten() {
+                            Some(sma50_val) => format!("{:.2}", sma50_val),
+                            None => "---".to_string(),
+                        }
+                    } else {
+                        "---".to_string()
+                    };
+
+                    // MACD (12, 26, 9) — show histogram value
+                    let macd_str = if closes.len() >= 35 {
+                        let macd_series = indicators::compute_macd(&closes, 12, 26, 9);
+                        match macd_series.last() {
+                            Some(Some(macd_result)) => format!("{:.3}", macd_result.histogram),
+                            _ => "---".to_string(),
+                        }
+                    } else {
+                        "---".to_string()
+                    };
+
+                    (rsi_str, sma50_str, macd_str)
+                }
+                _ => ("---".to_string(), "---".to_string(), "---".to_string()),
+            }
+        };
+
         rows.push(WatchRow {
             symbol: entry.symbol.clone(),
             name: display_name,
             category: entry.category.clone(),
             price: price_str,
             change: change_str,
+            rsi: rsi_str,
+            sma50: sma50_str,
+            macd: macd_str,
             target: target_str,
             proximity: proximity_str,
             fetched: fetched_str,
@@ -254,6 +310,24 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
         .max()
         .unwrap_or(8)
         .max(8);
+    let rsi_w = rows
+        .iter()
+        .map(|r| r.rsi.len())
+        .max()
+        .unwrap_or(3)
+        .max(3);
+    let sma50_w = rows
+        .iter()
+        .map(|r| r.sma50.len())
+        .max()
+        .unwrap_or(5)
+        .max(5);
+    let macd_w = rows
+        .iter()
+        .map(|r| r.macd.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
 
     if has_targets {
         let tgt_w = rows.iter().map(|r| r.target.len()).max().unwrap_or(6).max(6);
@@ -261,31 +335,31 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
 
         // Header
         println!(
-            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>tgt_w$}  {:>prox_w$}  Updated",
-            "Symbol", "Name", "Category", "Price", "1D Chg %", "Target", "Proximity",
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>rsi_w$}  {:>sma50_w$}  {:>macd_w$}  {:>tgt_w$}  {:>prox_w$}  Updated",
+            "Symbol", "Name", "Category", "Price", "1D Chg %", "RSI", "SMA50", "MACD", "Target", "Proximity",
         );
-        let total_w = sym_w + name_w + cat_w + price_w + chg_w + tgt_w + prox_w + 30;
+        let total_w = sym_w + name_w + cat_w + price_w + chg_w + rsi_w + sma50_w + macd_w + tgt_w + prox_w + 44;
         println!("  {}", "─".repeat(total_w));
 
         for r in &rows {
             println!(
-                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>tgt_w$}  {:>prox_w$}  {}",
-                r.symbol, r.name, r.category, r.price, r.change, r.target, r.proximity, r.fetched,
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>rsi_w$}  {:>sma50_w$}  {:>macd_w$}  {:>tgt_w$}  {:>prox_w$}  {}",
+                r.symbol, r.name, r.category, r.price, r.change, r.rsi, r.sma50, r.macd, r.target, r.proximity, r.fetched,
             );
         }
     } else {
         // Header (no target columns)
         println!(
-            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  Updated",
-            "Symbol", "Name", "Category", "Price", "1D Chg %",
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>rsi_w$}  {:>sma50_w$}  {:>macd_w$}  Updated",
+            "Symbol", "Name", "Category", "Price", "1D Chg %", "RSI", "SMA50", "MACD",
         );
-        let total_w = sym_w + name_w + cat_w + price_w + chg_w + 24;
+        let total_w = sym_w + name_w + cat_w + price_w + chg_w + rsi_w + sma50_w + macd_w + 32;
         println!("  {}", "─".repeat(total_w));
 
         for r in &rows {
             println!(
-                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {}",
-                r.symbol, r.name, r.category, r.price, r.change, r.fetched,
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>rsi_w$}  {:>sma50_w$}  {:>macd_w$}  {}",
+                r.symbol, r.name, r.category, r.price, r.change, r.rsi, r.sma50, r.macd, r.fetched,
             );
         }
     }

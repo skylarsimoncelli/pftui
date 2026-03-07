@@ -87,6 +87,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         Cell::from("Price"),
         Cell::from("Change %"),
         Cell::from("RSI"),
+        Cell::from("SMA50"),
     ];
     if has_targets {
         header_cells.push(Cell::from("Target"));
@@ -202,6 +203,50 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 }
             };
 
+            // Compute SMA50 from price history
+            let sma50_cell = {
+                let history = app.price_history.get(&yahoo_sym);
+                match history {
+                    Some(records) if records.len() >= 50 => {
+                        let closes: Vec<f64> = records
+                            .iter()
+                            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+                            .collect();
+                        let sma50_series = indicators::compute_sma(&closes, 50);
+                        match sma50_series.last().copied().flatten() {
+                            Some(sma50_val) => {
+                                // Compare current price to SMA50
+                                let sma50_color = if let Some(p) = price {
+                                    let price_f64: f64 = p.to_string().parse().unwrap_or(0.0);
+                                    let pct_diff = ((price_f64 - sma50_val) / sma50_val) * 100.0;
+                                    if pct_diff > 5.0 {
+                                        t.gain_green // >5% above SMA50 — bullish
+                                    } else if pct_diff < -5.0 {
+                                        t.loss_red // >5% below SMA50 — bearish
+                                    } else {
+                                        t.text_secondary // near SMA50 — neutral
+                                    }
+                                } else {
+                                    t.text_muted
+                                };
+                                Cell::from(Span::styled(
+                                    format!("{:.2}", sma50_val),
+                                    Style::default().fg(sma50_color),
+                                ))
+                            }
+                            None => Cell::from(Span::styled(
+                                "---",
+                                Style::default().fg(t.text_muted),
+                            )),
+                        }
+                    }
+                    _ => Cell::from(Span::styled(
+                        "---",
+                        Style::default().fg(t.text_muted),
+                    )),
+                }
+            };
+
             let mut cells = vec![
                 Cell::from(Span::styled(
                     entry.symbol.clone(),
@@ -224,6 +269,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                     Style::default().fg(change_color),
                 )),
                 rsi_cell,
+                sma50_cell,
             ];
 
             if has_targets {
@@ -275,6 +321,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(12),
             Constraint::Length(10),
             Constraint::Length(6),
+            Constraint::Length(8),
             Constraint::Length(12),
             Constraint::Length(10),
         ]
@@ -286,6 +333,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(12),
             Constraint::Length(10),
             Constraint::Length(6),
+            Constraint::Length(8),
         ]
     };
 
