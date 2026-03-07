@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 10:27 UTC — Add SMA50 to TUI watchlist and RSI/SMA50/MACD to CLI watchlist
+
+- What: added SMA50 column to TUI watchlist view (next to RSI) and added RSI(14), SMA50, MACD histogram columns to CLI `pftui watchlist` output. TUI SMA50 color-codes: green when price >5% above SMA50 (bullish), red when >5% below (bearish), neutral when within ±5%. CLI displays all three technicals with `---` placeholder when insufficient history. JSON output includes all three fields.
+- Why: P1 feedback-driven feature. Highest-leverage improvement per feedback summary (#2 priority, "eliminates Python script dependency for 3/4 testers"). Watchlist already had RSI in TUI; this adds SMA50 to TUI and full technicals suite to CLI. Market Research and Market Close testers still relied on external Python script for SMA/MACD on watchlist symbols. This eliminates that dependency.
+- Files: `src/tui/views/watchlist.rs` (added SMA50 column header, compute_sma cell with color-coding, updated column widths), `src/commands/watchlist_cli.rs` (added indicators import, rsi/sma50/macd fields to WatchRow, computed all three from price history, updated table headers/widths for both has_targets and no-targets branches)
+- Tests: all 1114 tests pass. Verified CLI output with `pftui watchlist` — columns render correctly with sample watchlist entries.
+- TODO: Technicals on watchlist (P1)
+
 ### 2026-03-07 09:27 UTC — Add candlestick chart rendering mode
 
 - What: implemented OHLC candlestick chart visualization using braille/block characters, toggled with 'C' key. New `ChartRenderMode` enum (Line, Candlestick) with toggle method. Candlestick renderer uses open/high/low/close fields from `HistoryRecord`. Bullish candles (close >= open) rendered with hollow body (▒), bearish with filled (█). Wicks rendered as vertical bars (│) extending from body to high/low. Mode indicator shown in chart navigation hint ("C:Line" or "C:Candles"). Keybinding: C toggles between Line and Candlestick modes in Positions view.

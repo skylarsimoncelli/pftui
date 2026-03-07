@@ -25,7 +25,6 @@
 - [ ] **After-hours / pre-market prices** — Yahoo provides extended hours data. Show in watchlist and brief. Files: `price/yahoo.rs`, `commands/brief.rs`
 - [ ] **Brent crude + WTI spread in macro** — Key metric for geopolitical crises. Files: `commands/macro_cmd.rs`, `views/economy.rs`
 - [ ] [Feedback] **Technicals on macro dashboard** — Add RSI(14), MACD, SMA(50) for macro instruments (DXY, VIX, oil, 10Y, copper). This is the #1 remaining reason testers use the external Python script. Files: `commands/macro_cmd.rs`
-- [ ] [Feedback] **Technicals on watchlist** — Add RSI/SMA50 columns for all watchlist symbols, not just held positions. Eliminates Python script dependency entirely. Files: `commands/watchlist_cli.rs`, `tui/views/watchlist.rs`
 
 ### CLI Enhancements
 - [ ] **`pftui eod` command** — Market close command combining brief + movers + macro + sentiment. Files: new `commands/eod.rs`
