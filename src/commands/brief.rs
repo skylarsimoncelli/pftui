@@ -7,6 +7,7 @@ use rust_decimal_macros::dec;
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::alerts::AlertStatus;
 use crate::analytics::risk;
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
@@ -618,6 +619,9 @@ fn run_full(
     // Top movers (by daily change %)
     print_top_movers(&positions, hist_1d, base);
 
+    // Alerts (triggered + near-threshold)
+    print_alerts(conn);
+
     // P&L attribution (by dollar amount)
     print_pnl_attribution(&positions, hist_1d, base);
 
@@ -675,6 +679,9 @@ fn run_percentage(
 
     // Top movers
     print_top_movers(&positions, hist_1d, base);
+
+    // Alerts (triggered + near-threshold)
+    print_alerts(conn);
 
     // P&L attribution (by dollar amount)
     print_pnl_attribution(&positions, hist_1d, base);
@@ -1031,6 +1038,66 @@ fn print_top_movers(
             pct,
         );
     }
+    println!();
+}
+
+fn print_alerts(conn: &Connection) {
+    use crate::alerts::engine::check_alerts;
+    
+    let results = match check_alerts(conn) {
+        Ok(r) => r,
+        Err(_) => return, // Silently skip if check fails
+    };
+    
+    // Separate triggered and armed alerts
+    let triggered: Vec<_> = results.iter()
+        .filter(|r| r.rule.status == AlertStatus::Triggered)
+        .collect();
+    
+    let armed_near: Vec<_> = results.iter()
+        .filter(|r| {
+            r.rule.status == AlertStatus::Armed 
+                && r.distance_pct.is_some() 
+                && r.distance_pct.unwrap().abs() <= dec!(5) // Within 5%
+        })
+        .collect();
+    
+    if triggered.is_empty() && armed_near.is_empty() {
+        return; // No alerts to show
+    }
+    
+    println!("## Alerts\n");
+    
+    // Show triggered alerts first
+    if !triggered.is_empty() {
+        for result in triggered {
+            let current = result.current_value
+                .map(|v| v.round_dp(2).to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            println!(
+                "🔴 **TRIGGERED** — {} (current: {})",
+                result.rule.rule_text,
+                current
+            );
+        }
+    }
+    
+    // Show near-threshold armed alerts
+    if !armed_near.is_empty() {
+        for result in armed_near {
+            let distance = result.distance_pct.unwrap().abs().round_dp(1);
+            let current = result.current_value
+                .map(|v| v.round_dp(2).to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            println!(
+                "🟡 **NEAR** — {} (current: {}, {}% away)",
+                result.rule.rule_text,
+                current,
+                distance
+            );
+        }
+    }
+    
     println!();
 }
 
