@@ -701,7 +701,28 @@ Every source works out of the box with no API keys:
 | Blockchair | BTC on-chain data | 5/sec |
 | RSS Feeds | Reuters, CoinDesk, Bloomberg, CNBC, Kitco | No limit |
 
-Optional API keys unlock additional sources. See [docs/API-SOURCES.md](docs/API-SOURCES.md).
+### Brave Search API (Recommended)
+
+pftui supports an optional [Brave Search API](https://brave.com/search/api/) key that dramatically improves data quality. With Brave configured:
+- **News** upgrades from RSS headlines to full article summaries from targeted searches
+- **Economic data** (CPI, NFP, PMI, Fed rate) is pulled from live web search results
+- **`pftui research`** lets you answer any financial question without leaving pftui
+- **`brief --agent`** includes news summaries and economic data in one JSON blob
+
+Free tier gives $5/month in auto-credited queries — more than enough for daily use.
+
+```bash
+# Add Brave API key during setup or later:
+pftui config set brave_api_key <your_key>
+
+# Verify it's working:
+pftui status
+# Should show: Brave Search: ✓ Configured
+```
+
+Without a Brave key, pftui works fine using existing free sources (Yahoo, CoinGecko, Polymarket, RSS, etc.). Brave is an enhancement, not a requirement.
+
+Other optional API keys unlock additional sources. See [docs/API-SOURCES.md](docs/API-SOURCES.md).
 
 ---
 
