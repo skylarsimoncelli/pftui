@@ -122,6 +122,56 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
+/// Render context header explaining ratio charts
+fn render_ratio_context_header(
+    frame: &mut Frame,
+    area: Rect,
+    variants: &[&ChartVariant],
+    app: &App,
+) {
+    let t = &app.theme;
+    
+    // Detect which asset we're viewing based on the variants
+    let primary_symbol = variants.iter().find_map(|v| match &v.kind {
+        ChartKind::Single { symbol, .. } => Some(symbol.as_str()),
+        _ => None,
+    });
+    
+    let (title, explanation) = match primary_symbol {
+        Some("DX-Y.NYB") | Some("DXY") => (
+            "Key Macro Ratios",
+            "DXY strength vs assets shows dollar purchasing power & safe-haven flows"
+        ),
+        Some(sym) if sym.contains("GC") || sym.contains("GOLD") => (
+            "Gold Context",
+            "Gold vs currencies & assets reveals inflation hedging & macro risk sentiment"
+        ),
+        Some(sym) if sym.contains("BTC") => (
+            "Bitcoin Context",
+            "BTC vs macro assets tracks risk appetite & digital gold narrative"
+        ),
+        Some(sym) if sym.starts_with("^") => (
+            "Index Context",
+            "Index vs macro indicators shows risk-on/risk-off positioning"
+        ),
+        _ => (
+            "Ratio Analysis",
+            "Asset relationships reveal relative strength & capital rotation"
+        ),
+    };
+    
+    let header_line = Line::from(vec![
+        Span::styled(format!(" {} ", title), Style::default().fg(t.text_accent).bold()),
+        Span::styled("│ ", Style::default().fg(t.border_inactive)),
+        Span::styled(explanation, Style::default().fg(t.text_muted).italic()),
+    ]);
+    
+    let para = Paragraph::new(vec![Line::from(""), header_line])
+        .style(Style::default().bg(t.surface_1));
+    
+    frame.render_widget(para, area);
+}
+
 /// Renders a multi-panel stacked view of all individual charts
 fn render_multi_panel(
     frame: &mut Frame,
@@ -134,21 +184,38 @@ fn render_multi_panel(
         return;
     }
 
+    // Check if we have ratio charts and enough height for a header
+    let has_ratios = variants.iter().any(|v| matches!(v.kind, ChartKind::Ratio { .. }));
+    let header_height = if has_ratios && area.height >= 8 { 2 } else { 0 };
+    
+    // Render context header if we have ratio charts
+    if header_height > 0 {
+        let header_area = Rect::new(area.x, area.y, area.width, header_height);
+        render_ratio_context_header(frame, header_area, variants, app);
+    }
+
+    let chart_area = Rect::new(
+        area.x,
+        area.y + header_height,
+        area.width,
+        area.height.saturating_sub(header_height),
+    );
+
     let panel_count = variants.len();
-    let panel_height = area.height / panel_count as u16;
+    let panel_height = chart_area.height / panel_count as u16;
     if panel_height < 3 {
         // Too small for multi-panel; just show first (no crosshair in multi-panel)
         if let Some(v) = variants.first() {
             match &v.kind {
                 ChartKind::Single { symbol, .. } => {
-                    render_single_chart(frame, area, symbol, &v.label, None, app);
+                    render_single_chart(frame, chart_area, symbol, &v.label, None, app);
                 }
                 ChartKind::Ratio {
                     num_symbol,
                     den_symbol,
                     ..
                 } => {
-                    render_ratio_chart(frame, area, num_symbol, den_symbol, &v.label, None, app);
+                    render_ratio_chart(frame, chart_area, num_symbol, den_symbol, &v.label, None, app);
                 }
                 _ => {}
             }
@@ -157,13 +224,13 @@ fn render_multi_panel(
     }
 
     for (i, v) in variants.iter().enumerate() {
-        let y = area.y + (i as u16 * panel_height);
+        let y = chart_area.y + (i as u16 * panel_height);
         let h = if i == panel_count - 1 {
-            area.height - (i as u16 * panel_height)
+            chart_area.height - (i as u16 * panel_height)
         } else {
             panel_height
         };
-        let panel_area = Rect::new(area.x, y, area.width, h);
+        let panel_area = Rect::new(chart_area.x, y, chart_area.width, h);
 
         // Label on first line of each panel
         let label_line = Line::from(Span::styled(
