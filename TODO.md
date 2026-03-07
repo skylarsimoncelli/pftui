@@ -20,7 +20,6 @@
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [ ] **Brent crude + WTI spread in macro** — Key metric for geopolitical crises. Files: `commands/macro_cmd.rs`, `views/economy.rs`
 
 ### CLI Enhancements
 - [ ] **`pftui eod` command** — Market close command combining brief + movers + macro + sentiment. Files: new `commands/eod.rs`

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 15:27 UTC — Add Brent crude + WTI-Brent spread to macro dashboard
+
+- What: added Brent crude (BZ=F) to macro dashboard commodities section. Added WTI-Brent spread derived metric showing price differential with context labels: "WTI Premium" (>$5), "Brent Premium" (<-$5), or "Converged" (-$5 to +$5). Terminal output shows spread with emoji indicators (🇺🇸/🌍). JSON output includes oil_brent field and wti_brent_spread in derived metrics with context (wti_premium/brent_premium/converged).
+- Why: key metric for geopolitical energy markets. WTI-Brent spread signals regional supply/demand imbalances, refining capacity utilization, shipping disruptions (Suez/Hormuz), and sanctions impact. Critical during oil crises for understanding which markets are tighter.
+- Files: src/commands/macro_cmd.rs (added BZ=F to market_indicators array, added WTI-Brent spread to derived metrics in JSON output, added Brent to commodities terminal display with spread calculation)
+- Tests: all 1114 tests pass
+- TODO: Brent crude + WTI spread in macro (P1)
+
 ### 2026-03-07 14:27 UTC — Add technical indicators to macro dashboard
 
 - What: macro dashboard now computes and displays RSI(14), MACD(12,26,9), and SMA(50) for all macro instruments (DXY, VIX, yields, currencies, commodities). Terminal output shows inline technicals: "RSI 61.1 | MACD 0.31/0.10 ↑ | SMA50 97.98 (above)". JSON output includes nested "technicals" object with rsi, macd, macd_signal, macd_histogram, sma50 fields. Uses existing indicators/ modules (rsi.rs, macd.rs, sma.rs). Requires ~100 days history, gracefully degrades if unavailable (shows nothing instead of failing). MACD cross direction shown with ↑/↓ arrow. SMA50 position shown as (above) or (below) current price.
