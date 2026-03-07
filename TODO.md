@@ -18,8 +18,7 @@
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [ ] **Add OHLC data to HistoryRecord** — Extend `HistoryRecord` with `open`, `high`, `low` fields (Option<Decimal>). Update `yahoo.rs` to populate from `q.open/high/low`. Update `coingecko.rs`, `db/price_history.rs` to set None. Fix all ~160 `HistoryRecord` struct initializations in tests to include new fields. Files: `models/price.rs`, `price/yahoo.rs`, `price/coingecko.rs`, `db/price_history.rs`, all test files
-- [ ] **Candlestick chart variant** — (depends on OHLC data) OHLC braille/block candlesticks. New variant `ChartVariant::Candlestick`, keybinding, renderer. Files: `app.rs`, `widgets/price_chart.rs`
+- [ ] **Candlestick chart variant** — OHLC braille/block candlesticks. New variant `ChartVariant::Candlestick`, keybinding, renderer. Files: `app.rs`, `widgets/price_chart.rs`
 - [ ] **SMA overlay on charts** — Configurable `chart_sma = [20, 50, 200]`. Faint braille lines. Files: `widgets/price_chart.rs`, `config.rs`
 - [ ] **Volume sub-chart** — 3-row braille bars below price. Toggle with `V`. Files: `widgets/price_chart.rs`
 - [ ] **After-hours / pre-market prices** — Yahoo provides extended hours data. Show in watchlist and brief. Files: `price/yahoo.rs`, `commands/brief.rs`

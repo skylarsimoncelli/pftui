@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 01:27 UTC — Add OHLC data fields to HistoryRecord
+
+- What: extended `HistoryRecord` struct with `open`, `high`, `low` fields (all `Option<Decimal>`). Updated `yahoo.rs` to populate OHLC from Yahoo Finance API quotes (`q.open`, `q.high`, `q.low`) with proper FX conversion (applies the same rate logic as close prices). Updated `coingecko.rs` and `db/price_history.rs` to set `None` (OHLC data not available from those sources). Fixed all 167 `HistoryRecord` struct initializations across test files to include the three new fields.
+- Why: required foundation for candlestick chart variant. Yahoo Finance provides OHLC data for all equity/commodity/FX symbols. This data enables candlestick rendering, better volume analysis, and more accurate technical indicators (ATR, true range, etc.).
+- Files: `src/models/price.rs` (added 3 optional fields to `HistoryRecord`), `src/price/yahoo.rs` (`fetch_history` now extracts and FX-converts open/high/low from `YQuote`), `src/price/coingecko.rs` (set `open/high/low: None`), `src/db/price_history.rs` (set `open/high/low: None` in query mapper), 13 test files (`src/commands/*.rs`, `src/tui/views/*.rs`, `src/tui/widgets/*.rs`, `src/regime/mod.rs` — updated all HistoryRecord initializations)
+- Tests: all 1114 tests pass, no logic changes (data structure extension only)
+- TODO: Add OHLC data to HistoryRecord (P1)
+
 ### 2026-03-07 00:27 UTC — Split candlestick task into data layer + rendering
 
 - What: broke "Candlestick chart variant" (P1) into two subtasks: (1) Add OHLC data to HistoryRecord (requires updating ~160 struct initializations across test files), (2) Implement candlestick rendering using OHLC data.
