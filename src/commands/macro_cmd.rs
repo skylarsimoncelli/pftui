@@ -15,6 +15,59 @@ use crate::data::fred;
 use crate::db::economic_cache;
 use crate::db::price_cache::get_all_cached_prices;
 use crate::db::price_history::get_history;
+use crate::indicators::{compute_macd, compute_rsi, compute_sma};
+
+/// Technical indicators for a macro instrument.
+#[derive(Debug, Clone)]
+struct Technicals {
+    rsi: Option<f64>,
+    macd: Option<f64>,
+    macd_signal: Option<f64>,
+    macd_histogram: Option<f64>,
+    sma50: Option<f64>,
+}
+
+impl Technicals {
+    fn none() -> Self {
+        Self {
+            rsi: None,
+            macd: None,
+            macd_signal: None,
+            macd_histogram: None,
+            sma50: None,
+        }
+    }
+}
+
+/// Compute technicals (RSI, MACD, SMA50) for a symbol.
+/// Requires ~90 days of history for SMA50, ~50 for MACD/RSI.
+fn compute_technicals(conn: &Connection, symbol: &str) -> Technicals {
+    let history = match get_history(conn, symbol, 100) {
+        Ok(h) if h.len() >= 30 => h,
+        _ => return Technicals::none(),
+    };
+
+    let closes: Vec<f64> = history
+        .iter()
+        .map(|rec| rec.close.to_string().parse::<f64>().unwrap_or(0.0))
+        .collect();
+
+    let rsi_vec = compute_rsi(&closes, 14);
+    let macd_vec = compute_macd(&closes, 12, 26, 9);
+    let sma50_vec = compute_sma(&closes, 50);
+
+    let rsi = rsi_vec.last().and_then(|x| *x);
+    let macd_res = macd_vec.last().and_then(|x| *x);
+    let sma50 = sma50_vec.last().and_then(|x| *x);
+
+    Technicals {
+        rsi,
+        macd: macd_res.map(|m| m.macd),
+        macd_signal: macd_res.map(|m| m.signal),
+        macd_histogram: macd_res.map(|m| m.histogram),
+        sma50,
+    }
+}
 
 /// Run the macro dashboard command.
 pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
@@ -32,7 +85,7 @@ pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
         .collect();
 
     if json {
-        print_json(&price_map, &fred_data)?;
+        print_json(&price_map, &fred_data, conn)?;
     } else {
         print_terminal(&price_map, &fred_data, conn)?;
     }
@@ -45,6 +98,7 @@ pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
 fn print_json(
     prices: &HashMap<String, Decimal>,
     fred: &HashMap<String, (Decimal, String)>,
+    conn: &Connection,
 ) -> Result<()> {
     use serde_json::{json, Map, Value};
 
@@ -74,6 +128,29 @@ fn print_json(
             let mut entry = Map::new();
             entry.insert("value".into(), json!(price.to_string().parse::<f64>().unwrap_or(0.0)));
             entry.insert("unit".into(), json!(unit));
+
+            // Add technical indicators
+            let tech = compute_technicals(conn, symbol);
+            if tech.rsi.is_some() || tech.macd.is_some() || tech.sma50.is_some() {
+                let mut tech_obj = Map::new();
+                if let Some(rsi) = tech.rsi {
+                    tech_obj.insert("rsi".into(), json!(rsi));
+                }
+                if let Some(macd) = tech.macd {
+                    tech_obj.insert("macd".into(), json!(macd));
+                }
+                if let Some(sig) = tech.macd_signal {
+                    tech_obj.insert("macd_signal".into(), json!(sig));
+                }
+                if let Some(hist) = tech.macd_histogram {
+                    tech_obj.insert("macd_histogram".into(), json!(hist));
+                }
+                if let Some(sma) = tech.sma50 {
+                    tech_obj.insert("sma50".into(), json!(sma));
+                }
+                entry.insert("technicals".into(), Value::Object(tech_obj));
+            }
+
             macro_obj.insert(key.to_string(), Value::Object(entry));
         }
     }
@@ -326,7 +403,7 @@ fn print_key_strip(
     }
 }
 
-/// Print a single indicator row with 1-day change from history.
+/// Print a single indicator row with 1-day change and technical indicators.
 fn print_indicator_row(
     name: &str,
     yahoo_symbol: &str,
@@ -369,7 +446,36 @@ fn print_indicator_row(
         format!("{:.4}", price)
     };
 
-    println!("  {:<22} {:>12}  {}", name, formatted, change_str);
+    // Compute technicals
+    let tech = compute_technicals(conn, yahoo_symbol);
+
+    // Build technical indicators string
+    let mut tech_parts = Vec::new();
+    if let Some(rsi) = tech.rsi {
+        tech_parts.push(format!("RSI {:.1}", rsi));
+    }
+    if let Some(macd) = tech.macd {
+        if let Some(sig) = tech.macd_signal {
+            let cross = if macd > sig { "↑" } else { "↓" };
+            tech_parts.push(format!("MACD {:.2}/{:.2} {}", macd, sig, cross));
+        }
+    }
+    if let Some(sma) = tech.sma50 {
+        let current = price.to_string().parse::<f64>().unwrap_or(0.0);
+        let vs_sma = if current > sma { "above" } else { "below" };
+        tech_parts.push(format!("SMA50 {:.2} ({})", sma, vs_sma));
+    }
+
+    let tech_str = if !tech_parts.is_empty() {
+        format!(" │ {}", tech_parts.join(" │ "))
+    } else {
+        String::new()
+    };
+
+    println!(
+        "  {:<22} {:>12}  {}{}",
+        name, formatted, change_str, tech_str
+    );
 }
 
 /// Print derived metrics (ratios, yield curve, etc.)
