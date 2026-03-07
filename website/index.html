@@ -211,40 +211,56 @@
     <!-- CLI Showcase -->
     <section class="cli">
         <div class="container">
-            <h2 class="section-title">Headless command surface</h2>
-            <p class="section-subtitle">Everything in the TUI, available as composable CLI primitives.</p>
+            <h2 class="section-title">35+ headless commands</h2>
+            <p class="section-subtitle">Every feature in the TUI, available as composable CLI primitives. All support <code>--json</code>.</p>
             <div class="cli-grid">
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui value</div>
-                    <div class="cli-output">Portfolio: $287,345.82 <span class="green">(+$3,892 / +1.4%)</span></div>
+                    <div class="cli-command">$ pftui refresh</div>
+                    <div class="cli-output">✓ Prices (51) ✓ Macro (18) ✓ COT (4) ✓ F&G ✓ Predictions (50) ✓ News (47) ✓ COMEX (2)</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui movers --threshold 3</div>
-                    <div class="cli-output">4/39 symbols: <span class="green">NVDA +5.2%</span> | <span class="green">BTC +4.8%</span> | <span class="red">XLE -6.1%</span> | <span class="red">SI=F -3.4%</span></div>
+                    <div class="cli-command">$ pftui value</div>
+                    <div class="cli-output">Portfolio: $287,345.42 <span class="green">(+$3,892 / +1.5%)</span>  Cash: 35% │ Comd: 30% │ Crypto: 25%</div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui macro</div>
-                    <div class="cli-output">DXY 98.85 │ VIX 22.3 ⚠️ │ 10Y 4.13% │ Gold $5,181 │ Oil $91.26</div>
+                    <div class="cli-output">DXY 98.86 RSI 56 │ VIX 29.5 ⚠️ │ 10Y 4.13% │ Gold $5,181 │ Oil $91.27 RSI 89 🔥</div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui sentiment</div>
-                    <div class="cli-output">Crypto F&G: 🟡 52 Neutral | Traditional F&G: 🟢 61 Greed</div>
+                    <div class="cli-output">Crypto F&G: 🔴 10 Extreme Fear │ COT Gold: 🟢 Net Long 142k (+8k) │ Oil: 🟢 264k</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui brief --json</div>
-                    <div class="cli-output">{"value":287345.82,"change_pct":1.38,"cash_pct":12.4,"top_holding":"BTC"}</div>
+                    <div class="cli-command">$ pftui movers</div>
+                    <div class="cli-output"><span class="green">▲ Oil +12.7%</span> │ <span class="green">▲ VIX +24.2%</span> │ <span class="green">▲ Silver +3.7%</span> │ <span class="red">▼ BTC -6.0%</span> │ <span class="red">▼ GLXY -9.6%</span></div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui performance</div>
-                    <div class="cli-output">MTD -1.2% | QTD +4.7% | YTD +18.2% | Since Inception +32.1%</div>
+                    <div class="cli-command">$ pftui sector</div>
+                    <div class="cli-output"><span class="green">XLE +4.2%</span> │ <span class="green">GDX +3.1%</span> │ <span class="green">XLU +1.8%</span> │ <span class="red">XLK -2.1%</span> │ <span class="red">SMH -3.7%</span></div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui alerts list</div>
-                    <div class="cli-output">🔔 GC=F above $5,200 (current: $5,181) | 🟢 VIX below 25 (current: 22.3)</div>
+                    <div class="cli-command">$ pftui predictions --category crypto</div>
+                    <div class="cli-output">BTC >$100k by Dec? 45% ↓ │ ETH flippening? 8% → │ Stablecoin regulation? 72% ↑</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui supply</div>
+                    <div class="cli-output">Gold COMEX: 18.2M oz (Reg 89%) │ Silver COMEX: 25.7M oz │ Reg Ratio declining ▼</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui calendar --impact high</div>
+                    <div class="cli-output">🔴 CPI Mar 12 (5d) │ 🔴 FOMC Mar 17 (10d) │ 🔴 NFP Apr 3 │ 🔴 GDP Mar 27</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui eod</div>
+                    <div class="cli-output">$287,345 +$3,892 │ 7 movers >3% │ VIX 29.5 ⚠️ │ F&G 🔴 10 │ Next: CPI in 5d</div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui drift</div>
-                    <div class="cli-output">BTC: 18.7% (target 20%) ↓1.3pp | GC=F: 25.4% (target 25%) ✓ | Cash: 49.3% (target 15%) ⚠️ ↑34pp</div>
+                    <div class="cli-output">Cash: 35% (target 40%) ⚠️ +9pp │ Gold: 25% ✓ │ BTC: 19% ✓ │ Equity: 10% ✓</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui brief --agent --json</div>
+                    <div class="cli-output">{"value":287345,"pnl":3892,"movers":[...],"macro":{...},"regime":"risk-off"}</div>
                 </div>
             </div>
         </div>

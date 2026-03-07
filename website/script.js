@@ -40,7 +40,7 @@ function copyToClipboard(text) {
 const installMethods = {
     curl: {
         title: 'curl install script',
-        description: 'Fastest path for Linux/macOS.',
+        description: 'Fastest path for Linux/macOS. Re-run to upgrade.',
         command: 'curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash'
     },
     brew: {
@@ -109,18 +109,47 @@ function initInstallTabs() {
 
 function initHighlightsMarquee() {
     const scroller = document.getElementById('highlights-scroller');
-    if (!scroller || scroller.children.length > 1) return;
+    const marquee = document.getElementById('highlights-marquee');
+    if (!scroller || !marquee || scroller.children.length > 1) return;
 
     const firstTrack = scroller.firstElementChild;
     if (!firstTrack) return;
 
+    // Clone track for seamless loop
     const clone = firstTrack.cloneNode(true);
     clone.setAttribute('aria-hidden', 'true');
     scroller.appendChild(clone);
+
+    // On mobile: pause auto-scroll during manual scroll, resume after
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    if (isMobile) {
+        let scrollTimeout;
+        marquee.addEventListener('scroll', () => {
+            scroller.style.animationPlayState = 'paused';
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                scroller.style.animationPlayState = 'running';
+            }, 3000); // Resume auto-scroll 3s after last manual scroll
+        }, { passive: true });
+
+        // Touch events: pause during touch
+        marquee.addEventListener('touchstart', () => {
+            scroller.style.animationPlayState = 'paused';
+        }, { passive: true });
+        marquee.addEventListener('touchend', () => {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                scroller.style.animationPlayState = 'running';
+            }, 3000);
+        }, { passive: true });
+    }
 }
 
 // ===== TERMINAL DEMO =====
-// Multi-scene terminal that cycles through pftui features
+// Fixed-height scenes: every scene has exactly 11 lines (command + blank + 8 content + closing)
+// This prevents layout jitter from height changes between scenes.
+
+const SCENE_LINES = 11;
 
 const scenes = [
     {
@@ -128,13 +157,14 @@ const scenes = [
             { text: '$ pftui', type: 'command', delay: 60 },
             { text: '', type: 'output', delay: 300 },
             { text: '┌─ Portfolio ──────────────────────────────┐', type: 'output', delay: 30 },
-            { text: '│  Total Value    $48,217    ▲ +2.4%       │', type: 'output', delay: 30 },
-            { text: '│  Day P&L        +$1,132                  │', type: 'output', delay: 30 },
+            { text: '│  Total Value    $287,345   ▲ +1.5%       │', type: 'output', delay: 30 },
+            { text: '│  Day P&L        +$3,892                  │', type: 'output', delay: 30 },
             { text: '│                                          │', type: 'output', delay: 30 },
-            { text: '│  Equity   45%  ██████████░░░░░░░░░░░░   │', type: 'output', delay: 30 },
-            { text: '│  Crypto   30%  ██████░░░░░░░░░░░░░░░░   │', type: 'output', delay: 30 },
-            { text: '│  Comd     25%  █████░░░░░░░░░░░░░░░░░   │', type: 'output', delay: 30 },
+            { text: '│  Cash    35%  ██████████░░░░░░░░░░░░░   │', type: 'output', delay: 30 },
+            { text: '│  Comd    30%  ███████░░░░░░░░░░░░░░░░   │', type: 'output', delay: 30 },
+            { text: '│  Equity  10%  ████░░░░░░░░░░░░░░░░░░░   │', type: 'output', delay: 30 },
             { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+            { text: '', type: 'output', delay: 0 },
         ],
         hold: 3000,
     },
@@ -142,46 +172,128 @@ const scenes = [
         lines: [
             { text: '$ pftui macro', type: 'command', delay: 60 },
             { text: '', type: 'output', delay: 200 },
-            { text: '┌─ Market Intelligence ────────────────────┐', type: 'output', delay: 30 },
-            { text: '│  S&P 500    ▲ +0.8%            RSI 58    │', type: 'output', delay: 30 },
-            { text: '│  VIX        ▼ -10.3%                      │', type: 'output', delay: 30 },
-            { text: '│  DXY        ▼ -0.1%            RSI 42    │', type: 'output', delay: 30 },
-            { text: '│  Gold       ▲ +1.2%            RSI 67    │', type: 'output', delay: 30 },
-            { text: '│  10Y Yield  ▼ -3bps                       │', type: 'output', delay: 30 },
-            { text: '│  Oil WTI    ▲ +0.6%                       │', type: 'output', delay: 30 },
-            { text: '│  BTC        ▲ +3.1%            RSI 61    │', type: 'output', delay: 30 },
+            { text: '┌─ Macro Intelligence ─────────────────────┐', type: 'output', delay: 30 },
+            { text: '│  S&P 500    6,740  ▼ -1.3%     RSI 42   │', type: 'output', delay: 30 },
+            { text: '│  VIX          29.5  ▲ +24.2%   ⚠️ HIGH   │', type: 'output', delay: 30 },
+            { text: '│  DXY         98.86  ▼ -0.5%     RSI 56   │', type: 'output', delay: 30 },
+            { text: '│  Gold       $5,181  ▲ +2.3%     RSI 58   │', type: 'output', delay: 30 },
+            { text: '│  10Y Yield   4.13%  ▼ -2bps               │', type: 'output', delay: 30 },
+            { text: '│  Oil WTI    $91.27  ▲ +12.7%    RSI 89 🔥│', type: 'output', delay: 30 },
+            { text: '│  BTC       $68,290  ▼ -6.0%     RSI 38   │', type: 'output', delay: 30 },
             { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
         ],
         hold: 3000,
     },
     {
         lines: [
-            { text: '$ pftui brief --agent', type: 'command', delay: 60 },
+            { text: '$ pftui sentiment', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ Market Sentiment ───────────────────────┐', type: 'output', delay: 30 },
+            { text: '│  Crypto F&G     🔴 10  Extreme Fear      │', type: 'output', delay: 30 },
+            { text: '│                                          │', type: 'output', delay: 30 },
+            { text: '│  COT Positioning (Managed Money)         │', type: 'output', delay: 30 },
+            { text: '│  Gold    🟢 Net Long   142k  (+8k)       │', type: 'output', delay: 30 },
+            { text: '│  Silver  ⚠️ Net Long    38k  (-2k)       │', type: 'output', delay: 30 },
+            { text: '│  Oil     🟢 Net Long   264k  (+19k)      │', type: 'output', delay: 30 },
+            { text: '│  BTC     🔴 Net Short  -12k  (-8k)       │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui sector', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ Sector ETF Performance ────────────────┐', type: 'output', delay: 30 },
+            { text: '│  XLE  Energy         $89.42  ▲ +4.2%    │', type: 'output', delay: 30 },
+            { text: '│  XLU  Utilities      $72.18  ▲ +1.8%    │', type: 'output', delay: 30 },
+            { text: '│  XLP  Cons Staples   $78.95  ▲ +0.9%    │', type: 'output', delay: 30 },
+            { text: '│  GDX  Gold Miners    $42.30  ▲ +3.1%    │', type: 'output', delay: 30 },
+            { text: '│  XLF  Financials     $43.67  ▼ -1.2%    │', type: 'output', delay: 30 },
+            { text: '│  XLK  Technology     $212.44 ▼ -2.1%    │', type: 'output', delay: 30 },
+            { text: '│  SMH  Semiconductors $248.91 ▼ -3.7%    │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui calendar --impact high', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ Economic Calendar (HIGH Impact) ───────┐', type: 'output', delay: 30 },
+            { text: '│  🔴 Mar 12  CPI (Cons: 3.1%, Prev: 3.0%)│', type: 'output', delay: 30 },
+            { text: '│  🔴 Mar 17  FOMC Rate Decision           │', type: 'output', delay: 30 },
+            { text: '│  🔴 Mar 18  FOMC Press Conference        │', type: 'output', delay: 30 },
+            { text: '│  🔴 Mar 27  GDP (Q4 Final)               │', type: 'output', delay: 30 },
+            { text: '│  🔴 Apr 03  Non-Farm Payrolls            │', type: 'output', delay: 30 },
+            { text: '│  🔴 Apr 10  CPI (April)                  │', type: 'output', delay: 30 },
+            { text: '│                                          │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui supply', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ COMEX Warehouse Inventory ─────────────┐', type: 'output', delay: 30 },
+            { text: '│  Gold  (GC=F)                           │', type: 'output', delay: 30 },
+            { text: '│  Registered:   16.2M troy oz             │', type: 'output', delay: 30 },
+            { text: '│  Eligible:      2.0M troy oz             │', type: 'output', delay: 30 },
+            { text: '│  Reg Ratio:     89.0%                    │', type: 'output', delay: 30 },
+            { text: '│                                          │', type: 'output', delay: 30 },
+            { text: '│  Silver  (SI=F)                          │', type: 'output', delay: 30 },
+            { text: '│  Registered:   25.7M troy oz             │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui movers', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ Significant Moves (>3%) ────────────────┐', type: 'output', delay: 30 },
+            { text: '│  ▲ Oil WTI     +12.7%   Brent $90+      │', type: 'output', delay: 30 },
+            { text: '│  ▲ VIX         +24.2%   War escalation   │', type: 'output', delay: 30 },
+            { text: '│  ▲ Silver      +3.7%    Safe haven bid   │', type: 'output', delay: 30 },
+            { text: '│  ▲ GDX         +3.1%    Gold miners      │', type: 'output', delay: 30 },
+            { text: '│  ▼ BTC         -6.0%    Risk-off         │', type: 'output', delay: 30 },
+            { text: '│  ▼ GLXY        -9.6%    Crypto proxy     │', type: 'output', delay: 30 },
+            { text: '│  ▼ SMH         -3.7%    Semis selling    │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui eod', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '┌─ End of Day Summary ────────────────────┐', type: 'output', delay: 30 },
+            { text: '│  Portfolio   $287,345    ▲ +$3,892       │', type: 'output', delay: 30 },
+            { text: '│  Movers      7 symbols > 3%              │', type: 'output', delay: 30 },
+            { text: '│  VIX         29.5       ⚠️ Elevated       │', type: 'output', delay: 30 },
+            { text: '│  F&G         🔴 10      Extreme Fear     │', type: 'output', delay: 30 },
+            { text: '│  Oil         $91.27     RSI 89 🔥        │', type: 'output', delay: 30 },
+            { text: '│  Gold COT    🟢 Managed Money Net Long   │', type: 'output', delay: 30 },
+            { text: '│  Next Event  CPI Mar 12 (5 days)         │', type: 'output', delay: 30 },
+            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
+        ],
+        hold: 3000,
+    },
+    {
+        lines: [
+            { text: '$ pftui brief --agent --json', type: 'command', delay: 60 },
             { text: '', type: 'output', delay: 200 },
             { text: '{', type: 'json', delay: 20 },
-            { text: '  "portfolio_value": 48217.43,', type: 'json', delay: 20 },
-            { text: '  "daily_pnl": 1132.18,', type: 'json', delay: 20 },
-            { text: '  "daily_pnl_pct": 2.4,', type: 'json', delay: 20 },
-            { text: '  "top_movers": [', type: 'json', delay: 20 },
-            { text: '    {"symbol": "BTC", "change": 3.1},', type: 'json', delay: 20 },
-            { text: '    {"symbol": "GOLD", "change": 1.2}', type: 'json', delay: 20 },
-            { text: '  ],', type: 'json', delay: 20 },
-            { text: '  "alerts_triggered": 0', type: 'json', delay: 20 },
+            { text: '  "value": 287345.42,', type: 'json', delay: 20 },
+            { text: '  "daily_pnl": 3892.18,', type: 'json', delay: 20 },
+            { text: '  "movers": [{"sym":"OIL","chg":12.7},', type: 'json', delay: 20 },
+            { text: '    {"sym":"VIX","chg":24.2},', type: 'json', delay: 20 },
+            { text: '    {"sym":"BTC","chg":-6.0}],', type: 'json', delay: 20 },
+            { text: '  "regime": "risk-off",', type: 'json', delay: 20 },
+            { text: '  "fear_greed": 10,', type: 'json', delay: 20 },
+            { text: '  "vix": 29.5, "dxy": 98.86', type: 'json', delay: 20 },
             { text: '}', type: 'json', delay: 20 },
-        ],
-        hold: 3000,
-    },
-    {
-        lines: [
-            { text: '$ pftui predictions', type: 'command', delay: 60 },
-            { text: '', type: 'output', delay: 200 },
-            { text: '┌─ Prediction Markets ─────────────────────┐', type: 'output', delay: 30 },
-            { text: '│  Fed rate cut next meeting?   67%   ▲+4  │', type: 'output', delay: 30 },
-            { text: '│  BTC breaks resistance soon?  52%   ▼-3  │', type: 'output', delay: 30 },
-            { text: '│  Recession odds rise?         23%   ▲+2  │', type: 'output', delay: 30 },
-            { text: '│  Gold extends trend?          78%   ▲+6  │', type: 'output', delay: 30 },
-            { text: '│  Risk regime shift this week? 61%   →0   │', type: 'output', delay: 30 },
-            { text: '└──────────────────────────────────────────┘', type: 'output', delay: 30 },
         ],
         hold: 3000,
     },
@@ -221,14 +333,19 @@ function colorize(text) {
     return text
         .replace(/▲ \+[\d.]+%?/g, '<span style="color:var(--accent-green)">$&</span>')
         .replace(/▲\+\d+/g, '<span style="color:var(--accent-green)">$&</span>')
+        .replace(/\+[\d.]+%/g, '<span style="color:var(--accent-green)">$&</span>')
         .replace(/▼ -[\d.]+%?/g, '<span style="color:var(--accent-red)">$&</span>')
         .replace(/▼-\d+/g, '<span style="color:var(--accent-red)">$&</span>')
+        .replace(/-[\d.]+%/g, '<span style="color:var(--accent-red)">$&</span>')
         .replace(/→0/g, '<span style="color:var(--text-tertiary)">$&</span>')
         .replace(/(RSI \d+)/g, '<span style="color:var(--accent-blue)">$1</span>')
         .replace(/(█+)/g, '<span style="color:var(--accent-green)">$1</span>')
         .replace(/(░+)/g, '<span style="color:var(--bg-tertiary)">$1</span>')
         .replace(/(\d+%)\s/g, '<span style="color:var(--accent-cyan)">$1</span> ')
-        .replace(/([\d,]+\.\d+|\$[\d,]+)/g, '<span style="color:var(--text-primary);font-weight:500">$1</span>');
+        .replace(/([\d,]+\.\d+|\$[\d,]+)/g, '<span style="color:var(--text-primary);font-weight:500">$1</span>')
+        .replace(/(⚠️ HIGH|🔥)/g, '<span style="color:var(--accent-red)">$1</span>')
+        .replace(/(Extreme Fear)/g, '<span style="color:var(--accent-red)">$1</span>')
+        .replace(/(🟢|🔴|⚠️)/g, '$1');
 }
 
 async function typeText(element, text, delay) {

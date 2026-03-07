@@ -277,7 +277,7 @@ body {
     padding: var(--spacing-md);
     font-family: var(--font-mono);
     font-size: clamp(0.66rem, 0.78vw, 0.95rem);
-    min-height: 400px;
+    height: 320px;
     background: var(--bg-primary);
     text-align: left;
     line-height: 1.45;
@@ -907,7 +907,7 @@ footer {
     
     .terminal-body {
         padding: var(--spacing-sm);
-        min-height: 250px;
+        height: 280px;
         font-size: 0.8rem;
     }
     
@@ -930,11 +930,6 @@ footer {
         -webkit-mask-image: none;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
-        scroll-snap-type: x mandatory;
-    }
-
-    .highlights-scroller {
-        animation: none;
     }
 
     .highlights-track {
@@ -944,7 +939,6 @@ footer {
 
     .highlight-card {
         width: min(84vw, 360px);
-        scroll-snap-align: start;
         flex-shrink: 0;
     }
     
@@ -1053,7 +1047,7 @@ footer {
     /* Terminal mockup */
     .terminal-body {
         padding: 0.75rem;
-        min-height: 200px;
+        height: 240px;
         font-size: 0.7rem;
     }
     
@@ -1175,6 +1169,6 @@ footer {
     
     .terminal-body {
         font-size: 0.6rem;
-        min-height: 180px;
+        height: 220px;
     }
 }
