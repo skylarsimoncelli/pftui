@@ -435,6 +435,7 @@ pub struct App {
     pub prices_live: bool,
     pub last_refresh: Option<Instant>,
     refresh_interval_secs: u64,
+    pub chart_sma_periods: Vec<usize>,
 
     // Totals
     pub total_value: Decimal,
@@ -682,6 +683,7 @@ impl App {
             prices_live: false,
             last_refresh: None,
             refresh_interval_secs: config.refresh_interval,
+            chart_sma_periods: config.chart_sma.clone(),
             total_value: dec!(0),
             total_cost: dec!(0),
             theme: theme::theme_by_name(&config.theme),
@@ -791,6 +793,7 @@ impl App {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: self.chart_sma_periods.clone(),
         };
         let service = PriceService::start(config);
         self.request_price_fetch(&service);
@@ -821,6 +824,7 @@ impl App {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: self.chart_sma_periods.clone(),
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -4176,6 +4180,7 @@ mod vim_motion_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
 
@@ -4414,6 +4419,7 @@ mod search_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
 
@@ -4738,6 +4744,7 @@ mod timeframe_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
@@ -4753,6 +4760,7 @@ mod timeframe_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
         app.display_positions.push(Position {
@@ -4836,6 +4844,7 @@ mod crosshair_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from(":memory:"));
         app.view_mode = ViewMode::Positions;
@@ -4990,6 +4999,7 @@ mod responsive_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
     }
@@ -5046,6 +5056,7 @@ mod on_demand_history_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
     }
@@ -5110,6 +5121,7 @@ mod daily_change_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
     }
@@ -5243,6 +5255,7 @@ mod portfolio_value_history_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
     }
@@ -6100,6 +6113,7 @@ mod sort_flash_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
         for i in 0..3 {
@@ -6192,6 +6206,7 @@ mod prev_day_alloc_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
     }
@@ -6356,6 +6371,7 @@ mod mouse_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
         app.terminal_width = 120;
@@ -6994,6 +7010,7 @@ mod mouse_tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, db_path);
         app.init_offline();

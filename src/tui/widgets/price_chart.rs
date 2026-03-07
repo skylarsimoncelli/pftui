@@ -20,10 +20,6 @@ pub struct CrosshairState {
 /// Block characters for volume bars (8 levels of fill)
 const VOLUME_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-// SMA periods to overlay on price charts
-const SMA_SHORT_PERIOD: usize = 20;
-const SMA_LONG_PERIOD: usize = 50;
-
 /// Bollinger Band multiplier (standard deviations from SMA)
 const BOLLINGER_MULTIPLIER: f64 = 2.0;
 
@@ -357,26 +353,29 @@ fn render_single_chart(
         }
     }
 
-    let sma20 = compute_sma(&raw_values, SMA_SHORT_PERIOD);
-    if sma20.iter().any(|v| v.is_some()) {
-        sma_overlays.push((sma20, t.text_accent));
-    }
-    let sma50 = compute_sma(&raw_values, SMA_LONG_PERIOD);
-    if sma50.iter().any(|v| v.is_some()) {
-        sma_overlays.push((sma50, t.border_accent));
+    // Compute SMA overlays from config
+    let sma_colors = [t.text_accent, t.border_accent, t.text_muted];
+    for (i, &period) in app.chart_sma_periods.iter().enumerate() {
+        let sma = compute_sma(&raw_values, period);
+        if sma.iter().any(|v| v.is_some()) {
+            let color = sma_colors.get(i).copied().unwrap_or(t.text_muted);
+            sma_overlays.push((sma, color));
+        }
     }
 
     let sma_overlay_count = sma_overlays.len();
 
-    // Bollinger Bands: SMA(20) ± 2σ, rendered as faint overlays
-    let (bb_upper, bb_lower) = compute_bollinger(&raw_values, SMA_SHORT_PERIOD, BOLLINGER_MULTIPLIER);
-    let bb_color = muted_color(t.text_accent, t.surface_1);
-    if bb_upper.iter().any(|v| v.is_some()) {
-        sma_overlays.push((bb_upper, bb_color));
-        sma_overlays.push((bb_lower, bb_color));
+    // Bollinger Bands: SMA(first period) ± 2σ, rendered as faint overlays
+    if let Some(&bb_period) = app.chart_sma_periods.first() {
+        let (bb_upper, bb_lower) = compute_bollinger(&raw_values, bb_period, BOLLINGER_MULTIPLIER);
+        let bb_color = muted_color(t.text_accent, t.surface_1);
+        if bb_upper.iter().any(|v| v.is_some()) {
+            sma_overlays.push((bb_upper, bb_color));
+            sma_overlays.push((bb_lower, bb_color));
+        }
     }
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, crosshair, app.chart_render_mode, t);
+    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, &app.chart_sma_periods, crosshair, app.chart_render_mode, t);
 }
 
 /// Render a ratio chart (numerator / denominator)
@@ -444,7 +443,7 @@ fn render_ratio_chart(
     };
 
     // No volume or overlays for ratio charts
-    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], 0, crosshair, app.chart_render_mode, t);
+    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], 0, &[], crosshair, app.chart_render_mode, t);
 }
 
 /// Compact single chart for multi-panel (no stats line, just braille)
@@ -741,6 +740,7 @@ fn render_braille_chart(
     volumes: Option<&[Option<u64>]>,
     sma_overlays: &[(Vec<Option<f64>>, Color)],
     sma_count: usize,
+    sma_periods: &[usize],
     crosshair: Option<&CrosshairState>,
     render_mode: crate::app::ChartRenderMode,
     t: &theme::Theme,
@@ -997,19 +997,16 @@ fn render_braille_chart(
         if !sma_overlays.is_empty() {
             stats_spans.push(Span::raw("  "));
             let mut bb_labeled = false;
-            for (i, (sma_raw, color)) in sma_overlays.iter().enumerate() {
+            for (i, (_sma_raw, color)) in sma_overlays.iter().enumerate() {
                 if i < sma_count {
-                    // SMA overlay — determine period from leading None count
-                    let period = sma_raw.iter().take_while(|v| v.is_none()).count() + 1;
-                    let label = if period <= SMA_SHORT_PERIOD + 1 {
-                        format!("SMA{}", SMA_SHORT_PERIOD)
-                    } else {
-                        format!("SMA{}", SMA_LONG_PERIOD)
-                    };
-                    stats_spans.push(Span::styled(
-                        format!("─{}", label),
-                        Style::default().fg(*color),
-                    ));
+                    // SMA overlay — use period from config
+                    if let Some(&period) = sma_periods.get(i) {
+                        let label = format!("SMA{}", period);
+                        stats_spans.push(Span::styled(
+                            format!("─{}", label),
+                            Style::default().fg(*color),
+                        ));
+                    }
                 } else if !bb_labeled {
                     // Bollinger Band overlay — label once for both upper+lower
                     stats_spans.push(Span::styled(
@@ -1417,15 +1414,16 @@ pub fn render_braille_lines<'a>(
 
     let normalized: Vec<usize> = resampled.iter().map(|v| normalize_val(*v)).collect();
 
-    // Compute SMA overlays
-    let sma20 = compute_sma(&values, SMA_SHORT_PERIOD);
-    let sma50 = compute_sma(&values, SMA_LONG_PERIOD);
+    // Compute SMA overlays with default periods (for popup/detail views)
     let mut sma_overlays: Vec<(Vec<Option<f64>>, Color)> = Vec::new();
-    if sma20.iter().any(|v| v.is_some()) {
-        sma_overlays.push((sma20, t.text_accent));
-    }
-    if sma50.iter().any(|v| v.is_some()) {
-        sma_overlays.push((sma50, t.border_accent));
+    let sma_colors = [t.text_accent, t.border_accent, t.text_muted];
+    let default_periods = [20, 50];
+    for (i, &period) in default_periods.iter().enumerate() {
+        let sma = compute_sma(&values, period);
+        if sma.iter().any(|v| v.is_some()) {
+            let color = sma_colors.get(i).copied().unwrap_or(t.text_muted);
+            sma_overlays.push((sma, color));
+        }
     }
 
     // Resample and normalize SMA overlays
@@ -1560,15 +1558,14 @@ pub fn render_braille_lines<'a>(
     // SMA legend
     if !sma_overlays.is_empty() {
         stats_spans.push(Span::raw("  "));
+        let default_periods = [20, 50];
         for (i, (_sma_raw, color)) in sma_overlays.iter().enumerate() {
-            let label = if i == 0 {
-                format!("─SMA{}", SMA_SHORT_PERIOD)
-            } else {
-                format!("─SMA{}", SMA_LONG_PERIOD)
-            };
-            stats_spans.push(Span::styled(label, Style::default().fg(*color)));
-            if i < sma_overlays.len() - 1 {
-                stats_spans.push(Span::raw(" "));
+            if let Some(&period) = default_periods.get(i) {
+                let label = format!("─SMA{}", period);
+                stats_spans.push(Span::styled(label, Style::default().fg(*color)));
+                if i < sma_overlays.len() - 1 {
+                    stats_spans.push(Span::raw(" "));
+                }
             }
         }
     }

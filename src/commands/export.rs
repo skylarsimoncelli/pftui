@@ -232,6 +232,7 @@ mod tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");

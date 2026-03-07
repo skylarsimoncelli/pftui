@@ -35,6 +35,13 @@ pub struct Config {
     /// Custom RSS feeds (name, url, category). If empty, uses default feeds.
     #[serde(default)]
     pub custom_news_feeds: Vec<CustomNewsFeed>,
+    /// SMA periods to overlay on price charts (default: [20, 50])
+    #[serde(default = "default_chart_sma")]
+    pub chart_sma: Vec<usize>,
+}
+
+fn default_chart_sma() -> Vec<usize> {
+    vec![20, 50]
 }
 
 fn default_base_currency() -> String {
@@ -75,6 +82,7 @@ impl Default for Config {
             fred_api_key: None,
             news_poll_interval: default_news_poll_interval(),
             custom_news_feeds: Vec::new(),
+            chart_sma: default_chart_sma(),
         }
     }
 }
@@ -256,6 +264,7 @@ mod tests {
             fred_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            chart_sma: vec![20, 50],
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();
