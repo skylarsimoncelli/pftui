@@ -947,6 +947,9 @@ mod tests {
                 date: format!("2025-{:02}-{:02}", (i / 28) + 1, (i % 28) + 1),
                 close: p.parse().unwrap_or_default(),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect()
     }
@@ -1040,6 +1043,9 @@ mod tests {
                 date: format!("2024-{:02}-{:02}", (i / 28) + 1, (i % 28) + 1),
                 close: p.parse().unwrap_or_default(),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         let result = compute_52w_range(&history, Some(dec!(110)));
@@ -1061,6 +1067,9 @@ mod tests {
                 date: format!("2025-01-{:02}", i + 1),
                 close: p.parse().unwrap_or_default(),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         app.price_history.insert(symbol.to_string(), records);
@@ -1202,6 +1211,9 @@ mod mini_sparkline_tests {
                 date: format!("2025-01-{:02}", i + 1),
                 close: p.parse().unwrap_or_default(),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect()
     }
@@ -1633,6 +1645,9 @@ mod rsi_indicator_tests {
                 close: rust_decimal::Decimal::from_str_exact(&format!("{:.2}", p))
                     .unwrap_or_default(),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect()
     }

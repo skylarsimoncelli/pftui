@@ -699,7 +699,10 @@ mod tests {
             date: "2026-03-01".into(),
             close: dec!(100),
             volume: None,
-        }];
+                open: None,
+                high: None,
+                low: None,
+            }];
         let spans = build_sparkline_spans(&t, &records, 7);
         assert_eq!(spans.len(), 1);
     }
@@ -712,6 +715,9 @@ mod tests {
                 date: format!("2026-03-0{}", i),
                 close: Decimal::new(i * 100, 0),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         let spans = build_sparkline_spans(&t, &records, 7);
@@ -726,6 +732,9 @@ mod tests {
                 date: format!("2026-01-{:02}", i),
                 close: Decimal::new(i * 10, 0),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         let spans = build_sparkline_spans(&t, &records, 7);
@@ -740,6 +749,9 @@ mod tests {
                 date: format!("2026-03-0{}", i),
                 close: dec!(50),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         let spans = build_sparkline_spans(&t, &records, 7);

@@ -489,6 +489,9 @@ mod tests {
                 date: "2026-03-03".to_string(),
                 close: dec!(195.50),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         )
         .unwrap();
@@ -511,7 +514,10 @@ mod tests {
                     date: "2026-03-03".to_string(),
                     close: dec!(200),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
             ],
         )
         .unwrap();
@@ -536,7 +542,10 @@ mod tests {
                     date: "2026-03-03".to_string(),
                     close: dec!(200),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
             ],
         )
         .unwrap();
@@ -561,7 +570,10 @@ mod tests {
                     date: "2026-03-03".to_string(),
                     close: dec!(0),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
             ],
         )
         .unwrap();
@@ -603,12 +615,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(210),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
             ],
         )
         .unwrap();

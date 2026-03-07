@@ -268,11 +268,17 @@ mod tests {
                 date: "2026-03-02".into(),
                 close: dec!(100),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             },
             HistoryRecord {
                 date: "2026-03-03".into(),
                 close: dec!(105),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             },
         ];
         let prev = prev_close_from_history(&records, "2026-03-03");
@@ -286,11 +292,17 @@ mod tests {
                 date: "2026-03-01".into(),
                 close: dec!(100),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             },
             HistoryRecord {
                 date: "2026-03-02".into(),
                 close: dec!(105),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             },
         ];
         let prev = prev_close_from_history(&records, "2026-03-03");
@@ -309,7 +321,10 @@ mod tests {
             date: "2026-03-03".into(),
             close: dec!(100),
             volume: None,
-        }];
+                open: None,
+                high: None,
+                low: None,
+            }];
         // Single record that IS today — no previous close available
         // (falls to else branch, returns last = today's close)
         let prev = prev_close_from_history(&records, "2026-03-03");

@@ -2422,9 +2422,9 @@ mod tests {
     #[test]
     fn history_change_pct_uses_lookback_point() {
         let h = vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(110), volume: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(120), volume: None },
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(120), volume: None, open: None, high: None, low: None },
         ];
         let day = history_change_pct(&h, 1).unwrap();
         assert!(day > dec!(9));
@@ -2436,9 +2436,9 @@ mod tests {
     #[test]
     fn range_and_volume_stats_read_recent_data() {
         let h = vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: Some(10) },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(90), volume: Some(20) },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(130), volume: Some(30) },
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: Some(10), open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(90), volume: Some(20), open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(130), volume: Some(30), open: None, high: None, low: None },
         ];
         let (lo, hi) = range_from_history(&h, 252);
         assert_eq!(lo, Some(dec!(90)));

@@ -1316,12 +1316,18 @@ mod tests {
                     date: "2026-03-01".to_string(),
                     close: dec!(170),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
                 HistoryRecord {
                     date: "2026-03-02".to_string(),
                     close: dec!(175),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
             ],
         );
         let lines = build_lines("AAPL", &app);
@@ -1340,6 +1346,9 @@ mod tests {
                 date: format!("2026-02-{:02}", (i % 28) + 1),
                 close: dec!(150) + Decimal::from(i),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             });
         }
         app.price_history.insert("AAPL".to_string(), hist);
@@ -1391,6 +1400,9 @@ mod tests {
                 date: format!("2026-01-{:02}", (i % 28) + 1),
                 close: dec!(150) + Decimal::from(i),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             });
         }
         app.price_history.insert("AAPL".to_string(), hist);
@@ -1421,6 +1433,9 @@ mod tests {
                 date: format!("2026-02-{:02}", (i % 28) + 1),
                 close: dec!(150) + Decimal::from(i),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             });
         }
         app.price_history.insert("AAPL".to_string(), hist);
@@ -1447,6 +1462,9 @@ mod tests {
                 date: "2026-03-01".to_string(),
                 close: dec!(170),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         );
         let lines = build_lines("AAPL", &app);

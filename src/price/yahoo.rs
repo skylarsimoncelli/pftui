@@ -240,10 +240,55 @@ pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>
                         continue;
                     }
                 }
+                let open = Decimal::try_from(q.open).ok().map(|mut o| {
+                    if currency != "USD" {
+                        if let Some(ref rates) = fx_rates {
+                            if let Some(&rate) = rates.get(&date) {
+                                o = (o * rate).round_dp(4);
+                            } else if let Some(rate) = fallback_fx {
+                                o = (o * rate).round_dp(4);
+                            }
+                        } else if let Some(rate) = fallback_fx {
+                            o = (o * rate).round_dp(4);
+                        }
+                    }
+                    o
+                });
+                let high = Decimal::try_from(q.high).ok().map(|mut h| {
+                    if currency != "USD" {
+                        if let Some(ref rates) = fx_rates {
+                            if let Some(&rate) = rates.get(&date) {
+                                h = (h * rate).round_dp(4);
+                            } else if let Some(rate) = fallback_fx {
+                                h = (h * rate).round_dp(4);
+                            }
+                        } else if let Some(rate) = fallback_fx {
+                            h = (h * rate).round_dp(4);
+                        }
+                    }
+                    h
+                });
+                let low = Decimal::try_from(q.low).ok().map(|mut l| {
+                    if currency != "USD" {
+                        if let Some(ref rates) = fx_rates {
+                            if let Some(&rate) = rates.get(&date) {
+                                l = (l * rate).round_dp(4);
+                            } else if let Some(rate) = fallback_fx {
+                                l = (l * rate).round_dp(4);
+                            }
+                        } else if let Some(rate) = fallback_fx {
+                            l = (l * rate).round_dp(4);
+                        }
+                    }
+                    l
+                });
                 records.push(HistoryRecord {
                     date,
                     close,
                     volume: Some(q.volume),
+                    open,
+                    high,
+                    low,
                 });
             }
         }

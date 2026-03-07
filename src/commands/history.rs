@@ -453,12 +453,18 @@ mod tests {
                     date: "2025-06-01".into(),
                     close: dec!(180),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
                 HistoryRecord {
                     date: "2025-06-15".into(),
                     close: dec!(190),
                     volume: None,
-                },
+                open: None,
+                high: None,
+                low: None,
+            },
             ],
         )
         .unwrap();
@@ -515,6 +521,9 @@ mod tests {
                 date: "2025-06-01".into(),
                 close: dec!(200),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         )
         .unwrap();
@@ -527,6 +536,9 @@ mod tests {
                 date: "2025-06-01".into(),
                 close: dec!(85000),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         )
         .unwrap();
@@ -616,6 +628,9 @@ mod tests {
                 date: "2025-06-01".into(),
                 close: dec!(184),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         )
         .unwrap();
@@ -658,6 +673,9 @@ mod tests {
                 date: "2025-06-01".into(),
                 close: dec!(85000),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         )
         .unwrap();
@@ -670,6 +688,9 @@ mod tests {
                 date: "2025-06-01".into(),
                 close: dec!(2800),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         )
         .unwrap();

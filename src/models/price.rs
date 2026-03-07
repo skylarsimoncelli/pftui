@@ -17,4 +17,13 @@ pub struct HistoryRecord {
     /// Daily trading volume (None if unavailable, e.g. ratio charts)
     #[serde(default)]
     pub volume: Option<u64>,
+    /// Open price (None if unavailable)
+    #[serde(default)]
+    pub open: Option<Decimal>,
+    /// High price (None if unavailable)
+    #[serde(default)]
+    pub high: Option<Decimal>,
+    /// Low price (None if unavailable)
+    #[serde(default)]
+    pub low: Option<Decimal>,
 }

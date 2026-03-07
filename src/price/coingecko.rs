@@ -188,7 +188,14 @@ pub async fn fetch_history(ticker: &str, days: u32) -> Result<Vec<HistoryRecord>
             let date = dt.format("%Y-%m-%d").to_string();
             if let Ok(close) = Decimal::try_from(*price) {
                 let volume = volume_by_date.get(&date).copied();
-                records.push(HistoryRecord { date, close, volume });
+                records.push(HistoryRecord {
+                    date,
+                    close,
+                    volume,
+                    open: None,
+                    high: None,
+                    low: None,
+                });
             }
         }
     }

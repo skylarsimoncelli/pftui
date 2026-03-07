@@ -4067,8 +4067,8 @@ mod tests {
         use crate::models::price::HistoryRecord;
         let mut history = HashMap::new();
         let records = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
         ];
         merge_history_into(&mut history, "AAPL".to_string(), records);
         assert_eq!(history.get("AAPL").unwrap().len(), 2);
@@ -4080,13 +4080,13 @@ mod tests {
         let mut history = HashMap::new();
         // Existing: 3 months of data
         history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-02-01".into(), close: dec!(110), volume: None },
-            HistoryRecord { date: "2025-03-01".into(), close: dec!(120), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-02-01".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-03-01".into(), close: dec!(120), volume: None, open: None, high: None, low: None },
         ]);
         // New fetch returns only last month (shorter range)
         let new_records = vec![
-            HistoryRecord { date: "2025-03-01".into(), close: dec!(125), volume: None },
+            HistoryRecord { date: "2025-03-01".into(), close: dec!(125), volume: None, open: None, high: None, low: None },
         ];
         merge_history_into(&mut history, "AAPL".to_string(), new_records);
         let merged = history.get("AAPL").unwrap();
@@ -4103,11 +4103,11 @@ mod tests {
         use crate::models::price::HistoryRecord;
         let mut history = HashMap::new();
         history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
         ]);
         let new_records = vec![
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
         ];
         merge_history_into(&mut history, "AAPL".to_string(), new_records);
         let merged = history.get("AAPL").unwrap();
@@ -4124,7 +4124,7 @@ mod tests {
         let mut history = HashMap::new();
         history.insert("AAPL".to_string(), Vec::new());
         let new_records = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
         ];
         merge_history_into(&mut history, "AAPL".to_string(), new_records);
         assert_eq!(history.get("AAPL").unwrap().len(), 1);
@@ -5119,8 +5119,8 @@ mod daily_change_tests {
         app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity)];
         // Add history with a previous day close of 150
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(148), volume: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(148), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_daily_change();
         // (155 - 150) * 10 = 50
@@ -5132,7 +5132,7 @@ mod daily_change_tests {
         let mut app = make_app();
         app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(145)), AssetCategory::Equity)];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_daily_change();
         // (145 - 150) * 10 = -50
@@ -5147,10 +5147,10 @@ mod daily_change_tests {
             make_position("GOOG", dec!(5), Some(dec!(2800)), AssetCategory::Equity),
         ];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(2750), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(2750), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_daily_change();
         // AAPL: (155-150)*10 = 50, GOOG: (2800-2750)*5 = 250. Total = 300
@@ -5165,7 +5165,7 @@ mod daily_change_tests {
             make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity),
         ];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_daily_change();
         // Only AAPL: (155-150)*10 = 50 (cash excluded)
@@ -5178,7 +5178,7 @@ mod daily_change_tests {
         app.portfolio_mode = PortfolioMode::Percentage;
         app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity)];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_daily_change();
         assert_eq!(app.daily_portfolio_change, None);
@@ -5190,8 +5190,8 @@ mod daily_change_tests {
         app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(160)), AssetCategory::Equity)];
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
-            HistoryRecord { date: today, close: dec!(158), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: today, close: dec!(158), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_daily_change();
         // Should use 2026-02-28 close (150), not today's record
@@ -5245,15 +5245,15 @@ mod portfolio_value_history_tests {
         let mut app = make_app();
         app.positions = vec![make_position("AAPL", dec!(10), AssetCategory::Equity)];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
             // No record for 2026-01-02
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(155), volume: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(155), volume: None, open: None, high: None, low: None },
         ]);
         // Add a second symbol that has data on day 2 to create the date
         app.positions.push(make_position("GOOG", dec!(5), AssetCategory::Equity));
         app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(2800), volume: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(2850), volume: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(2800), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(2850), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_portfolio_value_history();
 
@@ -5277,13 +5277,13 @@ mod portfolio_value_history_tests {
         ];
         // AAPL has prices on odd days, GOOG on even days
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-01-05".to_string(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-05".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
         ]);
         app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(200), volume: None },
-            HistoryRecord { date: "2026-01-04".to_string(), close: dec!(200), volume: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(200), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-04".to_string(), close: dec!(200), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_portfolio_value_history();
 
@@ -5312,8 +5312,8 @@ mod portfolio_value_history_tests {
             make_position("AAPL", dec!(10), AssetCategory::Equity),
         ];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(155), volume: None },
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(155), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_portfolio_value_history();
 
@@ -5331,13 +5331,13 @@ mod portfolio_value_history_tests {
             make_position("NEW", dec!(20), AssetCategory::Equity),
         ];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(105), volume: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(110), volume: None },
+            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(105), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(110), volume: None, open: None, high: None, low: None },
         ]);
         // NEW only gets a price on day 3
         app.price_history.insert("NEW".to_string(), vec![
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(50), volume: None },
+            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(50), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_portfolio_value_history();
 
@@ -6206,12 +6206,12 @@ mod prev_day_alloc_tests {
         ];
         // AAPL: prev close 140, BTC: prev close 50000
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.price_history.insert("BTC".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(50000), volume: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(60000), volume: None },
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(50000), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(60000), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_prev_day_cat_allocations();
 
@@ -6232,7 +6232,7 @@ mod prev_day_alloc_tests {
         ];
         // Only 1 record — no "previous" day
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_prev_day_cat_allocations();
         assert!(app.prev_day_cat_allocations.is_empty());
@@ -6246,8 +6246,8 @@ mod prev_day_alloc_tests {
             make_position("USD", dec!(1000), Some(dec!(1)), AssetCategory::Cash),
         ];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
         ]);
         // No price_history for USD/Cash — should still use price 1.0
         app.compute_prev_day_cat_allocations();
@@ -6269,16 +6269,16 @@ mod prev_day_alloc_tests {
             make_position("BTC", dec!(1), Some(dec!(50000)), AssetCategory::Crypto),
         ];
         app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ]);
         app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(190), volume: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(200), volume: None },
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(190), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(200), volume: None, open: None, high: None, low: None },
         ]);
         app.price_history.insert("BTC".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(48000), volume: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(50000), volume: None },
+            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(48000), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(50000), volume: None, open: None, high: None, low: None },
         ]);
         app.compute_prev_day_cat_allocations();
 

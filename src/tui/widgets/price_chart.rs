@@ -487,6 +487,9 @@ fn compute_ratio(
                     date: nr.date.clone(),
                     close: nr.close / *den_close,
                     volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
                 })
             } else {
                 None
@@ -1452,12 +1455,12 @@ mod tests {
     #[test]
     fn test_compute_ratio_has_no_volume() {
         let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(500_000) },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: Some(600_000) },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(500_000), open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: Some(600_000), open: None, high: None, low: None },
         ];
         let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: Some(300_000) },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: Some(400_000) },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: Some(300_000), open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: Some(400_000), open: None, high: None, low: None },
         ];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 2);
@@ -1567,14 +1570,14 @@ mod tests {
     #[test]
     fn test_compute_ratio_basic() {
         let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(150), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(150), volume: None, open: None, high: None, low: None },
         ];
         let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(75), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(75), volume: None, open: None, high: None, low: None },
         ];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 3);
@@ -1586,14 +1589,14 @@ mod tests {
     #[test]
     fn test_compute_ratio_skips_missing_dates() {
         let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(300), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(300), volume: None, open: None, high: None, low: None },
         ];
         let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None, open: None, high: None, low: None },
             // no 2025-01-02
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
         ];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 2); // only matching dates
@@ -1604,10 +1607,10 @@ mod tests {
     #[test]
     fn test_compute_ratio_skips_zero_denominator() {
         let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
         ];
         let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(0), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(0), volume: None, open: None, high: None, low: None },
         ];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 0);
@@ -1617,7 +1620,7 @@ mod tests {
     fn test_compute_ratio_empty_inputs() {
         let empty: Vec<HistoryRecord> = vec![];
         let non_empty = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
+            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
         ];
         assert!(compute_ratio(&empty, &non_empty).is_empty());
         assert!(compute_ratio(&non_empty, &empty).is_empty());
@@ -1699,11 +1702,11 @@ mod tests {
     fn test_crosshair_record_mapping() {
         // Given a chart width of 10, sample_count = 20,
         // and 5 records, crosshair at column 5 should map to record ~2
-        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(120), volume: None },
-            HistoryRecord { date: "2025-01-04".into(), close: dec!(130), volume: None },
-            HistoryRecord { date: "2025-01-05".into(), close: dec!(140), volume: None }];
+        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-03".into(), close: dec!(120), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-04".into(), close: dec!(130), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-05".into(), close: dec!(140), volume: None, open: None, high: None, low: None }];
         let chart_width = 10;
         let sample_count = chart_width * 2; // 20
         let crosshair_col = 5;
@@ -1716,8 +1719,8 @@ mod tests {
 
     #[test]
     fn test_crosshair_record_mapping_rightmost() {
-        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None }];
+        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None }];
         let chart_width = 10;
         let sample_count = chart_width * 2;
         let crosshair_col = chart_width - 1; // rightmost
@@ -1729,8 +1732,8 @@ mod tests {
 
     #[test]
     fn test_crosshair_record_mapping_leftmost() {
-        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None }];
+        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None }];
         let chart_width = 10;
         let sample_count = chart_width * 2;
         let crosshair_col = 0; // leftmost
@@ -1911,7 +1914,10 @@ mod tests {
             date: "2026-01-01".into(),
             close: dec!(100),
             volume: None,
-        }];
+                open: None,
+                high: None,
+                low: None,
+            }];
         let lines = render_braille_lines(&records, 40, 6, &t);
         assert!(lines.is_empty(), "Should return empty for < 2 records");
     }
@@ -1920,8 +1926,8 @@ mod tests {
     fn test_render_braille_lines_too_narrow() {
         let t = theme::midnight();
         let records = vec![
-            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None },
+            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
         ];
         let lines = render_braille_lines(&records, 2, 6, &t);
         assert!(lines.is_empty(), "Should return empty for width < 4");
@@ -1936,6 +1942,9 @@ mod tests {
                 date: format!("2026-01-{:02}", (i % 28) + 1),
                 close: dec!(100) + Decimal::from(i),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             });
         }
         let chart_height = 6;
@@ -1948,9 +1957,9 @@ mod tests {
     fn test_render_braille_lines_stats_line_contains_price() {
         let t = theme::midnight();
         let records = vec![
-            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-01-02".into(), close: dec!(120), volume: None },
-            HistoryRecord { date: "2026-01-03".into(), close: dec!(130), volume: None },
+            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-02".into(), close: dec!(120), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-03".into(), close: dec!(130), volume: None, open: None, high: None, low: None },
         ];
         let lines = render_braille_lines(&records, 40, 4, &t);
         // Last line is the stats line, should contain the last price
@@ -1964,8 +1973,8 @@ mod tests {
     fn test_render_braille_lines_has_left_padding() {
         let t = theme::midnight();
         let records = vec![
-            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None },
-            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None },
+            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
         ];
         let lines = render_braille_lines(&records, 20, 4, &t);
         // First span of each braille row should be "  " (left padding)
@@ -1984,6 +1993,9 @@ mod tests {
                 date: format!("2026-{:02}-{:02}", (i / 28) + 1, (i % 28) + 1),
                 close: dec!(100) + Decimal::from(i),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             });
         }
         let lines = render_braille_lines(&records, 50, 6, &t);

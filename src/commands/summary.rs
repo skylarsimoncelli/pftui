@@ -1295,8 +1295,8 @@ mod tests {
         }).unwrap();
 
         upsert_history(&conn, "AAPL", "yahoo", &[
-            HistoryRecord { date: "2025-05-15".into(), close: dec!(180), volume: None },
-            HistoryRecord { date: "2025-06-01".into(), close: dec!(190), volume: None },
+            HistoryRecord { date: "2025-05-15".into(), close: dec!(180), volume: None, open: None, high: None, low: None },
+            HistoryRecord { date: "2025-06-01".into(), close: dec!(190), volume: None, open: None, high: None, low: None },
         ]).unwrap();
 
         // Should succeed with historical data available

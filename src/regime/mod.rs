@@ -418,6 +418,9 @@ mod tests {
                 close: Decimal::from_str_exact(&format!("{:.2}", p))
                     .unwrap_or_else(|_| Decimal::new((p * 100.0) as i64, 2)),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect()
     }

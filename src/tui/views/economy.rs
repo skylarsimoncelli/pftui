@@ -1512,6 +1512,9 @@ mod tests {
                 date: format!("2026-01-{:02}", i),
                 close: Decimal::new(i * 100, 0),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         let spans = build_sparkline_spans(&t, &records, 7);
@@ -1536,6 +1539,9 @@ mod tests {
                 date: format!("2026-01-{:02}", i),
                 close: dec!(100),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         let spans = build_sparkline_spans(&t, &records, 7);
@@ -1556,6 +1562,9 @@ mod tests {
                 date: format!("2026-01-{:02}", i + 1),
                 close: Decimal::new(100 + i * 10, 0), // 100, 110, ..., 170
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             })
             .collect();
         app.price_history.insert("^TNX".to_string(), records);
@@ -1574,6 +1583,9 @@ mod tests {
                 date: "2026-01-01".to_string(),
                 close: dec!(100),
                 volume: None,
+                open: None,
+                high: None,
+                low: None,
             }],
         );
         assert!(compute_7d_momentum(&app, "^TNX").is_none());
