@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 02:27 UTC — Add --json flag to watchlist command
+
+- What: added `--json` flag to the `watchlist` CLI command for structured JSON output. Implemented consistent with other data commands (`value`, `summary`, `brief`). Returns an array of watchlist entries with symbol, name, category, price, change %, target, proximity, and fetched timestamp. Empty watchlist or filtered results return `[]`.
+- Why: CLI consistency — `watchlist` was the only data command lacking `--json` output, breaking scriptability and automation workflows. Fixes P0 item from TODO.md.
+- Files: `src/cli.rs` (added `json: bool` to `Watchlist` command), `src/commands/watchlist_cli.rs` (added `json` parameter, derived `Serialize` on `WatchRow`, added JSON serialization before table rendering, handled edge cases), `src/main.rs` (passed `json` flag to `watchlist_cli::run`). Fixed 4 test call sites.
+- Tests: all 1114 tests pass (no new tests needed — output format change only)
+- TODO: Add `--json` to watchlist (P0)
+
 ### 2026-03-07 01:27 UTC — Add OHLC data fields to HistoryRecord
 
 - What: extended `HistoryRecord` struct with `open`, `high`, `low` fields (all `Option<Decimal>`). Updated `yahoo.rs` to populate OHLC from Yahoo Finance API quotes (`q.open`, `q.high`, `q.low`) with proper FX conversion (applies the same rate logic as close prices). Updated `coingecko.rs` and `db/price_history.rs` to set `None` (OHLC data not available from those sources). Fixed all 167 `HistoryRecord` struct initializations across test files to include the three new fields.
