@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 13:27 UTC — Add after-hours/pre-market price support
+
+- What: extended PriceQuote model with three optional fields: `pre_market_price`, `post_market_price`, `post_market_change_percent`. Yahoo price fetcher now calls v8/finance/chart API with `includePrePost=true` to retrieve extended hours data for US equities. Extended hours prices only fetched for symbols without `.` or `=` (excludes TSX, FX pairs). Non-US equities, crypto, FX, and cash return None for extended hours fields. DB price cache stores only regular market prices (extended hours too volatile for caching).
+- Why: P1 feature request (#1 on TODO). Extended hours movement often signals next-day direction and is critical for overnight risk assessment. Yahoo provides this data natively via their chart API. Many equity traders want to see after-hours/pre-market movement immediately after `pftui refresh` without checking external sources.
+- Files: `src/models/price.rs` (added 3 optional fields to PriceQuote), `src/price/yahoo.rs` (new fetch_extended_hours async fn calling v8 chart API, integrated into fetch_price), `src/price/coingecko.rs` (set new fields to None), `src/db/price_cache.rs` (set new fields to None on cache reads), `src/commands/refresh.rs` (set new fields to None for cash), all test files (updated PriceQuote test constructions with new fields)
+- Tests: all 1114 tests pass
+- TODO: After-hours/pre-market prices (P1)
+
 ### 2026-03-07 12:27 UTC — Add volume sub-chart toggle (Shift+V)
 
 - What: implemented toggle for volume bars below price charts, activated with Shift+V. New `volume_overlay: bool` field in App state (default: false). When enabled and volume data is available, renders 3-row braille bar chart below price chart showing relative trading volume (8-level block characters: ▁▂▃▄▅▆▇█). Volume bars are color-coded using muted theme color (60% text_muted, 40% surface_1). Navigation hint now shows "V:on" or "V:off" indicator. Volume rendering infrastructure already existed (build_volume_line function) but was always shown when available; now user-controlled.
