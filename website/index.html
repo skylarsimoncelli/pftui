@@ -171,22 +171,22 @@
     <section class="agent-workflows">
         <div class="container">
             <h2 class="section-title">Agent-native by design</h2>
-            <p class="section-subtitle">Built for autonomous workflows: fetch context, score risk, and ship structured outputs to agents.</p>
+            <p class="section-subtitle">Built for autonomous workflows: fetch context, score risk, and ship structured outputs to agents and automation.</p>
             <div class="agent-grid">
                 <div class="agent-card">
                     <h3>Morning Risk Scan</h3>
-                    <div class="cli-command">$ pftui brief --agent --json</div>
-                    <p>Generate machine-readable portfolio state for your daily decision loop.</p>
+                    <div class="cli-command">$ pftui brief --json</div>
+                    <p>Machine-readable portfolio state with P&L, allocation, technicals, and risk signals for your daily decision loop.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Macro + Sentiment Pulse</h3>
-                    <div class="cli-command">$ pftui macro && pftui predictions --limit 10</div>
-                    <p>Combine rates, volatility, dollar strength, and crowd probabilities in seconds.</p>
+                    <h3>Macro Context Engine</h3>
+                    <div class="cli-command">$ pftui macro && pftui sentiment</div>
+                    <p>Yields, volatility regime, dollar strength, commodities, and Fear & Greed indices — the full context layer in one shot.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Export for Automation</h3>
-                    <div class="cli-command">$ pftui export json && pftui summary --period 1m</div>
-                    <p>Push clean data to scripts, cron jobs, or LLM pipelines without UI overhead.</p>
+                    <h3>Export & Orchestration</h3>
+                    <div class="cli-command">$ pftui export json && pftui movers --json</div>
+                    <p>Push portfolio snapshots and market events to cron jobs, agent pipelines, or notification systems with zero ceremony.</p>
                 </div>
             </div>
         </div>
@@ -200,35 +200,35 @@
             <div class="cli-grid">
                 <div class="cli-example">
                     <div class="cli-command">$ pftui value</div>
-                    <div class="cli-output">$287,345.82 <span class="green">+1.4%</span></div>
+                    <div class="cli-output">Portfolio: $287,345.82 <span class="green">(+$3,892 / +1.4%)</span></div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui movers --threshold 3</div>
-                    <div class="cli-output"><span class="green">📈 MSTR +7.2%</span> | <span class="green">📈 NVDA +4.1%</span> | <span class="red">📉 XLE -5.8%</span></div>
+                    <div class="cli-output">4/39 symbols: <span class="green">NVDA +5.2%</span> | <span class="green">BTC +4.8%</span> | <span class="red">XLE -6.1%</span> | <span class="red">SI=F -3.4%</span></div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui macro</div>
-                    <div class="cli-output">DXY 98.6 │ VIX 19.4 │ 10Y 4.21% │ Gold $5,092 │ Oil $73.45</div>
+                    <div class="cli-output">DXY 98.85 │ VIX 22.3 ⚠️ │ 10Y 4.13% │ Gold $5,181 │ Oil $91.26</div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui sentiment</div>
-                    <div class="cli-output">Crypto F&G: 🔴 14 Extreme Fear | Traditional: 🟡 48 Neutral</div>
+                    <div class="cli-output">Crypto F&G: 🟡 52 Neutral | Traditional F&G: 🟢 61 Greed</div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui brief --json</div>
-                    <div class="cli-output">{"value":287345.82,"change_pct":1.38,"positions":8,"risk":"neutral"}</div>
+                    <div class="cli-output">{"value":287345.82,"change_pct":1.38,"cash_pct":12.4,"top_holding":"BTC"}</div>
                 </div>
                 <div class="cli-example">
                     <div class="cli-command">$ pftui performance</div>
-                    <div class="cli-output">MTD +2.8% | QTD +8.4% | YTD +18.2% | Since Incept. +32.1%</div>
+                    <div class="cli-output">MTD -1.2% | QTD +4.7% | YTD +18.2% | Since Inception +32.1%</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui watchlist</div>
-                    <div class="cli-output">TSLA $412 <span class="green">+2.4%</span> | PLTR $148 <span class="green">+3.7%</span> | AAPL $201 <span class="red">-0.8%</span></div>
+                    <div class="cli-command">$ pftui alerts list</div>
+                    <div class="cli-output">🔔 GC=F above $5,200 (current: $5,181) | 🟢 VIX below 25 (current: 22.3)</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui journal list --limit 3</div>
-                    <div class="cli-output">2026-03-04: Gold thesis intact despite pullback<br>2026-03-01: Exited tech - risk/reward compressed<br>2026-02-28: Added uranium exposure</div>
+                    <div class="cli-command">$ pftui drift</div>
+                    <div class="cli-output">BTC: 18.7% (target 20%) ↓1.3pp | GC=F: 25.4% (target 25%) ✓ | Cash: 49.3% (target 15%) ⚠️ ↑34pp</div>
                 </div>
             </div>
         </div>
