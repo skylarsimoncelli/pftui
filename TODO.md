@@ -22,7 +22,6 @@
 ### Data & Display
 
 ### CLI Enhancements
-- [ ] **Alerts in `brief` output** — Show triggered/near-threshold alerts. Files: `commands/brief.rs`
 - [ ] **"What Changed Today" in `brief`** — Top movers, threshold crossings, triggered alerts. Files: `commands/brief.rs`
 - [ ] **Benchmark comparison in `brief`** — Portfolio performance vs SPY or custom benchmark. Files: `commands/brief.rs`
 - [ ] **Portfolio stress testing CLI** — `pftui stress-test` with named scenarios. Builds on F4.2 engine. Files: new `commands/stress_test.rs`

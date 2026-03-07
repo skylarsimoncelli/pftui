@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 21:27 UTC — Add alerts section to brief output
+
+- What: `pftui brief` now displays an Alerts section (after top movers, before P&L attribution) showing triggered alerts (🔴) and near-threshold armed alerts (🟡 within 5% of trigger). Each alert shows the rule text, current value, and distance to threshold for near alerts. Applies to both full and percentage mode.
+- Why: P1 CLI enhancement from TODO. Alerts exist in the TUI but weren't surfaced in brief output. Brief is the daily command for checking portfolio status — should highlight what needs attention. Triggered alerts are actionable (take profit, cut loss, rebalance). Near alerts warn of imminent triggers. Makes alert data visible without opening the TUI.
+- Files: `src/commands/brief.rs` (new `print_alerts` function, wired into `run_full` and `run_percentage`)
+- Tests: all 1114 tests pass (no new tests needed — display-only change, alert engine already tested)
+- TODO: Alerts in `brief` output (P1)
+
 ### 2026-03-07 18:27 UTC — Add `pftui calendar` command
 
 - What: new `calendar` command displays upcoming economic calendar events from TradingEconomics (with sample fallback). Terminal output shows color-coded impact levels (red=HIGH, yellow=MED, green=LOW) in a table with date, impact, and event name columns. Supports filtering: `--days N` (lookahead period, default 7), `--impact high|medium|low` (filter by impact level), `--json` (structured output for agent consumption).
