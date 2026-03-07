@@ -10,7 +10,8 @@
 > Broken existing functionality. Fix before shipping.
 
 ### Data Pipeline Reliability
-- [ ] [Feedback] **Fix COT data availability** — COT data shows "unavailable" for some testers despite field name fix. Verify CFTC API returns data consistently. Files: `data/cot.rs`, `db/cot_cache.rs`
+
+(No active P0 bugs)
 
 ---
 

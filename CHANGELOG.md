@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 08:27 UTC — Fix CFTC contract codes for COT data
+
+- What: corrected Gold COT contract code from 067651 to 088691. The old code 067651 was actually WTI crude oil, causing "unavailable" errors when fetching Gold positioning data. Verified all four contract codes against CFTC API: Gold (088691), Silver (084691), WTI (067411), Bitcoin (133741).
+- Why: P0 data pipeline bug. COT data showed "unavailable" for Gold despite API connectivity working. Root cause: wrong contract code mapping. Testers (Market Research, Eventuality Planner) reported intermittent COT failures. This was misdiagnosed as API reliability when it was actually a mapping bug.
+- Files: `src/data/cot.rs` (updated COT_CONTRACTS array Gold code 067651→088691, updated module docstring)
+- Tests: all 1114 tests pass. Verified with `pftui sentiment` — Gold/Silver/WTI/Bitcoin COT data now displays correctly.
+- TODO: Fix COT data availability (P0)
+
 ### 2026-03-07 07:27 UTC — Implement BTC ETF flows data fetching
 
 - What: implemented `fetch_etf_flows()` to retrieve daily Bitcoin ETF flow data from btcetffundflow.com. Parses embedded JSON from Next.js page structure (`__NEXT_DATA__` script tag → `flows2` array). Maps 12 ETF providers (IBIT/BlackRock, FBTC/Fidelity, ARKB/Ark, GBTC/Grayscale, BITB/Bitwise, EZBC/Franklin, BTCO/Invesco, HODL/VanEck, BRRR/Valkyrie, BTCW/WisdomTree, DEFI/Hashdex, BTC/Grayscale Mini) to daily BTC/USD net flow amounts. Returns `Vec<EtfFlow>` with fund name, date, BTC flow, USD flow. Data updates daily at D+1 09:00 GMT. No API key required.
