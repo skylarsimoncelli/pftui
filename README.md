@@ -1,9 +1,9 @@
 <h1 align="center">pftui</h1>
 
 <p align="center">
-  <b>PFTUI - The Portfolio TUI.</b><br>
-  Agent-native financial battle station for equities, crypto, forex, macro, sentiment, and news.<br>
-  Terminal-native. Vim-fast. Fully scriptable.<br>
+  <b>The Portfolio Intelligence Platform.</b><br>
+  Built for human operators and their AI agents to collaborate on portfolio management.<br>
+  TUI · Web Dashboard · CLI · Agent API · Local-first.<br>
 </p>
 
 <p align="center">
@@ -13,14 +13,16 @@
 </p>
 
 <p align="center">
-  <img width="1724" height="1085" alt="image" src="https://github.com/user-attachments/assets/351aba69-f659-42eb-9f18-6e791731431d" />
+  <img width="1724" height="1085" alt="pftui terminal UI" src="https://github.com/user-attachments/assets/351aba69-f659-42eb-9f18-6e791731431d" />
 </p>
 
 ---
 
-**pftui** is an agent-native financial battle station built for the terminal. Track equities, crypto, commodities, forex, and funds with real-time pricing, technical overlays, macro context, sentiment signals, and event/news awareness.
+**pftui** is a portfolio intelligence platform designed for two operators working together: **a human** who makes the decisions, and **an AI agent** that does the research, monitors the markets, and keeps the system running.
 
-Think Bloomberg Terminal ergonomics with vim-speed workflows, local-first privacy, and zero-friction automation.
+For the human: a full-featured terminal UI and a sleek responsive web dashboard — both designed for maximum information density with zero friction.
+
+For the agent: every feature exposed via CLI with structured JSON output, custom data models, and a local SQLite database that serves as the single source of truth for portfolio state.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
@@ -30,41 +32,132 @@ Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
 
 ---
 
-## ✨ What You Get
+## 🧑‍💻 For Human Operators
 
-- **📊 Portfolio Command Core** — Live positions, allocation, P&L, transaction history, watchlists, and alert-ready monitoring in one screen.
+### Terminal UI — Your Financial Battle Station
 
-- **📈 High-density Technical Visualization** — Braille charts with multi-timeframe views, SMA overlays, ratio analysis, volume bars, and momentum context.
+A Bloomberg Terminal-grade interface in your terminal. Vim-native keybindings, 11 hand-tuned themes, braille charts, and every data point you need at a glance.
 
-- **🌍 Full Market Coverage** — Equities, crypto, forex, rates, commodities, volatility, and macro indicators side by side.
+| Key | View | What You Get |
+|:---:|---|---|
+| `1` | **Positions** | Live prices, daily P&L, allocation bars, sparklines, RSI, 52W range |
+| `2` | **Transactions** | Buy/sell history with cost basis tracking |
+| `3` | **Markets** | S&P, NASDAQ, BTC, Gold, DXY, VIX, oil, copper — the macro pulse |
+| `4` | **Economy** | Yields, currencies, commodities, FRED data, economic calendar, prediction markets, F&G |
+| `5` | **Watchlist** | Assets you're stalking with price targets and proximity alerts |
+| `6` | **News** | Aggregated financial news from RSS feeds — Reuters, CoinDesk, Bloomberg |
+| `7` | **Journal** | Trade log, decision history, predictions, searchable notes |
 
-- **🧠 Sentiment + Event Context** — Prediction-market style probabilities and market-moving context integrated with portfolio state.
+**Charts:** High-resolution Unicode braille rendering with SMA overlays, Bollinger bands, volume bars, ratio analysis (vs SPX, QQQ, BTC, Gold), and 6 timeframes (1W → 5Y). Not ASCII art — actual data visualization.
 
-- **🤖 Agent-native Outputs** — Generate structured JSON and markdown briefs for scripts, cron jobs, and LLM/agent pipelines.
+**Themes:** 11 production-ready themes — Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox, Inferno, Neon, Hacker, Pastel, Miasma. Cycle with `t`. Your choice persists.
 
-- **⌨️ Vim-native TUI UX** — `j/k`, `gg/G`, `/` filtering, keyboard-first navigation, and optional mouse support.
+**Privacy:** Press `p` to instantly mask all monetary values. Percentage-only mode stores no dollar amounts at all.
 
-- **🔒 Local-first Privacy** — SQLite on your machine, percentage-only mode, and instant value masking with `p`.
+**Keys:** Vim-native — `j`/`k`, `gg`/`G`, `/` search, `Enter` to drill down, `Esc` to back out, `?` for help. Mouse works too. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
 
-- **🎨 Polished Interface** — Multiple production-ready themes with persistent preferences.
+### Web Dashboard — Your Portfolio on Any Screen
+
+A responsive web interface serving the same data as the TUI, accessible from any browser.
+
+```bash
+pftui web                          # Start on localhost:8080 with auth
+pftui web --port 3000 --bind 0.0.0.0   # Custom port, remote access
+```
+
+- **Responsive layout** — 2-column desktop, 1-column mobile
+- **TradingView charts** — professional interactive charts via the free Advanced Chart Widget
+- **Click-to-chart** — click any position, watchlist item, or macro indicator
+- **Auto-refresh** — data updates every 60 seconds
+- **Dark theme** matching the TUI aesthetic
+- **REST API** — 9 JSON endpoints for custom integrations
+
+Details: [WEB_DASHBOARD.md](WEB_DASHBOARD.md)
 
 ---
 
-## 🖥️ Views
+## 🤖 For AI Agents
 
-Navigate with number keys or click the tabs.
+pftui is designed to be the data backbone for AI-powered financial workflows. Every feature in the TUI and web dashboard has a CLI counterpart with structured JSON output. The SQLite database is the single source of truth — agents read from it, write to it, and build on top of it.
 
-| Key | View | |
-|:---:|---|---|
-| `1` | **Positions** | Your holdings — live prices, daily change, gain/loss, allocation bars, sparklines |
-| `2` | **Transactions** | Buy/sell history with cost basis tracking |
-| `3` | **Markets** | Broad market pulse — S&P, NASDAQ, BTC, Gold, DXY, 10Y, VIX, and more |
-| `4` | **Economy** | Macro dashboard — yields, currencies, commodities, FRED data, economic calendar |
-| `5` | **Watchlist** | Assets you're stalking — with price targets and proximity alerts |
-| `6` | **Analytics** | Portfolio risk, scenarios, correlation matrix, stress testing |
-| `7` | **Journal** | Trade log, decision history, predictions, searchable notes |
+### Portfolio & Market Data
 
-Press `Enter` on any position to open the detail popup. Press `Enter` again for the full chart.
+```bash
+pftui refresh                      # Fetch all prices + macro + sentiment + news
+pftui brief --json                 # Full portfolio state as structured JSON
+pftui value --json                 # Total value with category breakdown
+pftui summary --json               # Detailed position-level breakdown
+pftui macro --json                 # DXY, VIX, yields, commodities, derived ratios
+pftui watchlist --json             # All watched symbols with prices
+pftui movers --json                # Today's significant moves (held + watchlist)
+pftui predictions --json           # Polymarket prediction market odds
+pftui sentiment --json             # Fear & Greed indices + COT positioning
+pftui news --json                  # Aggregated financial news
+pftui supply --json                # COMEX inventory data
+pftui global --json                # World Bank macro (BRICS, G7)
+pftui performance --json           # Returns (1D, MTD, QTD, YTD)
+pftui drift --json                 # Allocation drift vs targets
+pftui history --date 2026-03-01 --json  # Historical snapshot
+pftui status --json                # Data source freshness
+```
+
+### Portfolio Management
+
+```bash
+pftui add-tx --symbol AAPL --category equity --tx-type buy \
+  --quantity 100 --price 175.50 --date 2026-03-01 --notes "Earnings dip"
+pftui remove-tx 42
+pftui set-cash USD 50000
+pftui watch TSLA --target 300
+pftui unwatch TSLA
+pftui target set AAPL --target 15  # Target allocation %
+pftui rebalance --json             # Suggested trades to hit targets
+pftui alerts add "BTC above 100000"
+pftui journal add --content "Gold thesis validated by CPI" --tag macro
+```
+
+### Data Architecture
+
+```
+~/.local/share/pftui/pftui.db     # SQLite — single source of truth
+├── transactions                   # Buy/sell records with cost basis
+├── price_cache                    # Latest spot prices
+├── price_history                  # Daily OHLCV history
+├── watchlist                      # Tracked symbols
+├── alerts                         # Price/allocation alerts
+├── targets                        # Target allocation percentages
+├── journal_entries                # Trade journal + notes
+├── calendar_events                # Economic calendar
+├── news_cache                     # RSS feed articles
+├── sentiment_cache                # F&G indices
+├── prediction_cache               # Polymarket odds
+├── cot_cache                      # CFTC COT positioning
+├── comex_cache                    # COMEX inventory
+├── bls_cache                      # BLS economic data
+├── worldbank_cache                # Global macro indicators
+└── onchain_cache                  # BTC on-chain + ETF flows
+```
+
+PostgreSQL support coming soon for multi-agent and production deployments.
+
+### Data Sources — Zero Configuration
+
+Every data source works out of the box with no API keys:
+
+| Source | Data | Update Cadence |
+|---|---|---|
+| Yahoo Finance | Equities, ETFs, forex, crypto, commodities | Real-time |
+| CoinGecko | Crypto prices, market cap, volume | Real-time |
+| Polymarket | Prediction market probabilities | 15-min |
+| CFTC Socrata | Commitments of Traders (COT) positioning | Weekly |
+| Alternative.me | Crypto Fear & Greed Index | Daily |
+| BLS API v1 | CPI, unemployment, NFP, wages | Monthly |
+| World Bank | GDP, debt/GDP, reserves for 8 economies | Quarterly |
+| CME Group | COMEX gold/silver inventory | Daily |
+| Blockchair | BTC on-chain data | Real-time |
+| RSS Feeds | Reuters, CoinDesk, Bloomberg, Kitco, CNBC | 10-min |
+
+Optional API keys unlock additional sources (Finnhub, FRED, Alpha Vantage). See [docs/API-SOURCES.md](docs/API-SOURCES.md).
 
 ---
 
@@ -80,105 +173,6 @@ pftui
 
 The setup wizard walks you through adding your first positions with symbol autocomplete and auto-categorization. Choose between **Full mode** (transactions with cost basis) or **Percentage mode** (allocations only, no monetary data).
 
-**Add a position later:**
-```bash
-pftui add-tx
-```
-
-**Check your portfolio without opening the TUI:**
-```bash
-pftui value          # Quick total value + gain
-pftui brief          # Formatted portfolio brief
-pftui summary        # Detailed breakdown
-```
-
-## 🤖 Agent-native Workflows
-
-Use pftui as a financial data plane for autonomous systems and scripted ops.
-
-```bash
-pftui brief --agent --json         # structured state for agents
-pftui macro                        # macro regime and risk context
-pftui predictions --limit 10       # sentiment/probability context
-pftui export json                  # downstream automation payload
-```
-
-Everything above can be chained into shell scripts, CI jobs, local automations, or LLM tool loops.
-
----
-
-## 📈 Charts
-
-High-resolution Unicode braille rendering. Not ASCII art — actual data visualization in your terminal.
-
-- **6 timeframes** — `h`/`l` to cycle: 1W, 1M, 3M, 6M, 1Y, 5Y
-- **Ratio analysis** — `J`/`K` to compare: asset vs SPX, QQQ, BTC, Gold
-- **Volume bars** — block characters scaled to relative volume
-- **Moving averages** — SMA(20) and SMA(50) overlays
-- **Gain-aware gradients** — green for gains, red for losses
-
----
-
-## 🛠️ CLI
-
-pftui works headless too. Every feature is accessible from the command line.
-
-```bash
-pftui refresh                    # Fetch latest prices
-pftui value                      # Quick portfolio value
-pftui brief                      # Markdown brief (great for scripts & agents)
-pftui summary --period 1m        # Monthly P&L breakdown
-pftui macro                      # Macro dashboard (DXY, VIX, yields, CPI)
-pftui performance --vs SPY       # Portfolio vs benchmark returns
-pftui calendar --impact high     # Upcoming market-moving events
-pftui alerts list                # Check price & allocation alerts
-pftui journal search "gold"      # Search your trade journal
-pftui watch TSLA --target 300    # Watch with entry target
-pftui export json                # Full portfolio export
-pftui snapshot                   # Render TUI to stdout (for sharing)
-```
-
-All commands support `--json` for programmatic access.
-
----
-
-## 🎨 Themes
-
-Eleven built-in themes. Cycle with `t`. Your choice persists automatically.
-
-| Theme | Vibe |
-|---|---|
-| **Midnight** | Deep navy with jewel-tone accents *(default)* |
-| **Catppuccin** | Warm mocha with pastel highlights |
-| **Nord** | Cool arctic blue-gray |
-| **Dracula** | Purple-dark with vivid accents |
-| **Solarized** | Teal-tinted dark with warm/cool balance |
-| **Gruvbox** | Retro warm brown/orange |
-| **Inferno** | Ember-dark with fiery amber/orange contrast |
-| **Neon** | Cyberpunk electric cyan/pink on deep dark |
-| **Hacker** | Classic green-on-black terminal look |
-| **Pastel** | Soft muted palette for low visual fatigue |
-| **Miasma** | Atmospheric warm haze with smoky depth |
-
----
-
-## ⌨️ Keys
-
-You'll pick these up in a minute. Full reference in [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
-
-| Key | What it does |
-|---|---|
-| `j` / `k` | Navigate down / up |
-| `1`-`7` | Switch view |
-| `Enter` | Open detail → open chart |
-| `/` | Search & filter |
-| `t` | Cycle theme |
-| `p` | Toggle privacy mode |
-| `?` | Help |
-| `q` | Quit |
-
-Mouse works too — click tabs, click rows, scroll wheel.
-
 ---
 
 ## 🏗️ Built With
@@ -186,7 +180,8 @@ Mouse works too — click tabs, click rows, scroll wheel.
 - **Rust** — fast, safe, single binary
 - **ratatui** — terminal UI framework
 - **SQLite** — bundled, zero-config persistence
-- **Yahoo Finance & CoinGecko** — free, no API keys required
+- **Actix-web** — web dashboard server
+- **TradingView Widget** — interactive web charts
 
 No runtime dependencies. No Node. No Python. No Docker required. Just one binary.
 
@@ -255,15 +250,31 @@ cd pftui && cargo build --release
 
 ## 🗺️ Roadmap
 
-pftui is under active development. Upcoming expansions include:
-
-- Unified alert engine (price targets, allocation drift, indicator thresholds)
-- Expanded performance attribution and benchmark analytics
-- Scenario stress testing and correlation tooling
-- Broader event/news intelligence and macro signal depth
-- Optional notification and automation integrations
+- Configurable homepage (portfolio-first vs watchlist-first)
+- Full chart search for any symbol (`/` → chart → quick-add)
+- Portfolio scenario engine (what-if modeling)
+- PostgreSQL backend for multi-agent deployments
+- Enhanced correlation and risk analytics
+- Broader economic calendar and event intelligence
 
 Full roadmap: [TODO.md](TODO.md) · Feature specs: [docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md)
+
+---
+
+## 📖 Documentation
+
+| Document | Description |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Agent operator guide — setup, workflows, integration patterns |
+| [CLAUDE.md](CLAUDE.md) | Development guide for AI coding agents |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Code architecture, file map, line ranges |
+| [docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md) | Feature specifications |
+| [docs/API-SOURCES.md](docs/API-SOURCES.md) | Free data source reference |
+| [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md) | Full keyboard shortcut reference |
+| [docs/VISION.md](docs/VISION.md) | Design principles and philosophy |
+| [WEB_DASHBOARD.md](WEB_DASHBOARD.md) | Web dashboard setup and API reference |
+| [TODO.md](TODO.md) | Development backlog |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ---
 
@@ -280,6 +291,5 @@ MIT — do whatever you want with it.
 ---
 
 <p align="center">
-  <b>PFTUI - The Portfolio TUI.</b><br>
-  <code>pftui</code> — your terminal-native financial battle station.
+  <b>pftui</b> — portfolio intelligence for humans and agents.<br>
 </p>
