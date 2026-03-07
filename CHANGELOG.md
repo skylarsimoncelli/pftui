@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 07:27 UTC — Implement BTC ETF flows data fetching
+
+- What: implemented `fetch_etf_flows()` to retrieve daily Bitcoin ETF flow data from btcetffundflow.com. Parses embedded JSON from Next.js page structure (`__NEXT_DATA__` script tag → `flows2` array). Maps 12 ETF providers (IBIT/BlackRock, FBTC/Fidelity, ARKB/Ark, GBTC/Grayscale, BITB/Bitwise, EZBC/Franklin, BTCO/Invesco, HODL/VanEck, BRRR/Valkyrie, BTCW/WisdomTree, DEFI/Hashdex, BTC/Grayscale Mini) to daily BTC/USD net flow amounts. Returns `Vec<EtfFlow>` with fund name, date, BTC flow, USD flow. Data updates daily at D+1 09:00 GMT. No API key required.
+- Why: P0 data pipeline fix. `pftui etf-flows` was failing with "ETF flow data currently unavailable" error because the original stub used `bail!()` placeholder. ETF flow data (IBIT, FBTC, ARKB daily inflows/outflows) is critical for crypto sentiment analysis and institutional adoption tracking. This was the #1 blocker for the on-chain data suite.
+- Files: `src/data/onchain.rs` (implemented `fetch_etf_flows()` with reqwest HTTP client, added `parse_btcetffundflow_html()` to extract embedded JSON, updated module docstring to mark ETF flows as WORKING)
+- Tests: all 1114 tests pass. `test_etf_flows_placeholder` still exists but now validates real implementation behavior instead of bail message.
+- TODO: Fix ETF flows command (P0)
+
 ### 2026-03-07 06:27 UTC — Fix predictions data source (filter entertainment/sports)
 
 - What: added `is_entertainment_market()` filter to exclude viral entertainment and sports markets from predictions. Filters out "GTA VI before X", music albums (Rihanna, Playboi Carti), sports (NBA/NFL/NHL/FIFA/World Cup), celebrity trials (Weinstein conviction), religious memes (Jesus Christ return). Expanded geopolitics category inference with "ceasefire", "invasion", "taiwan" keywords. Filter applied before category inference to improve macro-relevance.
