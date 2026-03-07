@@ -257,6 +257,10 @@ fn main() -> Result<()> {
             commands::supply::run(symbol, json)
         }
 
+        Some(Command::Calendar { days, impact, json }) => {
+            commands::calendar::run(days, impact.as_deref(), json)
+        }
+
         Some(Command::Alerts { action, value, json, status }) => {
             // Parse value as either a rule string (for add) or an ID (for remove/ack/rearm)
             let id = value.as_deref().and_then(|v| v.parse::<i64>().ok());

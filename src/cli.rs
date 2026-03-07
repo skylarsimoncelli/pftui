@@ -322,6 +322,21 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show upcoming economic calendar events
+    Calendar {
+        /// Number of days to look ahead (default: 7)
+        #[arg(long, default_value = "7")]
+        days: i64,
+
+        /// Filter by impact level: high, medium, low
+        #[arg(long)]
+        impact: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage price, allocation, and indicator alerts
     Alerts {
         /// Action: add, list, remove, check, ack, rearm
