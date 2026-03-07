@@ -43,6 +43,10 @@ pub enum Command {
         /// Show transaction notes column
         #[arg(long)]
         notes: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Add a transaction

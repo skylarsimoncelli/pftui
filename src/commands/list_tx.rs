@@ -3,10 +3,20 @@ use rusqlite::Connection;
 
 use crate::db::transactions::list_transactions;
 
-pub fn run(conn: &Connection, show_notes: bool) -> Result<()> {
+pub fn run(conn: &Connection, show_notes: bool, json_output: bool) -> Result<()> {
     let txs = list_transactions(conn)?;
     if txs.is_empty() {
-        println!("No transactions found. Add one with: pftui add-tx");
+        if json_output {
+            println!("[]");
+        } else {
+            println!("No transactions found. Add one with: pftui add-tx");
+        }
+        return Ok(());
+    }
+
+    if json_output {
+        let json = serde_json::to_string_pretty(&txs)?;
+        println!("{}", json);
         return Ok(());
     }
 
