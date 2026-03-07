@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 05:27 UTC — Make regime suggestions portfolio-aware
+
+- What: regime asset suggestions now reference actual portfolio holdings when available. Instead of generic "Gold", displays "Gold (25% alloc)". Changed `RegimeSuggestions.strong/weak` from `Vec<&'static str>` to `Vec<String>`. Added `build_portfolio_aware_suggestions()` to map generic suggestions to actual holdings with allocation percentages. Updated `regime_assets` widget to handle String types. Suggestions only show allocation % when: (1) user holds the asset category, (2) allocation ≥1%, (3) holding is regime-aligned (strong in risk-on, etc.).
+- Why: P0 UX cohesion fix. Regime advice was generic ("consider defensive positioning") despite knowing the user's portfolio. Testers wanted actionable context ("your 25% gold allocation is well-positioned for..."). This bridges the gap between macro regime signals and actual holdings.
+- Files: `src/regime/suggestions.rs` (changed suggestion vectors to String, added `build_portfolio_aware_suggestions()` with category mapping and allocation logic, updated tests to use `.iter().any()`), `src/tui/widgets/regime_assets.rs` (updated `build_asset_line()` signature, renamed `truncate_list()` to `truncate_list_owned()` for String slices, updated tests)
+- Tests: all 1114 tests pass. Updated 3 suggestion tests to use `.iter().any()` matching, updated 7 truncate tests for String arguments.
+- TODO: Regime suggestions should be portfolio-aware (P0)
+
 ### 2026-03-07 04:27 UTC — Add context header to ratio chart multi-panel view
 
 - What: added explanatory header to multi-panel ratio chart view. When viewing "All" chart variant (showing DXY, DXY/Gold, DXY/SPX, DXY/BTC mini charts), now displays a 2-row context header with title and explanation. Header text is asset-aware: DXY shows "Key Macro Ratios │ DXY strength vs assets shows dollar purchasing power & safe-haven flows", gold shows "Gold Context │ Gold vs currencies & assets reveals inflation hedging & macro risk sentiment", BTC shows "Bitcoin Context", and generic fallback for other assets. Header only renders when height ≥8 rows and ratio charts present.

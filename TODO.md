@@ -9,9 +9,6 @@
 
 > Broken existing functionality. Fix before shipping.
 
-### UX Cohesion
-- [ ] **Regime suggestions should be portfolio-aware** — Economy tab regime advice is generic ("consider defensive positioning"). Should reference actual holdings ("your 25% gold allocation is well-positioned for..."). Files: `tui/views/economy.rs`
-
 ### Data Pipeline Reliability
 - [ ] [Feedback] **Fix predictions data source** — Polymarket parser returns only sports/NHL markets, no geopolitical or financial predictions. Category filtering doesn't surface macro-relevant markets. Testers need ceasefire odds, rate cut probabilities, recession odds. Files: `data/predictions.rs`, `commands/predictions.rs`
 - [ ] [Feedback] **Fix ETF flows command** — `pftui etf-flows` fails with exit code 1 or returns empty. BTC ETF flow data (IBIT, FBTC, ARKB daily flows) is critical for crypto analysis. CoinGlass JS rendering blocks scraping. Files: `data/onchain.rs`, `commands/etf_flows.rs`
