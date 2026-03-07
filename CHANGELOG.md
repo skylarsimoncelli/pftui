@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 14:27 UTC — Add technical indicators to macro dashboard
+
+- What: macro dashboard now computes and displays RSI(14), MACD(12,26,9), and SMA(50) for all macro instruments (DXY, VIX, yields, currencies, commodities). Terminal output shows inline technicals: "RSI 61.1 | MACD 0.31/0.10 ↑ | SMA50 97.98 (above)". JSON output includes nested "technicals" object with rsi, macd, macd_signal, macd_histogram, sma50 fields. Uses existing indicators/ modules (rsi.rs, macd.rs, sma.rs). Requires ~100 days history, gracefully degrades if unavailable (shows nothing instead of failing). MACD cross direction shown with ↑/↓ arrow. SMA50 position shown as (above) or (below) current price.
+- Why: #1 highest-leverage feature per feedback. 3/4 testers still rely on external Python script for macro technicals. This eliminates that dependency entirely. Eventuality Planner feedback: "I still needed the fetch_prices.py script for oil RSI and S&P RSI". Market Close feedback: "Python script was truly redundant". This is the final data gap preventing pftui from being a genuine one-stop shop for macro analysis.
+- Files: src/commands/macro_cmd.rs (compute_technicals fn, Technicals struct, print_indicator_row updated with inline tech display, print_json updated with nested technicals object)
+- Tests: all 1114 tests pass. Manual validation: `pftui macro` shows RSI/MACD/SMA on DXY, gold, silver, GBP/USD. `pftui macro --json` includes technicals object.
+- TODO: Add technicals (RSI/MACD/SMA) to macro dashboard (P1)
+
 ### 2026-03-07 13:27 UTC — Add after-hours/pre-market price support
 
 - What: extended PriceQuote model with three optional fields: `pre_market_price`, `post_market_price`, `post_market_change_percent`. Yahoo price fetcher now calls v8/finance/chart API with `includePrePost=true` to retrieve extended hours data for US equities. Extended hours prices only fetched for symbols without `.` or `=` (excludes TSX, FX pairs). Non-US equities, crypto, FX, and cash return None for extended hours fields. DB price cache stores only regular market prices (extended hours too volatile for caching).

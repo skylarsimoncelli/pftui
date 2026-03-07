@@ -21,7 +21,6 @@
 
 ### Data & Display
 - [ ] **Brent crude + WTI spread in macro** — Key metric for geopolitical crises. Files: `commands/macro_cmd.rs`, `views/economy.rs`
-- [ ] [Feedback] **Technicals on macro dashboard** — Add RSI(14), MACD, SMA(50) for macro instruments (DXY, VIX, oil, 10Y, copper). This is the #1 remaining reason testers use the external Python script. Files: `commands/macro_cmd.rs`
 
 ### CLI Enhancements
 - [ ] **`pftui eod` command** — Market close command combining brief + movers + macro + sentiment. Files: new `commands/eod.rs`
