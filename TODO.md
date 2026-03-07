@@ -10,7 +10,6 @@
 > Broken existing functionality. Fix before shipping.
 
 ### UX Cohesion
-- [ ] **Sidebar ratio charts need context** — DXY/Gold, DXY/SPX, DXY/BTC charts are beautiful but new users don't understand why they're shown. Add "Key Macro Ratios" header with brief explanation. Files: `tui/views/asset_overview.rs` or equivalent sidebar widget
 - [ ] **Regime suggestions should be portfolio-aware** — Economy tab regime advice is generic ("consider defensive positioning"). Should reference actual holdings ("your 25% gold allocation is well-positioned for..."). Files: `tui/views/economy.rs`
 
 ### Data Pipeline Reliability

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 04:27 UTC — Add context header to ratio chart multi-panel view
+
+- What: added explanatory header to multi-panel ratio chart view. When viewing "All" chart variant (showing DXY, DXY/Gold, DXY/SPX, DXY/BTC mini charts), now displays a 2-row context header with title and explanation. Header text is asset-aware: DXY shows "Key Macro Ratios │ DXY strength vs assets shows dollar purchasing power & safe-haven flows", gold shows "Gold Context │ Gold vs currencies & assets reveals inflation hedging & macro risk sentiment", BTC shows "Bitcoin Context", and generic fallback for other assets. Header only renders when height ≥8 rows and ratio charts present.
+- Why: UX feedback from new users — ratio charts are visually striking but purpose wasn't clear. Users didn't understand why DXY/Gold, DXY/SPX, DXY/BTC charts were shown together or what these relationships indicate. This context helps users interpret capital flows, risk sentiment, and macro positioning at a glance.
+- Files: `src/tui/widgets/price_chart.rs` (added `render_ratio_context_header` function with asset-specific messaging, updated `render_multi_panel` to reserve header space and adjust chart layout when ratios present)
+- Tests: all 1114 tests pass (visual enhancement only, no logic changes)
+- TODO: Sidebar ratio charts need context (P0)
+
 ### 2026-03-07 03:27 UTC — Add --json flag to list-tx command
 
 - What: added `--json` flag to the `list-tx` CLI command. Returns transaction array with id, symbol, category, type, quantity, price, currency, date, notes, and created_at. Empty transactions list returns `[]`.
