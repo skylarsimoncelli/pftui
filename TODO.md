@@ -22,7 +22,6 @@
 ### Data & Display
 
 ### CLI Enhancements
-- [ ] **`pftui sector` command** — Sector ETF performance (XLE, XLF, IGV, etc.). Files: new `commands/sector.rs`
 - [ ] **`pftui calendar` CLI** — `pftui calendar` (next 7 days), `--days 30`, `--impact high`, `--json`. Files: new `commands/calendar.rs`
 - [ ] **Alerts in `brief` output** — Show triggered/near-threshold alerts. Files: `commands/brief.rs`
 - [ ] **"What Changed Today" in `brief`** — Top movers, threshold crossings, triggered alerts. Files: `commands/brief.rs`

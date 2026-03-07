@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 17:27 UTC — Add `pftui sector` command
+
+- What: new `sector` command displays sector ETF performance for 18 major sector/thematic ETFs (XLE Energy, XLF Financials, XLK Tech, XLV Healthcare, XLY Consumer Discretionary, XLP Consumer Staples, XLI Industrials, XLU Utilities, XLB Materials, XLRE Real Estate, XLC Communications, IGV Software, SMH Semiconductors, XBI Biotech, XRT Retail, XHB Homebuilders, ITB Building Materials, GDX Gold Miners). Shows current price, daily change %, RSI(14), and MACD histogram. Terminal output is a bordered table sorted by daily performance (strongest first) with green/red color coding for gains/losses. JSON mode (--json) returns structured data with symbol, name, price, day_change_pct, and nested technicals object (rsi, macd_histogram).
+- Why: #1 P1 CLI enhancement. Sector rotation is a key part of market analysis. This command provides at-a-glance sector strength/weakness view without needing to check each ETF individually. Useful for identifying leadership (tech rallying, energy lagging), defensive rotation (utilities/staples outperforming), and rotation into/out of cyclicals. Supports both manual review (terminal) and programmatic consumption (JSON for agents/scripts).
+- Files: `src/commands/sector.rs` (new 216 lines), `src/commands/mod.rs` (added pub mod sector), `src/cli.rs` (added Command::Sector variant with --json flag), `src/main.rs` (routed Command::Sector to commands::sector::run)
+- Tests: all 1114 tests pass, no new tests needed (simple display command, no complex logic requiring unit tests)
+- TODO: `pftui sector` command — Sector ETF performance (P1)
+
 ### 2026-03-07 16:27 UTC — Add `pftui eod` command
 
 - What: new `eod` (end-of-day) command combines brief + movers + macro + sentiment into a single market close summary. Terminal output shows four sections with box borders: Portfolio (from brief), Top Movers (3% threshold), Macro Indicators, Sentiment & Positioning (F&G indices + COT). JSON mode (--json) runs all four sub-commands and wraps output in a single timestamped object with portfolio/movers/macro/sentiment keys. Note: JSON integration is currently a placeholder awaiting sub-command refactoring to return data instead of printing.
