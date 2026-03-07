@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 06:27 UTC — Fix predictions data source (filter entertainment/sports)
+
+- What: added `is_entertainment_market()` filter to exclude viral entertainment and sports markets from predictions. Filters out "GTA VI before X", music albums (Rihanna, Playboi Carti), sports (NBA/NFL/NHL/FIFA/World Cup), celebrity trials (Weinstein conviction), religious memes (Jesus Christ return). Expanded geopolitics category inference with "ceasefire", "invasion", "taiwan" keywords. Filter applied before category inference to improve macro-relevance.
+- Why: P0 data pipeline bug. Polymarket's volume-sorted API returns entertainment/sports markets that dominate by trading volume, drowning out macro-relevant markets (recession odds, Fed rate cuts, ceasefire probabilities). Testers reported predictions showing only NHL/sports markets instead of geopolitical/economic data. This was the #1 blocker for predictions feature adoption (UX Analyst: "advertised features show no data").
+- Files: `src/data/predictions.rs` (added `is_entertainment_market()` with 20+ exclusion patterns, integrated filter into `fetch_polymarket_predictions()`, expanded geopolitics category with ceasefire/invasion/taiwan)
+- Tests: all 15 prediction tests pass (4 category inference, 6 CLI commands, 3 DB roundtrip, 2 history batch ops). Filter logic is pattern-based and defensive.
+- TODO: Fix predictions data source (P0)
+
 ### 2026-03-07 05:27 UTC — Make regime suggestions portfolio-aware
 
 - What: regime asset suggestions now reference actual portfolio holdings when available. Instead of generic "Gold", displays "Gold (25% alloc)". Changed `RegimeSuggestions.strong/weak` from `Vec<&'static str>` to `Vec<String>`. Added `build_portfolio_aware_suggestions()` to map generic suggestions to actual holdings with allocation percentages. Updated `regime_assets` widget to handle String types. Suggestions only show allocation % when: (1) user holds the asset category, (2) allocation ≥1%, (3) holding is regime-aligned (strong in risk-on, etc.).
