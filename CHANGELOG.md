@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 00:27 UTC — Split candlestick task into data layer + rendering
+
+- What: broke "Candlestick chart variant" (P1) into two subtasks: (1) Add OHLC data to HistoryRecord (requires updating ~160 struct initializations across test files), (2) Implement candlestick rendering using OHLC data.
+- Why: original task scope was too large for single 20-minute cron run. Data layer changes require touching every file that constructs HistoryRecord in tests (~160 instances). Splitting allows incremental progress.
+- Files: `TODO.md` (split task, estimated 2hrs for data layer + 1hr for rendering)
+- Tests: N/A (documentation change only)
+- TODO: Candlestick chart variant (P1) — split into two subtasks
+
 ### 2026-03-06 23:27 UTC — Split-pane detail view for positions (S key)
 
 - What: implemented split-pane toggle (`S` key) for Positions view. When active, screen splits 70% top (normal positions layout) + 30% bottom (detail pane showing chart, recent transactions, and news for selected position). Detail pane shows 3 horizontal sections: chart (50%), transactions (25%), news (25%).
