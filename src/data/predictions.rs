@@ -92,6 +92,8 @@ pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
         .into_iter()
         // Filter out closed/resolved markets (redundant with URL param but defensive)
         .filter(|m| m.active && !m.closed)
+        // Filter out entertainment/sports markets
+        .filter(|m| !is_entertainment_market(&m.question))
         .filter_map(|m| {
             // Parse outcome_prices JSON string: "[\"0.42\", \"0.58\"]"
             let prices: Vec<String> = serde_json::from_str(&m.outcome_prices).ok()?;
@@ -164,6 +166,9 @@ fn infer_category_from_question(question: &str) -> MarketCategory {
         || q_lower.contains("trump")
         || q_lower.contains("biden")
         || q_lower.contains("ukraine")
+        || q_lower.contains("ceasefire")
+        || q_lower.contains("invasion")
+        || q_lower.contains("taiwan")
     {
         MarketCategory::Geopolitics
     } else if q_lower.contains(" ai ")
@@ -177,6 +182,35 @@ fn infer_category_from_question(question: &str) -> MarketCategory {
     } else {
         MarketCategory::Other
     }
+}
+
+/// Check if a market question is entertainment/sports (should be filtered out).
+fn is_entertainment_market(question: &str) -> bool {
+    let q_lower = question.to_lowercase();
+    
+    // Explicit entertainment/sports signals
+    q_lower.contains("gta vi")
+        || q_lower.contains("grand theft auto")
+        || q_lower.contains("rihanna")
+        || q_lower.contains("album")
+        || q_lower.contains("playboi carti")
+        || q_lower.contains("jesus christ return")
+        || q_lower.contains("nfl")
+        || q_lower.contains("nba")
+        || q_lower.contains("nhl")
+        || q_lower.contains("mlb")
+        || q_lower.contains("fifa")
+        || q_lower.contains("world cup")
+        || q_lower.contains("super bowl")
+        || q_lower.contains("champions league")
+        || q_lower.contains("olympics")
+        || q_lower.contains("movie")
+        || q_lower.contains("film")
+        || q_lower.contains("actor")
+        || q_lower.contains("actress")
+        || q_lower.contains("convicted")
+        || q_lower.contains("weinstein")
+        || q_lower.contains("celebrity")
 }
 
 #[cfg(test)]
