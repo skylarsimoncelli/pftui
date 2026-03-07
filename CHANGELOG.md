@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 03:27 UTC — Add --json flag to list-tx command
+
+- What: added `--json` flag to the `list-tx` CLI command. Returns transaction array with id, symbol, category, type, quantity, price, currency, date, notes, and created_at. Empty transactions list returns `[]`.
+- Why: CLI consistency audit revealed `list-tx` was the only data output command missing `--json` support. Completes P0 CLI consistency work — all data commands now support structured JSON output.
+- Files: `src/cli.rs` (added `json: bool` field to `ListTx`), `src/commands/list_tx.rs` (added `json_output` parameter, JSON serialization path before table rendering), `src/main.rs` (passed `json` flag through to `list_tx::run`)
+- Tests: all 1114 tests pass (Transaction already had Serialize derive, output format change only)
+- TODO: Audit all CLI commands for --json consistency (P0) — completed
+
 ### 2026-03-07 02:27 UTC — Add --json flag to watchlist command
 
 - What: added `--json` flag to the `watchlist` CLI command for structured JSON output. Implemented consistent with other data commands (`value`, `summary`, `brief`). Returns an array of watchlist entries with symbol, name, category, price, change %, target, proximity, and fetched timestamp. Empty watchlist or filtered results return `[]`.
