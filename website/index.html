@@ -35,9 +35,9 @@
     <section class="hero">
         <div class="container">
             <div class="hero-content">
-                <p class="hero-kicker">PFTUI - The Portfolio TUI</p>
-                <h1 class="hero-title">Your portfolio's <span class="gradient-text">command center</span></h1>
-                <p class="hero-subtitle">Live prices, charts, macro data, and technical analysis. All in your terminal. Bloomberg-class intelligence with zero API keys.</p>
+                <p class="hero-kicker">The Portfolio Intelligence Platform</p>
+                <h1 class="hero-title">Your financial <span class="gradient-text">battle station</span></h1>
+                <p class="hero-subtitle">A data-rich, agent-native intelligence platform that centralises all your market data, news, economic indicators, and portfolio analytics — so you and your AI agent never need to check another source.</p>
                 <div class="hero-install">
                     <div class="install-command">
                         <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
@@ -47,6 +47,7 @@
                             </svg>
                         </button>
                     </div>
+                    <p style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">Re-run to upgrade. Your data is preserved.</p>
                 </div>
                 <div class="hero-badges">
                     <a href="https://github.com/skylarsimoncelli/pftui" target="_blank" rel="noopener">
@@ -88,11 +89,26 @@
         </div>
     </section>
 
+    <!-- Agent Setup CTA -->
+    <section class="agent-setup" style="padding: 3rem 0; background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.08));">
+        <div class="container" style="text-align: center;">
+            <h2 class="section-title">The recommended way to start</h2>
+            <p class="section-subtitle" style="max-width: 700px; margin: 0 auto 1.5rem;">Install pftui, then tell your AI agent — <strong>Claude Code</strong>, <strong>Codex</strong>, or <strong>OpenClaw</strong> — to set it up for you. It will read the agent guide, ask about your portfolio, and deliver your first brief in 15 minutes.</p>
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.25rem 1.5rem; max-width: 500px; text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 1.8;">
+                    <span style="opacity: 0.5;">$</span> curl -fsSL https://...install.sh | bash<br>
+                    <span style="opacity: 0.5;">$</span> <span style="opacity: 0.7;"># Then tell your agent:</span><br>
+                    <span style="color: #a78bfa;">"Read AGENTS.md in the pftui repo and set up pftui with my portfolio"</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Highlights Marquee -->
     <section class="highlights">
         <div class="container">
-            <h2 class="section-title">Real-time Portfolio + Market Intelligence</h2>
-            <p class="section-subtitle">A full command center for operators who want Bloomberg-class context in a terminal-native workflow.</p>
+            <h2 class="section-title">All your market intelligence, centralised</h2>
+            <p class="section-subtitle">Stop checking 10 sources. pftui pulls prices, news, macro data, sentiment, prediction markets, COT positioning, and economic releases into one tool. One refresh. One database. One command for your agent.</p>
             <div class="highlights-marquee" id="highlights-marquee">
                 <div class="highlights-scroller" id="highlights-scroller">
                     <div class="highlights-track">
@@ -170,23 +186,23 @@
     <!-- Agent Workflows -->
     <section class="agent-workflows">
         <div class="container">
-            <h2 class="section-title">Agent-native by design</h2>
-            <p class="section-subtitle">Built for autonomous workflows: fetch context, score risk, and ship structured outputs to agents and automation.</p>
+            <h2 class="section-title">Fully agent-native, fully agent-driven</h2>
+            <p class="section-subtitle">pftui is designed to be operated by your AI agent. Every feature has a CLI counterpart with <code>--json</code> output. The agent guide (AGENTS.md) covers setup, daily operation, and long-term system design — so any agent can run pftui as thoroughly as a human analyst.</p>
             <div class="agent-grid">
                 <div class="agent-card">
-                    <h3>Morning Risk Scan</h3>
-                    <div class="cli-command">$ pftui brief --json</div>
-                    <p>Machine-readable portfolio state with P&L, allocation, technicals, and risk signals for your daily decision loop.</p>
+                    <h3>One-Command Intelligence</h3>
+                    <div class="cli-command">$ pftui refresh && pftui brief --agent --json</div>
+                    <p>Your agent fetches 10+ data sources and gets a complete portfolio snapshot — positions, macro, news, sentiment, predictions, movers — in one JSON blob. No web searching required.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Macro Context Engine</h3>
-                    <div class="cli-command">$ pftui macro && pftui sentiment</div>
-                    <p>Yields, volatility regime, dollar strength, commodities, and Fear & Greed indices — the full context layer in one shot.</p>
+                    <h3>Agent-Guided Setup</h3>
+                    <div class="cli-command">"Read AGENTS.md and set up pftui for me"</div>
+                    <p>Tell Claude Code, Codex, or OpenClaw to read the agent guide. It will ask about your holdings, risk tolerance, and market views — then populate everything automatically.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Export & Orchestration</h3>
-                    <div class="cli-command">$ pftui export json && pftui movers --json</div>
-                    <p>Push portfolio snapshots and market events to cron jobs, agent pipelines, or notification systems with zero ceremony.</p>
+                    <h3>Automated Daily Briefs</h3>
+                    <div class="cli-command">$ pftui eod && pftui movers --json</div>
+                    <p>Set up cron jobs for morning briefs and market close summaries. Your agent monitors, analyses, and delivers — you read on your phone or terminal.</p>
                 </div>
             </div>
         </div>
@@ -238,7 +254,7 @@
     <section class="installation">
         <div class="container">
             <h2 class="section-title">Install anywhere</h2>
-            <p class="section-subtitle">Pick your install medium and copy the exact command.</p>
+            <p class="section-subtitle">The install script is the recommended method — it installs AND upgrades pftui. Re-run it anytime to update to the latest release. Your data is always preserved.</p>
             <div class="install-tabs" role="tablist" aria-label="Installation methods">
                 <button class="install-tab active" role="tab" aria-selected="true" data-install="curl">curl</button>
                 <button class="install-tab" role="tab" aria-selected="false" data-install="brew">Homebrew</button>
@@ -318,6 +334,20 @@
                             <td>Local</td>
                         </tr>
                         <tr>
+                            <td>Agent-Native CLI</td>
+                            <td class="highlight">30+ commands, --json</td>
+                            <td>No</td>
+                            <td>Bloomberg API ($)</td>
+                            <td>No</td>
+                        </tr>
+                        <tr>
+                            <td>Data Centralisation</td>
+                            <td class="highlight">10+ sources, one refresh</td>
+                            <td>1 source</td>
+                            <td>✓</td>
+                            <td>Manual</td>
+                        </tr>
+                        <tr>
                             <td>Cost</td>
                             <td class="highlight">Free</td>
                             <td>Free</td>
@@ -334,7 +364,7 @@
     <section class="open-source">
         <div class="container">
             <h2 class="section-title">Built in the open</h2>
-            <p class="section-subtitle">MIT licensed. Written in Rust. 1000+ tests. Actively developed.</p>
+            <p class="section-subtitle">MIT licensed. Written in Rust. 1100+ tests. Agent operator guide included. Actively developed.</p>
             <div class="oss-stats">
                 <div class="stat">
                     <div class="stat-value">
@@ -375,7 +405,7 @@
             <div class="footer-content">
                 <div class="footer-logo">
                     <span class="logo-text">pftui</span>
-                    <span class="footer-tagline">Your portfolio's command center</span>
+                    <span class="footer-tagline">Portfolio intelligence for humans and agents</span>
                 </div>
                 <div class="footer-links">
                     <div class="footer-column">

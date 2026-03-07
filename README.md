@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>The Portfolio Intelligence Platform.</b><br>
-  Built for human operators and their AI agents to collaborate on portfolio management.<br>
+  A data-rich financial battle station designed for human operators and their AI agents.<br>
   TUI · Web Dashboard · CLI · Agent API · Local-first.<br>
 </p>
 
@@ -18,17 +18,27 @@
 
 ---
 
-**pftui** is a portfolio intelligence platform designed for two operators working together: **a human** who makes the decisions, and **an AI agent** that does the research, monitors the markets, and keeps the system running.
+**pftui** is a data-rich, full-functionality financial battle station built for two operators working together: **a human** who makes the decisions, and **an AI agent** that does the research, monitors the markets, and keeps the system running.
 
-For the human: a full-featured terminal UI and a sleek responsive web dashboard — both designed for maximum information density with zero friction.
+pftui centralises all your market data, news, economic indicators, sentiment, prediction markets, and portfolio analytics into one local-first tool — relieving both you and your agent from constantly monitoring scattered sources of market information. One `pftui refresh` pulls from 10+ data sources. One `pftui brief --json` gives your agent everything it needs. One TUI gives you Bloomberg-class context in your terminal.
 
-For the agent: every feature exposed via CLI with structured JSON output, custom data models, and a local SQLite database that serves as the single source of truth for portfolio state.
+**The tool is fully agent-native and agent-driven.** Every feature ships with a CLI command and `--json` output. The database schema is documented. The [agent operator guide](AGENTS.md) is as thorough as the user manual. pftui is designed to be set up, operated, and maintained by your AI agent — with you in the decision seat.
+
+### 🚀 Recommended Setup
+
+The fastest way to get started: **ask your AI agent to do it.**
 
 ```bash
+# 1. Install (or upgrade) pftui — re-running this script updates to the latest version
 curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
+
+# 2. Tell your agent:
+# "Read AGENTS.md in the pftui repo and set up pftui with my portfolio"
 ```
 
-Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
+Whether you use **Claude Code**, **Codex**, **OpenClaw**, or any AI coding agent — point it at this repo and tell it to set up pftui for you. It will read [AGENTS.md](AGENTS.md), ask you about your holdings, risk tolerance, and market views, populate the database, configure your watchlist, and deliver your first brief. Setup takes 15-20 minutes of conversation.
+
+Or install manually via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
 
 ---
 
@@ -189,7 +199,7 @@ No runtime dependencies. No Node. No Python. No Docker required. Just one binary
 
 ## 📦 Installation
 
-The fastest way:
+**Recommended:** The install script is the canonical way to install AND upgrade pftui. Re-running it will detect your existing installation and update to the latest release version. Your data (SQLite database, config) is preserved across upgrades.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
@@ -265,13 +275,15 @@ Full roadmap: [TODO.md](TODO.md) · Feature specs: [docs/ANALYTICS-SPEC.md](docs
 
 | Document | Description |
 |---|---|
+| [PRODUCT-VISION.md](PRODUCT-VISION.md) | What pftui is, who it's for, and where it's going |
+| [PRODUCT-PHILOSOPHY.md](PRODUCT-PHILOSOPHY.md) | Core beliefs, design decisions, and what pftui will never be |
 | [AGENTS.md](AGENTS.md) | Agent operator guide — setup, workflows, integration patterns |
 | [CLAUDE.md](CLAUDE.md) | Development guide for AI coding agents |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Code architecture, file map, line ranges |
 | [docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md) | Feature specifications |
 | [docs/API-SOURCES.md](docs/API-SOURCES.md) | Free data source reference |
 | [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md) | Full keyboard shortcut reference |
-| [docs/VISION.md](docs/VISION.md) | Design principles and philosophy |
+| [docs/VISION.md](docs/VISION.md) | TUI design principles and quality bar |
 | [WEB_DASHBOARD.md](WEB_DASHBOARD.md) | Web dashboard setup and API reference |
 | [TODO.md](TODO.md) | Development backlog |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
