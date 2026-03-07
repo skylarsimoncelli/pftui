@@ -20,7 +20,6 @@
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [ ] **SMA overlay on charts** — Configurable `chart_sma = [20, 50, 200]`. Faint braille lines. Files: `widgets/price_chart.rs`, `config.rs`
 - [ ] **Volume sub-chart** — 3-row braille bars below price. Toggle with `V`. Files: `widgets/price_chart.rs`
 - [ ] **After-hours / pre-market prices** — Yahoo provides extended hours data. Show in watchlist and brief. Files: `price/yahoo.rs`, `commands/brief.rs`
 - [ ] **Brent crude + WTI spread in macro** — Key metric for geopolitical crises. Files: `commands/macro_cmd.rs`, `views/economy.rs`

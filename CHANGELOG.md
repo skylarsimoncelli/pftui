@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 11:27 UTC — Configurable SMA periods on charts
+
+- What: added `chart_sma` config field (default: `[20, 50]`) allowing users to customize which SMA periods overlay on price charts. Supports up to 3 periods with distinct colors (text_accent, border_accent, text_muted). Example: `chart_sma = [20, 50, 200]` in config.toml enables short/mid/long-term SMA overlays. Bollinger Bands now compute from the first configured SMA period. Previously SMA periods were hardcoded (20, 50); now fully user-configurable.
+- Why: P1 feature request. "SMA overlay on charts — Configurable chart_sma = [20, 50, 200]". Traders use different SMA periods for different strategies (day traders: 9/21, swing: 20/50, trend: 50/200). Hardcoded periods limited flexibility. This allows users to match their preferred technical analysis setup.
+- Files: `src/config.rs` (chart_sma field + default_chart_sma()), `src/app.rs` (chart_sma_periods field, initialized from config), `src/tui/widgets/price_chart.rs` (replaced hardcoded SMA_SHORT_PERIOD/SMA_LONG_PERIOD with loop over app.chart_sma_periods, updated labels, passed sma_periods to render_braille_chart)
+- Tests: all 1114 tests pass. Updated test configs to include chart_sma field.
+- TODO: SMA overlay on charts (P1)
+
 ### 2026-03-07 10:27 UTC — Add SMA50 to TUI watchlist and RSI/SMA50/MACD to CLI watchlist
 
 - What: added SMA50 column to TUI watchlist view (next to RSI) and added RSI(14), SMA50, MACD histogram columns to CLI `pftui watchlist` output. TUI SMA50 color-codes: green when price >5% above SMA50 (bullish), red when >5% below (bearish), neutral when within ±5%. CLI displays all three technicals with `---` placeholder when insufficient history. JSON output includes all three fields.
