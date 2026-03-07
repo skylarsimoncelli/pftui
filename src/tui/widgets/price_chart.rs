@@ -55,16 +55,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     // Navigation hint
+    let mode_label = app.chart_render_mode.label();
     let nav_hint = if app.crosshair_mode {
         if variant_count > 1 {
-            format!(" ⊹ [{}/{}] J/K  h/l:cursor  x:off ", idx + 1, variant_count)
+            format!(" ⊹ [{}/{}] J/K  h/l:cursor  x:off  C:{} ", idx + 1, variant_count, mode_label)
         } else {
-            " ⊹ h/l:cursor  x:off ".to_string()
+            format!(" ⊹ h/l:cursor  x:off  C:{} ", mode_label)
         }
     } else if variant_count > 1 {
-        format!(" [{}/{}] J/K  h/l ", idx + 1, variant_count)
+        format!(" [{}/{}] J/K  h/l  C:{} ", idx + 1, variant_count, mode_label)
     } else {
-        " h/l ".to_string()
+        format!(" h/l  C:{} ", mode_label)
     };
     let title = format!(" {} {} ", variant.label, app.chart_timeframe.label());
 
@@ -375,7 +376,7 @@ fn render_single_chart(
         sma_overlays.push((bb_lower, bb_color));
     }
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, crosshair, t);
+    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, crosshair, app.chart_render_mode, t);
 }
 
 /// Render a ratio chart (numerator / denominator)
@@ -443,7 +444,7 @@ fn render_ratio_chart(
     };
 
     // No volume or overlays for ratio charts
-    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], 0, crosshair, t);
+    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], 0, crosshair, app.chart_render_mode, t);
 }
 
 /// Compact single chart for multi-panel (no stats line, just braille)
@@ -634,6 +635,100 @@ pub fn compute_bollinger(
     (upper, lower)
 }
 
+/// Render candlestick chart using OHLC data with braille patterns for wicks and block chars for bodies
+#[allow(clippy::too_many_arguments)]
+fn render_candlestick_chart(
+    lines: &mut Vec<Line>,
+    records: &[HistoryRecord],
+    chart_height: usize,
+    chart_width: usize,
+    normalize_val: &dyn Fn(f64) -> usize,
+    _dot_rows: usize,
+    crosshair: Option<&CrosshairState>,
+    t: &theme::Theme,
+) {
+    // Map source records to chart columns (one candlestick per column)
+    let candles_per_chart = chart_width.min(records.len());
+    let skip = if records.len() > candles_per_chart {
+        records.len() - candles_per_chart
+    } else {
+        0
+    };
+    let visible_records = &records[skip..];
+    
+    // Crosshair column position
+    let ch_col = crosshair.map(|ch| ch.x.min(chart_width.saturating_sub(1)));
+    
+    for row in (0..chart_height).rev() {
+        let mut spans = Vec::new();
+        
+        for col in 0..chart_width {
+            if col >= visible_records.len() {
+                // No data for this column
+                spans.push(Span::styled(" ", Style::default().bg(t.surface_1)));
+                continue;
+            }
+            
+            let rec = &visible_records[col];
+            
+            // Parse OHLC values - fallback to close if OHLC not available
+            let open_val = rec.open.unwrap_or(rec.close).to_string().parse::<f64>().unwrap_or(0.0);
+            let high_val = rec.high.unwrap_or(rec.close).to_string().parse::<f64>().unwrap_or(0.0);
+            let low_val = rec.low.unwrap_or(rec.close).to_string().parse::<f64>().unwrap_or(0.0);
+            let close_val = rec.close.to_string().parse::<f64>().unwrap_or(0.0);
+            
+            // Normalize to dot rows
+            let open_y = normalize_val(open_val);
+            let high_y = normalize_val(high_val);
+            let low_y = normalize_val(low_val);
+            let close_y = normalize_val(close_val);
+            
+            // Determine bullish (close >= open) or bearish
+            let is_bullish = close_val >= open_val;
+            let candle_color = if is_bullish { t.gain_green } else { t.loss_red };
+            
+            // Body range (min/max of open/close)
+            let body_top = open_y.max(close_y);
+            let body_bottom = open_y.min(close_y);
+            
+            // Current row in dot coordinates
+            let row_start = row * BRAILLE_ROWS;
+            let row_end = row_start + BRAILLE_ROWS;
+            
+            // Render candle elements for this column
+            let is_wick = ((row_start..row_end).contains(&high_y) && (high_y > body_top || body_top == body_bottom))
+                       || ((row_start..row_end).contains(&low_y) && (low_y < body_bottom || body_top == body_bottom));
+            
+            let ch = if is_wick {
+                '│'
+            } else if body_top >= row_start && body_bottom < row_end {
+                // Body
+                if is_bullish {
+                    '▒' // Hollow body for bullish
+                } else {
+                    '█' // Filled body for bearish
+                }
+            } else {
+                ' '
+            };
+            
+            spans.push(Span::styled(
+                String::from(ch),
+                Style::default().fg(candle_color).bg(t.surface_1),
+            ));
+        }
+        
+        // Crosshair vertical line overlay
+        if let Some(cx) = ch_col {
+            if cx < spans.len() {
+                spans[cx] = Span::styled("│", Style::default().fg(t.text_accent).bg(t.surface_1));
+            }
+        }
+        
+        lines.push(Line::from(spans));
+    }
+}
+
 /// Full braille chart with optional volume bars and stats line (price, gain%, H/L)
 /// `sma_count` is the number of SMA overlays (the rest are Bollinger Band overlays).
 #[allow(clippy::too_many_arguments)]
@@ -647,6 +742,7 @@ fn render_braille_chart(
     sma_overlays: &[(Vec<Option<f64>>, Color)],
     sma_count: usize,
     crosshair: Option<&CrosshairState>,
+    render_mode: crate::app::ChartRenderMode,
     t: &theme::Theme,
 ) {
     if area.width < 4 || area.height < 4 {
@@ -715,77 +811,88 @@ fn render_braille_chart(
     let (grad_low, grad_mid, grad_high) = gain_gradient(gain_f, t);
 
     let mut lines: Vec<Line> = Vec::new();
-    for row in (0..chart_height).rev() {
-        let position = if chart_height > 1 {
-            row as f32 / (chart_height - 1) as f32
-        } else {
-            0.5
-        };
-        let row_color = theme::gradient_3(grad_low, grad_mid, grad_high, position);
+    
+    // Render chart based on mode
+    match render_mode {
+        crate::app::ChartRenderMode::Line => {
+            // Original braille line rendering
+            for row in (0..chart_height).rev() {
+                let position = if chart_height > 1 {
+                    row as f32 / (chart_height - 1) as f32
+                } else {
+                    0.5
+                };
+                let row_color = theme::gradient_3(grad_low, grad_mid, grad_high, position);
 
-        let mut spans = Vec::new();
-        for col in 0..chart_width {
-            let idx0 = col * 2;
-            let idx1 = idx0 + 1;
-            let v0 = normalized.get(idx0).copied().unwrap_or(0);
-            let v1 = normalized.get(idx1).copied().unwrap_or(0);
+                let mut spans = Vec::new();
+                for col in 0..chart_width {
+                    let idx0 = col * 2;
+                    let idx1 = idx0 + 1;
+                    let v0 = normalized.get(idx0).copied().unwrap_or(0);
+                    let v1 = normalized.get(idx1).copied().unwrap_or(0);
 
-            // Compute price braille bits
-            let price_bits = braille_bits(v0, v1, row, BRAILLE_ROWS);
+                    // Compute price braille bits
+                    let price_bits = braille_bits(v0, v1, row, BRAILLE_ROWS);
 
-            // Compute SMA overlay bits and determine overlay color
-            let mut sma_bits: u8 = 0;
-            let mut sma_color: Option<Color> = None;
-            for (sma_norm, color) in &sma_normalized {
-                let sv0 = sma_norm.get(idx0).and_then(|v| *v);
-                let sv1 = sma_norm.get(idx1).and_then(|v| *v);
-                let bits = braille_dot_bits(sv0, sv1, row, BRAILLE_ROWS);
-                if bits != 0 {
-                    sma_bits |= bits;
-                    sma_color = Some(*color);
+                    // Compute SMA overlay bits and determine overlay color
+                    let mut sma_bits: u8 = 0;
+                    let mut sma_color: Option<Color> = None;
+                    for (sma_norm, color) in &sma_normalized {
+                        let sv0 = sma_norm.get(idx0).and_then(|v| *v);
+                        let sv1 = sma_norm.get(idx1).and_then(|v| *v);
+                        let bits = braille_dot_bits(sv0, sv1, row, BRAILLE_ROWS);
+                        if bits != 0 {
+                            sma_bits |= bits;
+                            sma_color = Some(*color);
+                        }
+                    }
+
+                    let combined_bits = price_bits | sma_bits;
+                    let ch = char::from_u32(0x2800 + combined_bits as u32).unwrap_or(' ');
+
+                    // Use SMA color if only SMA dots are present, gradient if only price,
+                    // or gradient if both (price dominates visually)
+                    let cell_color = if price_bits == 0 && sma_bits != 0 {
+                        sma_color.unwrap_or(row_color)
+                    } else {
+                        row_color
+                    };
+
+                    // Area fill: tint background for cells below the chart line
+                    let bg_color = area_fill_bg(v0, v1, row, dot_rows, row_color, t.surface_1);
+
+                    spans.push(Span::styled(
+                        String::from(ch),
+                        Style::default().fg(cell_color).bg(bg_color),
+                    ));
                 }
-            }
 
-            let combined_bits = price_bits | sma_bits;
-            let ch = char::from_u32(0x2800 + combined_bits as u32).unwrap_or(' ');
+                // Crosshair: clamp and compute the column position
+                let ch_col = crosshair.map(|ch| ch.x.min(chart_width.saturating_sub(1)));
 
-            // Use SMA color if only SMA dots are present, gradient if only price,
-            // or gradient if both (price dominates visually)
-            let cell_color = if price_bits == 0 && sma_bits != 0 {
-                sma_color.unwrap_or(row_color)
-            } else {
-                row_color
-            };
+                // Y-axis labels
+                let label_width = 6;
+                if row == chart_height - 1 && chart_width > label_width + 2 {
+                    overlay_label(&mut spans, format_compact_short(max_val), t);
+                }
+                if row == 0 && chart_width > label_width + 2 {
+                    overlay_label(&mut spans, format_compact_short(min_val), t);
+                }
 
-            // Area fill: tint background for cells below the chart line
-            let bg_color = area_fill_bg(v0, v1, row, dot_rows, row_color, t.surface_1);
+                // Crosshair vertical line overlay
+                if let Some(cx) = ch_col {
+                    if cx < spans.len() {
+                        spans[cx] = Span::styled("│", Style::default().fg(t.text_accent));
+                    }
+                }
 
-            spans.push(Span::styled(
-                String::from(ch),
-                Style::default().fg(cell_color).bg(bg_color),
-            ));
-        }
-
-        // Crosshair: clamp and compute the column position
-        let ch_col = crosshair.map(|ch| ch.x.min(chart_width.saturating_sub(1)));
-
-        // Y-axis labels
-        let label_width = 6;
-        if row == chart_height - 1 && chart_width > label_width + 2 {
-            overlay_label(&mut spans, format_compact_short(max_val), t);
-        }
-        if row == 0 && chart_width > label_width + 2 {
-            overlay_label(&mut spans, format_compact_short(min_val), t);
-        }
-
-        // Crosshair vertical line overlay
-        if let Some(cx) = ch_col {
-            if cx < spans.len() {
-                spans[cx] = Span::styled("│", Style::default().fg(t.text_accent));
+                lines.push(Line::from(spans));
             }
         }
-
-        lines.push(Line::from(spans));
+        crate::app::ChartRenderMode::Candlestick => {
+            // Candlestick rendering using OHLC data
+            render_candlestick_chart(&mut lines, records, chart_height, chart_width, &normalize_val, dot_rows, crosshair, t);
+        }
     }
 
     // Crosshair: compute the record index and data for the tooltip

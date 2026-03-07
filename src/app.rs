@@ -41,6 +41,28 @@ pub enum ViewMode {
     Journal,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartRenderMode {
+    Line,
+    Candlestick,
+}
+
+impl ChartRenderMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            ChartRenderMode::Line => "Line",
+            ChartRenderMode::Candlestick => "Candles",
+        }
+    }
+
+    pub fn toggle(self) -> Self {
+        match self {
+            ChartRenderMode::Line => ChartRenderMode::Candlestick,
+            ChartRenderMode::Candlestick => ChartRenderMode::Line,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartTimeframe {
     OneWeek,
     OneMonth,
@@ -425,6 +447,7 @@ pub struct App {
     // Chart
     pub chart_index: usize, // which chart variant to show for current position
     pub chart_timeframe: ChartTimeframe,
+    pub chart_render_mode: ChartRenderMode, // Line or Candlestick rendering
     pub change_timeframe: ChangeTimeframe, // timeframe for % change column in positions table
     pub benchmark_overlay: bool, // toggle SPY benchmark overlay on charts
 
@@ -665,6 +688,7 @@ impl App {
             theme_name: config.theme.clone(),
             chart_index: 0,
             chart_timeframe: ChartTimeframe::ThreeMonths,
+            chart_render_mode: ChartRenderMode::Line,
             change_timeframe: ChangeTimeframe::TwentyFourHour,
             benchmark_overlay: false,
             fetched_history_days: HashMap::new(),
@@ -2187,6 +2211,10 @@ impl App {
                         self.chart_index = (self.chart_index + 1) % count;
                     }
                 }
+            }
+            // Chart render mode toggle with C (Positions view only)
+            KeyCode::Char('C') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.chart_render_mode = self.chart_render_mode.toggle();
             }
             // Crosshair toggle with x (Positions view only)
             KeyCode::Char('x') if matches!(self.view_mode, ViewMode::Positions) => {

@@ -85,6 +85,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("J / K", "Cycle chart variant", kc, tc));
     lines.push(key_line("h / l", "Cycle chart timeframe (1W–5Y)", kc, tc));
+    lines.push(key_line("C", "Toggle chart mode (Line / Candlestick)", kc, tc));
     lines.push(key_line("[ / ]", "Cycle sparkline timeframe (1W–5Y)", kc, tc));
     lines.push(key_line("x", "Toggle crosshair cursor on chart", kc, tc));
     lines.push(Line::from(Span::styled(
