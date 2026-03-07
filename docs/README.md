@@ -128,7 +128,12 @@ pftui snapshot                   # Render TUI to stdout (for sharing)
 
 Most data commands support JSON output via `--json`. Run `pftui <command> --help` for details.
 
-**Note:** Some features (prediction markets, news feeds, sentiment) are under active development and may show "no data" until their data sources are fully integrated. Core features (portfolio tracking, prices, macro, charts) work immediately.
+**⚠️ Data Pipeline Status:** Core features (portfolio tracking, prices, technicals, macro dashboard, charts) work immediately and reliably. Some advanced features are still stabilizing:
+- **Predictions** — Currently returns only sports markets; finance/geopolitics filtering coming soon
+- **ETF Flows** — Intermittent due to upstream data source changes
+- **News feeds** — Works but may show delays during high-traffic periods
+
+Run `pftui status` to check data freshness. If a CLI command shows "no data" or the TUI shows `---`, it means the data source is temporarily unavailable, not broken — retry with `pftui refresh`.
 
 ---
 

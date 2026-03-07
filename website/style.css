@@ -430,6 +430,31 @@ body {
     border-radius: var(--radius-md);
     padding: var(--spacing-md);
     box-shadow: var(--shadow-sm);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.agent-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient-primary);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.agent-card:hover {
+    border-color: var(--accent-cyan);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.agent-card:hover::before {
+    opacity: 1;
 }
 
 .agent-card h3 {
@@ -508,11 +533,15 @@ body {
     border: 1px solid var(--border);
     color: var(--text-secondary);
     border-radius: 999px;
-    padding: 0.5rem 0.9rem;
+    padding: 0.65rem 1.1rem;
     font-family: var(--font-mono);
     font-size: 0.8rem;
     cursor: pointer;
     transition: all 0.2s ease;
+    min-height: 44px; /* iOS touch target guideline */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .install-tab:hover {
