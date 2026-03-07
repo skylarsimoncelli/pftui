@@ -189,6 +189,13 @@ pub enum Command {
         json: bool,
     },
 
+    /// End-of-Day summary: brief + movers + macro + sentiment combined
+    Eod {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Global macro dashboard: World Bank structural data for major economies
     Global {
         /// Filter to a specific country code (e.g. USA, CHN, IND, RUS, BRA, ZAF, GBR, EUU)

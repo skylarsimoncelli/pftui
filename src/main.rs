@@ -223,6 +223,8 @@ fn main() -> Result<()> {
 
         Some(Command::Macro { json }) => commands::macro_cmd::run(&conn, &config, json),
 
+        Some(Command::Eod { json }) => commands::eod::run(&conn, &config, json),
+
         Some(Command::Global { country, indicator, json }) => {
             commands::global::run(&conn, country.as_deref(), indicator.as_deref(), json)
         }

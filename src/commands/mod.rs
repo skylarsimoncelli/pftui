@@ -7,6 +7,7 @@ pub mod supply;
 pub mod target;
 pub mod demo;
 pub mod drift;
+pub mod eod;
 pub mod etf_flows;
 pub mod global;
 pub mod rebalance;
