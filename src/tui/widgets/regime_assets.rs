@@ -89,7 +89,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 /// Build a line showing strong or weak assets: "▲ Gold, Treasuries, USD"
 fn build_asset_line<'a>(
     icon: &'a str,
-    assets: &[&str],
+    assets: &[String],
     t: &'a Theme,
     max_width: u16,
     is_strong: bool,
@@ -110,7 +110,7 @@ fn build_asset_line<'a>(
     // Build comma-separated list, truncated to fit
     let prefix = format!("{} ", icon);
     let available = max_width as usize - prefix.len();
-    let joined = truncate_list(assets, available);
+    let joined = truncate_list_owned(assets, available);
 
     Line::from(vec![
         Span::styled(prefix, Style::default().fg(color).bold()),
@@ -147,7 +147,7 @@ fn build_alignment_line<'a>(
 
 /// Join items with commas, truncating with "…" if they don't fit.
 /// Uses character count (not byte length) for width calculation.
-fn truncate_list(items: &[&str], max_chars: usize) -> String {
+fn truncate_list_owned(items: &[String], max_chars: usize) -> String {
     let mut result = String::new();
     let mut char_count: usize = 0;
 
@@ -202,18 +202,22 @@ pub fn compute_height(app: &App) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn truncate_list_fits() {
-        let items = vec!["Gold", "Silver"];
-        assert_eq!(truncate_list(&items, 20), "Gold, Silver");
+        let items = vec!["Gold".to_string(), "Silver".to_string()];
+        assert_eq!(super::truncate_list_owned(&items, 20), "Gold, Silver");
     }
 
     #[test]
     fn truncate_list_overflow() {
-        let items = vec!["Gold", "Silver", "Treasuries", "USD", "Utilities"];
-        let result = truncate_list(&items, 25);
+        let items = vec![
+            "Gold".to_string(),
+            "Silver".to_string(),
+            "Treasuries".to_string(),
+            "USD".to_string(),
+            "Utilities".to_string(),
+        ];
+        let result = super::truncate_list_owned(&items, 25);
         let char_count = result.chars().count();
         assert!(char_count <= 25, "result too long: {} ({} chars)", result, char_count);
         assert!(result.contains("Gold"));
@@ -225,8 +229,12 @@ mod tests {
     #[test]
     fn truncate_list_adds_ellipsis() {
         // With a tighter limit, ellipsis should appear
-        let items = vec!["Gold", "Silver", "Treasuries"];
-        let result = truncate_list(&items, 16);
+        let items = vec![
+            "Gold".to_string(),
+            "Silver".to_string(),
+            "Treasuries".to_string(),
+        ];
+        let result = super::truncate_list_owned(&items, 16);
         let char_count = result.chars().count();
         assert!(char_count <= 16, "too long: {} ({} chars)", result, char_count);
         assert!(result.contains("Gold"));
@@ -235,28 +243,28 @@ mod tests {
 
     #[test]
     fn truncate_list_empty() {
-        let items: Vec<&str> = vec![];
-        assert_eq!(truncate_list(&items, 20), "");
+        let items: Vec<String> = vec![];
+        assert_eq!(super::truncate_list_owned(&items, 20), "");
     }
 
     #[test]
     fn truncate_list_single_item() {
-        let items = vec!["Growth stocks"];
-        assert_eq!(truncate_list(&items, 20), "Growth stocks");
+        let items = vec!["Growth stocks".to_string()];
+        assert_eq!(super::truncate_list_owned(&items, 20), "Growth stocks");
     }
 
     #[test]
     fn truncate_list_exact_fit() {
-        let items = vec!["Gold", "Silver"];
+        let items = vec!["Gold".to_string(), "Silver".to_string()];
         // "Gold, Silver" = 12 chars
-        assert_eq!(truncate_list(&items, 12), "Gold, Silver");
+        assert_eq!(super::truncate_list_owned(&items, 12), "Gold, Silver");
     }
 
     #[test]
     fn truncate_list_one_over() {
-        let items = vec!["Gold", "Silver"];
+        let items = vec!["Gold".to_string(), "Silver".to_string()];
         // "Gold, Silver" = 12 chars, limit 11 → "Gold, …" or "Gold…"
-        let result = truncate_list(&items, 11);
+        let result = super::truncate_list_owned(&items, 11);
         assert!(result.len() <= 11);
         assert!(result.contains("Gold"));
     }

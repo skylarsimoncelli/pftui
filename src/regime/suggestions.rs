@@ -19,9 +19,9 @@ use crate::regime::RegimeScore;
 #[derive(Debug, Clone)]
 pub struct RegimeSuggestions {
     /// Assets historically strong in the current regime.
-    pub strong: Vec<&'static str>,
+    pub strong: Vec<String>,
     /// Assets historically weak in the current regime.
-    pub weak: Vec<&'static str>,
+    pub weak: Vec<String>,
     /// Portfolio alignment summary (None if no positions).
     pub alignment: Option<PortfolioAlignment>,
 }
@@ -86,33 +86,121 @@ pub fn compute_suggestions(
         };
     }
 
-    let (strong, weak) = match regime.total {
-        5..=9 => (RISK_ON_STRONG.to_vec(), RISK_ON_WEAK.to_vec()),
+    let (generic_strong, generic_weak) = match regime.total {
+        5..=9 => (RISK_ON_STRONG, RISK_ON_WEAK),
         2..=4 => (
             // Lean risk-on: narrower set
-            vec!["Growth stocks", "Crypto", "Copper"],
-            vec!["Gold", "Treasuries", "USD"],
+            &["Growth stocks", "Crypto", "Copper"] as &[&str],
+            &["Gold", "Treasuries", "USD"] as &[&str],
         ),
         -1..=1 => (
             // Neutral: mixed signals, hedged is good
-            vec!["Diversified", "Balanced"],
-            vec![],
+            &["Diversified", "Balanced"] as &[&str],
+            &[] as &[&str],
         ),
         -4..=-2 => (
             // Lean risk-off: narrower set
-            vec!["Gold", "Treasuries", "USD"],
-            vec!["Growth stocks", "Crypto", "High-yield bonds"],
+            &["Gold", "Treasuries", "USD"] as &[&str],
+            &["Growth stocks", "Crypto", "High-yield bonds"] as &[&str],
         ),
-        _ => (RISK_OFF_STRONG.to_vec(), RISK_OFF_WEAK.to_vec()),
+        _ => (RISK_OFF_STRONG, RISK_OFF_WEAK),
     };
 
     let alignment = compute_alignment(regime, positions);
+
+    // Build portfolio-aware suggestions
+    let strong = build_portfolio_aware_suggestions(
+        generic_strong,
+        positions,
+        regime.total,
+        true,
+    );
+    let weak = build_portfolio_aware_suggestions(
+        generic_weak,
+        positions,
+        regime.total,
+        false,
+    );
 
     RegimeSuggestions {
         strong,
         weak,
         alignment,
     }
+}
+
+/// Build portfolio-aware suggestions that reference actual holdings when possible.
+/// For example: "Gold (25% alloc)" instead of just "Gold".
+fn build_portfolio_aware_suggestions(
+    generic_suggestions: &[&str],
+    positions: &[Position],
+    regime_total: i8,
+    is_strong: bool,
+) -> Vec<String> {
+    if positions.is_empty() {
+        // No portfolio — return generic suggestions
+        return generic_suggestions.iter().map(|s| s.to_string()).collect();
+    }
+
+    // Compute total portfolio value
+    let total_value: Decimal = positions
+        .iter()
+        .filter_map(|p| p.current_value)
+        .sum();
+
+    if total_value <= dec!(0) {
+        return generic_suggestions.iter().map(|s| s.to_string()).collect();
+    }
+
+    // Build category -> (holdings, total_value) map
+    let mut category_holdings: HashMap<AssetCategory, (Vec<&Position>, Decimal)> = HashMap::new();
+    for pos in positions {
+        if let Some(val) = pos.current_value {
+            let entry = category_holdings.entry(pos.category).or_insert((Vec::new(), dec!(0)));
+            entry.0.push(pos);
+            entry.1 += val;
+        }
+    }
+
+    let mut result: Vec<String> = Vec::new();
+
+    for suggestion in generic_suggestions {
+        // Map generic suggestion to category
+        let category_match = match *suggestion {
+            "Growth stocks" | "Defensive equities" => Some(AssetCategory::Equity),
+            "Crypto" => Some(AssetCategory::Crypto),
+            "Gold" | "Silver" | "Copper" => Some(AssetCategory::Commodity),
+            "Treasuries" | "High-yield bonds" => Some(AssetCategory::Fund),
+            "USD" => Some(AssetCategory::Forex),
+            _ => None,
+        };
+
+        if let Some(cat) = category_match {
+            if let Some((holdings, cat_value)) = category_holdings.get(&cat) {
+                let cat_pct = ((cat_value * dec!(100)) / total_value).round();
+                
+                // Only show holdings if they're regime-aligned
+                let aligned = holdings.iter().any(|p| {
+                    category_regime_class(p.category, regime_total) == if is_strong {
+                        RegimeClass::Strong
+                    } else {
+                        RegimeClass::Weak
+                    }
+                });
+
+                if aligned && cat_pct >= dec!(1) {
+                    // Portfolio-aware: mention allocation
+                    result.push(format!("{} ({}% alloc)", suggestion, cat_pct));
+                    continue;
+                }
+            }
+        }
+
+        // No holdings or not aligned — use generic suggestion
+        result.push(suggestion.to_string());
+    }
+
+    result
 }
 
 /// Map pftui AssetCategory to regime-relevant groupings.
@@ -270,27 +358,27 @@ mod tests {
     fn risk_on_suggests_growth() {
         let regime = make_regime(7, 9);
         let suggestions = compute_suggestions(&regime, &[]);
-        assert!(suggestions.strong.contains(&"Growth stocks"));
-        assert!(suggestions.strong.contains(&"Crypto"));
-        assert!(suggestions.weak.contains(&"Gold"));
-        assert!(suggestions.weak.contains(&"Treasuries"));
+        assert!(suggestions.strong.iter().any(|s| s.contains("Growth stocks")));
+        assert!(suggestions.strong.iter().any(|s| s.contains("Crypto")));
+        assert!(suggestions.weak.iter().any(|s| s.contains("Gold")));
+        assert!(suggestions.weak.iter().any(|s| s.contains("Treasuries")));
     }
 
     #[test]
     fn risk_off_suggests_gold() {
         let regime = make_regime(-6, 9);
         let suggestions = compute_suggestions(&regime, &[]);
-        assert!(suggestions.strong.contains(&"Gold"));
-        assert!(suggestions.strong.contains(&"Treasuries"));
-        assert!(suggestions.weak.contains(&"Crypto"));
-        assert!(suggestions.weak.contains(&"Growth stocks"));
+        assert!(suggestions.strong.iter().any(|s| s.contains("Gold")));
+        assert!(suggestions.strong.iter().any(|s| s.contains("Treasuries")));
+        assert!(suggestions.weak.iter().any(|s| s.contains("Crypto")));
+        assert!(suggestions.weak.iter().any(|s| s.contains("Growth stocks")));
     }
 
     #[test]
     fn neutral_regime_balanced() {
         let regime = make_regime(0, 5);
         let suggestions = compute_suggestions(&regime, &[]);
-        assert!(suggestions.strong.contains(&"Diversified"));
+        assert!(suggestions.strong.iter().any(|s| s.contains("Diversified")));
         assert!(suggestions.weak.is_empty());
     }
 
