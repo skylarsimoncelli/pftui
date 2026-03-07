@@ -126,6 +126,9 @@ pub enum Command {
         /// Filter to symbols within N% of their target price (e.g. 10)
         #[arg(long)]
         approaching: Option<String>,
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
     },
 
     /// Set a cash position to an exact amount (replaces existing transactions for that currency)

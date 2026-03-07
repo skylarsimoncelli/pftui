@@ -4,6 +4,7 @@ use anyhow::Result;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
+use serde::Serialize;
 
 use crate::db::price_cache::get_all_cached_prices;
 use crate::db::price_history::get_history;
@@ -76,11 +77,15 @@ fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<
     Some((current - prev_close) / prev_close * dec!(100))
 }
 
-pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Option<&str>) -> Result<()> {
+pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Option<&str>, json: bool) -> Result<()> {
     let entries = list_watchlist(conn)?;
 
     if entries.is_empty() {
-        println!("Watchlist is empty. Add symbols with: pftui watch <SYMBOL>");
+        if json {
+            println!("[]");
+        } else {
+            println!("Watchlist is empty. Add symbols with: pftui watch <SYMBOL>");
+        }
         return Ok(());
     }
 
@@ -97,6 +102,7 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
         .collect();
 
     // Row: symbol, name, category, price, change, target, proximity, fetched
+    #[derive(Serialize)]
     struct WatchRow {
         symbol: String,
         name: String,
@@ -106,6 +112,7 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
         target: String,
         proximity: String,
         fetched: String,
+        #[serde(skip)]
         proximity_pct: Option<Decimal>,
     }
 
@@ -204,13 +211,24 @@ pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Optio
             None => false,
         });
         if rows.is_empty() {
-            println!("No watchlist symbols within {}% of their target.", threshold);
+            if json {
+                println!("[]");
+            } else {
+                println!("No watchlist symbols within {}% of their target.", threshold);
+            }
             return Ok(());
         }
     }
 
     // Sort by symbol for consistent output
     rows.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+
+    // JSON output
+    if json {
+        let json_str = serde_json::to_string_pretty(&rows)?;
+        println!("{}", json_str);
+        return Ok(());
+    }
 
     // Check if any rows have targets
     let has_targets = rows.iter().any(|r| r.target != "---");
@@ -391,7 +409,7 @@ mod tests {
     fn watchlist_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
-        let result = run(&conn, &config, None);
+        let result = run(&conn, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -405,7 +423,7 @@ mod tests {
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
 
-        let result = run(&conn, &config, None);
+        let result = run(&conn, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -433,7 +451,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None);
+        let result = run(&conn, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -631,7 +649,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None);
+        let result = run(&conn, &config, None, false);
         assert!(result.is_ok());
     }
 }
