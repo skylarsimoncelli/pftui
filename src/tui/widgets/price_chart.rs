@@ -52,16 +52,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Navigation hint
     let mode_label = app.chart_render_mode.label();
+    let vol_label = if app.volume_overlay { "V:on" } else { "V:off" };
     let nav_hint = if app.crosshair_mode {
         if variant_count > 1 {
-            format!(" ⊹ [{}/{}] J/K  h/l:cursor  x:off  C:{} ", idx + 1, variant_count, mode_label)
+            format!(" ⊹ [{}/{}] J/K  h/l:cursor  x:off  C:{}  {} ", idx + 1, variant_count, mode_label, vol_label)
         } else {
-            format!(" ⊹ h/l:cursor  x:off  C:{} ", mode_label)
+            format!(" ⊹ h/l:cursor  x:off  C:{}  {} ", mode_label, vol_label)
         }
     } else if variant_count > 1 {
-        format!(" [{}/{}] J/K  h/l  C:{} ", idx + 1, variant_count, mode_label)
+        format!(" [{}/{}] J/K  h/l  C:{}  {} ", idx + 1, variant_count, mode_label, vol_label)
     } else {
-        format!(" h/l  C:{} ", mode_label)
+        format!(" h/l  C:{}  {} ", mode_label, vol_label)
     };
     let title = format!(" {} {} ", variant.label, app.chart_timeframe.label());
 
@@ -316,6 +317,7 @@ fn render_single_chart(
     // Extract volume data
     let volumes: Vec<Option<u64>> = records.iter().map(|r| r.volume).collect();
     let has_volume = volumes.iter().any(|v| v.is_some());
+    let show_volume = app.volume_overlay && has_volume;
 
     // Compute SMA overlays from raw close prices
     let raw_values: Vec<f64> = records
@@ -375,7 +377,7 @@ fn render_single_chart(
         }
     }
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if has_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, &app.chart_sma_periods, crosshair, app.chart_render_mode, t);
+    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if show_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, &app.chart_sma_periods, crosshair, app.chart_render_mode, t);
 }
 
 /// Render a ratio chart (numerator / denominator)

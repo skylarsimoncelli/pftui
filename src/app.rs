@@ -451,6 +451,7 @@ pub struct App {
     pub chart_render_mode: ChartRenderMode, // Line or Candlestick rendering
     pub change_timeframe: ChangeTimeframe, // timeframe for % change column in positions table
     pub benchmark_overlay: bool, // toggle SPY benchmark overlay on charts
+    pub volume_overlay: bool, // toggle volume sub-chart (3-row braille bars)
 
     // History fetch tracking: max days fetched per symbol (to avoid re-fetching)
     fetched_history_days: HashMap<String, u32>,
@@ -693,6 +694,7 @@ impl App {
             chart_render_mode: ChartRenderMode::Line,
             change_timeframe: ChangeTimeframe::TwentyFourHour,
             benchmark_overlay: false,
+            volume_overlay: false,
             fetched_history_days: HashMap::new(),
             history_attempted: std::collections::HashSet::new(),
             tick_count: 0,
@@ -2376,6 +2378,11 @@ impl App {
             // Toggle benchmark overlay on chart (Shift+B)
             KeyCode::Char('B') if matches!(self.view_mode, ViewMode::Positions) => {
                 self.benchmark_overlay = !self.benchmark_overlay;
+            }
+
+            // Toggle volume sub-chart (Shift+V)
+            KeyCode::Char('V') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.volume_overlay = !self.volume_overlay;
             }
 
             _ => {}
