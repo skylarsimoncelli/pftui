@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-07 12:27 UTC — Add volume sub-chart toggle (Shift+V)
+
+- What: implemented toggle for volume bars below price charts, activated with Shift+V. New `volume_overlay: bool` field in App state (default: false). When enabled and volume data is available, renders 3-row braille bar chart below price chart showing relative trading volume (8-level block characters: ▁▂▃▄▅▆▇█). Volume bars are color-coded using muted theme color (60% text_muted, 40% surface_1). Navigation hint now shows "V:on" or "V:off" indicator. Volume rendering infrastructure already existed (build_volume_line function) but was always shown when available; now user-controlled.
+- Why: P1 feature request. "Volume sub-chart — 3-row braille bars below price. Toggle with `V`". Volume is critical context for price movements (breakouts with low volume are suspect, high volume confirms trend). Auto-showing volume cluttered the chart interface for users who don't use it. This adds user control while preserving existing rendering quality.
+- Files: `src/app.rs` (volume_overlay field, initialization to false, Shift+V keybinding), `src/tui/widgets/price_chart.rs` (show_volume flag combining volume_overlay and has_volume, updated nav hints with V:on/off)
+- Tests: all 1114 tests pass, no new test failures.
+- TODO: Volume sub-chart (P1)
+
 ### 2026-03-07 11:27 UTC — Configurable SMA periods on charts
 
 - What: added `chart_sma` config field (default: `[20, 50]`) allowing users to customize which SMA periods overlay on price charts. Supports up to 3 periods with distinct colors (text_accent, border_accent, text_muted). Example: `chart_sma = [20, 50, 200]` in config.toml enables short/mid/long-term SMA overlays. Bollinger Bands now compute from the first configured SMA period. Previously SMA periods were hardcoded (20, 50); now fully user-configurable.
