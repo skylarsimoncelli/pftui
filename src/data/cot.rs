@@ -8,7 +8,7 @@
 //! No authentication required. Rate limit: ~1000 req/hour per IP.
 //!
 //! Supported contracts:
-//! - Gold (067651): COMEX Gold Futures
+//! - Gold (088691): COMEX Gold Futures
 //! - Silver (084691): COMEX Silver Futures
 //! - WTI Crude Oil (067411): NYMEX WTI Light Sweet Crude Oil
 //! - Bitcoin (133741): CME Bitcoin Futures
@@ -19,7 +19,7 @@ use serde::Deserialize;
 /// CFTC contract codes we track and their pftui symbol mappings.
 pub const COT_CONTRACTS: &[CotContract] = &[
     CotContract {
-        cftc_code: "067651",
+        cftc_code: "088691",
         symbol: "GC=F",
         name: "Gold Futures",
         category: "Metals",
