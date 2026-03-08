@@ -11,6 +11,14 @@
 - Tests: all 1171 tests pass, clippy clean
 - TODO: none (P0 bug fix, not from TODO.md)
 
+### 2026-03-08 06:33 UTC — Add named multi-portfolio management via `pftui portfolio`
+
+- What: added portfolio management commands (`list`, `current`, `create`, `switch`, `remove`) and active-portfolio persistence. pftui now resolves DB path from the active portfolio and opens a separate SQLite DB per portfolio name.
+- Why: TODO item for named multi-portfolio support and portfolio switching.
+- Files: `src/commands/portfolio.rs` (new command), `src/db/mod.rs` (active portfolio state + path resolution helpers), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1177 passed)
+- TODO: Multi-portfolio support
+
 ### 2026-03-08 06:30 UTC — Add `pftui options` options-chain command (Yahoo free data)
 
 - What: added a new `pftui options <SYMBOL>` command that fetches option-chain data from Yahoo Finance with nearest-expiry default, optional `--expiry YYYY-MM-DD`, `--limit`, and `--json` output.

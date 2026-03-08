@@ -54,11 +54,82 @@ pub fn open_db(path: &std::path::Path) -> Result<Connection> {
     Ok(conn)
 }
 
-pub fn default_db_path() -> std::path::PathBuf {
+fn base_data_dir() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("pftui")
-        .join("pftui.db")
+}
+
+fn portfolios_dir() -> std::path::PathBuf {
+    base_data_dir().join("portfolios")
+}
+
+fn active_portfolio_path() -> std::path::PathBuf {
+    base_data_dir().join("active_portfolio")
+}
+
+pub fn sanitize_portfolio_name(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        Some(trimmed.to_lowercase())
+    } else {
+        None
+    }
+}
+
+pub fn read_active_portfolio() -> String {
+    std::fs::read_to_string(active_portfolio_path())
+        .ok()
+        .and_then(|s| sanitize_portfolio_name(&s))
+        .unwrap_or_else(|| "default".to_string())
+}
+
+pub fn write_active_portfolio(name: &str) -> Result<()> {
+    let safe = sanitize_portfolio_name(name)
+        .ok_or_else(|| anyhow::anyhow!("Invalid portfolio name: {}", name))?;
+    std::fs::create_dir_all(base_data_dir())?;
+    std::fs::write(active_portfolio_path(), format!("{}\n", safe))?;
+    Ok(())
+}
+
+pub fn db_path_for_portfolio(name: &str) -> std::path::PathBuf {
+    let safe = sanitize_portfolio_name(name).unwrap_or_else(|| "default".to_string());
+    let legacy_default = base_data_dir().join("pftui.db");
+    if safe == "default" && legacy_default.exists() {
+        return legacy_default;
+    }
+    portfolios_dir().join(format!("{}.db", safe))
+}
+
+pub fn list_portfolios() -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    names.insert("default".to_string());
+
+    if let Ok(entries) = std::fs::read_dir(portfolios_dir()) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("db") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Some(safe) = sanitize_portfolio_name(stem) {
+                        names.insert(safe);
+                    }
+                }
+            }
+        }
+    }
+
+    names.into_iter().collect()
+}
+
+pub fn default_db_path() -> std::path::PathBuf {
+    let active = read_active_portfolio();
+    db_path_for_portfolio(&active)
 }
 
 #[cfg(test)]

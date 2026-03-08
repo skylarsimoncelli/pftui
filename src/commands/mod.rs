@@ -29,6 +29,7 @@ pub mod news;
 pub mod oil;
 pub mod options;
 pub mod performance;
+pub mod portfolio;
 pub mod predictions;
 pub mod rebalance;
 pub mod refresh;

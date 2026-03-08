@@ -479,6 +479,9 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::options::run(&symbol, expiry.as_deref(), limit, json),
+        Some(Command::Portfolio { action, name, json }) => {
+            commands::portfolio::run(&action, name.as_deref(), json)
+        }
         Some(Command::StressTest { scenario, json }) => {
             commands::stress_test::run(&conn, &config, &scenario, json)
         }

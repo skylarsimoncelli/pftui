@@ -694,6 +694,19 @@ pub enum Command {
         json: bool,
     },
 
+    /// Manage named portfolios (list/current/create/switch/remove)
+    Portfolio {
+        /// Action: list, current, create, switch, remove
+        action: String,
+
+        /// Portfolio name (for create/switch/remove)
+        name: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Run named portfolio stress scenarios
     StressTest {
         /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
