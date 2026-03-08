@@ -216,7 +216,7 @@ The setup wizard walks you through adding your first positions with symbol autoc
 
 - **Rust**, fast, safe, single binary
 - **ratatui**, terminal UI framework
-- **SQLite**, bundled, zero-config persistence
+- **SQLite** default backend, with PostgreSQL plumbing in progress
 - **Actix-web**, web dashboard server
 - **TradingView Widget**, interactive web charts
 
@@ -309,6 +309,7 @@ Full roadmap: [TODO.md](TODO.md) · Feature specs: [docs/ANALYTICS-SPEC.md](docs
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Code architecture, file map, line ranges |
 | [docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md) | Feature specifications |
 | [docs/API-SOURCES.md](docs/API-SOURCES.md) | Free data source reference |
+| [docs/MIGRATING.md](docs/MIGRATING.md) | Backend migration guide (SQLite/PostgreSQL) |
 | [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md) | Full keyboard shortcut reference |
 | [docs/VISION.md](docs/VISION.md) | TUI design principles and quality bar |
 | [WEB_DASHBOARD.md](WEB_DASHBOARD.md) | Web dashboard setup and API reference |

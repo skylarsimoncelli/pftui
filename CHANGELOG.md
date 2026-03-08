@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 16:24 UTC — Add backend migration guide and rollout docs updates
+
+- What: added `docs/MIGRATING.md` with SQLite/PostgreSQL migration workflow (`export -> setup -> import`) and current backend support status. Updated `README.md`, `AGENTS.md`, and website copy to reflect backend plumbing progress and link migration guidance.
+- Why: progresses PostgreSQL epic Phase 3 docs/rollout requirements and provides a concrete operator path for future backend transitions.
+- Files: `docs/MIGRATING.md`, `README.md`, `AGENTS.md`, `website/index.html`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1180 passed)
+- TODO: PostgreSQL backend support (Phase 3 partial)
+
 ### 2026-03-08 16:18 UTC — Add backend abstraction scaffold in `db/backend.rs`
 
 - What: added new `db/backend.rs` infrastructure with `BackendConnection` (`Sqlite` / `Postgres`) and `open_from_config(&Config, &Path)` that opens SQLite via existing migrations or initializes a PostgreSQL pool from `database_url`. Wired `main.rs` startup through this abstraction.
