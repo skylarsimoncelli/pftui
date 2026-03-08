@@ -24,5 +24,7 @@ pub mod predictions;
 pub mod rss;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, Economy tab)
 pub mod sentiment;
+#[allow(dead_code)] // Infrastructure for P3 sovereign tracker command
+pub mod sovereign;
 #[allow(dead_code)] // Infrastructure for F25.1+ consumers (Global macro panel, CLI)
 pub mod worldbank;

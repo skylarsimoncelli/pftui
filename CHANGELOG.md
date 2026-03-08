@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:15 UTC — Add `pftui sovereign` sovereign-holdings tracker command
+
+- What: added a new `pftui sovereign` command to track sovereign positioning across three hard-to-combine datasets: central-bank gold reserves (WGC Central Banks Dashboard API), government bitcoin holdings (BitcoinTreasuries governments page), and COMEX silver warehouse inventory (`SI=F`). Supports human-readable and `--json` output.
+- Why: TODO item for sovereign holdings tracking (CB gold + government BTC + COMEX silver) as a differentiated macro/signal view.
+- Files: `src/data/sovereign.rs` (new fetch+parse module with tests), `src/commands/sovereign.rs` (new command), `src/data/mod.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1170 passed)
+- Notes: direct `cargo run -- sovereign --json` validation on this machine is still blocked by an existing local DB schema migration issue (`watchlist.group_id`) unrelated to the sovereign implementation.
+- TODO: Sovereign holdings tracker
+
 ### 2026-03-08 06:07 UTC — Add DB-backed dividend tracking commands
 
 - What: added a new `pftui dividends` command with actions `add`, `list`, and `remove` for tracking dividend payments, ex-dates, and pay dates. `list` now computes estimated cash payouts from current net shares and derives trailing 12-month yield per symbol using cached prices.

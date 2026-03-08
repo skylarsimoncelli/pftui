@@ -231,6 +231,7 @@ fn main() -> Result<()> {
         Some(Command::Oil { json }) => commands::oil::run(&conn, json),
         Some(Command::Crisis { json }) => commands::crisis::run(&conn, json),
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
+        Some(Command::Sovereign { json }) => commands::sovereign::run(json),
         Some(Command::Economy { indicator, json }) => {
             commands::economy::run(&conn, indicator.as_deref(), json)
         }

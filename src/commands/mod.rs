@@ -38,6 +38,7 @@ pub mod sentiment;
 pub mod set_cash;
 pub mod setup;
 pub mod snapshot;
+pub mod sovereign;
 pub mod status;
 pub mod stress_test;
 pub mod summary;

@@ -95,7 +95,6 @@
 
 ## P3 — Long Term
 
-- [ ] **Sovereign holdings tracker** — CB gold (WGC), government BTC, COMEX silver. No other TUI tracks this. Files: new `data/sovereign.rs`
 - [ ] **Multi-portfolio support** — Named portfolios with switching
 - [ ] **Custom keybinding config** — User-configurable in config.toml
 - [ ] **Sector heatmap** — Treemap-style sector performance view
