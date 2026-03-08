@@ -573,16 +573,9 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
     // 5. COT (CFTC)
     if cot_needs_refresh(conn)? {
         let mut total = 0;
-        
-        // Key commodities
-        for (_name, code) in &[
-            ("Gold", "088691"),
-            ("Silver", "084691"),
-            ("Copper", "085692"),
-            ("Crude Oil", "067651"),
-            ("S&P 500", "13874+"),
-        ] {
-            match cot::fetch_latest_report(code) {
+
+        for contract in cot::COT_CONTRACTS {
+            match cot::fetch_latest_report(contract.cftc_code) {
                 Ok(report) => {
                     let entry = crate::db::cot_cache::CotCacheEntry {
                         cftc_code: report.cftc_code.clone(),
@@ -779,9 +772,10 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ COMEX (fresh, skipping)");
     }
 
-    // 12. On-chain (Blockchair)
-    // On-chain data is always fetched since it's diverse and doesn't have a simple freshness check
-    // We'll fetch but not fail the whole command if it errors
+    // 12. On-chain (network + ETF flows)
+    let mut onchain_ok_parts = Vec::new();
+    let mut onchain_errors = Vec::new();
+
     match onchain::fetch_network_metrics() {
         Ok(metrics) => {
             let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -798,11 +792,36 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
             let _ = onchain_cache::upsert_metric(conn, &metric);
-            println!("✓ On-chain (network metrics)");
+            onchain_ok_parts.push("network");
         }
-        Err(e) => {
-            println!("✗ On-chain (failed: {})", e);
+        Err(e) => onchain_errors.push(format!("network: {}", e)),
+    }
+
+    match onchain::fetch_etf_flows() {
+        Ok(flows) => {
+            let fetched_at = chrono::Utc::now().to_rfc3339();
+            for flow in &flows {
+                let metric = crate::db::onchain_cache::OnchainMetric {
+                    metric: format!("etf_flow_{}", flow.fund),
+                    date: flow.date.clone(),
+                    value: flow.net_flow_btc.to_string(),
+                    metadata: Some(serde_json::json!({
+                        "fund": flow.fund,
+                        "net_flow_usd": flow.net_flow_usd,
+                    }).to_string()),
+                    fetched_at: fetched_at.clone(),
+                };
+                let _ = onchain_cache::upsert_metric(conn, &metric);
+            }
+            onchain_ok_parts.push("etf flows");
         }
+        Err(e) => onchain_errors.push(format!("etf flows: {}", e)),
+    }
+
+    if !onchain_ok_parts.is_empty() {
+        println!("✓ On-chain ({})", onchain_ok_parts.join(" + "));
+    } else {
+        println!("✗ On-chain (failed: {})", onchain_errors.join("; "));
     }
 
     // Store daily portfolio snapshot
