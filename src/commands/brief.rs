@@ -12,7 +12,7 @@ use crate::analytics::risk;
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
 use crate::db::economic_cache;
-use crate::db::price_cache::get_all_cached_prices;
+use crate::db::price_cache::{get_all_cached_prices, get_cached_price};
 use crate::db::price_history::{get_history, get_prices_at_date};
 use crate::db::snapshots::get_all_portfolio_snapshots;
 use crate::db::transactions::list_transactions;
@@ -582,6 +582,75 @@ fn pct_change(current: Decimal, previous: Decimal) -> Option<Decimal> {
     }
 }
 
+fn compute_portfolio_day_pct(
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+) -> Option<Decimal> {
+    let mut day_pnl = dec!(0);
+    let mut prev_value = dec!(0);
+    let mut has = false;
+
+    for pos in positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        let current = match pos.current_price {
+            Some(v) => v,
+            None => continue,
+        };
+        let prev = match hist_1d.get(&pos.symbol) {
+            Some(v) => *v,
+            None => continue,
+        };
+        if prev <= dec!(0) {
+            continue;
+        }
+        day_pnl += (current - prev) * pos.quantity;
+        prev_value += prev * pos.quantity;
+        has = true;
+    }
+
+    if has && prev_value > dec!(0) {
+        Some((day_pnl / prev_value) * dec!(100))
+    } else {
+        None
+    }
+}
+
+fn compute_symbol_day_pct(conn: &Connection, symbol: &str) -> Option<Decimal> {
+    let current = get_cached_price(conn, symbol, "USD").ok()??.price;
+    let yesterday = (Utc::now().date_naive() - chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let prev = get_prices_at_date(conn, &[symbol.to_string()], &yesterday)
+        .ok()?
+        .get(symbol)
+        .copied()?;
+    pct_change(current, prev)
+}
+
+fn print_benchmark_comparison(
+    conn: &Connection,
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+) {
+    let portfolio_1d = compute_portfolio_day_pct(positions, hist_1d);
+    let benchmark_1d = compute_symbol_day_pct(conn, "SPY");
+
+    println!("## Benchmark (SPY)\n");
+    match (portfolio_1d, benchmark_1d) {
+        (Some(p), Some(b)) => {
+            let spread = p - b;
+            println!("- Portfolio 1D: {:+.2}%", p);
+            println!("- SPY 1D: {:+.2}%", b);
+            println!("- Relative: {:+.2}%\n", spread);
+        }
+        _ => {
+            println!("- Benchmark comparison unavailable (run `pftui refresh` and ensure SPY price history exists).\n");
+        }
+    }
+}
+
 pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) -> Result<()> {
     if agent {
         return run_agent_mode(conn, config);
@@ -695,6 +764,7 @@ fn run_full(
         );
     }
     print_risk_summary(conn, &positions);
+    print_benchmark_comparison(conn, &positions, hist_1d);
     println!();
 
     // Category allocation
@@ -753,6 +823,7 @@ fn run_percentage(
     println!("# Portfolio Brief — {}\n", date_str);
     println!("*Percentage mode (allocation-based)*\n");
     print_risk_summary(conn, &positions);
+    print_benchmark_comparison(conn, &positions, hist_1d);
     println!();
 
     // Category allocation (use raw pct since no total value)
