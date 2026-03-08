@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::app::App;
+use crate::config::WatchlistColumn;
 use crate::indicators;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
@@ -43,6 +44,53 @@ fn proximity_spans(dist_pct: Decimal, hit: bool, t: &theme::Theme) -> Vec<Span<'
     }
 }
 
+fn active_columns(app: &App) -> Vec<WatchlistColumn> {
+    let cols = if app.watchlist_columns.is_empty() {
+        vec![
+            WatchlistColumn::Symbol,
+            WatchlistColumn::Name,
+            WatchlistColumn::Category,
+            WatchlistColumn::Price,
+            WatchlistColumn::ChangePct,
+            WatchlistColumn::Rsi,
+            WatchlistColumn::Sma50,
+            WatchlistColumn::Target,
+            WatchlistColumn::Prox,
+        ]
+    } else {
+        app.watchlist_columns.clone()
+    };
+    cols
+}
+
+fn column_label(col: WatchlistColumn) -> &'static str {
+    match col {
+        WatchlistColumn::Symbol => "Symbol",
+        WatchlistColumn::Name => "Name",
+        WatchlistColumn::Category => "Category",
+        WatchlistColumn::Price => "Price",
+        WatchlistColumn::ChangePct => "Change %",
+        WatchlistColumn::Rsi => "RSI",
+        WatchlistColumn::Sma50 => "SMA50",
+        WatchlistColumn::Target => "Target",
+        WatchlistColumn::Prox => "Prox",
+    }
+}
+
+fn column_width(col: WatchlistColumn) -> Constraint {
+    match col {
+        WatchlistColumn::Symbol => Constraint::Length(8),
+        WatchlistColumn::Name => Constraint::Min(12),
+        WatchlistColumn::Category => Constraint::Length(10),
+        WatchlistColumn::Price => Constraint::Length(12),
+        WatchlistColumn::ChangePct => Constraint::Length(10),
+        WatchlistColumn::Rsi => Constraint::Length(6),
+        WatchlistColumn::Sma50 => Constraint::Length(8),
+        WatchlistColumn::Target => Constraint::Length(12),
+        WatchlistColumn::Prox => Constraint::Length(10),
+    }
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let entries = &app.watchlist_entries;
@@ -75,24 +123,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Check if any entry has a target price set
-    let has_targets = entries
+    let columns = active_columns(app);
+    let header_cells = columns
         .iter()
-        .any(|e| e.target_price.is_some());
-
-    let mut header_cells = vec![
-        Cell::from("Symbol"),
-        Cell::from("Name"),
-        Cell::from("Category"),
-        Cell::from("Price"),
-        Cell::from("Change %"),
-        Cell::from("RSI"),
-        Cell::from("SMA50"),
-    ];
-    if has_targets {
-        header_cells.push(Cell::from("Target"));
-        header_cells.push(Cell::from("Prox"));
-    }
+        .map(|c| Cell::from(column_label(*c)))
+        .collect::<Vec<_>>();
 
     let header = Row::new(header_cells)
         .style(Style::default().fg(t.text_secondary).bold())
@@ -247,64 +282,69 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 }
             };
 
-            let mut cells = vec![
-                Cell::from(Span::styled(
-                    entry.symbol.clone(),
-                    Style::default().fg(t.text_primary).bold(),
-                )),
-                Cell::from(Span::styled(
-                    display_name,
-                    Style::default().fg(t.text_secondary),
-                )),
-                Cell::from(Span::styled(
-                    format!("{}", cat),
-                    Style::default().fg(cat_color),
-                )),
-                Cell::from(Span::styled(
-                    price_str.clone(),
-                    Style::default().fg(t.text_primary),
-                )),
-                Cell::from(Span::styled(
-                    change_str,
-                    Style::default().fg(change_color),
-                )),
-                rsi_cell,
-                sma50_cell,
-            ];
+            let (target_cell, prox_cell) = match (&entry.target_price, &entry.target_direction) {
+                (Some(tp), Some(dir)) => {
+                    if let Ok(target_dec) = tp.parse::<Decimal>() {
+                        let dir_symbol = if dir == "below" { "↓" } else { "↑" };
+                        let target_str = format!("{}{:.2}", dir_symbol, target_dec);
+                        let target = Cell::from(Span::styled(
+                            target_str,
+                            Style::default().fg(t.text_secondary),
+                        ));
 
-            if has_targets {
-                match (&entry.target_price, &entry.target_direction) {
-                    (Some(tp), Some(dir)) => {
-                        if let Ok(target_dec) = tp.parse::<Decimal>() {
-                            // Target cell
-                            let dir_symbol = if dir == "below" { "↓" } else { "↑" };
-                            let target_str = format!("{}{:.2}", dir_symbol, target_dec);
-                            cells.push(Cell::from(Span::styled(
-                                target_str,
-                                Style::default().fg(t.text_secondary),
-                            )));
-
-                            // Proximity cell
-                            if let Some(cur) = price {
-                                let (dist_pct, hit) = compute_proximity(cur, target_dec, dir);
-                                let spans = proximity_spans(dist_pct, hit, t);
-                                cells.push(Cell::from(Line::from(spans)));
-                            } else {
-                                cells.push(Cell::from(Span::styled(
-                                    "---",
-                                    Style::default().fg(t.text_muted),
-                                )));
-                            }
+                        let prox = if let Some(cur) = price {
+                            let (dist_pct, hit) = compute_proximity(cur, target_dec, dir);
+                            let spans = proximity_spans(dist_pct, hit, t);
+                            Cell::from(Line::from(spans))
                         } else {
-                            cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
-                            cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
-                        }
-                    }
-                    _ => {
-                        cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
-                        cells.push(Cell::from(Span::styled("---", Style::default().fg(t.text_muted))));
+                            Cell::from(Span::styled(
+                                "---",
+                                Style::default().fg(t.text_muted),
+                            ))
+                        };
+                        (target, prox)
+                    } else {
+                        (
+                            Cell::from(Span::styled("---", Style::default().fg(t.text_muted))),
+                            Cell::from(Span::styled("---", Style::default().fg(t.text_muted))),
+                        )
                     }
                 }
+                _ => (
+                    Cell::from(Span::styled("---", Style::default().fg(t.text_muted))),
+                    Cell::from(Span::styled("---", Style::default().fg(t.text_muted))),
+                ),
+            };
+
+            let mut cells: Vec<Cell> = Vec::with_capacity(columns.len());
+            for col in &columns {
+                let cell = match col {
+                    WatchlistColumn::Symbol => Cell::from(Span::styled(
+                        entry.symbol.clone(),
+                        Style::default().fg(t.text_primary).bold(),
+                    )),
+                    WatchlistColumn::Name => Cell::from(Span::styled(
+                        display_name.clone(),
+                        Style::default().fg(t.text_secondary),
+                    )),
+                    WatchlistColumn::Category => Cell::from(Span::styled(
+                        format!("{}", cat),
+                        Style::default().fg(cat_color),
+                    )),
+                    WatchlistColumn::Price => Cell::from(Span::styled(
+                        price_str.clone(),
+                        Style::default().fg(t.text_primary),
+                    )),
+                    WatchlistColumn::ChangePct => Cell::from(Span::styled(
+                        change_str.clone(),
+                        Style::default().fg(change_color),
+                    )),
+                    WatchlistColumn::Rsi => rsi_cell.clone(),
+                    WatchlistColumn::Sma50 => sma50_cell.clone(),
+                    WatchlistColumn::Target => target_cell.clone(),
+                    WatchlistColumn::Prox => prox_cell.clone(),
+                };
+                cells.push(cell);
             }
 
             Row::new(cells)
@@ -313,29 +353,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let widths: Vec<Constraint> = if has_targets {
-        vec![
-            Constraint::Length(8),
-            Constraint::Min(12),
-            Constraint::Length(10),
-            Constraint::Length(12),
-            Constraint::Length(10),
-            Constraint::Length(6),
-            Constraint::Length(8),
-            Constraint::Length(12),
-            Constraint::Length(10),
-        ]
-    } else {
-        vec![
-            Constraint::Length(8),
-            Constraint::Min(16),
-            Constraint::Length(10),
-            Constraint::Length(12),
-            Constraint::Length(10),
-            Constraint::Length(6),
-            Constraint::Length(8),
-        ]
-    };
+    let widths: Vec<Constraint> = columns.iter().map(|c| column_width(*c)).collect();
 
     let table = Table::new(rows, widths)
         .header(header)

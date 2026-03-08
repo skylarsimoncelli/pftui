@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
-use crate::config::{self, Config, PortfolioMode, WorkspaceLayout};
+use crate::config::{self, Config, PortfolioMode, WatchlistColumn, WorkspaceLayout};
 use crate::data::brave;
 use crate::db::{allocations, price_cache, price_history};
 use crate::db::transactions::{self, get_unique_symbols, insert_transaction, list_transactions};
@@ -438,6 +438,7 @@ pub struct App {
     pub economy_selected_index: usize,
     pub watchlist_selected_index: usize,
     pub watchlist_entries: Vec<db_watchlist::WatchlistEntry>,
+    pub watchlist_columns: Vec<WatchlistColumn>,
     pub prediction_markets: Vec<crate::data::predictions::PredictionMarket>,
     pub journal_selected_index: usize,
     pub journal_entries: Vec<crate::db::journal::JournalEntry>,
@@ -705,6 +706,7 @@ impl App {
             economy_selected_index: 0,
             watchlist_selected_index: 0,
             watchlist_entries: Vec::new(),
+            watchlist_columns: config.watchlist.columns.clone(),
             prediction_markets: Vec::new(),
             journal_selected_index: 0,
             journal_entries: Vec::new(),
@@ -856,6 +858,7 @@ impl App {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: self.chart_sma_periods.clone(),
+            watchlist: config::WatchlistConfig::default(),
         };
         let service = PriceService::start(config);
         self.request_price_fetch(&service);
@@ -892,6 +895,7 @@ impl App {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: self.chart_sma_periods.clone(),
+            watchlist: config::WatchlistConfig::default(),
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -4488,6 +4492,7 @@ mod vim_motion_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
 
@@ -4732,6 +4737,7 @@ mod search_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
 
@@ -5062,6 +5068,7 @@ mod timeframe_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
@@ -5083,6 +5090,7 @@ mod timeframe_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
         app.display_positions.push(Position {
@@ -5172,6 +5180,7 @@ mod crosshair_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from(":memory:"));
         app.view_mode = ViewMode::Positions;
@@ -5332,6 +5341,7 @@ mod responsive_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
     }
@@ -5394,6 +5404,7 @@ mod on_demand_history_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
     }
@@ -5464,6 +5475,7 @@ mod daily_change_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
     }
@@ -5603,6 +5615,7 @@ mod portfolio_value_history_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
     }
@@ -6466,6 +6479,7 @@ mod sort_flash_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
         for i in 0..3 {
@@ -6564,6 +6578,7 @@ mod prev_day_alloc_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
     }
@@ -6734,6 +6749,7 @@ mod mouse_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
         app.terminal_width = 120;
@@ -7500,6 +7516,7 @@ mod mouse_tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let mut app = App::new(&config, db_path);
         app.init_offline();

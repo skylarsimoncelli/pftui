@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 
-use crate::config::{load_config, save_config, WorkspaceLayout};
+use crate::config::{load_config, save_config, WatchlistColumn, WorkspaceLayout};
 
 pub fn run(action: &str, field: Option<&str>, value: Option<&str>) -> Result<()> {
     match action {
@@ -26,6 +26,10 @@ fn list_config() -> Result<()> {
     println!("news_poll_interval = {}", config.news_poll_interval);
     println!("custom_news_feeds = {} entries", config.custom_news_feeds.len());
     println!("chart_sma = {:?}", config.chart_sma);
+    println!(
+        "watchlist.columns = [{}]",
+        config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
+    );
     Ok(())
 }
 
@@ -46,6 +50,10 @@ fn get_field(field: Option<&str>) -> Result<()> {
         "news_poll_interval" => println!("{}", config.news_poll_interval),
         "custom_news_feeds" => println!("{}", config.custom_news_feeds.len()),
         "chart_sma" => println!("{:?}", config.chart_sma),
+        "watchlist.columns" | "watchlist_columns" => println!(
+            "[{}]",
+            config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
+        ),
         _ => bail!("Unknown field '{}'", field),
     }
     Ok(())
@@ -106,8 +114,17 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             save_config(&config)?;
             println!("Updated refresh_interval_secs = {}", config.refresh_interval_secs);
         }
+        "watchlist.columns" | "watchlist_columns" => {
+            let parsed = parse_watchlist_columns(value)?;
+            config.watchlist.columns = parsed;
+            save_config(&config)?;
+            println!(
+                "Updated watchlist.columns = [{}]",
+                config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
+            );
+        }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: brave_api_key, layout, auto_refresh, refresh_interval_secs",
+            "Unsupported set field '{}'. Currently supported: brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
             field
         ),
     }
@@ -120,6 +137,50 @@ fn format_layout(layout: WorkspaceLayout) -> &'static str {
         WorkspaceLayout::Split => "split",
         WorkspaceLayout::Analyst => "analyst",
     }
+}
+
+fn format_watchlist_column(column: WatchlistColumn) -> &'static str {
+    match column {
+        WatchlistColumn::Symbol => "symbol",
+        WatchlistColumn::Name => "name",
+        WatchlistColumn::Category => "category",
+        WatchlistColumn::Price => "price",
+        WatchlistColumn::ChangePct => "change_pct",
+        WatchlistColumn::Rsi => "rsi",
+        WatchlistColumn::Sma50 => "sma50",
+        WatchlistColumn::Target => "target",
+        WatchlistColumn::Prox => "prox",
+    }
+}
+
+fn parse_watchlist_columns(value: &str) -> Result<Vec<WatchlistColumn>> {
+    let raw = value.trim();
+    if raw.is_empty() {
+        bail!("watchlist.columns cannot be empty");
+    }
+    let mut columns = Vec::new();
+    for token in raw.split(',') {
+        let key = token.trim().trim_matches('"').to_lowercase();
+        let col = match key.as_str() {
+            "symbol" => WatchlistColumn::Symbol,
+            "name" => WatchlistColumn::Name,
+            "category" => WatchlistColumn::Category,
+            "price" => WatchlistColumn::Price,
+            "change_pct" | "change" | "change%" => WatchlistColumn::ChangePct,
+            "rsi" => WatchlistColumn::Rsi,
+            "sma50" | "sma_50" => WatchlistColumn::Sma50,
+            "target" => WatchlistColumn::Target,
+            "prox" | "proximity" => WatchlistColumn::Prox,
+            _ => bail!("Unknown watchlist column '{}'", token.trim()),
+        };
+        if !columns.contains(&col) {
+            columns.push(col);
+        }
+    }
+    if columns.is_empty() {
+        bail!("watchlist.columns cannot be empty");
+    }
+    Ok(columns)
 }
 
 fn format_secret(secret: Option<&str>) -> String {
@@ -166,5 +227,19 @@ mod tests {
         assert_eq!(format_layout(WorkspaceLayout::Compact), "compact");
         assert_eq!(format_layout(WorkspaceLayout::Split), "split");
         assert_eq!(format_layout(WorkspaceLayout::Analyst), "analyst");
+    }
+
+    #[test]
+    fn parses_watchlist_columns_csv() {
+        let cols = parse_watchlist_columns("symbol,price,change_pct,rsi").unwrap();
+        assert_eq!(
+            cols,
+            vec![
+                WatchlistColumn::Symbol,
+                WatchlistColumn::Price,
+                WatchlistColumn::ChangePct,
+                WatchlistColumn::Rsi
+            ]
+        );
     }
 }

@@ -20,6 +20,34 @@ pub enum WorkspaceLayout {
     Analyst,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchlistColumn {
+    Symbol,
+    Name,
+    Category,
+    Price,
+    ChangePct,
+    Rsi,
+    Sma50,
+    Target,
+    Prox,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchlistConfig {
+    #[serde(default = "default_watchlist_columns")]
+    pub columns: Vec<WatchlistColumn>,
+}
+
+impl Default for WatchlistConfig {
+    fn default() -> Self {
+        Self {
+            columns: default_watchlist_columns(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_base_currency")]
@@ -67,6 +95,9 @@ pub struct Config {
     /// SMA periods to overlay on price charts (default: [20, 50])
     #[serde(default = "default_chart_sma")]
     pub chart_sma: Vec<usize>,
+    /// Watchlist table customization.
+    #[serde(default)]
+    pub watchlist: WatchlistConfig,
 }
 
 fn default_brave_news_queries() -> Vec<String> {
@@ -82,6 +113,20 @@ fn default_brave_news_queries() -> Vec<String> {
 
 fn default_chart_sma() -> Vec<usize> {
     vec![20, 50]
+}
+
+fn default_watchlist_columns() -> Vec<WatchlistColumn> {
+    vec![
+        WatchlistColumn::Symbol,
+        WatchlistColumn::Name,
+        WatchlistColumn::Category,
+        WatchlistColumn::Price,
+        WatchlistColumn::ChangePct,
+        WatchlistColumn::Rsi,
+        WatchlistColumn::Sma50,
+        WatchlistColumn::Target,
+        WatchlistColumn::Prox,
+    ]
 }
 
 fn default_base_currency() -> String {
@@ -136,6 +181,7 @@ impl Default for Config {
             custom_news_feeds: Vec::new(),
             brave_news_queries: default_brave_news_queries(),
             chart_sma: default_chart_sma(),
+            watchlist: WatchlistConfig::default(),
         }
     }
 }
@@ -345,6 +391,7 @@ mod tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: default_brave_news_queries(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();

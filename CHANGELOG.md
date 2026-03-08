@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:36 UTC — Add watchlist column customization via config
+
+- What: implemented configurable watchlist table columns using config: `[watchlist] columns = [...]`. Supported columns: `symbol`, `name`, `category`, `price`, `change_pct`, `rsi`, `sma50`, `target`, `prox`. Watchlist rendering now follows configured column order and width mapping. Added `pftui config` support for listing/getting/setting `watchlist.columns` via CSV values.
+- Why: TODO item for watchlist column customization.
+- Files: `src/config.rs` (new watchlist config types/defaults), `src/app.rs` (store configured watchlist columns in app state), `src/tui/views/watchlist.rs` (dynamic column rendering), `src/commands/config_cmd.rs` (list/get/set parsing for watchlist columns), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1150 passed)
+- TODO: Watchlist column customization — Config: `watchlist.columns = [...]` (P2)
+
 ### 2026-03-08 04:32 UTC — Add Positions sub-mode keys (`G`/`A`/`P`)
 
 - What: implemented positions sub-mode shortcuts: `G` groups by category (enables grouped category mode + category sort), `A` sorts by allocation, and `P` sorts by performance (`gain%`). Added `End` as explicit jump-to-bottom key. To avoid key conflict, add-transaction hotkey in Positions is now `i` (full mode).

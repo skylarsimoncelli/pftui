@@ -82,7 +82,6 @@
 ### TUI Polish (batch: ~4hrs total)
 
 ### Watchlist (batch: ~2hrs total)
-- [ ] **Watchlist column customization** — Config: `watchlist.columns = [...]`. Files: `config.rs`, `views/watchlist.rs`
 - [ ] **Watchlist groups** — Multiple named watchlists, switch with `W` + 1/2/3. Files: new `db/watchlist_groups.rs`
 - [ ] **Inline watchlist actions** — `a`=alert, `c`=chart, `r`=remove. Files: `views/watchlist.rs`
 
