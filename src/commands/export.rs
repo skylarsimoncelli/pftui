@@ -230,6 +230,7 @@ mod tests {
             theme: "nord".to_string(),
             home_tab: "positions".to_string(),
             fred_api_key: None,
+            brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
             chart_sma: vec![20, 50],

@@ -29,6 +29,10 @@ pub struct Config {
     /// Register at: https://fred.stlouisfed.org/docs/api/api_key.html
     #[serde(default)]
     pub fred_api_key: Option<String>,
+    /// Brave Search API key for enhanced news/research/economic data.
+    /// Register at: https://brave.com/search/api/
+    #[serde(default)]
+    pub brave_api_key: Option<String>,
     /// RSS news feed polling interval in seconds (default: 600 = 10 minutes)
     #[serde(default = "default_news_poll_interval")]
     pub news_poll_interval: u64,
@@ -80,6 +84,7 @@ impl Default for Config {
             theme: default_theme(),
             home_tab: default_home_tab(),
             fred_api_key: None,
+            brave_api_key: None,
             news_poll_interval: default_news_poll_interval(),
             custom_news_feeds: Vec::new(),
             chart_sma: default_chart_sma(),
@@ -262,6 +267,7 @@ mod tests {
             theme: "nord".to_string(),
             home_tab: "watchlist".to_string(),
             fred_api_key: None,
+            brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
             chart_sma: vec![20, 50],
