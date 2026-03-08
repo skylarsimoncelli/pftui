@@ -27,15 +27,6 @@
 
 > A new `pftui research` command — the agent's Swiss Army knife. Instead of falling back to their own web_search tool, agents stay in pftui for ANY financial question.
 
-- [ ] **F29.2: Financial research presets** — Shortcut flags for common patterns:
-  - `--fed` → latest Fed statements/speeches
-  - `--earnings TSLA` → latest earnings results for symbol
-  - `--geopolitics` → geopolitical developments
-  - `--cot gold` → COT positioning reports (replaces broken CFTC scraper)
-  - `--etf btc` → BTC ETF flow reports (replaces broken CoinGlass scraper)
-  - `--opec` → OPEC production/decisions
-  - Files: `src/commands/research.rs`
-
 ### F30: Enhanced Refresh & Brief with Brave
 
 > `pftui refresh` becomes a one-command intelligence operation. `pftui brief --agent` becomes the one JSON blob an agent needs.
