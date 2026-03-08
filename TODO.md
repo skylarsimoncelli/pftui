@@ -347,7 +347,8 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     to_agent TEXT,         -- NULL = broadcast to all
     priority TEXT NOT NULL DEFAULT 'normal',  -- low|normal|high|critical
     content TEXT NOT NULL,
-    category TEXT,         -- signal|priority|feedback|alert|handoff
+    category TEXT,         -- signal|feedback|alert|handoff|escalation
+    layer TEXT,            -- low|medium|high|macro|cross (analytics engine layer)
     acknowledged INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     acknowledged_at TEXT
@@ -357,7 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_messages_ack ON agent_messages(acknowledged
 ```
 
 **DB functions:**
-- `send_message(conn, from, to, priority, content, category) -> Result<i64>`
+- `send_message(conn, from, to, priority, content, category, layer) -> Result<i64>`
 - `list_messages(conn, to: Option<&str>, unacked_only: bool, since: Option<&str>, limit: Option<usize>) -> Result<Vec<AgentMessage>>`
 - `acknowledge(conn, id) -> Result<()>` — sets acknowledged=1 + acknowledged_at
 - `acknowledge_all(conn, to: &str) -> Result<usize>` — ack all for a recipient
@@ -381,9 +382,12 @@ AgentMsg {
     /// Priority: low, normal, high, critical
     #[arg(long)]
     priority: Option<String>,
-    /// Category: signal, priority, feedback, alert, handoff
+    /// Category: signal, feedback, alert, handoff, escalation
     #[arg(long)]
     category: Option<String>,
+    /// Analytics engine layer: low, medium, high, macro, cross
+    #[arg(long)]
+    layer: Option<String>,
     /// Show only unacknowledged
     #[arg(long)]
     unacked: bool,
@@ -402,12 +406,33 @@ AgentMsg {
 
 **Example usage:**
 ```bash
-pftui agent-msg send "Oil technicals critical — RSI 89, watch for reversal signal" --from evening-planner --to morning-research --priority high --category signal
-pftui agent-msg list --to morning-research --unacked
+# LOW → MEDIUM: intraday signal escalated to scenario analysis
+pftui agent-msg send "BTC-SPX correlation broke from 0.8 to 0.3 — potential regime shift" --from low-refresh --to evening-planner --priority high --category escalation --layer low
+
+# MEDIUM → HIGH: economic data confirming a structural trend
+pftui agent-msg send "NFP -92K confirms white-collar displacement accelerating" --from evening-planner --to structural-analyst --priority normal --category signal --layer medium
+
+# HIGH → MACRO: trend shift with structural implications
+pftui agent-msg send "BRICS payment system processing $2B/day — reserve currency transition accelerating" --from structural-analyst --to macro-analyst --priority high --category escalation --layer high
+
+# MACRO → MEDIUM: structural context constraining scenario analysis
+pftui agent-msg send "Stage 6 confirmed — weight war/disorder scenarios higher" --from macro-analyst --to evening-planner --priority normal --category feedback --layer macro
+
+# Cross-layer broadcast
+pftui agent-msg send "FOMC decision in 2 hours — all layers expect volatility" --from morning-research --priority critical --category alert --layer cross
+
+# Query by layer
+pftui agent-msg list --layer low --unacked
+pftui agent-msg list --layer medium --since 2026-03-01
 pftui agent-msg ack --id 42
-pftui agent-msg ack-all --to morning-research
 pftui agent-msg purge --days 30
 ```
+
+**Layer escalation pattern:**
+Signals flow UP through layers (Low→Medium→High→Macro) via `--category escalation`.
+Context flows DOWN through layers (Macro→High→Medium→Low) via `--category feedback`.
+This creates the bidirectional intelligence loop where intraday data informs structural
+analysis and structural context constrains intraday interpretation.
 
 ---
 
