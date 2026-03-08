@@ -26,6 +26,7 @@ pub struct AlertCheckResult {
 /// Returns check results for all alerts (armed + already triggered).
 /// Newly triggered alerts are updated to `Triggered` status in the DB.
 pub fn check_alerts(conn: &Connection) -> Result<Vec<AlertCheckResult>> {
+    ensure_review_date_alerts(conn)?;
     let all_alerts = alerts::list_alerts(conn)?;
     if all_alerts.is_empty() {
         return Ok(Vec::new());
@@ -54,33 +55,47 @@ fn check_single_alert(
     alert: &AlertRule,
     price_map: &HashMap<String, Decimal>,
 ) -> Result<AlertCheckResult> {
-    let threshold = Decimal::from_str(&alert.threshold).unwrap_or(Decimal::ZERO);
-
-    let current_value = match alert.kind {
+    let (current_value, is_triggered, distance_pct) = match alert.kind {
         AlertKind::Price => {
-            // Direct symbol lookup in price cache
-            price_map.get(&alert.symbol).copied()
+            let threshold = Decimal::from_str(&alert.threshold).unwrap_or(Decimal::ZERO);
+            let current = price_map.get(&alert.symbol).copied();
+            let triggered = if let Some(current) = current {
+                match alert.direction {
+                    AlertDirection::Above => current >= threshold,
+                    AlertDirection::Below => current <= threshold,
+                }
+            } else {
+                false
+            };
+            let distance = current.and_then(|current| {
+                if threshold.is_zero() {
+                    return None;
+                }
+                let pct = match alert.direction {
+                    AlertDirection::Above => {
+                        (threshold - current) / threshold * Decimal::from(100)
+                    }
+                    AlertDirection::Below => {
+                        (current - threshold) / threshold * Decimal::from(100)
+                    }
+                };
+                Some(pct)
+            });
+            (current, triggered, distance)
         }
-        AlertKind::Allocation => {
-            // Allocation alerts need portfolio context — skip in this basic engine.
-            // Will be wired up when positions are available in the check context.
-            None
-        }
+        AlertKind::Allocation => (None, false, None),
         AlertKind::Indicator => {
-            // Indicator alerts (e.g. "GC=F RSI") need computed indicators.
-            // The symbol field stores "SYMBOL INDICATOR", e.g. "GC=F RSI".
-            // Will be wired up when indicator computation is available in check context.
-            None
+            // Special indicator alert for annotation review dates.
+            // Symbol format: REVIEW:<SYMBOL>, threshold: YYYY-MM-DD.
+            if alert.symbol.starts_with("REVIEW:") {
+                let review_date = chrono::NaiveDate::parse_from_str(&alert.threshold, "%Y-%m-%d").ok();
+                let today = chrono::Utc::now().date_naive();
+                let triggered = review_date.map(|d| today >= d).unwrap_or(false);
+                (None, triggered, None)
+            } else {
+                (None, false, None)
+            }
         }
-    };
-
-    let is_triggered = if let Some(current) = current_value {
-        match alert.direction {
-            AlertDirection::Above => current >= threshold,
-            AlertDirection::Below => current <= threshold,
-        }
-    } else {
-        false
     };
 
     let newly_triggered = is_triggered && alert.status == AlertStatus::Armed;
@@ -91,29 +106,55 @@ fn check_single_alert(
         alerts::update_alert_status(conn, alert.id, AlertStatus::Triggered, Some(&now))?;
     }
 
-    let distance_pct = current_value.and_then(|current| {
-        if threshold.is_zero() {
-            return None;
-        }
-        let distance = match alert.direction {
-            AlertDirection::Above => {
-                // Positive = below threshold (not triggered), negative = above (triggered)
-                (threshold - current) / threshold * Decimal::from(100)
-            }
-            AlertDirection::Below => {
-                // Positive = above threshold (not triggered), negative = below (triggered)
-                (current - threshold) / threshold * Decimal::from(100)
-            }
-        };
-        Some(distance)
-    });
-
     Ok(AlertCheckResult {
         rule: alert.clone(),
         current_value,
         newly_triggered,
         distance_pct,
     })
+}
+
+fn ensure_review_date_alerts(conn: &Connection) -> Result<()> {
+    let annotations = crate::db::annotations::list_annotations(conn)?;
+    if annotations.is_empty() {
+        return Ok(());
+    }
+
+    let existing = alerts::list_alerts(conn)?;
+    for ann in annotations {
+        let Some(review_date) = ann.review_date.clone() else {
+            continue;
+        };
+        if chrono::NaiveDate::parse_from_str(&review_date, "%Y-%m-%d").is_err() {
+            continue;
+        }
+        let symbol_key = format!("REVIEW:{}", ann.symbol.to_uppercase());
+        let rule_text = format!("Review {} thesis by {}", ann.symbol.to_uppercase(), review_date);
+
+        if let Some(existing_alert) = existing.iter().find(|a| {
+            a.kind == AlertKind::Indicator && a.symbol == symbol_key
+        }) {
+            // Keep alert synced when review date changes.
+            if existing_alert.threshold != review_date || existing_alert.rule_text != rule_text {
+                conn.execute(
+                    "UPDATE alerts
+                     SET threshold = ?1, rule_text = ?2, status = 'armed', triggered_at = NULL
+                     WHERE id = ?3",
+                    rusqlite::params![review_date, rule_text, existing_alert.id],
+                )?;
+            }
+        } else {
+            let _ = alerts::add_alert(
+                conn,
+                "indicator",
+                &symbol_key,
+                "below",
+                &review_date,
+                &rule_text,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Get only newly triggered alerts (convenience for refresh output).
@@ -296,5 +337,25 @@ mod tests {
         check_alerts(&conn).unwrap(); // triggers it
 
         assert_eq!(triggered_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_review_date_alert_auto_created_and_triggered() {
+        let conn = setup_test_db();
+        let ann = crate::db::annotations::Annotation {
+            symbol: "GC=F".to_string(),
+            thesis: "Test".to_string(),
+            invalidation: None,
+            review_date: Some("2000-01-01".to_string()),
+            target_price: None,
+            updated_at: String::new(),
+        };
+        crate::db::annotations::upsert_annotation(&conn, &ann).unwrap();
+
+        let results = check_alerts(&conn).unwrap();
+        assert!(results.iter().any(|r| r.rule.symbol == "REVIEW:GC=F"));
+        assert!(results
+            .iter()
+            .any(|r| r.rule.symbol == "REVIEW:GC=F" && (r.newly_triggered || r.rule.status == AlertStatus::Triggered)));
     }
 }

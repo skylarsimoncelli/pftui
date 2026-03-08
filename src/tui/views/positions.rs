@@ -4,6 +4,7 @@ use ratatui::{
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::collections::HashSet;
 
 use crate::app::{is_privacy_view, App, PriceFlashDirection, SortField};
 use crate::config::PortfolioMode;
@@ -290,6 +291,30 @@ fn capitalize_category(s: &str) -> String {
     }
 }
 
+fn overdue_review_symbols(app: &App) -> HashSet<String> {
+    let mut overdue = HashSet::new();
+    let conn = match rusqlite::Connection::open(&app.db_path) {
+        Ok(c) => c,
+        Err(_) => return overdue,
+    };
+    let annotations = match crate::db::annotations::list_annotations(&conn) {
+        Ok(v) => v,
+        Err(_) => return overdue,
+    };
+    let today = chrono::Utc::now().date_naive();
+    for ann in annotations {
+        let Some(date_str) = ann.review_date else {
+            continue;
+        };
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+            if d <= today {
+                overdue.insert(ann.symbol.to_uppercase());
+            }
+        }
+    }
+    overdue
+}
+
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if is_privacy_view(app) {
         render_privacy_table(frame, area, app);
@@ -301,6 +326,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     let positions = &app.display_positions;
     let t = &app.theme;
+    let overdue_symbols = overdue_review_symbols(app);
 
     // New column layout: Asset, Price, 24h (or active timeframe), P&L, Value, Alloc%, RSI, Trend
     let timeframe_label = app.change_timeframe.label();
@@ -367,13 +393,19 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             } else {
                 format!("{} {}", pos.name, pos.symbol)
             };
+            let has_overdue_review = overdue_symbols.contains(&pos.symbol.to_uppercase());
             let cat_dot = Span::styled("●", Style::default().fg(cat_color));
-            let asset_line = Line::from(vec![
+            let mut asset_spans = vec![
                 marker,
                 cat_dot,
                 Span::raw(" "),
                 Span::styled(asset_text, Style::default().fg(t.text_primary)),
-            ]);
+            ];
+            if has_overdue_review {
+                asset_spans.push(Span::raw(" "));
+                asset_spans.push(Span::styled("⏰", Style::default().fg(t.stale_yellow).bold()));
+            }
+            let asset_line = Line::from(asset_spans);
 
             // Price flash with direction
             let (price_style, flash_direction) = match app.price_flash_ticks.get(&pos.symbol) {
@@ -572,6 +604,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
 fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     let positions = &app.display_positions;
     let t = &app.theme;
+    let overdue_symbols = overdue_review_symbols(app);
 
     let timeframe_label = app.change_timeframe.label();
 
@@ -622,13 +655,19 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
             } else {
                 format!("{} {}", pos.name, pos.symbol)
             };
+            let has_overdue_review = overdue_symbols.contains(&pos.symbol.to_uppercase());
             let cat_dot = Span::styled("●", Style::default().fg(cat_color));
-            let asset_line = Line::from(vec![
+            let mut asset_spans = vec![
                 marker,
                 cat_dot,
                 Span::raw(" "),
                 Span::styled(asset_text, Style::default().fg(t.text_primary)),
-            ]);
+            ];
+            if has_overdue_review {
+                asset_spans.push(Span::raw(" "));
+                asset_spans.push(Span::styled("⏰", Style::default().fg(t.stale_yellow).bold()));
+            }
+            let asset_line = Line::from(asset_spans);
 
             let sparkline_spans = build_sparkline_spans(
                 t,
