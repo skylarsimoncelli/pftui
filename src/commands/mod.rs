@@ -6,6 +6,7 @@ pub mod calendar;
 pub mod config_cmd;
 pub mod correlations;
 pub mod cot;
+pub mod crisis;
 pub mod demo;
 pub mod drift;
 pub mod economy;

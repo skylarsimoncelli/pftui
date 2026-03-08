@@ -101,7 +101,6 @@
 - [ ] **Custom keybinding config** — User-configurable in config.toml
 - [ ] **Sector heatmap** — Treemap-style sector performance view
 - [ ] **Options chains** — If a free data source exists
-- [ ] [Feedback] **War/crisis mode dashboard** — Configurable crisis dashboard tracking oil, VIX, defense sector, safe havens, shipping rates in one view.
 - [ ] [Feedback] **CME FedWatch integration** — Track Fed funds futures implied probabilities. Critical macro indicator. Files: new `data/fedwatch.rs`
 
 ---

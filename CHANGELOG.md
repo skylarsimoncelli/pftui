@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:55 UTC — Add `pftui crisis` war/crisis mode dashboard
+
+- What: added a new `pftui crisis` command aggregating crisis-sensitive signals in one view: oil (WTI/Brent/spread), VIX regime, defense basket (ITA/LMT/RTX/PLTR), safe havens (gold/DXY/JPY), plus cached headline context buckets (oil-shipping, geopolitics, defense). Supports `--json`.
+- Why: feedback TODO item for a dedicated crisis workflow covering cross-asset stress indicators in one command.
+- Files: `src/commands/crisis.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1166 passed)
+- TODO: [Feedback] War/crisis mode dashboard
+
 ### 2026-03-08 05:46 UTC — Add `pftui oil` dashboard command
 
 - What: added a new `pftui oil` command showing WTI (`CL=F`), Brent (`BZ=F`), WTI-Brent spread, RSI(14) for both contracts, and cached oil-geopolitics context buckets (OPEC+, Hormuz, broader geopolitics). Supports `--json`.
