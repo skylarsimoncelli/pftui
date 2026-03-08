@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 19:08 UTC — F32 Phase 6: backend-dispatch transactions command path (`add-tx`, `list-tx`, `remove-tx`)
+
+- What: completed transaction command routing through backend-dispatched DB APIs by wiring `add-tx`, `list-tx`, and `remove-tx` to `BackendConnection` and native SQLite/Postgres transaction operations.
+- Why: removes another user-facing SQLite-only path and advances F32.3 core module migration for `transactions`.
+- Files: `src/db/transactions.rs`, `src/commands/add_tx.rs`, `src/commands/list_tx.rs`, `src/commands/remove_tx.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: transactions command path)
+
 ### 2026-03-08 19:02 UTC — F32 Phase 5: add centralized PostgreSQL schema migrations module
 
 - What: added `src/db/postgres_schema.rs` with `pftui_migrations` and core table creation, and wired backend startup to run Postgres schema migrations before command execution.

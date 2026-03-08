@@ -1,11 +1,11 @@
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 use std::io::{self, Write};
 
-use crate::db::transactions::{delete_transaction, get_transaction};
+use crate::db::backend::BackendConnection;
+use crate::db::transactions::{delete_transaction_backend, get_transaction_backend};
 
-pub fn run(conn: &Connection, id: i64) -> Result<()> {
-    let tx = get_transaction(conn, id)?;
+pub fn run(backend: &BackendConnection, id: i64) -> Result<()> {
+    let tx = get_transaction_backend(backend, id)?;
     match tx {
         None => bail!("Transaction #{} not found", id),
         Some(tx) => {
@@ -18,7 +18,7 @@ pub fn run(conn: &Connection, id: i64) -> Result<()> {
             let mut input = String::new();
             io::stdin().read_line(&mut input)?;
             if input.trim().to_lowercase() == "y" {
-                delete_transaction(conn, id)?;
+                delete_transaction_backend(backend, id)?;
                 println!("Deleted transaction #{}", id);
             } else {
                 println!("Cancelled");

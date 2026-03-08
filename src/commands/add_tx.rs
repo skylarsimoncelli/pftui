@@ -1,9 +1,9 @@
 use anyhow::{bail, Result};
 use rust_decimal::Decimal;
-use rusqlite::Connection;
 use std::io::{self, Write};
 
-use crate::db::transactions::insert_transaction;
+use crate::db::backend::BackendConnection;
+use crate::db::transactions::insert_transaction_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::transaction::{NewTransaction, TxType};
 
@@ -15,10 +15,9 @@ fn prompt(label: &str) -> Result<String> {
     Ok(input.trim().to_string())
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     symbol: Option<String>,
     category: Option<String>,
     tx_type: Option<String>,
@@ -87,7 +86,7 @@ pub fn run(
         notes,
     };
 
-    let id = insert_transaction(conn, &tx)?;
+    let id = insert_transaction_backend(backend, &tx)?;
     println!("Added transaction #{}: {} {} {} @ {}", id, tx_type, quantity, symbol, price_per);
     Ok(())
 }

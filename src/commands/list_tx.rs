@@ -1,10 +1,10 @@
 use anyhow::Result;
-use rusqlite::Connection;
 
-use crate::db::transactions::list_transactions;
+use crate::db::backend::BackendConnection;
+use crate::db::transactions::list_transactions_backend;
 
-pub fn run(conn: &Connection, show_notes: bool, json_output: bool) -> Result<()> {
-    let txs = list_transactions(conn)?;
+pub fn run(backend: &BackendConnection, show_notes: bool, json_output: bool) -> Result<()> {
+    let txs = list_transactions_backend(backend)?;
     if txs.is_empty() {
         if json_output {
             println!("[]");

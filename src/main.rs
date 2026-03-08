@@ -73,7 +73,7 @@ fn main() -> Result<()> {
             if config.is_percentage_mode() {
                 bail!("list-tx is not available in percentage mode (no transactions).\nRun `pftui setup` to switch to full mode.");
             }
-            commands::list_tx::run(conn, notes, json)
+            commands::list_tx::run(&backend, notes, json)
         }
 
         Some(Command::AddTx {
@@ -90,7 +90,7 @@ fn main() -> Result<()> {
                 bail!("add-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
             commands::add_tx::run(
-                conn, symbol, category, tx_type, quantity, price, currency, date, notes,
+                &backend, symbol, category, tx_type, quantity, price, currency, date, notes,
             )
         }
 
@@ -98,7 +98,7 @@ fn main() -> Result<()> {
             if config.is_percentage_mode() {
                 bail!("remove-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
-            commands::remove_tx::run(conn, id)
+            commands::remove_tx::run(&backend, id)
         }
 
         Some(Command::Watch { symbol, category, bulk, target, direction }) => {
