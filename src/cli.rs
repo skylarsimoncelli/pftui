@@ -511,7 +511,7 @@ pub enum Command {
     /// Run Brave web/news search for financial research queries
     Research {
         /// Research query text
-        query: String,
+        query: Option<String>,
 
         /// Use Brave news endpoint instead of web endpoint
         #[arg(long)]
@@ -528,6 +528,30 @@ pub enum Command {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+
+        /// Preset: latest Fed statements/speeches
+        #[arg(long)]
+        fed: bool,
+
+        /// Preset: latest earnings for a symbol (e.g. --earnings TSLA)
+        #[arg(long)]
+        earnings: Option<String>,
+
+        /// Preset: geopolitical developments
+        #[arg(long)]
+        geopolitics: bool,
+
+        /// Preset: COT positioning for a symbol/asset (e.g. --cot gold)
+        #[arg(long)]
+        cot: Option<String>,
+
+        /// Preset: ETF flows for an asset (e.g. --etf btc)
+        #[arg(long)]
+        etf: Option<String>,
+
+        /// Preset: OPEC production/decision updates
+        #[arg(long)]
+        opec: bool,
     },
 }
 

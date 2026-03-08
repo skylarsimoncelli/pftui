@@ -390,18 +390,39 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Sector { json }) => commands::sector::run(&conn, &config, json),
-        Some(Command::Research { query, news, freshness, count, json }) => {
+        Some(Command::Research {
+            query,
+            news,
+            freshness,
+            count,
+            json,
+            fed,
+            earnings,
+            geopolitics,
+            cot,
+            etf,
+            opec,
+        }) => {
             let freshness_checked = match freshness.as_deref() {
                 Some(v) => Some(commands::research::validate_freshness(v)?),
                 None => None,
             };
+            let preset = commands::research::ResearchPresetArgs {
+                fed,
+                earnings,
+                geopolitics,
+                cot,
+                etf,
+                opec,
+            };
             commands::research::run(
                 &conn,
-                &query,
+                query.as_deref(),
                 news,
                 freshness_checked.as_deref(),
                 count,
                 json,
+                preset,
             )
         }
     }
