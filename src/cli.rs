@@ -287,7 +287,7 @@ pub enum Command {
         #[arg(long)]
         category: Option<String>,
 
-        /// Search question text (case-insensitive substring match)
+        /// Search question text/topics (e.g. "ceasefire", "Fed rate")
         #[arg(long)]
         search: Option<String>,
 
