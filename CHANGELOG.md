@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:03 UTC — Add `pftui fedwatch` CME FedWatch probabilities command
+
+- What: added a new `pftui fedwatch` command that fetches CME FedWatch data from the QuikStrike view endpoint and parses the next-meeting snapshot: meeting metadata (date/contract/expiry/mid price/OI/volume), summary probabilities (ease/no-change/hike), target-rate distribution table (now/1D/1W/1M), and visible upcoming meeting tabs. Supports `--json`.
+- Why: feedback TODO item for CME FedWatch integration and implied-rate probability monitoring as a macro signal.
+- Files: `src/data/fedwatch.rs` (new fetch+parse module with tests), `src/commands/fedwatch.rs` (new command), `src/data/mod.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1167 passed)
+- Notes: direct runtime validation on this machine was blocked by an existing local DB schema migration issue unrelated to `fedwatch`; parser and command wiring are covered by unit tests.
+- TODO: [Feedback] CME FedWatch integration
+
 ### 2026-03-08 05:55 UTC — Add `pftui crisis` war/crisis mode dashboard
 
 - What: added a new `pftui crisis` command aggregating crisis-sensitive signals in one view: oil (WTI/Brent/spread), VIX regime, defense basket (ITA/LMT/RTX/PLTR), safe havens (gold/DXY/JPY), plus cached headline context buckets (oil-shipping, geopolitics, defense). Supports `--json`.

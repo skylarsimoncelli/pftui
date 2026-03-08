@@ -220,6 +220,13 @@ pub enum Command {
         json: bool,
     },
 
+    /// CME FedWatch probabilities from Fed funds futures implied pricing
+    Fedwatch {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show cached economic indicators (Brave/BLS)
     Economy {
         /// Filter to a specific indicator (e.g. cpi, nfp, fed_funds_rate)
