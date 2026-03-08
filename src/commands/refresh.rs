@@ -18,7 +18,7 @@ use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
 use crate::db::price_history::get_price_at_date_backend;
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
-use crate::db::transactions::{get_unique_symbols, list_transactions};
+use crate::db::transactions::{get_unique_symbols_backend, list_transactions};
 use crate::db::watchlist::get_watchlist_symbols_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
@@ -50,7 +50,7 @@ fn collect_symbols(
 
     // Portfolio symbols (transactions or allocations depending on mode)
     let portfolio_symbols = match config.portfolio_mode {
-        PortfolioMode::Full => get_unique_symbols(conn)?,
+        PortfolioMode::Full => get_unique_symbols_backend(backend)?,
         PortfolioMode::Percentage => get_unique_allocation_symbols(conn)?,
     };
     for (sym, cat) in portfolio_symbols {
@@ -145,7 +145,7 @@ fn build_brave_news_queries(
     let mut seen = HashSet::new();
 
     for (sym, cat) in match config.portfolio_mode {
-        PortfolioMode::Full => get_unique_symbols(conn)?,
+        PortfolioMode::Full => get_unique_symbols_backend(backend)?,
         PortfolioMode::Percentage => get_unique_allocation_symbols(conn)?,
     } {
         if cat != AssetCategory::Cash && seen.insert(sym.clone()) {

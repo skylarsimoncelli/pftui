@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 20:07 UTC — F32 Phase 13: backend-dispatch transaction symbol/count helpers
+
+- What: added backend-dispatched `transactions` helpers for `count` and `distinct symbols` with native Postgres implementations, and rewired refresh symbol discovery to use backend-dispatched transaction symbol queries.
+- Why: removes additional SQLite-only read paths from core refresh symbol collection logic.
+- Files: `src/db/transactions.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1184 passed)
+- TODO: F32.3 core modules migration (partial: transaction symbol discovery in refresh)
+
 ### 2026-03-08 20:02 UTC — F32 Phase 12: backend-aware alert evaluation path
 
 - What: added backend-native alert-check execution path in `alerts::engine` (`check_alerts_backend`) using backend-dispatched `alerts` and `price_cache` reads/writes, and rewired CLI/refresh alert checks to use it; preserved existing SQLite-only `check_alerts` API for unchanged callsites.

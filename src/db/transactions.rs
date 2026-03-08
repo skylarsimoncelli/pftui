@@ -155,6 +155,15 @@ pub fn list_transactions_backend(backend: &BackendConnection) -> Result<Vec<Tran
     query::dispatch(backend, list_transactions, list_transactions_postgres)
 }
 
+#[allow(dead_code)]
+pub fn count_transactions_backend(backend: &BackendConnection) -> Result<i64> {
+    query::dispatch(backend, count_transactions, count_transactions_postgres)
+}
+
+pub fn get_unique_symbols_backend(backend: &BackendConnection) -> Result<Vec<(String, AssetCategory)>> {
+    query::dispatch(backend, get_unique_symbols, get_unique_symbols_postgres)
+}
+
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
@@ -271,6 +280,35 @@ fn get_transaction_postgres(pool: &PgPool, id: i64) -> Result<Option<Transaction
         .await
     })?;
     Ok(row.map(tx_from_row))
+}
+
+fn count_transactions_postgres(pool: &PgPool) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let count: i64 = runtime.block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM transactions")
+            .fetch_one(pool)
+            .await
+    })?;
+    Ok(count)
+}
+
+fn get_unique_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCategory)>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, String)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT DISTINCT symbol, category
+             FROM transactions
+             ORDER BY symbol",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(symbol, category)| (symbol, category.parse().unwrap_or(AssetCategory::Equity)))
+        .collect())
 }
 
 #[cfg(test)]
