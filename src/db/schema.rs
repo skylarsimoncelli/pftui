@@ -49,7 +49,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             group_id INTEGER NOT NULL DEFAULT 1,
             added_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_watchlist_group_id ON watchlist(group_id);
+        -- NOTE: idx_watchlist_group_id index is created in the migration
+        -- section below to handle existing databases without group_id column.
 
         CREATE TABLE IF NOT EXISTS watchlist_groups (
             id INTEGER PRIMARY KEY,
