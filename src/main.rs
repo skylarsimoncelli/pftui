@@ -157,7 +157,7 @@ fn main() -> Result<()> {
 
                 match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
                     Ok(_) => {
-                        db::watchlist::add_to_watchlist(conn, upper, cat)?;
+                        db::watchlist::add_to_watchlist_backend(&backend, upper, cat)?;
                         let name = crate::models::asset_names::resolve_name(upper);
                         let display = if name.is_empty() { upper.clone() } else { name };
                         println!("Added {} ({}) to watchlist as {}", upper, display, cat);
@@ -174,12 +174,12 @@ fn main() -> Result<()> {
                 // Set target if provided
                 if let Some(ref t) = target {
                     let cleaned = t.replace(['$', ','], "");
-                    db::watchlist::set_watchlist_target(conn, upper, Some(&cleaned), Some(&direction))?;
+                    db::watchlist::set_watchlist_target_backend(&backend, upper, Some(&cleaned), Some(&direction))?;
                     println!("  Target: {} {} {}", upper, direction, cleaned);
 
                     // Auto-create an alert rule for this target
                     let rule_text = format!("{} {} {}", upper, direction, cleaned);
-                    db::alerts::add_alert(conn, "price", upper, &direction, &cleaned, &rule_text)?;
+                    db::alerts::add_alert_backend(&backend, "price", upper, &direction, &cleaned, &rule_text)?;
                     println!("  Alert created: {}", rule_text);
                 }
 
@@ -194,7 +194,7 @@ fn main() -> Result<()> {
 
         Some(Command::Unwatch { symbol }) => {
             let upper = symbol.to_uppercase();
-            if db::watchlist::remove_from_watchlist(conn, &upper)? {
+            if db::watchlist::remove_from_watchlist_backend(&backend, &upper)? {
                 println!("Removed {} from watchlist", upper);
             } else {
                 println!("{} was not in the watchlist", upper);

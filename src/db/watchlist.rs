@@ -1,6 +1,9 @@
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
 
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 use crate::models::asset::AssetCategory;
 
 /// A single entry in the watchlist table.
@@ -145,6 +148,122 @@ pub fn is_watched(conn: &Connection, symbol: &str) -> Result<bool> {
         |r| r.get(0),
     )?;
     Ok(count > 0)
+}
+
+pub fn add_to_watchlist_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    category: AssetCategory,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_to_watchlist(conn, symbol, category),
+        |pool| add_to_watchlist_postgres(pool, symbol, category, 1),
+    )
+}
+
+pub fn set_watchlist_target_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    target_price: Option<&str>,
+    target_direction: Option<&str>,
+) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| set_watchlist_target(conn, symbol, target_price, target_direction),
+        |pool| set_watchlist_target_postgres(pool, symbol, target_price, target_direction),
+    )
+}
+
+pub fn remove_from_watchlist_backend(backend: &BackendConnection, symbol: &str) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| remove_from_watchlist(conn, symbol),
+        |pool| remove_from_watchlist_postgres(pool, symbol),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS watchlist (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL,
+                group_id BIGINT NOT NULL DEFAULT 1,
+                added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                target_price TEXT,
+                target_direction TEXT
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn add_to_watchlist_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    category: AssetCategory,
+    group_id: i64,
+) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO watchlist (symbol, category, group_id)
+             VALUES ($1, $2, $3)
+             ON CONFLICT(symbol) DO UPDATE SET
+                category = EXCLUDED.category,
+                group_id = EXCLUDED.group_id
+             RETURNING id",
+        )
+        .bind(symbol.to_uppercase())
+        .bind(category.to_string())
+        .bind(gid)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn set_watchlist_target_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    target_price: Option<&str>,
+    target_direction: Option<&str>,
+) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query(
+            "UPDATE watchlist
+             SET target_price = $1, target_direction = $2
+             WHERE UPPER(symbol) = UPPER($3)",
+        )
+        .bind(target_price)
+        .bind(target_direction)
+        .bind(symbol)
+        .execute(pool)
+        .await
+    })?;
+    Ok(rows.rows_affected() > 0)
+}
+
+fn remove_from_watchlist_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query("DELETE FROM watchlist WHERE UPPER(symbol) = UPPER($1)")
+            .bind(symbol)
+            .execute(pool)
+            .await
+    })?;
+    Ok(rows.rows_affected() > 0)
 }
 
 #[cfg(test)]

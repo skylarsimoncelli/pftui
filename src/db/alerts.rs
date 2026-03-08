@@ -1,7 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
 
 use crate::alerts::{AlertKind, AlertDirection, AlertRule, AlertStatus};
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// Add a new alert rule. Returns the new row id.
 pub fn add_alert(
@@ -152,6 +155,71 @@ pub fn acknowledge_alert(conn: &Connection, id: i64) -> Result<bool> {
         params![id],
     )?;
     Ok(rows > 0)
+}
+
+pub fn add_alert_backend(
+    backend: &BackendConnection,
+    kind: &str,
+    symbol: &str,
+    direction: &str,
+    threshold: &str,
+    rule_text: &str,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_alert(conn, kind, symbol, direction, threshold, rule_text),
+        |pool| add_alert_postgres(pool, kind, symbol, direction, threshold, rule_text),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS alerts (
+                id BIGSERIAL PRIMARY KEY,
+                kind TEXT NOT NULL DEFAULT 'price',
+                symbol TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                threshold TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'armed',
+                rule_text TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                triggered_at TIMESTAMPTZ
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn add_alert_postgres(
+    pool: &PgPool,
+    kind: &str,
+    symbol: &str,
+    direction: &str,
+    threshold: &str,
+    rule_text: &str,
+) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO alerts (kind, symbol, direction, threshold, status, rule_text)
+             VALUES ($1, $2, $3, $4, 'armed', $5)
+             RETURNING id",
+        )
+        .bind(kind)
+        .bind(symbol.to_uppercase())
+        .bind(direction)
+        .bind(threshold)
+        .bind(rule_text)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
 }
 
 #[cfg(test)]

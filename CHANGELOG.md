@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 19:00 UTC — F32 Phase 4: backend-dispatch writes for watchlist and alerts
+
+- What: added backend-dispatched (SQLite/Postgres) write paths for watchlist add/remove/target updates and alert creation, then rewired direct `main` callsites (`watch`, `unwatch`, auto-alert creation) to use backend-aware APIs.
+- Why: continues F32 core migration by replacing direct SQLite writes in high-frequency operator workflows.
+- Files: `src/db/watchlist.rs`, `src/db/alerts.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: watchlist/alerts write paths)
+
 ### 2026-03-08 18:58 UTC — F32 Phase 3: backend-dispatch targets flow (`target`, `drift`, `rebalance`)
 
 - What: added native backend-dispatch implementation for `allocation_targets` and rewired `target`, `drift`, and `rebalance` commands to use backend-aware target reads/writes.
