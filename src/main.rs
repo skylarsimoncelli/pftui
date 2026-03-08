@@ -192,7 +192,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Refresh { notify }) => commands::refresh::run(&conn, &config, notify),
-        Some(Command::Status) => commands::status::run(&conn),
+        Some(Command::Status { .. }) => commands::status::run(&conn),
         Some(Command::Config { action, field, value }) => {
             commands::config_cmd::run(&action, field.as_deref(), value.as_deref())
         }

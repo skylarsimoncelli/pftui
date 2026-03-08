@@ -110,7 +110,11 @@ pub enum Command {
     },
 
     /// Show data freshness status for all cached sources
-    Status,
+    Status {
+        /// Explicitly request per-source data health output
+        #[arg(long)]
+        data: bool,
+    },
 
     /// View and update pftui configuration fields
     Config {
