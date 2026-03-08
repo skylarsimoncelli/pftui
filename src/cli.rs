@@ -112,6 +112,16 @@ pub enum Command {
     /// Show data freshness status for all cached sources
     Status,
 
+    /// View and update pftui configuration fields
+    Config {
+        /// Action: list, get, set
+        action: String,
+        /// Field name (required for get/set)
+        field: Option<String>,
+        /// Field value (required for set)
+        value: Option<String>,
+    },
+
     /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
     Brief {
         /// Output structured JSON (includes all available data)

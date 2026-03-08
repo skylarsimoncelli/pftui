@@ -2,6 +2,7 @@ pub mod alerts;
 pub mod brief;
 pub mod add_tx;
 pub mod calendar;
+pub mod config_cmd;
 pub mod cot;
 pub mod sentiment;
 pub mod supply;
