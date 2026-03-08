@@ -15,8 +15,6 @@
 
 ### F26: Brave API Configuration & Client
 
-- [ ] **F26.5: Brave status in `pftui status`** — Show "Brave Search: ✓ Configured" or "Brave Search: ✗ No key (add with `pftui config set brave_api_key <key>` — free tier at brave.com/search/api/)". When configured, show last query count + credit usage if available. Files: `src/commands/status.rs`
-
 ### F27: Brave-Powered News (Replaces/Supplements RSS)
 
 > When Brave key is configured, news comes from targeted Brave News Search queries instead of generic RSS polling. This gives article summaries (descriptions), not just headlines. Multiple focused queries replace one shallow RSS poll.
