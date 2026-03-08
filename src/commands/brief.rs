@@ -37,6 +37,14 @@ struct AgentBrief {
     #[serde(skip_serializing_if = "Option::is_none")]
     macro_data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    news_summary: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    economic_data: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    predictions: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sentiment: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     alerts: Vec<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     drift: Option<serde_json::Value>,
@@ -248,6 +256,10 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
 
     // Regime (if available)
     let regime_json = get_regime_json(conn).ok();
+    let news_summary = get_news_summary_json(conn).unwrap_or_default();
+    let economic_data = get_economic_data_json(conn).unwrap_or_default();
+    let predictions = get_predictions_json(conn).unwrap_or_default();
+    let sentiment = get_sentiment_json(conn).ok();
 
     let brief = AgentBrief {
         timestamp,
@@ -256,6 +268,10 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         watchlist: watchlist_json,
         movers: movers_json,
         macro_data,
+        news_summary,
+        economic_data,
+        predictions,
+        sentiment,
         alerts: alerts_json,
         drift: drift_json,
         regime: regime_json,
@@ -449,6 +465,74 @@ fn get_regime_json(_conn: &Connection) -> Result<serde_json::Value> {
     // Placeholder - regime module doesn't exist yet
     // Return empty object for now
     Ok(serde_json::json!({}))
+}
+
+fn get_news_summary_json(conn: &Connection) -> Result<Vec<serde_json::Value>> {
+    let items = crate::db::news_cache::get_latest_news(conn, 10, None, None, None, None)?;
+    Ok(items
+        .into_iter()
+        .map(|n| {
+            serde_json::json!({
+                "title": n.title,
+                "url": n.url,
+                "source": n.source,
+                "source_type": n.source_type,
+                "description": n.description,
+                "extra_snippets": n.extra_snippets,
+                "published_at": n.published_at,
+            })
+        })
+        .collect())
+}
+
+fn get_economic_data_json(conn: &Connection) -> Result<Vec<serde_json::Value>> {
+    let rows = crate::db::economic_data::get_all(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "indicator": r.indicator,
+                "value": r.value.to_string(),
+                "previous": r.previous.map(|v| v.to_string()),
+                "change": r.change.map(|v| v.to_string()),
+                "source_url": r.source_url,
+                "fetched_at": r.fetched_at,
+            })
+        })
+        .collect())
+}
+
+fn get_predictions_json(conn: &Connection) -> Result<Vec<serde_json::Value>> {
+    let rows = crate::db::predictions_cache::get_cached_predictions(conn, 5)?;
+    Ok(rows
+        .into_iter()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "question": p.question,
+                "probability": p.probability,
+                "volume_24h": p.volume_24h,
+                "category": p.category,
+            })
+        })
+        .collect())
+}
+
+fn get_sentiment_json(conn: &Connection) -> Result<serde_json::Value> {
+    let crypto = crate::db::sentiment_cache::get_latest(conn, "crypto_fng")?;
+    let traditional = crate::db::sentiment_cache::get_latest(conn, "traditional_fng")?;
+    Ok(serde_json::json!({
+        "crypto_fng": crypto.map(|r| serde_json::json!({
+            "value": r.value,
+            "classification": r.classification,
+            "timestamp": r.timestamp,
+        })),
+        "traditional_fng": traditional.map(|r| serde_json::json!({
+            "value": r.value,
+            "classification": r.classification,
+            "timestamp": r.timestamp,
+        })),
+    }))
 }
 
 /// Format a decimal with commas as thousands separators.
