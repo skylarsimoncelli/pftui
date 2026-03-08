@@ -208,6 +208,64 @@
         </div>
     </section>
 
+    <!-- Your Database Section -->
+    <section class="your-database">
+        <div class="container">
+            <h2 class="section-title">Your data. Your database. Your edge.</h2>
+            <p class="section-subtitle">Every refresh seeds a persistent local SQLite database with market data from 10+ sources. Over time, you build a proprietary dataset — the kind trading desks pay six figures for.</p>
+            <div class="database-grid">
+                <div class="database-feature">
+                    <div class="database-icon">🏦</div>
+                    <h3>Hedge fund analytics, zero cost</h3>
+                    <p>Daily OHLCV history, COT positioning, COMEX inventory, sentiment indices, economic releases, prediction odds — all accumulating locally. Query it however you want. Build your own backtests, correlations, and regime models.</p>
+                </div>
+                <div class="database-feature">
+                    <div class="database-icon">🔐</div>
+                    <h3>Full data sovereignty</h3>
+                    <p>No cloud sync. No third-party accounts. No data harvesting. One SQLite file at <code>~/.local/share/pftui/pftui.db</code> that you own completely. Back it up, version it, or migrate it — it's yours.</p>
+                </div>
+                <div class="database-feature">
+                    <div class="database-icon">📐</div>
+                    <h3>18 tables, one source of truth</h3>
+                    <p>Transactions, price history, COT data, COMEX warehouse reports, BLS economic data, World Bank global macro, sentiment indices, prediction markets, news, alerts, journal entries — all normalised, all queryable.</p>
+                </div>
+                <div class="database-feature">
+                    <div class="database-icon">⚡</div>
+                    <h3>Compounds over time</h3>
+                    <p>Day one you get a snapshot. Day thirty you have a month of cross-asset history. Day three hundred you have a dataset most retail investors never build. The longer you run it, the more powerful it becomes.</p>
+                </div>
+            </div>
+            <div class="database-schema">
+                <div class="terminal-window">
+                    <div class="terminal-header">
+                        <div class="terminal-buttons">
+                            <span class="btn-close"></span>
+                            <span class="btn-minimize"></span>
+                            <span class="btn-maximize"></span>
+                        </div>
+                        <div class="terminal-title">~/.local/share/pftui/pftui.db</div>
+                    </div>
+                    <div class="terminal-body schema-body">
+<pre class="schema-pre">
+<span class="schema-table">transactions</span>      <span class="schema-desc">Buy/sell records with cost basis tracking</span>
+<span class="schema-table">price_cache</span>       <span class="schema-desc">Latest spot prices across all asset classes</span>
+<span class="schema-table">price_history</span>     <span class="schema-desc">Daily OHLCV candles — your proprietary dataset</span>
+<span class="schema-table">cot_cache</span>         <span class="schema-desc">CFTC Commitments of Traders positioning</span>
+<span class="schema-table">comex_cache</span>       <span class="schema-desc">COMEX gold &amp; silver warehouse inventory</span>
+<span class="schema-table">bls_cache</span>         <span class="schema-desc">CPI, unemployment, NFP, wages from BLS</span>
+<span class="schema-table">worldbank_cache</span>   <span class="schema-desc">GDP, reserves, debt/GDP for 8 economies</span>
+<span class="schema-table">sentiment_cache</span>   <span class="schema-desc">Fear &amp; Greed indices (crypto + traditional)</span>
+<span class="schema-table">prediction_cache</span>  <span class="schema-desc">Polymarket / Manifold odds on macro events</span>
+<span class="schema-table">news_cache</span>        <span class="schema-desc">RSS headlines from Reuters, Bloomberg, Kitco</span>
+<span class="schema-table">journal_entries</span>   <span class="schema-desc">Trade journal, decision log, and notes</span>
+<span class="schema-table">calendar_events</span>   <span class="schema-desc">Upcoming economic releases with impact ratings</span>
+</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- CLI Showcase -->
     <section class="cli">
         <div class="container">
@@ -348,6 +406,13 @@
                             <td>Cloud</td>
                             <td>Enterprise</td>
                             <td>Local</td>
+                        </tr>
+                        <tr>
+                            <td>Persistent Local DB</td>
+                            <td class="highlight">18 tables, compounds daily</td>
+                            <td>No</td>
+                            <td>Proprietary</td>
+                            <td>Manual</td>
                         </tr>
                         <tr>
                             <td>Agent-Native CLI</td>

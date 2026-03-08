@@ -510,6 +510,111 @@ body {
     word-break: break-word;
 }
 
+/* ===== YOUR DATABASE SECTION ===== */
+.your-database {
+    padding: var(--spacing-3xl) 0;
+    background: var(--bg-primary);
+}
+
+.database-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+.database-feature {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.database-feature:hover {
+    border-color: var(--accent-cyan);
+    transform: translateY(-2px);
+}
+
+.database-icon {
+    font-size: 1.8rem;
+    margin-bottom: var(--spacing-sm);
+}
+
+.database-feature h3 {
+    font-family: var(--font-main);
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.database-feature p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.database-feature code {
+    background: var(--bg-tertiary);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.82em;
+    color: var(--accent-cyan);
+}
+
+.database-schema {
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+.database-schema .terminal-body {
+    height: auto;
+    padding: var(--spacing-md);
+}
+
+.schema-body {
+    overflow-x: auto;
+}
+
+.schema-pre {
+    font-family: var(--font-mono);
+    font-size: clamp(0.65rem, 0.78vw, 0.88rem);
+    line-height: 1.7;
+    margin: 0;
+    white-space: pre;
+}
+
+.schema-table {
+    color: var(--accent-cyan);
+    font-weight: 600;
+}
+
+.schema-desc {
+    color: var(--text-tertiary);
+}
+
+@media (max-width: 768px) {
+    .database-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .schema-pre {
+        font-size: 0.62rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .database-feature {
+        padding: var(--spacing-md);
+    }
+
+    .schema-pre {
+        font-size: 0.58rem;
+    }
+}
+
 /* ===== CLI SECTION ===== */
 .cli {
     padding: var(--spacing-xl) 0;

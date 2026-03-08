@@ -126,27 +126,37 @@ pftui alerts add "BTC above 100000"
 pftui journal add --content "Gold thesis validated by CPI" --tag macro
 ```
 
-### Data Architecture
+### Your Database — Your Edge
+
+Every `pftui refresh` pulls data from 10+ sources and writes it into a **persistent local SQLite database**. This isn't a cache that gets thrown away — it's a compounding dataset that grows more valuable every day you run it.
+
+**Day 1:** You get a snapshot of prices, sentiment, COT positioning, and economic data.
+**Day 30:** You have a month of cross-asset price history, weekly COT shifts, and sentiment trends.
+**Day 300:** You have a proprietary dataset — daily OHLCV across every asset class, CFTC positioning history, COMEX inventory trends, sentiment cycles, prediction market accuracy — the kind of data trading desks pay six figures for.
+
+You own this data completely. No cloud sync. No third-party accounts. One SQLite file you can query, back up, version, or export however you want. Build your own backtests, correlation models, and regime analysis on top of it.
 
 ```
 ~/.local/share/pftui/pftui.db     # SQLite — single source of truth
 ├── transactions                   # Buy/sell records with cost basis
 ├── price_cache                    # Latest spot prices
-├── price_history                  # Daily OHLCV history
+├── price_history                  # Daily OHLCV history (compounds over time)
 ├── watchlist                      # Tracked symbols
 ├── alerts                         # Price/allocation alerts
 ├── targets                        # Target allocation percentages
 ├── journal_entries                # Trade journal + notes
 ├── calendar_events                # Economic calendar
 ├── news_cache                     # RSS feed articles
-├── sentiment_cache                # F&G indices
-├── prediction_cache               # Polymarket odds
-├── cot_cache                      # CFTC COT positioning
-├── comex_cache                    # COMEX inventory
+├── sentiment_cache                # F&G indices (historical trend)
+├── prediction_cache               # Polymarket odds (track accuracy over time)
+├── cot_cache                      # CFTC COT positioning (weekly history)
+├── comex_cache                    # COMEX inventory (supply trend)
 ├── bls_cache                      # BLS economic data
 ├── worldbank_cache                # Global macro indicators
 └── onchain_cache                  # BTC on-chain + ETF flows
 ```
+
+The longer you run pftui, the more powerful it becomes. This is the core design principle — **your data compounds.**
 
 PostgreSQL support coming soon for multi-agent and production deployments.
 
