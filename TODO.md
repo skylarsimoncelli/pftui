@@ -175,6 +175,9 @@
 - [ ] **Review date alerts** — Overdue review dates show ⏰ in Positions tab. Auto-creates alert. Files: `alerts/engine.rs`, `views/positions.rs`
 - [ ] **Asset groups** — `pftui group create "hard-assets" --symbols GC=F,SI=F,BTC`. Combined allocation + performance. Filter positions by group. Files: new `db/groups.rs`, new `commands/group.rs`
 
+### Infrastructure
+- [ ] **PostgreSQL backend support** — Add PostgreSQL as alternative to SQLite. Setup wizard prompts: SQLite (default, zero-config) or PostgreSQL (provide connection string). Requires: database abstraction layer over current raw `rusqlite` calls, `tokio-postgres` or `sqlx` with compile-time feature flags (`--features postgres`). Config: `database.backend = "sqlite" | "postgres"` + `database.url` in config.toml. Include `pftui migrate --from sqlite --to postgres` (and reverse) that copies all tables without data loss. Document migration process in `docs/MIGRATING.md`. Files: new `db/backend.rs`, refactor `db/schema.rs`, `db/*.rs` (abstract all queries), `config.rs`, new `commands/migrate.rs`, new `docs/MIGRATING.md`
+
 ---
 
 ## P2 — Nice to Have
