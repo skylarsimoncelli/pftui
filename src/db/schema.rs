@@ -281,6 +281,20 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_annotations_review_date ON annotations(review_date);
+
+        CREATE TABLE IF NOT EXISTS groups (
+            name TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS group_members (
+            group_name TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (group_name, symbol),
+            FOREIGN KEY (group_name) REFERENCES groups(name) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_group_members_symbol ON group_members(symbol);
         ",
     )?;
 

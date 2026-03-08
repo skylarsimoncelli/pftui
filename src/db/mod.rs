@@ -17,6 +17,7 @@ pub mod economic_cache;
 #[allow(dead_code)] // Infrastructure for F28.1+ consumers (Brave economy fetcher)
 pub mod economic_data;
 pub mod fx_cache;
+pub mod groups;
 pub mod journal;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod news_cache;

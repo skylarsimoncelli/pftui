@@ -523,6 +523,23 @@ pub enum Command {
         json: bool,
     },
 
+    /// Manage named asset groups
+    Group {
+        /// Action: create, list, show, remove
+        action: String,
+
+        /// Group name (required for create/show/remove)
+        name: Option<String>,
+
+        /// Comma-separated symbols for create (e.g. GC=F,SI=F,BTC)
+        #[arg(long)]
+        symbols: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     MigrateJournal {
         /// Path to source markdown journal file

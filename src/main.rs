@@ -393,6 +393,19 @@ fn main() -> Result<()> {
             };
             commands::annotate::run(&conn, args)
         }
+        Some(Command::Group {
+            action,
+            name,
+            symbols,
+            json,
+        }) => commands::group::run(
+            &conn,
+            &config,
+            &action,
+            name.as_deref(),
+            symbols.as_deref(),
+            json,
+        ),
         Some(Command::MigrateJournal {
             path,
             dry_run,
