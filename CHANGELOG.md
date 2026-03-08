@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 18:43 UTC — Add scenario tracking system (F31.1)
+
+- What: implemented macro scenario planning database with probability tracking, signals, and full history. Scenarios table stores name, probability, description, asset_impact JSON, triggers, historical_precedent, status (active/resolved/archived). Signals table (CASCADE delete) tracks evidence for/against scenarios with watching/triggered/invalidated states. History table auto-snapshots probability changes with driver notes. CLI: `pftui scenario add/list/update/remove/signal-add/signal-list/signal-update/signal-remove/history` with `--json` output on all commands.
+- Why: replaces fragile markdown-based scenario tracking with indexed SQLite. Every probability update creates an auditable history row. Agents can query and update structured scenario data with full CRUD.
+- Files: `src/db/scenarios.rs` (new), `src/commands/scenario.rs` (new), `src/db/schema.rs`, `src/cli.rs`, `src/main.rs`, `src/db/mod.rs`, `src/commands/mod.rs`
+- Tests: `cargo test` (1181 passed), `cargo clippy --all-targets -- -D warnings` (passes). Manual validation: add/update/signals/history/JSON output all working.
+- TODO: Intelligence Database F31.1 (complete)
+
 ### 2026-03-08 18:33 UTC — Add distribution manifest automation for Snap/AUR/Scoop rollout
 
 - What: added distribution-prep scripts to generate/update external package metadata from GitHub release checksums: `scripts/prepare_distribution_manifests.sh`, `scripts/render_aur_pkgbuild.sh`, and `scripts/update_scoop_manifest.sh`. Added `docs/DISTRIBUTION.md` runbook and linked it from `docs/RELEASING.md` + `README.md`.
