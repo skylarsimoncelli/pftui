@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:30 UTC — Add `pftui options` options-chain command (Yahoo free data)
+
+- What: added a new `pftui options <SYMBOL>` command that fetches option-chain data from Yahoo Finance with nearest-expiry default, optional `--expiry YYYY-MM-DD`, `--limit`, and `--json` output.
+- Why: TODO item for options chain support using a free data source.
+- Files: `src/commands/options.rs` (new command + parsing/tests), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1176 passed)
+- TODO: Options chains
+
 ### 2026-03-08 06:27 UTC — Add `pftui heatmap` treemap-style sector performance command
 
 - What: added a new `pftui heatmap` command that renders a treemap-style, color-coded sector dashboard from 1D percent changes across the sector + defense universe. Supports both terminal visualization and `--json` output with per-tile weights.

@@ -27,6 +27,7 @@ pub mod migrate_journal;
 pub mod movers;
 pub mod news;
 pub mod oil;
+pub mod options;
 pub mod performance;
 pub mod predictions;
 pub mod rebalance;

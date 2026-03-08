@@ -96,7 +96,6 @@
 ## P3 — Long Term
 
 - [ ] **Multi-portfolio support** — Named portfolios with switching
-- [ ] **Options chains** — If a free data source exists
 
 ---
 

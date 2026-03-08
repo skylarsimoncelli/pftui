@@ -676,6 +676,24 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show options chain for an equity symbol (Yahoo free data)
+    Options {
+        /// Underlying symbol (e.g. AAPL, TSLA)
+        symbol: String,
+
+        /// Expiry date in YYYY-MM-DD (default: nearest expiry)
+        #[arg(long)]
+        expiry: Option<String>,
+
+        /// Number of strikes per side to show (default: 12)
+        #[arg(long, default_value = "12")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Run named portfolio stress scenarios
     StressTest {
         /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
