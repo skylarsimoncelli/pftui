@@ -966,7 +966,8 @@ impl App {
         std::thread::spawn(move || {
             if let Ok(conn) = rusqlite::Connection::open(&db_path) {
                 // Run refresh silently (notify=false to avoid desktop notifications)
-                let _ = crate::commands::refresh::run(&conn, &config, false);
+                let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+                let _ = crate::commands::refresh::run(&backend, backend.sqlite(), &config, false);
             }
             // Signal completion (ignore if receiver was dropped)
             let _ = tx.send(());

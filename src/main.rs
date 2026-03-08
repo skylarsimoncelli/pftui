@@ -202,7 +202,7 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        Some(Command::Refresh { notify }) => commands::refresh::run(conn, &config, notify),
+        Some(Command::Refresh { notify }) => commands::refresh::run(&backend, conn, &config, notify),
         Some(Command::Status { json, .. }) => commands::status::run(conn, json),
         Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => commands::value::run(conn, &config, json),

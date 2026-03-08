@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 19:39 UTC — F32 Phase 9: backend-aware refresh watchlist symbol path
+
+- What: made `refresh` backend-aware for watchlist symbol discovery by switching from SQLite-only `get_watchlist_symbols` to backend-dispatched watchlist lookups; updated runtime callsites (`main`, app background refresh, web background refresh loop) to pass `BackendConnection`.
+- Why: removes another core data-pipeline SQLite-only path from frequent runtime refresh operations.
+- Files: `src/commands/refresh.rs`, `src/main.rs`, `src/app.rs`, `src/web/server.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: refresh watchlist symbol collection)
+
 ### 2026-03-08 19:31 UTC — F32 Phase 8: backend-dispatch watchlist CLI read path
 
 - What: rewired `pftui watchlist` command to read watchlist entries through backend-dispatched APIs (`BackendConnection`) instead of direct SQLite-only reads.

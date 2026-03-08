@@ -11,6 +11,7 @@ use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
 use crate::data::{bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank};
 use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
+use crate::db::backend::BackendConnection;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::db::economic_data as economic_data_db;
@@ -18,7 +19,7 @@ use crate::db::price_cache::{get_all_cached_prices, upsert_price};
 use crate::db::price_history::get_price_at_date;
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
 use crate::db::transactions::{get_unique_symbols, list_transactions};
-use crate::db::watchlist::get_watchlist_symbols;
+use crate::db::watchlist::get_watchlist_symbols_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 use crate::models::price::PriceQuote;
@@ -41,6 +42,7 @@ const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
+    backend: &BackendConnection,
     conn: &Connection,
     config: &Config,
 ) -> Result<Vec<(String, AssetCategory)>> {
@@ -56,7 +58,7 @@ fn collect_symbols(
     }
 
     // Watchlist symbols
-    let watchlist_symbols = get_watchlist_symbols(conn)?;
+    let watchlist_symbols = get_watchlist_symbols_backend(backend)?;
     for (sym, cat) in watchlist_symbols {
         seen.entry(sym).or_insert(cat);
     }
@@ -117,7 +119,11 @@ fn compute_daily_change_pct(conn: &Connection, symbol: &str, current: Decimal) -
     Some(((current - prev) / prev * dec!(100)).abs())
 }
 
-fn build_brave_news_queries(conn: &Connection, config: &Config) -> Result<Vec<String>> {
+fn build_brave_news_queries(
+    backend: &BackendConnection,
+    conn: &Connection,
+    config: &Config,
+) -> Result<Vec<String>> {
     let mut queries = if config.brave_news_queries.is_empty() {
         vec![
             "stock market today".to_string(),
@@ -142,7 +148,7 @@ fn build_brave_news_queries(conn: &Connection, config: &Config) -> Result<Vec<St
             symbols.push(sym);
         }
     }
-    for (sym, cat) in get_watchlist_symbols(conn)? {
+    for (sym, cat) in get_watchlist_symbols_backend(backend)? {
         if cat != AssetCategory::Cash && seen.insert(sym.clone()) {
             symbols.push(sym);
         }
@@ -427,7 +433,7 @@ impl Drop for RefreshLock {
     }
 }
 
-pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, notify: bool) -> Result<()> {
     let _lock = RefreshLock::acquire()?;
 
     println!("Refreshing all data sources...\n");
@@ -453,7 +459,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
 
     // 2. Prices
     if prices_need_refresh(conn)? {
-        let symbols = collect_symbols(conn, config)?;
+        let symbols = collect_symbols(backend, conn, config)?;
         if !symbols.is_empty() {
             let _non_cash: Vec<_> = symbols
                 .iter()
@@ -503,7 +509,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
 
         if !brave_key.is_empty() {
-            let queries = build_brave_news_queries(conn, config)?;
+            let queries = build_brave_news_queries(backend, conn, config)?;
             for query in &queries {
                 match rt.block_on(brave::brave_news_search(&brave_key, query, Some("pd"), 5)) {
                     Ok(results) => {
