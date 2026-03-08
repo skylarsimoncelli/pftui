@@ -58,8 +58,8 @@ pub fn run(
         Some(p) => p.parse()?,
         None => prompt("Price per unit")?.parse()?,
     };
-    if price_per < Decimal::ZERO {
-        bail!("Price per unit cannot be negative (got {})", price_per);
+    if price_per <= Decimal::ZERO {
+        bail!("Price per unit must be greater than zero (got {})", price_per);
     }
 
     let date = match date {
