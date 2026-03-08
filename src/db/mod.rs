@@ -1,8 +1,8 @@
 #[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
 pub mod alerts;
-pub mod annotations;
 pub mod allocation_targets;
 pub mod allocations;
+pub mod annotations;
 #[allow(dead_code)] // Infrastructure for F24.1+ consumers (BLS indicators, Economy tab)
 pub mod bls_cache;
 #[allow(dead_code)] // Infrastructure for F12.1+ consumers (calendar CLI, Economy tab)
@@ -12,6 +12,7 @@ pub mod chart_state;
 pub mod comex_cache;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot_cache;
+pub mod dividends;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod economic_cache;
 #[allow(dead_code)] // Infrastructure for F28.1+ consumers (Brave economy fetcher)
@@ -28,11 +29,11 @@ pub mod prediction_cache;
 pub mod predictions_cache;
 pub mod predictions_history;
 pub mod price_cache;
+pub mod price_history;
+pub mod scan_queries;
+pub mod schema;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)
 pub mod sentiment_cache;
-pub mod scan_queries;
-pub mod price_history;
-pub mod schema;
 pub mod snapshots;
 pub mod transactions;
 pub mod watchlist;

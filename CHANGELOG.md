@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:07 UTC — Add DB-backed dividend tracking commands
+
+- What: added a new `pftui dividends` command with actions `add`, `list`, and `remove` for tracking dividend payments, ex-dates, and pay dates. `list` now computes estimated cash payouts from current net shares and derives trailing 12-month yield per symbol using cached prices.
+- Why: TODO item for native dividend tracking covering payments, yield, and ex-dates.
+- Files: `src/db/dividends.rs` (new table access layer + tests), `src/db/schema.rs` (new `dividends` table + indexes), `src/db/mod.rs`, `src/commands/dividends.rs` (new command), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1168 passed)
+- TODO: Dividend tracking
+
 ### 2026-03-08 06:03 UTC — Add `pftui fedwatch` CME FedWatch probabilities command
 
 - What: added a new `pftui fedwatch` command that fetches CME FedWatch data from the QuikStrike view endpoint and parses the next-meeting snapshot: meeting metadata (date/contract/expiry/mid price/OI/volume), summary probabilities (ease/no-change/hike), target-rate distribution table (now/1D/1W/1M), and visible upcoming meeting tabs. Supports `--json`.

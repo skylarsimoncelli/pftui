@@ -529,6 +529,39 @@ pub enum Command {
         json: bool,
     },
 
+    /// Track dividend payments, ex-dates, and trailing yield
+    Dividends {
+        /// Action: add, list, remove
+        action: String,
+
+        /// Symbol (for add), ID (for remove), or optional symbol filter (for list)
+        value: Option<String>,
+
+        /// Amount per share (for add)
+        #[arg(long)]
+        amount: Option<String>,
+
+        /// Pay date in YYYY-MM-DD (for add)
+        #[arg(long)]
+        pay_date: Option<String>,
+
+        /// Ex-dividend date in YYYY-MM-DD (for add)
+        #[arg(long)]
+        ex_date: Option<String>,
+
+        /// Currency (default: USD)
+        #[arg(long, default_value = "USD")]
+        currency: String,
+
+        /// Optional note
+        #[arg(long)]
+        notes: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Add, view, or remove position thesis annotations
     Annotate {
         /// Asset symbol (required unless using --list)

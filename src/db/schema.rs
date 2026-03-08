@@ -115,6 +115,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_journal_symbol ON journal(symbol);
         CREATE INDEX IF NOT EXISTS idx_journal_status ON journal(status);
 
+        CREATE TABLE IF NOT EXISTS dividends (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            amount_per_share TEXT NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'USD',
+            ex_date TEXT,
+            pay_date TEXT NOT NULL,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_dividends_symbol ON dividends(symbol);
+        CREATE INDEX IF NOT EXISTS idx_dividends_pay_date ON dividends(pay_date);
+
         CREATE TABLE IF NOT EXISTS calendar_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
@@ -340,7 +353,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     if !has_target_price {
         conn.execute_batch(
             "ALTER TABLE watchlist ADD COLUMN target_price TEXT;
-             ALTER TABLE watchlist ADD COLUMN target_direction TEXT;"
+             ALTER TABLE watchlist ADD COLUMN target_direction TEXT;",
         )?;
     }
 
@@ -372,7 +385,9 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         .unwrap_or(0)
         > 0;
     if !has_news_source_type {
-        conn.execute_batch("ALTER TABLE news_cache ADD COLUMN source_type TEXT NOT NULL DEFAULT 'rss'")?;
+        conn.execute_batch(
+            "ALTER TABLE news_cache ADD COLUMN source_type TEXT NOT NULL DEFAULT 'rss'",
+        )?;
     }
 
     // Migration: add Brave-rich news fields
@@ -382,16 +397,22 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         .unwrap_or(0)
         > 0;
     if !has_news_description {
-        conn.execute_batch("ALTER TABLE news_cache ADD COLUMN description TEXT NOT NULL DEFAULT ''")?;
+        conn.execute_batch(
+            "ALTER TABLE news_cache ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+        )?;
     }
 
     let has_news_snippets: bool = conn
-        .prepare("SELECT COUNT(*) FROM pragma_table_info('news_cache') WHERE name = 'extra_snippets'")?
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('news_cache') WHERE name = 'extra_snippets'",
+        )?
         .query_row([], |row| row.get::<_, i64>(0))
         .unwrap_or(0)
         > 0;
     if !has_news_snippets {
-        conn.execute_batch("ALTER TABLE news_cache ADD COLUMN extra_snippets TEXT NOT NULL DEFAULT '[]'")?;
+        conn.execute_batch(
+            "ALTER TABLE news_cache ADD COLUMN extra_snippets TEXT NOT NULL DEFAULT '[]'",
+        )?;
     }
 
     let has_news_symbol_tag: bool = conn

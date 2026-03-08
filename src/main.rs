@@ -389,6 +389,27 @@ fn main() -> Result<()> {
                 action
             )),
         },
+        Some(Command::Dividends {
+            action,
+            value,
+            amount,
+            pay_date,
+            ex_date,
+            currency,
+            notes,
+            json,
+        }) => {
+            let args = commands::dividends::DividendsArgs {
+                value,
+                amount,
+                pay_date,
+                ex_date,
+                currency,
+                notes,
+                json,
+            };
+            commands::dividends::run(&conn, &action, args)
+        }
         Some(Command::Annotate {
             symbol,
             thesis,
