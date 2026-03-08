@@ -9,7 +9,8 @@ Full keybinding reference for pftui. Press `?` in the TUI for an interactive ver
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
 | `gg` | Jump to top |
-| `G` | Jump to bottom |
+| `G` | Jump to bottom (non-Positions views) |
+| `End` | Jump to bottom |
 | `Ctrl+d` | Scroll down half page |
 | `Ctrl+u` | Scroll up half page |
 | `Enter` | Open position detail popup (press again for chart) |
@@ -41,10 +42,13 @@ Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and v
 | Key | Sort By |
 |---|---|
 | `a` | Allocation % (descending) |
+| `A` | Positions sub-mode: allocation sort (descending) |
 | `%` | Gain % (descending) |
+| `P` | Positions sub-mode: performance sort (descending) |
 | `$` | Total gain (descending) |
 | `n` | Name (ascending) |
 | `c` | Category (ascending) |
+| `G` | Positions sub-mode: group by category |
 | `d` | Date (descending, transactions view) |
 | `Tab` | Toggle sort direction |
 
@@ -54,6 +58,7 @@ Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and v
 |---|---|
 | `f` | Cycle category filter (All → Equity → Crypto → …) |
 | `r` | Force price refresh |
+| `i` | Add transaction for selected position (full mode) |
 | `p` | Toggle privacy view (full mode only) |
 | `t` | Cycle color theme |
 | `?` | Toggle help overlay |

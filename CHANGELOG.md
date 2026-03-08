@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:32 UTC — Add Positions sub-mode keys (`G`/`A`/`P`)
+
+- What: implemented positions sub-mode shortcuts: `G` groups by category (enables grouped category mode + category sort), `A` sorts by allocation, and `P` sorts by performance (`gain%`). Added `End` as explicit jump-to-bottom key. To avoid key conflict, add-transaction hotkey in Positions is now `i` (full mode).
+- Why: TODO item for fast sub-mode switching in Positions view.
+- Files: `src/app.rs` (key handling + tests), `src/tui/views/help.rs` (keybinding help text), `docs/KEYBINDINGS.md` (reference updates), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1149 passed)
+- TODO: Positions sub-modes — `G`=group by category, `A`=sort by allocation, `P`=sort by performance (P2)
+
 ### 2026-03-08 04:28 UTC — Add category grouping summaries in Positions view
 
 - What: added a new Positions toggle (`Shift+Z`) that groups rows by asset class and inserts category summary headers with aggregate allocation and group performance (`P&L %`) plus position count. Grouping is available in both full and privacy views; enabling it auto-sorts by category for stable sections.

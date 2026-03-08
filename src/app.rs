@@ -2441,8 +2441,34 @@ impl App {
                     self.recompute();
                 }
             }
+            KeyCode::Char('G') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.show_sector_grouping = true;
+                self.sort_field = SortField::Category;
+                self.sort_ascending = true;
+                self.last_sort_change_tick = self.tick_count;
+                self.recompute();
+            }
             KeyCode::Char('G') => {
                 self.jump_to_bottom();
+            }
+            KeyCode::End => {
+                self.jump_to_bottom();
+            }
+            KeyCode::Char('A') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.show_sector_grouping = false;
+                self.sort_field = SortField::Allocation;
+                self.sort_ascending = false;
+                self.last_sort_change_tick = self.tick_count;
+                self.recompute();
+            }
+            KeyCode::Char('P') if matches!(self.view_mode, ViewMode::Positions) => {
+                if !is_privacy_view(self) {
+                    self.show_sector_grouping = false;
+                    self.sort_field = SortField::GainPct;
+                    self.sort_ascending = false;
+                    self.last_sort_change_tick = self.tick_count;
+                    self.recompute();
+                }
             }
             KeyCode::Char('$') => {
                 if !is_privacy_view(self) {
@@ -2513,8 +2539,8 @@ impl App {
                 self.sparkline_timeframe = self.sparkline_timeframe.prev();
             }
 
-            // Add transaction (Shift+A) — opens inline form for selected position
-            KeyCode::Char('A') if matches!(self.view_mode, ViewMode::Positions) => {
+            // Add transaction (i) — opens inline form for selected position
+            KeyCode::Char('i') if matches!(self.view_mode, ViewMode::Positions) => {
                 if self.portfolio_mode == PortfolioMode::Full {
                     self.open_tx_form();
                 }
@@ -4524,11 +4550,11 @@ mod vim_motion_tests {
     }
 
     #[test]
-    fn test_shift_g_jumps_to_bottom() {
+    fn test_end_jumps_to_bottom() {
         let mut app = make_test_app(10);
         app.selected_index = 0;
 
-        app.handle_key(key('G'));
+        app.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
         assert_eq!(app.selected_index, 9);
     }
 
@@ -6122,7 +6148,7 @@ mod tx_form_tests {
     }
 
     #[test]
-    fn test_tx_form_opens_on_shift_a() {
+    fn test_tx_form_opens_on_i() {
         let mut app = make_app();
         app.positions = vec![Position {
             symbol: "AAPL".to_string(),
@@ -6144,7 +6170,7 @@ mod tx_form_tests {
         app.selected_index = 0;
 
         assert!(app.tx_form.is_none());
-        app.handle_key(shift_key('A'));
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
         assert!(app.tx_form.is_some());
         let form = app.tx_form.as_ref().unwrap();
         assert_eq!(form.symbol, "AAPL");
@@ -7332,6 +7358,60 @@ mod mouse_tests {
 
         app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('Z')));
         assert!(!app.show_sector_grouping);
+    }
+
+    #[test]
+    fn positions_submode_g_groups_by_category() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.show_sector_grouping = false;
+        app.sort_field = SortField::Name;
+        app.sort_ascending = false;
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('G')));
+        assert!(app.show_sector_grouping);
+        assert_eq!(app.sort_field, SortField::Category);
+        assert!(app.sort_ascending);
+    }
+
+    #[test]
+    fn positions_submode_a_sorts_allocation() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.show_sector_grouping = true;
+        app.sort_field = SortField::Name;
+        app.sort_ascending = true;
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('A')));
+        assert!(!app.show_sector_grouping);
+        assert_eq!(app.sort_field, SortField::Allocation);
+        assert!(!app.sort_ascending);
+    }
+
+    #[test]
+    fn positions_submode_p_sorts_performance() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.show_sector_grouping = true;
+        app.sort_field = SortField::Name;
+        app.sort_ascending = true;
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('P')));
+        assert!(!app.show_sector_grouping);
+        assert_eq!(app.sort_field, SortField::GainPct);
+        assert!(!app.sort_ascending);
+    }
+
+    #[test]
+    fn positions_add_transaction_hotkey_is_i() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.portfolio_mode = PortfolioMode::Full;
+        app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
+        app.selected_index = 0;
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('i')));
+        assert!(app.tx_form.is_some());
     }
 
     fn palette_key(c: char) -> KeyEvent {

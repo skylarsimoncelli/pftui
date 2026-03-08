@@ -80,7 +80,6 @@
 > Future improvements. Lower priority.
 
 ### TUI Polish (batch: ~4hrs total)
-- [ ] **Positions sub-modes** — `G`=group by category, `A`=sort by allocation, `P`=sort by performance. Files: `views/positions.rs`
 
 ### Watchlist (batch: ~2hrs total)
 - [ ] **Watchlist column customization** — Config: `watchlist.columns = [...]`. Files: `config.rs`, `views/watchlist.rs`

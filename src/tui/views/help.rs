@@ -57,7 +57,8 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("j / ↓", "Move down", kc, tc));
     lines.push(key_line("k / ↑", "Move up", kc, tc));
     lines.push(key_line("gg", "Jump to top", kc, tc));
-    lines.push(key_line("G", "Jump to bottom", kc, tc));
+    lines.push(key_line("G", "Jump to bottom (non-Positions)", kc, tc));
+    lines.push(key_line("End", "Jump to bottom", kc, tc));
     lines.push(key_line("Ctrl+d", "Scroll down half page", kc, tc));
     lines.push(key_line("Ctrl+u", "Scroll up half page", kc, tc));
     lines.push(key_line("/", "Search all assets", kc, tc));
@@ -115,10 +116,13 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(section_header("  Sorting", ac));
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("a", "Sort by allocation %", kc, tc));
+    lines.push(key_line("A", "Positions mode: sort by allocation", kc, tc));
     lines.push(key_line("%", "Sort by gain %", kc, tc));
+    lines.push(key_line("P", "Positions mode: sort by performance", kc, tc));
     lines.push(key_line("$", "Sort by total gain", kc, tc));
     lines.push(key_line("n", "Sort by name", kc, tc));
     lines.push(key_line("c", "Sort by category", kc, tc));
+    lines.push(key_line("G", "Positions mode: group by category", kc, tc));
     lines.push(key_line("d", "Sort by date (transactions)", kc, tc));
     lines.push(key_line("Tab", "Toggle ascending / descending", kc, tc));
     lines.push(Line::from(""));
@@ -143,7 +147,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("Z (Shift+z)", "Toggle category group summaries", kc, tc));
     lines.push(key_line("S (Shift+s)", "Toggle split-pane detail view", kc, tc));
     lines.push(key_line("t", "Cycle color theme", kc, tc));
-    lines.push(key_line("A (Shift+a)", "Add transaction for position", kc, tc));
+    lines.push(key_line("i", "Add transaction for position", kc, tc));
     lines.push(key_line("X (Shift+x)", "Delete all txns for position", kc, tc));
     lines.push(key_line("q / Ctrl+C", "Quit", kc, tc));
     lines.push(Line::from(""));
