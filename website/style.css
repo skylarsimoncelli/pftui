@@ -584,7 +584,7 @@ body {
 
 /* ===== YOUR DATABASE SECTION ===== */
 .your-database {
-    padding: var(--spacing-3xl) 0;
+    padding: var(--spacing-xl) 0;
     background: var(--bg-primary);
 }
 
@@ -638,7 +638,7 @@ body {
 
 .database-schema {
     max-width: 680px;
-    margin: 0 auto;
+    margin: 0 auto var(--spacing-lg);
 }
 
 .database-schema .terminal-body {
