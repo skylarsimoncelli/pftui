@@ -91,7 +91,6 @@
 
 ### Distribution
 - [ ] **Snap/AUR/Scoop publishing** — Needs accounts + secrets for each store
-- [ ] **Windows build support** — Add x86_64-pc-windows-msvc to release matrix
 - [ ] **Homebrew Core** — Needs 50+ GitHub stars (currently 1)
 
 ### Other

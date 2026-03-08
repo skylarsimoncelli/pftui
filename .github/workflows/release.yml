@@ -48,15 +48,23 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: pftui-x86_64-linux
+            binary: pftui
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: pftui-aarch64-linux
+            binary: pftui
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact: pftui-x86_64-macos
+            binary: pftui
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: pftui-aarch64-macos
+            binary: pftui
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: pftui-x86_64-windows.exe
+            binary: pftui.exe
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -80,7 +88,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/pftui dist/${{ matrix.artifact }}
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} dist/${{ matrix.artifact }}
           cd dist && sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256 || shasum -a 256 ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
 
       - name: Upload artifact

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:50 UTC — Add Windows target to release build matrix
+
+- What: extended GitHub release workflow build matrix with `x86_64-pc-windows-msvc` on `windows-latest`, including `.exe` artifact naming and binary path handling in packaging.
+- Why: TODO item for Windows build support in release automation.
+- Files: `.github/workflows/release.yml`, `TODO.md`
+- Tests: not run (workflow config change only)
+- TODO: Windows build support — Add x86_64-pc-windows-msvc to release matrix
+
 ### 2026-03-08 04:49 UTC — Fix Economy tab data gaps (BLS + global macro fallback)
 
 - What: resolved the Economy feedback gap in two parts: hardened BLS parsing (skip unsupported monthly bucket `M13`, accept comma-formatted numeric values) and added an on-demand World Bank fallback load path when cache is empty so Global Macro panel can self-populate without waiting for scheduled refresh.
