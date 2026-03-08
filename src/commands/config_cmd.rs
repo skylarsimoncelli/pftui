@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 
-use crate::config::{load_config, save_config, WatchlistColumn, WorkspaceLayout};
+use crate::config::{load_config, save_config, DatabaseBackend, WatchlistColumn, WorkspaceLayout};
 
 pub fn run(action: &str, field: Option<&str>, value: Option<&str>, json: bool) -> Result<()> {
     match action {
@@ -18,6 +18,8 @@ fn list_config(json: bool) -> Result<()> {
         use serde_json::json;
         
         let output = json!({
+            "database_backend": format_database_backend(config.database_backend),
+            "database_url": format_secret(config.database_url.as_deref()),
             "base_currency": config.base_currency,
             "refresh_interval": config.refresh_interval,
             "auto_refresh": config.auto_refresh,
@@ -38,6 +40,8 @@ fn list_config(json: bool) -> Result<()> {
         
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
+        println!("database_backend = {}", format_database_backend(config.database_backend));
+        println!("database_url = {}", format_secret(config.database_url.as_deref()));
         println!("base_currency = {}", config.base_currency);
         println!("refresh_interval = {}", config.refresh_interval);
         println!("auto_refresh = {}", config.auto_refresh);
@@ -68,6 +72,8 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
         use serde_json::json;
         
         let value = match field {
+            "database_backend" => json!(format_database_backend(config.database_backend)),
+            "database_url" => json!(format_secret(config.database_url.as_deref())),
             "base_currency" => json!(config.base_currency),
             "refresh_interval" => json!(config.refresh_interval),
             "auto_refresh" => json!(config.auto_refresh),
@@ -97,6 +103,8 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         match field {
+            "database_backend" => println!("{}", format_database_backend(config.database_backend)),
+            "database_url" => println!("{}", format_secret(config.database_url.as_deref())),
             "base_currency" => println!("{}", config.base_currency),
             "refresh_interval" => println!("{}", config.refresh_interval),
             "auto_refresh" => println!("{}", config.auto_refresh),
@@ -127,6 +135,24 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
 
     let mut config = load_config()?;
     match field {
+        "database_backend" => {
+            config.database_backend = parse_database_backend(value)?;
+            save_config(&config)?;
+            println!(
+                "Updated database_backend = {}",
+                format_database_backend(config.database_backend)
+            );
+        }
+        "database_url" => {
+            let trimmed = value.trim();
+            config.database_url = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            };
+            save_config(&config)?;
+            println!("Updated database_url");
+        }
         "brave_api_key" => {
             let trimmed = value.trim();
             config.brave_api_key = if trimmed.is_empty() {
@@ -186,11 +212,29 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             );
         }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
+            "Unsupported set field '{}'. Currently supported: database_backend, database_url, brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
             field
         ),
     }
     Ok(())
+}
+
+fn parse_database_backend(value: &str) -> Result<DatabaseBackend> {
+    match value.trim().to_lowercase().as_str() {
+        "sqlite" => Ok(DatabaseBackend::Sqlite),
+        "postgres" | "postgresql" => Ok(DatabaseBackend::Postgres),
+        _ => bail!(
+            "Invalid database_backend '{}'. Use: sqlite, postgres",
+            value
+        ),
+    }
+}
+
+fn format_database_backend(backend: DatabaseBackend) -> &'static str {
+    match backend {
+        DatabaseBackend::Sqlite => "sqlite",
+        DatabaseBackend::Postgres => "postgres",
+    }
 }
 
 fn format_layout(layout: WorkspaceLayout) -> &'static str {
@@ -289,6 +333,12 @@ mod tests {
         assert_eq!(format_layout(WorkspaceLayout::Compact), "compact");
         assert_eq!(format_layout(WorkspaceLayout::Split), "split");
         assert_eq!(format_layout(WorkspaceLayout::Analyst), "analyst");
+    }
+
+    #[test]
+    fn formats_database_backend() {
+        assert_eq!(format_database_backend(DatabaseBackend::Sqlite), "sqlite");
+        assert_eq!(format_database_backend(DatabaseBackend::Postgres), "postgres");
     }
 
     #[test]

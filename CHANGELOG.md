@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 16:10 UTC — PostgreSQL Phase 1 config + setup plumbing
+
+- What: added initial database backend plumbing in config and setup flow: new `database_backend` (`sqlite`/`postgres`) and `database_url` fields in `Config`, surfaced via `pftui config list/get/set`, plus setup wizard prompts for backend selection and PostgreSQL URL input.
+- Why: progress on TODO P1 PostgreSQL epic (Phase 1 plumbing) without changing existing default runtime behavior for current SQLite users.
+- Files: `src/config.rs`, `src/commands/config_cmd.rs`, `src/commands/setup.rs`, `src/app.rs`, `src/commands/export.rs`
+- Tests: `cargo test -q` (1178 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: PostgreSQL backend support (Phase 1 partial)
+
 ### 2026-03-08 15:27 UTC — Document config command in AGENTS.md and README.md
 
 - What: added `pftui config` command documentation to AGENTS.md (Utility section) and README.md (Portfolio Management section). Documented `config list`, `config get`, and `config set` with examples.

@@ -13,6 +13,14 @@ pub enum PortfolioMode {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum DatabaseBackend {
+    #[default]
+    Sqlite,
+    Postgres,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum WorkspaceLayout {
     Compact,
     #[default]
@@ -82,6 +90,12 @@ impl Default for KeybindingsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Database backend selector.
+    #[serde(default)]
+    pub database_backend: DatabaseBackend,
+    /// Database connection URL used when `database_backend = "postgres"`.
+    #[serde(default)]
+    pub database_url: Option<String>,
     #[serde(default = "default_base_currency")]
     pub base_currency: String,
     /// Legacy refresh interval (seconds) used by older config versions.
@@ -230,6 +244,8 @@ pub struct CustomNewsFeed {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            database_backend: DatabaseBackend::default(),
+            database_url: None,
             base_currency: default_base_currency(),
             refresh_interval: default_refresh_interval(),
             auto_refresh: default_auto_refresh(),
@@ -416,6 +432,8 @@ mod tests {
     #[test]
     fn default_config_has_expected_values() {
         let config = Config::default();
+        assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
+        assert_eq!(config.database_url, None);
         assert_eq!(config.base_currency, "USD");
         assert_eq!(config.refresh_interval, 60);
         assert!(config.auto_refresh);
@@ -441,6 +459,8 @@ mod tests {
     #[test]
     fn config_roundtrip_toml() {
         let config = Config {
+            database_backend: DatabaseBackend::Postgres,
+            database_url: Some("postgres://localhost:5432/pftui".to_string()),
             base_currency: "EUR".to_string(),
             refresh_interval: 30,
             auto_refresh: false,
@@ -460,6 +480,11 @@ mod tests {
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(loaded.database_backend, DatabaseBackend::Postgres);
+        assert_eq!(
+            loaded.database_url,
+            Some("postgres://localhost:5432/pftui".to_string())
+        );
         assert_eq!(loaded.base_currency, "EUR");
         assert_eq!(loaded.refresh_interval, 30);
         assert!(!loaded.auto_refresh);
@@ -474,6 +499,8 @@ mod tests {
     fn config_deserialize_missing_fields_uses_defaults() {
         let toml_str = r#"base_currency = "GBP""#;
         let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
+        assert_eq!(config.database_url, None);
         assert_eq!(config.base_currency, "GBP");
         assert_eq!(config.refresh_interval, 60);
         assert!(config.auto_refresh);
@@ -489,6 +516,8 @@ mod tests {
     #[test]
     fn config_deserialize_empty_uses_all_defaults() {
         let config: Config = toml::from_str("").unwrap();
+        assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
+        assert_eq!(config.database_url, None);
         assert_eq!(config.base_currency, "USD");
         assert_eq!(config.refresh_interval, 60);
         assert!(config.auto_refresh);

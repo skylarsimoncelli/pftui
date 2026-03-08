@@ -228,6 +228,8 @@ mod tests {
     #[test]
     fn config_export_from_config() {
         let config = Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "EUR".to_string(),
             refresh_interval: 30,
             auto_refresh: true,

@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
-use crate::config::{save_config, Config, PortfolioMode, SUPPORTED_CURRENCIES};
+use crate::config::{save_config, Config, DatabaseBackend, PortfolioMode, SUPPORTED_CURRENCIES};
 use crate::db::{allocations, transactions};
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names;
@@ -135,6 +135,9 @@ pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> 
     let mut new_config = config.clone();
     new_config.base_currency = chosen_currency;
     new_config.portfolio_mode = mode;
+    let (database_backend, database_url) = prompt_database_backend(config)?;
+    new_config.database_backend = database_backend;
+    new_config.database_url = database_url;
 
     match mode {
         PortfolioMode::Full => full_mode_setup(conn, &new_config)?,
@@ -160,6 +163,48 @@ pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> 
     println!();
 
     Ok(())
+}
+
+fn prompt_database_backend(config: &Config) -> Result<(DatabaseBackend, Option<String>)> {
+    println!("  Database backend:");
+    println!("    \x1b[1m[1]\x1b[0m SQLite \x1b[90m— local file (default)\x1b[0m");
+    println!("    \x1b[1m[2]\x1b[0m PostgreSQL \x1b[90m— external database URL\x1b[0m");
+    println!();
+
+    let default_choice = match config.database_backend {
+        DatabaseBackend::Sqlite => "1",
+        DatabaseBackend::Postgres => "2",
+    };
+
+    let backend = loop {
+        let choice = prompt(&format!("  Select [1/2] (default: {}): ", default_choice))?;
+        let normalized = if choice.trim().is_empty() {
+            default_choice.to_string()
+        } else {
+            choice
+        };
+        match normalized.trim() {
+            "1" => break DatabaseBackend::Sqlite,
+            "2" => break DatabaseBackend::Postgres,
+            _ => println!("  Please enter 1 or 2."),
+        }
+    };
+
+    let url = if backend == DatabaseBackend::Postgres {
+        loop {
+            let raw = prompt("  PostgreSQL URL (postgres://...): ")?;
+            let trimmed = raw.trim();
+            if trimmed.starts_with("postgres://") || trimmed.starts_with("postgresql://") {
+                break Some(trimmed.to_string());
+            }
+            println!("  Enter a valid PostgreSQL URL starting with postgres:// or postgresql://");
+        }
+    } else {
+        None
+    };
+
+    println!();
+    Ok((backend, url))
 }
 
 fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {

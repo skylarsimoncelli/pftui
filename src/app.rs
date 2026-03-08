@@ -895,6 +895,8 @@ impl App {
 
         // Start price service
         let config = Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
             auto_refresh: self.auto_refresh_enabled,
@@ -933,6 +935,8 @@ impl App {
     fn start_background_refresh(&mut self) {
         let db_path = self.db_path.clone();
         let config = Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
             auto_refresh: self.auto_refresh_enabled,
@@ -4962,6 +4966,8 @@ mod vim_motion_tests {
 
     fn make_test_app(num_positions: usize) -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5208,6 +5214,8 @@ mod search_tests {
 
     fn make_search_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5540,6 +5548,8 @@ mod timeframe_tests {
     #[test]
     fn test_default_timeframe_is_three_months() {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5563,6 +5573,8 @@ mod timeframe_tests {
 
     fn make_tf_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5654,6 +5666,8 @@ mod crosshair_tests {
 
     fn make_crosshair_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5816,6 +5830,8 @@ mod responsive_tests {
 
     fn make_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5880,6 +5896,8 @@ mod on_demand_history_tests {
 
     fn make_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5952,6 +5970,8 @@ mod daily_change_tests {
 
     fn make_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -6093,6 +6113,8 @@ mod portfolio_value_history_tests {
 
     fn make_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -6958,6 +6980,8 @@ mod sort_flash_tests {
 
     fn make_test_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -7058,6 +7082,8 @@ mod prev_day_alloc_tests {
 
     fn make_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -7230,6 +7256,8 @@ mod mouse_tests {
 
     fn make_app() -> App {
         let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -8096,6 +8124,8 @@ mod mouse_tests {
         drop(conn);
 
         let config = Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
