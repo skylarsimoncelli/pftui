@@ -143,7 +143,7 @@ fn main() -> Result<()> {
                     }
                     _ => upper.clone(),
                 };
-                
+
                 match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
                     Ok(_) => {
                         db::watchlist::add_to_watchlist(&conn, upper, cat)?;
@@ -248,6 +248,9 @@ fn main() -> Result<()> {
 
         Some(Command::Movers { threshold, json }) => {
             commands::movers::run(&conn, &config, Some(&threshold), json)
+        }
+        Some(Command::Scan { filter, json }) => {
+            commands::scan::run(&conn, &config, &filter, json)
         }
 
         Some(Command::Predictions { category, search, limit, json }) => {

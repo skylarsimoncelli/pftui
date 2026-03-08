@@ -284,6 +284,17 @@ pub enum Command {
         json: bool,
     },
 
+    /// Scan positions using a simple filter DSL
+    Scan {
+        /// Filter expression (e.g. "allocation_pct > 10 and gain_pct < 0")
+        #[arg(long)]
+        filter: String,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show prediction market odds from Polymarket and Manifold
     Predictions {
         /// Filter by category: crypto, economics, geopolitics, ai

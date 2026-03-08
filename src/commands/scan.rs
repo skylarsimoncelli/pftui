@@ -1,0 +1,446 @@
+use anyhow::{bail, Context, Result};
+use rusqlite::Connection;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+
+use crate::config::{currency_symbol, Config, PortfolioMode};
+use crate::db::allocations::list_allocations;
+use crate::db::fx_cache::get_all_fx_rates;
+use crate::db::price_cache::get_all_cached_prices;
+use crate::db::transactions::list_transactions;
+use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FilterOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Eq,
+    Ne,
+    Contains,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Clause {
+    field: String,
+    op: FilterOp,
+    value: String,
+}
+
+struct ScanRow {
+    symbol: String,
+    name: String,
+    category: String,
+    quantity: Option<Decimal>,
+    current_price: Option<Decimal>,
+    current_value: Option<Decimal>,
+    gain_pct: Option<Decimal>,
+    allocation_pct: Option<Decimal>,
+}
+
+pub fn run(conn: &Connection, config: &Config, filter: &str, json: bool) -> Result<()> {
+    let clauses = parse_filter(filter)?;
+    validate_clauses(&clauses)?;
+
+    let rows = load_rows(conn, config)?;
+    if rows.is_empty() {
+        println!("No positions to scan. Add holdings first.");
+        return Ok(());
+    }
+
+    let mut matches: Vec<&ScanRow> = Vec::new();
+    for row in &rows {
+        if matches_all_clauses(row, &clauses)? {
+            matches.push(row);
+        }
+    }
+
+    if json {
+        let output = serde_json::json!({
+            "filter": filter,
+            "total_scanned": rows.len(),
+            "match_count": matches.len(),
+            "matches": matches.into_iter().map(to_json).collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    print_table(matches, rows.len(), filter, &config.base_currency);
+    Ok(())
+}
+
+fn load_rows(conn: &Connection, config: &Config) -> Result<Vec<ScanRow>> {
+    let prices = get_all_cached_prices(conn)?
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect();
+    let fx_rates = get_all_fx_rates(conn).unwrap_or_default();
+
+    let positions: Vec<Position> = match config.portfolio_mode {
+        PortfolioMode::Full => {
+            let txs = list_transactions(conn)?;
+            compute_positions(&txs, &prices, &fx_rates)
+        }
+        PortfolioMode::Percentage => {
+            let allocs = list_allocations(conn)?;
+            compute_positions_from_allocations(&allocs, &prices, &fx_rates)
+        }
+    };
+
+    Ok(positions
+        .into_iter()
+        .map(|p| ScanRow {
+            symbol: p.symbol,
+            name: p.name,
+            category: p.category.to_string(),
+            quantity: if p.quantity == dec!(0) {
+                None
+            } else {
+                Some(p.quantity)
+            },
+            current_price: p.current_price,
+            current_value: p.current_value,
+            gain_pct: p.gain_pct,
+            allocation_pct: p.allocation_pct,
+        })
+        .collect())
+}
+
+fn parse_filter(input: &str) -> Result<Vec<Clause>> {
+    let tokens = tokenize(input);
+    if tokens.is_empty() {
+        bail!("Filter is empty. Example: pftui scan --filter \"allocation_pct > 10\"");
+    }
+
+    let mut clauses = Vec::new();
+    let mut idx = 0usize;
+    while idx < tokens.len() {
+        if idx + 2 >= tokens.len() {
+            bail!(
+                "Invalid filter near '{}'. Expected: <field> <op> <value>",
+                tokens[idx]
+            );
+        }
+        let field = tokens[idx].to_lowercase();
+        let op = parse_op(&tokens[idx + 1])?;
+        let value = tokens[idx + 2].clone();
+        clauses.push(Clause { field, op, value });
+        idx += 3;
+
+        if idx < tokens.len() {
+            let connector = tokens[idx].to_lowercase();
+            if connector != "and" && connector != "&&" {
+                bail!(
+                    "Unsupported connector '{}'. Use 'and' or '&&' between clauses.",
+                    tokens[idx]
+                );
+            }
+            idx += 1;
+        }
+    }
+    Ok(clauses)
+}
+
+fn tokenize(input: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+
+    for ch in input.chars() {
+        match quote {
+            Some(q) if ch == q => {
+                quote = None;
+            }
+            Some(_) => current.push(ch),
+            None if ch == '"' || ch == '\'' => {
+                quote = Some(ch);
+            }
+            None if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    tokens.push(current.clone());
+                    current.clear();
+                }
+            }
+            None => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
+fn parse_op(op: &str) -> Result<FilterOp> {
+    match op {
+        ">" => Ok(FilterOp::Gt),
+        ">=" => Ok(FilterOp::Gte),
+        "<" => Ok(FilterOp::Lt),
+        "<=" => Ok(FilterOp::Lte),
+        "=" | "==" => Ok(FilterOp::Eq),
+        "!=" => Ok(FilterOp::Ne),
+        "contains" | "~" => Ok(FilterOp::Contains),
+        _ => bail!("Unsupported operator '{}'", op),
+    }
+}
+
+fn validate_clauses(clauses: &[Clause]) -> Result<()> {
+    for clause in clauses {
+        let Some(field_type) = field_type(&clause.field) else {
+            bail!(
+                "Unknown field '{}'. Supported fields: symbol, name, category, quantity, current_price, current_value, gain_pct, allocation_pct",
+                clause.field
+            );
+        };
+        match field_type {
+            FieldType::Numeric => {
+                if clause.op == FilterOp::Contains {
+                    bail!("'contains' is only valid for text fields");
+                }
+                clause
+                    .value
+                    .parse::<Decimal>()
+                    .with_context(|| format!("'{}' is not a valid number", clause.value))?;
+            }
+            FieldType::Text => {
+                if !matches!(clause.op, FilterOp::Eq | FilterOp::Ne | FilterOp::Contains) {
+                    bail!("Text fields only support ==, !=, and contains operators");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum FieldType {
+    Numeric,
+    Text,
+}
+
+fn field_type(field: &str) -> Option<FieldType> {
+    match normalize_field(field) {
+        "symbol" | "name" | "category" => Some(FieldType::Text),
+        "quantity" | "current_price" | "current_value" | "gain_pct" | "allocation_pct" => {
+            Some(FieldType::Numeric)
+        }
+        _ => None,
+    }
+}
+
+fn normalize_field(field: &str) -> &str {
+    match field {
+        "alloc" | "allocation" => "allocation_pct",
+        "gain" => "gain_pct",
+        "price" => "current_price",
+        "value" => "current_value",
+        "qty" => "quantity",
+        other => other,
+    }
+}
+
+fn matches_all_clauses(row: &ScanRow, clauses: &[Clause]) -> Result<bool> {
+    for clause in clauses {
+        if !matches_clause(row, clause)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn matches_clause(row: &ScanRow, clause: &Clause) -> Result<bool> {
+    match field_type(&clause.field).context("invalid field")? {
+        FieldType::Text => {
+            let lhs =
+                get_text(row, normalize_field(&clause.field)).context("missing text field")?;
+            let lhs = lhs.to_lowercase();
+            let rhs = clause.value.to_lowercase();
+            Ok(match clause.op {
+                FilterOp::Eq => lhs == rhs,
+                FilterOp::Ne => lhs != rhs,
+                FilterOp::Contains => lhs.contains(&rhs),
+                _ => false,
+            })
+        }
+        FieldType::Numeric => {
+            let Some(lhs) = get_numeric(row, normalize_field(&clause.field)) else {
+                return Ok(false);
+            };
+            let rhs = clause
+                .value
+                .parse::<Decimal>()
+                .with_context(|| format!("invalid numeric value '{}'", clause.value))?;
+            Ok(match clause.op {
+                FilterOp::Gt => lhs > rhs,
+                FilterOp::Gte => lhs >= rhs,
+                FilterOp::Lt => lhs < rhs,
+                FilterOp::Lte => lhs <= rhs,
+                FilterOp::Eq => lhs == rhs,
+                FilterOp::Ne => lhs != rhs,
+                FilterOp::Contains => false,
+            })
+        }
+    }
+}
+
+fn get_text<'a>(row: &'a ScanRow, field: &str) -> Option<&'a str> {
+    match field {
+        "symbol" => Some(row.symbol.as_str()),
+        "name" => Some(row.name.as_str()),
+        "category" => Some(row.category.as_str()),
+        _ => None,
+    }
+}
+
+fn get_numeric(row: &ScanRow, field: &str) -> Option<Decimal> {
+    match field {
+        "quantity" => row.quantity,
+        "current_price" => row.current_price,
+        "current_value" => row.current_value,
+        "gain_pct" => row.gain_pct,
+        "allocation_pct" => row.allocation_pct,
+        _ => None,
+    }
+}
+
+fn print_table(rows: Vec<&ScanRow>, total_scanned: usize, filter: &str, base_currency: &str) {
+    println!(
+        "Scan results: {}/{} matched (`{}`)\n",
+        rows.len(),
+        total_scanned,
+        filter
+    );
+
+    if rows.is_empty() {
+        println!("No matches.");
+        return;
+    }
+
+    let csym = currency_symbol(base_currency);
+    let sym_w = rows
+        .iter()
+        .map(|r| r.symbol.len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+    let name_w = rows
+        .iter()
+        .map(|r| r.name.len())
+        .max()
+        .unwrap_or(4)
+        .min(30)
+        .max(4);
+    let cat_w = rows
+        .iter()
+        .map(|r| r.category.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
+
+    println!(
+        "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
+        "Symbol", "Name", "Category", "Alloc%", "Gain%", "Value", "Price",
+    );
+    println!("  {}", "─".repeat(sym_w + name_w + cat_w + 50));
+
+    for row in rows {
+        let alloc = row
+            .allocation_pct
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "-".to_string());
+        let gain = row
+            .gain_pct
+            .map(|v| format!("{:+.2}", v))
+            .unwrap_or_else(|| "-".to_string());
+        let value = row
+            .current_value
+            .map(|v| format!("{}{:.2}", csym, v))
+            .unwrap_or_else(|| "-".to_string());
+        let price = row
+            .current_price
+            .map(|v| format!("{}{:.2}", csym, v))
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
+            row.symbol,
+            truncate_name(&row.name, name_w),
+            row.category,
+            alloc,
+            gain,
+            value,
+            price,
+        );
+    }
+}
+
+fn truncate_name(name: &str, width: usize) -> String {
+    if name.chars().count() <= width {
+        return name.to_string();
+    }
+    if width <= 1 {
+        return "…".to_string();
+    }
+    let truncated: String = name.chars().take(width - 1).collect();
+    format!("{}…", truncated)
+}
+
+fn to_json(row: &ScanRow) -> serde_json::Value {
+    serde_json::json!({
+        "symbol": row.symbol,
+        "name": row.name,
+        "category": row.category,
+        "quantity": row.quantity.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "current_price": row.current_price.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "current_value": row.current_value.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "gain_pct": row.gain_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "allocation_pct": row.allocation_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_row() -> ScanRow {
+        ScanRow {
+            symbol: "AAPL".to_string(),
+            name: "Apple Inc".to_string(),
+            category: "equity".to_string(),
+            quantity: Some(dec!(10)),
+            current_price: Some(dec!(190)),
+            current_value: Some(dec!(1900)),
+            gain_pct: Some(dec!(15)),
+            allocation_pct: Some(dec!(12.5)),
+        }
+    }
+
+    #[test]
+    fn parses_single_clause() {
+        let clauses = parse_filter("allocation_pct > 10").unwrap();
+        assert_eq!(clauses.len(), 1);
+        assert_eq!(clauses[0].field, "allocation_pct");
+        assert_eq!(clauses[0].op, FilterOp::Gt);
+        assert_eq!(clauses[0].value, "10");
+    }
+
+    #[test]
+    fn parses_and_clauses() {
+        let clauses = parse_filter("allocation_pct >= 10 and category == equity").unwrap();
+        assert_eq!(clauses.len(), 2);
+    }
+
+    #[test]
+    fn matches_numeric_and_text() {
+        let row = sample_row();
+        let clauses = parse_filter("allocation > 10 and category == equity").unwrap();
+        assert!(matches_all_clauses(&row, &clauses).unwrap());
+    }
+
+    #[test]
+    fn supports_contains_operator() {
+        let row = sample_row();
+        let clauses = parse_filter("name contains \"Apple\"").unwrap();
+        assert!(matches_all_clauses(&row, &clauses).unwrap());
+    }
+}

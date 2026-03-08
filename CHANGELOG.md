@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:13 UTC — Add scanner command with filter DSL
+
+- What: added a new `pftui scan` CLI command with a lightweight filter DSL for position screening: numeric operators (`>`, `>=`, `<`, `<=`, `==`, `!=`), text operators (`==`, `!=`, `contains`/`~`), and multi-clause `and`/`&&`. Supports field aliases (`alloc`, `gain`, `price`, `value`, `qty`) and both table + `--json` outputs.
+- Why: TODO scanner item. This enables quick portfolio scans such as `pftui scan --filter "allocation_pct > 10 and gain_pct < 0"` without exporting data.
+- Files: `src/commands/scan.rs` (new command, parser/evaluator, tests), `src/commands/mod.rs` (module export), `src/cli.rs` (new `scan` subcommand), `src/main.rs` (dispatch wiring), `TODO.md` (removed completed item)
+- Tests: `cargo fmt --all`, `cargo test -q` (1163 passed)
+- TODO: Scanner with filter DSL — `pftui scan --filter "allocation_pct > 10"`
+
 ### 2026-03-08 04:50 UTC — Add Windows target to release build matrix
 
 - What: extended GitHub release workflow build matrix with `x86_64-pc-windows-msvc` on `windows-latest`, including `.exe` artifact naming and binary path handling in packaging.
