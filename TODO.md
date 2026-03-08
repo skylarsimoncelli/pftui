@@ -31,8 +31,6 @@
 
 > `pftui refresh` becomes a one-command intelligence operation. `pftui brief --agent` becomes the one JSON blob an agent needs.
 
-- [ ] **F30.1: Brave-aware refresh pipeline** — When key configured, `pftui refresh` includes: prices (Yahoo/CoinGecko) → Brave news batch (~12 queries) → Brave economic data (~8 queries) → existing free sources (Polymarket, F&G, etc.). Progress: `✓ Prices (51 symbols) ✓ News (47 articles via Brave) ✓ Economy (8 indicators) ✓ Predictions ✓ Sentiment`. Total: ~20-25 Brave calls per refresh (well within free tier of ~70/day at $5/month). Files: `src/commands/refresh.rs`
-
 - [ ] **F30.2: `brief --agent` with full intelligence** — When Brave configured, `pftui brief --agent --json` includes:
   - `positions` — all held assets with prices, allocation, change
   - `movers` — significant daily moves
