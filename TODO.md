@@ -19,19 +19,6 @@
 
 > When Brave key is configured, news comes from targeted Brave News Search queries instead of generic RSS polling. This gives article summaries (descriptions), not just headlines. Multiple focused queries replace one shallow RSS poll.
 
-- [ ] **F27.1: Brave news fetcher in refresh pipeline** — On `pftui refresh`, if Brave key exists, run batch of targeted news searches:
-  - `"stock market today"` (freshness: pd) — general market
-  - `"federal reserve interest rates monetary policy"` (freshness: pd) — central bank
-  - `"bitcoin cryptocurrency regulation"` (freshness: pd) — crypto
-  - `"gold silver precious metals price"` (freshness: pd) — metals
-  - `"oil OPEC energy crude"` (freshness: pd) — energy
-  - `"geopolitics international trade war sanctions"` (freshness: pd) — geopolitical
-  - Dynamic: for each held/watched asset with >3% move, add `"{symbol} stock news"`
-  - Store in `news_cache` with `source_type` column (`brave` vs `rss`). Deduplicate by URL.
-  - Brave is primary when configured; RSS supplements. Without key, RSS-only as before.
-  - ~10-15 Brave API calls per news refresh cycle.
-  - Files: `src/data/brave.rs`, `src/commands/refresh.rs`, `src/db/news_cache.rs`
-
 - [ ] **F27.2: Configurable news queries** — Add `brave_news_queries: Vec<String>` to Config with defaults above. Users/agents can add `"uranium nuclear energy"`, `"agricultural commodities wheat"`, or remove `"geopolitics"` to customise. Files: `src/config.rs`
 
 - [ ] **F27.3: Rich news in TUI and CLI** — When source is Brave, display `description` as expandable preview in News tab [6] (Enter on headline shows 2-3 line summary). `pftui news --json` includes `description` and `extra_snippets` fields. Files: `src/tui/views/news.rs`, `src/commands/news.rs`
