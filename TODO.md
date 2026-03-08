@@ -59,7 +59,6 @@
 ### Data & Display
 
 ### CLI Enhancements
-- [ ] [Feedback] **Prediction category filtering** — `pftui predictions --category geopolitics` should filter out sports/entertainment. Add query search for specific topics (e.g., "ceasefire", "Fed rate"). Files: `commands/predictions.rs`, `data/predictions.rs`
 
 ### Analytics
 - [ ] **Correlation grid in Markets tab** — Color-coded matrix (green/red). Toggle 7d/30d/90d. Files: `views/markets.rs`, new `views/correlation_grid.rs`
