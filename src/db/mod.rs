@@ -3,6 +3,7 @@ pub mod alerts;
 pub mod allocation_targets;
 pub mod allocations;
 pub mod annotations;
+pub mod backend;
 #[allow(dead_code)] // Infrastructure for F24.1+ consumers (BLS indicators, Economy tab)
 pub mod bls_cache;
 #[allow(dead_code)] // Infrastructure for F12.1+ consumers (calendar CLI, Economy tab)

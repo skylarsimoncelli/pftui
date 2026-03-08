@@ -26,6 +26,7 @@ clap = { version = "4", features = ["derive"] }
 ratatui = "0.29"
 crossterm = "0.28"
 rusqlite = { version = "0.32", features = ["bundled"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
 rust_decimal = { version = "1", features = ["serde"] }
 rust_decimal_macros = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

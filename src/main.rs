@@ -19,13 +19,14 @@ use clap::Parser;
 
 use crate::cli::{Cli, Command};
 use crate::config::load_config_with_first_run_prompt;
-use crate::db::{default_db_path, open_db};
+use crate::db::backend::open_from_config;
+use crate::db::default_db_path;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
-    let conn = open_db(&db_path)?;
+    let conn = open_from_config(&config, &db_path)?.require_sqlite()?;
 
     match cli.command {
         None => {

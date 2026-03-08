@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 16:18 UTC — Add backend abstraction scaffold in `db/backend.rs`
+
+- What: added new `db/backend.rs` infrastructure with `BackendConnection` (`Sqlite` / `Postgres`) and `open_from_config(&Config, &Path)` that opens SQLite via existing migrations or initializes a PostgreSQL pool from `database_url`. Wired `main.rs` startup through this abstraction.
+- Why: progresses TODO P1 PostgreSQL epic (Phase 1 plumbing) by introducing a backend entrypoint and centralizing backend selection at startup.
+- Files: `src/db/backend.rs` (new), `src/db/mod.rs`, `src/main.rs`, `Cargo.toml`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1180 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: PostgreSQL backend support (Phase 1 partial)
+
 ### 2026-03-08 16:10 UTC — PostgreSQL Phase 1 config + setup plumbing
 
 - What: added initial database backend plumbing in config and setup flow: new `database_backend` (`sqlite`/`postgres`) and `database_url` fields in `Config`, surfaced via `pftui config list/get/set`, plus setup wizard prompts for backend selection and PostgreSQL URL input.
