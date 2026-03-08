@@ -101,7 +101,6 @@
 
 ### Minor
 
-- [ ] **Performance shows N/A for MTD with March data** — Calculate from earliest available snapshot. Files: `src/commands/performance.rs`
 
 ---
 
