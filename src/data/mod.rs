@@ -1,5 +1,7 @@
 #[allow(dead_code)] // Infrastructure for F24.1+ consumers (BLS indicators, Economy tab)
 pub mod bls;
+#[allow(dead_code)] // Infrastructure for F26.4+ consumers (Brave web/news search)
+pub mod brave;
 #[allow(dead_code)] // Infrastructure for F12.1+ consumers (calendar CLI, Economy tab)
 pub mod calendar;
 #[allow(dead_code)] // Infrastructure for F22.1+ consumers (COMEX supply panel, CLI)
