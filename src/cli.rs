@@ -114,6 +114,9 @@ pub enum Command {
         /// Explicitly request per-source data health output
         #[arg(long)]
         data: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// View and update pftui configuration fields

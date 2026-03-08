@@ -458,19 +458,8 @@ fn check_onchain(conn: &Connection) -> Result<DataSourceStatus> {
     })
 }
 
-pub fn run(conn: &Connection) -> Result<()> {
+pub fn run(conn: &Connection, json: bool) -> Result<()> {
     let config = load_config()?;
-
-    let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim();
-    if brave_key.is_empty() {
-        println!(
-            "Brave Search: ✗ No key (add with `pftui config set brave_api_key <key>` — free tier at brave.com/search/api/)"
-        );
-    } else {
-        println!("Brave Search: ✓ Configured");
-        println!("Brave usage: query count / credits unavailable via current API response metadata");
-    }
-    println!();
 
     let sources = vec![
         check_prices(conn)?,
@@ -484,6 +473,56 @@ pub fn run(conn: &Connection) -> Result<()> {
         check_comex(conn)?,
         check_onchain(conn)?,
     ];
+
+    if json {
+        print_json(&config, &sources)?;
+    } else {
+        print_table(&config, &sources);
+    }
+    
+    Ok(())
+}
+
+fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> Result<()> {
+    use serde_json::json;
+    
+    let brave_configured = config.brave_api_key
+        .as_ref()
+        .map(|k| !k.trim().is_empty())
+        .unwrap_or(false);
+
+    let sources_json: Vec<_> = sources
+        .iter()
+        .map(|s| {
+            json!({
+                "name": s.name,
+                "last_fetch": s.last_fetch,
+                "records": s.records,
+                "status": s.status.name().to_lowercase(),
+            })
+        })
+        .collect();
+
+    let output = json!({
+        "brave_api_key_configured": brave_configured,
+        "sources": sources_json,
+    });
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn print_table(config: &crate::config::Config, sources: &[DataSourceStatus]) {
+    let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim();
+    if brave_key.is_empty() {
+        println!(
+            "Brave Search: ✗ No key (add with `pftui config set brave_api_key <key>` — free tier at brave.com/search/api/)"
+        );
+    } else {
+        println!("Brave Search: ✓ Configured");
+        println!("Brave usage: query count / credits unavailable via current API response metadata");
+    }
+    println!();
     
     // Print header
     println!("{:<16} {:<18} {:<8} Status", "Source", "Last Fetch", "Records");
@@ -505,6 +544,4 @@ pub fn run(conn: &Connection) -> Result<()> {
             source.status.name()
         );
     }
-    
-    Ok(())
 }
