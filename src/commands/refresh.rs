@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -8,11 +9,12 @@ use rusqlite::Connection;
 
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
-use crate::data::{bls, calendar, comex, cot, fx, onchain, predictions, rss, sentiment, worldbank};
+use crate::data::{bls, brave, calendar, comex, cot, fx, onchain, predictions, rss, sentiment, worldbank};
 use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::db::price_cache::{get_all_cached_prices, upsert_price};
+use crate::db::price_history::get_price_at_date;
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
 use crate::db::transactions::{get_unique_symbols, list_transactions};
 use crate::db::watchlist::get_watchlist_symbols;
@@ -34,6 +36,7 @@ const SENTIMENT_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
 const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
 const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
+const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -100,6 +103,63 @@ fn news_needs_refresh(conn: &Connection) -> Result<bool> {
         return Ok(age.num_seconds() > NEWS_FRESHNESS_SECS);
     }
     Ok(true)
+}
+
+fn compute_daily_change_pct(conn: &Connection, symbol: &str, current: Decimal) -> Option<Decimal> {
+    let today = chrono::Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+    let prev = get_price_at_date(conn, symbol, &yesterday_str).ok()??;
+    if prev == dec!(0) {
+        return None;
+    }
+    Some(((current - prev) / prev * dec!(100)).abs())
+}
+
+fn build_brave_news_queries(conn: &Connection, config: &Config) -> Result<Vec<String>> {
+    let mut queries = vec![
+        "stock market today".to_string(),
+        "federal reserve interest rates monetary policy".to_string(),
+        "bitcoin cryptocurrency regulation".to_string(),
+        "gold silver precious metals price".to_string(),
+        "oil OPEC energy crude".to_string(),
+        "geopolitics international trade war sanctions".to_string(),
+    ];
+
+    let mut symbols = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (sym, cat) in match config.portfolio_mode {
+        PortfolioMode::Full => get_unique_symbols(conn)?,
+        PortfolioMode::Percentage => get_unique_allocation_symbols(conn)?,
+    } {
+        if cat != AssetCategory::Cash && seen.insert(sym.clone()) {
+            symbols.push(sym);
+        }
+    }
+    for (sym, cat) in get_watchlist_symbols(conn)? {
+        if cat != AssetCategory::Cash && seen.insert(sym.clone()) {
+            symbols.push(sym);
+        }
+    }
+
+    let price_map: HashMap<String, Decimal> = get_all_cached_prices(conn)?
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect();
+
+    for sym in symbols {
+        if let Some(current) = price_map.get(&sym).copied() {
+            if let Some(abs_change) = compute_daily_change_pct(conn, &sym, current) {
+                if abs_change >= dec!(3) {
+                    queries.push(format!("{} stock news", sym));
+                }
+            }
+        }
+    }
+
+    queries.truncate(BRAVE_NEWS_QUERY_LIMIT);
+    Ok(queries)
 }
 
 /// Check if predictions need refreshing
@@ -424,12 +484,42 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ Predictions (fresh, skipping)");
     }
 
-    // 4. News (RSS feeds)
+    // 4. News (Brave primary when configured, RSS supplements)
     if news_needs_refresh(conn)? {
+        let mut inserted = 0usize;
+        let mut brave_inserted = 0usize;
+        let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+
+        if !brave_key.is_empty() {
+            let queries = build_brave_news_queries(conn, config)?;
+            for query in &queries {
+                match rt.block_on(brave::brave_news_search(&brave_key, query, Some("pd"), 5)) {
+                    Ok(results) => {
+                        for item in &results {
+                            let source = item.source.as_deref().unwrap_or("Brave");
+                            if news_cache::insert_news_with_source_type(
+                                conn,
+                                &item.title,
+                                &item.url,
+                                source,
+                                "brave",
+                                "markets",
+                                chrono::Utc::now().timestamp(),
+                            ).is_ok() {
+                                inserted += 1;
+                                brave_inserted += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Brave news query failed ({}): {}", query, e);
+                    }
+                }
+            }
+        }
+
         let feeds = rss::default_feeds();
         let items = rt.block_on(rss::fetch_all_feeds(&feeds));
-        
-        let mut inserted = 0;
         for item in &items {
             let category_str = match item.category {
                 rss::NewsCategory::Macro => "macro",
@@ -438,19 +528,26 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
                 rss::NewsCategory::Geopolitics => "geopolitics",
                 rss::NewsCategory::Markets => "markets",
             };
-            
-            if news_cache::insert_news(
+
+            if news_cache::insert_news_with_source_type(
                 conn,
                 &item.title,
                 &item.url,
                 &item.source,
+                "rss",
                 category_str,
                 item.published_at,
-            ).is_ok() {
+            )
+            .is_ok()
+            {
                 inserted += 1;
             }
         }
-        println!("✓ News ({} articles)", inserted);
+        if brave_inserted > 0 {
+            println!("✓ News ({} articles via Brave + RSS)", inserted);
+        } else {
+            println!("✓ News ({} articles via RSS)", inserted);
+        }
     } else {
         println!("⊘ News (fresh, skipping)");
     }

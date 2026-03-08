@@ -13,6 +13,7 @@ pub struct NewsEntry {
     pub title: String,
     pub url: String,
     pub source: String,
+    pub source_type: String,
     pub category: String,
     pub published_at: i64,
     pub fetched_at: String,
@@ -29,10 +30,23 @@ pub fn insert_news(
     category: &str,
     published_at: i64,
 ) -> Result<()> {
+    insert_news_with_source_type(conn, title, url, source, "rss", category, published_at)
+}
+
+/// Insert a news item with an explicit source type ("rss" or "brave").
+pub fn insert_news_with_source_type(
+    conn: &Connection,
+    title: &str,
+    url: &str,
+    source: &str,
+    source_type: &str,
+    category: &str,
+    published_at: i64,
+) -> Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO news_cache (title, url, source, category, published_at, fetched_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
-        params![title, url, source, category, published_at],
+        "INSERT OR IGNORE INTO news_cache (title, url, source, source_type, category, published_at, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+        params![title, url, source, source_type, category, published_at],
     )?;
     Ok(())
 }
@@ -48,7 +62,7 @@ pub fn get_latest_news(
     search_term: Option<&str>,
     hours_back: Option<i64>,
 ) -> Result<Vec<NewsEntry>> {
-    let mut sql = "SELECT id, title, url, source, category, published_at, fetched_at
+    let mut sql = "SELECT id, title, url, source, source_type, category, published_at, fetched_at
                    FROM news_cache
                    WHERE 1=1".to_string();
 
@@ -87,9 +101,10 @@ pub fn get_latest_news(
             title: row.get(1)?,
             url: row.get(2)?,
             source: row.get(3)?,
-            category: row.get(4)?,
-            published_at: row.get(5)?,
-            fetched_at: row.get(6)?,
+            source_type: row.get(4)?,
+            category: row.get(5)?,
+            published_at: row.get(6)?,
+            fetched_at: row.get(7)?,
         })
     })?;
 

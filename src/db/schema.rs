@@ -191,6 +191,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             title TEXT NOT NULL,
             url TEXT NOT NULL UNIQUE,
             source TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'rss',
             category TEXT NOT NULL,
             published_at INTEGER NOT NULL,
             fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -285,6 +286,16 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             "ALTER TABLE watchlist ADD COLUMN target_price TEXT;
              ALTER TABLE watchlist ADD COLUMN target_direction TEXT;"
         )?;
+    }
+
+    // Migration: add source_type column to news_cache (rss|brave)
+    let has_news_source_type: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('news_cache') WHERE name = 'source_type'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_news_source_type {
+        conn.execute_batch("ALTER TABLE news_cache ADD COLUMN source_type TEXT NOT NULL DEFAULT 'rss'")?;
     }
 
     Ok(())
