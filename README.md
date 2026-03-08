@@ -328,4 +328,5 @@ MIT, do whatever you want with it.
 
 <p align="center">
   <b>pftui</b>, portfolio intelligence for humans and agents.<br>
+  Built with Rust 🦀 and OpenClaw 🦞
 </p>
