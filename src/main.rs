@@ -253,6 +253,9 @@ fn main() -> Result<()> {
         Some(Command::Predictions { category, search, limit, json }) => {
             commands::predictions::run(&conn, category.as_deref(), search.as_deref(), limit, json)
         }
+        Some(Command::Correlations { window, limit, json }) => {
+            commands::correlations::run(&conn, window, limit, json)
+        }
 
         Some(Command::News { source, search, hours, limit, json }) => {
             commands::news::run(&conn, source.as_deref(), search.as_deref(), hours, limit, json)

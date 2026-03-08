@@ -300,6 +300,21 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show rolling correlation matrix for held assets and key macro anchors
+    Correlations {
+        /// Primary window for sorting/display emphasis: 7, 30, or 90
+        #[arg(long, default_value = "30")]
+        window: usize,
+
+        /// Maximum number of pairs to show
+        #[arg(long, default_value = "15")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show latest financial news from RSS feeds
     News {
         /// Filter by source (e.g. "Reuters", "CoinDesk", "ZeroHedge")
