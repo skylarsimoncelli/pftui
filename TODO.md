@@ -933,6 +933,115 @@ Use `pftui structural dashboard` for the combined view.
 
 ### Infrastructure
 
+### F32: Native PostgreSQL Backend (epic)
+
+> The current "Postgres support" is a bridge — it serialises the entire SQLite database as a binary blob
+> in a single Postgres row (`pftui_sqlite_state`), hydrates it at startup, and syncs it back on shutdown.
+> All queries still run against SQLite. This is NOT acceptable as a product.
+>
+> Full native Postgres means: when `database_backend = "postgres"`, every query runs directly against
+> Postgres tables. No SQLite involved. Users choose one backend or the other. Both are first-class.
+>
+> This is the largest refactor in the project. Every `db/*.rs` module uses `rusqlite` directly.
+> The approach: create a backend abstraction layer, implement it for both SQLite and Postgres,
+> then migrate each module one at a time.
+
+**Scope:** ~6,600 lines across 30+ `src/db/*.rs` modules. All use `rusqlite::Connection` directly.
+
+**Architecture:**
+
+```
+src/db/
+├── backend.rs          # BackendConnection enum (already exists, extend it)
+├── trait.rs            # NEW: DbBackend trait with all query methods
+├── sqlite_impl.rs      # NEW: impl DbBackend for SqliteBackend
+├── postgres_impl.rs    # NEW: impl DbBackend for PostgresBackend
+├── mod.rs              # Route open_db() to correct backend
+└── schema.rs           # Split into sqlite_schema.rs + postgres_schema.rs
+```
+
+**Implementation order** (each item is independently shippable + testable):
+
+#### F32.1: Backend trait abstraction
+- [ ] **Create `src/db/trait.rs`** — define `DbBackend` trait with method signatures for every DB operation currently in `src/db/*.rs`. Start with the simplest module (e.g. `price_cache`) and expand. Use `async` methods or `Result<T>` returns that both backends can satisfy.
+- [ ] **Design decision: trait object vs enum dispatch.** Enum dispatch (`match backend { Sqlite(c) => ..., Postgres(p) => ... }`) is simpler and avoids `dyn` overhead. Recommend enum dispatch since there are only 2 variants. Each module gets a pair of functions: `fn operation_sqlite(conn: &Connection, ...) -> Result<T>` and `fn operation_postgres(pool: &PgPool, ...) -> Result<T>`, dispatched by the enum.
+- [ ] **Alternative approach (simpler): query abstraction layer.** Instead of a full trait, create `src/db/query.rs` with `fn execute(backend, sql_sqlite, sql_postgres, params)` and `fn query_rows(backend, sql_sqlite, sql_postgres, params)` that dispatch to the right backend. Modules call the abstraction instead of `rusqlite` directly. This avoids rewriting every module — just swap the query call sites.
+- **Recommended: the query abstraction approach.** It's less elegant but 10x less code to change. Each module keeps its logic, just swaps `conn.execute(sql, params)` → `db::query::execute(backend, sql, params)`.
+
+#### F32.2: PostgreSQL schema
+- [ ] **Create `src/db/postgres_schema.rs`** — PostgreSQL equivalents of every `CREATE TABLE` in `schema.rs`. Key differences from SQLite:
+  - `INTEGER PRIMARY KEY AUTOINCREMENT` → `SERIAL PRIMARY KEY` (or `BIGSERIAL`)
+  - `TEXT NOT NULL DEFAULT (datetime('now'))` → `TIMESTAMPTZ NOT NULL DEFAULT NOW()`
+  - `REAL` → `DOUBLE PRECISION`
+  - `INTEGER` boolean columns → `BOOLEAN`
+  - No `PRAGMA` statements
+  - `INSERT OR REPLACE` → `INSERT ... ON CONFLICT DO UPDATE`
+  - `CREATE INDEX IF NOT EXISTS` works the same in both
+- [ ] **Migration system** — both backends need versioned migrations. SQLite currently uses `pragma_table_info` checks. Postgres should use a `pftui_migrations` table with version numbers.
+- [ ] **Schema parity tests** — ensure both backends create identical logical schemas. Write a test that creates both, compares table/column lists.
+
+#### F32.3: Core modules migration (batch 1 — data pipeline)
+These are the most-used modules. Migrate them first to validate the pattern.
+- [ ] **`price_cache.rs`** — spot prices. Simple CRUD. Good first module to validate the abstraction.
+- [ ] **`price_history.rs`** — daily OHLCV. Insert-heavy, query-heavy. Tests the pattern under load.
+- [ ] **`transactions.rs`** — buy/sell records. Core portfolio data.
+- [ ] **`watchlist.rs`** — watched symbols. Simple CRUD.
+- [ ] **`alerts.rs`** — price alerts. Simple CRUD.
+- [ ] **`allocation_targets.rs`** — target percentages. Simple CRUD.
+- Each module: replace `rusqlite` calls with backend-dispatched equivalents. Add Postgres-specific SQL where syntax differs (upserts, date functions, etc.).
+
+#### F32.4: Cache modules migration (batch 2 — data sources)
+- [ ] **`news_cache.rs`** — RSS/Brave news articles
+- [ ] **`sentiment_cache.rs`** — Fear & Greed indices
+- [ ] **`cot_cache.rs`** — CFTC COT data
+- [ ] **`comex_cache.rs`** — COMEX inventory
+- [ ] **`bls_cache.rs`** — BLS economic data
+- [ ] **`worldbank_cache.rs`** — World Bank macro
+- [ ] **`economic_cache.rs`** — general economic data
+- [ ] **`economic_data.rs`** — economic data queries
+- [ ] **`prediction_cache.rs`** + **`predictions_cache.rs`** + **`predictions_history.rs`** — prediction market data
+- [ ] **`onchain_cache.rs`** — BTC on-chain + ETF flows
+- [ ] **`calendar_cache.rs`** — economic calendar
+- [ ] **`fx_cache.rs`** — forex rates
+
+#### F32.5: Analytics modules migration (batch 3 — portfolio intelligence)
+- [ ] **`journal.rs`** — trade journal (468 lines, most complex module)
+- [ ] **`snapshots.rs`** — portfolio snapshots (369 lines)
+- [ ] **`annotations.rs`** — chart annotations
+- [ ] **`chart_state.rs`** — chart view state
+- [ ] **`groups.rs`** + **`watchlist_groups.rs`** — watchlist grouping
+- [ ] **`dividends.rs`** — dividend tracking
+- [ ] **`scan_queries.rs`** — scanner saved queries
+- [ ] **`allocations.rs`** — portfolio allocations
+
+#### F32.6: F31 Intelligence tables migration (batch 4)
+- [ ] All F31 tables (scenarios, thesis, convictions, research_questions, user_predictions, agent_messages, daily_notes, opportunity_cost, correlation_snapshots, regime_snapshots, structural tables) — implement with native Postgres support from the start if F31 isn't complete yet. If F31 is already done in SQLite-only, migrate these modules like the others.
+
+#### F32.7: Remove bridge, cleanup, docs
+- [ ] **Remove `PostgresSqliteBridge`** from `backend.rs` — no more blob serialisation
+- [ ] **Remove `pftui_sqlite_state` table** from Postgres (migration to drop it)
+- [ ] **Update `docs/MIGRATING.md`** — new migration path is `pftui export` → switch backend → `pftui import`, OR direct table-level migration tool
+- [ ] **Add `pftui db-info` command** — shows which backend is active, connection details, table counts, total rows
+- [ ] **Update README.md, AGENTS.md, website** — "Full SQLite or PostgreSQL support. Choose your backend."
+- [ ] **Connection pooling config** — expose `max_connections`, `connect_timeout` in config for Postgres
+- [ ] **Test suite** — run full test suite against both backends in CI. Ensure feature parity.
+
+**Key SQL differences to handle per-module:**
+
+| SQLite | PostgreSQL | Notes |
+|--------|-----------|-------|
+| `INSERT OR REPLACE INTO` | `INSERT INTO ... ON CONFLICT (key) DO UPDATE SET ...` | Every upsert needs rewriting |
+| `datetime('now')` | `NOW()` | All timestamp defaults |
+| `strftime('%Y-%m-%d', ...)` | `TO_CHAR(..., 'YYYY-MM-DD')` | Date formatting |
+| `LIKE` (case-insensitive by default) | `ILIKE` | Search queries |
+| `AUTOINCREMENT` | `SERIAL` or `GENERATED ALWAYS AS IDENTITY` | Primary keys |
+| `GROUP BY` allows non-aggregated columns | Strict `GROUP BY` — must include all selected columns | Several queries will need fixing |
+| `PRAGMA table_info(...)` | `information_schema.columns` | Migration checks |
+| `REAL` | `DOUBLE PRECISION` | Float columns |
+| `INTEGER` for booleans (0/1) | `BOOLEAN` (true/false) | Boolean columns |
+| `||` for string concat | `||` (same) | Compatible |
+| No `RETURNING` before 3.35 | `RETURNING *` always available | Can simplify insert-then-select patterns |
+
 ---
 
 ## P2 — Nice to Have
