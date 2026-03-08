@@ -121,6 +121,7 @@ pftui set-cash GBP 20000
 **Percentage mode — allocation only (no monetary data stored):**
 ```bash
 pftui setup  # Interactive wizard — choose "percentage mode"
+# Wizard also offers optional Brave Search API key entry (press Enter to skip)
 ```
 
 ### Category Mapping

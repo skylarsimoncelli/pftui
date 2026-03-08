@@ -191,6 +191,7 @@ pub fn load_config_with_first_run_prompt() -> Result<Config> {
 
     let config = Config {
         home_tab: prompt_first_run_home_tab()?,
+        brave_api_key: prompt_optional_brave_api_key()?,
         ..Config::default()
     };
     save_config(&config)?;
@@ -219,6 +220,23 @@ fn parse_home_tab_input(input: &str) -> Option<&'static str> {
         "" | "p" | "portfolio" => Some("positions"),
         "w" | "watchlist" => Some("watchlist"),
         _ => None,
+    }
+}
+
+fn prompt_optional_brave_api_key() -> Result<Option<String>> {
+    println!();
+    println!("  Optional: Brave Search API key");
+    println!("  For richer news, economic data, and market intelligence, add a Brave Search API key (free tier: $5/month credits).");
+    println!("  Get one at https://brave.com/search/api/");
+    print!("  Enter key (or press Enter to skip): ");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let key = input.trim().to_string();
+    if key.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(key))
     }
 }
 

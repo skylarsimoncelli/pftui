@@ -141,6 +141,18 @@ pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> 
         PortfolioMode::Percentage => percentage_mode_setup(conn)?,
     }
 
+    // Optional Brave API key for richer research/news/economic data.
+    println!();
+    println!("  Optional: Brave Search API key");
+    println!("  For richer news, economic data, and market intelligence, add a Brave Search API key (free tier: $5/month credits).");
+    println!("  Get one at https://brave.com/search/api/");
+    let brave_key = prompt("  Enter key (or press Enter to skip): ")?;
+    new_config.brave_api_key = if brave_key.trim().is_empty() {
+        None
+    } else {
+        Some(brave_key)
+    };
+
     // Save config with chosen mode and currency
     save_config(&new_config)?;
 
