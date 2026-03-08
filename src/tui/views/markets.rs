@@ -8,6 +8,7 @@ use rust_decimal_macros::dec;
 use crate::app::App;
 use crate::models::asset::AssetCategory;
 use crate::tui::theme;
+use crate::tui::views::correlation_grid;
 use crate::tui::widgets::skeleton;
 
 /// Braille-style sparkline characters (bottom to top).
@@ -60,17 +61,19 @@ pub fn market_symbols() -> Vec<MarketItem> {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
-    // Split area: top 70% for traditional markets, bottom 30% for predictions
+    // Split area: markets table, correlation matrix, then predictions.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(70),
+            Constraint::Percentage(50),
+            Constraint::Percentage(20),
             Constraint::Percentage(30),
         ])
         .split(area);
     
     render_markets_table(frame, chunks[0], app);
-    render_predictions_panel(frame, chunks[1], app);
+    correlation_grid::render(frame, chunks[1], app);
+    render_predictions_panel(frame, chunks[2], app);
 }
 
 fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {

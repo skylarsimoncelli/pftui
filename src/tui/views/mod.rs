@@ -2,6 +2,7 @@ pub mod alerts_popup;
 pub mod analytics;
 pub mod asset_detail_popup;
 pub mod context_menu;
+pub mod correlation_grid;
 pub mod economy;
 pub mod help;
 pub mod journal;

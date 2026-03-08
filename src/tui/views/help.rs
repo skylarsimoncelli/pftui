@@ -127,6 +127,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("f", "Cycle category filter", kc, tc));
     lines.push(key_line("r", "Force refresh prices", kc, tc));
+    lines.push(key_line("M (Shift+m)", "Markets: correlation window 7d/30d/90d", kc, tc));
     lines.push(key_line("p", "Toggle privacy view", kc, tc));
     lines.push(key_line("T (Shift+t)", "Cycle timeframe (table % & chart)", kc, tc));
     lines.push(Line::from(Span::styled(

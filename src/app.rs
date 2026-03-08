@@ -175,6 +175,39 @@ impl ChangeTimeframe {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarketCorrelationWindow {
+    SevenDay,
+    ThirtyDay,
+    NinetyDay,
+}
+
+impl MarketCorrelationWindow {
+    pub fn days(self) -> usize {
+        match self {
+            MarketCorrelationWindow::SevenDay => 7,
+            MarketCorrelationWindow::ThirtyDay => 30,
+            MarketCorrelationWindow::NinetyDay => 90,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MarketCorrelationWindow::SevenDay => "7d",
+            MarketCorrelationWindow::ThirtyDay => "30d",
+            MarketCorrelationWindow::NinetyDay => "90d",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            MarketCorrelationWindow::SevenDay => MarketCorrelationWindow::ThirtyDay,
+            MarketCorrelationWindow::ThirtyDay => MarketCorrelationWindow::NinetyDay,
+            MarketCorrelationWindow::NinetyDay => MarketCorrelationWindow::SevenDay,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortField {
     Name,
     Category,
@@ -399,6 +432,7 @@ pub struct App {
     pub selected_symbol: Option<String>,
     pub tx_selected_index: usize,
     pub markets_selected_index: usize,
+    pub markets_correlation_window: MarketCorrelationWindow,
     pub economy_selected_index: usize,
     pub watchlist_selected_index: usize,
     pub watchlist_entries: Vec<db_watchlist::WatchlistEntry>,
@@ -659,6 +693,7 @@ impl App {
             selected_symbol: None,
             tx_selected_index: 0,
             markets_selected_index: 0,
+            markets_correlation_window: MarketCorrelationWindow::ThirtyDay,
             economy_selected_index: 0,
             watchlist_selected_index: 0,
             watchlist_entries: Vec::new(),
@@ -2235,6 +2270,10 @@ impl App {
                     ChangeTimeframe::ThirtyDay => ChartTimeframe::ThreeMonths, // 30d fits in 3M
                     ChangeTimeframe::YearToDate => ChartTimeframe::OneYear, // YTD uses 1Y view
                 };
+            }
+            // Markets correlation window (7d/30d/90d)
+            KeyCode::Char('M') if matches!(self.view_mode, ViewMode::Markets) => {
+                self.markets_correlation_window = self.markets_correlation_window.next();
             }
 
             // Detail popup toggle (chart is always visible in right pane)
