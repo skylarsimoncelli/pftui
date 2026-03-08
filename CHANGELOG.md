@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 09:27 UTC — Add context-sensitive hotkey hints in status bar
+
+- What: status bar hints now adapt by active view instead of showing a fixed set. Each view surfaces relevant actions (for example Markets: `M` correlation window, News: `o` open + search, Analytics: `+/-` shock controls, Positions: detail/filter/split/command mode). Compact mode now includes explicit `:` command palette hint.
+- Why: TODO item for context-sensitive hotkey hints. This reduces hint noise and makes available actions more discoverable in the current workflow context.
+- Files: `src/tui/widgets/status_bar.rs` (added view-aware hint mapping and rendering), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1144 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: Context-sensitive hotkey hints — Bottom bar shows available actions for current view (P2)
+
 ### 2026-03-08 08:27 UTC — Add `:` command palette with autocomplete
 
 - What: added a vim-style command palette overlay opened with `:`. It supports live autocomplete suggestions, arrow navigation, `Tab` completion, and `Enter` execution. Implemented commands include: view switching (`view positions|transactions|markets|economy|watchlist|analytics|news|journal`), `refresh`, `help`, `theme next`, `split toggle`, `layout compact|split|analyst`, and `quit`.

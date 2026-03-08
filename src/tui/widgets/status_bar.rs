@@ -3,7 +3,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::{App, TxFormField};
+use crate::app::{App, TxFormField, ViewMode};
 use crate::config::PortfolioMode;
 use crate::models::transaction::TxType;
 use crate::tui::theme;
@@ -16,6 +16,62 @@ fn capitalize_first(s: &str) -> String {
         None => String::new(),
         Some(c) => c.to_uppercase().to_string() + chars.as_str(),
     }
+}
+
+fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
+    let mut hints = match app.view_mode {
+        ViewMode::Positions => vec![
+            ("Enter", "Detail"),
+            ("r", "Refresh"),
+            ("/", "Search"),
+            ("f", "Filter"),
+            ("S", "Split"),
+            (":", "Cmd"),
+        ],
+        ViewMode::Watchlist => vec![
+            ("Enter", "Detail"),
+            ("r", "Refresh"),
+            ("/", "Search"),
+            (":", "Cmd"),
+        ],
+        ViewMode::Transactions => vec![
+            ("d", "Sort Date"),
+            ("Tab", "Sort Dir"),
+            (":", "Cmd"),
+        ],
+        ViewMode::Markets => vec![
+            ("M", "Corr Win"),
+            ("r", "Refresh"),
+            (":", "Cmd"),
+        ],
+        ViewMode::Economy => vec![
+            ("j/k", "Select"),
+            ("r", "Refresh"),
+            (":", "Cmd"),
+        ],
+        ViewMode::Analytics => vec![
+            ("+/-", "Shock"),
+            ("0", "Reset"),
+            (":", "Cmd"),
+        ],
+        ViewMode::News => vec![
+            ("Enter", "Preview"),
+            ("o", "Open"),
+            ("/", "Search"),
+            (":", "Cmd"),
+        ],
+        ViewMode::Journal => vec![
+            ("/", "Search"),
+            ("j/k", "Navigate"),
+            (":", "Cmd"),
+        ],
+    };
+
+    if app.portfolio_mode == PortfolioMode::Full {
+        hints.push(("p", "Privacy"));
+    }
+    hints.push(("t", "Theme"));
+    hints
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
@@ -173,40 +229,26 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     spans.push(Span::styled(" │ ", Style::default().fg(t.border_subtle)));
 
     if compact {
-        // Compact: show only essential hints
         spans.push(Span::styled("[?]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
         spans.push(sep.clone());
         spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Search", Style::default().fg(t.text_secondary)));
+        spans.push(sep.clone());
+        spans.push(Span::styled("[:]", Style::default().fg(t.key_hint)));
+        spans.push(Span::styled("Cmd", Style::default().fg(t.text_secondary)));
         spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
     } else {
-        // Full: show all hints
         spans.push(Span::styled("[?]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
-        spans.push(sep.clone());
-        spans.push(Span::styled("[Enter]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Chart", Style::default().fg(t.text_secondary)));
-        spans.push(sep.clone());
-        spans.push(Span::styled("[r]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Refresh", Style::default().fg(t.text_secondary)));
-        spans.push(sep.clone());
-        spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Search", Style::default().fg(t.text_secondary)));
-        spans.push(sep.clone());
-        spans.push(Span::styled("[f]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Filter", Style::default().fg(t.text_secondary)));
-        spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
-
-        if app.portfolio_mode == PortfolioMode::Full {
+        for (key, label) in context_hints(app) {
             spans.push(sep.clone());
-            spans.push(Span::styled("[p]", Style::default().fg(t.key_hint)));
-            spans.push(Span::styled("Privacy", Style::default().fg(t.text_secondary)));
+            spans.push(Span::styled(format!("[{key}]"), Style::default().fg(t.key_hint)));
+            spans.push(Span::styled(label, Style::default().fg(t.text_secondary)));
         }
-
-        spans.push(sep);
-        spans.push(Span::styled("[t]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Theme", Style::default().fg(t.text_secondary)));
+        if !filter_text.is_empty() && matches!(app.view_mode, ViewMode::Positions) {
+            spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
+        }
     }
 
     // Theme toast — show theme name briefly after cycling
