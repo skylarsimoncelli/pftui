@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:46 UTC — Close Economy calendar TODO (already implemented)
+
+- What: verified the Economy tab already includes a 7-day calendar panel with impact indicators and countdown labels (`render_calendar_panel`), then removed the stale unchecked TODO item.
+- Why: TODO was out of date relative to existing implementation.
+- Files: `TODO.md`
+- Tests: not run (no code-path changes)
+- TODO: Calendar in Economy tab — 7-day forward view with impact color-coding (P2)
+
 ### 2026-03-08 04:44 UTC — Add watchlist groups with `W` + `1/2/3` switching
 
 - What: added DB-backed watchlist groups (`Core`, `Opportunistic`, `Research`) with `group_id` on watchlist entries, new `db/watchlist_groups.rs`, and app-level group switching chord `W` then `1/2/3`. Watchlist view now filters by active group and shows group in title. Adding from search popup (`w`) now writes into the active group.
