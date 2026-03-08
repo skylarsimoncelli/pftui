@@ -1,6 +1,14 @@
 # CLAUDE.md — Development Guide
 
 > This guide is for AI coding agents making code changes to pftui.
+
+## ⛔ MAXIMUM PRIORITY — DATA SECURITY
+
+**The local pftui installation database on this system contains real personal financial information. It must NEVER be tampered with, exposed, committed, logged, printed, or referenced in the public repo.** This includes:
+- Never read, query, or print data from `~/.local/share/pftui/pftui.db` in commits, logs, or output
+- Never use real portfolio data in tests, screenshots, demos, or examples — use only synthetic/demo data
+- Never commit config files that contain real API keys or personal data
+- If you accidentally encounter real financial data, do not include it in any output
 > For agent OPERATOR guidance (using pftui as a tool), see [AGENTS.md](AGENTS.md).
 
 ## What This Is
