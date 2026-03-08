@@ -12,26 +12,66 @@
   <a href="https://github.com/skylarsimoncelli/pftui/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license"></a>
 </p>
 
-<p align="center">
-  pftui portfolio overview
-  <img width="1728" height="1088" alt="pftui portfolio overview" src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" />
-  pftui transactions
-  <img width="1728" height="1086" alt="pftui tx overview" src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" />
-  pftui economy
-  <img width="1728" height="1069" alt="pftui economy overview" src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" />
-  pftui analytics
-  <img width="1728" height="1086" alt="pftui analytics" src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" />
-  pftui web
-  <img width="1728" height="1085" alt="pftui web" src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" />
-  pftui web search
-  <img width="1728" height="1085" alt="pftui web search" src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" />
-  pftui web economy
-  <img width="1728" height="1067" alt="pftui web economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" />
-  pftui web asset detail
-  <img width="1727" height="1080" alt=" pftui web asset detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" />
-  pftui cli
-  <img width="1728" height="1062" alt="pftui cli" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" />
+### Terminal UI
 
+<table>
+  <tr>
+    <td align="center">
+      <img width="600" alt="Portfolio Overview" src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" /><br>
+      <b>Portfolio Overview</b><br>
+      <sub>Positions, live prices, allocation, sparklines, and price chart</sub>
+    </td>
+    <td align="center">
+      <img width="600" alt="Transactions" src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" /><br>
+      <b>Transactions</b><br>
+      <sub>Buy/sell history with cost basis tracking</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img width="600" alt="Economy Dashboard" src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" /><br>
+      <b>Economy Dashboard</b><br>
+      <sub>Macro indicators, regime detection, predictions, calendar</sub>
+    </td>
+    <td align="center">
+      <img width="600" alt="Analytics" src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" /><br>
+      <b>Analytics</b><br>
+      <sub>Technical indicators, correlations, and portfolio analysis</sub>
+    </td>
+  </tr>
+</table>
+
+### Web Dashboard
+
+<table>
+  <tr>
+    <td align="center">
+      <img width="400" alt="Web Dashboard" src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" /><br>
+      <b>Dashboard</b>
+    </td>
+    <td align="center">
+      <img width="400" alt="Web Search" src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" /><br>
+      <b>Search</b>
+    </td>
+    <td align="center">
+      <img width="400" alt="Web Economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" /><br>
+      <b>Economy</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3">
+      <img width="600" alt="Web Asset Detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" /><br>
+      <b>Asset Detail</b><br>
+      <sub>TradingView charts, technicals, transactions, and news</sub>
+    </td>
+  </tr>
+</table>
+
+### CLI & Agent Output
+
+<p align="center">
+  <img width="800" alt="CLI Output" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" /><br>
+  <b>Agent-ready CLI</b> · <sub>Every command supports <code>--json</code> for structured output</sub>
 </p>
 
 ---

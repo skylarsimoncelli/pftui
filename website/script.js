@@ -446,6 +446,23 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     });
 });
 
+// ===== SCREENSHOT GALLERY =====
+function initGallery() {
+    const tabs = document.querySelectorAll('.gallery-tab');
+    const slides = document.querySelectorAll('.gallery-slide');
+    if (!tabs.length) return;
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.target;
+            tabs.forEach(t => t.classList.remove('active'));
+            slides.forEach(s => s.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(target).classList.add('active');
+        });
+    });
+}
+
 // ===== INIT =====
 window.addEventListener('DOMContentLoaded', () => {
     terminal = document.getElementById('terminal');
@@ -460,6 +477,7 @@ window.addEventListener('DOMContentLoaded', () => {
     initHighlightsMarquee();
     initInstallTabs();
     setInstallMethod('curl');
+    initGallery();
     
     // Observe fade-in elements
     document.querySelectorAll('.fade-in, .highlight-card').forEach(el => {
