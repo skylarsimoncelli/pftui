@@ -680,9 +680,13 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
     // 8. Economy indicators (Brave primary, BLS fallback)
     {
         let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+        let mut used_brave = false;
         let readings = if !brave_key.is_empty() {
             match rt.block_on(economic::fetch_via_brave(&brave_key)) {
-                Ok(v) if !v.is_empty() => Ok(v),
+                Ok(v) if !v.is_empty() => {
+                    used_brave = true;
+                    Ok(v)
+                }
                 Ok(_) => rt.block_on(economic::fetch_bls_fallback()),
                 Err(_) => rt.block_on(economic::fetch_bls_fallback()),
             }
@@ -704,7 +708,11 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
                     };
                     let _ = economic_data_db::upsert_entry(conn, &entry);
                 }
-                println!("✓ Economy ({} indicators)", items.len());
+                if used_brave {
+                    println!("✓ Economy ({} indicators via Brave)", items.len());
+                } else {
+                    println!("✓ Economy ({} indicators via BLS fallback)", items.len());
+                }
             }
             Err(e) => println!("✗ Economy (failed: {})", e),
         }
