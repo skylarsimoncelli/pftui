@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 
+use crate::config::load_config;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, price_cache, sentiment_cache, worldbank_cache};
 
@@ -458,6 +459,19 @@ fn check_onchain(conn: &Connection) -> Result<DataSourceStatus> {
 }
 
 pub fn run(conn: &Connection) -> Result<()> {
+    let config = load_config()?;
+
+    let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim();
+    if brave_key.is_empty() {
+        println!(
+            "Brave Search: ✗ No key (add with `pftui config set brave_api_key <key>` — free tier at brave.com/search/api/)"
+        );
+    } else {
+        println!("Brave Search: ✓ Configured");
+        println!("Brave usage: query count / credits unavailable via current API response metadata");
+    }
+    println!();
+
     let sources = vec![
         check_prices(conn)?,
         check_predictions(conn)?,
