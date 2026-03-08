@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use scraper::{Html, Selector};
 
+use crate::data::brave;
+
 /// A calendar event (economic or earnings).
 #[derive(Debug, Clone)]
 pub struct Event {
@@ -44,6 +46,50 @@ pub fn fetch_events(days_ahead: i64) -> Result<Vec<Event>> {
             Ok(filtered)
         }
     }
+}
+
+/// Enrich calendar with key upcoming macro dates discovered via Brave web search.
+pub async fn enrich_with_brave(events: &mut Vec<Event>, brave_key: &str) -> Result<()> {
+    let today = Utc::now().date_naive();
+    let queries = [
+        ("next CPI release date", "Consumer Price Index (CPI)"),
+        ("next FOMC meeting date", "FOMC Rate Decision"),
+    ];
+
+    for (query, event_name) in queries {
+        let results = brave::brave_web_search(brave_key, query, Some("pm"), 5).await?;
+        let mut discovered_date = None;
+        for r in &results {
+            let corpus = format!("{} {} {}", r.title, r.description, r.extra_snippets.join(" "));
+            if let Some(d) = extract_date_from_text(&corpus) {
+                if d >= today {
+                    discovered_date = Some(d);
+                    break;
+                }
+            }
+        }
+
+        if let Some(date) = discovered_date {
+            let date_str = date.format("%Y-%m-%d").to_string();
+            let exists = events
+                .iter()
+                .any(|e| e.date == date_str && e.name.to_lowercase().contains(&event_name.to_lowercase()));
+            if !exists {
+                events.push(Event {
+                    date: date_str,
+                    name: event_name.to_string(),
+                    impact: "high".to_string(),
+                    previous: None,
+                    forecast: None,
+                    event_type: "economic".to_string(),
+                    symbol: None,
+                });
+            }
+        }
+    }
+
+    events.sort_by(|a, b| a.date.cmp(&b.date).then(a.name.cmp(&b.name)));
+    Ok(())
 }
 
 /// Scrape TradingEconomics calendar page for economic events.
@@ -196,6 +242,33 @@ fn classify_impact(name: &str) -> String {
     }
 
     "low".into()
+}
+
+fn extract_date_from_text(text: &str) -> Option<NaiveDate> {
+    // 2026-03-18
+    for token in text.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| ",.;:()[]{}".contains(c));
+        if let Ok(d) = NaiveDate::parse_from_str(cleaned, "%Y-%m-%d") {
+            return Some(d);
+        }
+    }
+
+    // Month day year, e.g. "March 18, 2026"
+    let normalized = text.replace(',', "");
+    let words: Vec<String> = normalized
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| ".;:()[]{}".contains(c)).to_string())
+        .collect();
+    for window in words.windows(3) {
+        let candidate = format!("{} {} {}", window[0], window[1], window[2]);
+        if let Ok(d) = NaiveDate::parse_from_str(&candidate, "%B %d %Y") {
+            return Some(d);
+        }
+        if let Ok(d) = NaiveDate::parse_from_str(&candidate, "%b %d %Y") {
+            return Some(d);
+        }
+    }
+    None
 }
 
 /// Hardcoded sample calendar events for Mar-Apr 2026.
@@ -429,5 +502,17 @@ mod tests {
                 first.event_type == "economic" || first.event_type == "earnings"
             );
         }
+    }
+
+    #[test]
+    fn test_extract_date_from_text() {
+        assert_eq!(
+            extract_date_from_text("Next FOMC meeting on March 18, 2026."),
+            NaiveDate::from_ymd_opt(2026, 3, 18)
+        );
+        assert_eq!(
+            extract_date_from_text("Release date: 2026-04-10"),
+            NaiveDate::from_ymd_opt(2026, 4, 10)
+        );
     }
 }

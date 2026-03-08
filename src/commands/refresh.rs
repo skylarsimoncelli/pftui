@@ -650,7 +650,11 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
     // 7. Calendar (TradingEconomics)
     if calendar_needs_refresh(conn)? {
         match calendar::fetch_events(7) {
-            Ok(events) => {
+            Ok(mut events) => {
+                let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+                if !brave_key.is_empty() {
+                    let _ = rt.block_on(calendar::enrich_with_brave(&mut events, &brave_key));
+                }
                 for event in &events {
                     let _ = calendar_cache::upsert_event(
                         conn,
