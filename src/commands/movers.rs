@@ -25,24 +25,10 @@ struct Mover {
     change_str: String,
 }
 
-/// Map a symbol to its Yahoo Finance ticker for history lookup.
-fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
-    match category {
-        AssetCategory::Crypto => {
-            if symbol.ends_with("-USD") {
-                symbol.to_string()
-            } else {
-                format!("{}-USD", symbol)
-            }
-        }
-        _ => symbol.to_string(),
-    }
-}
-
 /// Compute daily change % from current price vs yesterday's close.
 /// Returns None if no yesterday price exists or current price is not available.
 /// Uses same logic as brief.rs to ensure consistency.
-fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<Decimal>) -> Option<Decimal> {
+fn compute_change_pct(conn: &Connection, symbol: &str, current_price: Option<Decimal>) -> Option<Decimal> {
     use chrono::Utc;
     
     let current = current_price?;
@@ -52,7 +38,7 @@ fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     
-    let prev_close = get_price_at_date(conn, yahoo_sym, &yesterday_str).ok()??;
+    let prev_close = get_price_at_date(conn, symbol, &yesterday_str).ok()??;
     if prev_close == dec!(0) {
         return None;
     }
@@ -161,10 +147,9 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
     // Compute movers
     let mut movers: Vec<Mover> = Vec::new();
     for (sym, cat, source) in &symbols {
-        let yahoo_sym = yahoo_symbol_for(sym, *cat);
         let current_price = price_map.get(sym).copied();
         
-        if let Some(pct) = compute_change_pct(conn, &yahoo_sym, current_price) {
+        if let Some(pct) = compute_change_pct(conn, sym, current_price) {
             let abs_pct = if pct < dec!(0) { -pct } else { pct };
             if abs_pct >= threshold_pct {
                 let name = resolve_name(sym);
@@ -592,16 +577,6 @@ mod tests {
         // Should only show AAPL once (as "held")
         let result = run(&conn, &config, None, false);
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn yahoo_symbol_crypto() {
-        assert_eq!(yahoo_symbol_for("BTC", AssetCategory::Crypto), "BTC-USD");
-    }
-
-    #[test]
-    fn yahoo_symbol_equity() {
-        assert_eq!(yahoo_symbol_for("AAPL", AssetCategory::Equity), "AAPL");
     }
 
     #[test]
