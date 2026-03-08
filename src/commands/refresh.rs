@@ -15,7 +15,7 @@ use crate::db::backend::BackendConnection;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::db::economic_data as economic_data_db;
-use crate::db::price_cache::{get_all_cached_prices, upsert_price};
+use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
 use crate::db::price_history::get_price_at_date;
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
 use crate::db::transactions::{get_unique_symbols, list_transactions};
@@ -73,8 +73,8 @@ fn collect_symbols(
 }
 
 /// Check if prices need refreshing
-fn prices_need_refresh(conn: &Connection) -> Result<bool> {
-    let prices = get_all_cached_prices(conn)?;
+fn prices_need_refresh(backend: &BackendConnection) -> Result<bool> {
+    let prices = get_all_cached_prices_backend(backend)?;
     if prices.is_empty() {
         return Ok(true);
     }
@@ -154,7 +154,7 @@ fn build_brave_news_queries(
         }
     }
 
-    let price_map: HashMap<String, Decimal> = get_all_cached_prices(conn)?
+    let price_map: HashMap<String, Decimal> = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
@@ -458,7 +458,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     }
 
     // 2. Prices
-    if prices_need_refresh(conn)? {
+    if prices_need_refresh(backend)? {
         let symbols = collect_symbols(backend, conn, config)?;
         if !symbols.is_empty() {
             let _non_cash: Vec<_> = symbols
@@ -469,7 +469,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
             let (quotes, _errors) = rt.block_on(fetch_all_prices(&symbols, config));
             
             for quote in &quotes {
-                if let Err(e) = upsert_price(conn, quote) {
+                if let Err(e) = upsert_price_backend(backend, quote) {
                     eprintln!("Failed to cache {}: {}", quote.symbol, e);
                 }
             }
@@ -831,7 +831,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     }
 
     // Store daily portfolio snapshot
-    if let Err(e) = store_portfolio_snapshot(conn, config) {
+    if let Err(e) = store_portfolio_snapshot(backend, conn, config) {
         eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
     }
 
@@ -886,8 +886,12 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
 }
 
 /// Compute current positions and store a daily portfolio snapshot.
-fn store_portfolio_snapshot(conn: &Connection, config: &Config) -> Result<()> {
-    let cached = get_all_cached_prices(conn)?;
+fn store_portfolio_snapshot(
+    backend: &BackendConnection,
+    conn: &Connection,
+    config: &Config,
+) -> Result<()> {
+    let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|q| (q.symbol, q.price))
