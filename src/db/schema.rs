@@ -271,6 +271,16 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             source_url TEXT NOT NULL,
             fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS annotations (
+            symbol TEXT PRIMARY KEY,
+            thesis TEXT NOT NULL DEFAULT '',
+            invalidation TEXT,
+            review_date TEXT,
+            target_price TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_annotations_review_date ON annotations(review_date);
         ",
     )?;
 

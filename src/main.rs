@@ -369,6 +369,30 @@ fn main() -> Result<()> {
                 action
             )),
         },
+        Some(Command::Annotate {
+            symbol,
+            thesis,
+            invalidation,
+            review_date,
+            target,
+            show,
+            list,
+            remove,
+            json,
+        }) => {
+            let args = commands::annotate::AnnotateArgs {
+                symbol: symbol.as_deref(),
+                thesis: thesis.as_deref(),
+                invalidation: invalidation.as_deref(),
+                review_date: review_date.as_deref(),
+                target: target.as_deref(),
+                show,
+                list,
+                remove,
+                json,
+            };
+            commands::annotate::run(&conn, args)
+        }
         Some(Command::MigrateJournal {
             path,
             dry_run,

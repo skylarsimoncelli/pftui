@@ -482,6 +482,44 @@ pub enum Command {
         json: bool,
     },
 
+    /// Add, view, or remove position thesis annotations
+    Annotate {
+        /// Asset symbol (required unless using --list)
+        symbol: Option<String>,
+
+        /// Thesis text
+        #[arg(long)]
+        thesis: Option<String>,
+
+        /// Invalidation criteria
+        #[arg(long)]
+        invalidation: Option<String>,
+
+        /// Review date in YYYY-MM-DD
+        #[arg(long)]
+        review_date: Option<String>,
+
+        /// Target price/level
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Show annotation for symbol
+        #[arg(long)]
+        show: bool,
+
+        /// List all annotations
+        #[arg(long)]
+        list: bool,
+
+        /// Remove annotation for symbol
+        #[arg(long)]
+        remove: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     MigrateJournal {
         /// Path to source markdown journal file

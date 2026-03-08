@@ -1,4 +1,5 @@
 pub mod alerts;
+pub mod annotate;
 pub mod brief;
 pub mod add_tx;
 pub mod calendar;

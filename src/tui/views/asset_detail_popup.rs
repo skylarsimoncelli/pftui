@@ -613,6 +613,45 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         lines.push(Line::from(""));
     }
 
+    // ── Thesis Annotation ──
+    if let Some(ann) = load_annotation(symbol, app) {
+        lines.push(section_header("  Thesis", t.text_accent));
+        lines.push(sep_line(t.border_subtle, 80));
+
+        let thesis_text = if ann.thesis.trim().is_empty() {
+            "(empty)".to_string()
+        } else {
+            ann.thesis
+        };
+        lines.push(Line::from(vec![
+            Span::styled("  Thesis      ", Style::default().fg(t.text_secondary)),
+            Span::styled(thesis_text, Style::default().fg(t.text_primary)),
+        ]));
+
+        if let Some(invalidation) = ann.invalidation {
+            if !invalidation.trim().is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("  Invalidates ", Style::default().fg(t.text_secondary)),
+                    Span::styled(invalidation, Style::default().fg(t.text_primary)),
+                ]));
+            }
+        }
+        if let Some(review_date) = ann.review_date {
+            lines.push(Line::from(vec![
+                Span::styled("  Review Date ", Style::default().fg(t.text_secondary)),
+                Span::styled(review_date, Style::default().fg(t.text_primary)),
+            ]));
+        }
+        if let Some(target) = ann.target_price {
+            lines.push(Line::from(vec![
+                Span::styled("  Target      ", Style::default().fg(t.text_secondary)),
+                Span::styled(target, Style::default().fg(t.text_primary)),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+    }
+
     // ── BTC Intelligence (ETF flows, Exchange flows, Network metrics) ──
     if symbol == "BTC" || symbol == "BTC-USD" || symbol == "BTCUSD" {
         let mut btc_section_added = false;
@@ -1022,6 +1061,11 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     lines.push(Line::from(""));
 
     lines
+}
+
+fn load_annotation(symbol: &str, app: &App) -> Option<crate::db::annotations::Annotation> {
+    let conn = rusqlite::Connection::open(&app.db_path).ok()?;
+    crate::db::annotations::get_annotation(&conn, symbol).ok().flatten()
 }
 
 /// Build search terms for news filtering based on symbol and asset name.
