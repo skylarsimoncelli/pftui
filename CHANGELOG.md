@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 20:02 UTC — F32 Phase 12: backend-aware alert evaluation path
+
+- What: added backend-native alert-check execution path in `alerts::engine` (`check_alerts_backend`) using backend-dispatched `alerts` and `price_cache` reads/writes, and rewired CLI/refresh alert checks to use it; preserved existing SQLite-only `check_alerts` API for unchanged callsites.
+- Why: reduces hybrid behavior in runtime alert evaluation while keeping compatibility for remaining SQLite-signature paths.
+- Files: `src/alerts/engine.rs`, `src/commands/alerts.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: alert checks backend-native in CLI/refresh)
+
 ### 2026-03-08 19:54 UTC — F32 Phase 11: native backend dispatch for `price_history` + refresh daily-change lookup
 
 - What: implemented backend-dispatched `price_history` operations (upsert/history/date lookups and symbol-history scans) with native Postgres SQL; switched refresh daily-change computations to use backend-dispatched historical-price lookups.

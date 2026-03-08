@@ -6,7 +6,9 @@ use std::str::FromStr;
 
 use super::{AlertDirection, AlertKind, AlertRule, AlertStatus};
 use crate::db::alerts;
+use crate::db::backend::BackendConnection;
 use crate::db::price_cache;
+use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::scan_queries;
 
 /// Result of checking a single alert rule against current data.
@@ -34,8 +36,30 @@ pub fn check_alerts(conn: &Connection) -> Result<Vec<AlertCheckResult>> {
         return Ok(Vec::new());
     }
 
-    // Build a price map from the cache for quick lookups
     let cached_prices = price_cache::get_all_cached_prices(conn)?;
+    let price_map: HashMap<String, Decimal> = cached_prices
+        .into_iter()
+        .map(|q| (q.symbol.clone(), q.price))
+        .collect();
+
+    let mut results = Vec::new();
+    for alert in all_alerts {
+        let result = check_single_alert_sqlite(conn, &alert, &price_map)?;
+        results.push(result);
+    }
+    Ok(results)
+}
+
+pub fn check_alerts_backend(backend: &BackendConnection, conn: &Connection) -> Result<Vec<AlertCheckResult>> {
+    ensure_review_date_alerts(conn)?;
+    ensure_scan_query_change_alerts(conn)?;
+    let all_alerts = alerts::list_alerts_backend(backend)?;
+    if all_alerts.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build a price map from the cache for quick lookups
+    let cached_prices = get_all_cached_prices_backend(backend)?;
     let price_map: HashMap<String, Decimal> = cached_prices
         .into_iter()
         .map(|q| (q.symbol.clone(), q.price))
@@ -44,7 +68,7 @@ pub fn check_alerts(conn: &Connection) -> Result<Vec<AlertCheckResult>> {
     let mut results = Vec::new();
 
     for alert in all_alerts {
-        let result = check_single_alert(conn, &alert, &price_map)?;
+        let result = check_single_alert_backend(backend, &alert, &price_map)?;
         results.push(result);
     }
 
@@ -52,8 +76,68 @@ pub fn check_alerts(conn: &Connection) -> Result<Vec<AlertCheckResult>> {
 }
 
 /// Check a single alert against the price map. Updates DB if newly triggered.
-fn check_single_alert(
+fn check_single_alert_sqlite(
     conn: &Connection,
+    alert: &AlertRule,
+    price_map: &HashMap<String, Decimal>,
+) -> Result<AlertCheckResult> {
+    let (current_value, is_triggered, distance_pct) = match alert.kind {
+        AlertKind::Price => {
+            let threshold = Decimal::from_str(&alert.threshold).unwrap_or(Decimal::ZERO);
+            let current = price_map.get(&alert.symbol).copied();
+            let triggered = if let Some(current) = current {
+                match alert.direction {
+                    AlertDirection::Above => current >= threshold,
+                    AlertDirection::Below => current <= threshold,
+                }
+            } else {
+                false
+            };
+            let distance = current.and_then(|current| {
+                if threshold.is_zero() {
+                    return None;
+                }
+                let pct = match alert.direction {
+                    AlertDirection::Above => {
+                        (threshold - current) / threshold * Decimal::from(100)
+                    }
+                    AlertDirection::Below => {
+                        (current - threshold) / threshold * Decimal::from(100)
+                    }
+                };
+                Some(pct)
+            });
+            (current, triggered, distance)
+        }
+        AlertKind::Allocation => (None, false, None),
+        AlertKind::Indicator => {
+            if alert.symbol.starts_with("REVIEW:") {
+                let review_date = chrono::NaiveDate::parse_from_str(&alert.threshold, "%Y-%m-%d").ok();
+                let today = chrono::Utc::now().date_naive();
+                let triggered = review_date.map(|d| today >= d).unwrap_or(false);
+                (None, triggered, None)
+            } else {
+                (None, false, None)
+            }
+        }
+    };
+
+    let newly_triggered = is_triggered && alert.status == AlertStatus::Armed;
+    if newly_triggered {
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        alerts::update_alert_status(conn, alert.id, AlertStatus::Triggered, Some(&now))?;
+    }
+
+    Ok(AlertCheckResult {
+        rule: alert.clone(),
+        current_value,
+        newly_triggered,
+        distance_pct,
+    })
+}
+
+fn check_single_alert_backend(
+    backend: &BackendConnection,
     alert: &AlertRule,
     price_map: &HashMap<String, Decimal>,
 ) -> Result<AlertCheckResult> {
@@ -105,7 +189,12 @@ fn check_single_alert(
     // Update DB status if newly triggered
     if newly_triggered {
         let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-        alerts::update_alert_status(conn, alert.id, AlertStatus::Triggered, Some(&now))?;
+        alerts::update_alert_status_backend(
+            backend,
+            alert.id,
+            AlertStatus::Triggered,
+            Some(&now),
+        )?;
     }
 
     Ok(AlertCheckResult {
@@ -232,7 +321,9 @@ pub fn triggered_count(conn: &Connection) -> Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::backend::BackendConnection;
     use crate::db::open_in_memory;
+    use crate::db::price_cache;
     use crate::models::price::PriceQuote;
 
     fn setup_test_db() -> Connection {
@@ -273,18 +364,20 @@ mod tests {
 
     #[test]
     fn test_check_empty_alerts() {
-        let conn = setup_test_db();
-        let results = check_alerts(&conn).unwrap();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         assert!(results.is_empty());
     }
 
     #[test]
     fn test_check_price_alert_triggered() {
-        let conn = setup_test_db();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
         // GC=F is at 5600, alert for above 5500 should trigger
-        alerts::add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
+        alerts::add_alert(conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
             .unwrap();
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].newly_triggered);
         assert_eq!(results[0].current_value, Some(Decimal::from(5600)));
@@ -292,21 +385,23 @@ mod tests {
 
     #[test]
     fn test_check_price_alert_not_triggered() {
-        let conn = setup_test_db();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
         // GC=F is at 5600, alert for above 6000 should NOT trigger
-        alerts::add_alert(&conn, "price", "GC=F", "above", "6000", "GC=F above 6000")
+        alerts::add_alert(conn, "price", "GC=F", "above", "6000", "GC=F above 6000")
             .unwrap();
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         assert_eq!(results.len(), 1);
         assert!(!results[0].newly_triggered);
     }
 
     #[test]
     fn test_check_below_alert_triggered() {
-        let conn = setup_test_db();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
         // BTC is at 68000, alert for below 70000 should trigger
         alerts::add_alert(
-            &conn,
+            conn,
             "price",
             "BTC",
             "below",
@@ -314,32 +409,34 @@ mod tests {
             "BTC below 70000",
         )
         .unwrap();
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].newly_triggered);
     }
 
     #[test]
     fn test_already_triggered_not_newly() {
-        let conn = setup_test_db();
-        let id = alerts::add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
+        let id = alerts::add_alert(conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
             .unwrap();
         // Manually mark as triggered
-        alerts::update_alert_status(&conn, id, AlertStatus::Triggered, Some("2026-03-04"))
+        alerts::update_alert_status(conn, id, AlertStatus::Triggered, Some("2026-03-04"))
             .unwrap();
 
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         assert_eq!(results.len(), 1);
         assert!(!results[0].newly_triggered);
     }
 
     #[test]
     fn test_distance_calculation() {
-        let conn = setup_test_db();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
         // GC=F at 5600, threshold 6000 above → distance = (6000-5600)/6000 * 100 ≈ 6.67%
-        alerts::add_alert(&conn, "price", "GC=F", "above", "6000", "GC=F above 6000")
+        alerts::add_alert(conn, "price", "GC=F", "above", "6000", "GC=F above 6000")
             .unwrap();
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         let dist = results[0].distance_pct.unwrap();
         // (6000 - 5600) / 6000 * 100 = 6.666...
         assert!(dist > Decimal::from(6) && dist < Decimal::from(7));
@@ -347,9 +444,10 @@ mod tests {
 
     #[test]
     fn test_unknown_symbol_no_crash() {
-        let conn = setup_test_db();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
         alerts::add_alert(
-            &conn,
+            conn,
             "price",
             "UNKNOWN",
             "above",
@@ -357,7 +455,7 @@ mod tests {
             "UNKNOWN above 100",
         )
         .unwrap();
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         assert_eq!(results.len(), 1);
         assert!(!results[0].newly_triggered);
         assert!(results[0].current_value.is_none());
@@ -365,14 +463,15 @@ mod tests {
 
     #[test]
     fn test_get_newly_triggered_filter() {
-        let conn = setup_test_db();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
         // One that will trigger, one that won't
-        alerts::add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
+        alerts::add_alert(conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
             .unwrap();
-        alerts::add_alert(&conn, "price", "GC=F", "above", "6000", "GC=F above 6000")
+        alerts::add_alert(conn, "price", "GC=F", "above", "6000", "GC=F above 6000")
             .unwrap();
 
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         let newly = get_newly_triggered(&results);
         assert_eq!(newly.len(), 1);
         assert_eq!(newly[0].rule.threshold, "5500");
@@ -380,19 +479,21 @@ mod tests {
 
     #[test]
     fn test_triggered_count() {
-        let conn = setup_test_db();
-        assert_eq!(triggered_count(&conn).unwrap(), 0);
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
+        assert_eq!(triggered_count(conn).unwrap(), 0);
 
-        alerts::add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
+        alerts::add_alert(conn, "price", "GC=F", "above", "5500", "GC=F above 5500")
             .unwrap();
-        check_alerts(&conn).unwrap(); // triggers it
+        check_alerts_backend(&backend, conn).unwrap(); // triggers it
 
-        assert_eq!(triggered_count(&conn).unwrap(), 1);
+        assert_eq!(triggered_count(conn).unwrap(), 1);
     }
 
     #[test]
     fn test_review_date_alert_auto_created_and_triggered() {
-        let conn = setup_test_db();
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
         let ann = crate::db::annotations::Annotation {
             symbol: "GC=F".to_string(),
             thesis: "Test".to_string(),
@@ -401,9 +502,9 @@ mod tests {
             target_price: None,
             updated_at: String::new(),
         };
-        crate::db::annotations::upsert_annotation(&conn, &ann).unwrap();
+        crate::db::annotations::upsert_annotation(conn, &ann).unwrap();
 
-        let results = check_alerts(&conn).unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
         assert!(results.iter().any(|r| r.rule.symbol == "REVIEW:GC=F"));
         assert!(results
             .iter()
@@ -412,20 +513,21 @@ mod tests {
 
     #[test]
     fn test_scan_query_change_creates_triggered_alert() {
-        let conn = setup_test_db();
-        crate::db::scan_queries::upsert_scan_query(&conn, "equities", "category == equity")
+        let backend = BackendConnection::Sqlite { conn: setup_test_db() };
+        let conn = backend.sqlite();
+        crate::db::scan_queries::upsert_scan_query(conn, "equities", "category == equity")
             .unwrap();
 
         // First check seeds baseline state and should not emit change alert.
-        let _ = check_alerts(&conn).unwrap();
-        assert!(alerts::list_alerts(&conn)
+        let _ = check_alerts_backend(&backend, conn).unwrap();
+        assert!(alerts::list_alerts(conn)
             .unwrap()
             .iter()
             .all(|a| !a.symbol.starts_with("SCAN:")));
 
         // Add one matching position and check again -> should emit triggered scan alert.
         crate::db::transactions::insert_transaction(
-            &conn,
+            conn,
             &crate::models::transaction::NewTransaction {
                 symbol: "AAPL".to_string(),
                 category: crate::models::asset::AssetCategory::Equity,
@@ -438,8 +540,8 @@ mod tests {
             },
         )
         .unwrap();
-        let _ = check_alerts(&conn).unwrap();
-        let all = alerts::list_alerts(&conn).unwrap();
+        let _ = check_alerts_backend(&backend, conn).unwrap();
+        let all = alerts::list_alerts(conn).unwrap();
         let scan_alerts: Vec<_> = all
             .iter()
             .filter(|a| a.symbol.starts_with("SCAN:"))

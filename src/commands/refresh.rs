@@ -840,7 +840,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     }
 
     // Check for newly triggered alerts
-    match engine::check_alerts(conn) {
+    match engine::check_alerts_backend(backend, conn) {
         Ok(results) => {
             let newly_triggered = engine::get_newly_triggered(&results);
             if !newly_triggered.is_empty() {
