@@ -249,8 +249,22 @@ fn main() -> Result<()> {
         Some(Command::Movers { threshold, json }) => {
             commands::movers::run(&conn, &config, Some(&threshold), json)
         }
-        Some(Command::Scan { filter, json }) => {
-            commands::scan::run(&conn, &config, &filter, json)
+        Some(Command::Scan {
+            filter,
+            save,
+            load,
+            list,
+            json,
+        }) => {
+            commands::scan::run(
+                &conn,
+                &config,
+                filter.as_deref(),
+                save.as_deref(),
+                load.as_deref(),
+                list,
+                json,
+            )
         }
 
         Some(Command::Predictions { category, search, limit, json }) => {

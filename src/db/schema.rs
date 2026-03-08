@@ -302,6 +302,13 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             FOREIGN KEY (group_name) REFERENCES groups(name) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_group_members_symbol ON group_members(symbol);
+
+        CREATE TABLE IF NOT EXISTS scan_queries (
+            name TEXT PRIMARY KEY,
+            filter_expr TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 

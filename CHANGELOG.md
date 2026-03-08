@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:16 UTC — Add saved scan queries in SQLite
+
+- What: added SQLite-backed saved scan queries via new `scan_queries` table and `db/scan_queries.rs` helpers. Extended `pftui scan` to support `--save <name>`, `--load <name>`, and `--list` (with table and JSON output) while preserving filter execution.
+- Why: TODO scanner workflow item. Reusable named scans are required for efficient repeated monitoring and unlock follow-on items (`:scan` builder and scan-change alerts).
+- Files: `src/db/schema.rs` (new `scan_queries` table), `src/db/scan_queries.rs` (new CRUD helpers + tests), `src/db/mod.rs` (module export), `src/cli.rs` (scan flags), `src/main.rs` (dispatch wiring), `src/commands/scan.rs` (save/load/list support), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1164 passed)
+- TODO: Saveable scan queries — SQLite storage. `:scan save my_scan`
+
 ### 2026-03-08 05:13 UTC — Add scanner command with filter DSL
 
 - What: added a new `pftui scan` CLI command with a lightweight filter DSL for position screening: numeric operators (`>`, `>=`, `<`, `<=`, `==`, `!=`), text operators (`==`, `!=`, `contains`/`~`), and multi-clause `and`/`&&`. Supports field aliases (`alloc`, `gain`, `price`, `value`, `qty`) and both table + `--json` outputs.

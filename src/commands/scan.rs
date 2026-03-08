@@ -7,6 +7,7 @@ use crate::config::{currency_symbol, Config, PortfolioMode};
 use crate::db::allocations::list_allocations;
 use crate::db::fx_cache::get_all_fx_rates;
 use crate::db::price_cache::get_all_cached_prices;
+use crate::db::scan_queries::{get_scan_query, list_scan_queries, upsert_scan_query};
 use crate::db::transactions::list_transactions;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
@@ -39,8 +40,41 @@ struct ScanRow {
     allocation_pct: Option<Decimal>,
 }
 
-pub fn run(conn: &Connection, config: &Config, filter: &str, json: bool) -> Result<()> {
-    let clauses = parse_filter(filter)?;
+pub fn run(
+    conn: &Connection,
+    config: &Config,
+    filter: Option<&str>,
+    save: Option<&str>,
+    load: Option<&str>,
+    list: bool,
+    json: bool,
+) -> Result<()> {
+    if list {
+        return print_saved_queries(conn, json);
+    }
+
+    let mut effective_filter: Option<String> = filter.map(|s| s.to_string());
+    if let Some(query_name) = load {
+        let Some(saved) = get_scan_query(conn, query_name)? else {
+            bail!("Saved scan query '{}' not found", query_name);
+        };
+        effective_filter = Some(saved.filter_expr);
+    }
+    let Some(filter_expr) = effective_filter else {
+        bail!(
+            "Missing filter. Use --filter, --load, or --list. Example: pftui scan --filter \"allocation_pct > 10\""
+        );
+    };
+
+    if let Some(name) = save {
+        upsert_scan_query(conn, name, &filter_expr)?;
+        if !json {
+            println!("Saved scan query '{}' as: {}", name, filter_expr);
+            println!();
+        }
+    }
+
+    let clauses = parse_filter(&filter_expr)?;
     validate_clauses(&clauses)?;
 
     let rows = load_rows(conn, config)?;
@@ -58,7 +92,7 @@ pub fn run(conn: &Connection, config: &Config, filter: &str, json: bool) -> Resu
 
     if json {
         let output = serde_json::json!({
-            "filter": filter,
+            "filter": filter_expr,
             "total_scanned": rows.len(),
             "match_count": matches.len(),
             "matches": matches.into_iter().map(to_json).collect::<Vec<_>>(),
@@ -67,7 +101,48 @@ pub fn run(conn: &Connection, config: &Config, filter: &str, json: bool) -> Resu
         return Ok(());
     }
 
-    print_table(matches, rows.len(), filter, &config.base_currency);
+    print_table(matches, rows.len(), &filter_expr, &config.base_currency);
+    Ok(())
+}
+
+fn print_saved_queries(conn: &Connection, json: bool) -> Result<()> {
+    let rows = list_scan_queries(conn)?;
+    if json {
+        let output = serde_json::json!({
+            "count": rows.len(),
+            "queries": rows.into_iter().map(|r| {
+                serde_json::json!({
+                    "name": r.name,
+                    "filter": r.filter_expr,
+                    "updated_at": r.updated_at,
+                })
+            }).collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!("No saved scan queries.");
+        return Ok(());
+    }
+
+    let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
+    println!("Saved scans ({}):", rows.len());
+    println!(
+        "  {:<name_w$}  {:<40}  Updated",
+        "Name",
+        "Filter",
+    );
+    println!("  {}", "─".repeat(name_w + 56));
+    for row in rows {
+        println!(
+            "  {:<name_w$}  {:<40}  {}",
+            row.name,
+            truncate_name(&row.filter_expr, 40),
+            row.updated_at
+        );
+    }
     Ok(())
 }
 

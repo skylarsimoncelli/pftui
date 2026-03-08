@@ -288,7 +288,19 @@ pub enum Command {
     Scan {
         /// Filter expression (e.g. "allocation_pct > 10 and gain_pct < 0")
         #[arg(long)]
-        filter: String,
+        filter: Option<String>,
+
+        /// Save filter as a named query (e.g. --save "risk")
+        #[arg(long)]
+        save: Option<String>,
+
+        /// Load and run a previously saved query (e.g. --load "risk")
+        #[arg(long)]
+        load: Option<String>,
+
+        /// List saved scan queries
+        #[arg(long)]
+        list: bool,
 
         /// Output as JSON for agent/script consumption
         #[arg(long)]
