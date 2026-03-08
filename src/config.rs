@@ -49,6 +49,38 @@ impl Default for WatchlistConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeybindingsConfig {
+    #[serde(default = "default_key_quit")]
+    pub quit: String,
+    #[serde(default = "default_key_help")]
+    pub help: String,
+    #[serde(default = "default_key_command_palette")]
+    pub command_palette: String,
+    #[serde(default = "default_key_refresh")]
+    pub refresh: String,
+    #[serde(default = "default_key_search")]
+    pub search: String,
+    #[serde(default = "default_key_theme_cycle")]
+    pub theme_cycle: String,
+    #[serde(default = "default_key_privacy_toggle")]
+    pub privacy_toggle: String,
+}
+
+impl Default for KeybindingsConfig {
+    fn default() -> Self {
+        Self {
+            quit: default_key_quit(),
+            help: default_key_help(),
+            command_palette: default_key_command_palette(),
+            refresh: default_key_refresh(),
+            search: default_key_search(),
+            theme_cycle: default_key_theme_cycle(),
+            privacy_toggle: default_key_privacy_toggle(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_base_currency")]
     pub base_currency: String,
@@ -98,6 +130,9 @@ pub struct Config {
     /// Watchlist table customization.
     #[serde(default)]
     pub watchlist: WatchlistConfig,
+    /// User-configurable global keybindings.
+    #[serde(default)]
+    pub keybindings: KeybindingsConfig,
 }
 
 fn default_brave_news_queries() -> Vec<String> {
@@ -157,6 +192,34 @@ fn default_news_poll_interval() -> u64 {
     600 // 10 minutes
 }
 
+fn default_key_quit() -> String {
+    "q".to_string()
+}
+
+fn default_key_help() -> String {
+    "?".to_string()
+}
+
+fn default_key_command_palette() -> String {
+    ":".to_string()
+}
+
+fn default_key_refresh() -> String {
+    "r".to_string()
+}
+
+fn default_key_search() -> String {
+    "/".to_string()
+}
+
+fn default_key_theme_cycle() -> String {
+    "t".to_string()
+}
+
+fn default_key_privacy_toggle() -> String {
+    "p".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomNewsFeed {
     pub name: String,
@@ -182,6 +245,7 @@ impl Default for Config {
             brave_news_queries: default_brave_news_queries(),
             chart_sma: default_chart_sma(),
             watchlist: WatchlistConfig::default(),
+            keybindings: KeybindingsConfig::default(),
         }
     }
 }
@@ -392,6 +456,7 @@ mod tests {
             brave_news_queries: default_brave_news_queries(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();
@@ -417,6 +482,8 @@ mod tests {
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
         assert_eq!(config.layout, WorkspaceLayout::Split);
+        assert_eq!(config.keybindings.quit, "q");
+        assert_eq!(config.keybindings.search, "/");
     }
 
     #[test]
@@ -430,6 +497,25 @@ mod tests {
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
         assert_eq!(config.layout, WorkspaceLayout::Split);
+        assert_eq!(config.keybindings.help, "?");
+    }
+
+    #[test]
+    fn keybindings_deserialize_custom_values() {
+        let toml_str = r#"
+[keybindings]
+quit = "x"
+help = "h"
+command_palette = ";"
+refresh = "R"
+search = "s"
+theme_cycle = "T"
+privacy_toggle = "P"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.keybindings.quit, "x");
+        assert_eq!(config.keybindings.command_palette, ";");
+        assert_eq!(config.keybindings.privacy_toggle, "P");
     }
 
     #[test]

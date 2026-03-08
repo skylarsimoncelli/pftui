@@ -79,3 +79,20 @@ Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and v
 | Click tab label | Switch to that view (Pos/Tx/Mkt/Econ/Watch) |
 | Click row | Select that position/item |
 | Click anywhere | Dismiss help overlay, search overlay, or detail popup |
+
+## Custom Keybindings
+
+Global keys can be customized in `~/.config/pftui/config.toml`:
+
+```toml
+[keybindings]
+quit = "q"
+help = "?"
+command_palette = ":"
+refresh = "r"
+search = "/"
+theme_cycle = "t"
+privacy_toggle = "p"
+```
+
+Supported formats are single keys (for example `q`, `/`, `;`) and `ctrl+<key>` (for example `ctrl+c`).

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:24 UTC — Add user-configurable global keybindings in `config.toml`
+
+- What: added a new `[keybindings]` config section to customize global keys (`quit`, `help`, `command_palette`, `refresh`, `search`, `theme_cycle`, `privacy_toggle`), wired the app to honor those bindings, and documented usage/examples in keybinding docs.
+- Why: TODO item for user-configurable keybindings to make global controls adaptable without code changes.
+- Files: `src/config.rs` (new `KeybindingsConfig`, defaults, deserialization tests), `src/app.rs` (config wiring + key matcher + key handling precedence), `docs/KEYBINDINGS.md` (custom keybinding section), `TODO.md`
+- Tests: `cargo test -q` (1171 passed)
+- TODO: Custom keybinding config
+
 ### 2026-03-08 06:15 UTC — Add `pftui sovereign` sovereign-holdings tracker command
 
 - What: added a new `pftui sovereign` command to track sovereign positioning across three hard-to-combine datasets: central-bank gold reserves (WGC Central Banks Dashboard API), government bitcoin holdings (BitcoinTreasuries governments page), and COMEX silver warehouse inventory (`SI=F`). Supports human-readable and `--json` output.

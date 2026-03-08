@@ -422,6 +422,7 @@ pub struct App {
     pub show_sector_grouping: bool,
     pub split_pane_open: bool,
     pub workspace_layout: WorkspaceLayout,
+    pub keybindings: config::KeybindingsConfig,
 
     // Data
     pub transactions: Vec<Transaction>,
@@ -728,6 +729,7 @@ impl App {
             show_sector_grouping: false,
             split_pane_open: false,
             workspace_layout: config.layout,
+            keybindings: config.keybindings.clone(),
             transactions: Vec::new(),
             allocations: Vec::new(),
             positions: Vec::new(),
@@ -911,6 +913,7 @@ impl App {
             brave_news_queries: Vec::new(),
             chart_sma: self.chart_sma_periods.clone(),
             watchlist: config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let service = PriceService::start(config);
         self.request_price_fetch(&service);
@@ -948,6 +951,7 @@ impl App {
             brave_news_queries: Vec::new(),
             chart_sma: self.chart_sma_periods.clone(),
             watchlist: config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -2193,6 +2197,55 @@ impl App {
         self.load_sentiment(); // reload from cache after background fetch
     }
 
+    fn key_matches(binding: &str, key: KeyEvent) -> bool {
+        let b = binding.trim();
+        if b.is_empty() {
+            return false;
+        }
+
+        if b.eq_ignore_ascii_case("esc") {
+            return key.code == KeyCode::Esc;
+        }
+        if b.eq_ignore_ascii_case("tab") {
+            return key.code == KeyCode::Tab;
+        }
+
+        if let Some(rest) = b
+            .strip_prefix("ctrl+")
+            .or_else(|| b.strip_prefix("Ctrl+"))
+        {
+            if !key.modifiers.contains(KeyModifiers::CONTROL) {
+                return false;
+            }
+            let mut chars = rest.chars();
+            let Some(expected) = chars.next() else {
+                return false;
+            };
+            if chars.next().is_some() {
+                return false;
+            }
+            return matches!(
+                key.code,
+                KeyCode::Char(c) if c.eq_ignore_ascii_case(&expected)
+            );
+        }
+
+        let mut chars = b.chars();
+        let Some(expected) = chars.next() else {
+            return false;
+        };
+        if chars.next().is_some() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char(c) => {
+                c == expected
+            }
+            _ => false,
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) {
         // Search chart popup (sits on top of search overlay)
         if self.search_chart_popup.is_some() {
@@ -2256,30 +2309,42 @@ impl App {
         // Record keystroke for status bar echo
         self.record_keystroke(&key);
 
+        // User-configurable global keybindings (config.toml [keybindings]).
+        if Self::key_matches(&self.keybindings.quit, key) {
+            self.should_quit = true;
+            return;
+        }
+        if Self::key_matches(&self.keybindings.help, key) {
+            self.show_help = !self.show_help;
+            if self.show_help {
+                self.help_scroll = 0;
+            }
+            return;
+        }
+        if Self::key_matches(&self.keybindings.command_palette, key) {
+            self.open_command_palette();
+            return;
+        }
+        if Self::key_matches(&self.keybindings.search, key) {
+            self.search_overlay_open = true;
+            self.search_overlay_query.clear();
+            self.search_overlay_selected = 0;
+            self.search_overlay_requested_symbols.clear();
+            self.search_chart_popup = None;
+            self.command_palette_open = false;
+            self.command_palette_input.clear();
+            self.command_palette_selected = 0;
+            return;
+        }
         // Global keys
         match key.code {
-            KeyCode::Char('q') => {
-                self.should_quit = true;
-                return;
-            }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
-                return;
-            }
-            KeyCode::Char('?') => {
-                self.show_help = !self.show_help;
-                if self.show_help {
-                    self.help_scroll = 0;
-                }
                 return;
             }
             KeyCode::Char('O') => {
                 self.onboarding_open = true;
                 self.onboarding_step = 0;
-                return;
-            }
-            KeyCode::Char(':') => {
-                self.open_command_palette();
                 return;
             }
             KeyCode::Esc if self.detail_popup_open => {
@@ -2471,13 +2536,6 @@ impl App {
                 if self.alerts_open {
                     self.alerts_scroll = 0;
                     self.load_alerts(); // refresh alerts when opening
-                }
-            }
-
-            // Privacy toggle
-            KeyCode::Char('p') => {
-                if self.portfolio_mode == PortfolioMode::Full {
-                    self.show_percentages_only = !self.show_percentages_only;
                 }
             }
 
@@ -2723,28 +2781,6 @@ impl App {
                 self.cycle_filter();
             }
 
-            // Global asset search overlay
-            KeyCode::Char('/') => {
-                self.search_overlay_open = true;
-                self.search_overlay_query.clear();
-                self.search_overlay_selected = 0;
-                self.search_overlay_requested_symbols.clear();
-                self.search_chart_popup = None;
-                self.command_palette_open = false;
-                self.command_palette_input.clear();
-                self.command_palette_selected = 0;
-            }
-
-            // Refresh
-            KeyCode::Char('r') => {
-                self.force_refresh();
-            }
-
-            // Theme cycle
-            KeyCode::Char('t') => {
-                self.cycle_theme();
-            }
-
             // Portfolio sparkline timeframe cycling
             KeyCode::Char(']') => {
                 self.sparkline_timeframe = self.sparkline_timeframe.next();
@@ -2775,6 +2811,19 @@ impl App {
             // Toggle volume sub-chart (Shift+V)
             KeyCode::Char('V') if matches!(self.view_mode, ViewMode::Positions) => {
                 self.volume_overlay = !self.volume_overlay;
+            }
+
+            // Lower-priority configurable globals: allow view-specific keys to win first.
+            _ if Self::key_matches(&self.keybindings.refresh, key) => {
+                self.force_refresh();
+            }
+            _ if Self::key_matches(&self.keybindings.theme_cycle, key) => {
+                self.cycle_theme();
+            }
+            _ if Self::key_matches(&self.keybindings.privacy_toggle, key) => {
+                if self.portfolio_mode == PortfolioMode::Full {
+                    self.show_percentages_only = !self.show_percentages_only;
+                }
             }
 
             _ => {}
@@ -4927,6 +4976,7 @@ mod vim_motion_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
 
@@ -5172,6 +5222,7 @@ mod search_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
 
@@ -5503,6 +5554,7 @@ mod timeframe_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
@@ -5525,6 +5577,7 @@ mod timeframe_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
         app.display_positions.push(Position {
@@ -5615,6 +5668,7 @@ mod crosshair_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from(":memory:"));
         app.view_mode = ViewMode::Positions;
@@ -5776,6 +5830,7 @@ mod responsive_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
     }
@@ -5839,6 +5894,7 @@ mod on_demand_history_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
     }
@@ -5910,6 +5966,7 @@ mod daily_change_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
     }
@@ -6050,6 +6107,7 @@ mod portfolio_value_history_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
     }
@@ -6914,6 +6972,7 @@ mod sort_flash_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
         for i in 0..3 {
@@ -7013,6 +7072,7 @@ mod prev_day_alloc_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
     }
@@ -7184,6 +7244,7 @@ mod mouse_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
         app.terminal_width = 120;
@@ -8049,6 +8110,7 @@ mod mouse_tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let mut app = App::new(&config, db_path);
         app.init_offline();

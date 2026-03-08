@@ -243,6 +243,7 @@ mod tests {
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");
