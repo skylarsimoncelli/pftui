@@ -13,9 +13,33 @@ use rusqlite::Connection;
 use crate::config::Config;
 use crate::data::fred;
 use crate::db::economic_cache;
-use crate::db::price_cache::get_all_cached_prices;
+use crate::db::price_cache::{get_all_cached_prices, upsert_price};
 use crate::db::price_history::get_history;
 use crate::indicators::{compute_macd, compute_rsi, compute_sma};
+use crate::price::yahoo;
+
+const MARKET_INDICATORS: &[(&str, &str, &str)] = &[
+    ("dxy", "DX-Y.NYB", "index"),
+    ("vix", "^VIX", "index"),
+    ("yield_2y", "^IRX", "%"),
+    ("yield_5y", "^FVX", "%"),
+    ("yield_10y", "^TNX", "%"),
+    ("yield_30y", "^TYX", "%"),
+    ("gold", "GC=F", "USD"),
+    ("silver", "SI=F", "USD"),
+    ("oil_wti", "CL=F", "USD"),
+    ("oil_brent", "BZ=F", "USD"),
+    ("copper", "HG=F", "USD"),
+    ("nat_gas", "NG=F", "USD"),
+    ("wheat", "ZW=F", "USD"),
+    ("corn", "ZC=F", "USD"),
+    ("soybeans", "ZS=F", "USD"),
+    ("coffee", "KC=F", "USD"),
+    ("eur_usd", "EURUSD=X", "fx"),
+    ("gbp_usd", "GBPUSD=X", "fx"),
+    ("usd_jpy", "JPY=X", "fx"),
+    ("usd_cny", "CNY=X", "fx"),
+];
 
 /// Technical indicators for a macro instrument.
 #[derive(Debug, Clone)]
@@ -69,14 +93,47 @@ fn compute_technicals(conn: &Connection, symbol: &str) -> Technicals {
     }
 }
 
+fn missing_market_symbols(price_map: &HashMap<String, Decimal>) -> Vec<&'static str> {
+    MARKET_INDICATORS
+        .iter()
+        .map(|(_, symbol, _)| *symbol)
+        .filter(|symbol| !price_map.contains_key(*symbol))
+        .collect()
+}
+
+fn backfill_market_prices(
+    conn: &Connection,
+    price_map: &mut HashMap<String, Decimal>,
+    symbols: &[&str],
+) -> Result<()> {
+    if symbols.is_empty() {
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Runtime::new()?;
+    for symbol in symbols {
+        if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
+            upsert_price(conn, &quote)?;
+            price_map.insert(symbol.to_string(), quote.price);
+        }
+    }
+
+    Ok(())
+}
+
 /// Run the macro dashboard command.
 pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
     // Build price map from cached data (yahoo symbol -> price)
     let all_prices = get_all_cached_prices(conn)?;
-    let price_map: HashMap<String, Decimal> = all_prices
+    let mut price_map: HashMap<String, Decimal> = all_prices
         .iter()
         .map(|p| (p.symbol.clone(), p.price))
         .collect();
+
+    // Ensure macro dashboard can display the full market basket even when
+    // some symbols were not previously fetched during refresh.
+    let missing = missing_market_symbols(&price_map);
+    backfill_market_prices(conn, &mut price_map, &missing)?;
 
     // Build FRED data map (series_id -> latest observation)
     let fred_data: HashMap<String, (Decimal, String)> = economic_cache::get_all_latest(conn)?
@@ -104,27 +161,7 @@ fn print_json(
 
     let mut macro_obj = Map::new();
 
-    // Market-sourced indicators
-    let market_indicators: &[(&str, &str, &str)] = &[
-        ("dxy", "DX-Y.NYB", "index"),
-        ("vix", "^VIX", "index"),
-        ("yield_2y", "^IRX", "%"),
-        ("yield_5y", "^FVX", "%"),
-        ("yield_10y", "^TNX", "%"),
-        ("yield_30y", "^TYX", "%"),
-        ("gold", "GC=F", "USD"),
-        ("silver", "SI=F", "USD"),
-        ("oil_wti", "CL=F", "USD"),
-        ("oil_brent", "BZ=F", "USD"),
-        ("copper", "HG=F", "USD"),
-        ("nat_gas", "NG=F", "USD"),
-        ("eur_usd", "EURUSD=X", "fx"),
-        ("gbp_usd", "GBPUSD=X", "fx"),
-        ("usd_jpy", "JPY=X", "fx"),
-        ("usd_cny", "CNY=X", "fx"),
-    ];
-
-    for (key, symbol, unit) in market_indicators {
+    for (key, symbol, unit) in MARKET_INDICATORS {
         if let Some(price) = prices.get(*symbol) {
             let mut entry = Map::new();
             entry.insert("value".into(), json!(price.to_string().parse::<f64>().unwrap_or(0.0)));
@@ -334,6 +371,10 @@ fn print_terminal(
         ("Oil (Brent)", "BZ=F", "$"),
         ("Copper", "HG=F", "$"),
         ("Natural Gas", "NG=F", "$"),
+        ("Wheat", "ZW=F", "$"),
+        ("Corn", "ZC=F", "$"),
+        ("Soybeans", "ZS=F", "$"),
+        ("Coffee", "KC=F", "$"),
     ];
     for (name, symbol, unit) in commodities {
         print_indicator_row(name, symbol, unit, prices, conn);
@@ -781,5 +822,17 @@ mod tests {
         // Missing VIX, 10Y, Gold, Oil — should print what's available
         let fred = HashMap::new();
         print_key_strip(&prices, &fred);
+    }
+
+    #[test]
+    fn market_indicators_include_agricultural_futures() {
+        let symbols: Vec<&str> = MARKET_INDICATORS
+            .iter()
+            .map(|(_, symbol, _)| *symbol)
+            .collect();
+        assert!(symbols.contains(&"ZW=F"));
+        assert!(symbols.contains(&"ZC=F"));
+        assert!(symbols.contains(&"ZS=F"));
+        assert!(symbols.contains(&"KC=F"));
     }
 }

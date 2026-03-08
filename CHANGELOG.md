@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:27 UTC — Add agricultural commodity tracking to `pftui macro`
+
+- What: added wheat (`ZW=F`), corn (`ZC=F`), soybeans (`ZS=F`), and coffee (`KC=F`) to macro market indicators and commodity table output. Also added on-demand backfill for missing macro symbols via Yahoo with cache upsert so these indicators populate even when not already present in `price_cache`.
+- Why: Feedback TODO item. These ag commodities are useful inflation leading indicators and were requested for macro monitoring workflows.
+- Files: `src/commands/macro_cmd.rs` (new market indicator constants, missing-symbol backfill, commodities rows, agricultural symbol test), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1132 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: [Feedback] Agricultural commodity tracking (P2)
+
 ### 2026-03-08 05:27 UTC — Improve `pftui config` discoverability in help and Quick Start
 
 - What: added a new `Configuration` section to the in-app help popup (`?`) with `pftui config list` and `pftui config set brave_api_key <key>`, and added the Brave key command to README Quick Start.
