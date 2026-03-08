@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 18:33 UTC — Add distribution manifest automation for Snap/AUR/Scoop rollout
+
+- What: added distribution-prep scripts to generate/update external package metadata from GitHub release checksums: `scripts/prepare_distribution_manifests.sh`, `scripts/render_aur_pkgbuild.sh`, and `scripts/update_scoop_manifest.sh`. Added `docs/DISTRIBUTION.md` runbook and linked it from `docs/RELEASING.md` + `README.md`.
+- Why: moves the remaining distribution TODO forward by making Snap/AUR/Scoop packaging reproducible in-repo; final publish remains externally blocked on maintainer accounts and credentials.
+- Files: `scripts/prepare_distribution_manifests.sh`, `scripts/render_aur_pkgbuild.sh`, `scripts/update_scoop_manifest.sh`, `docs/DISTRIBUTION.md`, `docs/RELEASING.md`, `README.md`, `scoop/pftui.json`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1181 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: Snap/AUR/Scoop publishing (external-blocked rollout prep)
+
 ### 2026-03-08 17:50 UTC — Ship PostgreSQL backend support via runtime SQLite bridge
 
 - What: implemented functional PostgreSQL backend support in `db/backend.rs` by introducing a managed backend that hydrates a local SQLite working DB from PostgreSQL on startup and flushes it back to PostgreSQL (`pftui_sqlite_state` table) on shutdown. Updated `main.rs` to keep backend lifecycle alive and always flush after command/TUI/web execution.

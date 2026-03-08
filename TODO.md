@@ -1164,5 +1164,5 @@ Use `pftui structural dashboard` for the combined view.
 ### Top 3 Priorities (Feedback-Driven)
 
 1. ✅ **Brave Search API integration** — COMPLETE (Mar 7, 2026). Config, client, news, economic data, research command all shipped.
-2. **Config discoverability** — Config command exists but isn't surfaced in help or README.
-3. **PostgreSQL backend support** — The only remaining P1 item.
+2. ✅ **Config discoverability** — COMPLETE. Config command is documented in README + AGENTS.
+3. ✅ **PostgreSQL backend support** — COMPLETE (Mar 8, 2026).

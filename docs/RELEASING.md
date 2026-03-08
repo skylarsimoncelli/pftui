@@ -32,8 +32,15 @@ Releases are driven by **git tags**. The feedback reviewer cron decides when to 
 3. **GitHub Release** — Create release with binaries + SHA256 checksums
 4. **crates.io** — `cargo publish`
 5. **Homebrew** — Update formula in `skylarsimoncelli/homebrew-tap`
+6. **Distribution manifests** — Prepare AUR + Scoop metadata from release checksums
+
+```bash
+scripts/prepare_distribution_manifests.sh X.Y.Z ./release
+```
 
 ## Secrets Required (GitHub repo settings)
 
 - `CARGO_REGISTRY_TOKEN` — crates.io API token
 - `HOMEBREW_TAP_TOKEN` — PAT with repo access to `homebrew-tap` repo
+
+For Snap/AUR/Scoop/Homebrew Core rollout details, see [`docs/DISTRIBUTION.md`](DISTRIBUTION.md).

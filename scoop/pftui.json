@@ -5,7 +5,7 @@
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/skylarsimoncelli/pftui/releases/download/v0.1.0/pftui-x86_64-linux",
+            "url": "https://github.com/skylarsimoncelli/pftui/releases/download/v0.1.0/pftui-x86_64-windows.exe",
             "hash": ""
         }
     },
@@ -14,7 +14,7 @@
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/skylarsimoncelli/pftui/releases/download/v$version/pftui-x86_64-linux"
+                "url": "https://github.com/skylarsimoncelli/pftui/releases/download/v$version/pftui-x86_64-windows.exe"
             }
         }
     }
