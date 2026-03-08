@@ -131,12 +131,8 @@ fn main() -> Result<()> {
                     Some(c) => c.parse().unwrap_or_else(|_| infer_category(upper)),
                     None => infer_category(upper),
                 };
-                db::watchlist::add_to_watchlist(&conn, upper, cat)?;
-                let name = crate::models::asset_names::resolve_name(upper);
-                let display = if name.is_empty() { upper.clone() } else { name };
-                println!("Added {} ({}) to watchlist as {}", upper, display, cat);
 
-                // Validate symbol by attempting price fetch
+                // Validate symbol by attempting price fetch before persisting it.
                 let yahoo_sym = match cat {
                     crate::models::asset::AssetCategory::Crypto => {
                         if upper.ends_with("-USD") {
@@ -150,10 +146,17 @@ fn main() -> Result<()> {
                 
                 match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
                     Ok(_) => {
-                        // Price fetch succeeded, symbol is valid
+                        db::watchlist::add_to_watchlist(&conn, upper, cat)?;
+                        let name = crate::models::asset_names::resolve_name(upper);
+                        let display = if name.is_empty() { upper.clone() } else { name };
+                        println!("Added {} ({}) to watchlist as {}", upper, display, cat);
                     }
-                    Err(_) => {
-                        eprintln!("Warning: could not fetch price for {} — symbol may be invalid", upper);
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: skipping {} — price lookup failed ({}). Symbol may be invalid.",
+                            upper, e
+                        );
+                        continue;
                     }
                 }
 
