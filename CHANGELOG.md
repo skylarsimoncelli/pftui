@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 16:31 UTC — Allow `pftui config` without DB startup
+
+- What: adjusted startup flow so `pftui config ...` executes before database initialization. This prevents config commands from being blocked when `database_backend=postgres` is set during Phase 1 while storage migration is still pending.
+- Why: keeps a safe recovery path to change backend settings even when non-SQLite backend startup is intentionally gated.
+- Files: `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1180 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: PostgreSQL backend support (Phase 1 hardening)
+
 ### 2026-03-08 16:24 UTC — Add backend migration guide and rollout docs updates
 
 - What: added `docs/MIGRATING.md` with SQLite/PostgreSQL migration workflow (`export -> setup -> import`) and current backend support status. Updated `README.md`, `AGENTS.md`, and website copy to reflect backend plumbing progress and link migration guidance.

@@ -26,6 +26,17 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
+
+    if let Some(Command::Config {
+        action,
+        field,
+        value,
+        json,
+    }) = &cli.command
+    {
+        return commands::config_cmd::run(action, field.as_deref(), value.as_deref(), *json);
+    }
+
     let conn = open_from_config(&config, &db_path)?.require_sqlite()?;
 
     match cli.command {
@@ -194,9 +205,7 @@ fn main() -> Result<()> {
 
         Some(Command::Refresh { notify }) => commands::refresh::run(&conn, &config, notify),
         Some(Command::Status { json, .. }) => commands::status::run(&conn, json),
-        Some(Command::Config { action, field, value, json }) => {
-            commands::config_cmd::run(&action, field.as_deref(), value.as_deref(), json)
-        }
+        Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => commands::value::run(&conn, &config, json),
         Some(Command::Brief { json }) => commands::brief::run(&conn, &config, true, json),
         Some(Command::Watchlist { approaching, json }) => commands::watchlist_cli::run(&conn, &config, approaching.as_deref(), json),
