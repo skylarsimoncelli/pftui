@@ -66,14 +66,14 @@ pub fn run(db_path: &std::path::Path, json: bool) -> Result<()> {
     drift_data.sort_by(|a, b| b.drift.abs().cmp(&a.drift.abs()));
 
     if json {
-        // Format decimals to 4 decimal places for JSON output
+        // Format percentages to 2 decimal places for JSON output.
         let formatted_data: Vec<DriftRowJson> = drift_data.iter().map(|row| {
             DriftRowJson {
                 symbol: row.symbol.clone(),
-                target_pct: format!("{:.4}", row.target_pct),
-                actual_pct: format!("{:.4}", row.actual_pct),
-                drift: format!("{:.4}", row.drift),
-                drift_band: format!("{:.4}", row.drift_band),
+                target_pct: round_decimal_2(row.target_pct),
+                actual_pct: round_decimal_2(row.actual_pct),
+                drift: round_decimal_2(row.drift),
+                drift_band: round_decimal_2(row.drift_band),
                 over_band: row.over_band,
             }
         }).collect();
@@ -127,9 +127,14 @@ struct DriftRow {
 #[derive(serde::Serialize)]
 struct DriftRowJson {
     symbol: String,
-    target_pct: String,
-    actual_pct: String,
-    drift: String,
-    drift_band: String,
+    target_pct: f64,
+    actual_pct: f64,
+    drift: f64,
+    drift_band: f64,
     over_band: bool,
+}
+
+fn round_decimal_2(value: Decimal) -> f64 {
+    let rounded = value.round_dp(2);
+    rounded.to_string().parse::<f64>().unwrap_or(0.0)
 }

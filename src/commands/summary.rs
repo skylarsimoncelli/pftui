@@ -1021,6 +1021,11 @@ fn format_decimal_4(d: Decimal) -> String {
     format!("{:.4}", d)
 }
 
+/// Format percentage-style Decimals to 2 decimal places for JSON output.
+fn format_percent_2(d: Decimal) -> String {
+    format!("{:.2}", d)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_full_json(
     conn: &Connection,
@@ -1053,8 +1058,8 @@ fn run_full_json(
             "current_price": p.current_price.map(format_decimal_4),
             "current_value": p.current_value.map(format_decimal_4),
             "gain": p.gain.map(format_decimal_4),
-            "gain_pct": p.gain_pct.map(format_decimal_4),
-            "allocation_pct": p.allocation_pct.map(format_decimal_4),
+            "gain_pct": p.gain_pct.map(format_percent_2),
+            "allocation_pct": p.allocation_pct.map(format_percent_2),
             "currency": &p.currency,
             "native_currency": p.native_currency.as_ref(),
             "fx_rate": p.fx_rate.map(format_decimal_4),
@@ -1086,7 +1091,7 @@ fn run_percentage_json(
         serde_json::json!({
             "symbol": p.symbol,
             "category": format_category(&p.category),
-            "allocation_pct": p.allocation_pct.map(format_decimal_4),
+            "allocation_pct": p.allocation_pct.map(format_percent_2),
             "current_price": p.current_price.map(format_decimal_4),
             "currency": &p.currency,
             "native_currency": p.native_currency.as_ref(),
