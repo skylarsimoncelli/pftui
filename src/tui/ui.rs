@@ -70,6 +70,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         ViewMode::Watchlist => render_watchlist_layout(frame, chunks[1], app),
         ViewMode::Analytics => views::analytics::render(frame, chunks[1], app),
         ViewMode::News => views::news::render(frame, chunks[1], app),
+        ViewMode::ChartGrid => views::chart_grid::render(frame, chunks[1], app),
         ViewMode::Journal => views::journal::render(frame, chunks[1], app),
     }
 

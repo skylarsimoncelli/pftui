@@ -90,7 +90,6 @@
 - [ ] **Homebrew Core** — Needs 50+ GitHub stars (currently 1)
 
 ### Other
-- [ ] **Chart grid view** — Mini braille charts for all positions (6-9 per screen). New view `8`. Files: new `views/chart_grid.rs`
 - [ ] **Onboarding tour** — First-run walkthrough for new users. Files: new `views/onboarding.rs`
 
 ---

@@ -1,6 +1,7 @@
 pub mod alerts_popup;
 pub mod analytics;
 pub mod asset_detail_popup;
+pub mod chart_grid;
 pub mod command_palette;
 pub mod context_menu;
 pub mod correlation_grid;

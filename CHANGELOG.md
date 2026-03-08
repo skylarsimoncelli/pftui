@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:40 UTC — Add Chart Grid view for mini multi-asset trend cards
+
+- What: added a new TUI `Chart Grid` view with up to 9 mini chart cards (symbol, price, braille-style trend line, and 1D change). Wired it into navigation (`8`), command palette (`view chartgrid`), header tabs (`[8]Grid`, journal moved to `[9]`), UI rendering, status hints, and help/docs.
+- Why: TODO item for at-a-glance multi-position chart monitoring in one screen.
+- Files: `src/tui/views/chart_grid.rs` (new), `src/tui/views/mod.rs`, `src/tui/ui.rs`, `src/app.rs` (new view mode + navigation/breadcrumb/mouse/scroll handling), `src/tui/views/command_palette.rs`, `src/tui/widgets/header.rs`, `src/tui/widgets/status_bar.rs`, `src/tui/views/help.rs`, `docs/KEYBINDINGS.md`, `TODO.md`
+- Tests: `cargo test -q` (1166 passed)
+- TODO: Chart grid view — Mini braille charts for all positions (6-9 per screen). New view `8`.
+
 ### 2026-03-08 05:31 UTC — Add scan-triggered alerts on saved query count changes
 
 - What: extended alert checks to track each saved scan query’s match count and emit a triggered indicator alert when a count changes between checks. Added persistent `scan_alert_state` storage and reused scan filter evaluation via a new `count_matches` helper.

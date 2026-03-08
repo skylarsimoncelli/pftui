@@ -75,7 +75,8 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("W + 1/2/3", "Switch watchlist group", kc, tc));
     lines.push(key_line("6", "Analytics", kc, tc));
     lines.push(key_line("7", "News feed", kc, tc));
-    lines.push(key_line("8", "Journal", kc, tc));
+    lines.push(key_line("8", "Chart grid", kc, tc));
+    lines.push(key_line("9", "Journal", kc, tc));
     lines.push(key_line("Tab / ← / →", "Toggle home sub-tab (P/W)", kc, tc));
     lines.push(key_line("Enter", "Position detail / chart", kc, tc));
     lines.push(key_line("Esc", "Close chart / help", kc, tc));

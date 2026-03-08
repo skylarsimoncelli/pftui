@@ -60,6 +60,11 @@ fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("/", "Search"),
             (":", "Cmd"),
         ],
+        ViewMode::ChartGrid => vec![
+            ("r", "Refresh"),
+            ("h/l", "Timeframe"),
+            (":", "Cmd"),
+        ],
         ViewMode::Journal => vec![
             ("/", "Search"),
             ("j/k", "Navigate"),

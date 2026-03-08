@@ -487,6 +487,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     spans.push(Span::styled("[7]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "N" } else { "News" }, news_style));
 
+    // Chart grid tab — always visible
+    let grid_style = if matches!(app.view_mode, ViewMode::ChartGrid) {
+        Style::default().fg(t.text_primary).bold().underlined()
+    } else {
+        Style::default().fg(t.text_muted)
+    };
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled("[8]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled(if compact { "G" } else { "Grid" }, grid_style));
+
     // Journal tab — always visible
     let journal_style = if matches!(app.view_mode, ViewMode::Journal) {
         Style::default().fg(t.text_primary).bold().underlined()
@@ -494,7 +504,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Style::default().fg(t.text_muted)
     };
     spans.push(Span::raw(" "));
-    spans.push(Span::styled("[8]", Style::default().fg(t.key_hint)));
+    spans.push(Span::styled("[9]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "J" } else { "Journal" }, journal_style));
 
     if !compact {

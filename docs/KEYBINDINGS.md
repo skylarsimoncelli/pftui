@@ -28,6 +28,8 @@ Full keybinding reference for pftui. Press `?` in the TUI for an interactive ver
 | `4` | Economy — treasury yields, currencies, macro indicators |
 | `5` | Watchlist — tracked assets you don't hold |
 | `W` then `1/2/3` | Switch watchlist group |
+| `8` | Chart Grid — mini charts for held positions |
+| `9` | Journal |
 
 ## Charts
 

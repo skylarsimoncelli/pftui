@@ -40,6 +40,7 @@ pub enum ViewMode {
     Watchlist,
     Analytics,
     News,
+    ChartGrid,
     Journal,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1820,6 +1821,7 @@ impl App {
             ViewMode::Watchlist => "Watchlist",
             ViewMode::Analytics => "Analytics",
             ViewMode::News => "News",
+            ViewMode::ChartGrid => "Chart Grid",
             ViewMode::Journal => "Journal",
         };
 
@@ -2417,6 +2419,11 @@ impl App {
                 self.load_news();
             }
             KeyCode::Char('8') => {
+                self.view_mode = ViewMode::ChartGrid;
+                self.detail_open = false;
+                self.detail_popup_open = false;
+            }
+            KeyCode::Char('9') => {
                 self.view_mode = ViewMode::Journal;
                 self.detail_open = false;
                 self.detail_popup_open = false;
@@ -2921,7 +2928,7 @@ impl App {
 
     /// Handle a click in the header area. Detect which tab label was clicked.
     ///
-    /// Tab layout (non-compact): " pftui  [1]Pos [2]Tx [3]Mkt [4]Econ [5]Watch [6]Analytics [7]News [8]Journal ..."
+    /// Tab layout (non-compact): " pftui  [1]Pos [2]Tx [3]Mkt [4]Econ [5]Watch [6]Analytics [7]News [8]Grid [9]Journal ..."
     /// Character offsets are approximate; we use generous hit zones.
     fn handle_header_click(&mut self, col: u16) {
         let col = col as usize;
@@ -3012,8 +3019,17 @@ impl App {
         }
 
         let base6 = base5 + news_label_len + 1;
-        let journal_label_len: usize = if compact { 4 } else { 10 }; // "[8]J" or "[8]Journal"
-        if (base6..base6 + journal_label_len + 1).contains(&col) {
+        let grid_label_len: usize = if compact { 4 } else { 7 }; // "[8]G" or "[8]Grid"
+        if (base6..base6 + grid_label_len + 1).contains(&col) {
+            self.view_mode = ViewMode::ChartGrid;
+            self.detail_open = false;
+            self.detail_popup_open = false;
+            return;
+        }
+
+        let base7 = base6 + grid_label_len + 1;
+        let journal_label_len: usize = if compact { 4 } else { 10 }; // "[9]J" or "[9]Journal"
+        if (base7..base7 + journal_label_len + 1).contains(&col) {
             self.view_mode = ViewMode::Journal;
             self.detail_open = false;
             self.detail_popup_open = false;
@@ -3211,6 +3227,7 @@ impl App {
                     self.news_selected_index = clicked_row;
                 }
             }
+            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if clicked_row < self.journal_entries.len() {
                     self.journal_selected_index = clicked_row;
@@ -3350,6 +3367,7 @@ impl App {
                         (self.news_selected_index + 1).min(self.news_entries.len() - 1);
                 }
             }
+            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index =
@@ -3388,6 +3406,7 @@ impl App {
             ViewMode::News => {
                 self.news_selected_index = self.news_selected_index.saturating_sub(1);
             }
+            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(1);
             }
@@ -3423,6 +3442,7 @@ impl App {
             ViewMode::News => {
                 self.news_selected_index = 0;
             }
+            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 self.journal_selected_index = 0;
             }
@@ -3475,6 +3495,7 @@ impl App {
                     self.news_selected_index = self.news_entries.len() - 1;
                 }
             }
+            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index = self.journal_entries.len() - 1;
@@ -3552,6 +3573,7 @@ impl App {
                         (self.news_selected_index + step).min(self.news_entries.len() - 1);
                 }
             }
+            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index =
@@ -3591,6 +3613,7 @@ impl App {
             ViewMode::News => {
                 self.news_selected_index = self.news_selected_index.saturating_sub(step);
             }
+            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(step);
             }
@@ -3852,6 +3875,9 @@ impl App {
             }
             "view analytics" => self.view_mode = ViewMode::Analytics,
             "view news" => self.view_mode = ViewMode::News,
+            "view chartgrid" | "view charts" | "view chart-grid" => {
+                self.view_mode = ViewMode::ChartGrid
+            }
             "view journal" => self.view_mode = ViewMode::Journal,
             "scan" => self.open_scan_builder(),
             _ => {}
