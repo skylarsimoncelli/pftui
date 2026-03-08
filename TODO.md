@@ -101,7 +101,6 @@
 
 ### Minor
 
-- [ ] **`add-tx` accepts quantity=0 and price=0** — Add validation. Files: `src/commands/add_tx.rs`
 - [ ] **`watch` accepts invalid symbols without warning** — Validate with price lookup. Files: `src/commands/watch.rs`
 - [ ] **No rate limiting on concurrent refreshes** — Add lock file. Files: `src/commands/refresh.rs`
 - [ ] **Performance shows N/A for MTD with March data** — Calculate from earliest available snapshot. Files: `src/commands/performance.rs`
