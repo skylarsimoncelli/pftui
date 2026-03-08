@@ -29,6 +29,9 @@
   <img width="1728" height="1067" alt="pftui web economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" />
   pftui web asset detail
   <img width="1727" height="1080" alt=" pftui web asset detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" />
+  pftui cli
+  <img width="1728" height="1062" alt="pftui cli" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" />
+
 </p>
 
 ---
