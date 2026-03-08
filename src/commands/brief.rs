@@ -16,6 +16,7 @@ use crate::db::price_cache::{get_all_cached_prices, get_cached_price};
 use crate::db::price_history::{get_history, get_prices_at_date};
 use crate::db::snapshots::get_all_portfolio_snapshots;
 use crate::db::transactions::list_transactions;
+use crate::indicators::correlation::compute_rolling_correlation;
 use crate::indicators::macd::{compute_macd, MacdResult};
 use crate::indicators::rsi::compute_rsi;
 use crate::indicators::sma::compute_sma;
@@ -50,6 +51,8 @@ struct AgentBrief {
     drift: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     regime: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correlations: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -109,6 +112,28 @@ struct MoverJson {
     name: String,
     daily_change_pct: String,
     daily_change_abs: String,
+}
+
+#[derive(Debug, Clone)]
+struct CorrelationPair {
+    symbol_a: String,
+    symbol_b: String,
+    corr_30d: f64,
+}
+
+#[derive(Debug, Clone)]
+struct CorrelationBreak {
+    symbol_a: String,
+    symbol_b: String,
+    corr_7d: f64,
+    corr_90d: f64,
+    delta: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CorrelationSummary {
+    top_pairs: Vec<CorrelationPair>,
+    active_breaks: Vec<CorrelationBreak>,
 }
 
 /// Agent mode: single comprehensive JSON blob
@@ -256,10 +281,12 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
 
     // Regime (if available)
     let regime_json = get_regime_json(conn).ok();
+    let corr_summary = compute_correlation_summary(conn, &positions);
     let news_summary = get_news_summary_json(conn).unwrap_or_default();
     let economic_data = get_economic_data_json(conn).unwrap_or_default();
     let predictions = get_predictions_json(conn).unwrap_or_default();
     let sentiment = get_sentiment_json(conn).ok();
+    let correlations = correlation_summary_to_json(&corr_summary);
 
     let brief = AgentBrief {
         timestamp,
@@ -275,6 +302,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         alerts: alerts_json,
         drift: drift_json,
         regime: regime_json,
+        correlations,
     };
 
     let json = serde_json::to_string_pretty(&brief)?;
@@ -765,6 +793,7 @@ fn run_full(
     }
     print_risk_summary(conn, &positions);
     print_benchmark_comparison(conn, &positions, hist_1d);
+    print_correlation_summary(conn, &positions);
     println!();
 
     // Category allocation
@@ -824,6 +853,7 @@ fn run_percentage(
     println!("*Percentage mode (allocation-based)*\n");
     print_risk_summary(conn, &positions);
     print_benchmark_comparison(conn, &positions, hist_1d);
+    print_correlation_summary(conn, &positions);
     println!();
 
     // Category allocation (use raw pct since no total value)
@@ -1199,6 +1229,181 @@ fn print_what_changed_today(
     println!("## What Changed Today\n");
     print_top_movers(positions, hist_1d, base);
     print_alerts(conn);
+}
+
+fn print_correlation_summary(conn: &Connection, positions: &[Position]) {
+    let summary = compute_correlation_summary(conn, positions);
+    if summary.top_pairs.is_empty() && summary.active_breaks.is_empty() {
+        return;
+    }
+
+    println!("## Correlations\n");
+
+    if !summary.top_pairs.is_empty() {
+        println!("**Top Pairs (30d):**");
+        for pair in summary.top_pairs.iter().take(5) {
+            println!(
+                "- {}-{}: {:+.2}",
+                pair.symbol_a, pair.symbol_b, pair.corr_30d
+            );
+        }
+    }
+
+    if !summary.active_breaks.is_empty() {
+        if !summary.top_pairs.is_empty() {
+            println!();
+        }
+        println!("**Active Breaks (7d vs 90d):**");
+        for brk in summary.active_breaks.iter().take(5) {
+            println!(
+                "- {}-{}: Δ{:+.2} (7d {:+.2} vs 90d {:+.2})",
+                brk.symbol_a, brk.symbol_b, brk.delta, brk.corr_7d, brk.corr_90d
+            );
+        }
+    }
+
+    println!();
+}
+
+fn correlation_summary_to_json(summary: &CorrelationSummary) -> Option<serde_json::Value> {
+    if summary.top_pairs.is_empty() && summary.active_breaks.is_empty() {
+        return None;
+    }
+    Some(serde_json::json!({
+        "top_pairs_30d": summary.top_pairs.iter().map(|p| {
+            serde_json::json!({
+                "symbol_a": p.symbol_a,
+                "symbol_b": p.symbol_b,
+                "corr_30d": p.corr_30d,
+            })
+        }).collect::<Vec<_>>(),
+        "active_breaks": summary.active_breaks.iter().map(|b| {
+            serde_json::json!({
+                "symbol_a": b.symbol_a,
+                "symbol_b": b.symbol_b,
+                "corr_7d": b.corr_7d,
+                "corr_90d": b.corr_90d,
+                "delta": b.delta,
+            })
+        }).collect::<Vec<_>>(),
+    }))
+}
+
+fn compute_correlation_summary(conn: &Connection, positions: &[Position]) -> CorrelationSummary {
+    const WINDOW_SHORT: usize = 7;
+    const WINDOW_MAIN: usize = 30;
+    const WINDOW_LONG: usize = 90;
+    const BREAK_THRESHOLD: f64 = 0.30;
+
+    let symbols: Vec<String> = positions
+        .iter()
+        .filter(|p| p.category != AssetCategory::Cash)
+        .map(|p| p.symbol.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    if symbols.len() < 2 {
+        return CorrelationSummary::default();
+    }
+
+    let mut price_map: HashMap<String, Vec<f64>> = HashMap::new();
+    for symbol in &symbols {
+        if let Ok(history) = get_history(conn, symbol, WINDOW_LONG as u32 + 40) {
+            let closes: Vec<f64> = history
+                .into_iter()
+                .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+                .filter(|v| *v > 0.0)
+                .collect();
+            if closes.len() >= WINDOW_MAIN + 1 {
+                price_map.insert(symbol.clone(), closes);
+            }
+        }
+    }
+
+    let mut top_pairs = Vec::new();
+    let mut active_breaks = Vec::new();
+    let mut symbols_sorted: Vec<String> = price_map.keys().cloned().collect();
+    symbols_sorted.sort();
+
+    for i in 0..symbols_sorted.len() {
+        for j in (i + 1)..symbols_sorted.len() {
+            let a = &symbols_sorted[i];
+            let b = &symbols_sorted[j];
+            let prices_a = match price_map.get(a) {
+                Some(v) => v,
+                None => continue,
+            };
+            let prices_b = match price_map.get(b) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let min_len = prices_a.len().min(prices_b.len());
+            if min_len < WINDOW_LONG + 1 {
+                continue;
+            }
+            let aligned_a = &prices_a[prices_a.len() - min_len..];
+            let aligned_b = &prices_b[prices_b.len() - min_len..];
+
+            let c30 = latest_corr(aligned_a, aligned_b, WINDOW_MAIN);
+            let c7 = latest_corr(aligned_a, aligned_b, WINDOW_SHORT);
+            let c90 = latest_corr(aligned_a, aligned_b, WINDOW_LONG);
+
+            if let Some(corr_30d) = c30 {
+                top_pairs.push(CorrelationPair {
+                    symbol_a: a.clone(),
+                    symbol_b: b.clone(),
+                    corr_30d,
+                });
+            }
+
+            if let (Some(corr_7d), Some(corr_90d)) = (c7, c90) {
+                let delta = corr_7d - corr_90d;
+                if delta.abs() >= BREAK_THRESHOLD {
+                    active_breaks.push(CorrelationBreak {
+                        symbol_a: a.clone(),
+                        symbol_b: b.clone(),
+                        corr_7d,
+                        corr_90d,
+                        delta,
+                    });
+                }
+            }
+        }
+    }
+
+    top_pairs.sort_by(|a, b| {
+        b.corr_30d
+            .abs()
+            .partial_cmp(&a.corr_30d.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    top_pairs.truncate(5);
+
+    active_breaks.sort_by(|a, b| {
+        b.delta
+            .abs()
+            .partial_cmp(&a.delta.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    active_breaks.truncate(5);
+
+    CorrelationSummary {
+        top_pairs,
+        active_breaks,
+    }
+}
+
+fn latest_corr(prices_a: &[f64], prices_b: &[f64], window: usize) -> Option<f64> {
+    if prices_a.len() != prices_b.len() || prices_a.len() < window + 1 {
+        return None;
+    }
+    compute_rolling_correlation(prices_a, prices_b, window)
+        .into_iter()
+        .rev()
+        .flatten()
+        .next()
 }
 
 fn print_alerts(conn: &Connection) {
