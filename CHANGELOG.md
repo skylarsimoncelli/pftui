@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 21:27 UTC — F31.3: Conviction tracking system (MEDIUM-layer analytics)
+
+- What: implemented conviction tracking (F31.3) — symbol-level conviction scores (-5 to +5) over time. Append-only log with `set/list/history/changes` CLI actions. Every `set` creates a new row; `list` shows current (latest per symbol by id). `changes` computes conviction shifts in last N days.
+- Why: core MEDIUM-layer analytics table enabling conviction calibration and signal tracking.
+- Files: `src/db/convictions.rs` (new), `src/commands/conviction.rs` (new), `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: 4 tests (set/list, history, validation, changes), all tests pass (1190 total)
+- TODO: F31.3 Convictions (P0 MEDIUM)
+
 ### 2026-03-08 20:07 UTC — F32 Phase 13: backend-dispatch transaction symbol/count helpers
 
 - What: added backend-dispatched `transactions` helpers for `count` and `distinct symbols` with native Postgres implementations, and rewired refresh symbol discovery to use backend-dispatched transaction symbol queries.

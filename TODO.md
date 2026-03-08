@@ -40,8 +40,6 @@
 
 _Already implemented by dev cron (scenarios table exists). Verify CLI completeness._
 
----
-
 ### F31.2: Thesis — Versioned macro outlook by section [MEDIUM]
 
 **Files to create/modify:**
@@ -111,70 +109,6 @@ pftui thesis update regime --content "Risk-off. Stagflation confirmed by NFP -92
 pftui thesis update btc --content "Bear. F&G 12, RSI 38, below SMA50. CryptoQuant: bottom Sep-Nov 2026. Daily CyberDots haven't flipped." --conviction high
 pftui thesis list
 pftui thesis history regime --limit 5
-```
-
----
-
-### F31.3: Convictions — Asset conviction scores over time [MEDIUM]
-
-**Files:** `src/db/convictions.rs`, `src/commands/conviction.rs`, schema/cli/main/mod updates.
-
-**Schema:**
-```sql
-CREATE TABLE IF NOT EXISTS convictions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol TEXT NOT NULL,
-    score INTEGER NOT NULL CHECK(score BETWEEN -5 AND 5),
-    notes TEXT,
-    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_convictions_symbol ON convictions(symbol);
-CREATE INDEX IF NOT EXISTS idx_convictions_recorded ON convictions(recorded_at);
-```
-Note: this is an append-only log — every `set` creates a new row. "Current" conviction = latest row per symbol.
-
-**DB functions:**
-- `set_conviction(conn, symbol, score, notes) -> Result<i64>`
-- `list_current(conn) -> Result<Vec<ConvictionEntry>>` — latest row per symbol via `GROUP BY symbol HAVING MAX(recorded_at)`
-- `get_history(conn, symbol, limit: Option<usize>) -> Result<Vec<ConvictionEntry>>`
-- `get_changes(conn, days: usize) -> Result<Vec<ConvictionChange>>` — show symbols where score changed in last N days
-
-**CLI variant:**
-```rust
-/// Track asset conviction scores over time (-5 to +5)
-#[command(name = "conviction")]
-Conviction {
-    /// Action: set, list, history, changes
-    action: String,
-    /// Symbol (for set/history) or days (for changes, default 7)
-    value: Option<String>,
-    /// Score -5 to +5
-    #[arg(long)]
-    score: Option<i32>,
-    /// Notes explaining the score
-    #[arg(long)]
-    notes: Option<String>,
-    #[arg(long)]
-    limit: Option<usize>,
-    #[arg(long)]
-    json: bool,
-}
-```
-
-**Command routing:**
-- `"set"` → requires `value` (symbol) + `--score`. Optional `--notes`.
-- `"list"` → current conviction per symbol. Table: `Symbol | Score | Notes | Last Updated`. Sorted by abs(score) desc.
-- `"history"` → requires `value` (symbol). Shows score evolution. Optional `--limit`.
-- `"changes"` → optional `value` (days, default 7). Shows symbols where conviction changed recently.
-
-**Human-readable output:**
-```
-Current Convictions:
-  GC=F     +4   Gold thesis validated by NFP + war          3h ago
-  SI=F     +3   Defending $83 trackline, SMA50 reclaim      3h ago
-  BTC       0   Bear tracking, called bull trap correctly    3h ago
-  Equities -2   GOOG/TSLA interest emerging but patient     3h ago
-  U-U.TO   +1   AI power thesis intact, tactical weakness   3h ago
 ```
 
 ---
