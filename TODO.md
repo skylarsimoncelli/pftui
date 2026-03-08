@@ -31,19 +31,6 @@
 
 > `pftui refresh` becomes a one-command intelligence operation. `pftui brief --agent` becomes the one JSON blob an agent needs.
 
-- [ ] **F30.2: `brief --agent` with full intelligence** — When Brave configured, `pftui brief --agent --json` includes:
-  - `positions` — all held assets with prices, allocation, change
-  - `movers` — significant daily moves
-  - `macro` — DXY, VIX, yields, commodities, derived ratios
-  - `news_summary` — top 10 articles with descriptions (not just titles)
-  - `economic_data` — latest CPI, NFP, PMI, Fed rate values
-  - `predictions` — top prediction market odds
-  - `sentiment` — F&G indices
-  - `alerts` — triggered alerts
-  - `drift` — allocation drift from targets
-  - This is the "one blob" that replaces 4-5 CLI calls + web searching. An agent reading this has 90% of what it needs for a morning brief.
-  - Files: `src/commands/brief.rs`
-
 ---
 
 ## P0 — QA Bugs (from 2026-03-06 QA Report)
