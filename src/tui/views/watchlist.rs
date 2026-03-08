@@ -45,7 +45,7 @@ fn proximity_spans(dist_pct: Decimal, hit: bool, t: &theme::Theme) -> Vec<Span<'
 }
 
 fn active_columns(app: &App) -> Vec<WatchlistColumn> {
-    let cols = if app.watchlist_columns.is_empty() {
+    if app.watchlist_columns.is_empty() {
         vec![
             WatchlistColumn::Symbol,
             WatchlistColumn::Name,
@@ -59,8 +59,7 @@ fn active_columns(app: &App) -> Vec<WatchlistColumn> {
         ]
     } else {
         app.watchlist_columns.clone()
-    };
-    cols
+    }
 }
 
 fn column_label(col: WatchlistColumn) -> &'static str {

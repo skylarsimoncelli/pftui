@@ -425,8 +425,7 @@ fn print_table(rows: Vec<&ScanRow>, total_scanned: usize, filter: &str, base_cur
         .map(|r| r.name.len())
         .max()
         .unwrap_or(4)
-        .min(30)
-        .max(4);
+        .clamp(4, 30);
     let cat_w = rows
         .iter()
         .map(|r| r.category.len())

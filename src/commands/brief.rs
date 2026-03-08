@@ -1315,7 +1315,7 @@ fn compute_correlation_summary(conn: &Connection, positions: &[Position]) -> Cor
                 .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
                 .filter(|v| *v > 0.0)
                 .collect();
-            if closes.len() >= WINDOW_MAIN + 1 {
+            if closes.len() > WINDOW_MAIN {
                 price_map.insert(symbol.clone(), closes);
             }
         }

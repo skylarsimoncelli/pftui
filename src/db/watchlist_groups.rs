@@ -8,6 +8,7 @@ pub struct WatchlistGroup {
     pub name: String,
 }
 
+#[allow(dead_code)]
 pub fn list_groups(conn: &Connection) -> Result<Vec<WatchlistGroup>> {
     let mut stmt = conn.prepare("SELECT id, name FROM watchlist_groups ORDER BY id ASC")?;
     let rows = stmt.query_map([], |row| {
@@ -23,6 +24,7 @@ pub fn list_groups(conn: &Connection) -> Result<Vec<WatchlistGroup>> {
     Ok(groups)
 }
 
+#[allow(dead_code)]
 pub fn get_group_name(conn: &Connection, group_id: i64) -> Result<Option<String>> {
     let gid = clamp_group_id(group_id);
     let mut stmt = conn.prepare("SELECT name FROM watchlist_groups WHERE id = ?1")?;

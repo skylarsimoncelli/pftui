@@ -23,7 +23,7 @@ pub fn compute_sma(values: &[f64], period: usize) -> Vec<Option<f64>> {
         if i >= period {
             window_sum -= values[i - period];
         }
-        if i + 1 >= period {
+        if i >= period - 1 {
             result.push(Some(window_sum / period as f64));
         } else {
             result.push(None);
