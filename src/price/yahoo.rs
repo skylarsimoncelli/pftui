@@ -27,6 +27,10 @@ pub fn normalize_yahoo_symbol(symbol: &str) -> String {
     symbol.to_string()
 }
 
+fn uses_frankfurter_fallback(symbol: &str) -> bool {
+    matches!(symbol, "JPY=X" | "CNY=X")
+}
+
 /// Fetch the FX rate to convert from `from_currency` to USD.
 /// Uses Yahoo Finance FX pairs (e.g., CADUSD=X).
 /// Returns the multiplier: price_in_foreign * rate = price_in_usd.
@@ -101,7 +105,7 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
     let yahoo_sym = normalize_yahoo_symbol(symbol);
     
     // Special handling for FX pairs that Yahoo often gets wrong
-    if symbol == "JPY=X" || symbol == "CNY=X" {
+    if uses_frankfurter_fallback(symbol) {
         let currency = symbol.strip_suffix("=X").unwrap();
         match fetch_fx_rate_frankfurter(currency).await {
             Ok(rate) => {
@@ -409,5 +413,12 @@ mod tests {
         assert_eq!(normalize_yahoo_symbol("^GSPC"), "^GSPC");
         assert_eq!(normalize_yahoo_symbol("DX-Y.NYB"), "DX-Y.NYB");
         assert_eq!(normalize_yahoo_symbol("GBPUSD=X"), "GBPUSD=X");
+    }
+
+    #[test]
+    fn detects_special_fx_fallback_symbols() {
+        assert!(uses_frankfurter_fallback("JPY=X"));
+        assert!(uses_frankfurter_fallback("CNY=X"));
+        assert!(!uses_frankfurter_fallback("EURUSD=X"));
     }
 }
