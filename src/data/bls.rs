@@ -46,6 +46,36 @@ struct BlsDataItem {
     value: String,
 }
 
+fn parse_bls_data_point(series_id: &str, item: &BlsDataItem) -> Option<BlsDataPoint> {
+    // Parse value, handling BLS formatting like "278,802" and placeholders like "-"
+    let raw_value = item.value.trim();
+    if raw_value.is_empty() || raw_value == "-" {
+        return None;
+    }
+    let cleaned_value = raw_value.replace(',', "");
+    let value = Decimal::from_str(&cleaned_value).ok()?;
+
+    let year: i32 = item.year.parse().ok()?;
+
+    // Keep only regular monthly buckets (M01..M12). Skip M13 annual average.
+    if !item.period.starts_with('M') {
+        return None;
+    }
+    let month: u32 = item.period[1..].parse().ok()?;
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+
+    let date = NaiveDate::from_ymd_opt(year, month, 1)?;
+    Some(BlsDataPoint {
+        series_id: series_id.to_string(),
+        year,
+        period: item.period.clone(),
+        value,
+        date,
+    })
+}
+
 /// Fetch BLS data for given series IDs.
 /// BLS v1 API: no auth, 10 calls/day, up to 25 series per call.
 pub async fn fetch_bls_data(series_ids: &[&str]) -> Result<Vec<BlsDataPoint>> {
@@ -89,44 +119,9 @@ pub async fn fetch_bls_data(series_ids: &[&str]) -> Result<Vec<BlsDataPoint>> {
 
     for series in results.series {
         for item in series.data {
-            // Parse value (skip if "-" or other non-numeric placeholder)
-            let value = match Decimal::from_str(item.value.trim()) {
-                Ok(v) => v,
-                Err(_) => {
-                    // Skip missing/invalid data points (BLS uses "-" for missing data)
-                    if item.value.trim() == "-" || item.value.trim().is_empty() {
-                        continue;
-                    }
-                    return Err(anyhow::anyhow!("Failed to parse BLS value: {}", item.value));
-                }
-            };
-
-            // Parse year
-            let year: i32 = item
-                .year
-                .parse()
-                .with_context(|| format!("Failed to parse year: {}", item.year))?;
-
-            // Parse period (M01-M12 for monthly)
-            let month: u32 = if item.period.starts_with('M') {
-                item.period[1..]
-                    .parse()
-                    .with_context(|| format!("Failed to parse period: {}", item.period))?
-            } else {
-                continue; // Skip non-monthly (annual, quarterly)
-            };
-
-            // Construct date (use day 1)
-            let date = NaiveDate::from_ymd_opt(year, month, 1)
-                .ok_or_else(|| anyhow::anyhow!("Invalid date: {}-{}", year, month))?;
-
-            data_points.push(BlsDataPoint {
-                series_id: series.series_id.clone(),
-                year,
-                period: item.period.clone(),
-                value,
-                date,
-            });
+            if let Some(point) = parse_bls_data_point(&series.series_id, &item) {
+                data_points.push(point);
+            }
         }
     }
 
@@ -180,5 +175,26 @@ mod tests {
                 eprintln!("BLS API test skipped: {}", e);
             }
         }
+    }
+
+    #[test]
+    fn parse_skips_m13_annual_average() {
+        let item = BlsDataItem {
+            year: "2025".to_string(),
+            period: "M13".to_string(),
+            value: "4.1".to_string(),
+        };
+        assert!(parse_bls_data_point(SERIES_UNEMPLOYMENT, &item).is_none());
+    }
+
+    #[test]
+    fn parse_handles_comma_separated_values() {
+        let item = BlsDataItem {
+            year: "2025".to_string(),
+            period: "M01".to_string(),
+            value: "278,802".to_string(),
+        };
+        let parsed = parse_bls_data_point(SERIES_NFP, &item).unwrap();
+        assert_eq!(parsed.value, Decimal::from_str("278802").unwrap());
     }
 }

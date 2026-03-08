@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:47 UTC — Harden BLS parsing for Economy data reliability
+
+- What: made BLS ingestion resilient by skipping `M13` annual-average rows and other non-monthly periods instead of failing the whole fetch, and by parsing comma-formatted numeric values (for example `278,802`). Added focused parser tests.
+- Why: addresses a core cause of Economy tab gaps where one malformed/unsupported BLS row caused full-series parse failure.
+- Files: `src/data/bls.rs`
+- Tests: `cargo test -q` (1159 passed)
+- TODO: [Feedback] Economy tab data gaps (partial progress)
+
 ### 2026-03-08 04:46 UTC — Close Economy calendar TODO (already implemented)
 
 - What: verified the Economy tab already includes a 7-day calendar panel with impact indicators and countdown labels (`render_calendar_panel`), then removed the stale unchecked TODO item.
