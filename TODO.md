@@ -15,8 +15,6 @@
 
 ### F26: Brave API Configuration & Client
 
-- [ ] **F26.3: `pftui config` CLI command** — `pftui config list` (show config, mask API keys to last 4 chars), `pftui config set brave_api_key <key>`, `pftui config get <field>`. Easy way to add key later without re-running setup. Files: new `src/commands/config_cmd.rs`, `cli.rs`, `main.rs`
-
 - [ ] **F26.4: Brave API client module** — HTTP client for Brave Search API. Two core functions:
   - `brave_web_search(key, query, freshness, count) -> Result<Vec<BraveWebResult>>` — web search
   - `brave_news_search(key, query, freshness, count) -> Result<Vec<BraveNewsResult>>` — news search
