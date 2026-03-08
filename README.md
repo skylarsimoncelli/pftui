@@ -203,6 +203,9 @@ curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/insta
 
 # Launch, the setup wizard handles the rest
 pftui
+
+# Optional: enable Brave-powered news/research/economic data
+pftui config set brave_api_key <key>
 ```
 
 The setup wizard walks you through adding your first positions with symbol autocomplete and auto-categorization. Choose between **Full mode** (transactions with cost basis) or **Percentage mode** (allocations only, no monetary data).

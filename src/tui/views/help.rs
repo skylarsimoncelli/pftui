@@ -146,6 +146,18 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("q / Ctrl+C", "Quit", kc, tc));
     lines.push(Line::from(""));
 
+    // ── Configuration ──
+    lines.push(section_header("  Configuration", ac));
+    lines.push(sep_line(bc, sep_w));
+    lines.push(key_line("pftui config list", "Show current config values", kc, tc));
+    lines.push(key_line(
+        "pftui config set brave_api_key <key>",
+        "Enable Brave-powered news/research",
+        kc,
+        tc,
+    ));
+    lines.push(Line::from(""));
+
     // ── Mouse ──
     lines.push(section_header("  Mouse", ac));
     lines.push(sep_line(bc, sep_w));
@@ -261,6 +273,7 @@ mod tests {
         assert!(text.contains("Charts"), "missing Charts section");
         assert!(text.contains("Sorting"), "missing Sorting section");
         assert!(text.contains("Actions"), "missing Actions section");
+        assert!(text.contains("Configuration"), "missing Configuration section");
     }
 
     #[test]

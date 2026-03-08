@@ -104,7 +104,6 @@
 - [ ] **Homebrew Core** — Needs 50+ GitHub stars (currently 1)
 
 ### Other
-- [ ] [Feedback] **`pftui config` discoverability** — Add config command to TUI help popup (`?`) under new 'Configuration' section, and mention `pftui config set brave_api_key <key>` in README Quick Start. Currently invisible to users. Files: `tui/views/help.rs`, `README.md`
 - [ ] [Feedback] **Agricultural commodity tracking** — Add wheat, corn, soybeans, coffee as watchable assets in macro dashboard. Inflation leading indicators. Files: `commands/macro_cmd.rs`
 - [ ] **Workspace presets** — Config: `layout = "compact" | "split" | "analyst"`. Files: `config.rs`, `tui/ui.rs`
 - [ ] **Chart grid view** — Mini braille charts for all positions (6-9 per screen). New view `8`. Files: new `views/chart_grid.rs`

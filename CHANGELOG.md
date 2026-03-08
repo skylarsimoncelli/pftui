@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:27 UTC — Improve `pftui config` discoverability in help and Quick Start
+
+- What: added a new `Configuration` section to the in-app help popup (`?`) with `pftui config list` and `pftui config set brave_api_key <key>`, and added the Brave key command to README Quick Start.
+- Why: Feedback TODO item. Users were missing config capabilities entirely because the command was not discoverable from either the TUI help overlay or the first-run docs flow.
+- Files: `src/tui/views/help.rs` (new Configuration section + section test), `README.md` (Quick Start includes Brave config command), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1131 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: [Feedback] `pftui config` discoverability (P2)
+
 ### 2026-03-08 04:27 UTC — Fix `pftui sector` returning incomplete ETF set
 
 - What: `pftui sector` now backfills missing sector ETF quotes directly from Yahoo at command runtime, caches them, and then renders output. This removes the prior dependency on whichever symbols happened to already exist in `price_cache`.
