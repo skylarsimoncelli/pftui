@@ -700,11 +700,8 @@ fn run_full(
     // Category allocation
     print_category_allocation(&positions, total_value);
 
-    // Top movers (by daily change %)
-    print_top_movers(&positions, hist_1d, base);
-
-    // Alerts (triggered + near-threshold)
-    print_alerts(conn);
+    // What changed today: movers + threshold crossings + triggered alerts
+    print_what_changed_today(conn, &positions, hist_1d, base);
 
     // P&L attribution (by dollar amount)
     print_pnl_attribution(&positions, hist_1d, base);
@@ -761,11 +758,8 @@ fn run_percentage(
     // Category allocation (use raw pct since no total value)
     print_category_allocation_pct(&positions);
 
-    // Top movers
-    print_top_movers(&positions, hist_1d, base);
-
-    // Alerts (triggered + near-threshold)
-    print_alerts(conn);
+    // What changed today: movers + threshold crossings + triggered alerts
+    print_what_changed_today(conn, &positions, hist_1d, base);
 
     // P&L attribution (by dollar amount)
     print_pnl_attribution(&positions, hist_1d, base);
@@ -1123,6 +1117,17 @@ fn print_top_movers(
         );
     }
     println!();
+}
+
+fn print_what_changed_today(
+    conn: &Connection,
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+    base: &str,
+) {
+    println!("## What Changed Today\n");
+    print_top_movers(positions, hist_1d, base);
+    print_alerts(conn);
 }
 
 fn print_alerts(conn: &Connection) {
