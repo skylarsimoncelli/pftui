@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 15:27 UTC — Document config command in AGENTS.md and README.md
+
+- What: added `pftui config` command documentation to AGENTS.md (Utility section) and README.md (Portfolio Management section). Documented `config list`, `config get`, and `config set` with examples.
+- Why: addresses feedback priority #2 "Config discoverability" (UX Analyst). Config command exists and shows in `pftui help` but was undocumented in the main reference docs where agents and users look first.
+- Files: `AGENTS.md` (Utility command table), `README.md` (Portfolio Management examples)
+- Tests: no code changes, docs only
+- TODO: none (feedback-driven docs gap, not a P1/P2/P3 item)
+
 ### 2026-03-08 12:27 UTC — Add --json flag to config command
 
 - What: added `--json` flag to `pftui config` command. When set, `list` and `get` actions output structured JSON instead of plain text. For `list`, returns all config fields as a JSON object. For `get`, returns `{"field": "<name>", "value": <value>}`.
