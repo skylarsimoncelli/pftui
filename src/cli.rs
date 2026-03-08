@@ -508,6 +508,16 @@ pub enum Command {
         json: bool,
     },
 
+    /// Run named portfolio stress scenarios
+    StressTest {
+        /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
+        scenario: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Run Brave web/news search for financial research queries
     Research {
         /// Research query text
