@@ -643,6 +643,9 @@ Without persistent files, every session starts from zero. With them:
 
 | Command | What It Does |
 |---|---|
+| `pftui config list [--json]` | List all configuration fields |
+| `pftui config get FIELD [--json]` | Get a specific config value |
+| `pftui config set FIELD VALUE` | Set a config field (e.g., `brave_api_key`) |
 | `pftui snapshot` | Render full TUI to stdout (for sharing or screenshots) |
 | `pftui demo` | Launch with sample data (for testing, no real data) |
 | `pftui web [--port N] [--bind ADDR] [--no-auth]` | Start web dashboard |

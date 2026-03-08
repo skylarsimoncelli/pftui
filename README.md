@@ -136,6 +136,8 @@ pftui target set AAPL --target 15  # Target allocation %
 pftui rebalance --json             # Suggested trades to hit targets
 pftui alerts add "BTC above 100000"
 pftui journal add --content "Gold thesis validated by CPI" --tag macro
+pftui config list --json           # List all config fields
+pftui config set brave_api_key <key>  # Set Brave Search API key
 ```
 
 ### Your Database, Your Edge
