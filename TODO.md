@@ -15,8 +15,6 @@
 
 ### F26: Brave API Configuration & Client
 
-- [ ] **F26.2: First-run setup prompt** — During `pftui setup` wizard and `load_config_with_first_run_prompt()`, add optional step: "For richer news, economic data, and market intelligence, add a Brave Search API key (free tier: $5/month credits). Get one at https://brave.com/search/api/ — Enter key (or press Enter to skip):". Also add to AGENTS.md setup flow. Files: `src/config.rs`, `src/commands/setup.rs`
-
 - [ ] **F26.3: `pftui config` CLI command** — `pftui config list` (show config, mask API keys to last 4 chars), `pftui config set brave_api_key <key>`, `pftui config get <field>`. Easy way to add key later without re-running setup. Files: new `src/commands/config_cmd.rs`, `cli.rs`, `main.rs`
 
 - [ ] **F26.4: Brave API client module** — HTTP client for Brave Search API. Two core functions:
