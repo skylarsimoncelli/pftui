@@ -14,6 +14,8 @@ pub struct NewsEntry {
     pub url: String,
     pub source: String,
     pub source_type: String,
+    pub description: String,
+    pub extra_snippets: Vec<String>,
     pub category: String,
     pub published_at: i64,
     pub fetched_at: String,
@@ -30,7 +32,17 @@ pub fn insert_news(
     category: &str,
     published_at: i64,
 ) -> Result<()> {
-    insert_news_with_source_type(conn, title, url, source, "rss", category, published_at)
+    insert_news_with_source_type(
+        conn,
+        title,
+        url,
+        source,
+        "rss",
+        category,
+        published_at,
+        None,
+        &[],
+    )
 }
 
 /// Insert a news item with an explicit source type ("rss" or "brave").
@@ -42,11 +54,24 @@ pub fn insert_news_with_source_type(
     source_type: &str,
     category: &str,
     published_at: i64,
+    description: Option<&str>,
+    extra_snippets: &[String],
 ) -> Result<()> {
+    let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
-        "INSERT OR IGNORE INTO news_cache (title, url, source, source_type, category, published_at, fetched_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
-        params![title, url, source, source_type, category, published_at],
+        "INSERT OR IGNORE INTO news_cache
+         (title, url, source, source_type, description, extra_snippets, category, published_at, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))",
+        params![
+            title,
+            url,
+            source,
+            source_type,
+            description.unwrap_or(""),
+            snippets_json,
+            category,
+            published_at
+        ],
     )?;
     Ok(())
 }
@@ -62,7 +87,7 @@ pub fn get_latest_news(
     search_term: Option<&str>,
     hours_back: Option<i64>,
 ) -> Result<Vec<NewsEntry>> {
-    let mut sql = "SELECT id, title, url, source, source_type, category, published_at, fetched_at
+    let mut sql = "SELECT id, title, url, source, source_type, description, extra_snippets, category, published_at, fetched_at
                    FROM news_cache
                    WHERE 1=1".to_string();
 
@@ -102,9 +127,12 @@ pub fn get_latest_news(
             url: row.get(2)?,
             source: row.get(3)?,
             source_type: row.get(4)?,
-            category: row.get(5)?,
-            published_at: row.get(6)?,
-            fetched_at: row.get(7)?,
+            description: row.get(5)?,
+            extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(6)?)
+                .unwrap_or_default(),
+            category: row.get(7)?,
+            published_at: row.get(8)?,
+            fetched_at: row.get(9)?,
         })
     })?;
 

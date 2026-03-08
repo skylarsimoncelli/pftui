@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
 };
 
 use crate::app::App;
@@ -140,6 +140,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         title.push_str(&format!("[search: {}] ", app.news_search_query));
     }
 
+    let show_preview = app.news_preview_expanded
+        && app.news_selected_index < filtered_entries.len()
+        && filtered_entries[app.news_selected_index].source_type == "brave"
+        && !filtered_entries[app.news_selected_index].description.trim().is_empty();
+
+    let (table_area, preview_area) = if show_preview {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(8), Constraint::Length(6)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let table = Table::new(rows, widths)
         .header(header)
         .block(
@@ -151,7 +166,33 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         )
         .column_spacing(1);
 
-    frame.render_widget(table, area);
+    frame.render_widget(table, table_area);
+
+    if let Some(preview_area) = preview_area {
+        let selected = filtered_entries[app.news_selected_index];
+        let mut lines = vec![
+            Line::styled("Summary", Style::default().fg(t.text_accent).bold()),
+            Line::raw(selected.description.clone()),
+        ];
+        if let Some(snippet) = selected.extra_snippets.first() {
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                format!("• {}", snippet),
+                Style::default().fg(t.text_secondary),
+            ));
+        }
+        let preview = Paragraph::new(lines)
+            .wrap(Wrap { trim: true })
+            .style(Style::default().fg(t.text_primary))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Brave Preview (Enter toggle, o open) ")
+                    .title_style(Style::default().fg(t.text_primary).bold())
+                    .border_style(Style::default().fg(t.border_inactive)),
+            );
+        frame.render_widget(preview, preview_area);
+    }
 }
 
 /// Format Unix timestamp as relative time (e.g., "2h ago", "1d ago")

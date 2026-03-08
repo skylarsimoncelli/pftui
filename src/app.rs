@@ -410,6 +410,7 @@ pub struct App {
     pub news_filter_source: Option<String>,
     pub news_filter_category: Option<String>,
     pub news_search_query: String,
+    pub news_preview_expanded: bool,
     pub analytics_selected_index: usize,
     pub analytics_shock_scale_pct: i32,
     pub g_pending: bool,
@@ -667,6 +668,7 @@ impl App {
             news_filter_source: None,
             news_filter_category: None,
             news_search_query: String::new(),
+            news_preview_expanded: false,
             analytics_selected_index: 0,
             analytics_shock_scale_pct: 100,
             g_pending: false,
@@ -2191,13 +2193,16 @@ impl App {
                 self.toggle_home_subtab();
             }
 
-            // Open URL in browser from News view
+            // Toggle rich preview in News view
             KeyCode::Enter if matches!(self.view_mode, ViewMode::News) => {
+                self.news_preview_expanded = !self.news_preview_expanded;
+            }
+
+            // Open selected news URL in browser
+            KeyCode::Char('o') if matches!(self.view_mode, ViewMode::News) => {
                 if self.news_selected_index < self.news_entries.len() {
                     let url = &self.news_entries[self.news_selected_index].url;
-                    let _ = std::process::Command::new("xdg-open")
-                        .arg(url)
-                        .spawn();
+                    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
                 }
             }
 

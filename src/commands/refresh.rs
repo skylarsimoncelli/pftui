@@ -509,6 +509,8 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
                                 "brave",
                                 "markets",
                                 chrono::Utc::now().timestamp(),
+                                Some(&item.description),
+                                &item.extra_snippets,
                             ).is_ok() {
                                 inserted += 1;
                                 brave_inserted += 1;
@@ -541,6 +543,8 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
                 "rss",
                 category_str,
                 item.published_at,
+                None,
+                &[],
             )
             .is_ok()
             {
