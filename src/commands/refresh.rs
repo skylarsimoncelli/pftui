@@ -117,14 +117,18 @@ fn compute_daily_change_pct(conn: &Connection, symbol: &str, current: Decimal) -
 }
 
 fn build_brave_news_queries(conn: &Connection, config: &Config) -> Result<Vec<String>> {
-    let mut queries = vec![
-        "stock market today".to_string(),
-        "federal reserve interest rates monetary policy".to_string(),
-        "bitcoin cryptocurrency regulation".to_string(),
-        "gold silver precious metals price".to_string(),
-        "oil OPEC energy crude".to_string(),
-        "geopolitics international trade war sanctions".to_string(),
-    ];
+    let mut queries = if config.brave_news_queries.is_empty() {
+        vec![
+            "stock market today".to_string(),
+            "federal reserve interest rates monetary policy".to_string(),
+            "bitcoin cryptocurrency regulation".to_string(),
+            "gold silver precious metals price".to_string(),
+            "oil OPEC energy crude".to_string(),
+            "geopolitics international trade war sanctions".to_string(),
+        ]
+    } else {
+        config.brave_news_queries.clone()
+    };
 
     let mut symbols = Vec::new();
     let mut seen = HashSet::new();

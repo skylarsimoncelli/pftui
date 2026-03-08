@@ -39,9 +39,23 @@ pub struct Config {
     /// Custom RSS feeds (name, url, category). If empty, uses default feeds.
     #[serde(default)]
     pub custom_news_feeds: Vec<CustomNewsFeed>,
+    /// Brave news search query presets used during refresh.
+    #[serde(default = "default_brave_news_queries")]
+    pub brave_news_queries: Vec<String>,
     /// SMA periods to overlay on price charts (default: [20, 50])
     #[serde(default = "default_chart_sma")]
     pub chart_sma: Vec<usize>,
+}
+
+fn default_brave_news_queries() -> Vec<String> {
+    vec![
+        "stock market today".to_string(),
+        "federal reserve interest rates monetary policy".to_string(),
+        "bitcoin cryptocurrency regulation".to_string(),
+        "gold silver precious metals price".to_string(),
+        "oil OPEC energy crude".to_string(),
+        "geopolitics international trade war sanctions".to_string(),
+    ]
 }
 
 fn default_chart_sma() -> Vec<usize> {
@@ -87,6 +101,7 @@ impl Default for Config {
             brave_api_key: None,
             news_poll_interval: default_news_poll_interval(),
             custom_news_feeds: Vec::new(),
+            brave_news_queries: default_brave_news_queries(),
             chart_sma: default_chart_sma(),
         }
     }
@@ -288,6 +303,7 @@ mod tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: default_brave_news_queries(),
             chart_sma: vec![20, 50],
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();

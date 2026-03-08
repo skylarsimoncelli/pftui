@@ -233,6 +233,7 @@ mod tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let export = ConfigExport::from(&config);

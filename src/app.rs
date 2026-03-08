@@ -796,6 +796,7 @@ impl App {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: self.chart_sma_periods.clone(),
         };
         let service = PriceService::start(config);
@@ -828,6 +829,7 @@ impl App {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: self.chart_sma_periods.clone(),
         };
 
@@ -4190,6 +4192,7 @@ mod vim_motion_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
@@ -4430,6 +4433,7 @@ mod search_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
@@ -4756,6 +4760,7 @@ mod timeframe_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
@@ -4773,6 +4778,7 @@ mod timeframe_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
@@ -4858,6 +4864,7 @@ mod crosshair_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from(":memory:"));
@@ -5014,6 +5021,7 @@ mod responsive_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
@@ -5072,6 +5080,7 @@ mod on_demand_history_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
@@ -5138,6 +5147,7 @@ mod daily_change_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
@@ -5273,6 +5283,7 @@ mod portfolio_value_history_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
@@ -6132,6 +6143,7 @@ mod sort_flash_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
@@ -6226,6 +6238,7 @@ mod prev_day_alloc_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
@@ -6392,6 +6405,7 @@ mod mouse_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
@@ -7032,6 +7046,7 @@ mod mouse_tests {
             brave_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
         };
         let mut app = App::new(&config, db_path);
