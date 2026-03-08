@@ -43,8 +43,6 @@
 
 - [ ] **COT, BLS, On-chain, ETF flows all fail on every refresh** — 4 broken data integrations. Brave API (F28, F29) provides a better path for economic data and research. Fix scrapers where possible, fall back to Brave research presets. Files: `src/data/cot.rs`, `src/data/bls.rs`, `src/data/onchain.rs`
 
-- [ ] **COMEX registered inventory shows 0 troy ounces** — Scraper parsing wrong field. Files: `src/data/comex.rs`
-
 - [ ] **USD/JPY and USD/CNY show 1.0000** — Yahoo FX feed issue. Files: `src/price/yahoo.rs`
 
 ### Minor
