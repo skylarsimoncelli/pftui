@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:35 UTC — Fix 6 clippy warnings
+
+- What: resolved 6 clippy warnings introduced in the recent code push. Replaced `>= x + 1` patterns with `>` (int_plus_one lint). Marked unused `list_groups` and `get_group_name` functions in `watchlist_groups.rs` with `#[allow(dead_code)]`. Added `#[allow(clippy::enum_variant_names)]` to `MarketCorrelationWindow` (intentional design). Replaced `.min().max()` with `.clamp()` in `scan.rs`. Removed unnecessary let binding in `watchlist.rs`.
+- Why: maintain clean clippy output with `-D warnings` for CI/CD.
+- Files: `src/commands/brief.rs`, `src/indicators/sma.rs`, `src/db/watchlist_groups.rs`, `src/app.rs`, `src/commands/scan.rs`, `src/tui/views/watchlist.rs`
+- Tests: all 1171 tests pass, clippy clean
+- TODO: none (P0 bug fix, not from TODO.md)
+
 ### 2026-03-08 06:30 UTC — Add `pftui options` options-chain command (Yahoo free data)
 
 - What: added a new `pftui options <SYMBOL>` command that fetches option-chain data from Yahoo Finance with nearest-expiry default, optional `--expiry YYYY-MM-DD`, `--limit`, and `--json` output.
