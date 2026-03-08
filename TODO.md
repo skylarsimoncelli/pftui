@@ -176,7 +176,15 @@
 - [ ] **Asset groups** — `pftui group create "hard-assets" --symbols GC=F,SI=F,BTC`. Combined allocation + performance. Filter positions by group. Files: new `db/groups.rs`, new `commands/group.rs`
 
 ### Infrastructure
-- [ ] **PostgreSQL backend support** — Add PostgreSQL as alternative to SQLite. `pftui setup` prompts: SQLite (default, zero-config) or PostgreSQL (provide connection string). Requires: database abstraction layer over current raw `rusqlite` calls, `sqlx` as unified query layer (supports both SQLite and Postgres at runtime). Config: `database.backend = "sqlite" | "postgres"` + `database.url` in config.toml. Migration: `pftui export json > backup.json`, re-run `pftui setup` (pick new backend), `pftui import backup.json`. Document in `docs/MIGRATING.md`. Files: new `db/backend.rs`, refactor `db/schema.rs`, `db/*.rs` (abstract all queries), `config.rs`, new `docs/MIGRATING.md`
+- [ ] **PostgreSQL backend support** — Add PostgreSQL as alternative to SQLite via `sqlx` (runtime, not compile-time). `pftui setup` already handles DB choice — add Postgres option to the wizard. Migration uses existing workflow: `pftui export json` → `pftui setup` (pick new backend) → `pftui import`. Files to change:
+  - `db/backend.rs` (new) — abstraction layer over `rusqlite`/`sqlx`
+  - `db/schema.rs` + `db/*.rs` — abstract all queries to work with both backends
+  - `config.rs` — `database.backend` + `database.url` fields
+  - `commands/setup.rs` — add Postgres option to wizard
+  - `docs/MIGRATING.md` (new) — document the 3-step export/setup/import workflow
+  - `README.md` — add "SQLite (default) or PostgreSQL" to features, install section
+  - `website/index.html` — update comparison table + features to mention Postgres support
+  - `AGENTS.md` — update data model section to explain both backends + how agents should handle it
 
 ---
 
