@@ -23,8 +23,6 @@
 
 > Instead of fragile scrapers for BLS/Trading Economics, use Brave Web Search to find latest economic readings. More resilient — when a scraper breaks because a page changed layout, Brave still works because it searches the entire web.
 
-- [ ] **F28.2: Economy tab with real indicator values** — Display actual values in Economy tab [4] instead of `---` or stale data. Show: indicator, current value, previous, direction arrow, release date. Highlight surprises. Files: `src/tui/views/economy.rs`
-
 - [ ] **F28.3: `pftui economy` CLI** — `pftui economy` (all indicators), `--indicator cpi`, `--json`. Agents use this instead of web searching for macro data. Files: new `src/commands/economy.rs`, `cli.rs`, `main.rs`
 
 - [ ] **F28.4: Calendar enrichment** — Search `"next CPI release date"`, `"next FOMC meeting date"` to populate calendar with actual dates and consensus forecasts. Files: `src/data/calendar.rs`
