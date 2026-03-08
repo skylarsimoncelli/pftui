@@ -507,6 +507,28 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Run Brave web/news search for financial research queries
+    Research {
+        /// Research query text
+        query: String,
+
+        /// Use Brave news endpoint instead of web endpoint
+        #[arg(long)]
+        news: bool,
+
+        /// Freshness window: pd (day), pw (week), pm (month), py (year)
+        #[arg(long)]
+        freshness: Option<String>,
+
+        /// Number of results to return
+        #[arg(long, default_value = "5")]
+        count: usize,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
