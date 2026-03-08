@@ -2,60 +2,122 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::config::{load_config, save_config, WatchlistColumn, WorkspaceLayout};
 
-pub fn run(action: &str, field: Option<&str>, value: Option<&str>) -> Result<()> {
+pub fn run(action: &str, field: Option<&str>, value: Option<&str>, json: bool) -> Result<()> {
     match action {
-        "list" => list_config(),
-        "get" => get_field(field),
+        "list" => list_config(json),
+        "get" => get_field(field, json),
         "set" => set_field(field, value),
         _ => bail!("Invalid action '{}'. Use: list, get, set", action),
     }
 }
 
-fn list_config() -> Result<()> {
+fn list_config(json: bool) -> Result<()> {
     let config = load_config()?;
-    println!("base_currency = {}", config.base_currency);
-    println!("refresh_interval = {}", config.refresh_interval);
-    println!("auto_refresh = {}", config.auto_refresh);
-    println!("refresh_interval_secs = {}", config.refresh_interval_secs);
-    println!("portfolio_mode = {}", format!("{:?}", config.portfolio_mode).to_lowercase());
-    println!("theme = {}", config.theme);
-    println!("home_tab = {}", config.home_tab);
-    println!("layout = {}", format_layout(config.layout));
-    println!("fred_api_key = {}", format_secret(config.fred_api_key.as_deref()));
-    println!("brave_api_key = {}", format_secret(config.brave_api_key.as_deref()));
-    println!("news_poll_interval = {}", config.news_poll_interval);
-    println!("custom_news_feeds = {} entries", config.custom_news_feeds.len());
-    println!("chart_sma = {:?}", config.chart_sma);
-    println!(
-        "watchlist.columns = [{}]",
-        config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
-    );
+    
+    if json {
+        use serde_json::json;
+        
+        let output = json!({
+            "base_currency": config.base_currency,
+            "refresh_interval": config.refresh_interval,
+            "auto_refresh": config.auto_refresh,
+            "refresh_interval_secs": config.refresh_interval_secs,
+            "portfolio_mode": format!("{:?}", config.portfolio_mode).to_lowercase(),
+            "theme": config.theme,
+            "home_tab": config.home_tab,
+            "layout": format_layout(config.layout),
+            "fred_api_key": format_secret(config.fred_api_key.as_deref()),
+            "brave_api_key": format_secret(config.brave_api_key.as_deref()),
+            "news_poll_interval": config.news_poll_interval,
+            "custom_news_feeds": config.custom_news_feeds.len(),
+            "chart_sma": config.chart_sma,
+            "watchlist_columns": config.watchlist.columns.iter()
+                .map(|c| format_watchlist_column(*c))
+                .collect::<Vec<_>>(),
+        });
+        
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!("base_currency = {}", config.base_currency);
+        println!("refresh_interval = {}", config.refresh_interval);
+        println!("auto_refresh = {}", config.auto_refresh);
+        println!("refresh_interval_secs = {}", config.refresh_interval_secs);
+        println!("portfolio_mode = {}", format!("{:?}", config.portfolio_mode).to_lowercase());
+        println!("theme = {}", config.theme);
+        println!("home_tab = {}", config.home_tab);
+        println!("layout = {}", format_layout(config.layout));
+        println!("fred_api_key = {}", format_secret(config.fred_api_key.as_deref()));
+        println!("brave_api_key = {}", format_secret(config.brave_api_key.as_deref()));
+        println!("news_poll_interval = {}", config.news_poll_interval);
+        println!("custom_news_feeds = {} entries", config.custom_news_feeds.len());
+        println!("chart_sma = {:?}", config.chart_sma);
+        println!(
+            "watchlist.columns = [{}]",
+            config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
+        );
+    }
+    
     Ok(())
 }
 
-fn get_field(field: Option<&str>) -> Result<()> {
+fn get_field(field: Option<&str>, json: bool) -> Result<()> {
     let field = field.ok_or_else(|| anyhow!("Missing field. Usage: pftui config get <field>"))?;
     let config = load_config()?;
-    match field {
-        "base_currency" => println!("{}", config.base_currency),
-        "refresh_interval" => println!("{}", config.refresh_interval),
-        "auto_refresh" => println!("{}", config.auto_refresh),
-        "refresh_interval_secs" => println!("{}", config.refresh_interval_secs),
-        "portfolio_mode" => println!("{}", format!("{:?}", config.portfolio_mode).to_lowercase()),
-        "theme" => println!("{}", config.theme),
-        "home_tab" => println!("{}", config.home_tab),
-        "layout" | "workspace_layout" => println!("{}", format_layout(config.layout)),
-        "fred_api_key" => println!("{}", format_secret(config.fred_api_key.as_deref())),
-        "brave_api_key" => println!("{}", format_secret(config.brave_api_key.as_deref())),
-        "news_poll_interval" => println!("{}", config.news_poll_interval),
-        "custom_news_feeds" => println!("{}", config.custom_news_feeds.len()),
-        "chart_sma" => println!("{:?}", config.chart_sma),
-        "watchlist.columns" | "watchlist_columns" => println!(
-            "[{}]",
-            config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
-        ),
-        _ => bail!("Unknown field '{}'", field),
+    
+    if json {
+        use serde_json::json;
+        
+        let value = match field {
+            "base_currency" => json!(config.base_currency),
+            "refresh_interval" => json!(config.refresh_interval),
+            "auto_refresh" => json!(config.auto_refresh),
+            "refresh_interval_secs" => json!(config.refresh_interval_secs),
+            "portfolio_mode" => json!(format!("{:?}", config.portfolio_mode).to_lowercase()),
+            "theme" => json!(config.theme),
+            "home_tab" => json!(config.home_tab),
+            "layout" | "workspace_layout" => json!(format_layout(config.layout)),
+            "fred_api_key" => json!(format_secret(config.fred_api_key.as_deref())),
+            "brave_api_key" => json!(format_secret(config.brave_api_key.as_deref())),
+            "news_poll_interval" => json!(config.news_poll_interval),
+            "custom_news_feeds" => json!(config.custom_news_feeds.len()),
+            "chart_sma" => json!(config.chart_sma),
+            "watchlist.columns" | "watchlist_columns" => json!(
+                config.watchlist.columns.iter()
+                    .map(|c| format_watchlist_column(*c))
+                    .collect::<Vec<_>>()
+            ),
+            _ => bail!("Unknown field '{}'", field),
+        };
+        
+        let output = json!({
+            "field": field,
+            "value": value,
+        });
+        
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        match field {
+            "base_currency" => println!("{}", config.base_currency),
+            "refresh_interval" => println!("{}", config.refresh_interval),
+            "auto_refresh" => println!("{}", config.auto_refresh),
+            "refresh_interval_secs" => println!("{}", config.refresh_interval_secs),
+            "portfolio_mode" => println!("{}", format!("{:?}", config.portfolio_mode).to_lowercase()),
+            "theme" => println!("{}", config.theme),
+            "home_tab" => println!("{}", config.home_tab),
+            "layout" | "workspace_layout" => println!("{}", format_layout(config.layout)),
+            "fred_api_key" => println!("{}", format_secret(config.fred_api_key.as_deref())),
+            "brave_api_key" => println!("{}", format_secret(config.brave_api_key.as_deref())),
+            "news_poll_interval" => println!("{}", config.news_poll_interval),
+            "custom_news_feeds" => println!("{}", config.custom_news_feeds.len()),
+            "chart_sma" => println!("{:?}", config.chart_sma),
+            "watchlist.columns" | "watchlist_columns" => println!(
+                "[{}]",
+                config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
+            ),
+            _ => bail!("Unknown field '{}'", field),
+        }
     }
+    
     Ok(())
 }
 

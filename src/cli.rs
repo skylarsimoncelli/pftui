@@ -127,6 +127,9 @@ pub enum Command {
         field: Option<String>,
         /// Field value (required for set)
         value: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
