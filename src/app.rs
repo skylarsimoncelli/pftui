@@ -3021,36 +3021,37 @@ impl App {
         // Must match the constraints in positions.rs render_full_table / render_privacy_table.
         // ratatui default column_spacing = 1.
         let (col_widths, sort_fields): (Vec<u16>, Vec<Option<SortField>>) = if privacy {
-            // Privacy: Asset, Price, Day%, Alloc%, 52W, Trend
-            let fixed: u16 = 12 + 7 + 8 + 11 + 8; // all fixed-width columns
+            // Privacy: Asset, Price, Day%, Alloc%, RSI, Trend
+            let fixed: u16 = 12 + 7 + 8 + 6 + 8; // all fixed-width columns
             let gaps: u16 = 5; // 6 columns → 5 gaps
             let asset_w = content_width.saturating_sub(fixed + gaps).max(18);
             (
-                vec![asset_w, 12, 7, 8, 11, 8],
+                vec![asset_w, 12, 7, 8, 6, 8],
                 vec![
                     Some(SortField::Name),       // Asset
                     None,                         // Price (no sort field)
                     None,                         // Day% (no sort field)
                     Some(SortField::Allocation),  // Alloc%
-                    None,                         // 52W
+                    None,                         // RSI
                     None,                         // Trend
                 ],
             )
         } else {
-            // Full: Asset, Qty, Price, Day%, Gain%, Alloc%, 52W, Trend
-            let fixed: u16 = 8 + 16 + 7 + 8 + 7 + 11 + 8; // all fixed-width columns
-            let gaps: u16 = 7; // 8 columns → 7 gaps
+            // Full: Asset, Price, Day%, Day$, P&L, Value, Alloc%, RSI, Trend
+            let fixed: u16 = 16 + 7 + 9 + 8 + 10 + 7 + 6 + 8; // all fixed-width columns
+            let gaps: u16 = 8; // 9 columns → 8 gaps
             let asset_w = content_width.saturating_sub(fixed + gaps).max(14);
             (
-                vec![asset_w, 8, 16, 7, 8, 7, 11, 8],
+                vec![asset_w, 16, 7, 9, 8, 10, 7, 6, 8],
                 vec![
                     Some(SortField::Name),       // Asset
-                    None,                         // Qty (no sort field)
                     None,                         // Price (no sort field)
                     None,                         // Day% (no sort field)
-                    Some(SortField::GainPct),     // Gain%
+                    None,                         // Day$ (no sort field)
+                    Some(SortField::GainPct),     // P&L
+                    None,                         // Value
                     Some(SortField::Allocation),  // Alloc%
-                    None,                         // 52W
+                    None,                         // RSI
                     None,                         // Trend
                 ],
             )
@@ -7099,15 +7100,10 @@ mod mouse_tests {
         app.sort_field = SortField::Name;
         app.sort_ascending = true;
 
-        // In full mode (120 cols wide), compute Alloc% column position.
-        // Table content width = 57% of 120 = 68, minus 2 borders = 66.
-        // Fixed cols: 8+16+7+8+7+11+8 = 65. Gaps: 7. Asset = 66-65-7 = max(14, -6) → 14.
-        // But Min(14) means at least 14, so asset_w = max(66 - 65 - 7, 14) = max(-6, 14) = 14.
-        // Col offsets (0-indexed from border):
-        //   Asset: 0..14, gap, Qty: 15..23, gap, Price: 24..40, gap,
-        //   Day%: 41..48, gap, Gain%: 49..57, gap, Alloc%: 58..65
-        // Absolute col = 1 (border) + 58 = 59
-        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 59, 5));
+        // In full mode (120 cols wide), Alloc% is the 7th fixed column:
+        // Asset, Price, Day%, Day$, P&L, Value, Alloc%, RSI, Trend.
+        // Click near the Alloc% start boundary.
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 71, 5));
         assert_eq!(app.sort_field, SortField::Allocation);
         assert!(!app.sort_ascending); // Allocation defaults descending
     }

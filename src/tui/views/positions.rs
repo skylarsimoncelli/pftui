@@ -184,6 +184,40 @@ pub fn format_value(value: Decimal) -> String {
     }
 }
 
+/// Format a signed dollar delta compactly with sign and suffix.
+/// Examples: +$892, -$12.4k, +$1.2M
+fn format_signed_value(value: Option<Decimal>) -> String {
+    let Some(value) = value else {
+        return "---".to_string();
+    };
+
+    let val_f64: f64 = value.to_string().parse().unwrap_or(0.0);
+    let abs_val = val_f64.abs();
+    let sign = if val_f64 >= 0.0 { "+" } else { "-" };
+
+    if abs_val >= 1_000_000.0 {
+        format!("{}${:.1}M", sign, abs_val / 1_000_000.0)
+    } else if abs_val >= 10_000.0 {
+        format!("{}${:.0}k", sign, abs_val / 1_000.0)
+    } else if abs_val >= 1_000.0 {
+        format!("{}${:.1}k", sign, abs_val / 1_000.0)
+    } else {
+        format!("{}${:.0}", sign, abs_val)
+    }
+}
+
+/// Estimate one-day dollar P&L from current value and day change %.
+/// Formula: day_pnl = current - (current / (1 + day_pct/100)).
+fn compute_day_pnl_dollars(current_value: Option<Decimal>, day_change_pct: Option<Decimal>) -> Option<Decimal> {
+    let current = current_value?;
+    let pct = day_change_pct?;
+    let denominator = dec!(1) + (pct / dec!(100));
+    if denominator <= dec!(0) {
+        return None;
+    }
+    Some(current - (current / denominator))
+}
+
 /// Build compact RSI indicator spans for a position row.
 /// Format: `45 ▲` with color coding:
 /// - RSI > 70: red (overbought)
@@ -328,13 +362,14 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let overdue_symbols = overdue_review_symbols(app);
 
-    // New column layout: Asset, Price, 24h (or active timeframe), P&L, Value, Alloc%, RSI, Trend
+    // New column layout: Asset, Price, 24h (or active timeframe), Day$, P&L, Value, Alloc%, RSI, Trend
     let timeframe_label = app.change_timeframe.label();
     
     let mut header_cells = vec![
         Cell::from("Asset"),
         Cell::from("Price"),
         Cell::from(timeframe_label),
+        Cell::from("Day$"),
         Cell::from("P&L"),
         Cell::from("Value"),
         Cell::from("Alloc%"),
@@ -356,13 +391,13 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         .height(1);
 
     let sorted_by_category = matches!(app.sort_field, SortField::Category);
-    let col_count = if app.show_drift_columns { 11 } else { 8 };
+    let col_count = if app.show_drift_columns { 12 } else { 9 };
     let mut rows: Vec<Row> = Vec::new();
 
     // Show skeleton placeholder rows while waiting for initial data
     if positions.is_empty() && !app.prices_live {
-        // New layout: Asset, Price, timeframe%, P&L, Value, Alloc%, RSI, Trend
-        let col_widths = [12, 16, 7, 8, 10, 5, 5, 6];
+        // New layout: Asset, Price, timeframe%, Day$, P&L, Value, Alloc%, RSI, Trend
+        let col_widths = [12, 16, 7, 9, 8, 10, 5, 5, 6];
         rows = skeleton::skeleton_rows(t, app.tick_count, &col_widths, col_count);
     }
 
@@ -455,6 +490,13 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             // Position value (price × quantity)
             let position_value = pos.current_price.map(|p| p * pos.quantity);
             let value_text = position_value.map(format_value).unwrap_or_else(|| "---".to_string());
+            let day_pnl = compute_day_pnl_dollars(position_value, compute_change_pct(app, &pos.symbol));
+            let day_pnl_color = match day_pnl {
+                Some(v) if v > Decimal::ZERO => t.gain_green,
+                Some(v) if v < Decimal::ZERO => t.loss_red,
+                Some(_) => t.text_muted,
+                None => t.text_muted,
+            };
 
             // RSI indicator
             let rsi_line = build_rsi_spans(
@@ -476,7 +518,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 7,
             );
 
-            // New column order: Asset, Price, timeframe%, P&L, Value, Alloc%, RSI, Trend
+            // New column order: Asset, Price, timeframe%, Day$, P&L, Value, Alloc%, RSI, Trend
             let mut row_cells = vec![
                 Cell::from(asset_line),
                 Cell::from(Line::from({
@@ -515,6 +557,8 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
                 })),
                 Cell::from(format_change_pct(period_change))
                     .style(Style::default().fg(period_change_color)),
+                Cell::from(format_signed_value(day_pnl))
+                    .style(Style::default().fg(day_pnl_color)),
                 Cell::from(build_gain_bar_spans(t, pos.gain_pct, 8)),
                 Cell::from(value_text)
                     .style(Style::default().fg(t.text_primary)),
@@ -570,12 +614,13 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             rows.push(Row::new(row_cells).style(style));
     }
 
-    // New column layout: Asset, Price, timeframe%, P&L, Value, Alloc%, [drift cols], RSI, Trend
+    // New column layout: Asset, Price, timeframe%, Day$, P&L, Value, Alloc%, [drift cols], RSI, Trend
     let widths = if app.show_drift_columns {
         vec![
             Constraint::Min(14),    // Asset
             Constraint::Length(16), // Price (with mini sparkline)
             Constraint::Length(7),  // timeframe% (24h, 7d, etc.)
+            Constraint::Length(9),  // Day$
             Constraint::Length(8),  // P&L (gain bar)
             Constraint::Length(10), // Value (position value)
             Constraint::Length(7),  // Alloc%
@@ -590,6 +635,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Min(14),    // Asset
             Constraint::Length(16), // Price
             Constraint::Length(7),  // timeframe%
+            Constraint::Length(9),  // Day$
             Constraint::Length(8),  // P&L
             Constraint::Length(10), // Value
             Constraint::Length(7),  // Alloc%

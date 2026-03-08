@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:26 UTC — Add Day$ column to TUI Positions table
+
+- What: added a new `Day$` column in the full Positions view showing absolute one-day dollar P&L per position alongside existing percentage change and total P&L. Day-dollar values are compact-formatted with sign (for example `+$892`, `-$12.4k`) and colored by direction.
+- Why: feedback TODO item. Sentinel reviews repeatedly requested absolute daily P&L visibility in the table instead of only total gain/loss.
+- Files: `src/tui/views/positions.rs` (Day$ calculation/formatting, header/rows/widths), `src/app.rs` (header-click column mapping/tests updated for new layout), `TODO.md` (removed completed item, updated feedback summary line)
+- Tests: `cargo test -q` (1144 passed)
+- TODO: [Feedback] Day P&L dollar column in TUI positions (P2)
+
 ### 2026-03-08 11:27 UTC — Add configurable auto-refresh timer
 
 - What: added explicit config controls for periodic TUI refresh: `auto_refresh` (bool) and `refresh_interval_secs` (u64). App refresh loop now respects `auto_refresh` before triggering timed refreshes. `pftui config` now supports listing/getting/setting both fields.
