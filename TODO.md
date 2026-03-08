@@ -125,8 +125,6 @@
 
 ### Critical
 
-- [ ] **`brief` and `movers` show contradictory 1D% for same assets** — BTC shows -6.4% in brief vs -0.14% in movers. Root cause: `brief` uses Yahoo `regularMarketChangePercent`, `movers` compares last two cached entries. Fix: standardise on Yahoo day-change field. Files: `src/commands/brief.rs`, `src/commands/movers.rs`
-
 - [ ] **`drift` displays raw Decimal with 30+ decimal places** — Shows `18.718814357195681326649469110` instead of `18.72`. Also affects `summary --json`. Files: `src/commands/drift.rs`, `src/commands/summary.rs`
 
 ### Significant

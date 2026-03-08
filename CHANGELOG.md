@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 00:27 UTC — Fix movers 1D% data inconsistency with brief
+
+- What: fixed critical data accuracy bug where `pftui movers` and `pftui brief` showed contradictory 1D% change for the same assets (e.g., BTC -6.4% in brief vs -0.14% in movers). Root cause: movers.rs transformed crypto symbols (BTC → BTC-USD) for historical price lookup, but price_history stores data under original symbols. Now both commands use the same symbol consistently.
+- Why: P0 bug from QA-REPORT.md (highest priority). Data inconsistency breaks user trust — if two commands disagree on a basic metric like daily change, the tool is unreliable. This was causing confusion in portfolio analysis and alerting workflows.
+- Fix: removed `yahoo_symbol_for()` transformation in movers.rs, changed `compute_change_pct()` to accept original symbol instead of Yahoo-normalized symbol. Both brief and movers now fetch historical prices using the same symbol that appears in the cache.
+- Files: `src/commands/movers.rs` (compute_change_pct signature, call site, removed yahoo_symbol_for function and its 2 tests)
+- Tests: all 1112 tests pass (2 tests removed with the dead code)
+- TODO: `brief` and `movers` show contradictory 1D% for same assets (P0 QA)
+
 ### 2026-03-07 21:27 UTC — Add alerts section to brief output
 
 - What: `pftui brief` now displays an Alerts section (after top movers, before P&L attribution) showing triggered alerts (🔴) and near-threshold armed alerts (🟡 within 5% of trigger). Each alert shows the rule text, current value, and distance to threshold for near alerts. Applies to both full and percentage mode.
