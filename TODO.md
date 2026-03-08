@@ -84,7 +84,6 @@
 ### Watchlist (batch: ~2hrs total)
 
 ### Scanner (batch: ~3hrs total)
-- [ ] **Interactive scan builder** — `:scan` modal with add/remove/save/load. Files: new `views/scan_builder.rs`
 - [ ] **Scan-triggered alerts** — Alert when scan results change. Files: `alerts/engine.rs`
 
 ### Distribution

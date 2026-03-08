@@ -12,6 +12,7 @@ pub mod news;
 pub mod position_detail;
 pub mod position_detail_pane;
 pub mod positions;
+pub mod scan_builder;
 pub mod search_chart_popup;
 pub mod search_overlay;
 pub mod transactions;

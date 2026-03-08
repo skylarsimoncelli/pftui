@@ -27,6 +27,7 @@ const COMMANDS: &[CommandPaletteEntry] = &[
     CommandPaletteEntry { command: "view analytics", description: "Switch to Analytics view" },
     CommandPaletteEntry { command: "view news", description: "Switch to News view" },
     CommandPaletteEntry { command: "view journal", description: "Switch to Journal view" },
+    CommandPaletteEntry { command: "scan", description: "Open interactive scan builder" },
     CommandPaletteEntry { command: "quit", description: "Exit pftui" },
 ];
 

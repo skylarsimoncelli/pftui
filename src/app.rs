@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use crate::config::{self, Config, PortfolioMode, WatchlistColumn, WorkspaceLayout};
 use crate::data::brave;
 use crate::db::{allocations, price_cache, price_history};
+use crate::db::scan_queries;
 use crate::db::transactions::{self, get_unique_symbols, insert_transaction, list_transactions};
 use crate::models::allocation::Allocation;
 use crate::models::asset::AssetCategory;
@@ -138,6 +139,13 @@ pub enum ChangeTimeframe {
     SevenDay,
     ThirtyDay,
     YearToDate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanBuilderMode {
+    Edit,
+    SaveName,
+    LoadName,
 }
 
 impl ChangeTimeframe {
@@ -465,6 +473,13 @@ pub struct App {
     pub command_palette_open: bool,
     pub command_palette_input: String,
     pub command_palette_selected: usize,
+    pub scan_builder_open: bool,
+    pub scan_builder_mode: ScanBuilderMode,
+    pub scan_builder_clause_input: String,
+    pub scan_builder_name_input: String,
+    pub scan_builder_clauses: Vec<String>,
+    pub scan_builder_selected: usize,
+    pub scan_builder_message: Option<String>,
 
     // Sorting
     pub sort_field: SortField,
@@ -733,6 +748,13 @@ impl App {
             command_palette_open: false,
             command_palette_input: String::new(),
             command_palette_selected: 0,
+            scan_builder_open: false,
+            scan_builder_mode: ScanBuilderMode::Edit,
+            scan_builder_clause_input: String::new(),
+            scan_builder_name_input: String::new(),
+            scan_builder_clauses: Vec::new(),
+            scan_builder_selected: 0,
+            scan_builder_message: None,
             sort_field: SortField::Allocation,
             sort_ascending: false,
             category_filter: None,
@@ -2162,6 +2184,11 @@ impl App {
             return;
         }
 
+        if self.scan_builder_open {
+            self.handle_scan_builder_key(key);
+            return;
+        }
+
         // Global asset search overlay (must be checked first)
         if self.search_overlay_open {
             self.handle_search_overlay_key(key);
@@ -2727,6 +2754,7 @@ impl App {
                 // Dismiss overlays with scroll if active
                 if self.show_help
                     || self.command_palette_open
+                    || self.scan_builder_open
                     || self.search_overlay_open
                     || self.detail_popup_open
                 {
@@ -2737,6 +2765,7 @@ impl App {
             MouseEventKind::ScrollDown => {
                 if self.show_help
                     || self.command_palette_open
+                    || self.scan_builder_open
                     || self.search_overlay_open
                     || self.detail_popup_open
                 {
@@ -2761,6 +2790,14 @@ impl App {
                     self.command_palette_open = false;
                     self.command_palette_input.clear();
                     self.command_palette_selected = 0;
+                    return;
+                }
+                if self.scan_builder_open {
+                    self.scan_builder_open = false;
+                    self.scan_builder_clause_input.clear();
+                    self.scan_builder_name_input.clear();
+                    self.scan_builder_message = None;
+                    self.scan_builder_mode = ScanBuilderMode::Edit;
                     return;
                 }
                 // If search overlay is open, click outside to dismiss
@@ -3816,7 +3853,162 @@ impl App {
             "view analytics" => self.view_mode = ViewMode::Analytics,
             "view news" => self.view_mode = ViewMode::News,
             "view journal" => self.view_mode = ViewMode::Journal,
+            "scan" => self.open_scan_builder(),
             _ => {}
+        }
+    }
+
+    fn open_scan_builder(&mut self) {
+        self.scan_builder_open = true;
+        self.scan_builder_mode = ScanBuilderMode::Edit;
+        self.scan_builder_clause_input.clear();
+        self.scan_builder_name_input.clear();
+        self.scan_builder_clauses.clear();
+        self.scan_builder_selected = 0;
+        self.scan_builder_message = None;
+    }
+
+    fn current_scan_filter_expr(&self) -> String {
+        self.scan_builder_clauses.join(" and ")
+    }
+
+    fn load_scan_builder_query(&mut self, name: &str) {
+        match Connection::open(&self.db_path)
+            .ok()
+            .and_then(|conn| scan_queries::get_scan_query(&conn, name).ok())
+            .flatten()
+        {
+            Some(row) => {
+                self.scan_builder_clauses = row
+                    .filter_expr
+                    .split(" and ")
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                self.scan_builder_selected = 0;
+                self.scan_builder_message = Some(format!("Loaded '{}'", name));
+            }
+            None => {
+                self.scan_builder_message = Some(format!("No saved scan named '{}'", name));
+            }
+        }
+    }
+
+    fn save_scan_builder_query(&mut self, name: &str) {
+        if self.scan_builder_clauses.is_empty() {
+            self.scan_builder_message = Some("No clauses to save".to_string());
+            return;
+        }
+        let expr = self.current_scan_filter_expr();
+        let res = Connection::open(&self.db_path)
+            .ok()
+            .and_then(|conn| scan_queries::upsert_scan_query(&conn, name, &expr).ok());
+        if res.is_some() {
+            self.scan_builder_message = Some(format!("Saved '{}' ({})", name, expr));
+        } else {
+            self.scan_builder_message = Some("Failed to save scan".to_string());
+        }
+    }
+
+    fn handle_scan_builder_key(&mut self, key: KeyEvent) {
+        match self.scan_builder_mode {
+            ScanBuilderMode::Edit => match key.code {
+                KeyCode::Esc => {
+                    self.scan_builder_open = false;
+                    self.scan_builder_clause_input.clear();
+                    self.scan_builder_name_input.clear();
+                }
+                KeyCode::Backspace => {
+                    self.scan_builder_clause_input.pop();
+                }
+                KeyCode::Char('a') | KeyCode::Enter => {
+                    let clause = self.scan_builder_clause_input.trim();
+                    if !clause.is_empty() {
+                        self.scan_builder_clauses.push(clause.to_string());
+                        self.scan_builder_clause_input.clear();
+                        self.scan_builder_selected = self.scan_builder_clauses.len().saturating_sub(1);
+                        self.scan_builder_message = Some("Clause added".to_string());
+                    }
+                }
+                KeyCode::Char('r') => {
+                    if self.scan_builder_selected < self.scan_builder_clauses.len() {
+                        self.scan_builder_clauses.remove(self.scan_builder_selected);
+                        if self.scan_builder_selected >= self.scan_builder_clauses.len() {
+                            self.scan_builder_selected = self.scan_builder_clauses.len().saturating_sub(1);
+                        }
+                        self.scan_builder_message = Some("Clause removed".to_string());
+                    }
+                }
+                KeyCode::Char('c') => {
+                    self.scan_builder_clauses.clear();
+                    self.scan_builder_selected = 0;
+                    self.scan_builder_message = Some("Cleared clauses".to_string());
+                }
+                KeyCode::Char('s') => {
+                    self.scan_builder_mode = ScanBuilderMode::SaveName;
+                    self.scan_builder_name_input.clear();
+                    self.scan_builder_message = Some("Enter name, then press Enter to save".to_string());
+                }
+                KeyCode::Char('l') => {
+                    self.scan_builder_mode = ScanBuilderMode::LoadName;
+                    self.scan_builder_name_input.clear();
+                    self.scan_builder_message = Some("Enter name, then press Enter to load".to_string());
+                }
+                KeyCode::Down => {
+                    if self.scan_builder_selected + 1 < self.scan_builder_clauses.len() {
+                        self.scan_builder_selected += 1;
+                    }
+                }
+                KeyCode::Up => {
+                    self.scan_builder_selected = self.scan_builder_selected.saturating_sub(1);
+                }
+                KeyCode::Char(ch) => {
+                    self.scan_builder_clause_input.push(ch);
+                }
+                _ => {}
+            },
+            ScanBuilderMode::SaveName => match key.code {
+                KeyCode::Esc => {
+                    self.scan_builder_mode = ScanBuilderMode::Edit;
+                    self.scan_builder_name_input.clear();
+                }
+                KeyCode::Backspace => {
+                    self.scan_builder_name_input.pop();
+                }
+                KeyCode::Enter => {
+                    let name = self.scan_builder_name_input.trim().to_string();
+                    if !name.is_empty() {
+                        self.save_scan_builder_query(&name);
+                    }
+                    self.scan_builder_mode = ScanBuilderMode::Edit;
+                    self.scan_builder_name_input.clear();
+                }
+                KeyCode::Char(ch) => {
+                    self.scan_builder_name_input.push(ch);
+                }
+                _ => {}
+            },
+            ScanBuilderMode::LoadName => match key.code {
+                KeyCode::Esc => {
+                    self.scan_builder_mode = ScanBuilderMode::Edit;
+                    self.scan_builder_name_input.clear();
+                }
+                KeyCode::Backspace => {
+                    self.scan_builder_name_input.pop();
+                }
+                KeyCode::Enter => {
+                    let name = self.scan_builder_name_input.trim().to_string();
+                    if !name.is_empty() {
+                        self.load_scan_builder_query(&name);
+                    }
+                    self.scan_builder_mode = ScanBuilderMode::Edit;
+                    self.scan_builder_name_input.clear();
+                }
+                KeyCode::Char(ch) => {
+                    self.scan_builder_name_input.push(ch);
+                }
+                _ => {}
+            },
         }
     }
 
@@ -7715,6 +7907,19 @@ mod mouse_tests {
         }
         app.handle_key(palette_enter_key());
         assert_eq!(app.workspace_layout, WorkspaceLayout::Compact);
+    }
+
+    #[test]
+    fn command_palette_scan_opens_builder_modal() {
+        let mut app = make_app();
+        assert!(!app.scan_builder_open);
+        app.handle_key(palette_key(':'));
+        for c in "scan".chars() {
+            app.handle_key(palette_key(c));
+        }
+        app.handle_key(palette_enter_key());
+        assert!(app.scan_builder_open);
+        assert!(!app.command_palette_open);
     }
 
     #[test]

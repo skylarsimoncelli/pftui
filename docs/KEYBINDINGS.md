@@ -58,6 +58,7 @@ Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and v
 | Key | Action |
 |---|---|
 | `f` | Cycle category filter (All → Equity → Crypto → …) |
+| `:`, then `scan` | Open interactive scan builder modal |
 | `r` | Force price refresh |
 | `Watchlist: a` | Add alert for selected watchlist symbol |
 | `Watchlist: c` | Open chart popup for selected watchlist symbol |

@@ -95,6 +95,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         views::command_palette::render(frame, size, app);
     }
 
+    if app.scan_builder_open {
+        views::scan_builder::render(frame, size, app);
+    }
+
     if app.asset_detail.is_some() {
         views::asset_detail_popup::render(frame, size, app);
     }

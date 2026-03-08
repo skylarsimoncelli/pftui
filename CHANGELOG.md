@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:29 UTC — Add interactive `:scan` builder modal in TUI
+
+- What: added a new scan builder overlay opened from command palette (`:scan`) with interactive clause management and saved-query operations. Edit mode supports clause add/remove/clear and selection navigation; save/load modes persist and restore named scans using existing SQLite-backed scan queries.
+- Why: TODO scanner workflow item. This makes scan query construction reusable directly inside TUI without leaving the app.
+- Files: `src/tui/views/scan_builder.rs` (new modal renderer), `src/tui/views/mod.rs` + `src/tui/ui.rs` (overlay wiring), `src/tui/views/command_palette.rs` (new `scan` command), `src/app.rs` (scan builder state, input handling, DB save/load actions, overlay dismissal, command execution test), `src/tui/views/help.rs` + `docs/KEYBINDINGS.md` (discoverability docs), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1165 passed)
+- TODO: Interactive scan builder — `:scan` modal with add/remove/save/load
+
 ### 2026-03-08 05:16 UTC — Add saved scan queries in SQLite
 
 - What: added SQLite-backed saved scan queries via new `scan_queries` table and `db/scan_queries.rs` helpers. Extended `pftui scan` to support `--save <name>`, `--load <name>`, and `--list` (with table and JSON output) while preserving filter execution.

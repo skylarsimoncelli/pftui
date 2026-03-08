@@ -150,6 +150,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("D (Shift+d)", "Toggle drift columns", kc, tc));
     lines.push(key_line("Z (Shift+z)", "Toggle category group summaries", kc, tc));
     lines.push(key_line("S (Shift+s)", "Toggle split-pane detail view", kc, tc));
+    lines.push(key_line(": scan", "Open interactive scan builder modal", kc, tc));
     lines.push(key_line("t", "Cycle color theme", kc, tc));
     lines.push(key_line("i", "Add transaction for position", kc, tc));
     lines.push(key_line("X (Shift+x)", "Delete all txns for position", kc, tc));
