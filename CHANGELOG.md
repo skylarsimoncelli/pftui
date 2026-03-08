@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:46 UTC — Add `pftui oil` dashboard command
+
+- What: added a new `pftui oil` command showing WTI (`CL=F`), Brent (`BZ=F`), WTI-Brent spread, RSI(14) for both contracts, and cached oil-geopolitics context buckets (OPEC+, Hormuz, broader geopolitics). Supports `--json`.
+- Why: feedback TODO item for a dedicated oil workflow during geopolitically sensitive periods.
+- Files: `src/commands/oil.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1166 passed)
+- TODO: [Feedback] Oil-specific dashboard — `pftui oil`
+
 ### 2026-03-08 05:44 UTC — Extend `pftui sector` with defense tracking symbols
 
 - What: expanded `pftui sector` coverage to include defense-focused tracking: `ITA` (Aerospace & Defense ETF), `LMT`, `RTX`, and `PLTR`, while preserving existing sector universe behavior and backfill logic. Updated command description and missing-symbol test coverage.
