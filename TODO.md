@@ -805,7 +805,241 @@ Current Regime: RISK-OFF (confidence: 0.85)
 
 ---
 
-### F31.11: AGENTS.md Documentation Update
+### F31.11: Structural Cycles — Long-cycle macro intelligence (Dalio framework)
+
+**Files:** `src/db/structural.rs`, `src/commands/structural.rs`, schema/cli/main/mod updates.
+
+This is the highest-timeframe layer — tracking multi-decade empire cycles, reserve currency transitions, and power metrics. Based on Ray Dalio's "Changing World Order" framework (8 measures of power, 6-stage Big Cycle, 250-year empire cycles). Updated weekly, not daily. Provides CONTEXT for all shorter-timeframe analysis.
+
+**Schema:**
+```sql
+-- Power metrics: track 8 Dalio measures for any country over time
+CREATE TABLE IF NOT EXISTS power_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    country TEXT NOT NULL,           -- "US", "China", "India", etc.
+    metric TEXT NOT NULL,            -- education|innovation|competitiveness|economic_output|trade_share|military|financial_centre|reserve_currency
+    score REAL,                      -- 0.0-1.0 normalised score (from Dalio's index or manual)
+    rank INTEGER,                    -- rank among tracked countries
+    trend TEXT NOT NULL DEFAULT 'stable',  -- rising|stable|declining
+    notes TEXT,
+    source TEXT,                     -- "Dalio GPI 2024", "IMF COFER Q4 2025", etc.
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_power_metrics_country ON power_metrics(country);
+CREATE INDEX IF NOT EXISTS idx_power_metrics_metric ON power_metrics(metric);
+
+-- Structural cycles: track where we are in named long-term cycles
+CREATE TABLE IF NOT EXISTS structural_cycles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_name TEXT NOT NULL UNIQUE,  -- "US Big Cycle", "Debt Supercycle", "Reserve Currency Cycle", etc.
+    current_stage TEXT NOT NULL,       -- user-defined stage name
+    stage_entered TEXT,               -- date entered current stage
+    description TEXT,
+    evidence TEXT,                    -- why we think we're at this stage
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Structural outcomes: long-horizon scenarios (10-30yr) with probability tracking
+CREATE TABLE IF NOT EXISTS structural_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,        -- "Gradual US Decline", "AI Extends Dominance", etc.
+    probability REAL NOT NULL DEFAULT 0.0,
+    time_horizon TEXT,                -- "10-30 years", "5-15 years"
+    description TEXT,
+    historical_parallel TEXT,         -- "British decline 1914-1945"
+    asset_implications TEXT,          -- JSON: {"gold": "bullish", "usd": "bearish", ...}
+    key_signals TEXT,                 -- what to watch for this outcome
+    status TEXT NOT NULL DEFAULT 'active',  -- active|resolved|archived
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Structural outcome history: probability tracking over time (like scenario_history)
+CREATE TABLE IF NOT EXISTS structural_outcome_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    outcome_id INTEGER NOT NULL REFERENCES structural_outcomes(id) ON DELETE CASCADE,
+    probability REAL NOT NULL,
+    driver TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_structural_outcome_history ON structural_outcome_history(outcome_id);
+
+-- Historical parallels: specific episodes from history that match current conditions
+CREATE TABLE IF NOT EXISTS historical_parallels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period TEXT NOT NULL,             -- "British Empire 1910-1945"
+    event TEXT NOT NULL,              -- "UK gold standard exit 1931"
+    parallel_to TEXT NOT NULL,        -- "US debt monetisation 2020-2026"
+    similarity_score INTEGER CHECK(similarity_score BETWEEN 1 AND 10),
+    asset_outcome TEXT,               -- what happened to assets during this period
+    notes TEXT,
+    source TEXT,                      -- "Dalio Ch.4", "Eichengreen 2011"
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Structural weekly log: append-only weekly observations
+CREATE TABLE IF NOT EXISTS structural_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,               -- YYYY-MM-DD (week of)
+    development TEXT NOT NULL,        -- what happened
+    cycle_impact TEXT,                -- how it affects the structural picture
+    outcome_shift TEXT,               -- any probability changes
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_structural_log_date ON structural_log(date);
+```
+
+**Structs** (`src/db/structural.rs`):
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PowerMetric { pub id: i64, pub country: String, pub metric: String, pub score: Option<f64>, pub rank: Option<i32>, pub trend: String, pub notes: Option<String>, pub source: Option<String>, pub recorded_at: String }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuralCycle { pub id: i64, pub cycle_name: String, pub current_stage: String, pub stage_entered: Option<String>, pub description: Option<String>, pub evidence: Option<String>, pub updated_at: String }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuralOutcome { pub id: i64, pub name: String, pub probability: f64, pub time_horizon: Option<String>, pub description: Option<String>, pub historical_parallel: Option<String>, pub asset_implications: Option<String>, pub key_signals: Option<String>, pub status: String, pub created_at: String, pub updated_at: String }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoricalParallel { pub id: i64, pub period: String, pub event: String, pub parallel_to: String, pub similarity_score: Option<i32>, pub asset_outcome: Option<String>, pub notes: Option<String>, pub source: Option<String>, pub created_at: String }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuralLog { pub id: i64, pub date: String, pub development: String, pub cycle_impact: Option<String>, pub outcome_shift: Option<String>, pub created_at: String }
+```
+
+**DB functions:**
+- Power metrics: `set_metric(conn, country, metric, score, rank, trend, notes, source)`, `list_metrics(conn, country: Option<&str>, metric: Option<&str>)`, `get_metric_history(conn, country, metric, limit)`
+- Cycles: `set_cycle(conn, name, stage, entered, description, evidence)`, `list_cycles(conn)`, `get_cycle(conn, name)`
+- Outcomes: `add_outcome(conn, name, probability, ...)`, `list_outcomes(conn)`, `update_outcome_probability(conn, name, probability, driver)` (auto-logs to history), `get_outcome_history(conn, name, limit)`
+- Parallels: `add_parallel(conn, period, event, parallel_to, score, outcome, notes, source)`, `list_parallels(conn, period: Option<&str>)`, `search_parallels(conn, query)`
+- Log: `add_log(conn, date, development, cycle_impact, outcome_shift)`, `list_log(conn, since: Option<&str>, limit)`
+
+**CLI variant:**
+```rust
+/// Track structural macro cycles, power metrics, and historical parallels
+#[command(name = "structural")]
+Structural {
+    /// Action: metric-set, metric-list, metric-history, cycle-set, cycle-list,
+    ///         outcome-add, outcome-list, outcome-update, outcome-history,
+    ///         parallel-add, parallel-list, parallel-search,
+    ///         log-add, log-list, dashboard
+    action: String,
+    /// Value (country for metrics, cycle name, outcome name, search query, etc.)
+    value: Option<String>,
+    #[arg(long)]
+    country: Option<String>,
+    #[arg(long)]
+    metric: Option<String>,
+    #[arg(long)]
+    score: Option<f64>,
+    #[arg(long)]
+    rank: Option<i32>,
+    #[arg(long)]
+    trend: Option<String>,
+    #[arg(long)]
+    stage: Option<String>,
+    #[arg(long)]
+    entered: Option<String>,
+    #[arg(long)]
+    probability: Option<f64>,
+    #[arg(long)]
+    horizon: Option<String>,
+    #[arg(long)]
+    description: Option<String>,
+    #[arg(long)]
+    parallel: Option<String>,
+    #[arg(long)]
+    impact: Option<String>,
+    #[arg(long)]
+    driver: Option<String>,
+    #[arg(long)]
+    period: Option<String>,
+    #[arg(long)]
+    event: Option<String>,
+    #[arg(long)]
+    parallel_to: Option<String>,
+    #[arg(long)]
+    similarity: Option<i32>,
+    #[arg(long)]
+    outcome: Option<String>,
+    #[arg(long)]
+    evidence: Option<String>,
+    #[arg(long)]
+    signals: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+    #[arg(long)]
+    source: Option<String>,
+    #[arg(long)]
+    date: Option<String>,
+    #[arg(long)]
+    since: Option<String>,
+    #[arg(long)]
+    limit: Option<usize>,
+    #[arg(long)]
+    json: bool,
+}
+```
+
+**Key command: `pftui structural dashboard`** — the most important view. Shows:
+```
+Structural Dashboard
+════════════════════════════════════════════════════
+
+Cycles:
+  US Big Cycle          Stage 5→6 (entering breakdown)     since 2026-02
+  Debt Supercycle       Late stage (120%+ debt/GDP)         since 2020
+  Reserve Currency      Declining (58% → ?)                 since 2000
+
+Power Metrics (US vs China):
+  Education:        US #5 ↘  vs  China #1 ↗   [LONG-LEADING]
+  Innovation:       US #1 →  vs  China #2 ↗
+  Trade Share:      US #2 ↘  vs  China #1 ↗
+  Military:         US #1 →  vs  China #2 ↗
+  Reserve Currency: US #1 ↘  vs  China #5 ↗
+
+Structural Outcomes (10-30yr):
+  Gradual US Decline          45%    parallel: UK 1914-1945
+  AI Extends Dominance        25%    parallel: UK Industrial Rev
+  Crisis-Accelerated          15%    parallel: 1931 UK gold exit
+  Chinese Stagnation          10%    parallel: Japan 1990s
+  Multipolar Fragmentation     5%    parallel: Pre-WWI Europe
+
+Recent (last 4 weeks):
+  2026-03-08  Iran war + NFP -92K confirms Stage 5→6 transition
+  2026-03-01  Dalio: "World order has broken down" — Stage 6 declared
+```
+
+**Example usage:**
+```bash
+# Power metrics
+pftui structural metric-set --country US --metric reserve_currency --score 0.58 --rank 1 --trend declining --source "IMF COFER Q4 2025" --notes "Down from 72% in 2000"
+pftui structural metric-set --country China --metric education --score 0.92 --rank 1 --trend rising --source "Dalio GPI 2024"
+pftui structural metric-list --country US
+
+# Cycles
+pftui structural cycle-set "US Big Cycle" --stage "Stage 5→6 transition" --entered 2026-02 --evidence "Dalio declared Stage 6 Feb 2026. Iran war, $38T debt, internal polarisation."
+pftui structural cycle-list
+
+# Outcomes
+pftui structural outcome-add "Gradual US Decline" --probability 45 --horizon "10-30 years" --parallel "British decline 1914-1945" --description "US remains dominant for 10-15 more years but gradually loses share" --impact '{"gold":"bullish","usd":"bearish","us_equities":"underperform_real","commodities":"bullish"}'
+pftui structural outcome-update "Gradual US Decline" --probability 48 --driver "Iran war accelerates de-dollarisation"
+pftui structural outcome-history "Gradual US Decline"
+
+# Historical parallels
+pftui structural parallel-add --period "British Empire 1910-1945" --event "UK gold standard exit 1931" --parallel-to "US potential dollar confidence crisis" --similarity 8 --outcome "Gold +69% in GBP terms. Sterling lost 80% purchasing power 1914-1945." --source "Dalio Ch.4"
+pftui structural parallel-search "gold standard"
+
+# Weekly log
+pftui structural log-add --date 2026-03-08 "Iran war Day 9 + NFP -92K + Dalio Stage 6 declaration" --impact "Confirms all 3 big forces active simultaneously" --outcome-shift "S3 (Crisis-Accelerated) +2pp"
+
+# Dashboard
+pftui structural dashboard --json
+```
+
+---
+
+### F31.12: AGENTS.md Documentation Update
 
 After ALL F31 tables are implemented, update `AGENTS.md` with a new section:
 
@@ -855,6 +1089,17 @@ evolution between asset pairs. Correlation breaks = regime change signals.
 ### Regime (`pftui regime`)
 Automated market regime classification. Computed from VIX, DXY, yields,
 oil, and gold during refresh. Tracks regime transitions over time.
+
+### Structural Cycles (`pftui structural`)
+Long-cycle macro intelligence — multi-decade empire cycles, reserve currency
+transitions, and power metrics (Dalio framework). 6 sub-tables:
+- `power_metrics` — 8 measures of national power (education, innovation,
+  trade, military, etc.) for any country, tracked over time
+- `structural_cycles` — named cycles with current stage and evidence
+- `structural_outcomes` — 10-30yr scenarios with probability tracking
+- `historical_parallels` — specific episodes from history that match now
+- `structural_log` — weekly observations
+Use `pftui structural dashboard` for the combined view.
 ```
 
 ## P1 — Feature Requests
