@@ -408,6 +408,7 @@ pub struct App {
     pub portfolio_mode: PortfolioMode,
     pub show_percentages_only: bool,
     pub show_drift_columns: bool,
+    pub show_sector_grouping: bool,
     pub split_pane_open: bool,
     pub workspace_layout: WorkspaceLayout,
 
@@ -682,6 +683,7 @@ impl App {
             portfolio_mode: config.portfolio_mode,
             show_percentages_only: config.portfolio_mode == PortfolioMode::Percentage,
             show_drift_columns: false,
+            show_sector_grouping: false,
             split_pane_open: false,
             workspace_layout: config.layout,
             transactions: Vec::new(),
@@ -2279,6 +2281,17 @@ impl App {
             // Drift columns toggle
             KeyCode::Char('D') => {
                 self.show_drift_columns = !self.show_drift_columns;
+            }
+
+            // Category grouping toggle (group headers with aggregate alloc/perf)
+            KeyCode::Char('Z') if matches!(self.view_mode, ViewMode::Positions) => {
+                self.show_sector_grouping = !self.show_sector_grouping;
+                if self.show_sector_grouping {
+                    self.sort_field = SortField::Category;
+                    self.sort_ascending = true;
+                    self.last_sort_change_tick = self.tick_count;
+                }
+                self.recompute();
             }
 
             // Split-pane toggle (bottom 30% detail pane for selected position)
@@ -7302,6 +7315,23 @@ mod mouse_tests {
 
         app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('D')));
         assert!(!app.show_drift_columns);
+    }
+
+    #[test]
+    fn sector_grouping_toggle_with_z() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.sort_field = SortField::Name;
+        app.sort_ascending = false;
+        assert!(!app.show_sector_grouping);
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('Z')));
+        assert!(app.show_sector_grouping);
+        assert_eq!(app.sort_field, SortField::Category);
+        assert!(app.sort_ascending);
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('Z')));
+        assert!(!app.show_sector_grouping);
     }
 
     fn palette_key(c: char) -> KeyEvent {

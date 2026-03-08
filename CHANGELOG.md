@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:28 UTC — Add category grouping summaries in Positions view
+
+- What: added a new Positions toggle (`Shift+Z`) that groups rows by asset class and inserts category summary headers with aggregate allocation and group performance (`P&L %`) plus position count. Grouping is available in both full and privacy views; enabling it auto-sorts by category for stable sections.
+- Why: feedback TODO item. Users wanted grouped category context (Cash/Commodities/Crypto/Equities) with aggregate performance directly in the table instead of only per-position rows.
+- Files: `src/app.rs` (new `show_sector_grouping` state + keybinding + test), `src/tui/views/positions.rs` (category aggregate computation and summary rows), `src/tui/views/help.rs` (new keybinding help), `TODO.md` (removed completed item and updated feedback summary line)
+- Tests: `cargo test -q` (1145 passed)
+- TODO: [Feedback] Sector grouping in positions (P2)
+
 ### 2026-03-08 04:26 UTC — Add Day$ column to TUI Positions table
 
 - What: added a new `Day$` column in the full Positions view showing absolute one-day dollar P&L per position alongside existing percentage change and total P&L. Day-dollar values are compact-formatted with sign (for example `+$892`, `-$12.4k`) and colored by direction.

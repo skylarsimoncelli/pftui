@@ -4,7 +4,7 @@ use ratatui::{
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::app::{is_privacy_view, App, PriceFlashDirection, SortField};
 use crate::config::PortfolioMode;
@@ -316,6 +316,60 @@ fn category_divider_row(category: AssetCategory, t: &theme::Theme, col_count: us
         .height(1)
 }
 
+#[derive(Default, Clone, Copy)]
+struct CategoryAggregate {
+    count: usize,
+    allocation_pct: Decimal,
+    total_gain: Decimal,
+    total_cost: Decimal,
+}
+
+fn compute_category_aggregates(positions: &[crate::models::position::Position]) -> HashMap<AssetCategory, CategoryAggregate> {
+    let mut out: HashMap<AssetCategory, CategoryAggregate> = HashMap::new();
+    for pos in positions {
+        let entry = out.entry(pos.category).or_default();
+        entry.count += 1;
+        entry.allocation_pct += pos.allocation_pct.unwrap_or(dec!(0));
+        entry.total_gain += pos.gain.unwrap_or(dec!(0));
+        entry.total_cost += pos.total_cost;
+    }
+    out
+}
+
+fn category_summary_row(
+    category: AssetCategory,
+    agg: CategoryAggregate,
+    t: &theme::Theme,
+    col_count: usize,
+) -> Row<'static> {
+    let label = format!("{}", category);
+    let cap_label = capitalize_category(&label);
+    let perf_pct = if agg.total_cost > dec!(0) {
+        Some((agg.total_gain / agg.total_cost) * dec!(100))
+    } else {
+        None
+    };
+    let perf_text = perf_pct
+        .map(|v| format!("{:+.1}%", v))
+        .unwrap_or_else(|| "---".to_string());
+    let summary = format!(
+        "─── {} ({}) · Alloc {:.1}% · P&L {} ───",
+        cap_label, agg.count, agg.allocation_pct, perf_text
+    );
+
+    let mut cells: Vec<Cell> = Vec::with_capacity(col_count);
+    cells.push(Cell::from(Span::styled(
+        summary,
+        Style::default().fg(t.text_secondary).bold(),
+    )));
+    for _ in 1..col_count {
+        cells.push(Cell::from(""));
+    }
+    Row::new(cells)
+        .style(Style::default().bg(t.surface_1_alt))
+        .height(1)
+}
+
 /// Capitalize the first letter of a category name.
 fn capitalize_category(s: &str) -> String {
     let mut chars = s.chars();
@@ -390,9 +444,14 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
         .style(Style::default().fg(t.text_secondary).bold())
         .height(1);
 
-    let sorted_by_category = matches!(app.sort_field, SortField::Category);
+    let grouped_by_category = app.show_sector_grouping || matches!(app.sort_field, SortField::Category);
     let col_count = if app.show_drift_columns { 12 } else { 9 };
     let mut rows: Vec<Row> = Vec::new();
+    let category_aggregates = if app.show_sector_grouping {
+        Some(compute_category_aggregates(positions))
+    } else {
+        None
+    };
 
     // Show skeleton placeholder rows while waiting for initial data
     if positions.is_empty() && !app.prices_live {
@@ -405,9 +464,14 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
 
     for (i, pos) in positions.iter().enumerate() {
         // Insert category divider when sorted by category and category changes
-        if sorted_by_category {
+        if grouped_by_category {
             if last_category != Some(pos.category) {
-                rows.push(category_divider_row(pos.category, t, col_count));
+                if let Some(aggregates) = &category_aggregates {
+                    let agg = aggregates.get(&pos.category).copied().unwrap_or_default();
+                    rows.push(category_summary_row(pos.category, agg, t, col_count));
+                } else {
+                    rows.push(category_divider_row(pos.category, t, col_count));
+                }
             }
             last_category = Some(pos.category);
         }
@@ -665,9 +729,14 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
 
-    let sorted_by_category = matches!(app.sort_field, SortField::Category);
+    let grouped_by_category = app.show_sector_grouping || matches!(app.sort_field, SortField::Category);
     let privacy_col_count = 6;
     let mut rows: Vec<Row> = Vec::new();
+    let category_aggregates = if app.show_sector_grouping {
+        Some(compute_category_aggregates(positions))
+    } else {
+        None
+    };
 
     // Show skeleton placeholder rows while waiting for initial data
     if positions.is_empty() && !app.prices_live {
@@ -678,9 +747,14 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
     let mut last_category: Option<AssetCategory> = None;
 
     for (i, pos) in positions.iter().enumerate() {
-        if sorted_by_category {
+        if grouped_by_category {
             if last_category != Some(pos.category) {
-                rows.push(category_divider_row(pos.category, t, privacy_col_count));
+                if let Some(aggregates) = &category_aggregates {
+                    let agg = aggregates.get(&pos.category).copied().unwrap_or_default();
+                    rows.push(category_summary_row(pos.category, agg, t, privacy_col_count));
+                } else {
+                    rows.push(category_divider_row(pos.category, t, privacy_col_count));
+                }
             }
             last_category = Some(pos.category);
         }
@@ -792,12 +866,17 @@ fn render_table(
         Style::default().fg(t.text_accent)
     };
 
-    let title = if app.portfolio_mode == PortfolioMode::Percentage {
+    let base_title = if app.portfolio_mode == PortfolioMode::Percentage {
         " Positions (%) "
     } else if app.show_percentages_only {
         " Positions [% view] "
     } else {
         " Positions "
+    };
+    let title = if app.show_sector_grouping {
+        format!("{base_title}[Grouped] ")
+    } else {
+        base_title.to_string()
     };
 
     let is_active_panel = !(app.selected_position().is_some() && app.terminal_width >= crate::tui::ui::COMPACT_WIDTH);

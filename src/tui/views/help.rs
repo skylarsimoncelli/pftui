@@ -140,6 +140,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
         Style::default().fg(sc),
     )));
     lines.push(key_line("D (Shift+d)", "Toggle drift columns", kc, tc));
+    lines.push(key_line("Z (Shift+z)", "Toggle category group summaries", kc, tc));
     lines.push(key_line("S (Shift+s)", "Toggle split-pane detail view", kc, tc));
     lines.push(key_line("t", "Cycle color theme", kc, tc));
     lines.push(key_line("A (Shift+a)", "Add transaction for position", kc, tc));
