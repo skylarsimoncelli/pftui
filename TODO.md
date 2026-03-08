@@ -96,7 +96,6 @@
 ## P3 — Long Term
 
 - [ ] **Multi-portfolio support** — Named portfolios with switching
-- [ ] **Sector heatmap** — Treemap-style sector performance view
 - [ ] **Options chains** — If a free data source exists
 
 ---

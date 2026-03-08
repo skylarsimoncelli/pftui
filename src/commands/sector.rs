@@ -17,7 +17,7 @@ use crate::indicators::{compute_macd, compute_rsi};
 use crate::price::yahoo;
 
 /// Sector and defense universe definitions (symbol, name).
-const SECTOR_ETFS: &[(&str, &str)] = &[
+pub(crate) const SECTOR_ETFS: &[(&str, &str)] = &[
     ("XLE", "Energy"),
     ("XLF", "Financials"),
     ("XLK", "Technology"),

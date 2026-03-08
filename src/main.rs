@@ -472,6 +472,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Sector { json }) => commands::sector::run(&conn, &config, json),
+        Some(Command::Heatmap { json }) => commands::heatmap::run(&conn, json),
         Some(Command::StressTest { scenario, json }) => {
             commands::stress_test::run(&conn, &config, &scenario, json)
         }

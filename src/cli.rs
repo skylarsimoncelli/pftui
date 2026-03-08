@@ -669,6 +669,13 @@ pub enum Command {
         json: bool,
     },
 
+    /// Treemap-style sector heatmap using 1D performance
+    Heatmap {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Run named portfolio stress scenarios
     StressTest {
         /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")

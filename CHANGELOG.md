@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:27 UTC — Add `pftui heatmap` treemap-style sector performance command
+
+- What: added a new `pftui heatmap` command that renders a treemap-style, color-coded sector dashboard from 1D percent changes across the sector + defense universe. Supports both terminal visualization and `--json` output with per-tile weights.
+- Why: TODO item for a sector heatmap view to quickly scan sector leadership/laggards.
+- Files: `src/commands/heatmap.rs` (new command + tests), `src/commands/sector.rs` (exported shared sector universe constant), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q` (1174 passed)
+- TODO: Sector heatmap
+
 ### 2026-03-08 06:24 UTC — Add user-configurable global keybindings in `config.toml`
 
 - What: added a new `[keybindings]` config section to customize global keys (`quit`, `help`, `command_palette`, `refresh`, `search`, `theme_cycle`, `privacy_toggle`), wired the app to honor those bindings, and documented usage/examples in keybinding docs.
