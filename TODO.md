@@ -59,7 +59,6 @@
 ### Data & Display
 
 ### CLI Enhancements
-- [ ] [Feedback] **`pftui status --json`** — Structured JSON output for agent health checks. All other data commands support `--json` but status doesn't, breaking the pattern for automated monitoring. Files: `commands/status.rs`
 - [ ] [Feedback] **Fix `pftui sector` data — only returns 1 of 18 ETFs** — Sector command should return all 18 configured sector ETFs (XLK, XLF, XLV, etc.) but most show no data. Likely Yahoo Finance fetch failure for batch sector ETF quotes. Files: `commands/sector.rs`, `price/yahoo.rs`
 
 ### Analytics
@@ -159,4 +158,4 @@
 
 1. **Brave Search API integration** (P0) — Unifies broken data pipelines (predictions, news depth, economic data) behind one reliable API. The single highest-leverage infrastructure investment. 4 data integrations still intermittent.
 2. **Fix `pftui sector` data bug** (P1) — Only returns 1 of 18 ETFs. Quick win that directly improves Eventuality Planner scores. Likely a batch Yahoo Finance fetch issue.
-3. **`pftui status --json` + config discoverability** (P1/P2) — Completes CLI consistency for agent health checks. Config command is invisible to users — needs help popup and README mention.
+3. **Config discoverability** (P2) — Config command is invisible to users — needs help popup and README mention (`pftui config set brave_api_key <key>`).

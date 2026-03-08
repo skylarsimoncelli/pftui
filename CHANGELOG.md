@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 03:27 UTC — Add --json flag to status command
+
+- What: `pftui status --json` now outputs structured JSON for agent health checks. Returns `brave_api_key_configured` boolean and `sources` array with per-source health (name, last_fetch RFC3339, records count, status: fresh/stale/empty).
+- Why: P1 CLI enhancement. All other data commands support `--json` but status didn't, breaking the pattern for automated monitoring. Agents need structured status output for health checks and alerting workflows. Completes CLI consistency.
+- Files: `src/cli.rs` (added --json flag to Status command), `src/main.rs` (wire flag to run call), `src/commands/status.rs` (refactored run() to accept json param, added print_json() and print_table() helpers)
+- Tests: all 1127 tests pass
+- TODO: `pftui status --json` (P1)
+
 ### 2026-03-08 00:27 UTC — Fix movers 1D% data inconsistency with brief
 
 - What: fixed critical data accuracy bug where `pftui movers` and `pftui brief` showed contradictory 1D% change for the same assets (e.g., BTC -6.4% in brief vs -0.14% in movers). Root cause: movers.rs transformed crypto symbols (BTC → BTC-USD) for historical price lookup, but price_history stores data under original symbols. Now both commands use the same symbol consistently.
