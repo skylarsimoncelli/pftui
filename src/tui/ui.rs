@@ -14,6 +14,30 @@ pub const ULTRA_WIDE_WIDTH: u16 = 160;
 /// Minimum height for the portfolio overview panel (allocation bars + sparkline).
 const MIN_OVERVIEW_HEIGHT: u16 = 14;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PositionsLayoutMode {
+    Compact,
+    Split,
+    Analyst,
+}
+
+fn choose_positions_layout_mode(
+    width: u16,
+    workspace_layout: crate::config::WorkspaceLayout,
+) -> PositionsLayoutMode {
+    use crate::config::WorkspaceLayout;
+
+    if width < COMPACT_WIDTH || workspace_layout == WorkspaceLayout::Compact {
+        return PositionsLayoutMode::Compact;
+    }
+
+    if workspace_layout == WorkspaceLayout::Analyst && width >= ULTRA_WIDE_WIDTH {
+        return PositionsLayoutMode::Analyst;
+    }
+
+    PositionsLayoutMode::Split
+}
+
 pub fn render(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
 
@@ -106,15 +130,16 @@ fn render_positions_layout_normal(frame: &mut Frame, area: Rect, app: &mut App) 
     use crate::tui::theme;
 
     let width = app.terminal_width;
+    let mode = choose_positions_layout_mode(width, app.workspace_layout);
 
-    if width < COMPACT_WIDTH {
-        // Compact: full width, no right pane
+    if mode == PositionsLayoutMode::Compact {
+        // Compact preset: table-first full-width layout.
         views::positions::render(frame, area, app);
-    } else if width >= ULTRA_WIDE_WIDTH {
-        // Ultra-wide 3-column layout:
-        //   Left (45%):   table (top) + portfolio overview (bottom)
-        //   Middle (25%): market context (top movers, macro, F&G, events, alerts)
-        //   Right (30%):  asset section header + asset header + price chart
+        return;
+    }
+
+    if mode == PositionsLayoutMode::Analyst {
+        // Analyst preset on ultra-wide: 3-column context-heavy layout.
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -124,10 +149,8 @@ fn render_positions_layout_normal(frame: &mut Frame, area: Rect, app: &mut App) 
             ])
             .split(area);
 
-        // Left pane: section header + table + portfolio overview
         render_left_pane(frame, h_chunks[0], app);
 
-        // Middle pane: market context
         let middle_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -139,23 +162,21 @@ fn render_positions_layout_normal(frame: &mut Frame, area: Rect, app: &mut App) 
         theme::render_section_header(frame, middle_chunks[0], "MARKET CONTEXT", &app.theme);
         widgets::market_context::render(frame, middle_chunks[1], app);
 
-        // Right pane: asset overview + chart
         render_right_pane(frame, h_chunks[2], app);
-    } else {
-        // Standard two-column layout:
-        //   Left (57%):  table (top) + portfolio overview (bottom)
-        //   Right (43%): asset section header + asset header + price chart
-        let h_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(57),
-                Constraint::Percentage(43),
-            ])
-            .split(area);
-
-        render_left_pane(frame, h_chunks[0], app);
-        render_right_pane(frame, h_chunks[1], app);
+        return;
     }
+
+    // Split preset (or Analyst on non-ultra-wide): two-column default layout.
+    let h_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(57),
+            Constraint::Percentage(43),
+        ])
+        .split(area);
+
+    render_left_pane(frame, h_chunks[0], app);
+    render_right_pane(frame, h_chunks[1], app);
 }
 
 /// Render the left pane: section header + positions table + portfolio overview.
@@ -303,9 +324,46 @@ fn compute_overview_height(app: &App, max_height: u16) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::WorkspaceLayout;
 
     #[test]
     fn compact_width_threshold_is_100() {
         assert_eq!(COMPACT_WIDTH, 100);
+    }
+
+    #[test]
+    fn layout_mode_compact_when_preset_compact() {
+        assert_eq!(
+            choose_positions_layout_mode(140, WorkspaceLayout::Compact),
+            PositionsLayoutMode::Compact
+        );
+    }
+
+    #[test]
+    fn layout_mode_compact_when_narrow_terminal() {
+        assert_eq!(
+            choose_positions_layout_mode(90, WorkspaceLayout::Split),
+            PositionsLayoutMode::Compact
+        );
+    }
+
+    #[test]
+    fn layout_mode_split_default() {
+        assert_eq!(
+            choose_positions_layout_mode(140, WorkspaceLayout::Split),
+            PositionsLayoutMode::Split
+        );
+    }
+
+    #[test]
+    fn layout_mode_analyst_only_on_ultra_wide() {
+        assert_eq!(
+            choose_positions_layout_mode(170, WorkspaceLayout::Analyst),
+            PositionsLayoutMode::Analyst
+        );
+        assert_eq!(
+            choose_positions_layout_mode(140, WorkspaceLayout::Analyst),
+            PositionsLayoutMode::Split
+        );
     }
 }

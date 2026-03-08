@@ -104,7 +104,6 @@
 - [ ] **Homebrew Core** — Needs 50+ GitHub stars (currently 1)
 
 ### Other
-- [ ] **Workspace presets** — Config: `layout = "compact" | "split" | "analyst"`. Files: `config.rs`, `tui/ui.rs`
 - [ ] **Chart grid view** — Mini braille charts for all positions (6-9 per screen). New view `8`. Files: new `views/chart_grid.rs`
 - [ ] **Onboarding tour** — First-run walkthrough for new users. Files: new `views/onboarding.rs`
 - [ ] **Calendar in Economy tab** — 7-day forward view with impact color-coding. Files: `views/economy.rs`

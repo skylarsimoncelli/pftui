@@ -229,6 +229,7 @@ mod tests {
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,

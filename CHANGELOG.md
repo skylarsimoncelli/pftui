@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 07:27 UTC — Add workspace layout presets (`compact`/`split`/`analyst`)
+
+- What: added a new `layout` config enum with presets `compact`, `split`, and `analyst`; wired it into app state and positions rendering mode selection. `compact` forces full-width table layout, `split` uses the two-column layout on wide terminals, and `analyst` enables the ultra-wide 3-column market-context layout when terminal width is 160+. Also added `pftui config` support for reading and setting this field (`config list`, `config get layout`, `config set layout <preset>`).
+- Why: TODO item for workspace presets. This makes layout behavior explicitly user-configurable instead of purely width-driven and gives power users deterministic workspace control.
+- Files: `src/config.rs` (new `WorkspaceLayout` enum + config field + tests), `src/app.rs` (store/load preset and propagate in runtime config usage), `src/tui/ui.rs` (preset-aware layout selection + tests), `src/commands/config_cmd.rs` (list/get/set support), `src/commands/export.rs` (test config initializer update), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1138 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: Workspace presets — Config: `layout = "compact" | "split" | "analyst"` (P2)
+
 ### 2026-03-08 06:27 UTC — Add agricultural commodity tracking to `pftui macro`
 
 - What: added wheat (`ZW=F`), corn (`ZC=F`), soybeans (`ZS=F`), and coffee (`KC=F`) to macro market indicators and commodity table output. Also added on-demand backfill for missing macro symbols via Yahoo with cache upsert so these indicators populate even when not already present in `price_cache`.

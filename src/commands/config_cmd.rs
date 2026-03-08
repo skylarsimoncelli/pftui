@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 
-use crate::config::{load_config, save_config};
+use crate::config::{load_config, save_config, WorkspaceLayout};
 
 pub fn run(action: &str, field: Option<&str>, value: Option<&str>) -> Result<()> {
     match action {
@@ -18,6 +18,7 @@ fn list_config() -> Result<()> {
     println!("portfolio_mode = {}", format!("{:?}", config.portfolio_mode).to_lowercase());
     println!("theme = {}", config.theme);
     println!("home_tab = {}", config.home_tab);
+    println!("layout = {}", format_layout(config.layout));
     println!("fred_api_key = {}", format_secret(config.fred_api_key.as_deref()));
     println!("brave_api_key = {}", format_secret(config.brave_api_key.as_deref()));
     println!("news_poll_interval = {}", config.news_poll_interval);
@@ -35,6 +36,7 @@ fn get_field(field: Option<&str>) -> Result<()> {
         "portfolio_mode" => println!("{}", format!("{:?}", config.portfolio_mode).to_lowercase()),
         "theme" => println!("{}", config.theme),
         "home_tab" => println!("{}", config.home_tab),
+        "layout" | "workspace_layout" => println!("{}", format_layout(config.layout)),
         "fred_api_key" => println!("{}", format_secret(config.fred_api_key.as_deref())),
         "brave_api_key" => println!("{}", format_secret(config.brave_api_key.as_deref())),
         "news_poll_interval" => println!("{}", config.news_poll_interval),
@@ -61,9 +63,37 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             save_config(&config)?;
             println!("Updated brave_api_key");
         }
-        _ => bail!("Unsupported set field '{}'. Currently supported: brave_api_key", field),
+        "layout" | "workspace_layout" => {
+            let parsed = match value.trim().to_lowercase().as_str() {
+                "compact" => WorkspaceLayout::Compact,
+                "split" => WorkspaceLayout::Split,
+                "analyst" => WorkspaceLayout::Analyst,
+                _ => bail!(
+                    "Invalid layout '{}'. Use: compact, split, analyst",
+                    value
+                ),
+            };
+            config.layout = parsed;
+            save_config(&config)?;
+            println!(
+                "Updated layout = {}",
+                format_layout(config.layout)
+            );
+        }
+        _ => bail!(
+            "Unsupported set field '{}'. Currently supported: brave_api_key, layout",
+            field
+        ),
     }
     Ok(())
+}
+
+fn format_layout(layout: WorkspaceLayout) -> &'static str {
+    match layout {
+        WorkspaceLayout::Compact => "compact",
+        WorkspaceLayout::Split => "split",
+        WorkspaceLayout::Analyst => "analyst",
+    }
 }
 
 fn format_secret(secret: Option<&str>) -> String {
@@ -103,5 +133,12 @@ mod tests {
     #[test]
     fn masks_short_secret() {
         assert_eq!(mask_secret("abc"), "***");
+    }
+
+    #[test]
+    fn formats_layout() {
+        assert_eq!(format_layout(WorkspaceLayout::Compact), "compact");
+        assert_eq!(format_layout(WorkspaceLayout::Split), "split");
+        assert_eq!(format_layout(WorkspaceLayout::Analyst), "analyst");
     }
 }

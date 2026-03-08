@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
-use crate::config::{self, Config, PortfolioMode};
+use crate::config::{self, Config, PortfolioMode, WorkspaceLayout};
 use crate::data::brave;
 use crate::db::{allocations, price_cache, price_history};
 use crate::db::transactions::{self, get_unique_symbols, insert_transaction, list_transactions};
@@ -409,6 +409,7 @@ pub struct App {
     pub show_percentages_only: bool,
     pub show_drift_columns: bool,
     pub split_pane_open: bool,
+    pub workspace_layout: WorkspaceLayout,
 
     // Data
     pub transactions: Vec<Transaction>,
@@ -678,6 +679,7 @@ impl App {
             show_percentages_only: config.portfolio_mode == PortfolioMode::Percentage,
             show_drift_columns: false,
             split_pane_open: false,
+            workspace_layout: config.layout,
             transactions: Vec::new(),
             allocations: Vec::new(),
             positions: Vec::new(),
@@ -835,6 +837,7 @@ impl App {
             } else {
                 "positions".to_string()
             },
+            layout: self.workspace_layout,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -868,6 +871,7 @@ impl App {
             } else {
                 "positions".to_string()
             },
+            layout: self.workspace_layout,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -4294,6 +4298,7 @@ mod vim_motion_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -4535,6 +4540,7 @@ mod search_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -4862,6 +4868,7 @@ mod timeframe_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -4880,6 +4887,7 @@ mod timeframe_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -4966,6 +4974,7 @@ mod crosshair_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -5123,6 +5132,7 @@ mod responsive_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -5182,6 +5192,7 @@ mod on_demand_history_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -5249,6 +5260,7 @@ mod daily_change_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -5385,6 +5397,7 @@ mod portfolio_value_history_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -6245,6 +6258,7 @@ mod sort_flash_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -6340,6 +6354,7 @@ mod prev_day_alloc_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -6507,6 +6522,7 @@ mod mouse_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -7148,6 +7164,7 @@ mod mouse_tests {
             portfolio_mode: PortfolioMode::Full,
             theme: "default".to_string(),
             home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,

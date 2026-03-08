@@ -11,6 +11,15 @@ pub enum PortfolioMode {
     Percentage,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkspaceLayout {
+    Compact,
+    #[default]
+    Split,
+    Analyst,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_base_currency")]
@@ -25,6 +34,12 @@ pub struct Config {
     /// Allowed values: "positions" or "watchlist".
     #[serde(default = "default_home_tab")]
     pub home_tab: String,
+    /// Workspace layout preset for Positions view.
+    /// compact: table-first, no right pane
+    /// split: standard two-column layout on wide terminals
+    /// analyst: enables ultra-wide 3-column layout when available
+    #[serde(default, alias = "workspace_layout")]
+    pub layout: WorkspaceLayout,
     /// FRED API key for fetching economic indicators.
     /// Register at: https://fred.stlouisfed.org/docs/api/api_key.html
     #[serde(default)]
@@ -97,6 +112,7 @@ impl Default for Config {
             portfolio_mode: PortfolioMode::default(),
             theme: default_theme(),
             home_tab: default_home_tab(),
+            layout: WorkspaceLayout::default(),
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: default_news_poll_interval(),
@@ -205,10 +221,11 @@ pub fn load_config_with_first_run_prompt() -> Result<Config> {
     }
 
     let config = Config {
-        home_tab: prompt_first_run_home_tab()?,
-        brave_api_key: prompt_optional_brave_api_key()?,
-        ..Config::default()
-    };
+            home_tab: prompt_first_run_home_tab()?,
+            layout: WorkspaceLayout::default(),
+            brave_api_key: prompt_optional_brave_api_key()?,
+            ..Config::default()
+        };
     save_config(&config)?;
     Ok(config)
 }
@@ -277,6 +294,7 @@ mod tests {
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
+        assert_eq!(config.layout, WorkspaceLayout::Split);
     }
 
     #[test]
@@ -299,6 +317,7 @@ mod tests {
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
             home_tab: "watchlist".to_string(),
+            layout: WorkspaceLayout::Analyst,
             fred_api_key: None,
             brave_api_key: None,
             news_poll_interval: 600,
@@ -313,6 +332,7 @@ mod tests {
         assert_eq!(loaded.portfolio_mode, PortfolioMode::Percentage);
         assert_eq!(loaded.theme, "nord");
         assert_eq!(loaded.home_tab, "watchlist");
+        assert_eq!(loaded.layout, WorkspaceLayout::Analyst);
     }
 
     #[test]
@@ -324,6 +344,7 @@ mod tests {
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
+        assert_eq!(config.layout, WorkspaceLayout::Split);
     }
 
     #[test]
@@ -334,6 +355,7 @@ mod tests {
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
+        assert_eq!(config.layout, WorkspaceLayout::Split);
     }
 
     #[test]
@@ -345,6 +367,22 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&PortfolioMode::Percentage).unwrap(),
             "\"percentage\""
+        );
+    }
+
+    #[test]
+    fn workspace_layout_serialization() {
+        assert_eq!(
+            serde_json::to_string(&WorkspaceLayout::Compact).unwrap(),
+            "\"compact\""
+        );
+        assert_eq!(
+            serde_json::to_string(&WorkspaceLayout::Split).unwrap(),
+            "\"split\""
+        );
+        assert_eq!(
+            serde_json::to_string(&WorkspaceLayout::Analyst).unwrap(),
+            "\"analyst\""
         );
     }
 
