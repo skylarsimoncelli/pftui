@@ -23,8 +23,6 @@
 
 > Instead of fragile scrapers for BLS/Trading Economics, use Brave Web Search to find latest economic readings. More resilient — when a scraper breaks because a page changed layout, Brave still works because it searches the entire web.
 
-- [ ] **F28.4: Calendar enrichment** — Search `"next CPI release date"`, `"next FOMC meeting date"` to populate calendar with actual dates and consensus forecasts. Files: `src/data/calendar.rs`
-
 ### F29: Brave-Powered Research Command
 
 > A new `pftui research` command — the agent's Swiss Army knife. Instead of falling back to their own web_search tool, agents stay in pftui for ANY financial question.
