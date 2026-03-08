@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:40 UTC — Add inline watchlist actions (`a`/`c`/`r`)
+
+- What: implemented watchlist inline actions in TUI: `a` adds a price alert for the selected watchlist symbol (uses configured watchlist target if present, otherwise defaults to +5% above current price), `c` opens chart popup for the selected symbol, and `r` removes the selected symbol from watchlist. Added regression tests for all three actions.
+- Why: TODO item for faster in-view watchlist workflow without switching to CLI commands.
+- Files: `src/app.rs` (watchlist action handlers + keybindings + tests), `src/tui/views/help.rs` (help overlay key hints), `docs/KEYBINDINGS.md` (reference updates), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1153 passed)
+- TODO: Inline watchlist actions — `a`=alert, `c`=chart, `r`=remove (P2)
+
 ### 2026-03-08 04:36 UTC — Add watchlist column customization via config
 
 - What: implemented configurable watchlist table columns using config: `[watchlist] columns = [...]`. Supported columns: `symbol`, `name`, `category`, `price`, `change_pct`, `rsi`, `sma50`, `target`, `prox`. Watchlist rendering now follows configured column order and width mapping. Added `pftui config` support for listing/getting/setting `watchlist.columns` via CSV values.

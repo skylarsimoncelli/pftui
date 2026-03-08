@@ -58,6 +58,9 @@ Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and v
 |---|---|
 | `f` | Cycle category filter (All → Equity → Crypto → …) |
 | `r` | Force price refresh |
+| `Watchlist: a` | Add alert for selected watchlist symbol |
+| `Watchlist: c` | Open chart popup for selected watchlist symbol |
+| `Watchlist: r` | Remove selected watchlist symbol |
 | `i` | Add transaction for selected position (full mode) |
 | `p` | Toggle privacy view (full mode only) |
 | `t` | Cycle color theme |

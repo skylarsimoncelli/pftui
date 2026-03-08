@@ -1645,6 +1645,10 @@ impl App {
         self.display_positions.get(self.selected_index)
     }
 
+    fn selected_watchlist_entry(&self) -> Option<&db_watchlist::WatchlistEntry> {
+        self.watchlist_entries.get(self.watchlist_selected_index)
+    }
+
     /// Update selected_index and sync selected_symbol to the position at that index.
     pub fn set_selected_index(&mut self, new_index: usize) {
         self.selected_index = new_index;
@@ -1682,6 +1686,74 @@ impl App {
         if matches!(self.view_mode, ViewMode::Watchlist) {
             self.load_watchlist();
             self.request_watchlist_data();
+        }
+    }
+
+    fn watchlist_inline_open_chart(&mut self) {
+        let Some(entry) = self.selected_watchlist_entry().cloned() else {
+            return;
+        };
+        let category: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
+        let symbol = watchlist_view::yahoo_symbol_for(&entry.symbol, category);
+
+        if let Some(svc) = &self.price_service {
+            if !self.prices.contains_key(&symbol) {
+                svc.send_command(PriceCommand::FetchAll(vec![(symbol.clone(), category)]));
+            }
+            if !self.price_history.contains_key(&symbol) {
+                svc.send_command(PriceCommand::FetchHistory(
+                    symbol.clone(),
+                    category,
+                    370,
+                ));
+            }
+        }
+        self.search_chart_popup = Some(
+            crate::tui::views::search_chart_popup::SearchChartPopupState { symbol },
+        );
+    }
+
+    fn watchlist_inline_remove(&mut self) {
+        let Some(entry) = self.selected_watchlist_entry().cloned() else {
+            return;
+        };
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            let _ = db_watchlist::remove_from_watchlist(&conn, &entry.symbol);
+        }
+        self.load_watchlist();
+        if self.watchlist_selected_index >= self.watchlist_entries.len() && self.watchlist_selected_index > 0 {
+            self.watchlist_selected_index -= 1;
+        }
+    }
+
+    fn watchlist_inline_add_alert(&mut self) {
+        let Some(entry) = self.selected_watchlist_entry().cloned() else {
+            return;
+        };
+        let category: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
+        let alert_symbol = watchlist_view::yahoo_symbol_for(&entry.symbol, category);
+
+        let (direction, threshold) = if let (Some(tp), Some(dir)) = (entry.target_price.clone(), entry.target_direction.clone()) {
+            (dir, tp)
+        } else {
+            let Some(price) = self.prices.get(&alert_symbol).copied() else {
+                return;
+            };
+            let above = (price * dec!(1.05)).round_dp(2);
+            ("above".to_string(), above.to_string())
+        };
+        let rule_text = format!("{} {} {}", alert_symbol, direction, threshold);
+
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            let _ = crate::db::alerts::add_alert(
+                &conn,
+                "price",
+                &alert_symbol,
+                &direction,
+                &threshold,
+                &rule_text,
+            );
+            self.load_alerts();
         }
     }
 
@@ -2428,6 +2500,17 @@ impl App {
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.scroll_up_half_page();
+            }
+
+            // Watchlist inline actions
+            KeyCode::Char('a') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                self.watchlist_inline_add_alert();
+            }
+            KeyCode::Char('c') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                self.watchlist_inline_open_chart();
+            }
+            KeyCode::Char('r') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                self.watchlist_inline_remove();
             }
 
             // Sorting
@@ -7428,6 +7511,66 @@ mod mouse_tests {
 
         app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('i')));
         assert!(app.tx_form.is_some());
+    }
+
+    #[test]
+    fn watchlist_inline_chart_opens_popup() {
+        let mut app = make_app();
+        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_chart_{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&app.db_path);
+        app.view_mode = ViewMode::Watchlist;
+        app.watchlist_entries = vec![crate::db::watchlist::WatchlistEntry {
+            id: 1,
+            symbol: "BTC".to_string(),
+            category: "crypto".to_string(),
+            added_at: "2026-03-08T00:00:00Z".to_string(),
+            target_price: None,
+            target_direction: None,
+        }];
+        app.watchlist_selected_index = 0;
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('c')));
+        assert!(app.search_chart_popup.is_some());
+        assert_eq!(app.search_chart_popup.as_ref().unwrap().symbol, "BTC-USD");
+    }
+
+    #[test]
+    fn watchlist_inline_remove_deletes_selected_symbol() {
+        let mut app = make_app();
+        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_remove_{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&app.db_path);
+        app.view_mode = ViewMode::Watchlist;
+        let conn = rusqlite::Connection::open(&app.db_path).unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        crate::db::watchlist::add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
+        drop(conn);
+        app.load_watchlist();
+        assert_eq!(app.watchlist_entries.len(), 1);
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('r')));
+        assert!(app.watchlist_entries.is_empty());
+    }
+
+    #[test]
+    fn watchlist_inline_alert_creates_price_alert() {
+        let mut app = make_app();
+        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_alert_{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&app.db_path);
+        app.view_mode = ViewMode::Watchlist;
+        let conn = rusqlite::Connection::open(&app.db_path).unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        crate::db::watchlist::add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
+        crate::db::watchlist::set_watchlist_target(&conn, "AAPL", Some("190"), Some("above")).unwrap();
+        drop(conn);
+        app.load_watchlist();
+        app.watchlist_selected_index = 0;
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('a')));
+        let conn = rusqlite::Connection::open(&app.db_path).unwrap();
+        let alerts = crate::db::alerts::list_alerts(&conn).unwrap();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].symbol, "AAPL");
+        assert_eq!(alerts[0].threshold, "190");
     }
 
     fn palette_key(c: char) -> KeyEvent {
