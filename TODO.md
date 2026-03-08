@@ -89,8 +89,6 @@
 
 ### Critical
 
-- [ ] **`drift` displays raw Decimal with 30+ decimal places** — Shows `18.718814357195681326649469110` instead of `18.72`. Also affects `summary --json`. Files: `src/commands/drift.rs`, `src/commands/summary.rs`
-
 ### Significant
 
 - [ ] **COT, BLS, On-chain, ETF flows all fail on every refresh** — 4 broken data integrations. Brave API (F28, F29) provides a better path for economic data and research. Fix scrapers where possible, fall back to Brave research presets. Files: `src/data/cot.rs`, `src/data/bls.rs`, `src/data/onchain.rs`
