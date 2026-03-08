@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 19:31 UTC — F32 Phase 8: backend-dispatch watchlist CLI read path
+
+- What: rewired `pftui watchlist` command to read watchlist entries through backend-dispatched APIs (`BackendConnection`) instead of direct SQLite-only reads.
+- Why: removes a direct SQLite dependency from a user-facing command and starts consuming the new watchlist backend-read functions in production paths.
+- Files: `src/commands/watchlist_cli.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: watchlist CLI read path)
+
 ### 2026-03-08 19:24 UTC — F32 Phase 7: backend-dispatch alerts CRUD and watchlist read APIs
 
 - What: expanded native backend dispatch for `alerts` to full CRUD/status operations (list, get, remove, ack, rearm, status updates, counts) with Postgres SQL implementations; added backend-read APIs for `watchlist` (list/group/symbol checks) with Postgres implementations; rewired `pftui alerts` command routing to use backend-aware operations for add/list/remove/ack/rearm.

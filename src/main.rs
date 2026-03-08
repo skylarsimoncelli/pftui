@@ -207,7 +207,9 @@ fn main() -> Result<()> {
         Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => commands::value::run(conn, &config, json),
         Some(Command::Brief { json }) => commands::brief::run(conn, &config, true, json),
-        Some(Command::Watchlist { approaching, json }) => commands::watchlist_cli::run(conn, &config, approaching.as_deref(), json),
+        Some(Command::Watchlist { approaching, json }) => {
+            commands::watchlist_cli::run(&backend, conn, &config, approaching.as_deref(), json)
+        }
 
         Some(Command::SetCash { symbol, amount }) => {
             if config.is_percentage_mode() {

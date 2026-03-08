@@ -6,9 +6,10 @@ use rust_decimal_macros::dec;
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices;
 use crate::db::price_history::get_history;
-use crate::db::watchlist::list_watchlist;
+use crate::db::watchlist::list_watchlist_backend;
 use crate::indicators;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
@@ -78,8 +79,14 @@ fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<
     Some((current - prev_close) / prev_close * dec!(100))
 }
 
-pub fn run(conn: &Connection, config: &crate::config::Config, approaching: Option<&str>, json: bool) -> Result<()> {
-    let entries = list_watchlist(conn)?;
+pub fn run(
+    backend: &BackendConnection,
+    conn: &Connection,
+    config: &crate::config::Config,
+    approaching: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let entries = list_watchlist_backend(backend)?;
 
     if entries.is_empty() {
         if json {
@@ -483,7 +490,8 @@ mod tests {
     fn watchlist_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
-        let result = run(&conn, &config, None, false);
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+        let result = run(&backend, backend.sqlite(), &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -497,7 +505,8 @@ mod tests {
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
 
-        let result = run(&conn, &config, None, false);
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+        let result = run(&backend, backend.sqlite(), &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -529,7 +538,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None, false);
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+        let result = run(&backend, backend.sqlite(), &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -731,7 +741,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None, false);
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+        let result = run(&backend, backend.sqlite(), &config, None, false);
         assert!(result.is_ok());
     }
 }
