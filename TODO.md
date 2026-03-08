@@ -59,7 +59,6 @@
 ### Data & Display
 
 ### CLI Enhancements
-- [ ] [Feedback] **Fix `pftui sector` data — only returns 1 of 18 ETFs** — Sector command should return all 18 configured sector ETFs (XLK, XLF, XLV, etc.) but most show no data. Likely Yahoo Finance fetch failure for batch sector ETF quotes. Files: `commands/sector.rs`, `price/yahoo.rs`
 
 ### Analytics
 

@@ -11,9 +11,10 @@ use rust_decimal::Decimal;
 use rusqlite::Connection;
 
 use crate::config::Config;
-use crate::db::price_cache::get_all_cached_prices;
+use crate::db::price_cache::{get_all_cached_prices, upsert_price};
 use crate::db::price_history::get_history;
 use crate::indicators::{compute_macd, compute_rsi};
+use crate::price::yahoo;
 
 /// Sector ETF definitions (symbol, name).
 const SECTOR_ETFS: &[(&str, &str)] = &[
@@ -77,13 +78,47 @@ fn compute_technicals(conn: &Connection, symbol: &str) -> Technicals {
     }
 }
 
+fn missing_sector_symbols(price_map: &HashMap<String, Decimal>) -> Vec<&'static str> {
+    SECTOR_ETFS
+        .iter()
+        .map(|(symbol, _)| *symbol)
+        .filter(|symbol| !price_map.contains_key(*symbol))
+        .collect()
+}
+
+fn backfill_sector_prices(
+    conn: &Connection,
+    price_map: &mut HashMap<String, Decimal>,
+    symbols: &[&str],
+) -> Result<()> {
+    if symbols.is_empty() {
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Runtime::new()?;
+
+    for symbol in symbols {
+        if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
+            upsert_price(conn, &quote)?;
+            price_map.insert(symbol.to_string(), quote.price);
+        }
+    }
+
+    Ok(())
+}
+
 /// Run the sector command.
 pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
     let all_prices = get_all_cached_prices(conn)?;
-    let price_map: HashMap<String, Decimal> = all_prices
+    let mut price_map: HashMap<String, Decimal> = all_prices
         .iter()
         .map(|p| (p.symbol.clone(), p.price))
         .collect();
+
+    // Ensure sector command has complete coverage even if prices weren't preloaded
+    // by other flows (portfolio/watchlist/refresh subsets).
+    let missing = missing_sector_symbols(&price_map);
+    backfill_sector_prices(conn, &mut price_map, &missing)?;
 
     // Get history for day change calculation
     let mut sector_data: Vec<(String, String, Decimal, Option<Decimal>, Technicals)> = Vec::new();
@@ -218,4 +253,25 @@ fn print_terminal(data: &[(String, String, Decimal, Option<Decimal>, Technicals)
     println!();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn identifies_missing_sector_symbols_from_cache() {
+        let mut price_map = HashMap::new();
+        price_map.insert("XLE".to_string(), dec!(100.0));
+        price_map.insert("XLK".to_string(), dec!(200.0));
+
+        let missing = missing_sector_symbols(&price_map);
+
+        assert_eq!(missing.len(), SECTOR_ETFS.len() - 2);
+        assert!(!missing.contains(&"XLE"));
+        assert!(!missing.contains(&"XLK"));
+        assert!(missing.contains(&"XLF"));
+        assert!(missing.contains(&"GDX"));
+    }
 }

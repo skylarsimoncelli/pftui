@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:27 UTC — Fix `pftui sector` returning incomplete ETF set
+
+- What: `pftui sector` now backfills missing sector ETF quotes directly from Yahoo at command runtime, caches them, and then renders output. This removes the prior dependency on whichever symbols happened to already exist in `price_cache`.
+- Why: Feedback bug in TODO (P1). Sector command was often showing only 1/18 ETFs because it only read cached prices and most sector symbols are not guaranteed to be part of portfolio/watchlist refresh sets.
+- Files: `src/commands/sector.rs` (added missing-symbol detection, Yahoo backfill+cache path, and unit test for missing symbol detection), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1131 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: [Feedback] Fix `pftui sector` data — only returns 1 of 18 ETFs (P1)
+
 ### 2026-03-08 03:27 UTC — Add --json flag to status command
 
 - What: `pftui status --json` now outputs structured JSON for agent health checks. Returns `brave_api_key_configured` boolean and `sources` array with per-source health (name, last_fetch RFC3339, records count, status: fresh/stale/empty).
