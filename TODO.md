@@ -63,7 +63,6 @@
 - [ ] [Feedback] **Fix `pftui sector` data — only returns 1 of 18 ETFs** — Sector command should return all 18 configured sector ETFs (XLK, XLF, XLV, etc.) but most show no data. Likely Yahoo Finance fetch failure for batch sector ETF quotes. Files: `commands/sector.rs`, `price/yahoo.rs`
 
 ### Analytics
-- [ ] **Review date alerts** — Overdue review dates show ⏰ in Positions tab. Auto-creates alert. Files: `alerts/engine.rs`, `views/positions.rs`
 - [ ] **Asset groups** — `pftui group create "hard-assets" --symbols GC=F,SI=F,BTC`. Combined allocation + performance. Filter positions by group. Files: new `db/groups.rs`, new `commands/group.rs`
 
 ### Infrastructure
