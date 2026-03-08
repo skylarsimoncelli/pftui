@@ -31,6 +31,7 @@ pub mod predictions_cache;
 pub mod predictions_history;
 pub mod price_cache;
 pub mod price_history;
+pub mod postgres_schema;
 pub mod query;
 pub mod scan_queries;
 pub mod scenarios;

@@ -88,6 +88,9 @@ impl PostgresSqliteBridge {
             .block_on(async { PgPoolOptions::new().max_connections(5).connect(url).await })
             .context("Failed to connect to PostgreSQL using database_url")?;
 
+        crate::db::postgres_schema::run_migrations(&pool)
+            .context("Failed to run PostgreSQL schema migrations")?;
+
         runtime
             .block_on(async {
                 sqlx::query(

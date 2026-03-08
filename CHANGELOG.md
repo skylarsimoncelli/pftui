@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 19:02 UTC — F32 Phase 5: add centralized PostgreSQL schema migrations module
+
+- What: added `src/db/postgres_schema.rs` with `pftui_migrations` and core table creation, and wired backend startup to run Postgres schema migrations before command execution.
+- Why: begins F32.2 with centralized native Postgres schema management instead of per-module ad hoc table bootstrapping.
+- Files: `src/db/postgres_schema.rs`, `src/db/mod.rs`, `src/db/backend.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.2 PostgreSQL schema (partial)
+
 ### 2026-03-08 19:00 UTC — F32 Phase 4: backend-dispatch writes for watchlist and alerts
 
 - What: added backend-dispatched (SQLite/Postgres) write paths for watchlist add/remove/target updates and alert creation, then rewired direct `main` callsites (`watch`, `unwatch`, auto-alert creation) to use backend-aware APIs.
