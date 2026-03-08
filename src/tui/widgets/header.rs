@@ -497,6 +497,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     spans.push(Span::styled("[8]", Style::default().fg(t.key_hint)));
     spans.push(Span::styled(if compact { "J" } else { "Journal" }, journal_style));
 
+    if !compact {
+        spans.push(Span::styled("  │  ", Style::default().fg(t.text_muted)));
+        spans.push(Span::styled("Path ", Style::default().fg(t.text_muted)));
+        spans.push(Span::styled(
+            app.breadcrumb(),
+            Style::default().fg(t.text_accent),
+        ));
+    }
+
     // Calendar countdown — show next high-impact event
     if !compact {
         if let Some((event_name, countdown)) = get_next_event_countdown(app) {

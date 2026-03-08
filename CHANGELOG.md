@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 10:27 UTC — Add breadcrumb trail to header
+
+- What: header now shows a `Path` breadcrumb in non-compact layouts using `app.breadcrumb()` (for example, `Positions › AAPL › Detail`), so navigation context is visible at the top of the UI, not only in the status bar.
+- Why: TODO item for breadcrumb navigation in header. This improves orientation during deep navigation states (detail popup, chart variants, symbol focus).
+- Files: `src/tui/widgets/header.rs` (render breadcrumb path segment), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1144 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: Breadcrumb navigation — Header shows `Positions → AAPL → Detail` (P2)
+
 ### 2026-03-08 09:27 UTC — Add context-sensitive hotkey hints in status bar
 
 - What: status bar hints now adapt by active view instead of showing a fixed set. Each view surfaces relevant actions (for example Markets: `M` correlation window, News: `o` open + search, Analytics: `+/-` shock controls, Positions: detail/filter/split/command mode). Compact mode now includes explicit `:` command palette hint.
