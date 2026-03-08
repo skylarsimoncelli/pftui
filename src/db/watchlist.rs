@@ -183,6 +183,39 @@ pub fn remove_from_watchlist_backend(backend: &BackendConnection, symbol: &str) 
     )
 }
 
+#[allow(dead_code)]
+pub fn list_watchlist_backend(backend: &BackendConnection) -> Result<Vec<WatchlistEntry>> {
+    query::dispatch(backend, list_watchlist, list_watchlist_postgres)
+}
+
+#[allow(dead_code)]
+pub fn list_watchlist_by_group_backend(
+    backend: &BackendConnection,
+    group_id: i64,
+) -> Result<Vec<WatchlistEntry>> {
+    query::dispatch(
+        backend,
+        |conn| list_watchlist_by_group(conn, group_id),
+        |pool| list_watchlist_by_group_postgres(pool, group_id),
+    )
+}
+
+#[allow(dead_code)]
+pub fn get_watchlist_symbols_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<(String, AssetCategory)>> {
+    query::dispatch(backend, get_watchlist_symbols, get_watchlist_symbols_postgres)
+}
+
+#[allow(dead_code)]
+pub fn is_watched_backend(backend: &BackendConnection, symbol: &str) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| is_watched(conn, symbol),
+        |pool| is_watched_postgres(pool, symbol),
+    )
+}
+
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
@@ -264,6 +297,84 @@ fn remove_from_watchlist_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
             .await
     })?;
     Ok(rows.rows_affected() > 0)
+}
+
+#[allow(dead_code)]
+type WatchlistRow = (i64, String, String, i64, String, Option<String>, Option<String>);
+
+#[allow(dead_code)]
+fn watchlist_entry_from_row(row: WatchlistRow) -> WatchlistEntry {
+    WatchlistEntry {
+        id: row.0,
+        symbol: row.1,
+        category: row.2,
+        group_id: row.3,
+        added_at: row.4,
+        target_price: row.5,
+        target_direction: row.6,
+    }
+}
+
+#[allow(dead_code)]
+fn list_watchlist_postgres(pool: &PgPool) -> Result<Vec<WatchlistEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<WatchlistRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, symbol, category, group_id, added_at::text, target_price, target_direction
+             FROM watchlist
+             ORDER BY added_at DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(watchlist_entry_from_row).collect())
+}
+
+#[allow(dead_code)]
+fn list_watchlist_by_group_postgres(pool: &PgPool, group_id: i64) -> Result<Vec<WatchlistEntry>> {
+    ensure_tables_postgres(pool)?;
+    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<WatchlistRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, symbol, category, group_id, added_at::text, target_price, target_direction
+             FROM watchlist
+             WHERE group_id = $1
+             ORDER BY added_at DESC",
+        )
+        .bind(gid)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(watchlist_entry_from_row).collect())
+}
+
+#[allow(dead_code)]
+fn get_watchlist_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCategory)>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, String)> = runtime.block_on(async {
+        sqlx::query_as("SELECT symbol, category FROM watchlist ORDER BY symbol")
+            .fetch_all(pool)
+            .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(symbol, category)| (symbol, category.parse().unwrap_or(AssetCategory::Equity)))
+        .collect())
+}
+
+fn is_watched_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let count: i64 = runtime.block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM watchlist WHERE UPPER(symbol) = UPPER($1)")
+            .bind(symbol)
+            .fetch_one(pool)
+            .await
+    })?;
+    Ok(count > 0)
 }
 
 #[cfg(test)]

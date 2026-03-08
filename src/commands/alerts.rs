@@ -5,17 +5,18 @@ use serde::Serialize;
 use crate::alerts::engine::{check_alerts, AlertCheckResult};
 use crate::alerts::rules::parse_rule;
 use crate::alerts::AlertStatus;
+use crate::db::backend::BackendConnection;
 use crate::db::alerts as alerts_db;
 
 /// Run the alerts CLI subcommand.
-pub fn run(conn: &Connection, action: &str, args: &AlertsArgs) -> Result<()> {
+pub fn run(backend: &BackendConnection, conn: &Connection, action: &str, args: &AlertsArgs) -> Result<()> {
     match action {
-        "add" => run_add(conn, args),
-        "list" => run_list(conn, args),
-        "remove" => run_remove(conn, args),
+        "add" => run_add(backend, args),
+        "list" => run_list(backend, args),
+        "remove" => run_remove(backend, args),
         "check" => run_check(conn, args),
-        "ack" => run_ack(conn, args),
-        "rearm" => run_rearm(conn, args),
+        "ack" => run_ack(backend, args),
+        "rearm" => run_rearm(backend, args),
         _ => bail!("Unknown alerts action: '{}'. Expected: add, list, remove, check, ack, rearm", action),
     }
 }
@@ -28,15 +29,15 @@ pub struct AlertsArgs {
     pub status_filter: Option<String>,
 }
 
-fn run_add(conn: &Connection, args: &AlertsArgs) -> Result<()> {
+fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     let rule_text = args.rule.as_deref().unwrap_or("");
     if rule_text.is_empty() {
         bail!("Usage: pftui alerts add \"<rule>\"\n\nExamples:\n  pftui alerts add \"GC=F above 5500\"\n  pftui alerts add \"BTC below 55000\"\n  pftui alerts add \"gold allocation above 30%\"\n  pftui alerts add \"GC=F RSI below 30\"");
     }
 
     let parsed = parse_rule(rule_text)?;
-    let id = alerts_db::add_alert(
-        conn,
+    let id = alerts_db::add_alert_backend(
+        backend,
         &parsed.kind.to_string(),
         &parsed.symbol,
         &parsed.direction.to_string(),
@@ -49,12 +50,12 @@ fn run_add(conn: &Connection, args: &AlertsArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_list(conn: &Connection, args: &AlertsArgs) -> Result<()> {
+fn run_list(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     let alerts = if let Some(ref status_str) = args.status_filter {
         let status: AlertStatus = status_str.parse()?;
-        alerts_db::list_alerts_by_status(conn, status)?
+        alerts_db::list_alerts_by_status_backend(backend, status)?
     } else {
-        alerts_db::list_alerts(conn)?
+        alerts_db::list_alerts_backend(backend)?
     };
 
     if alerts.is_empty() {
@@ -87,14 +88,14 @@ fn run_list(conn: &Connection, args: &AlertsArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_remove(conn: &Connection, args: &AlertsArgs) -> Result<()> {
+fn run_remove(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     let id = args.id.unwrap_or_else(|| {
         eprintln!("Usage: pftui alerts remove <id>");
         std::process::exit(1);
     });
 
-    if let Some(alert) = alerts_db::get_alert(conn, id)? {
-        alerts_db::remove_alert(conn, id)?;
+    if let Some(alert) = alerts_db::get_alert_backend(backend, id)? {
+        alerts_db::remove_alert_backend(backend, id)?;
         println!("Removed alert #{}: {}", id, alert.rule_text);
     } else {
         bail!("No alert found with id #{}", id);
@@ -167,17 +168,17 @@ fn run_check(conn: &Connection, args: &AlertsArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_ack(conn: &Connection, args: &AlertsArgs) -> Result<()> {
+fn run_ack(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     let id = args.id.unwrap_or_else(|| {
         eprintln!("Usage: pftui alerts ack <id>");
         std::process::exit(1);
     });
 
-    if let Some(alert) = alerts_db::get_alert(conn, id)? {
+    if let Some(alert) = alerts_db::get_alert_backend(backend, id)? {
         if alert.status != AlertStatus::Triggered {
             bail!("Alert #{} is not triggered (status: {}). Only triggered alerts can be acknowledged.", id, alert.status);
         }
-        alerts_db::acknowledge_alert(conn, id)?;
+        alerts_db::acknowledge_alert_backend(backend, id)?;
         println!("✅ Acknowledged alert #{}: {}", id, alert.rule_text);
     } else {
         bail!("No alert found with id #{}", id);
@@ -185,17 +186,17 @@ fn run_ack(conn: &Connection, args: &AlertsArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_rearm(conn: &Connection, args: &AlertsArgs) -> Result<()> {
+fn run_rearm(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     let id = args.id.unwrap_or_else(|| {
         eprintln!("Usage: pftui alerts rearm <id>");
         std::process::exit(1);
     });
 
-    if let Some(alert) = alerts_db::get_alert(conn, id)? {
+    if let Some(alert) = alerts_db::get_alert_backend(backend, id)? {
         if alert.status == AlertStatus::Armed {
             bail!("Alert #{} is already armed.", id);
         }
-        alerts_db::rearm_alert(conn, id)?;
+        alerts_db::rearm_alert_backend(backend, id)?;
         println!("🟢 Re-armed alert #{}: {}", id, alert.rule_text);
     } else {
         bail!("No alert found with id #{}", id);
@@ -265,6 +266,7 @@ mod tests {
     use rust_decimal::Decimal;
     use std::str::FromStr;
     use crate::alerts::AlertRule;
+    use crate::db::backend::BackendConnection;
     use crate::db::open_in_memory;
     use crate::models::price::PriceQuote;
     use crate::db::price_cache;
@@ -304,17 +306,21 @@ mod tests {
         conn
     }
 
+    fn setup_backend() -> BackendConnection {
+        BackendConnection::Sqlite { conn: setup_db() }
+    }
+
     #[test]
     fn test_add_alert_via_cli() {
-        let conn = setup_db();
+        let backend = setup_backend();
         let args = AlertsArgs {
             rule: Some("GC=F above 5500".to_string()),
             id: None,
             json: false,
             status_filter: None,
         };
-        run_add(&conn, &args).unwrap();
-        let alerts = alerts_db::list_alerts(&conn).unwrap();
+        run_add(&backend, &args).unwrap();
+        let alerts = alerts_db::list_alerts_backend(&backend).unwrap();
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].symbol, "GC=F");
         assert_eq!(alerts[0].threshold, "5500");
@@ -322,55 +328,55 @@ mod tests {
 
     #[test]
     fn test_add_allocation_alert() {
-        let conn = setup_db();
+        let backend = setup_backend();
         let args = AlertsArgs {
             rule: Some("gold allocation above 30%".to_string()),
             id: None,
             json: false,
             status_filter: None,
         };
-        run_add(&conn, &args).unwrap();
-        let alerts = alerts_db::list_alerts(&conn).unwrap();
+        run_add(&backend, &args).unwrap();
+        let alerts = alerts_db::list_alerts_backend(&backend).unwrap();
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].kind, crate::alerts::AlertKind::Allocation);
     }
 
     #[test]
     fn test_add_empty_rule_fails() {
-        let conn = setup_db();
+        let backend = setup_backend();
         let args = AlertsArgs {
             rule: Some(String::new()),
             id: None,
             json: false,
             status_filter: None,
         };
-        assert!(run_add(&conn, &args).is_err());
+        assert!(run_add(&backend, &args).is_err());
     }
 
     #[test]
     fn test_remove_alert_via_cli() {
-        let conn = setup_db();
-        let id = alerts_db::add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        let backend = setup_backend();
+        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
         };
-        run_remove(&conn, &args).unwrap();
-        assert!(alerts_db::list_alerts(&conn).unwrap().is_empty());
+        run_remove(&backend, &args).unwrap();
+        assert!(alerts_db::list_alerts_backend(&backend).unwrap().is_empty());
     }
 
     #[test]
     fn test_remove_nonexistent_fails() {
-        let conn = setup_db();
+        let backend = setup_backend();
         let args = AlertsArgs {
             rule: None,
             id: Some(999),
             json: false,
             status_filter: None,
         };
-        assert!(run_remove(&conn, &args).is_err());
+        assert!(run_remove(&backend, &args).is_err());
     }
 
     #[test]
@@ -396,61 +402,63 @@ mod tests {
 
     #[test]
     fn test_ack_triggered_alert() {
-        let conn = setup_db();
-        let id = alerts_db::add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        let backend = setup_backend();
+        let conn = backend.sqlite();
+        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
         // Trigger it
-        check_alerts(&conn).unwrap();
+        check_alerts(conn).unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
         };
-        run_ack(&conn, &args).unwrap();
-        let alert = alerts_db::get_alert(&conn, id).unwrap().unwrap();
+        run_ack(&backend, &args).unwrap();
+        let alert = alerts_db::get_alert_backend(&backend, id).unwrap().unwrap();
         assert_eq!(alert.status, AlertStatus::Acknowledged);
     }
 
     #[test]
     fn test_ack_armed_alert_fails() {
-        let conn = setup_db();
-        let id = alerts_db::add_alert(&conn, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
+        let backend = setup_backend();
+        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
         };
-        assert!(run_ack(&conn, &args).is_err());
+        assert!(run_ack(&backend, &args).is_err());
     }
 
     #[test]
     fn test_rearm_triggered_alert() {
-        let conn = setup_db();
-        let id = alerts_db::add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
-        check_alerts(&conn).unwrap(); // triggers it
+        let backend = setup_backend();
+        let conn = backend.sqlite();
+        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        check_alerts(conn).unwrap(); // triggers it
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
         };
-        run_rearm(&conn, &args).unwrap();
-        let alert = alerts_db::get_alert(&conn, id).unwrap().unwrap();
+        run_rearm(&backend, &args).unwrap();
+        let alert = alerts_db::get_alert_backend(&backend, id).unwrap().unwrap();
         assert_eq!(alert.status, AlertStatus::Armed);
     }
 
     #[test]
     fn test_rearm_already_armed_fails() {
-        let conn = setup_db();
-        let id = alerts_db::add_alert(&conn, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
+        let backend = setup_backend();
+        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
         };
-        assert!(run_rearm(&conn, &args).is_err());
+        assert!(run_rearm(&backend, &args).is_err());
     }
 
     #[test]

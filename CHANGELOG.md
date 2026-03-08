@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 19:24 UTC — F32 Phase 7: backend-dispatch alerts CRUD and watchlist read APIs
+
+- What: expanded native backend dispatch for `alerts` to full CRUD/status operations (list, get, remove, ack, rearm, status updates, counts) with Postgres SQL implementations; added backend-read APIs for `watchlist` (list/group/symbol checks) with Postgres implementations; rewired `pftui alerts` command routing to use backend-aware operations for add/list/remove/ack/rearm.
+- Why: removes more SQLite-only operator flows and advances F32.3 core-module parity for `alerts` and `watchlist` data access.
+- Files: `src/db/alerts.rs`, `src/db/watchlist.rs`, `src/commands/alerts.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: alerts CRUD + watchlist read APIs)
+
 ### 2026-03-08 19:08 UTC — F32 Phase 6: backend-dispatch transactions command path (`add-tx`, `list-tx`, `remove-tx`)
 
 - What: completed transaction command routing through backend-dispatched DB APIs by wiring `add-tx`, `list-tx`, and `remove-tx` to `BackendConnection` and native SQLite/Postgres transaction operations.

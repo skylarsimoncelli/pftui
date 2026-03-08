@@ -172,6 +172,75 @@ pub fn add_alert_backend(
     )
 }
 
+pub fn list_alerts_backend(backend: &BackendConnection) -> Result<Vec<AlertRule>> {
+    query::dispatch(backend, list_alerts, list_alerts_postgres)
+}
+
+pub fn list_alerts_by_status_backend(
+    backend: &BackendConnection,
+    status: AlertStatus,
+) -> Result<Vec<AlertRule>> {
+    query::dispatch(
+        backend,
+        |conn| list_alerts_by_status(conn, status),
+        |pool| list_alerts_by_status_postgres(pool, status),
+    )
+}
+
+pub fn update_alert_status_backend(
+    backend: &BackendConnection,
+    id: i64,
+    status: AlertStatus,
+    triggered_at: Option<&str>,
+) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| update_alert_status(conn, id, status, triggered_at),
+        |pool| update_alert_status_postgres(pool, id, status, triggered_at),
+    )
+}
+
+pub fn remove_alert_backend(backend: &BackendConnection, id: i64) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| remove_alert(conn, id),
+        |pool| remove_alert_postgres(pool, id),
+    )
+}
+
+pub fn get_alert_backend(backend: &BackendConnection, id: i64) -> Result<Option<AlertRule>> {
+    query::dispatch(
+        backend,
+        |conn| get_alert(conn, id),
+        |pool| get_alert_postgres(pool, id),
+    )
+}
+
+#[allow(dead_code)]
+pub fn count_by_status_backend(backend: &BackendConnection, status: AlertStatus) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| count_by_status(conn, status),
+        |pool| count_by_status_postgres(pool, status),
+    )
+}
+
+pub fn rearm_alert_backend(backend: &BackendConnection, id: i64) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| rearm_alert(conn, id),
+        |pool| rearm_alert_postgres(pool, id),
+    )
+}
+
+pub fn acknowledge_alert_backend(backend: &BackendConnection, id: i64) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| acknowledge_alert(conn, id),
+        |pool| acknowledge_alert_postgres(pool, id),
+    )
+}
+
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
@@ -220,6 +289,158 @@ fn add_alert_postgres(
         .await
     })?;
     Ok(id)
+}
+
+type AlertRow = (
+    i64,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+);
+
+fn alert_from_row(row: AlertRow) -> AlertRule {
+    AlertRule {
+        id: row.0,
+        kind: row.1.parse().unwrap_or(AlertKind::Price),
+        symbol: row.2,
+        direction: row.3.parse().unwrap_or(AlertDirection::Above),
+        threshold: row.4,
+        status: row.5.parse().unwrap_or(AlertStatus::Armed),
+        rule_text: row.6,
+        created_at: row.7,
+        triggered_at: row.8,
+    }
+}
+
+fn list_alerts_postgres(pool: &PgPool) -> Result<Vec<AlertRule>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<AlertRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at::text, triggered_at::text
+             FROM alerts
+             ORDER BY created_at DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(alert_from_row).collect())
+}
+
+fn list_alerts_by_status_postgres(pool: &PgPool, status: AlertStatus) -> Result<Vec<AlertRule>> {
+    ensure_tables_postgres(pool)?;
+    let status_str = status.to_string();
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<AlertRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at::text, triggered_at::text
+             FROM alerts
+             WHERE status = $1
+             ORDER BY created_at DESC",
+        )
+        .bind(status_str)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(alert_from_row).collect())
+}
+
+fn update_alert_status_postgres(
+    pool: &PgPool,
+    id: i64,
+    status: AlertStatus,
+    triggered_at: Option<&str>,
+) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let status_str = status.to_string();
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query(
+            "UPDATE alerts
+             SET status = $1, triggered_at = COALESCE($2::timestamptz, triggered_at)
+             WHERE id = $3",
+        )
+        .bind(status_str)
+        .bind(triggered_at)
+        .bind(id)
+        .execute(pool)
+        .await
+    })?;
+    Ok(rows.rows_affected() > 0)
+}
+
+fn remove_alert_postgres(pool: &PgPool, id: i64) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query("DELETE FROM alerts WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await
+    })?;
+    Ok(rows.rows_affected() > 0)
+}
+
+fn get_alert_postgres(pool: &PgPool, id: i64) -> Result<Option<AlertRule>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<AlertRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at::text, triggered_at::text
+             FROM alerts
+             WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(alert_from_row))
+}
+
+fn count_by_status_postgres(pool: &PgPool, status: AlertStatus) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let status_str = status.to_string();
+    let runtime = tokio::runtime::Runtime::new()?;
+    let count: i64 = runtime.block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM alerts WHERE status = $1")
+            .bind(status_str)
+            .fetch_one(pool)
+            .await
+    })?;
+    Ok(count)
+}
+
+fn rearm_alert_postgres(pool: &PgPool, id: i64) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query("UPDATE alerts SET status = 'armed', triggered_at = NULL WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await
+    })?;
+    Ok(rows.rows_affected() > 0)
+}
+
+fn acknowledge_alert_postgres(pool: &PgPool, id: i64) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query(
+            "UPDATE alerts
+             SET status = 'acknowledged'
+             WHERE id = $1 AND status = 'triggered'",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+    })?;
+    Ok(rows.rows_affected() > 0)
 }
 
 #[cfg(test)]
