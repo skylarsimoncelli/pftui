@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 17:50 UTC — Ship PostgreSQL backend support via runtime SQLite bridge
+
+- What: implemented functional PostgreSQL backend support in `db/backend.rs` by introducing a managed backend that hydrates a local SQLite working DB from PostgreSQL on startup and flushes it back to PostgreSQL (`pftui_sqlite_state` table) on shutdown. Updated `main.rs` to keep backend lifecycle alive and always flush after command/TUI/web execution.
+- Why: closes the remaining P1 TODO for PostgreSQL backend support without rewriting every existing SQLite query callsite.
+- Files: `src/db/backend.rs`, `src/main.rs`, `docs/MIGRATING.md`, `README.md`, `AGENTS.md`, `website/index.html`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1181 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: PostgreSQL backend support (epic)
+
 ### 2026-03-08 16:31 UTC — Allow `pftui config` without DB startup
 
 - What: adjusted startup flow so `pftui config ...` executes before database initialization. This prevents config commands from being blocked when `database_backend=postgres` is set during Phase 1 while storage migration is still pending.

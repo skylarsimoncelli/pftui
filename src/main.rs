@@ -37,44 +37,43 @@ fn main() -> Result<()> {
         return commands::config_cmd::run(action, field.as_deref(), value.as_deref(), *json);
     }
 
-    let conn = open_from_config(&config, &db_path)?.require_sqlite()?;
+    let backend = open_from_config(&config, &db_path)?;
+    let conn = backend.sqlite();
 
-    match cli.command {
+    let result = match cli.command {
         None => {
             // Auto-detect: run setup if no portfolio data
-            if !commands::setup::has_portfolio_data(&conn) {
-                commands::setup::run(&conn, &config, false)?;
+            if !commands::setup::has_portfolio_data(conn) {
+                commands::setup::run(conn, &config, false)?;
                 // Reload config (setup may have changed portfolio_mode)
                 let config = load_config_with_first_run_prompt()?;
-                drop(conn);
                 let mut app = app::App::new(&config, db_path);
                 app.init();
                 let result = tui::run(&mut app);
                 app.shutdown();
-                return result;
+                result
+            } else {
+                // Launch TUI
+                let mut app = app::App::new(&config, db_path);
+                app.init();
+                let result = tui::run(&mut app);
+                app.shutdown();
+                result
             }
-
-            // Launch TUI
-            drop(conn);
-            let mut app = app::App::new(&config, db_path);
-            app.init();
-            let result = tui::run(&mut app);
-            app.shutdown();
-            result
         }
 
         Some(Command::Setup) => {
-            commands::setup::run(&conn, &config, true)
+            commands::setup::run(conn, &config, true)
         }
 
-        Some(Command::Summary { group_by, period, what_if, json }) => commands::summary::run(&conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref(), true, json),
-        Some(Command::Export { format, output }) => commands::export::run(&conn, &format, &config, output.as_deref()),
+        Some(Command::Summary { group_by, period, what_if, json }) => commands::summary::run(conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref(), true, json),
+        Some(Command::Export { format, output }) => commands::export::run(conn, &format, &config, output.as_deref()),
 
         Some(Command::ListTx { notes, json }) => {
             if config.is_percentage_mode() {
                 bail!("list-tx is not available in percentage mode (no transactions).\nRun `pftui setup` to switch to full mode.");
             }
-            commands::list_tx::run(&conn, notes, json)
+            commands::list_tx::run(conn, notes, json)
         }
 
         Some(Command::AddTx {
@@ -91,7 +90,7 @@ fn main() -> Result<()> {
                 bail!("add-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
             commands::add_tx::run(
-                &conn, symbol, category, tx_type, quantity, price, currency, date, notes,
+                conn, symbol, category, tx_type, quantity, price, currency, date, notes,
             )
         }
 
@@ -99,7 +98,7 @@ fn main() -> Result<()> {
             if config.is_percentage_mode() {
                 bail!("remove-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
-            commands::remove_tx::run(&conn, id)
+            commands::remove_tx::run(conn, id)
         }
 
         Some(Command::Watch { symbol, category, bulk, target, direction }) => {
@@ -158,7 +157,7 @@ fn main() -> Result<()> {
 
                 match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
                     Ok(_) => {
-                        db::watchlist::add_to_watchlist(&conn, upper, cat)?;
+                        db::watchlist::add_to_watchlist(conn, upper, cat)?;
                         let name = crate::models::asset_names::resolve_name(upper);
                         let display = if name.is_empty() { upper.clone() } else { name };
                         println!("Added {} ({}) to watchlist as {}", upper, display, cat);
@@ -175,12 +174,12 @@ fn main() -> Result<()> {
                 // Set target if provided
                 if let Some(ref t) = target {
                     let cleaned = t.replace(['$', ','], "");
-                    db::watchlist::set_watchlist_target(&conn, upper, Some(&cleaned), Some(&direction))?;
+                    db::watchlist::set_watchlist_target(conn, upper, Some(&cleaned), Some(&direction))?;
                     println!("  Target: {} {} {}", upper, direction, cleaned);
 
                     // Auto-create an alert rule for this target
                     let rule_text = format!("{} {} {}", upper, direction, cleaned);
-                    db::alerts::add_alert(&conn, "price", upper, &direction, &cleaned, &rule_text)?;
+                    db::alerts::add_alert(conn, "price", upper, &direction, &cleaned, &rule_text)?;
                     println!("  Alert created: {}", rule_text);
                 }
 
@@ -195,7 +194,7 @@ fn main() -> Result<()> {
 
         Some(Command::Unwatch { symbol }) => {
             let upper = symbol.to_uppercase();
-            if db::watchlist::remove_from_watchlist(&conn, &upper)? {
+            if db::watchlist::remove_from_watchlist(conn, &upper)? {
                 println!("Removed {} from watchlist", upper);
             } else {
                 println!("{} was not in the watchlist", upper);
@@ -203,18 +202,18 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        Some(Command::Refresh { notify }) => commands::refresh::run(&conn, &config, notify),
-        Some(Command::Status { json, .. }) => commands::status::run(&conn, json),
+        Some(Command::Refresh { notify }) => commands::refresh::run(conn, &config, notify),
+        Some(Command::Status { json, .. }) => commands::status::run(conn, json),
         Some(Command::Config { .. }) => unreachable!(),
-        Some(Command::Value { json }) => commands::value::run(&conn, &config, json),
-        Some(Command::Brief { json }) => commands::brief::run(&conn, &config, true, json),
-        Some(Command::Watchlist { approaching, json }) => commands::watchlist_cli::run(&conn, &config, approaching.as_deref(), json),
+        Some(Command::Value { json }) => commands::value::run(conn, &config, json),
+        Some(Command::Brief { json }) => commands::brief::run(conn, &config, true, json),
+        Some(Command::Watchlist { approaching, json }) => commands::watchlist_cli::run(conn, &config, approaching.as_deref(), json),
 
         Some(Command::SetCash { symbol, amount }) => {
             if config.is_percentage_mode() {
                 bail!("set-cash is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
-            commands::set_cash::run(&conn, &symbol, &amount)
+            commands::set_cash::run(conn, &symbol, &amount)
         }
 
         Some(Command::Demo) => {
@@ -230,30 +229,30 @@ fn main() -> Result<()> {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,
                 cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
             };
-            commands::import::run(&conn, &config, &path, import_mode)
+            commands::import::run(conn, &config, &path, import_mode)
         }
 
         Some(Command::History { date, group_by }) => {
-            commands::history::run(&conn, &config, &date, group_by.as_ref())
+            commands::history::run(conn, &config, &date, group_by.as_ref())
         }
 
-        Some(Command::Macro { json }) => commands::macro_cmd::run(&conn, &config, json),
-        Some(Command::Oil { json }) => commands::oil::run(&conn, json),
-        Some(Command::Crisis { json }) => commands::crisis::run(&conn, json),
+        Some(Command::Macro { json }) => commands::macro_cmd::run(conn, &config, json),
+        Some(Command::Oil { json }) => commands::oil::run(conn, json),
+        Some(Command::Crisis { json }) => commands::crisis::run(conn, json),
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
         Some(Command::Sovereign { json }) => commands::sovereign::run(json),
         Some(Command::Economy { indicator, json }) => {
-            commands::economy::run(&conn, indicator.as_deref(), json)
+            commands::economy::run(conn, indicator.as_deref(), json)
         }
 
-        Some(Command::Eod { json }) => commands::eod::run(&conn, &config, json),
+        Some(Command::Eod { json }) => commands::eod::run(conn, &config, json),
 
         Some(Command::Global { country, indicator, json }) => {
-            commands::global::run(&conn, country.as_deref(), indicator.as_deref(), json)
+            commands::global::run(conn, country.as_deref(), indicator.as_deref(), json)
         }
 
         Some(Command::Performance { since, period, vs, json }) => {
-            commands::performance::run(&conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
+            commands::performance::run(conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
         }
 
         Some(Command::EtfFlows { days, fund, json }) => {
@@ -261,7 +260,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Movers { threshold, json }) => {
-            commands::movers::run(&conn, &config, Some(&threshold), json)
+            commands::movers::run(conn, &config, Some(&threshold), json)
         }
         Some(Command::Scan {
             filter,
@@ -271,7 +270,7 @@ fn main() -> Result<()> {
             json,
         }) => {
             commands::scan::run(
-                &conn,
+                conn,
                 &config,
                 filter.as_deref(),
                 save.as_deref(),
@@ -282,14 +281,14 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Predictions { category, search, limit, json }) => {
-            commands::predictions::run(&conn, category.as_deref(), search.as_deref(), limit, json)
+            commands::predictions::run(conn, category.as_deref(), search.as_deref(), limit, json)
         }
         Some(Command::Correlations { window, limit, json }) => {
-            commands::correlations::run(&conn, window, limit, json)
+            commands::correlations::run(conn, window, limit, json)
         }
 
         Some(Command::News { source, search, hours, limit, json }) => {
-            commands::news::run(&conn, source.as_deref(), search.as_deref(), hours, limit, json)
+            commands::news::run(conn, source.as_deref(), search.as_deref(), hours, limit, json)
         }
 
         Some(Command::Sentiment { symbol, history, json }) => {
@@ -314,7 +313,7 @@ fn main() -> Result<()> {
                 json,
                 status_filter: status,
             };
-            commands::alerts::run(&conn, &action, &args)
+            commands::alerts::run(conn, &action, &args)
         }
 
         Some(Command::Target { action, symbol, target, band, json }) => {
@@ -419,7 +418,7 @@ fn main() -> Result<()> {
                 notes,
                 json,
             };
-            commands::dividends::run(&conn, &action, args)
+            commands::dividends::run(conn, &action, args)
         }
         Some(Command::Annotate {
             symbol,
@@ -443,7 +442,7 @@ fn main() -> Result<()> {
                 remove,
                 json,
             };
-            commands::annotate::run(&conn, args)
+            commands::annotate::run(conn, args)
         }
         Some(Command::Group {
             action,
@@ -451,7 +450,7 @@ fn main() -> Result<()> {
             symbols,
             json,
         }) => commands::group::run(
-            &conn,
+            conn,
             &config,
             &action,
             name.as_deref(),
@@ -465,7 +464,7 @@ fn main() -> Result<()> {
             default_status,
             json,
         }) => commands::migrate_journal::run(
-            &conn,
+            conn,
             &path,
             dry_run,
             default_tag.as_deref(),
@@ -481,8 +480,8 @@ fn main() -> Result<()> {
             })
         }
 
-        Some(Command::Sector { json }) => commands::sector::run(&conn, &config, json),
-        Some(Command::Heatmap { json }) => commands::heatmap::run(&conn, json),
+        Some(Command::Sector { json }) => commands::sector::run(conn, &config, json),
+        Some(Command::Heatmap { json }) => commands::heatmap::run(conn, json),
         Some(Command::Options {
             symbol,
             expiry,
@@ -493,7 +492,7 @@ fn main() -> Result<()> {
             commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {
-            commands::stress_test::run(&conn, &config, &scenario, json)
+            commands::stress_test::run(conn, &config, &scenario, json)
         }
         Some(Command::Research {
             query,
@@ -521,7 +520,7 @@ fn main() -> Result<()> {
                 opec,
             };
             commands::research::run(
-                &conn,
+                conn,
                 query.as_deref(),
                 news,
                 freshness_checked.as_deref(),
@@ -530,5 +529,11 @@ fn main() -> Result<()> {
                 preset,
             )
         }
+    };
+
+    match (result, backend.flush()) {
+        (Err(e), _) => Err(e),
+        (Ok(_), Err(e)) => Err(e),
+        (Ok(v), Ok(_)) => Ok(v),
     }
 }

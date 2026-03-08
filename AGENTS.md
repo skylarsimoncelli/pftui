@@ -688,7 +688,7 @@ sqlite3 ~/.local/share/pftui/pftui.db "SELECT symbol, quantity, cost_per_unit FR
 
 Backend status:
 - `sqlite` (default): fully supported
-- `postgres`: config/plumbing available (`database_backend`, `database_url`), storage/query migration in progress
+- `postgres`: fully supported via runtime backend bridge (`database_backend`, `database_url`)
 
 Migration guide: [docs/MIGRATING.md](docs/MIGRATING.md)
 

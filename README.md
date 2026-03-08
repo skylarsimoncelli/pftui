@@ -172,7 +172,7 @@ You own this data completely. No cloud sync. No third-party accounts. One SQLite
 
 The longer you run pftui, the more powerful it becomes. This is the core design principle, **your data compounds.**
 
-PostgreSQL support coming soon for multi-agent and production deployments.
+PostgreSQL backend is now supported via runtime state sync (`database_backend = "postgres"` + `database_url`).
 
 ### Data Sources, Zero Configuration
 
@@ -216,7 +216,7 @@ The setup wizard walks you through adding your first positions with symbol autoc
 
 - **Rust**, fast, safe, single binary
 - **ratatui**, terminal UI framework
-- **SQLite** default backend, with PostgreSQL plumbing in progress
+- **SQLite** default backend, with PostgreSQL backend support via `sqlx`
 - **Actix-web**, web dashboard server
 - **TradingView Widget**, interactive web charts
 

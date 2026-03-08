@@ -16,11 +16,6 @@
 ### Analytics
 
 ### Infrastructure
-- [ ] **PostgreSQL backend support (epic)** — Add PostgreSQL as alternative to SQLite via `sqlx` (runtime, not compile-time). Migration path remains: `pftui export json` → `pftui setup` (new backend) → `pftui import`.
-  - Phase 1 (plumbing): `db/backend.rs` abstraction over `rusqlite`/`sqlx`, `config.rs` database backend/url fields, setup wizard backend choice.
-  - Phase 2 (storage): migrate `db/schema.rs` + `db/*.rs` query layer to backend-agnostic implementations.
-  - Phase 3 (docs + rollout): `docs/MIGRATING.md`, `README.md`, `website/index.html`, `AGENTS.md`.
-  - Scope note: large migration touching most DB callsites; treat as dedicated branch item, not mixed with feature batches.
 
 ---
 

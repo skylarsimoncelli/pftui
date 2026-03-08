@@ -5,8 +5,8 @@ This guide covers moving portfolio data between pftui storage backends.
 ## Current Status (2026-03-08)
 
 - `sqlite` is the default and fully supported backend.
-- `postgres` backend config/plumbing is available (`database_backend`, `database_url`), but query-layer storage migration is still in progress.
-- If `database_backend = "postgres"` is set today, pftui will exit with a clear message until PostgreSQL storage support lands.
+- `postgres` is fully supported via the runtime bridge layer (`database_backend`, `database_url`) and persists portfolio state in PostgreSQL.
+- Existing SQLite query/storage logic is retained by materializing a local working SQLite database per run, then syncing that state to PostgreSQL on command/TUI shutdown.
 
 ## SQLite to PostgreSQL Migration Path
 
@@ -51,3 +51,4 @@ Use the same process in reverse:
 - Backups are strongly recommended before backend switches.
 - `replace` overwrites existing portfolio data in the destination backend.
 - `merge` can be used for additive imports when appropriate.
+- PostgreSQL backend currently stores one binary SQLite state blob per active portfolio path in table `pftui_sqlite_state`.
