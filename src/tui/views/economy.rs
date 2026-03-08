@@ -127,6 +127,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 /// BLS Economic Indicators panel — CPI, unemployment, NFP, hourly earnings.
 fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
+    let econ = &app.economic_data;
 
     // Get latest BLS data points
     let cpi = app.bls_data.get(crate::data::bls::SERIES_CPI_U);
@@ -136,9 +137,16 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
 
     let mut lines = Vec::new();
 
-    // CPI (YoY%, MoM%)
-    if let Some(cpi_latest) = cpi {
-        // For now just show the value — YoY/MoM calculation requires historical data
+    // CPI
+    if let Some(cpi_econ) = econ.get("cpi") {
+        let cpi_str = format!("CPI: {:.2}%", cpi_econ.value);
+        let date_str = format!(" ({})", format_fetched_date(&cpi_econ.fetched_at));
+        lines.push(Line::from(vec![
+            Span::styled("CPI ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(cpi_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else if let Some(cpi_latest) = cpi {
         let cpi_str = format!("CPI: {:.1}", cpi_latest.value);
         let date_str = format!(" ({})", cpi_latest.date.format("%b %Y"));
         lines.push(Line::from(vec![
@@ -151,7 +159,15 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     // Unemployment Rate
-    if let Some(unemp) = unemployment {
+    if let Some(unemp_econ) = econ.get("unemployment_rate") {
+        let unemp_str = format!("{:.2}%", unemp_econ.value);
+        let date_str = format!(" ({})", format_fetched_date(&unemp_econ.fetched_at));
+        lines.push(Line::from(vec![
+            Span::styled("Unemp Rate ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(unemp_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else if let Some(unemp) = unemployment {
         let unemp_str = format!("{:.1}%", unemp.value);
         let date_str = format!(" ({})", unemp.date.format("%b %Y"));
         lines.push(Line::from(vec![
@@ -163,8 +179,17 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(Span::styled("Unemp Rate: ---", Style::default().fg(t.text_muted))));
     }
 
-    // NFP (Nonfarm Payrolls) — show in thousands
-    if let Some(nfp_data) = nfp {
+    // NFP (Nonfarm Payrolls)
+    if let Some(nfp_econ) = econ.get("nfp") {
+        let nfp_k = nfp_econ.value / rust_decimal_macros::dec!(1000);
+        let nfp_str = format!("{:.0}k", nfp_k);
+        let date_str = format!(" ({})", format_fetched_date(&nfp_econ.fetched_at));
+        lines.push(Line::from(vec![
+            Span::styled("NFP ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(nfp_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else if let Some(nfp_data) = nfp {
         let nfp_k = nfp_data.value / rust_decimal_macros::dec!(1000);
         let nfp_str = format!("{:.0}k", nfp_k);
         let date_str = format!(" ({})", nfp_data.date.format("%b %Y"));
@@ -177,8 +202,16 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(Span::styled("NFP: ---", Style::default().fg(t.text_muted))));
     }
 
-    // Average Hourly Earnings
-    if let Some(earn) = earnings {
+    // Average Hourly Earnings / PPI
+    if let Some(ppi_econ) = econ.get("ppi") {
+        let ppi_str = format!("PPI: {:.2}%", ppi_econ.value);
+        let date_str = format!(" ({})", format_fetched_date(&ppi_econ.fetched_at));
+        lines.push(Line::from(vec![
+            Span::styled("PPI ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(ppi_str, Style::default().fg(t.text_primary)),
+            Span::styled(date_str, Style::default().fg(t.text_muted)),
+        ]));
+    } else if let Some(earn) = earnings {
         let earn_str = format!("${:.2}", earn.value);
         let date_str = format!(" ({})", earn.date.format("%b %Y"));
         lines.push(Line::from(vec![
@@ -192,10 +225,17 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
 
     // Note about data refresh
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "Monthly data from BLS",
-        Style::default().fg(t.text_muted).italic(),
-    )));
+    if let Some(fed) = econ.get("fed_funds_rate") {
+        lines.push(Line::from(Span::styled(
+            format!("Fed Funds: {:.2}%  (Brave)", fed.value),
+            Style::default().fg(t.text_muted).italic(),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "Monthly data from BLS",
+            Style::default().fg(t.text_muted).italic(),
+        )));
+    }
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -209,6 +249,12 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
 
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
+}
+
+fn format_fetched_date(ts: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .map(|d| d.format("%b %d").to_string())
+        .unwrap_or_else(|_| "recent".to_string())
 }
 
 /// Top strip: key macro numbers at a glance — DXY, VIX, 10Y, Gold, Oil, BTC.

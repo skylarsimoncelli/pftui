@@ -503,6 +503,8 @@ pub struct App {
 
     // BLS economic data (CPI, unemployment, NFP, earnings)
     pub bls_data: HashMap<String, crate::data::bls::BlsDataPoint>,
+    // Parsed economic indicators from Brave/BLS fallback cache.
+    pub economic_data: HashMap<String, crate::db::economic_data::EconomicDataEntry>,
 
     // World Bank global macro data (GDP growth, debt/GDP, reserves)
     pub worldbank_data: HashMap<(String, String), crate::data::worldbank::WorldBankDataPoint>,
@@ -739,6 +741,7 @@ impl App {
             traditional_fng: None,
             calendar_events: Vec::new(),
             bls_data: HashMap::new(),
+            economic_data: HashMap::new(),
             worldbank_data: HashMap::new(),
             db_path,
             last_saved_home_tab: initial_view,
@@ -762,6 +765,7 @@ impl App {
         self.load_sentiment();
         self.load_calendar();
         self.load_bls_data();
+        self.load_economic_data();
         self.load_worldbank_data();
         self.recompute();
         self.recompute_regime();
@@ -780,6 +784,7 @@ impl App {
         self.load_sentiment();
         self.load_calendar();
         self.load_bls_data();
+        self.load_economic_data();
         self.load_worldbank_data();
         self.recompute();
         self.recompute_regime();
@@ -1026,6 +1031,17 @@ impl App {
                 if let Ok(Some(data)) = crate::db::bls_cache::get_latest_bls_data(&conn, series_id) {
                     self.bls_data.insert(series_id.to_string(), data);
                 }
+            }
+        }
+    }
+
+    fn load_economic_data(&mut self) {
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            if let Ok(entries) = crate::db::economic_data::get_all(&conn) {
+                self.economic_data = entries
+                    .into_iter()
+                    .map(|e| (e.indicator.clone(), e))
+                    .collect();
             }
         }
     }
@@ -1855,6 +1871,7 @@ impl App {
                     self.load_sentiment();
                     self.load_calendar();
                     self.load_bls_data();
+                    self.load_economic_data();
                     self.load_worldbank_data();
                     self.recompute();
                     self.recompute_regime();
