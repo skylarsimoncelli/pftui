@@ -11,6 +11,8 @@ pub mod calendar_cache;
 pub mod chart_state;
 #[allow(dead_code)] // Infrastructure for F22.1+ consumers (COMEX supply panel, CLI)
 pub mod comex_cache;
+#[allow(dead_code)] // Infrastructure for F31.3 (conviction CLI)
+pub mod convictions;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot_cache;
 pub mod dividends;

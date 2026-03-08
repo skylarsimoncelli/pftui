@@ -379,6 +379,16 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section);
+
+        CREATE TABLE IF NOT EXISTS convictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            score INTEGER NOT NULL CHECK(score BETWEEN -5 AND 5),
+            notes TEXT,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_convictions_symbol ON convictions(symbol);
+        CREATE INDEX IF NOT EXISTS idx_convictions_recorded ON convictions(recorded_at);
         ",
     )?;
 

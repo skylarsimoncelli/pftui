@@ -578,6 +578,31 @@ pub enum Command {
         json: bool,
     },
 
+    /// Track asset conviction scores over time (-5 to +5)
+    Conviction {
+        /// Action: set, list, history, changes
+        action: String,
+
+        /// Symbol (for set/history) or days (for changes, default 7)
+        value: Option<String>,
+
+        /// Score -5 to +5
+        #[arg(long)]
+        score: Option<i32>,
+
+        /// Notes explaining the score
+        #[arg(long)]
+        notes: Option<String>,
+
+        /// Max results for history
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage trade journal and decision log
     Journal {
         /// Action: add, list, search, update, remove, tags, stats

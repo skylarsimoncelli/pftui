@@ -4,6 +4,7 @@ pub mod annotate;
 pub mod brief;
 pub mod calendar;
 pub mod config_cmd;
+pub mod conviction;
 pub mod correlations;
 pub mod cot;
 pub mod crisis;

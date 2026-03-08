@@ -390,6 +390,42 @@ fn main() -> Result<()> {
         }
         Some(Command::Drift { json }) => commands::drift::run(&backend, &db_path, json),
         Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, &db_path, json),
+        Some(Command::Conviction {
+            action,
+            value,
+            score,
+            notes,
+            limit,
+            json,
+        }) => match action.as_str() {
+            "set" => {
+                let symbol = value.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing symbol. Usage: pftui conviction set SYMBOL --score N")
+                })?;
+                let score_val = score.ok_or_else(|| {
+                    anyhow::anyhow!("Missing score. Usage: pftui conviction set SYMBOL --score N")
+                })?;
+                commands::conviction::run_set(symbol, score_val, notes.as_deref(), json)
+            }
+            "list" => commands::conviction::run_list(json),
+            "history" => {
+                let symbol = value.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing symbol. Usage: pftui conviction history SYMBOL")
+                })?;
+                commands::conviction::run_history(symbol, limit, json)
+            }
+            "changes" => {
+                let days = if let Some(val) = value.as_deref() {
+                    val.parse::<usize>().unwrap_or(7)
+                } else {
+                    7
+                };
+                commands::conviction::run_changes(days, json)
+            }
+            _ => Err(anyhow::anyhow!(
+                "Invalid action. Use: set, list, history, changes"
+            )),
+        },
         Some(Command::Journal {
             action,
             value,
