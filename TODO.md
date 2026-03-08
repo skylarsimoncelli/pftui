@@ -63,7 +63,6 @@
 - [ ] [Feedback] **Fix `pftui sector` data — only returns 1 of 18 ETFs** — Sector command should return all 18 configured sector ETFs (XLK, XLF, XLV, etc.) but most show no data. Likely Yahoo Finance fetch failure for batch sector ETF quotes. Files: `commands/sector.rs`, `price/yahoo.rs`
 
 ### Analytics
-- [ ] [Feedback] **`pftui correlations` CLI** — Rolling correlations between held assets (gold-DXY, BTC-SPX, silver-gold). Foundation module already exists in `indicators/correlation.rs`. Files: new `commands/correlations.rs`
 - [ ] **Position annotations & thesis tracking** — SQLite table with thesis, invalidation criteria, review dates, targets. CLI: `pftui annotate GC=F --thesis "..."`. Show in detail popup. Files: new `db/annotations.rs`, new `commands/annotate.rs`, `views/asset_detail_popup.rs`
 - [ ] **Review date alerts** — Overdue review dates show ⏰ in Positions tab. Auto-creates alert. Files: `alerts/engine.rs`, `views/positions.rs`
 - [ ] **Asset groups** — `pftui group create "hard-assets" --symbols GC=F,SI=F,BTC`. Combined allocation + performance. Filter positions by group. Files: new `db/groups.rs`, new `commands/group.rs`
