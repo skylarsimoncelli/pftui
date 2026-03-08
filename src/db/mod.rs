@@ -37,6 +37,7 @@ pub mod schema;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)
 pub mod sentiment_cache;
 pub mod snapshots;
+pub mod thesis;
 pub mod transactions;
 pub mod watchlist;
 pub mod watchlist_groups;

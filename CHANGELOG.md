@@ -11,6 +11,14 @@
 - Tests: `cargo test` (1181 passed), `cargo clippy --all-targets -- -D warnings` (passes). Manual validation: add/update/signals/history/JSON output all working.
 - TODO: Intelligence Database F31.1 (complete)
 
+### 2026-03-08 18:42 UTC — Add `pftui thesis` (F31.2) with versioned history
+
+- What: implemented new intelligence-database module for thesis management: `pftui thesis list|update|history|remove` with JSON support. Added `thesis` + `thesis_history` schema and migration guards, DB CRUD layer (`src/db/thesis.rs`), CLI variant and main router wiring.
+- Why: progresses P0 Intelligence Database roadmap (F31.2) by replacing fragile markdown-based thesis tracking with structured, queryable storage and revision history.
+- Files: `src/db/thesis.rs`, `src/commands/thesis.rs`, `src/db/schema.rs`, `src/cli.rs`, `src/main.rs`, `src/db/mod.rs`, `src/commands/mod.rs`, `AGENTS.md`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F31.2 Thesis — Versioned macro outlook by section
+
 ### 2026-03-08 18:33 UTC — Add distribution manifest automation for Snap/AUR/Scoop rollout
 
 - What: added distribution-prep scripts to generate/update external package metadata from GitHub release checksums: `scripts/prepare_distribution_manifests.sh`, `scripts/render_aur_pkgbuild.sh`, and `scripts/update_scoop_manifest.sh`. Added `docs/DISTRIBUTION.md` runbook and linked it from `docs/RELEASING.md` + `README.md`.

@@ -362,6 +362,23 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_scenario_history_scenario ON scenario_history(scenario_id);
+
+        CREATE TABLE IF NOT EXISTS thesis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            section TEXT NOT NULL UNIQUE,
+            content TEXT NOT NULL,
+            conviction TEXT NOT NULL DEFAULT 'medium',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS thesis_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            section TEXT NOT NULL,
+            content TEXT NOT NULL,
+            conviction TEXT NOT NULL,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section);
         ",
     )?;
 
@@ -456,6 +473,42 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         > 0;
     if !has_news_symbol_tag {
         conn.execute_batch("ALTER TABLE news_cache ADD COLUMN symbol_tag TEXT")?;
+    }
+
+    // Migration guard: ensure thesis tables exist on upgraded databases.
+    let has_thesis: bool = conn
+        .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='thesis'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_thesis {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS thesis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                section TEXT NOT NULL UNIQUE,
+                content TEXT NOT NULL,
+                conviction TEXT NOT NULL DEFAULT 'medium',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+        )?;
+    }
+
+    let has_thesis_history: bool = conn
+        .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='thesis_history'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_thesis_history {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS thesis_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                section TEXT NOT NULL,
+                content TEXT NOT NULL,
+                conviction TEXT NOT NULL,
+                recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section)",
+        )?;
     }
 
     Ok(())

@@ -299,6 +299,7 @@ fn main() -> Result<()> {
             json,
         }) => {
             commands::scenario::run(
+                conn,
                 &action,
                 value.as_deref(),
                 id,
@@ -317,6 +318,22 @@ fn main() -> Result<()> {
                 json,
             )
         }
+        Some(Command::Thesis {
+            action,
+            value,
+            content,
+            conviction,
+            limit,
+            json,
+        }) => commands::thesis::run(
+            conn,
+            &action,
+            value.as_deref(),
+            content.as_deref(),
+            conviction.as_deref(),
+            limit,
+            json,
+        ),
 
         Some(Command::Predictions { category, search, limit, json }) => {
             commands::predictions::run(conn, category.as_deref(), search.as_deref(), limit, json)

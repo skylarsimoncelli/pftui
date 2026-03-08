@@ -404,6 +404,32 @@ pub enum Command {
         json: bool,
     },
 
+    /// Manage your macro thesis — versioned outlook by section
+    #[command(name = "thesis")]
+    Thesis {
+        /// Action: list, update, history, remove
+        action: String,
+
+        /// Section name (for update/history/remove)
+        value: Option<String>,
+
+        /// Content text
+        #[arg(long)]
+        content: Option<String>,
+
+        /// Conviction: high, medium, low
+        #[arg(long)]
+        conviction: Option<String>,
+
+        /// Max results for history
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show prediction market odds from Polymarket and Manifold
     Predictions {
         /// Filter by category: crypto, economics, geopolitics, ai

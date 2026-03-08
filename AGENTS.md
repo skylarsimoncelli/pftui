@@ -639,6 +639,18 @@ Without persistent files, every session starts from zero. With them:
 | `pftui journal list --json` | List all entries |
 | `pftui journal search "QUERY" --json` | Search entries |
 
+### Intelligence Database
+
+| Command | What It Does |
+|---|---|
+| `pftui scenario add "NAME" --probability N` | Add macro scenario with initial probability |
+| `pftui scenario update "NAME" --probability N --driver "WHY"` | Update scenario probability and auto-log history |
+| `pftui scenario signal-add --scenario "NAME" "SIGNAL"` | Attach a tracked signal to a scenario |
+| `pftui scenario history "NAME" --limit N --json` | Show scenario probability history |
+| `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
+| `pftui thesis list --json` | List all current thesis sections |
+| `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |
+
 ### Utility
 
 | Command | What It Does |
@@ -678,7 +690,12 @@ The database is the single source of truth. All interfaces (TUI, Web, CLI) read 
 ├── comex_cache                    # COMEX inventory
 ├── bls_cache                      # BLS economic data (CPI, NFP)
 ├── worldbank_cache                # Global macro indicators
-└── onchain_cache                  # BTC on-chain + ETF flows
+├── onchain_cache                  # BTC on-chain + ETF flows
+├── scenarios                      # Macro scenarios + probabilities
+├── scenario_signals               # Signal checklist per scenario
+├── scenario_history               # Probability change log
+├── thesis                         # Current thesis sections
+└── thesis_history                 # Thesis revision history
 ```
 
 You can query the database directly if needed:

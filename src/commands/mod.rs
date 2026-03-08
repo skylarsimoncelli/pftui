@@ -48,5 +48,6 @@ pub mod stress_test;
 pub mod summary;
 pub mod supply;
 pub mod target;
+pub mod thesis;
 pub mod value;
 pub mod watchlist_cli;
