@@ -382,8 +382,7 @@ struct RefreshLock {
 
 impl RefreshLock {
     fn acquire() -> Result<Self> {
-        let lock_path = std::path::Path::new(&std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
-            .join(".local/share/pftui/refresh.lock");
+        let lock_path = refresh_lock_path();
         
         // Ensure parent directory exists
         if let Some(parent) = lock_path.parent() {
@@ -411,6 +410,14 @@ impl RefreshLock {
         
         Ok(RefreshLock { path: lock_path })
     }
+}
+
+fn refresh_lock_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("PFTUI_REFRESH_LOCK_DIR") {
+        return std::path::Path::new(&path).join("refresh.lock");
+    }
+    std::path::Path::new(&std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+        .join(".local/share/pftui/refresh.lock")
 }
 
 impl Drop for RefreshLock {
@@ -917,5 +924,27 @@ mod tests {
     #[test]
     fn yahoo_crypto_symbol_no_double() {
         assert_eq!(yahoo_crypto_symbol("BTC-USD"), "BTC-USD");
+    }
+
+    #[test]
+    fn refresh_lock_prevents_concurrent_runs() {
+        let tmp = std::env::temp_dir().join(format!(
+            "pftui-refresh-lock-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+        std::env::set_var("PFTUI_REFRESH_LOCK_DIR", tmp.to_string_lossy().to_string());
+
+        let first = RefreshLock::acquire().expect("first lock should succeed");
+        let second = RefreshLock::acquire();
+        assert!(second.is_err(), "second lock should fail while first is held");
+
+        drop(first);
+        let third = RefreshLock::acquire();
+        assert!(third.is_ok(), "lock should be acquirable after release");
+        drop(third);
+
+        std::env::remove_var("PFTUI_REFRESH_LOCK_DIR");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
