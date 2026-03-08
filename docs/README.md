@@ -80,6 +80,15 @@ pftui
 
 The setup wizard walks you through adding your first positions with symbol autocomplete and auto-categorization. Choose between **Full mode** (transactions with cost basis) or **Percentage mode** (allocations only, no monetary data).
 
+**Optional: Configure data sources**
+```bash
+# Add Brave Search API key for enhanced news & economic data (free tier: brave.com/search/api)
+pftui config set brave_api_key <your-key>
+
+# View all config options
+pftui config list
+```
+
 **Add a position later:**
 ```bash
 pftui add-tx
@@ -90,6 +99,7 @@ pftui add-tx
 pftui value          # Quick total value + gain
 pftui brief          # Formatted portfolio brief
 pftui summary        # Detailed breakdown
+pftui status         # Data freshness status
 ```
 
 ---

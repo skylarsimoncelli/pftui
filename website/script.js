@@ -2,6 +2,19 @@
 function copyInstall() {
     const text = document.getElementById('install-cmd').textContent;
     copyToClipboard(text);
+    
+    // Visual feedback: change icon to checkmark
+    const button = event.target.closest('.copy-btn');
+    if (!button) return;
+    
+    const originalSVG = button.innerHTML;
+    button.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.5 4L6 12L2.5 8.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    button.style.color = 'var(--accent-green)';
+    
+    setTimeout(() => {
+        button.innerHTML = originalSVG;
+        button.style.color = '';
+    }, 2000);
 }
 
 function copyCode(button) {
