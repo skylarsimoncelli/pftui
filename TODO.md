@@ -5,53 +5,6 @@
 
 ---
 
-## P0 — Brave Search API Integration
-
-> **Goal:** Native Brave Search API support as a single reliable data source that replaces broken scrapers and shallow RSS feeds. Optional API key — pftui works without it, but with a key the data quality jumps dramatically. Free tier gives $5/month in credits (~2000 queries), more than enough for pftui's use case.
->
-> **Why:** 4 data integrations are broken (COT, BLS, on-chain, ETF flows). RSS gives headlines but no context. Brave Search API solves both problems with one integration — it can answer ANY financial question via web + news search, returning structured results with full descriptions. Instead of maintaining 10 fragile scrapers, maintain 1 reliable API client.
->
-> **API:** Web search (`/res/v1/web/search`) + News search (`/res/v1/news/search`). Auth via `X-Subscription-Token` header. Free tier: $5/month auto-credited, 50 qps. News returns up to 50 results with descriptions, extra_snippets, freshness filtering.
-
-### F26: Brave API Configuration & Client
-
-### F27: Brave-Powered News (Replaces/Supplements RSS)
-
-> When Brave key is configured, news comes from targeted Brave News Search queries instead of generic RSS polling. This gives article summaries (descriptions), not just headlines. Multiple focused queries replace one shallow RSS poll.
-
-### F28: Brave-Powered Economic Data
-
-> Instead of fragile scrapers for BLS/Trading Economics, use Brave Web Search to find latest economic readings. More resilient — when a scraper breaks because a page changed layout, Brave still works because it searches the entire web.
-
-### F29: Brave-Powered Research Command
-
-> A new `pftui research` command — the agent's Swiss Army knife. Instead of falling back to their own web_search tool, agents stay in pftui for ANY financial question.
-
-### F30: Enhanced Refresh & Brief with Brave
-
-> `pftui refresh` becomes a one-command intelligence operation. `pftui brief --agent` becomes the one JSON blob an agent needs.
-
----
-
-## P0 — QA Bugs (from 2026-03-06 QA Report)
-
-> Source: Opus QA agent ran 52 manual tests + 1105 unit tests. Full report: `QA-REPORT.md`
-
-### Critical
-
-### Significant
-
-### Minor
-
-
----
-
-## P0 — Bugs & Fixes
-
-> Other broken functionality. Fix before shipping.
-
----
-
 ## P1 — Feature Requests
 
 > User-requested features and high-value improvements.
@@ -123,6 +76,6 @@
 
 ### Top 3 Priorities (Feedback-Driven)
 
-1. **Brave Search API integration** (P0) — Unifies broken data pipelines (predictions, news depth, economic data) behind one reliable API. The single highest-leverage infrastructure investment. 4 data integrations still intermittent.
-2. **Fix `pftui sector` data bug** (P1) — Only returns 1 of 18 ETFs. Quick win that directly improves Eventuality Planner scores. Likely a batch Yahoo Finance fetch issue.
-3. **Config discoverability** (P2) — Config command is invisible to users — needs help popup and README mention (`pftui config set brave_api_key <key>`).
+1. ✅ **Brave Search API integration** — COMPLETE (Mar 7, 2026). Config, client, news, economic data, research command all shipped.
+2. **Config discoverability** — Config command exists but isn't surfaced in help or README.
+3. **PostgreSQL backend support** — The only remaining P1 item.
