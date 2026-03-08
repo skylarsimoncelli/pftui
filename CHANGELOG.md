@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:49 UTC — Fix Economy tab data gaps (BLS + global macro fallback)
+
+- What: resolved the Economy feedback gap in two parts: hardened BLS parsing (skip unsupported monthly bucket `M13`, accept comma-formatted numeric values) and added an on-demand World Bank fallback load path when cache is empty so Global Macro panel can self-populate without waiting for scheduled refresh.
+- Why: users were seeing `---` for BLS indicators and empty Global Macro sections due brittle parsing and empty-cache startup behavior.
+- Files: `src/data/bls.rs`, `src/app.rs`, `TODO.md`
+- Tests: `cargo test -q` (1159 passed)
+- TODO: [Feedback] Economy tab data gaps (P2)
+
 ### 2026-03-08 04:47 UTC — Harden BLS parsing for Economy data reliability
 
 - What: made BLS ingestion resilient by skipping `M13` annual-average rows and other non-monthly periods instead of failing the whole fetch, and by parsing comma-formatted numeric values (for example `278,802`). Added focused parser tests.

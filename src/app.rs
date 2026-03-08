@@ -1109,6 +1109,7 @@ impl App {
 
     fn load_worldbank_data(&mut self) {
         if let Ok(conn) = Connection::open(&self.db_path) {
+            self.worldbank_data.clear();
             // Load latest data for tracked countries and indicators
             let countries = [
                 crate::data::worldbank::COUNTRY_US,
@@ -1123,14 +1124,31 @@ impl App {
                 crate::data::worldbank::INDICATOR_DEBT_GDP,
                 crate::data::worldbank::INDICATOR_RESERVES,
             ];
-            
-            for country in &countries {
-                for indicator in &indicators {
-                    if let Ok(data_points) = crate::db::worldbank_cache::get_cached_worldbank_data(&conn, &[country], indicator) {
-                        // Take the most recent year for this country+indicator
-                        if let Some(latest) = data_points.first() {
-                            let key = (country.to_string(), indicator.to_string());
-                            self.worldbank_data.insert(key, latest.clone());
+
+            let load_from_cache = |store: &mut HashMap<(String, String), crate::data::worldbank::WorldBankDataPoint>| {
+                for country in &countries {
+                    for indicator in &indicators {
+                        if let Ok(data_points) = crate::db::worldbank_cache::get_cached_worldbank_data(&conn, &[country], indicator) {
+                            // Take the most recent year for this country+indicator
+                            if let Some(latest) = data_points.first() {
+                                let key = (country.to_string(), indicator.to_string());
+                                store.insert(key, latest.clone());
+                            }
+                        }
+                    }
+                }
+            };
+
+            load_from_cache(&mut self.worldbank_data);
+
+            // Cache miss fallback: fetch once on-demand so Economy global macro
+            // panel doesn't stay empty between scheduled refresh runs.
+            if self.worldbank_data.is_empty() {
+                if let Ok(rt) = tokio::runtime::Runtime::new() {
+                    if let Ok(points) = rt.block_on(crate::data::worldbank::fetch_all_indicators()) {
+                        if !points.is_empty() {
+                            let _ = crate::db::worldbank_cache::upsert_worldbank_data(&conn, &points);
+                            load_from_cache(&mut self.worldbank_data);
                         }
                     }
                 }
