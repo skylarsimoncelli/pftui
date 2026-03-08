@@ -29,6 +29,20 @@ impl BackendConnection {
             BackendConnection::Postgres(bridge) => bridge.flush(),
         }
     }
+
+    pub fn sqlite_native(&self) -> Option<&Connection> {
+        match self {
+            BackendConnection::Sqlite { conn } => Some(conn),
+            BackendConnection::Postgres(_) => None,
+        }
+    }
+
+    pub fn postgres_pool(&self) -> Option<&PgPool> {
+        match self {
+            BackendConnection::Sqlite { .. } => None,
+            BackendConnection::Postgres(bridge) => Some(&bridge.pool),
+        }
+    }
 }
 
 pub fn open_from_config(config: &Config, sqlite_path: &Path) -> Result<BackendConnection> {

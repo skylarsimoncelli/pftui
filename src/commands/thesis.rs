@@ -1,10 +1,10 @@
+use crate::db::backend::BackendConnection;
 use crate::db::thesis;
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 use serde_json::json;
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     content: Option<&str>,
@@ -14,7 +14,7 @@ pub fn run(
 ) -> Result<()> {
     match action {
         "list" => {
-            let entries = thesis::list_thesis(conn)?;
+            let entries = thesis::list_thesis_backend(backend)?;
             if json_output {
                 println!(
                     "{}",
@@ -54,16 +54,16 @@ pub fn run(
 
             let conviction = if let Some(c) = conviction {
                 validate_conviction(c)?
-            } else if let Some(existing) = thesis::get_thesis_section(conn, section)? {
+            } else if let Some(existing) = thesis::get_thesis_section_backend(backend, section)? {
                 existing.conviction
             } else {
                 "medium".to_string()
             };
 
-            thesis::upsert_thesis(conn, section, content, &conviction)?;
+            thesis::upsert_thesis_backend(backend, section, content, &conviction)?;
 
             if json_output {
-                let updated = thesis::get_thesis_section(conn, section)?.unwrap();
+                let updated = thesis::get_thesis_section_backend(backend, section)?.unwrap();
                 println!("{}", serde_json::to_string_pretty(&updated)?);
             } else {
                 println!("Updated thesis section '{}'", section);
@@ -71,7 +71,7 @@ pub fn run(
         }
         "history" => {
             let section = value.ok_or_else(|| anyhow::anyhow!("section name required"))?;
-            let entries = thesis::get_thesis_history(conn, section, limit)?;
+            let entries = thesis::get_thesis_history_backend(backend, section, limit)?;
 
             if json_output {
                 println!(
@@ -103,7 +103,7 @@ pub fn run(
         }
         "remove" => {
             let section = value.ok_or_else(|| anyhow::anyhow!("section name required"))?;
-            thesis::remove_thesis(conn, section)?;
+            thesis::remove_thesis_backend(backend, section)?;
             if json_output {
                 println!(
                     "{}",

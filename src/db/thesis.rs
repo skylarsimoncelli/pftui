@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThesisEntry {
@@ -127,6 +131,221 @@ pub fn get_thesis_history(
 
 pub fn remove_thesis(conn: &Connection, section: &str) -> Result<()> {
     conn.execute("DELETE FROM thesis WHERE section = ?1", params![section])?;
+    Ok(())
+}
+
+pub fn upsert_thesis_backend(
+    backend: &BackendConnection,
+    section: &str,
+    content: &str,
+    conviction: &str,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_thesis(conn, section, content, conviction),
+        |pool| upsert_thesis_postgres(pool, section, content, conviction),
+    )
+}
+
+pub fn list_thesis_backend(backend: &BackendConnection) -> Result<Vec<ThesisEntry>> {
+    query::dispatch(backend, list_thesis, list_thesis_postgres)
+}
+
+pub fn get_thesis_section_backend(
+    backend: &BackendConnection,
+    section: &str,
+) -> Result<Option<ThesisEntry>> {
+    query::dispatch(
+        backend,
+        |conn| get_thesis_section(conn, section),
+        |pool| get_thesis_section_postgres(pool, section),
+    )
+}
+
+pub fn get_thesis_history_backend(
+    backend: &BackendConnection,
+    section: &str,
+    limit: Option<usize>,
+) -> Result<Vec<ThesisHistoryEntry>> {
+    query::dispatch(
+        backend,
+        |conn| get_thesis_history(conn, section, limit),
+        |pool| get_thesis_history_postgres(pool, section, limit),
+    )
+}
+
+pub fn remove_thesis_backend(backend: &BackendConnection, section: &str) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| remove_thesis(conn, section),
+        |pool| remove_thesis_postgres(pool, section),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS thesis (
+                id BIGSERIAL PRIMARY KEY,
+                section TEXT NOT NULL UNIQUE,
+                content TEXT NOT NULL,
+                conviction TEXT NOT NULL DEFAULT 'medium',
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS thesis_history (
+                id BIGSERIAL PRIMARY KEY,
+                section TEXT NOT NULL,
+                content TEXT NOT NULL,
+                conviction TEXT NOT NULL,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section)")
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_thesis_postgres(pool: &PgPool, section: &str, content: &str, conviction: &str) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO thesis_history (section, content, conviction)
+             SELECT section, content, conviction FROM thesis WHERE section = $1",
+        )
+        .bind(section)
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO thesis (section, content, conviction, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT(section) DO UPDATE SET
+                content = EXCLUDED.content,
+                conviction = EXCLUDED.conviction,
+                updated_at = NOW()",
+        )
+        .bind(section)
+        .bind(content)
+        .bind(conviction)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn list_thesis_postgres(pool: &PgPool) -> Result<Vec<ThesisEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(i64, String, String, String, String)> = runtime.block_on(async {
+        sqlx::query_as::<_, (i64, String, String, String, String)>(
+            "SELECT id, section, content, conviction, updated_at::text
+             FROM thesis
+             ORDER BY section ASC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| ThesisEntry {
+            id: r.0,
+            section: r.1,
+            content: r.2,
+            conviction: r.3,
+            updated_at: r.4,
+        })
+        .collect())
+}
+
+fn get_thesis_section_postgres(pool: &PgPool, section: &str) -> Result<Option<ThesisEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<(i64, String, String, String, String)> = runtime.block_on(async {
+        sqlx::query_as::<_, (i64, String, String, String, String)>(
+            "SELECT id, section, content, conviction, updated_at::text
+             FROM thesis
+             WHERE section = $1",
+        )
+        .bind(section)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(|r| ThesisEntry {
+        id: r.0,
+        section: r.1,
+        content: r.2,
+        conviction: r.3,
+        updated_at: r.4,
+    }))
+}
+
+fn get_thesis_history_postgres(
+    pool: &PgPool,
+    section: &str,
+    limit: Option<usize>,
+) -> Result<Vec<ThesisHistoryEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(i64, String, String, String, String)> = if let Some(limit) = limit {
+        runtime.block_on(async {
+            sqlx::query_as::<_, (i64, String, String, String, String)>(
+                "SELECT id, section, content, conviction, recorded_at::text
+                 FROM thesis_history
+                 WHERE section = $1
+                 ORDER BY recorded_at DESC, id DESC
+                 LIMIT $2",
+            )
+            .bind(section)
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        runtime.block_on(async {
+            sqlx::query_as::<_, (i64, String, String, String, String)>(
+                "SELECT id, section, content, conviction, recorded_at::text
+                 FROM thesis_history
+                 WHERE section = $1
+                 ORDER BY recorded_at DESC, id DESC",
+            )
+            .bind(section)
+            .fetch_all(pool)
+            .await
+        })?
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| ThesisHistoryEntry {
+            id: r.0,
+            section: r.1,
+            content: r.2,
+            conviction: r.3,
+            recorded_at: r.4,
+        })
+        .collect())
+}
+
+fn remove_thesis_postgres(pool: &PgPool, section: &str) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query("DELETE FROM thesis WHERE section = $1")
+            .bind(section)
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
     Ok(())
 }
 

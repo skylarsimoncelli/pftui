@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 18:52 UTC — F32 Phase 1: add backend query dispatch and native Postgres path for thesis
+
+- What: introduced `src/db/query.rs` with backend dispatch helpers, extended `BackendConnection` accessors for native backend branching, and migrated thesis command/data path to run against backend-dispatched storage (`thesis` now supports native Postgres SQL path in addition to SQLite path).
+- Why: starts F32 native-backend migration with a reusable dispatch pattern and first converted module.
+- Files: `src/db/query.rs`, `src/db/backend.rs`, `src/db/mod.rs`, `src/db/thesis.rs`, `src/commands/thesis.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.1 backend abstraction (partial), F32.6 intelligence tables migration (partial: thesis)
+
 ### 2026-03-08 18:43 UTC — Add scenario tracking system (F31.1)
 
 - What: implemented macro scenario planning database with probability tracking, signals, and full history. Scenarios table stores name, probability, description, asset_impact JSON, triggers, historical_precedent, status (active/resolved/archived). Signals table (CASCADE delete) tracks evidence for/against scenarios with watching/triggered/invalidated states. History table auto-snapshots probability changes with driver notes. CLI: `pftui scenario add/list/update/remove/signal-add/signal-list/signal-update/signal-remove/history` with `--json` output on all commands.

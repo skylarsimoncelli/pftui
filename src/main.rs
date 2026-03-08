@@ -326,7 +326,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::thesis::run(
-            conn,
+            &backend,
             &action,
             value.as_deref(),
             content.as_deref(),
