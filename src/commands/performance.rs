@@ -22,14 +22,15 @@ fn snapshot_at_or_before<'a>(snapshots: &'a [PortfolioSnapshot], target: &str) -
 }
 
 /// Find the snapshot for period-based returns (MTD, QTD, YTD).
-/// If no snapshot exists at or before the period start, return the earliest snapshot >= period_start.
+/// Prefer the first snapshot on/after period start (true period start anchor).
+/// If none exists yet, fall back to the latest snapshot before period start.
 fn snapshot_for_period<'a>(snapshots: &'a [PortfolioSnapshot], period_start: &str) -> Option<&'a PortfolioSnapshot> {
-    // First try to find a snapshot at or before period start
-    if let Some(snap) = snapshot_at_or_before(snapshots, period_start) {
+    // Prefer first snapshot inside the period.
+    if let Some(snap) = snapshots.iter().find(|s| s.date.as_str() >= period_start) {
         return Some(snap);
     }
-    // No snapshot before period start — use the earliest available snapshot >= period_start
-    snapshots.iter().find(|s| s.date.as_str() >= period_start)
+    // No in-period snapshot yet — use latest pre-period snapshot.
+    snapshot_at_or_before(snapshots, period_start)
 }
 
 /// Format a return percentage for display.
@@ -701,5 +702,28 @@ mod tests {
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].date, "2026-02-01");
         assert_eq!(all[2].date, "2026-03-01");
+    }
+
+    #[test]
+    fn test_snapshot_for_period_prefers_in_period_start() {
+        let snapshots = vec![
+            PortfolioSnapshot {
+                date: "2026-02-28".into(),
+                total_value: dec!(100000),
+                cash_value: dec!(20000),
+                invested_value: dec!(80000),
+                snapshot_at: "".into(),
+            },
+            PortfolioSnapshot {
+                date: "2026-03-06".into(),
+                total_value: dec!(101000),
+                cash_value: dec!(20000),
+                invested_value: dec!(81000),
+                snapshot_at: "".into(),
+            },
+        ];
+
+        let start = snapshot_for_period(&snapshots, "2026-03-01").unwrap();
+        assert_eq!(start.date, "2026-03-06");
     }
 }
