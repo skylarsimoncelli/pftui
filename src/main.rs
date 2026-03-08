@@ -228,6 +228,9 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Macro { json }) => commands::macro_cmd::run(&conn, &config, json),
+        Some(Command::Economy { indicator, json }) => {
+            commands::economy::run(&conn, indicator.as_deref(), json)
+        }
 
         Some(Command::Eod { json }) => commands::eod::run(&conn, &config, json),
 

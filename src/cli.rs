@@ -199,6 +199,17 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show cached economic indicators (Brave/BLS)
+    Economy {
+        /// Filter to a specific indicator (e.g. cpi, nfp, fed_funds_rate)
+        #[arg(long)]
+        indicator: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+
     /// End-of-Day summary: brief + movers + macro + sentiment combined
     Eod {
         /// Output as JSON for agent/script consumption
