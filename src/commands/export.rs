@@ -242,6 +242,7 @@ mod tests {
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),
             chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");
