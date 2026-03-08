@@ -5,12 +5,24 @@
 
 ---
 
-## P0 — Intelligence Database (F31)
+## P0 — Analytics Engine (F31)
 
-> Structured storage for the analytical layer. Replaces fragile markdown files with indexed SQLite.
+> pftui's core differentiator: a multi-timeframe analytics engine backed by structured SQLite/Postgres.
+> Four layers: LOW (hours→days), MEDIUM (weeks→months), HIGH (months→years), MACRO (years→decades).
+> Each layer uses different data, updates at different frequencies, and produces different signals.
+> Layers constrain downward (macro bias → themes → scenarios → signals) and signal upward.
+> See `docs/ANALYTICS-ENGINE.md` for full architecture.
+>
 > Every table gets a CLI subcommand with full CRUD + `--json`. No TUI integration needed yet.
 > All tables/commands must be generic — useful to ANY pftui user, not specific to one setup.
 > Update AGENTS.md with usage patterns for each new command after implementation.
+>
+> **Timeframe mapping:**
+> - LOW: `correlation_snapshots`, `regime_snapshots` (+ existing: price_cache, sentiment_cache, prediction_cache, calendar_events, alerts)
+> - MEDIUM: `scenarios`, `thesis`, `convictions`, `research_questions`, `user_predictions`, `opportunity_cost`, `daily_notes`, `agent_messages` (+ existing: bls_cache, economic_cache, cot_cache, comex_cache)
+> - HIGH: `trend_tracker`, `trend_evidence`, `trend_asset_impact`
+> - MACRO: `power_metrics`, `structural_cycles`, `structural_outcomes`, `historical_parallels`, `structural_log`
+> - CROSS: `analytics` CLI unifying all layers, `timeframe_signals` for alignment/divergence detection
 >
 > **Implementation pattern** (follow existing code exactly):
 > 1. Schema: add `CREATE TABLE IF NOT EXISTS` to `db/schema.rs` initial batch (for fresh DBs)
@@ -24,7 +36,13 @@
 > Reference implementation: `journal` — see `src/db/journal.rs`, `src/commands/journal.rs`, cli.rs `Journal` variant, main.rs routing.
 > All string args use `Option<String>`. Action is first positional `String`. Value is second positional `Option<String>`.
 
-### F31.2: Thesis — Versioned macro outlook by section
+### F31.1: Scenarios — Macro scenario planning [MEDIUM]
+
+_Already implemented by dev cron (scenarios table exists). Verify CLI completeness._
+
+---
+
+### F31.2: Thesis — Versioned macro outlook by section [MEDIUM]
 
 **Files to create/modify:**
 - `src/db/thesis.rs` (NEW)
@@ -97,7 +115,7 @@ pftui thesis history regime --limit 5
 
 ---
 
-### F31.3: Convictions — Asset conviction scores over time
+### F31.3: Convictions — Asset conviction scores over time [MEDIUM]
 
 **Files:** `src/db/convictions.rs`, `src/commands/conviction.rs`, schema/cli/main/mod updates.
 
@@ -161,7 +179,7 @@ Current Convictions:
 
 ---
 
-### F31.4: Research Questions — Open questions with evidence tracking
+### F31.4: Research Questions — Open questions with evidence tracking [MEDIUM]
 
 **Files:** `src/db/research_questions.rs`, `src/commands/research_question.rs`, schema/cli/main/mod updates.
 
@@ -229,7 +247,7 @@ pftui question list --status open --json
 
 ---
 
-### F31.5: User Predictions — Your calls, scored for accuracy
+### F31.5: User Predictions — Your calls, scored for accuracy [MEDIUM]
 
 **Files:** `src/db/user_predictions.rs`, `src/commands/predict.rs`, schema/cli/main/mod updates.
 
@@ -317,7 +335,7 @@ pftui predict list --filter pending
 
 ---
 
-### F31.6: Agent Messages — Structured inter-agent communication
+### F31.6: Agent Messages — Structured inter-agent communication [CROSS]
 
 **Files:** `src/db/agent_messages.rs`, `src/commands/agent_msg.rs`, schema/cli/main/mod updates.
 
@@ -393,7 +411,7 @@ pftui agent-msg purge --days 30
 
 ---
 
-### F31.7: Daily Notes — Date-keyed narrative entries
+### F31.7: Daily Notes — Date-keyed narrative entries [CROSS]
 
 **Files:** `src/db/daily_notes.rs`, `src/commands/notes.rs`, schema/cli/main/mod updates.
 
@@ -451,7 +469,7 @@ pftui notes search "DXY" --since 2026-03-01
 
 ---
 
-### F31.8: Opportunity Cost Tracker — What positioning saved and cost
+### F31.8: Opportunity Cost Tracker — What positioning saved and cost [MEDIUM]
 
 **Files:** `src/db/opportunity_cost.rs`, `src/commands/opportunity.rs`, schema/cli/main/mod updates.
 
@@ -526,7 +544,7 @@ Opportunity {
 
 ---
 
-### F31.9: Correlation Snapshots — Rolling asset correlations
+### F31.9: Correlation Snapshots — Rolling asset correlations [LOW]
 
 **Files:** `src/db/correlation_snapshots.rs`, `src/commands/correlations.rs` (EXISTS — extend it), schema update.
 
@@ -561,7 +579,7 @@ In `src/commands/refresh.rs`, after prices are fetched and `price_history` is up
 
 ---
 
-### F31.10: Regime Classification — Automated market regime detection
+### F31.10: Regime Classification — Automated market regime detection [LOW]
 
 **Files:** `src/db/regime_snapshots.rs`, `src/commands/regime.rs`, schema/cli/main/mod updates.
 
@@ -624,7 +642,7 @@ Current Regime: RISK-OFF (confidence: 0.85)
 
 ---
 
-### F31.11: Structural Cycles — Long-cycle macro intelligence (Dalio framework)
+### F31.11: Structural Cycles — Long-cycle macro intelligence [MACRO]
 
 **Files:** `src/db/structural.rs`, `src/commands/structural.rs`, schema/cli/main/mod updates.
 
@@ -858,16 +876,174 @@ pftui structural dashboard --json
 
 ---
 
-### F31.12: AGENTS.md Documentation Update
+### F31.12: High-Timeframe Trends — Trend tracking [HIGH]
+
+The only missing analytics layer. LOW, MEDIUM, and MACRO are covered by F31.1-F31.11.
+HIGH-timeframe tracks multi-quarter structural trends (AI, energy, demographics, politics).
+
+**Files:** `src/db/trends.rs` (NEW), `src/commands/trends.rs` (NEW), schema/cli/main/mod updates.
+
+**Schema:**
+```sql
+CREATE TABLE IF NOT EXISTS trend_tracker (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    timeframe TEXT NOT NULL DEFAULT 'high',  -- high|macro
+    direction TEXT NOT NULL DEFAULT 'neutral',  -- accelerating|stable|decelerating|reversing
+    conviction TEXT NOT NULL DEFAULT 'medium',  -- high|medium|low
+    category TEXT,  -- ai|energy|demographics|politics|trade|technology|regulation
+    description TEXT,
+    asset_impact TEXT,  -- JSON: {"NVDA": "bullish", "XLK": "bullish"}
+    key_signal TEXT,  -- what would change direction
+    status TEXT NOT NULL DEFAULT 'active',  -- active|paused|resolved
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS trend_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trend_id INTEGER NOT NULL REFERENCES trend_tracker(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    direction_impact TEXT,  -- strengthens|weakens|neutral
+    source TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_trend_evidence_trend ON trend_evidence(trend_id);
+
+CREATE TABLE IF NOT EXISTS trend_asset_impact (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trend_id INTEGER NOT NULL REFERENCES trend_tracker(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL,
+    impact TEXT NOT NULL,  -- bullish|bearish|neutral
+    mechanism TEXT,  -- HOW the trend affects this asset
+    timeframe TEXT,  -- when the impact materialises
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_trend_asset_trend ON trend_asset_impact(trend_id);
+```
+
+**DB functions:**
+- `add_trend(conn, name, timeframe, direction, conviction, category, description, asset_impact, key_signal)` → `Result<i64>`
+- `list_trends(conn, status: Option<&str>, category: Option<&str>)` → `Result<Vec<Trend>>`
+- `update_trend(conn, name, direction, conviction, description, key_signal, status)` → `Result<()>`
+- `add_evidence(conn, trend_id, date, evidence, direction_impact, source)` → `Result<i64>`
+- `list_evidence(conn, trend_id, limit: Option<usize>)` → `Result<Vec<TrendEvidence>>`
+- `add_asset_impact(conn, trend_id, symbol, impact, mechanism, timeframe)` → `Result<i64>`
+- `list_asset_impacts(conn, trend_id)` → `Result<Vec<TrendAssetImpact>>`
+- `get_impacts_for_symbol(conn, symbol)` → `Result<Vec<(Trend, TrendAssetImpact)>>` — which trends affect this asset
+
+**CLI:** `pftui trends add/list/update/evidence-add/evidence-list/impact-add/impact-list/dashboard`
+
+**Example usage:**
+```bash
+pftui trends add "AI White-Collar Displacement" --category ai --direction accelerating --conviction medium --description "AI success destroys consumer economy through white-collar displacement spiral" --signal "NFP composition shift: white-collar losses exceeding blue-collar"
+pftui trends evidence-add --trend "AI White-Collar Displacement" --date 2026-03-07 "NFP -92K with wages +3.8% = stagflation" --impact strengthens --source "BLS"
+pftui trends impact-add --trend "AI White-Collar Displacement" --symbol PLTR --impact bullish --mechanism "Defense-AI convergence, government contracts immune to consumer spending"
+pftui trends dashboard --json
+```
+
+---
+
+### F31.13: Analytics Engine CLI — Multi-timeframe dashboards [CROSS]
+
+The unified view across all four analytics layers. Reads from all F31 tables + existing data tables. No new storage — pure presentation and cross-referencing.
+
+**Files:** `src/commands/analytics.rs` (NEW), cli/main/mod updates.
+
+**CLI variant:**
+```rust
+/// Multi-timeframe analytics engine
+#[command(name = "analytics")]
+Analytics {
+    /// View: summary, low, medium, high, macro, alignment
+    action: String,
+    /// Symbol filter for alignment view
+    #[arg(long)]
+    symbol: Option<String>,
+    #[arg(long)]
+    json: bool,
+}
+```
+
+**Actions:**
+- `"summary"` — 4-layer combined view: regime + top scenario + top trend + structural cycle + alignment score. Pulls from: `regime_snapshots`, `scenarios`, `trend_tracker`, `structural_cycles`, `convictions`.
+- `"low"` — expanded LOW layer: prices, sentiment, calendar, correlations, regime, alerts. Pulls from: `price_cache`, `sentiment_cache`, `prediction_cache`, `calendar_events`, `correlation_snapshots`, `regime_snapshots`, `alerts`.
+- `"medium"` — expanded MEDIUM layer: scenarios with probabilities, thesis sections, convictions, open predictions. Pulls from: `scenarios`, `thesis`, `convictions`, `research_questions`, `user_predictions`, `bls_cache`, `cot_cache`, `comex_cache`.
+- `"high"` — expanded HIGH layer: active trends with direction, latest evidence, asset impacts. Pulls from: `trend_tracker`, `trend_evidence`, `trend_asset_impact`.
+- `"macro"` — expanded MACRO layer: structural dashboard. Pulls from: `power_metrics`, `structural_cycles`, `structural_outcomes`, `historical_parallels`, `structural_log`.
+- `"alignment"` — per-asset matrix showing what each timeframe says. Computed from: regime per-asset signal + scenario asset_impact + trend asset_impact + structural outcome asset_implications. No new storage needed.
+
+**Human-readable `analytics summary` output:**
+```
+Analytics Engine — Multi-Timeframe Intelligence
+════════════════════════════════════════════════════════════════
+
+LOW (hours → days)                        Updated: 2h ago
+  Regime: RISK-OFF (0.85) │ F&G: 🔴 10 │ VIX: 29.5 ⚠️
+  Alerts: 3 triggered │ Movers: 7 > 3%
+
+MEDIUM (weeks → months)                   Updated: 8h ago
+  Top Scenario: Geopolitical War (42%) ↑
+  Thesis: Stagflation (HIGH) │ Gold +4, BTC 0, Equities -2
+
+HIGH (months → years)                     Updated: 1w ago
+  ▲ AI Displacement, Nuclear Renaissance, BRICS De-Dollar
+  ▼ Space Commercialisation (funding tightening)
+
+MACRO (years → decades)                   Updated: 1w ago
+  Stage 5→6 │ USD reserve declining │ Gradual Decline 45%
+
+ALIGNMENT: ████████░░ 80% — Gold: all 4 agree bullish
+```
+
+**Human-readable `analytics alignment` output:**
+```
+  Symbol │ Low    │ Medium │ High   │ Macro  │ Consensus
+  ───────┼────────┼────────┼────────┼────────┼──────────
+  GC=F   │ ▲ Bull │ ▲ Bull │ ▲ Bull │ ▲ Bull │ STRONG BUY
+  BTC    │ ▼ Bear │ ▼ Bear │ → Flat │ → Flat │ AVOID
+  SPY    │ ▼ Bear │ ▼ Bear │ ▼ Bear │ ▼ Bear │ STRONG AVOID
+```
+
+Alignment logic: query each layer's latest signal per asset. 4/4 = STRONG. 3/4 = directional. Split = MIXED. Computed, not stored.
+
+---
+
+### F31.14: Cross-Timeframe Signal Detection [CROSS]
+
+Automated detection of alignment and divergence across timeframes. Future — after F31.13 is working.
+
+- [ ] **`timeframe_signals` table** — `id, signal_type (alignment|divergence|transition), layers TEXT (JSON), assets TEXT, description TEXT, severity TEXT (info|notable|critical), detected_at TEXT`
+- [ ] Compute during `pftui refresh`: compare regime, scenario probabilities, trend directions, structural outcomes. Log when layers agree or diverge on a specific asset.
+- [ ] **`pftui analytics signals`** — show active cross-timeframe signals. `--json`.
+- [ ] Integrate with `pftui brief --agent` — include top cross-timeframe signal in agent blob.
+
+---
+
+### F31.15: Documentation & Product Updates [CROSS]
+
+After F31.1-F31.14 are implemented:
+
+- [ ] **README.md** — new "Analytics Engine" section. Multi-timeframe diagram. Position pftui as an analytics platform.
+- [ ] **Website `index.html`** — Analytics Engine section with 4-layer diagram. Terminal demo scene: `pftui analytics summary`. Comparison table row: "Multi-Timeframe Analytics."
+- [ ] **AGENTS.md** — "Analytics Engine" chapter: which commands per timeframe, what signals to look for, how to update each layer.
+- [ ] **PRODUCT-VISION.md** — center vision on the analytics engine as core differentiator.
+- [ ] **Marketing line:** "The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles."
+
+---
+
+### F31.16: AGENTS.md Documentation Update [CROSS]
 
 After ALL F31 tables are implemented, update `AGENTS.md` with a new section:
 
 ```markdown
-## Intelligence Database
+## Analytics Engine
 
-pftui stores analytical intelligence in structured SQLite tables alongside market data.
-These tables enable agents to track scenarios, thesis evolution, conviction changes,
-predictions, and inter-agent communication without fragile file-based storage.
+pftui's core is a multi-timeframe analytics engine operating across four layers:
+LOW (hours→days), MEDIUM (weeks→months), HIGH (months→years), MACRO (years→decades).
+Each layer uses different data, updates at different frequencies, and produces different signals.
+Layers constrain downward and signal upward. Use `pftui analytics summary` for the combined view.
 
 ### Scenarios (`pftui scenario`)
 Track macro scenarios with probability estimates. Each probability update is logged
@@ -909,16 +1085,17 @@ evolution between asset pairs. Correlation breaks = regime change signals.
 Automated market regime classification. Computed from VIX, DXY, yields,
 oil, and gold during refresh. Tracks regime transitions over time.
 
-### Structural Cycles (`pftui structural`)
+### Structural Cycles (`pftui structural`) [MACRO]
 Long-cycle macro intelligence — multi-decade empire cycles, reserve currency
-transitions, and power metrics (Dalio framework). 6 sub-tables:
-- `power_metrics` — 8 measures of national power (education, innovation,
-  trade, military, etc.) for any country, tracked over time
-- `structural_cycles` — named cycles with current stage and evidence
-- `structural_outcomes` — 10-30yr scenarios with probability tracking
-- `historical_parallels` — specific episodes from history that match now
-- `structural_log` — weekly observations
-Use `pftui structural dashboard` for the combined view.
+transitions, and power metrics. Use `pftui structural dashboard` for the combined view.
+
+### Trends (`pftui trends`) [HIGH]
+Multi-quarter structural trends — AI disruption, energy transition, geopolitical
+shifts. Track direction, evidence, and per-asset impact. Use `pftui trends dashboard`.
+
+### Analytics (`pftui analytics`) [CROSS]
+Unified multi-timeframe view. `summary` shows all 4 layers. `alignment` shows
+per-asset consensus across timeframes. `low/medium/high/macro` expand each layer.
 ```
 
 ## P1 — Feature Requests
@@ -1041,178 +1218,6 @@ These are the most-used modules. Migrate them first to validate the pattern.
 | `INTEGER` for booleans (0/1) | `BOOLEAN` (true/false) | Boolean columns |
 | `||` for string concat | `||` (same) | Compatible |
 | No `RETURNING` before 3.35 | `RETURNING *` always available | Can simplify insert-then-select patterns |
-
-### F33: Analytics Engine — Multi-Timeframe Intelligence (epic)
-
-> pftui's core differentiator: a four-layer analytics engine operating across
-> LOW (hours→days), MEDIUM (weeks→months), HIGH (months→years), MACRO (years→decades).
-> Each layer uses different data, different update frequencies, and produces different signals.
-> Layers constrain downward (macro bias → themes → scenarios → signals) and
-> signal upward (correlation breaks → scenario shifts → trend evidence → structural data).
->
-> See `docs/ANALYTICS-ENGINE.md` for full architecture.
-> All commands support `--json`. Update AGENTS.md and README after each phase.
-
-#### F33.1: High-Timeframe Tables — Trend tracking (months → years)
-Low, Medium, and Macro timeframes are already covered by existing tables + F31.
-High-timeframe is the missing layer. These tables track multi-quarter structural trends.
-
-**Files:** `src/db/trends.rs` (NEW), `src/commands/trends.rs` (NEW), schema/cli/main/mod updates.
-
-**Schema:**
-```sql
-CREATE TABLE IF NOT EXISTS trend_tracker (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    timeframe TEXT NOT NULL DEFAULT 'high',  -- high|macro (reusable for macro trends too)
-    direction TEXT NOT NULL DEFAULT 'neutral',  -- accelerating|stable|decelerating|reversing
-    conviction TEXT NOT NULL DEFAULT 'medium',  -- high|medium|low
-    category TEXT,  -- ai|energy|demographics|politics|trade|technology|regulation
-    description TEXT,
-    asset_impact TEXT,  -- JSON: {"NVDA": "bullish", "XLK": "bullish", "labor": "bearish"}
-    key_signal TEXT,  -- what would change direction
-    status TEXT NOT NULL DEFAULT 'active',  -- active|paused|resolved
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS trend_evidence (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trend_id INTEGER NOT NULL REFERENCES trend_tracker(id) ON DELETE CASCADE,
-    date TEXT NOT NULL,
-    evidence TEXT NOT NULL,
-    direction_impact TEXT,  -- strengthens|weakens|neutral
-    source TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_trend_evidence_trend ON trend_evidence(trend_id);
-
-CREATE TABLE IF NOT EXISTS trend_asset_impact (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trend_id INTEGER NOT NULL REFERENCES trend_tracker(id) ON DELETE CASCADE,
-    symbol TEXT NOT NULL,
-    impact TEXT NOT NULL,  -- bullish|bearish|neutral
-    mechanism TEXT,  -- HOW the trend affects this asset
-    timeframe TEXT,  -- when the impact materialises
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_trend_asset_trend ON trend_asset_impact(trend_id);
-```
-
-**CLI:** `pftui trends add/list/update/evidence-add/evidence-list/impact-add/impact-list/dashboard`
-
-**Example usage:**
-```bash
-pftui trends add "AI White-Collar Displacement" --category ai --direction accelerating --conviction medium --description "AI success destroys consumer economy through white-collar displacement spiral" --signal "NFP composition shift: white-collar job losses exceeding blue-collar"
-pftui trends evidence-add --trend "AI White-Collar Displacement" --date 2026-03-07 "NFP -92K with wages +3.8% = stagflation. PLTR only green tech stock." --impact strengthens --source "BLS"
-pftui trends impact-add --trend "AI White-Collar Displacement" --symbol PLTR --impact bullish --mechanism "Defense-AI convergence, government contracts immune to consumer spending"
-pftui trends impact-add --trend "AI White-Collar Displacement" --symbol XLY --impact bearish --mechanism "Consumer discretionary hit by white-collar income loss"
-pftui trends dashboard --json
-```
-
-**Seed trends for our system:**
-- AI White-Collar Displacement (G2 scenario)
-- Nuclear Energy Renaissance (AI power demand)
-- BRICS De-Dollarisation
-- US-China Tech Decoupling
-- Commodity Supercycle (electrification + war)
-- Space Commercialisation
-- Sovereign Money Movement (BTC + gold)
-
-#### F33.2: Analytics Engine CLI — Multi-timeframe dashboards
-
-**Files:** `src/commands/analytics.rs` (NEW), cli/main/mod updates.
-
-**CLI variant:**
-```rust
-/// Multi-timeframe analytics engine
-#[command(name = "analytics")]
-Analytics {
-    /// View: summary, low, medium, high, macro, alignment, signals
-    action: String,
-    #[arg(long)]
-    json: bool,
-}
-```
-
-**Actions:**
-
-`pftui analytics summary` — combined 4-layer view:
-```
-Analytics Engine — Multi-Timeframe Intelligence
-════════════════════════════════════════════════════════════════
-
-LOW (hours → days)                        Updated: 2h ago
-  Regime: RISK-OFF (confidence 0.85)
-  F&G: 🔴 10 Extreme Fear │ VIX: 29.5 ⚠️ │ Oil RSI: 89 🔥
-  Alerts: 3 triggered │ Movers: 7 > 3%
-  Signal: Defensive. Gold/silver bid, risk assets selling.
-
-MEDIUM (weeks → months)                   Updated: 8h ago
-  Top Scenario: Geopolitical War (42%) ↑
-  Thesis: Stagflation confirmed (HIGH conviction)
-  Convictions: Gold +4, Silver +3, BTC 0, Equities -2
-  Signal: Hold defensive. FOMC Mar 17-18 is decision point.
-
-HIGH (months → years)                     Updated: 1w ago
-  Accelerating: AI Displacement, Nuclear Renaissance, BRICS
-  Decelerating: Space Commercialisation (funding tightening)
-  Signal: Favor energy, defense, hard assets over consumer/tech.
-
-MACRO (years → decades)                   Updated: 1w ago
-  Big Cycle: Stage 5→6 (entering breakdown)
-  Reserve Currency: USD declining (58%, was 72%)
-  Top Outcome: Gradual US Decline (45%)
-  Signal: Structural gold/commodity overweight. USD risk long-term.
-
-ALIGNMENT: ████████░░ 80%
-  All 4 layers agree: gold bullish, risk-off, defensive.
-  Divergence: Low shows oil overbought (RSI 89) but Medium/Macro
-  both structurally bullish oil. Resolution: tactical pullback
-  within structural uptrend.
-```
-
-`pftui analytics low` — expands Low layer with full price/sentiment/calendar detail.
-Pulls from: `price_cache`, `sentiment_cache`, `prediction_cache`, `calendar_events`, `correlation_snapshots`, `regime_snapshots`, `alerts`.
-
-`pftui analytics medium` — expands Medium layer with scenarios, thesis, convictions.
-Pulls from: `scenarios`, `thesis`, `convictions`, `research_questions`, `user_predictions`, `bls_cache`, `economic_cache`, `cot_cache`, `comex_cache`.
-
-`pftui analytics high` — expands High layer with trend dashboard.
-Pulls from: `trend_tracker`, `trend_evidence`, `trend_asset_impact`.
-
-`pftui analytics macro` — expands Macro layer with structural dashboard.
-Pulls from: `power_metrics`, `structural_cycles`, `structural_outcomes`, `historical_parallels`, `structural_log`.
-
-`pftui analytics alignment` — shows where timeframes agree and diverge, per asset.
-```
-Asset Alignment Matrix:
-  Symbol │ Low    │ Medium │ High   │ Macro  │ Consensus
-  ───────┼────────┼────────┼────────┼────────┼──────────
-  GC=F   │ ▲ Bull │ ▲ Bull │ ▲ Bull │ ▲ Bull │ ████ STRONG BUY
-  SI=F   │ → Flat │ ▲ Bull │ ▲ Bull │ ▲ Bull │ ███░ BUY
-  BTC    │ ▼ Bear │ ▼ Bear │ → Flat │ → Flat │ ██░░ HOLD
-  SPY    │ ▼ Bear │ ▼ Bear │ ▼ Bear │ ▼ Bear │ ████ STRONG AVOID
-  CL=F   │ ▲ Over │ ▲ Bull │ ▲ Bull │ ▲ Bull │ ███░ BUY (wait pullback)
-```
-
-Alignment logic: query each timeframe's latest signal per asset. Compare. 4/4 agreement = "STRONG". 3/4 = directional. 2/2 split = "MIXED". This is computed, not stored — built from existing table data.
-
-#### F33.3: Cross-Timeframe Signal Detection (future)
-- [ ] **`timeframe_signals` table** — `id, signal_type (alignment|divergence|transition), timeframes TEXT (JSON array), assets TEXT, description TEXT, severity TEXT (info|notable|critical), detected_at TEXT`
-- [ ] Compute during `pftui refresh`: compare regime classification, scenario probabilities, trend directions, and structural outcomes. Log when layers agree/diverge on a specific asset.
-- [ ] **`pftui analytics signals`** — show active cross-timeframe signals. `--json`.
-- [ ] Integration with `pftui brief --agent` — include the top cross-timeframe signal in the agent brief blob.
-
-#### F33.4: README, Website, AGENTS.md, PRODUCT-VISION.md Updates
-
-After F33.1-F33.3 are implemented:
-
-- [ ] **README.md** — new "Analytics Engine" section replacing or augmenting "Your Database" section. Multi-timeframe diagram. Position pftui as an analytics platform, not just a tracker.
-- [ ] **Website `index.html`** — new Analytics Engine section with the 4-layer diagram. Terminal demo scene showing `pftui analytics summary`. Comparison table: add "Multi-Timeframe Analytics" row.
-- [ ] **AGENTS.md** — new "Analytics Engine" chapter explaining how agents use each timeframe. Which commands to call, what signals to look for, how to update each layer.
-- [ ] **PRODUCT-VISION.md** — update vision to center on the analytics engine as core differentiator.
-- [ ] **Highlight in all marketing:** "The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles."
 
 ---
 
