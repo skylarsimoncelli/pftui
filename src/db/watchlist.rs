@@ -10,6 +10,7 @@ pub struct WatchlistEntry {
     pub id: i64,
     pub symbol: String,
     pub category: String,
+    pub group_id: i64,
     pub added_at: String,
     pub target_price: Option<String>,
     pub target_direction: Option<String>,
@@ -21,12 +22,24 @@ pub fn add_to_watchlist(
     symbol: &str,
     category: AssetCategory,
 ) -> Result<i64> {
+    add_to_watchlist_in_group(conn, symbol, category, 1)
+}
+
+/// Add a symbol to a specific watchlist group (1-3).
+pub fn add_to_watchlist_in_group(
+    conn: &Connection,
+    symbol: &str,
+    category: AssetCategory,
+    group_id: i64,
+) -> Result<i64> {
+    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
     conn.execute(
-        "INSERT INTO watchlist (symbol, category)
-         VALUES (?1, ?2)
+        "INSERT INTO watchlist (symbol, category, group_id)
+         VALUES (?1, ?2, ?3)
          ON CONFLICT(symbol) DO UPDATE SET
-           category = excluded.category",
-        params![symbol.to_uppercase(), category.to_string()],
+           category = excluded.category,
+           group_id = excluded.group_id",
+        params![symbol.to_uppercase(), category.to_string(), gid],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -59,7 +72,7 @@ pub fn remove_from_watchlist(conn: &Connection, symbol: &str) -> Result<bool> {
 /// List all watchlist entries, ordered by added_at descending.
 pub fn list_watchlist(conn: &Connection) -> Result<Vec<WatchlistEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, symbol, category, added_at, target_price, target_direction
+        "SELECT id, symbol, category, group_id, added_at, target_price, target_direction
          FROM watchlist ORDER BY added_at DESC",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -67,9 +80,35 @@ pub fn list_watchlist(conn: &Connection) -> Result<Vec<WatchlistEntry>> {
             id: row.get(0)?,
             symbol: row.get(1)?,
             category: row.get(2)?,
-            added_at: row.get(3)?,
-            target_price: row.get(4)?,
-            target_direction: row.get(5)?,
+            group_id: row.get(3)?,
+            added_at: row.get(4)?,
+            target_price: row.get(5)?,
+            target_direction: row.get(6)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+/// List watchlist entries for a specific group.
+pub fn list_watchlist_by_group(conn: &Connection, group_id: i64) -> Result<Vec<WatchlistEntry>> {
+    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
+    let mut stmt = conn.prepare(
+        "SELECT id, symbol, category, group_id, added_at, target_price, target_direction
+         FROM watchlist WHERE group_id = ?1 ORDER BY added_at DESC",
+    )?;
+    let rows = stmt.query_map(params![gid], |row| {
+        Ok(WatchlistEntry {
+            id: row.get(0)?,
+            symbol: row.get(1)?,
+            category: row.get(2)?,
+            group_id: row.get(3)?,
+            added_at: row.get(4)?,
+            target_price: row.get(5)?,
+            target_direction: row.get(6)?,
         })
     })?;
     let mut result = Vec::new();
@@ -132,6 +171,7 @@ mod tests {
         let entries = list_watchlist(&conn).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].category, "fund");
+        assert_eq!(entries[0].group_id, 1);
     }
 
     #[test]
@@ -165,6 +205,7 @@ mod tests {
         // Stored as uppercase
         let entries = list_watchlist(&conn).unwrap();
         assert_eq!(entries[0].symbol, "AAPL");
+        assert_eq!(entries[0].group_id, 1);
         // Remove with different case works
         assert!(remove_from_watchlist(&conn, "Aapl").unwrap());
         assert!(list_watchlist(&conn).unwrap().is_empty());
@@ -205,5 +246,19 @@ mod tests {
         // Ordered alphabetically
         assert_eq!(syms[0].0, "AAPL");
         assert_eq!(syms[1].0, "BTC");
+    }
+
+    #[test]
+    fn test_list_watchlist_by_group() {
+        let conn = open_in_memory();
+        add_to_watchlist_in_group(&conn, "BTC", AssetCategory::Crypto, 1).unwrap();
+        add_to_watchlist_in_group(&conn, "SOL", AssetCategory::Crypto, 2).unwrap();
+
+        let g1 = list_watchlist_by_group(&conn, 1).unwrap();
+        let g2 = list_watchlist_by_group(&conn, 2).unwrap();
+        assert_eq!(g1.len(), 1);
+        assert_eq!(g2.len(), 1);
+        assert_eq!(g1[0].symbol, "BTC");
+        assert_eq!(g2[0].symbol, "SOL");
     }
 }

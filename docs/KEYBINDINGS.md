@@ -27,6 +27,7 @@ Full keybinding reference for pftui. Press `?` in the TUI for an interactive ver
 | `3` | Markets — major indices, commodities, crypto, forex |
 | `4` | Economy — treasury yields, currencies, macro indicators |
 | `5` | Watchlist — tracked assets you don't hold |
+| `W` then `1/2/3` | Switch watchlist group |
 
 ## Charts
 

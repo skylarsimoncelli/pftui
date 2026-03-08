@@ -362,7 +362,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_set(crate::tui::theme::BORDER_INACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
-                .style(Style::default().bg(t.surface_0)),
+                .style(Style::default().bg(t.surface_0))
+                .title(format!(" Watchlist [Group {}] ", app.watchlist_active_group)),
         )
         .row_highlight_style(Style::default().bg(t.surface_3));
 

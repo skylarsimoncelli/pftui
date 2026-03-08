@@ -439,6 +439,8 @@ pub struct App {
     pub watchlist_selected_index: usize,
     pub watchlist_entries: Vec<db_watchlist::WatchlistEntry>,
     pub watchlist_columns: Vec<WatchlistColumn>,
+    pub watchlist_active_group: i64,
+    watchlist_group_pending: bool,
     pub prediction_markets: Vec<crate::data::predictions::PredictionMarket>,
     pub journal_selected_index: usize,
     pub journal_entries: Vec<crate::db::journal::JournalEntry>,
@@ -707,6 +709,8 @@ impl App {
             watchlist_selected_index: 0,
             watchlist_entries: Vec::new(),
             watchlist_columns: config.watchlist.columns.clone(),
+            watchlist_active_group: 1,
+            watchlist_group_pending: false,
             prediction_markets: Vec::new(),
             journal_selected_index: 0,
             journal_entries: Vec::new(),
@@ -958,7 +962,7 @@ impl App {
 
     fn load_watchlist(&mut self) {
         if let Ok(conn) = Connection::open(&self.db_path) {
-            self.watchlist_entries = db_watchlist::list_watchlist(&conn).unwrap_or_default();
+            self.watchlist_entries = db_watchlist::list_watchlist_by_group(&conn, self.watchlist_active_group).unwrap_or_default();
         }
     }
 
@@ -1689,6 +1693,13 @@ impl App {
         }
     }
 
+    fn set_watchlist_group(&mut self, group_id: i64) {
+        self.watchlist_active_group = crate::db::watchlist_groups::clamp_group_id(group_id);
+        self.load_watchlist();
+        self.request_watchlist_data();
+        self.watchlist_group_pending = false;
+    }
+
     fn watchlist_inline_open_chart(&mut self) {
         let Some(entry) = self.selected_watchlist_entry().cloned() else {
             return;
@@ -2272,6 +2283,29 @@ impl App {
             return;
         }
 
+        // Handle watchlist group key chord: W then 1/2/3
+        if self.watchlist_group_pending {
+            self.watchlist_group_pending = false;
+            match key.code {
+                KeyCode::Char('1') => {
+                    self.set_watchlist_group(1);
+                    self.view_mode = ViewMode::Watchlist;
+                    return;
+                }
+                KeyCode::Char('2') => {
+                    self.set_watchlist_group(2);
+                    self.view_mode = ViewMode::Watchlist;
+                    return;
+                }
+                KeyCode::Char('3') => {
+                    self.set_watchlist_group(3);
+                    self.view_mode = ViewMode::Watchlist;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         // Handle gg vim motion (two-key sequence)
         if self.g_pending {
             self.g_pending = false;
@@ -2319,6 +2353,12 @@ impl App {
                 self.detail_popup_open = false;
                 self.load_watchlist();
                 self.request_watchlist_data();
+            }
+            KeyCode::Char('W') => {
+                self.view_mode = ViewMode::Watchlist;
+                self.watchlist_group_pending = true;
+                self.detail_open = false;
+                self.detail_popup_open = false;
             }
             KeyCode::Char('6') => {
                 self.view_mode = ViewMode::Analytics;
@@ -3843,7 +3883,12 @@ impl App {
                     let symbol = state.symbol.clone();
                     let category = crate::models::asset_names::infer_category(&symbol);
                     if let Ok(conn) = Connection::open(&self.db_path) {
-                        let _ = db_watchlist::add_to_watchlist(&conn, &symbol, category);
+                        let _ = db_watchlist::add_to_watchlist_in_group(
+                            &conn,
+                            &symbol,
+                            category,
+                            self.watchlist_active_group,
+                        );
                     }
                     self.load_watchlist();
                     self.request_watchlist_data();
@@ -7523,6 +7568,7 @@ mod mouse_tests {
             id: 1,
             symbol: "BTC".to_string(),
             category: "crypto".to_string(),
+            group_id: 1,
             added_at: "2026-03-08T00:00:00Z".to_string(),
             target_price: None,
             target_direction: None,
@@ -7571,6 +7617,30 @@ mod mouse_tests {
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].symbol, "AAPL");
         assert_eq!(alerts[0].threshold, "190");
+    }
+
+    #[test]
+    fn watchlist_group_switch_w_then_number() {
+        let mut app = make_app();
+        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_groups_{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&app.db_path);
+        app.view_mode = ViewMode::Watchlist;
+        let conn = rusqlite::Connection::open(&app.db_path).unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        crate::db::watchlist::add_to_watchlist_in_group(&conn, "AAPL", AssetCategory::Equity, 1).unwrap();
+        crate::db::watchlist::add_to_watchlist_in_group(&conn, "BTC", AssetCategory::Crypto, 2).unwrap();
+        drop(conn);
+
+        app.load_watchlist();
+        assert_eq!(app.watchlist_active_group, 1);
+        assert_eq!(app.watchlist_entries.len(), 1);
+        assert_eq!(app.watchlist_entries[0].symbol, "AAPL");
+
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('W')));
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('2')));
+        assert_eq!(app.watchlist_active_group, 2);
+        assert_eq!(app.watchlist_entries.len(), 1);
+        assert_eq!(app.watchlist_entries[0].symbol, "BTC");
     }
 
     fn palette_key(c: char) -> KeyEvent {

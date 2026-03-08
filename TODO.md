@@ -82,7 +82,6 @@
 ### TUI Polish (batch: ~4hrs total)
 
 ### Watchlist (batch: ~2hrs total)
-- [ ] **Watchlist groups** — Multiple named watchlists, switch with `W` + 1/2/3. Files: new `db/watchlist_groups.rs`
 
 ### Scanner (batch: ~3hrs total)
 - [ ] **Scanner with filter DSL** — `pftui scan --filter "allocation_pct > 10"`. Files: new `commands/scan.rs`

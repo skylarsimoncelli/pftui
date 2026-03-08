@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 04:44 UTC — Add watchlist groups with `W` + `1/2/3` switching
+
+- What: added DB-backed watchlist groups (`Core`, `Opportunistic`, `Research`) with `group_id` on watchlist entries, new `db/watchlist_groups.rs`, and app-level group switching chord `W` then `1/2/3`. Watchlist view now filters by active group and shows group in title. Adding from search popup (`w`) now writes into the active group.
+- Why: TODO item for multiple named watchlists with fast keyboard switching.
+- Files: `src/db/schema.rs` (group schema + migrations), `src/db/watchlist.rs` (group-aware APIs), `src/db/watchlist_groups.rs` (new), `src/db/mod.rs` (module export), `src/app.rs` (active group state, key handling, load/filter, tests), `src/tui/views/watchlist.rs` (group title), `src/tui/views/help.rs` and `docs/KEYBINDINGS.md` (keybinding docs), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1156 passed)
+- TODO: Watchlist groups — Multiple named watchlists, switch with `W` + 1/2/3 (P2)
+
 ### 2026-03-08 04:40 UTC — Add inline watchlist actions (`a`/`c`/`r`)
 
 - What: implemented watchlist inline actions in TUI: `a` adds a price alert for the selected watchlist symbol (uses configured watchlist target if present, otherwise defaults to +5% above current price), `c` opens chart popup for the selected symbol, and `r` removes the selected symbol from watchlist. Added regression tests for all three actions.

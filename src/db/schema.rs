@@ -46,7 +46,14 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL UNIQUE,
             category TEXT NOT NULL,
+            group_id INTEGER NOT NULL DEFAULT 1,
             added_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_watchlist_group_id ON watchlist(group_id);
+
+        CREATE TABLE IF NOT EXISTS watchlist_groups (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
         );
 
         CREATE TABLE IF NOT EXISTS economic_cache (
@@ -323,6 +330,27 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
              ALTER TABLE watchlist ADD COLUMN target_direction TEXT;"
         )?;
     }
+
+    // Migration: add group_id column to watchlist and ensure watchlist_groups seed rows
+    let has_group_id: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('watchlist') WHERE name = 'group_id'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_group_id {
+        conn.execute_batch("ALTER TABLE watchlist ADD COLUMN group_id INTEGER NOT NULL DEFAULT 1")?;
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS watchlist_groups (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
+         );
+         INSERT OR IGNORE INTO watchlist_groups (id, name) VALUES
+            (1, 'Core'),
+            (2, 'Opportunistic'),
+            (3, 'Research');
+         CREATE INDEX IF NOT EXISTS idx_watchlist_group_id ON watchlist(group_id);",
+    )?;
 
     // Migration: add source_type column to news_cache (rss|brave)
     let has_news_source_type: bool = conn

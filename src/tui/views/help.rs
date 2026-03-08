@@ -72,6 +72,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("3", "Markets overview", kc, tc));
     lines.push(key_line("4", "Economy dashboard", kc, tc));
     lines.push(key_line("5 / w", "Watchlist", kc, tc));
+    lines.push(key_line("W + 1/2/3", "Switch watchlist group", kc, tc));
     lines.push(key_line("6", "Analytics", kc, tc));
     lines.push(key_line("7", "News feed", kc, tc));
     lines.push(key_line("8", "Journal", kc, tc));
