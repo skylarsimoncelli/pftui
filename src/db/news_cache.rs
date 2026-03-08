@@ -14,6 +14,7 @@ pub struct NewsEntry {
     pub url: String,
     pub source: String,
     pub source_type: String,
+    pub symbol_tag: Option<String>,
     pub description: String,
     pub extra_snippets: Vec<String>,
     pub category: String,
@@ -38,6 +39,7 @@ pub fn insert_news(
         url,
         source,
         "rss",
+        None,
         category,
         published_at,
         None,
@@ -52,6 +54,7 @@ pub fn insert_news_with_source_type(
     url: &str,
     source: &str,
     source_type: &str,
+    symbol_tag: Option<&str>,
     category: &str,
     published_at: i64,
     description: Option<&str>,
@@ -60,13 +63,14 @@ pub fn insert_news_with_source_type(
     let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
         "INSERT OR IGNORE INTO news_cache
-         (title, url, source, source_type, description, extra_snippets, category, published_at, fetched_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))",
+         (title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))",
         params![
             title,
             url,
             source,
             source_type,
+            symbol_tag,
             description.unwrap_or(""),
             snippets_json,
             category,
@@ -87,7 +91,7 @@ pub fn get_latest_news(
     search_term: Option<&str>,
     hours_back: Option<i64>,
 ) -> Result<Vec<NewsEntry>> {
-    let mut sql = "SELECT id, title, url, source, source_type, description, extra_snippets, category, published_at, fetched_at
+    let mut sql = "SELECT id, title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at
                    FROM news_cache
                    WHERE 1=1".to_string();
 
@@ -127,12 +131,13 @@ pub fn get_latest_news(
             url: row.get(2)?,
             source: row.get(3)?,
             source_type: row.get(4)?,
-            description: row.get(5)?,
-            extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(6)?)
+            symbol_tag: row.get(5)?,
+            description: row.get(6)?,
+            extra_snippets: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(7)?)
                 .unwrap_or_default(),
-            category: row.get(7)?,
-            published_at: row.get(8)?,
-            fetched_at: row.get(9)?,
+            category: row.get(8)?,
+            published_at: row.get(9)?,
+            fetched_at: row.get(10)?,
         })
     })?;
 

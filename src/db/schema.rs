@@ -192,6 +192,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             url TEXT NOT NULL UNIQUE,
             source TEXT NOT NULL,
             source_type TEXT NOT NULL DEFAULT 'rss',
+            symbol_tag TEXT,
             description TEXT NOT NULL DEFAULT '',
             extra_snippets TEXT NOT NULL DEFAULT '[]',
             category TEXT NOT NULL,
@@ -317,6 +318,15 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         > 0;
     if !has_news_snippets {
         conn.execute_batch("ALTER TABLE news_cache ADD COLUMN extra_snippets TEXT NOT NULL DEFAULT '[]'")?;
+    }
+
+    let has_news_symbol_tag: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('news_cache') WHERE name = 'symbol_tag'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_news_symbol_tag {
+        conn.execute_batch("ALTER TABLE news_cache ADD COLUMN symbol_tag TEXT")?;
     }
 
     Ok(())

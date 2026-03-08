@@ -110,6 +110,7 @@ fn print_json(entries: &[NewsEntry]) -> Result<()> {
                 "url": entry.url,
                 "source": entry.source,
                 "source_type": entry.source_type,
+                "symbol_tag": entry.symbol_tag,
                 "description": entry.description,
                 "extra_snippets": entry.extra_snippets,
                 "category": entry.category,

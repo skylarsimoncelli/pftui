@@ -958,9 +958,14 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         let relevant_news: Vec<_> = app.news_entries
             .iter()
             .filter(|entry| {
-                search_terms.iter().any(|term| {
-                    entry.title.to_lowercase().contains(&term.to_lowercase())
-                })
+                if let Some(tag) = &entry.symbol_tag {
+                    if tag.eq_ignore_ascii_case(symbol) {
+                        return true;
+                    }
+                }
+                search_terms
+                    .iter()
+                    .any(|term| entry.title.to_lowercase().contains(&term.to_lowercase()))
             })
             .take(5)
             .collect();
@@ -990,6 +995,15 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                         Style::default().fg(t.text_muted),
                     ),
                 ]));
+
+                if !news.description.trim().is_empty() {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("    {}", news.description),
+                            Style::default().fg(t.text_secondary),
+                        ),
+                    ]));
+                }
                 
                 if idx < relevant_news.len() - 1 {
                     lines.push(Line::from(""));

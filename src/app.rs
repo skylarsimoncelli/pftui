@@ -8,6 +8,7 @@ use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
 use crate::config::{self, Config, PortfolioMode};
+use crate::data::brave;
 use crate::db::{allocations, price_cache, price_history};
 use crate::db::transactions::{self, get_unique_symbols, insert_transaction, list_transactions};
 use crate::models::allocation::Allocation;
@@ -921,6 +922,46 @@ impl App {
                 Some(48), // last 48 hours
             )
             .unwrap_or_default();
+        }
+    }
+
+    fn fetch_asset_brave_news(&mut self, symbol: &str) {
+        let cfg = match config::load_config() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let key = match cfg.brave_api_key {
+            Some(k) if !k.trim().is_empty() => k,
+            _ => return,
+        };
+
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(_) => return,
+        };
+        let query = format!("{} stock news", symbol);
+        let results = match rt.block_on(brave::brave_news_search(&key, &query, Some("pw"), 5)) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        if let Ok(conn) = Connection::open(&self.db_path) {
+            for item in &results {
+                let source = item.source.as_deref().unwrap_or("Brave");
+                let _ = crate::db::news_cache::insert_news_with_source_type(
+                    &conn,
+                    &item.title,
+                    &item.url,
+                    source,
+                    "brave",
+                    Some(symbol),
+                    "markets",
+                    chrono::Utc::now().timestamp(),
+                    Some(&item.description),
+                    &item.extra_snippets,
+                );
+            }
+            self.load_news();
         }
     }
 
@@ -2181,8 +2222,11 @@ impl App {
 
             // Detail popup toggle (chart is always visible in right pane)
             KeyCode::Enter if matches!(self.view_mode, ViewMode::Positions) => {
-                if self.selected_position().is_some() {
+                if let Some(pos) = self.selected_position().cloned() {
                     self.detail_popup_open = !self.detail_popup_open;
+                    if self.detail_popup_open {
+                        self.fetch_asset_brave_news(&pos.symbol);
+                    }
                 }
             }
 
@@ -3358,8 +3402,9 @@ impl App {
     fn execute_context_action(&mut self, action: ContextMenuAction) {
         match action {
             ContextMenuAction::ViewDetail => {
-                if self.selected_position().is_some() {
+                if let Some(pos) = self.selected_position().cloned() {
                     self.detail_popup_open = true;
+                    self.fetch_asset_brave_news(&pos.symbol);
                 }
             }
             ContextMenuAction::AddTransaction => {
