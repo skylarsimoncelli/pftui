@@ -23,19 +23,6 @@
 
 > Instead of fragile scrapers for BLS/Trading Economics, use Brave Web Search to find latest economic readings. More resilient — when a scraper breaks because a page changed layout, Brave still works because it searches the entire web.
 
-- [ ] **F28.1: Economic data fetcher via Brave** — On `pftui refresh`, if Brave key configured, search for each tracked indicator:
-  - `"latest US CPI inflation rate"` → regex-parse value from snippets
-  - `"latest US unemployment rate nonfarm payrolls"` → extract NFP + UE
-  - `"latest ISM manufacturing PMI services PMI"` → extract both PMIs
-  - `"latest FOMC federal funds rate"` → extract rate
-  - `"latest US initial jobless claims"` → extract claims
-  - `"latest US PPI producer price index"` → extract PPI
-  - Parse patterns: "CPI rose 3.2%", "unemployment at 4.4%", "economy added/lost X jobs"
-  - Store in new `economic_data` table: `{ indicator, value, previous, change, source_url, fetched_at }`
-  - Falls back to BLS API v1 if Brave unavailable
-  - ~8-10 Brave API calls per economic refresh
-  - Files: new `src/data/economic.rs`, new `src/db/economic_cache.rs`, `src/commands/refresh.rs`
-
 - [ ] **F28.2: Economy tab with real indicator values** — Display actual values in Economy tab [4] instead of `---` or stale data. Show: indicator, current value, previous, direction arrow, release date. Highlight surprises. Files: `src/tui/views/economy.rs`
 
 - [ ] **F28.3: `pftui economy` CLI** — `pftui economy` (all indicators), `--indicator cpi`, `--json`. Agents use this instead of web searching for macro data. Files: new `src/commands/economy.rs`, `cli.rs`, `main.rs`
