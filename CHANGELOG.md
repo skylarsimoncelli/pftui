@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 06:36 UTC — Clarify remaining TODO scope and blockers
+
+- What: refined remaining TODO items to make execution status explicit: PostgreSQL marked as a staged epic (plumbing/storage/docs phases), and distribution tasks marked as externally blocked prerequisites.
+- Why: keep backlog actionable and reduce ambiguity on what can be shipped in-repo vs what depends on external accounts/policies.
+- Files: `TODO.md`
+- Tests: not run (docs/todo-only update)
+
 ### 2026-03-08 06:35 UTC — Fix 6 clippy warnings
 
 - What: resolved 6 clippy warnings introduced in the recent code push. Replaced `>= x + 1` patterns with `>` (int_plus_one lint). Marked unused `list_groups` and `get_group_name` functions in `watchlist_groups.rs` with `#[allow(dead_code)]`. Added `#[allow(clippy::enum_variant_names)]` to `MarketCorrelationWindow` (intentional design). Replaced `.min().max()` with `.clamp()` in `scan.rs`. Removed unnecessary let binding in `watchlist.rs`.

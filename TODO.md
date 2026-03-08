@@ -16,15 +16,11 @@
 ### Analytics
 
 ### Infrastructure
-- [ ] **PostgreSQL backend support** — Add PostgreSQL as alternative to SQLite via `sqlx` (runtime, not compile-time). `pftui setup` already handles DB choice — add Postgres option to the wizard. Migration uses existing workflow: `pftui export json` → `pftui setup` (pick new backend) → `pftui import`. Files to change:
-  - `db/backend.rs` (new) — abstraction layer over `rusqlite`/`sqlx`
-  - `db/schema.rs` + `db/*.rs` — abstract all queries to work with both backends
-  - `config.rs` — `database.backend` + `database.url` fields
-  - `commands/setup.rs` — add Postgres option to wizard
-  - `docs/MIGRATING.md` (new) — document the 3-step export/setup/import workflow
-  - `README.md` — add "SQLite (default) or PostgreSQL" to features, install section
-  - `website/index.html` — update comparison table + features to mention Postgres support
-  - `AGENTS.md` — update data model section to explain both backends + how agents should handle it
+- [ ] **PostgreSQL backend support (epic)** — Add PostgreSQL as alternative to SQLite via `sqlx` (runtime, not compile-time). Migration path remains: `pftui export json` → `pftui setup` (new backend) → `pftui import`.
+  - Phase 1 (plumbing): `db/backend.rs` abstraction over `rusqlite`/`sqlx`, `config.rs` database backend/url fields, setup wizard backend choice.
+  - Phase 2 (storage): migrate `db/schema.rs` + `db/*.rs` query layer to backend-agnostic implementations.
+  - Phase 3 (docs + rollout): `docs/MIGRATING.md`, `README.md`, `website/index.html`, `AGENTS.md`.
+  - Scope note: large migration touching most DB callsites; treat as dedicated branch item, not mixed with feature batches.
 
 ---
 
@@ -39,8 +35,8 @@
 ### Scanner (batch: ~3hrs total)
 
 ### Distribution
-- [ ] **Snap/AUR/Scoop publishing** — Needs accounts + secrets for each store
-- [ ] **Homebrew Core** — Needs 50+ GitHub stars (currently 1)
+- [ ] **Snap/AUR/Scoop publishing** — Blocked on external publisher accounts + CI secrets for each store.
+- [ ] **Homebrew Core** — Blocked on Homebrew inclusion prerequisite (50+ GitHub stars; currently 1).
 
 ### Other
 
