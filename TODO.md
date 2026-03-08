@@ -59,7 +59,6 @@
 ### Data & Display
 
 ### CLI Enhancements
-- [ ] **"What Changed Today" in `brief`** — Top movers, threshold crossings, triggered alerts. Files: `commands/brief.rs`
 - [ ] **Benchmark comparison in `brief`** — Portfolio performance vs SPY or custom benchmark. Files: `commands/brief.rs`
 - [ ] **Portfolio stress testing CLI** — `pftui stress-test` with named scenarios. Builds on F4.2 engine. Files: new `commands/stress_test.rs`
 - [ ] [Feedback] **`pftui status --data` command** — Per-source data health: prices (✓ fresh 3h ago), predictions (✗ parse error), COT (✗ unavailable), news (✓ 92 articles), BLS (✗ parse error). Makes data availability transparent. Files: new `commands/status_data.rs` or extend `commands/status.rs`
