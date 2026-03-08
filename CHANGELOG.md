@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 12:27 UTC — Add --json flag to config command
+
+- What: added `--json` flag to `pftui config` command. When set, `list` and `get` actions output structured JSON instead of plain text. For `list`, returns all config fields as a JSON object. For `get`, returns `{"field": "<name>", "value": <value>}`.
+- Why: closes the `status --json gap` mentioned in feedback (UX Analyst report). Aligns with product philosophy: "`--json` on everything" for agent-primary operation. Enables agents to programmatically read config without parsing plain text.
+- Files: `src/cli.rs` (Config struct + json field), `src/main.rs` (pass json flag to config_cmd), `src/commands/config_cmd.rs` (list_config/get_field JSON branches using serde_json)
+- Tests: all 1177 tests pass, clippy clean
+- TODO: addresses feedback gap (not from TODO.md P1/P2/P3 items)
+
 ### 2026-03-08 06:36 UTC — Clarify remaining TODO scope and blockers
 
 - What: refined remaining TODO items to make execution status explicit: PostgreSQL marked as a staged epic (plumbing/storage/docs phases), and distribution tasks marked as externally blocked prerequisites.
