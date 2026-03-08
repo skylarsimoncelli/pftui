@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>pftui — Agent-native financial battle station</title>
+    <title>pftui, Agent-native financial battle station</title>
     <meta name="description" content="PFTUI - The Portfolio TUI. Agent-native financial battle station for equities, crypto, forex, commodities, macro, sentiment, and news in your terminal.">
     
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://pftui.com/">
-    <meta property="og:title" content="pftui — Agent-native financial battle station">
+    <meta property="og:title" content="pftui, Agent-native financial battle station">
     <meta property="og:description" content="PFTUI - The Portfolio TUI. Equities, crypto, forex, macro, sentiment, and news in a sleek terminal-native command center.">
     <meta property="og:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://pftui.com/">
-    <meta property="twitter:title" content="pftui — Agent-native financial battle station">
+    <meta property="twitter:title" content="pftui, Agent-native financial battle station">
     <meta property="twitter:description" content="PFTUI - The Portfolio TUI. Terminal-native intelligence for macro, sentiment, crypto, forex, equities, and news.">
     <meta property="twitter:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
@@ -35,7 +35,7 @@
     <section class="hero">
         <div class="container">
             <div class="hero-content">
-                <p class="hero-kicker"><em>"pftui — The Portfolio TUI"</em></p>
+                <p class="hero-kicker"><em>"pftui, The Portfolio TUI"</em></p>
                 <h1 class="hero-title">Your financial <span class="gradient-text">battle station</span></h1>
                 <p class="hero-subtitle">A data-rich, agent-native intelligence platform that centralises all your market data, news, and portfolio analytics into one tool.</p>
                 <div class="hero-install">
@@ -94,6 +94,7 @@
         <div class="container">
             <h2 class="section-title">The recommended way to start</h2>
             <p class="section-subtitle">Install pftui, then tell <strong>Claude Code</strong>, <strong>Codex</strong>, or <strong>OpenClaw</strong> to set it up for you.</p>
+            <p class="section-subtitle">Your agent can read <code>AGENTS.md</code>, ask for your holdings and targets, populate transactions, configure the watchlist, and run the first <code>pftui brief</code> in one guided setup session.</p>
             <div class="agent-setup-code">
                 <div class="agent-setup-block">
                     <span class="agent-dim">$</span> curl -fsSL https://...install.sh | bash<br>
@@ -108,7 +109,8 @@
     <section class="highlights">
         <div class="container">
             <h2 class="section-title">All your market intelligence, centralised</h2>
-            <p class="section-subtitle">Prices, news, macro, sentiment, predictions, and economic releases — one refresh, one database, one command.</p>
+            <p class="section-subtitle">Prices, news, macro, sentiment, predictions, and economic releases, one refresh, one database, one command.</p>
+            <p class="section-subtitle">One run of <code>pftui refresh</code> updates the same local SQLite store used by the TUI, web dashboard, and CLI. Your agent then gets consistent portfolio and market context from <code>pftui brief --json</code>, without juggling multiple apps or tabs.</p>
             <div class="highlights-marquee" id="highlights-marquee">
                 <div class="highlights-scroller" id="highlights-scroller">
                     <div class="highlights-track">
@@ -207,7 +209,7 @@
                 </div>
                 <div class="gallery-slide" id="ss-web">
                     <img src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" alt="pftui web dashboard" loading="lazy">
-                    <p class="gallery-caption">Browser-based dashboard — same data, responsive layout</p>
+                    <p class="gallery-caption">Browser-based dashboard, same data, responsive layout</p>
                 </div>
                 <div class="gallery-slide" id="ss-web-search">
                     <img src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" alt="pftui web search" loading="lazy">
@@ -223,7 +225,7 @@
                 </div>
                 <div class="gallery-slide" id="ss-cli">
                     <img src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" alt="pftui CLI output" loading="lazy">
-                    <p class="gallery-caption">Agent-ready CLI — every command supports <code>--json</code></p>
+                    <p class="gallery-caption">Agent-ready CLI, every command supports <code>--json</code></p>
                 </div>
             </div>
         </div>
@@ -233,22 +235,22 @@
     <section class="agent-workflows">
         <div class="container">
             <h2 class="section-title">Fully agent-native, fully agent-driven</h2>
-            <p class="section-subtitle">pftui is designed to be operated by your AI agent. Every feature has a CLI counterpart with <code>--json</code> output. The agent guide (AGENTS.md) covers setup, daily operation, and long-term system design — so any agent can run pftui as thoroughly as a human analyst.</p>
+            <p class="section-subtitle">pftui is designed to be operated by your AI agent. Every feature has a CLI counterpart with <code>--json</code> output. The agent guide (AGENTS.md) covers setup, daily operation, and long-term system design, so any agent can run pftui as thoroughly as a human analyst.</p>
             <div class="agent-grid">
                 <div class="agent-card">
                     <h3>One-Command Intelligence</h3>
                     <div class="cli-command">$ pftui refresh && pftui brief --agent --json</div>
-                    <p>Your agent fetches 10+ data sources and gets a complete portfolio snapshot — positions, macro, news, sentiment, predictions, movers — in one JSON blob. No web searching required.</p>
+                    <p>Your agent fetches 10+ data sources and gets a complete portfolio snapshot, positions, macro, news, sentiment, predictions, movers, in one JSON blob. No web searching required.</p>
                 </div>
                 <div class="agent-card">
                     <h3>Agent-Guided Setup</h3>
                     <div class="cli-command">"Read AGENTS.md and set up pftui for me"</div>
-                    <p>Tell Claude Code, Codex, or OpenClaw to read the agent guide. It will ask about your holdings, risk tolerance, and market views — then populate everything automatically.</p>
+                    <p>Tell Claude Code, Codex, or OpenClaw to read the agent guide. It will ask about your holdings, risk tolerance, and market views, then populate everything automatically.</p>
                 </div>
                 <div class="agent-card">
                     <h3>Automated Daily Briefs</h3>
                     <div class="cli-command">$ pftui eod && pftui movers --json</div>
-                    <p>Set up cron jobs for morning briefs and market close summaries. Your agent monitors, analyses, and delivers — you read on your phone or terminal.</p>
+                    <p>Set up cron jobs for morning briefs and market close summaries. Your agent monitors, analyses, and delivers, you read on your phone or terminal.</p>
                 </div>
             </div>
         </div>
@@ -258,22 +260,22 @@
     <section class="your-database">
         <div class="container">
             <h2 class="section-title">Your data. Your database. Your edge.</h2>
-            <p class="section-subtitle">Every refresh seeds a persistent local SQLite database with market data from 10+ sources. Over time, you build a proprietary dataset — the kind trading desks pay six figures for.</p>
+            <p class="section-subtitle">Every refresh seeds a persistent local SQLite database with market data from 10+ sources. Over time, you build a proprietary dataset, the kind trading desks pay six figures for.</p>
             <div class="database-grid">
                 <div class="database-feature">
                     <div class="database-icon">🏦</div>
                     <h3>Hedge fund analytics, zero cost</h3>
-                    <p>Daily OHLCV history, COT positioning, COMEX inventory, sentiment indices, economic releases, prediction odds — all accumulating locally. Query it however you want. Build your own backtests, correlations, and regime models.</p>
+                    <p>Daily OHLCV history, COT positioning, COMEX inventory, sentiment indices, economic releases, prediction odds, all accumulating locally. Query it however you want. Build your own backtests, correlations, and regime models.</p>
                 </div>
                 <div class="database-feature">
                     <div class="database-icon">🔐</div>
                     <h3>Full data sovereignty</h3>
-                    <p>No cloud sync. No third-party accounts. No data harvesting. One SQLite file at <code>~/.local/share/pftui/pftui.db</code> that you own completely. Back it up, version it, or migrate it — it's yours.</p>
+                    <p>No cloud sync. No third-party accounts. No data harvesting. One SQLite file at <code>~/.local/share/pftui/pftui.db</code> that you own completely. Back it up, version it, or migrate it, it's yours.</p>
                 </div>
                 <div class="database-feature">
                     <div class="database-icon">📐</div>
                     <h3>18 tables, one source of truth</h3>
-                    <p>Transactions, price history, COT data, COMEX warehouse reports, BLS economic data, World Bank global macro, sentiment indices, prediction markets, news, alerts, journal entries — all normalised, all queryable.</p>
+                    <p>Transactions, price history, COT data, COMEX warehouse reports, BLS economic data, World Bank global macro, sentiment indices, prediction markets, news, alerts, journal entries, all normalised, all queryable.</p>
                 </div>
                 <div class="database-feature">
                     <div class="database-icon">⚡</div>
@@ -295,7 +297,7 @@
 <pre class="schema-pre">
 <span class="schema-table">transactions</span>      <span class="schema-desc">Buy/sell records with cost basis tracking</span>
 <span class="schema-table">price_cache</span>       <span class="schema-desc">Latest spot prices across all asset classes</span>
-<span class="schema-table">price_history</span>     <span class="schema-desc">Daily OHLCV candles — your proprietary dataset</span>
+<span class="schema-table">price_history</span>     <span class="schema-desc">Daily OHLCV candles, your proprietary dataset</span>
 <span class="schema-table">cot_cache</span>         <span class="schema-desc">CFTC Commitments of Traders positioning</span>
 <span class="schema-table">comex_cache</span>       <span class="schema-desc">COMEX gold &amp; silver warehouse inventory</span>
 <span class="schema-table">bls_cache</span>         <span class="schema-desc">CPI, unemployment, NFP, wages from BLS</span>
@@ -374,7 +376,7 @@
     <section class="installation">
         <div class="container">
             <h2 class="section-title">Install anywhere</h2>
-            <p class="section-subtitle">The install script is the recommended method — it installs AND upgrades pftui. Re-run it anytime to update to the latest release. Your data is always preserved.</p>
+            <p class="section-subtitle">The install script is the recommended method, it installs AND upgrades pftui. Re-run it anytime to update to the latest release. Your data is always preserved.</p>
             <div class="install-tabs" role="tablist" aria-label="Installation methods">
                 <button class="install-tab active" role="tab" aria-selected="true" data-install="curl">curl</button>
                 <button class="install-tab" role="tab" aria-selected="false" data-install="brew">Homebrew</button>
