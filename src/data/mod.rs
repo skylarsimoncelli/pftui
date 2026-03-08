@@ -8,6 +8,8 @@ pub mod calendar;
 pub mod comex;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot;
+#[allow(dead_code)] // Infrastructure for F28.1+ consumers (Brave economic data parsing)
+pub mod economic;
 pub mod fx;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod fred;

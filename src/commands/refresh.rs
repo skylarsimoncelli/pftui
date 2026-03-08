@@ -9,10 +9,11 @@ use rusqlite::Connection;
 
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
-use crate::data::{bls, brave, calendar, comex, cot, fx, onchain, predictions, rss, sentiment, worldbank};
+use crate::data::{bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank};
 use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
+use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{get_all_cached_prices, upsert_price};
 use crate::db::price_history::get_price_at_date;
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
@@ -672,7 +673,40 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ Calendar (fresh, skipping)");
     }
 
-    // 8. BLS
+    // 8. Economy indicators (Brave primary, BLS fallback)
+    {
+        let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+        let readings = if !brave_key.is_empty() {
+            match rt.block_on(economic::fetch_via_brave(&brave_key)) {
+                Ok(v) if !v.is_empty() => Ok(v),
+                Ok(_) => rt.block_on(economic::fetch_bls_fallback()),
+                Err(_) => rt.block_on(economic::fetch_bls_fallback()),
+            }
+        } else {
+            rt.block_on(economic::fetch_bls_fallback())
+        };
+
+        match readings {
+            Ok(items) => {
+                let now = chrono::Utc::now().to_rfc3339();
+                for item in &items {
+                    let entry = economic_data_db::EconomicDataEntry {
+                        indicator: item.indicator.clone(),
+                        value: item.value,
+                        previous: item.previous,
+                        change: item.change,
+                        source_url: item.source_url.clone(),
+                        fetched_at: now.clone(),
+                    };
+                    let _ = economic_data_db::upsert_entry(conn, &entry);
+                }
+                println!("✓ Economy ({} indicators)", items.len());
+            }
+            Err(e) => println!("✗ Economy (failed: {})", e),
+        }
+    }
+
+    // 9. BLS
     if bls_needs_refresh(conn)? {
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
@@ -687,7 +721,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ BLS (fresh, skipping)");
     }
 
-    // 9. World Bank
+    // 10. World Bank
     if worldbank_needs_refresh(conn)? {
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
@@ -702,7 +736,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ World Bank (fresh, skipping)");
     }
 
-    // 10. COMEX
+    // 11. COMEX
     if comex_needs_refresh(conn)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
@@ -733,7 +767,7 @@ pub fn run(conn: &Connection, config: &Config, notify: bool) -> Result<()> {
         println!("⊘ COMEX (fresh, skipping)");
     }
 
-    // 11. On-chain (Blockchair)
+    // 12. On-chain (Blockchair)
     // On-chain data is always fetched since it's diverse and doesn't have a simple freshness check
     // We'll fetch but not fail the whole command if it errors
     match onchain::fetch_network_metrics() {

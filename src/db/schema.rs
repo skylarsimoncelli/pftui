@@ -262,6 +262,15 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             rate TEXT NOT NULL,
             fetched_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS economic_data (
+            indicator TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            previous TEXT,
+            change TEXT,
+            source_url TEXT NOT NULL,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 
