@@ -16,7 +16,7 @@ use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, new
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
-use crate::db::price_history::get_price_at_date;
+use crate::db::price_history::get_price_at_date_backend;
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
 use crate::db::transactions::{get_unique_symbols, list_transactions};
 use crate::db::watchlist::get_watchlist_symbols_backend;
@@ -108,11 +108,15 @@ fn news_needs_refresh(conn: &Connection) -> Result<bool> {
     Ok(true)
 }
 
-fn compute_daily_change_pct(conn: &Connection, symbol: &str, current: Decimal) -> Option<Decimal> {
+fn compute_daily_change_pct(
+    backend: &BackendConnection,
+    symbol: &str,
+    current: Decimal,
+) -> Option<Decimal> {
     let today = chrono::Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
-    let prev = get_price_at_date(conn, symbol, &yesterday_str).ok()??;
+    let prev = get_price_at_date_backend(backend, symbol, &yesterday_str).ok()??;
     if prev == dec!(0) {
         return None;
     }
@@ -161,7 +165,7 @@ fn build_brave_news_queries(
 
     for sym in symbols {
         if let Some(current) = price_map.get(&sym).copied() {
-            if let Some(abs_change) = compute_daily_change_pct(conn, &sym, current) {
+            if let Some(abs_change) = compute_daily_change_pct(backend, &sym, current) {
                 if abs_change >= dec!(3) {
                     queries.push(format!("{} stock news", sym));
                 }

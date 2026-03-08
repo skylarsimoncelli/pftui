@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
 
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 use crate::models::price::HistoryRecord;
 
 pub fn upsert_history(conn: &Connection, symbol: &str, source: &str, records: &[HistoryRecord]) -> Result<()> {
@@ -94,6 +97,213 @@ pub fn get_all_symbols_history(conn: &Connection, limit: u32) -> Result<Vec<(Str
         let records = get_history(conn, &sym, limit)?;
         if !records.is_empty() {
             result.push((sym, records));
+        }
+    }
+    Ok(result)
+}
+
+#[allow(dead_code)]
+pub fn upsert_history_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    source: &str,
+    records: &[HistoryRecord],
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_history(conn, symbol, source, records),
+        |pool| upsert_history_postgres(pool, symbol, source, records),
+    )
+}
+
+#[allow(dead_code)]
+pub fn get_history_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    limit: u32,
+) -> Result<Vec<HistoryRecord>> {
+    query::dispatch(
+        backend,
+        |conn| get_history(conn, symbol, limit),
+        |pool| get_history_postgres(pool, symbol, limit),
+    )
+}
+
+pub fn get_price_at_date_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    date: &str,
+) -> Result<Option<Decimal>> {
+    query::dispatch(
+        backend,
+        |conn| get_price_at_date(conn, symbol, date),
+        |pool| get_price_at_date_postgres(pool, symbol, date),
+    )
+}
+
+#[allow(dead_code)]
+pub fn get_prices_at_date_backend(
+    backend: &BackendConnection,
+    symbols: &[String],
+    date: &str,
+) -> Result<HashMap<String, Decimal>> {
+    query::dispatch(
+        backend,
+        |conn| get_prices_at_date(conn, symbols, date),
+        |pool| get_prices_at_date_postgres(pool, symbols, date),
+    )
+}
+
+#[allow(dead_code)]
+pub fn get_all_symbols_history_backend(
+    backend: &BackendConnection,
+    limit: u32,
+) -> Result<Vec<(String, Vec<HistoryRecord>)>> {
+    query::dispatch(
+        backend,
+        |conn| get_all_symbols_history(conn, limit),
+        |pool| get_all_symbols_history_postgres(pool, limit),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS price_history (
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                close TEXT NOT NULL,
+                source TEXT NOT NULL,
+                volume TEXT,
+                PRIMARY KEY (symbol, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_history_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    source: &str,
+    records: &[HistoryRecord],
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        for rec in records {
+            let volume = rec.volume.map(|v| v.to_string());
+            sqlx::query(
+                "INSERT INTO price_history (symbol, date, close, source, volume)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (symbol, date)
+                 DO UPDATE SET
+                    close = EXCLUDED.close,
+                    source = EXCLUDED.source,
+                    volume = COALESCE(EXCLUDED.volume, price_history.volume)",
+            )
+            .bind(symbol)
+            .bind(&rec.date)
+            .bind(rec.close.to_string())
+            .bind(source)
+            .bind(volume)
+            .execute(pool)
+            .await?;
+        }
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+type HistoryRow = (String, String, Option<String>);
+
+fn history_record_from_row(row: HistoryRow) -> HistoryRecord {
+    let volume = row.2.and_then(|v| v.parse::<u64>().ok());
+    HistoryRecord {
+        date: row.0,
+        close: row.1.parse().unwrap_or(Decimal::ZERO),
+        volume,
+        open: None,
+        high: None,
+        low: None,
+    }
+}
+
+fn get_history_postgres(pool: &PgPool, symbol: &str, limit: u32) -> Result<Vec<HistoryRecord>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<HistoryRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT date, close, volume
+             FROM price_history
+             WHERE symbol = $1
+             ORDER BY date DESC
+             LIMIT $2",
+        )
+        .bind(symbol)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+    let mut out: Vec<HistoryRecord> = rows.into_iter().map(history_record_from_row).collect();
+    out.reverse();
+    Ok(out)
+}
+
+fn get_price_at_date_postgres(pool: &PgPool, symbol: &str, date: &str) -> Result<Option<Decimal>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let close: Option<String> = runtime.block_on(async {
+        sqlx::query_scalar(
+            "SELECT close
+             FROM price_history
+             WHERE symbol = $1 AND date <= $2
+             ORDER BY date DESC
+             LIMIT 1",
+        )
+        .bind(symbol)
+        .bind(date)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(close.map(|c| c.parse().unwrap_or(Decimal::ZERO)))
+}
+
+fn get_prices_at_date_postgres(
+    pool: &PgPool,
+    symbols: &[String],
+    date: &str,
+) -> Result<HashMap<String, Decimal>> {
+    let mut result = HashMap::new();
+    for symbol in symbols {
+        if let Some(price) = get_price_at_date_postgres(pool, symbol, date)? {
+            result.insert(symbol.clone(), price);
+        }
+    }
+    Ok(result)
+}
+
+fn get_all_symbols_history_postgres(
+    pool: &PgPool,
+    limit: u32,
+) -> Result<Vec<(String, Vec<HistoryRecord>)>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let symbols: Vec<String> = runtime.block_on(async {
+        sqlx::query_scalar("SELECT DISTINCT symbol FROM price_history")
+            .fetch_all(pool)
+            .await
+    })?;
+
+    let mut result = Vec::new();
+    for symbol in symbols {
+        let records = get_history_postgres(pool, &symbol, limit)?;
+        if !records.is_empty() {
+            result.push((symbol, records));
         }
     }
     Ok(result)

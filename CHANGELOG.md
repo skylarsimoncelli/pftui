@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 19:54 UTC — F32 Phase 11: native backend dispatch for `price_history` + refresh daily-change lookup
+
+- What: implemented backend-dispatched `price_history` operations (upsert/history/date lookups and symbol-history scans) with native Postgres SQL; switched refresh daily-change computations to use backend-dispatched historical-price lookups.
+- Why: advances F32.3 core data-pipeline migration by removing another SQLite-only dependency from high-frequency refresh logic.
+- Files: `src/db/price_history.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: `price_history` in refresh path)
+
 ### 2026-03-08 19:46 UTC — F32 Phase 10: native backend dispatch for `price_cache` + refresh cache path
 
 - What: implemented backend-dispatched `price_cache` operations (get/upsert/list) with native Postgres SQL, and rewired `refresh` cache read/write paths to use backend APIs for price freshness checks, quote upserts, and snapshot price maps.
