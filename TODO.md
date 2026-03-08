@@ -27,13 +27,6 @@
 
 > A new `pftui research` command — the agent's Swiss Army knife. Instead of falling back to their own web_search tool, agents stay in pftui for ANY financial question.
 
-- [ ] **F29.1: `pftui research "<query>"` CLI** — Brave web search with structured results. Default 5 results with title, URL, description, snippets. Flags: `--news` (news endpoint), `--freshness pd/pw/pm/py`, `--count N`, `--json`. Examples:
-  - `pftui research "Iran oil exports sanctions 2026" --news --freshness pw`
-  - `pftui research "COMEX silver registered inventory" --json`
-  - `pftui research "COT gold managed money positioning" --json`
-  - `pftui research "BTC ETF inflows outflows this week" --news`
-  - Files: new `src/commands/research.rs`, `cli.rs`, `main.rs`
-
 - [ ] **F29.2: Financial research presets** — Shortcut flags for common patterns:
   - `--fed` → latest Fed statements/speeches
   - `--earnings TSLA` → latest earnings results for symbol
