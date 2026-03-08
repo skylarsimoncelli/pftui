@@ -78,6 +78,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("Enter", "Position detail / chart", kc, tc));
     lines.push(key_line("Esc", "Close chart / help", kc, tc));
     lines.push(key_line("?", "Toggle this help", kc, tc));
+    lines.push(key_line(":", "Open command palette", kc, tc));
     lines.push(Line::from(""));
 
     // ── Charts ──

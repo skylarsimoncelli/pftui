@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 08:27 UTC — Add `:` command palette with autocomplete
+
+- What: added a vim-style command palette overlay opened with `:`. It supports live autocomplete suggestions, arrow navigation, `Tab` completion, and `Enter` execution. Implemented commands include: view switching (`view positions|transactions|markets|economy|watchlist|analytics|news|journal`), `refresh`, `help`, `theme next`, `split toggle`, `layout compact|split|analyst`, and `quit`.
+- Why: next TODO item in TUI polish. This gives keyboard-driven command execution without memorizing every keybinding and creates a foundation for richer command-mode workflows.
+- Files: `src/tui/views/command_palette.rs` (new overlay + matching logic + tests), `src/tui/views/mod.rs` (module wiring), `src/tui/ui.rs` (overlay rendering), `src/app.rs` (state, key handling, command execution, layout persistence helper, tests), `src/tui/views/help.rs` (document `:` key), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1144 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: Command palette — `:` opens vim-style command mode with autocomplete (P2)
+
 ### 2026-03-08 07:27 UTC — Add workspace layout presets (`compact`/`split`/`analyst`)
 
 - What: added a new `layout` config enum with presets `compact`, `split`, and `analyst`; wired it into app state and positions rendering mode selection. `compact` forces full-width table layout, `split` uses the two-column layout on wide terminals, and `analyst` enables the ultra-wide 3-column market-context layout when terminal width is 160+. Also added `pftui config` support for reading and setting this field (`config list`, `config get layout`, `config set layout <preset>`).

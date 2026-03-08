@@ -458,6 +458,9 @@ pub struct App {
     pub search_overlay_query: String,
     pub search_overlay_selected: usize,
     pub search_overlay_requested_symbols: std::collections::HashSet<String>,
+    pub command_palette_open: bool,
+    pub command_palette_input: String,
+    pub command_palette_selected: usize,
 
     // Sorting
     pub sort_field: SortField,
@@ -718,6 +721,9 @@ impl App {
             search_overlay_query: String::new(),
             search_overlay_selected: 0,
             search_overlay_requested_symbols: std::collections::HashSet::new(),
+            command_palette_open: false,
+            command_palette_input: String::new(),
+            command_palette_selected: 0,
             sort_field: SortField::Allocation,
             sort_ascending: false,
             category_filter: None,
@@ -2036,6 +2042,11 @@ impl App {
             return;
         }
 
+        if self.command_palette_open {
+            self.handle_command_palette_key(key);
+            return;
+        }
+
         // Global asset search overlay (must be checked first)
         if self.search_overlay_open {
             self.handle_search_overlay_key(key);
@@ -2086,6 +2097,10 @@ impl App {
                 if self.show_help {
                     self.help_scroll = 0;
                 }
+                return;
+            }
+            KeyCode::Char(':') => {
+                self.open_command_palette();
                 return;
             }
             KeyCode::Esc if self.detail_popup_open => {
@@ -2454,6 +2469,9 @@ impl App {
                 self.search_overlay_selected = 0;
                 self.search_overlay_requested_symbols.clear();
                 self.search_chart_popup = None;
+                self.command_palette_open = false;
+                self.command_palette_input.clear();
+                self.command_palette_selected = 0;
             }
 
             // Refresh
@@ -2515,13 +2533,21 @@ impl App {
             // Scroll wheel — navigate up/down in current view
             MouseEventKind::ScrollUp => {
                 // Dismiss overlays with scroll if active
-                if self.show_help || self.search_overlay_open || self.detail_popup_open {
+                if self.show_help
+                    || self.command_palette_open
+                    || self.search_overlay_open
+                    || self.detail_popup_open
+                {
                     return;
                 }
                 self.move_up();
             }
             MouseEventKind::ScrollDown => {
-                if self.show_help || self.search_overlay_open || self.detail_popup_open {
+                if self.show_help
+                    || self.command_palette_open
+                    || self.search_overlay_open
+                    || self.detail_popup_open
+                {
                     return;
                 }
                 self.move_down();
@@ -2536,6 +2562,13 @@ impl App {
                 // If help overlay is open, click anywhere to dismiss
                 if self.show_help {
                     self.show_help = false;
+                    return;
+                }
+                // If command palette is open, click anywhere to dismiss
+                if self.command_palette_open {
+                    self.command_palette_open = false;
+                    self.command_palette_input.clear();
+                    self.command_palette_selected = 0;
                     return;
                 }
                 // If search overlay is open, click outside to dismiss
@@ -3500,6 +3533,106 @@ impl App {
     fn open_tx_form_for_symbol(&mut self, symbol: String) {
         let category = crate::models::asset_names::infer_category(&symbol);
         self.tx_form = Some(TxFormState::new(symbol, category));
+    }
+
+    fn open_command_palette(&mut self) {
+        self.command_palette_open = true;
+        self.command_palette_input.clear();
+        self.command_palette_selected = 0;
+        self.search_overlay_open = false;
+    }
+
+    fn handle_command_palette_key(&mut self, key: KeyEvent) {
+        let matches = crate::tui::views::command_palette::matching_commands(
+            &self.command_palette_input,
+        );
+        match key.code {
+            KeyCode::Esc => {
+                self.command_palette_open = false;
+                self.command_palette_input.clear();
+                self.command_palette_selected = 0;
+            }
+            KeyCode::Backspace => {
+                self.command_palette_input.pop();
+                self.command_palette_selected = 0;
+            }
+            KeyCode::Down => {
+                if self.command_palette_selected + 1 < matches.len() {
+                    self.command_palette_selected += 1;
+                }
+            }
+            KeyCode::Up => {
+                self.command_palette_selected =
+                    self.command_palette_selected.saturating_sub(1);
+            }
+            KeyCode::Tab => {
+                if let Some(entry) = matches.get(self.command_palette_selected) {
+                    self.command_palette_input = entry.command.to_string();
+                }
+            }
+            KeyCode::Enter => {
+                let command = if let Some(entry) = matches.get(self.command_palette_selected) {
+                    entry.command.to_string()
+                } else {
+                    self.command_palette_input.trim().to_string()
+                };
+                self.execute_palette_command(&command);
+                self.command_palette_open = false;
+                self.command_palette_input.clear();
+                self.command_palette_selected = 0;
+            }
+            KeyCode::Char(c) => {
+                self.command_palette_input.push(c);
+                self.command_palette_selected = 0;
+            }
+            _ => {}
+        }
+    }
+
+    fn execute_palette_command(&mut self, command: &str) {
+        let cmd = command.trim().to_lowercase();
+        match cmd.as_str() {
+            "quit" | "q" | "exit" => self.should_quit = true,
+            "help" | "?" => {
+                self.show_help = true;
+                self.help_scroll = 0;
+            }
+            "refresh" | "r" => self.force_refresh(),
+            "theme next" | "theme" => self.cycle_theme(),
+            "split toggle" => {
+                if matches!(self.view_mode, ViewMode::Positions) {
+                    self.split_pane_open = !self.split_pane_open;
+                }
+            }
+            "layout compact" => self.set_workspace_layout(WorkspaceLayout::Compact),
+            "layout split" => self.set_workspace_layout(WorkspaceLayout::Split),
+            "layout analyst" => self.set_workspace_layout(WorkspaceLayout::Analyst),
+            "view positions" => self.view_mode = ViewMode::Positions,
+            "view transactions" => {
+                if self.portfolio_mode == PortfolioMode::Full {
+                    self.view_mode = ViewMode::Transactions;
+                }
+            }
+            "view markets" => self.view_mode = ViewMode::Markets,
+            "view economy" => self.view_mode = ViewMode::Economy,
+            "view watchlist" => {
+                self.view_mode = ViewMode::Watchlist;
+                self.load_watchlist();
+                self.request_watchlist_data();
+            }
+            "view analytics" => self.view_mode = ViewMode::Analytics,
+            "view news" => self.view_mode = ViewMode::News,
+            "view journal" => self.view_mode = ViewMode::Journal,
+            _ => {}
+        }
+    }
+
+    fn set_workspace_layout(&mut self, layout: WorkspaceLayout) {
+        self.workspace_layout = layout;
+        if let Ok(mut cfg) = config::load_config() {
+            cfg.layout = layout;
+            let _ = config::save_config(&cfg);
+        }
     }
 
     /// Handle key input in the global asset search overlay.
@@ -7141,6 +7274,62 @@ mod mouse_tests {
 
         app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('D')));
         assert!(!app.show_drift_columns);
+    }
+
+    fn palette_key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn palette_tab_key() -> KeyEvent {
+        KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)
+    }
+
+    fn palette_enter_key() -> KeyEvent {
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn command_palette_opens_with_colon() {
+        let mut app = make_app();
+        assert!(!app.command_palette_open);
+        app.handle_key(palette_key(':'));
+        assert!(app.command_palette_open);
+    }
+
+    #[test]
+    fn command_palette_tab_autocomplete() {
+        let mut app = make_app();
+        app.handle_key(palette_key(':'));
+        for c in "view mar".chars() {
+            app.handle_key(palette_key(c));
+        }
+        app.handle_key(palette_tab_key());
+        assert_eq!(app.command_palette_input, "view markets");
+    }
+
+    #[test]
+    fn command_palette_executes_view_switch() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Positions;
+        app.handle_key(palette_key(':'));
+        for c in "view news".chars() {
+            app.handle_key(palette_key(c));
+        }
+        app.handle_key(palette_enter_key());
+        assert_eq!(app.view_mode, ViewMode::News);
+        assert!(!app.command_palette_open);
+    }
+
+    #[test]
+    fn command_palette_executes_layout_command() {
+        let mut app = make_app();
+        assert_eq!(app.workspace_layout, WorkspaceLayout::Split);
+        app.handle_key(palette_key(':'));
+        for c in "layout compact".chars() {
+            app.handle_key(palette_key(c));
+        }
+        app.handle_key(palette_enter_key());
+        assert_eq!(app.workspace_layout, WorkspaceLayout::Compact);
     }
 
     #[test]

@@ -91,6 +91,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         views::search_chart_popup::render(frame, size, app);
     }
 
+    if app.command_palette_open {
+        views::command_palette::render(frame, size, app);
+    }
+
     if app.asset_detail.is_some() {
         views::asset_detail_popup::render(frame, size, app);
     }
