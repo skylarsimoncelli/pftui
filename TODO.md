@@ -19,8 +19,6 @@
 
 > When Brave key is configured, news comes from targeted Brave News Search queries instead of generic RSS polling. This gives article summaries (descriptions), not just headlines. Multiple focused queries replace one shallow RSS poll.
 
-- [ ] **F27.4: Per-asset news via Brave** — In asset detail popup (Enter on position), if Brave configured, search `"{symbol} stock news"` (freshness: pw). Show 5 relevant articles with summaries. Cache with symbol tag. Files: `src/tui/views/asset_detail_popup.rs`, `src/data/brave.rs`
-
 ### F28: Brave-Powered Economic Data
 
 > Instead of fragile scrapers for BLS/Trading Economics, use Brave Web Search to find latest economic readings. More resilient — when a scraper breaks because a page changed layout, Brave still works because it searches the entire web.
