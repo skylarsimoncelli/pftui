@@ -1,11 +1,11 @@
+use crate::db::backend::BackendConnection;
 use crate::db::scenarios;
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 use serde_json::json;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     id: Option<i64>,
@@ -28,8 +28,8 @@ pub fn run(
             let name = value.ok_or_else(|| anyhow::anyhow!("scenario name required"))?;
             let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
 
-            let id = scenarios::add_scenario(
-                conn,
+            let id = scenarios::add_scenario_backend(
+                backend,
                 name,
                 prob,
                 description,
@@ -39,7 +39,7 @@ pub fn run(
             )?;
 
             if json_output {
-                let scenario = scenarios::get_scenario_by_name(conn, name)?.unwrap();
+                let scenario = scenarios::get_scenario_by_name_backend(backend, name)?.unwrap();
                 println!("{}", serde_json::to_string_pretty(&scenario)?);
             } else {
                 println!("Added scenario #{}: {}", id, name);
@@ -47,7 +47,7 @@ pub fn run(
         }
 
         "list" => {
-            let scenarios_list = scenarios::list_scenarios(conn, status)?;
+            let scenarios_list = scenarios::list_scenarios_backend(backend, status)?;
 
             if json_output {
                 println!(
@@ -82,12 +82,12 @@ pub fn run(
 
         "update" => {
             let name = value.ok_or_else(|| anyhow::anyhow!("scenario name required"))?;
-            let scenario = scenarios::get_scenario_by_name(conn, name)?
+            let scenario = scenarios::get_scenario_by_name_backend(backend, name)?
                 .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", name))?;
 
             // If probability is being updated, use special handler
             if let Some(prob) = probability {
-                scenarios::update_scenario_probability(conn, scenario.id, prob, driver)?;
+                scenarios::update_scenario_probability_backend(backend, scenario.id, prob, driver)?;
                 if !json_output {
                     println!("Updated probability for '{}' to {:.1}%", name, prob);
                 }
@@ -96,8 +96,8 @@ pub fn run(
             // Update other fields if provided
             if description.is_some() || impact.is_some() || triggers.is_some() || status.is_some()
             {
-                scenarios::update_scenario(
-                    conn,
+                scenarios::update_scenario_backend(
+                    backend,
                     scenario.id,
                     description,
                     impact,
@@ -110,7 +110,7 @@ pub fn run(
             }
 
             if json_output {
-                let updated = scenarios::get_scenario_by_name(conn, name)?.unwrap();
+                let updated = scenarios::get_scenario_by_name_backend(backend, name)?.unwrap();
                 println!("{}", serde_json::to_string_pretty(&updated)?);
             }
         }
@@ -119,14 +119,14 @@ pub fn run(
             let scenario_id = if let Some(i) = id {
                 i
             } else if let Some(name) = value {
-                scenarios::get_scenario_by_name(conn, name)?
+                scenarios::get_scenario_by_name_backend(backend, name)?
                     .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", name))?
                     .id
             } else {
                 bail!("scenario name or --id required");
             };
 
-            scenarios::remove_scenario(conn, scenario_id)?;
+            scenarios::remove_scenario_backend(backend, scenario_id)?;
             if !json_output {
                 println!("Removed scenario #{}", scenario_id);
             }
@@ -137,14 +137,14 @@ pub fn run(
                 scenario_name.ok_or_else(|| anyhow::anyhow!("--scenario required"))?;
             let signal_text = value.ok_or_else(|| anyhow::anyhow!("signal text required"))?;
 
-            let scenario = scenarios::get_scenario_by_name(conn, scenario_name)?
+            let scenario = scenarios::get_scenario_by_name_backend(backend, scenario_name)?
                 .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", scenario_name))?;
 
             let signal_id =
-                scenarios::add_signal(conn, scenario.id, signal_text, status, evidence, source)?;
+                scenarios::add_signal_backend(backend, scenario.id, signal_text, status, evidence, source)?;
 
             if json_output {
-                let signals = scenarios::list_signals(conn, scenario.id, None)?;
+                let signals = scenarios::list_signals_backend(backend, scenario.id, None)?;
                 let inserted = signals.iter().find(|s| s.id == signal_id).unwrap();
                 println!("{}", serde_json::to_string_pretty(inserted)?);
             } else {
@@ -156,10 +156,10 @@ pub fn run(
             let scenario_name =
                 scenario_name.ok_or_else(|| anyhow::anyhow!("--scenario required"))?;
 
-            let scenario = scenarios::get_scenario_by_name(conn, scenario_name)?
+            let scenario = scenarios::get_scenario_by_name_backend(backend, scenario_name)?
                 .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", scenario_name))?;
 
-            let signals = scenarios::list_signals(conn, scenario.id, status)?;
+            let signals = scenarios::list_signals_backend(backend, scenario.id, status)?;
 
             if json_output {
                 println!(
@@ -192,7 +192,7 @@ pub fn run(
         "signal-update" => {
             let sig_id = signal_id.ok_or_else(|| anyhow::anyhow!("--signal-id required"))?;
 
-            scenarios::update_signal(conn, sig_id, status, evidence)?;
+            scenarios::update_signal_backend(backend, sig_id, status, evidence)?;
 
             if json_output {
                 println!("{}", json!({"updated": sig_id}));
@@ -204,7 +204,7 @@ pub fn run(
         "signal-remove" => {
             let sig_id = signal_id.ok_or_else(|| anyhow::anyhow!("--signal-id required"))?;
 
-            scenarios::remove_signal(conn, sig_id)?;
+            scenarios::remove_signal_backend(backend, sig_id)?;
 
             if json_output {
                 println!("{}", json!({"removed": sig_id}));
@@ -216,10 +216,10 @@ pub fn run(
         "history" => {
             let name = value.ok_or_else(|| anyhow::anyhow!("scenario name required"))?;
 
-            let scenario = scenarios::get_scenario_by_name(conn, name)?
+            let scenario = scenarios::get_scenario_by_name_backend(backend, name)?
                 .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", name))?;
 
-            let history = scenarios::get_history(conn, scenario.id, limit)?;
+            let history = scenarios::get_history_backend(backend, scenario.id, limit)?;
 
             if json_output {
                 println!(

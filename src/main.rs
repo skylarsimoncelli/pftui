@@ -299,7 +299,7 @@ fn main() -> Result<()> {
             json,
         }) => {
             commands::scenario::run(
-                conn,
+                &backend,
                 &action,
                 value.as_deref(),
                 id,

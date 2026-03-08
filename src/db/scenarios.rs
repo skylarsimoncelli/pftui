@@ -1,6 +1,24 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
+
+type ScenarioRow = (
+    i64,
+    String,
+    f64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+);
+type ScenarioSignalRow = (i64, i64, String, String, Option<String>, Option<String>, String);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scenario {
@@ -335,4 +353,526 @@ pub fn get_history(
         history.push(row?);
     }
     Ok(history)
+}
+
+pub fn add_scenario_backend(
+    backend: &BackendConnection,
+    name: &str,
+    probability: f64,
+    description: Option<&str>,
+    asset_impact: Option<&str>,
+    triggers: Option<&str>,
+    precedent: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_scenario(conn, name, probability, description, asset_impact, triggers, precedent),
+        |pool| add_scenario_postgres(pool, name, probability, description, asset_impact, triggers, precedent),
+    )
+}
+
+pub fn list_scenarios_backend(
+    backend: &BackendConnection,
+    status_filter: Option<&str>,
+) -> Result<Vec<Scenario>> {
+    query::dispatch(
+        backend,
+        |conn| list_scenarios(conn, status_filter),
+        |pool| list_scenarios_postgres(pool, status_filter),
+    )
+}
+
+pub fn get_scenario_by_name_backend(
+    backend: &BackendConnection,
+    name: &str,
+) -> Result<Option<Scenario>> {
+    query::dispatch(
+        backend,
+        |conn| get_scenario_by_name(conn, name),
+        |pool| get_scenario_by_name_postgres(pool, name),
+    )
+}
+
+pub fn update_scenario_probability_backend(
+    backend: &BackendConnection,
+    id: i64,
+    probability: f64,
+    driver: Option<&str>,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| update_scenario_probability(conn, id, probability, driver),
+        |pool| update_scenario_probability_postgres(pool, id, probability, driver),
+    )
+}
+
+pub fn update_scenario_backend(
+    backend: &BackendConnection,
+    id: i64,
+    description: Option<&str>,
+    asset_impact: Option<&str>,
+    triggers: Option<&str>,
+    status: Option<&str>,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| update_scenario(conn, id, description, asset_impact, triggers, status),
+        |pool| update_scenario_postgres(pool, id, description, asset_impact, triggers, status),
+    )
+}
+
+pub fn remove_scenario_backend(backend: &BackendConnection, id: i64) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| remove_scenario(conn, id),
+        |pool| remove_scenario_postgres(pool, id),
+    )
+}
+
+pub fn add_signal_backend(
+    backend: &BackendConnection,
+    scenario_id: i64,
+    signal: &str,
+    status: Option<&str>,
+    evidence: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_signal(conn, scenario_id, signal, status, evidence, source),
+        |pool| add_signal_postgres(pool, scenario_id, signal, status, evidence, source),
+    )
+}
+
+pub fn list_signals_backend(
+    backend: &BackendConnection,
+    scenario_id: i64,
+    status_filter: Option<&str>,
+) -> Result<Vec<ScenarioSignal>> {
+    query::dispatch(
+        backend,
+        |conn| list_signals(conn, scenario_id, status_filter),
+        |pool| list_signals_postgres(pool, scenario_id, status_filter),
+    )
+}
+
+pub fn update_signal_backend(
+    backend: &BackendConnection,
+    signal_id: i64,
+    status: Option<&str>,
+    evidence: Option<&str>,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| update_signal(conn, signal_id, status, evidence),
+        |pool| update_signal_postgres(pool, signal_id, status, evidence),
+    )
+}
+
+pub fn remove_signal_backend(backend: &BackendConnection, signal_id: i64) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| remove_signal(conn, signal_id),
+        |pool| remove_signal_postgres(pool, signal_id),
+    )
+}
+
+pub fn get_history_backend(
+    backend: &BackendConnection,
+    scenario_id: i64,
+    limit: Option<usize>,
+) -> Result<Vec<ScenarioHistoryEntry>> {
+    query::dispatch(
+        backend,
+        |conn| get_history(conn, scenario_id, limit),
+        |pool| get_history_postgres(pool, scenario_id, limit),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scenarios (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                probability DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                description TEXT,
+                asset_impact TEXT,
+                triggers TEXT,
+                historical_precedent TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scenario_signals (
+                id BIGSERIAL PRIMARY KEY,
+                scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+                signal TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'watching',
+                evidence TEXT,
+                source TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scenario_history (
+                id BIGSERIAL PRIMARY KEY,
+                scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+                probability DOUBLE PRECISION NOT NULL,
+                driver TEXT,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_signals_scenario ON scenario_signals(scenario_id)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_history_scenario ON scenario_history(scenario_id)")
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn add_scenario_postgres(
+    pool: &PgPool,
+    name: &str,
+    probability: f64,
+    description: Option<&str>,
+    asset_impact: Option<&str>,
+    triggers: Option<&str>,
+    precedent: Option<&str>,
+) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO scenarios (name, probability, description, asset_impact, triggers, historical_precedent)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id",
+        )
+        .bind(name)
+        .bind(probability)
+        .bind(description)
+        .bind(asset_impact)
+        .bind(triggers)
+        .bind(precedent)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result<Vec<Scenario>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<ScenarioRow> =
+        if let Some(status) = status_filter {
+            runtime.block_on(async {
+                sqlx::query_as(
+                    "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
+                     FROM scenarios
+                     WHERE status = $1
+                     ORDER BY probability DESC",
+                )
+                .bind(status)
+                .fetch_all(pool)
+                .await
+            })?
+        } else {
+            runtime.block_on(async {
+                sqlx::query_as(
+                    "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
+                     FROM scenarios
+                     ORDER BY probability DESC",
+                )
+                .fetch_all(pool)
+                .await
+            })?
+        };
+
+    Ok(rows
+        .into_iter()
+        .map(|r| Scenario {
+            id: r.0,
+            name: r.1,
+            probability: r.2,
+            description: r.3,
+            asset_impact: r.4,
+            triggers: r.5,
+            historical_precedent: r.6,
+            status: r.7,
+            created_at: r.8,
+            updated_at: r.9,
+        })
+        .collect())
+}
+
+fn get_scenario_by_name_postgres(pool: &PgPool, name: &str) -> Result<Option<Scenario>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<ScenarioRow> =
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
+                 FROM scenarios
+                 WHERE name = $1",
+            )
+            .bind(name)
+            .fetch_optional(pool)
+            .await
+        })?;
+    Ok(row.map(|r| Scenario {
+        id: r.0,
+        name: r.1,
+        probability: r.2,
+        description: r.3,
+        asset_impact: r.4,
+        triggers: r.5,
+        historical_precedent: r.6,
+        status: r.7,
+        created_at: r.8,
+        updated_at: r.9,
+    }))
+}
+
+fn update_scenario_probability_postgres(
+    pool: &PgPool,
+    id: i64,
+    probability: f64,
+    driver: Option<&str>,
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO scenario_history (scenario_id, probability, driver)
+             SELECT id, probability, $1 FROM scenarios WHERE id = $2",
+        )
+        .bind(driver)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        sqlx::query("UPDATE scenarios SET probability = $1, updated_at = NOW() WHERE id = $2")
+            .bind(probability)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn update_scenario_postgres(
+    pool: &PgPool,
+    id: i64,
+    description: Option<&str>,
+    asset_impact: Option<&str>,
+    triggers: Option<&str>,
+    status: Option<&str>,
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "UPDATE scenarios
+             SET description = COALESCE($1, description),
+                 asset_impact = COALESCE($2, asset_impact),
+                 triggers = COALESCE($3, triggers),
+                 status = COALESCE($4, status),
+                 updated_at = NOW()
+             WHERE id = $5",
+        )
+        .bind(description)
+        .bind(asset_impact)
+        .bind(triggers)
+        .bind(status)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn remove_scenario_postgres(pool: &PgPool, id: i64) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query("DELETE FROM scenarios WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn add_signal_postgres(
+    pool: &PgPool,
+    scenario_id: i64,
+    signal: &str,
+    status: Option<&str>,
+    evidence: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO scenario_signals (scenario_id, signal, status, evidence, source)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id",
+        )
+        .bind(scenario_id)
+        .bind(signal)
+        .bind(status.unwrap_or("watching"))
+        .bind(evidence)
+        .bind(source)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_signals_postgres(
+    pool: &PgPool,
+    scenario_id: i64,
+    status_filter: Option<&str>,
+) -> Result<Vec<ScenarioSignal>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<ScenarioSignalRow> =
+        if let Some(status) = status_filter {
+            runtime.block_on(async {
+                sqlx::query_as(
+                    "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
+                     FROM scenario_signals
+                     WHERE scenario_id = $1 AND status = $2
+                     ORDER BY updated_at DESC",
+                )
+                .bind(scenario_id)
+                .bind(status)
+                .fetch_all(pool)
+                .await
+            })?
+        } else {
+            runtime.block_on(async {
+                sqlx::query_as(
+                    "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
+                     FROM scenario_signals
+                     WHERE scenario_id = $1
+                     ORDER BY updated_at DESC",
+                )
+                .bind(scenario_id)
+                .fetch_all(pool)
+                .await
+            })?
+        };
+    Ok(rows
+        .into_iter()
+        .map(|r| ScenarioSignal {
+            id: r.0,
+            scenario_id: r.1,
+            signal: r.2,
+            status: r.3,
+            evidence: r.4,
+            source: r.5,
+            updated_at: r.6,
+        })
+        .collect())
+}
+
+fn update_signal_postgres(
+    pool: &PgPool,
+    signal_id: i64,
+    status: Option<&str>,
+    evidence: Option<&str>,
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "UPDATE scenario_signals
+             SET status = COALESCE($1, status),
+                 evidence = COALESCE($2, evidence),
+                 updated_at = NOW()
+             WHERE id = $3",
+        )
+        .bind(status)
+        .bind(evidence)
+        .bind(signal_id)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn remove_signal_postgres(pool: &PgPool, signal_id: i64) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query("DELETE FROM scenario_signals WHERE id = $1")
+            .bind(signal_id)
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_history_postgres(
+    pool: &PgPool,
+    scenario_id: i64,
+    limit: Option<usize>,
+) -> Result<Vec<ScenarioHistoryEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(i64, i64, f64, Option<String>, String)> = if let Some(limit) = limit {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, scenario_id, probability, driver, recorded_at::text
+                 FROM scenario_history
+                 WHERE scenario_id = $1
+                 ORDER BY recorded_at DESC
+                 LIMIT $2",
+            )
+            .bind(scenario_id)
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, scenario_id, probability, driver, recorded_at::text
+                 FROM scenario_history
+                 WHERE scenario_id = $1
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(scenario_id)
+            .fetch_all(pool)
+            .await
+        })?
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| ScenarioHistoryEntry {
+            id: r.0,
+            scenario_id: r.1,
+            probability: r.2,
+            driver: r.3,
+            recorded_at: r.4,
+        })
+        .collect())
 }

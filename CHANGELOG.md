@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 18:56 UTC — F32 Phase 2: migrate scenario command/data path to backend-dispatched native SQL
+
+- What: converted `scenario` command path to backend-dispatched DB operations and added native Postgres SQL implementations for scenario CRUD, signal CRUD, and history operations in `db/scenarios.rs`.
+- Why: expands F32 native backend parity across F31 intelligence tables and removes SQLite-only assumptions from `pftui scenario`.
+- Files: `src/db/scenarios.rs`, `src/commands/scenario.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.6 intelligence tables migration (partial: scenario + thesis)
+
 ### 2026-03-08 18:52 UTC — F32 Phase 1: add backend query dispatch and native Postgres path for thesis
 
 - What: introduced `src/db/query.rs` with backend dispatch helpers, extended `BackendConnection` accessors for native backend branching, and migrated thesis command/data path to run against backend-dispatched storage (`thesis` now supports native Postgres SQL path in addition to SQLite path).
