@@ -7,6 +7,7 @@ use std::str::FromStr;
 use super::{AlertDirection, AlertKind, AlertRule, AlertStatus};
 use crate::db::alerts;
 use crate::db::price_cache;
+use crate::db::scan_queries;
 
 /// Result of checking a single alert rule against current data.
 #[derive(Debug, Clone)]
@@ -27,6 +28,7 @@ pub struct AlertCheckResult {
 /// Newly triggered alerts are updated to `Triggered` status in the DB.
 pub fn check_alerts(conn: &Connection) -> Result<Vec<AlertCheckResult>> {
     ensure_review_date_alerts(conn)?;
+    ensure_scan_query_change_alerts(conn)?;
     let all_alerts = alerts::list_alerts(conn)?;
     if all_alerts.is_empty() {
         return Ok(Vec::new());
@@ -154,6 +156,55 @@ fn ensure_review_date_alerts(conn: &Connection) -> Result<()> {
             )?;
         }
     }
+    Ok(())
+}
+
+fn ensure_scan_query_change_alerts(conn: &Connection) -> Result<()> {
+    let queries = scan_queries::list_scan_queries(conn)?;
+    if queries.is_empty() {
+        return Ok(());
+    }
+
+    for q in queries {
+        let current = crate::commands::scan::count_matches(conn, &q.filter_expr)? as i64;
+        let previous: Option<i64> = conn
+            .query_row(
+                "SELECT last_count FROM scan_alert_state WHERE name = ?1",
+                rusqlite::params![q.name],
+                |r| r.get(0),
+            )
+            .ok();
+
+        if let Some(prev) = previous {
+            if prev != current {
+                let rule_text = format!(
+                    "Scan '{}' result count changed: {} -> {}",
+                    q.name, prev, current
+                );
+                let symbol = format!("SCAN:{}", q.name.to_uppercase());
+                let id = alerts::add_alert(
+                    conn,
+                    "indicator",
+                    &symbol,
+                    "above",
+                    &current.to_string(),
+                    &rule_text,
+                )?;
+                let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                alerts::update_alert_status(conn, id, AlertStatus::Triggered, Some(&now))?;
+            }
+        }
+
+        conn.execute(
+            "INSERT INTO scan_alert_state (name, last_count, updated_at)
+             VALUES (?1, ?2, datetime('now'))
+             ON CONFLICT(name) DO UPDATE
+             SET last_count = excluded.last_count,
+                 updated_at = datetime('now')",
+            rusqlite::params![q.name, current],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -357,5 +408,43 @@ mod tests {
         assert!(results
             .iter()
             .any(|r| r.rule.symbol == "REVIEW:GC=F" && (r.newly_triggered || r.rule.status == AlertStatus::Triggered)));
+    }
+
+    #[test]
+    fn test_scan_query_change_creates_triggered_alert() {
+        let conn = setup_test_db();
+        crate::db::scan_queries::upsert_scan_query(&conn, "equities", "category == equity")
+            .unwrap();
+
+        // First check seeds baseline state and should not emit change alert.
+        let _ = check_alerts(&conn).unwrap();
+        assert!(alerts::list_alerts(&conn)
+            .unwrap()
+            .iter()
+            .all(|a| !a.symbol.starts_with("SCAN:")));
+
+        // Add one matching position and check again -> should emit triggered scan alert.
+        crate::db::transactions::insert_transaction(
+            &conn,
+            &crate::models::transaction::NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: crate::models::asset::AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: Decimal::from(2),
+                price_per: Decimal::from(180),
+                currency: "USD".to_string(),
+                date: "2026-03-09".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        let _ = check_alerts(&conn).unwrap();
+        let all = alerts::list_alerts(&conn).unwrap();
+        let scan_alerts: Vec<_> = all
+            .iter()
+            .filter(|a| a.symbol.starts_with("SCAN:"))
+            .collect();
+        assert_eq!(scan_alerts.len(), 1);
+        assert_eq!(scan_alerts[0].status, AlertStatus::Triggered);
     }
 }

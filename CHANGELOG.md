@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:31 UTC — Add scan-triggered alerts on saved query count changes
+
+- What: extended alert checks to track each saved scan query’s match count and emit a triggered indicator alert when a count changes between checks. Added persistent `scan_alert_state` storage and reused scan filter evaluation via a new `count_matches` helper.
+- Why: TODO scanner workflow item. Users can now get explicit alert events when saved scan results shift, enabling regime/risk monitoring without manually rerunning scans.
+- Files: `src/alerts/engine.rs` (scan count state check + triggered alert creation + regression test), `src/commands/scan.rs` (new `count_matches` helper and mode-agnostic row loading), `src/db/schema.rs` (new `scan_alert_state` table), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1166 passed)
+- TODO: Scan-triggered alerts — Alert when scan results change
+
 ### 2026-03-08 05:29 UTC — Add interactive `:scan` builder modal in TUI
 
 - What: added a new scan builder overlay opened from command palette (`:scan`) with interactive clause management and saved-query operations. Edit mode supports clause add/remove/clear and selection navigation; save/load modes persist and restore named scans using existing SQLite-backed scan queries.

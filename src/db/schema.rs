@@ -309,6 +309,12 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS scan_alert_state (
+            name TEXT PRIMARY KEY,
+            last_count INTEGER NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 

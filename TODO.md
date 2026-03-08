@@ -84,7 +84,6 @@
 ### Watchlist (batch: ~2hrs total)
 
 ### Scanner (batch: ~3hrs total)
-- [ ] **Scan-triggered alerts** — Alert when scan results change. Files: `alerts/engine.rs`
 
 ### Distribution
 - [ ] **Snap/AUR/Scoop publishing** — Needs accounts + secrets for each store

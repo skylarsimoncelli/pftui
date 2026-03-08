@@ -77,7 +77,7 @@ pub fn run(
     let clauses = parse_filter(&filter_expr)?;
     validate_clauses(&clauses)?;
 
-    let rows = load_rows(conn, config)?;
+    let rows = load_rows(conn, Some(config.portfolio_mode))?;
     if rows.is_empty() {
         println!("No positions to scan. Add holdings first.");
         return Ok(());
@@ -103,6 +103,19 @@ pub fn run(
 
     print_table(matches, rows.len(), &filter_expr, &config.base_currency);
     Ok(())
+}
+
+pub fn count_matches(conn: &Connection, filter: &str) -> Result<usize> {
+    let clauses = parse_filter(filter)?;
+    validate_clauses(&clauses)?;
+    let rows = load_rows(conn, None)?;
+    let mut count = 0usize;
+    for row in &rows {
+        if matches_all_clauses(row, &clauses)? {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 fn print_saved_queries(conn: &Connection, json: bool) -> Result<()> {
@@ -146,18 +159,26 @@ fn print_saved_queries(conn: &Connection, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn load_rows(conn: &Connection, config: &Config) -> Result<Vec<ScanRow>> {
+fn load_rows(conn: &Connection, mode_hint: Option<PortfolioMode>) -> Result<Vec<ScanRow>> {
     let prices = get_all_cached_prices(conn)?
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
     let fx_rates = get_all_fx_rates(conn).unwrap_or_default();
-
-    let positions: Vec<Position> = match config.portfolio_mode {
-        PortfolioMode::Full => {
-            let txs = list_transactions(conn)?;
-            compute_positions(&txs, &prices, &fx_rates)
+    let txs = list_transactions(conn)?;
+    let use_mode = match mode_hint {
+        Some(m) => m,
+        None => {
+            if txs.is_empty() {
+                PortfolioMode::Percentage
+            } else {
+                PortfolioMode::Full
+            }
         }
+    };
+
+    let positions: Vec<Position> = match use_mode {
+        PortfolioMode::Full => compute_positions(&txs, &prices, &fx_rates),
         PortfolioMode::Percentage => {
             let allocs = list_allocations(conn)?;
             compute_positions_from_allocations(&allocs, &prices, &fx_rates)
