@@ -15,6 +15,8 @@ fn list_config() -> Result<()> {
     let config = load_config()?;
     println!("base_currency = {}", config.base_currency);
     println!("refresh_interval = {}", config.refresh_interval);
+    println!("auto_refresh = {}", config.auto_refresh);
+    println!("refresh_interval_secs = {}", config.refresh_interval_secs);
     println!("portfolio_mode = {}", format!("{:?}", config.portfolio_mode).to_lowercase());
     println!("theme = {}", config.theme);
     println!("home_tab = {}", config.home_tab);
@@ -33,6 +35,8 @@ fn get_field(field: Option<&str>) -> Result<()> {
     match field {
         "base_currency" => println!("{}", config.base_currency),
         "refresh_interval" => println!("{}", config.refresh_interval),
+        "auto_refresh" => println!("{}", config.auto_refresh),
+        "refresh_interval_secs" => println!("{}", config.refresh_interval_secs),
         "portfolio_mode" => println!("{}", format!("{:?}", config.portfolio_mode).to_lowercase()),
         "theme" => println!("{}", config.theme),
         "home_tab" => println!("{}", config.home_tab),
@@ -80,8 +84,30 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
                 format_layout(config.layout)
             );
         }
+        "auto_refresh" => {
+            let parsed = match value.trim().to_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => true,
+                "false" | "0" | "no" | "off" => false,
+                _ => bail!("Invalid auto_refresh '{}'. Use: true|false", value),
+            };
+            config.auto_refresh = parsed;
+            save_config(&config)?;
+            println!("Updated auto_refresh = {}", config.auto_refresh);
+        }
+        "refresh_interval_secs" => {
+            let parsed = value
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| anyhow!("Invalid refresh_interval_secs '{}'", value))?;
+            if parsed == 0 {
+                bail!("refresh_interval_secs must be > 0");
+            }
+            config.refresh_interval_secs = parsed;
+            save_config(&config)?;
+            println!("Updated refresh_interval_secs = {}", config.refresh_interval_secs);
+        }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: brave_api_key, layout",
+            "Unsupported set field '{}'. Currently supported: brave_api_key, layout, auto_refresh, refresh_interval_secs",
             field
         ),
     }

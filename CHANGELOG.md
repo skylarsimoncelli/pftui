@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 11:27 UTC — Add configurable auto-refresh timer
+
+- What: added explicit config controls for periodic TUI refresh: `auto_refresh` (bool) and `refresh_interval_secs` (u64). App refresh loop now respects `auto_refresh` before triggering timed refreshes. `pftui config` now supports listing/getting/setting both fields.
+- Why: TODO item for auto-refresh timer config. The refresh loop already existed but was always-on and tied to legacy interval semantics; this makes behavior explicit and user-tunable.
+- Files: `src/config.rs` (new config fields/defaults + tests), `src/app.rs` (auto-refresh gating + config propagation), `src/commands/config_cmd.rs` (list/get/set support), `src/commands/export.rs` (export includes new config fields), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1144 passed), `cargo clippy -q --all-targets --all-features` (passes; existing unrelated warnings in `brief.rs` and `app.rs`)
+- TODO: Auto-refresh timer — Config: `auto_refresh = true`, `refresh_interval_secs = 300` (P2)
+
 ### 2026-03-08 10:27 UTC — Add breadcrumb trail to header
 
 - What: header now shows a `Path` breadcrumb in non-compact layouts using `app.breadcrumb()` (for example, `Positions › AAPL › Detail`), so navigation context is visible at the top of the UI, not only in the status bar.

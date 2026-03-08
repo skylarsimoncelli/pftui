@@ -24,8 +24,15 @@ pub enum WorkspaceLayout {
 pub struct Config {
     #[serde(default = "default_base_currency")]
     pub base_currency: String,
+    /// Legacy refresh interval (seconds) used by older config versions.
     #[serde(default = "default_refresh_interval")]
     pub refresh_interval: u64,
+    /// Enable automatic periodic refresh in the TUI.
+    #[serde(default = "default_auto_refresh")]
+    pub auto_refresh: bool,
+    /// Auto-refresh interval in seconds.
+    #[serde(default = "default_refresh_interval_secs")]
+    pub refresh_interval_secs: u64,
     #[serde(default)]
     pub portfolio_mode: PortfolioMode,
     #[serde(default = "default_theme")]
@@ -85,6 +92,14 @@ fn default_refresh_interval() -> u64 {
     60
 }
 
+fn default_auto_refresh() -> bool {
+    true
+}
+
+fn default_refresh_interval_secs() -> u64 {
+    300
+}
+
 fn default_theme() -> String {
     "midnight".to_string()
 }
@@ -109,6 +124,8 @@ impl Default for Config {
         Config {
             base_currency: default_base_currency(),
             refresh_interval: default_refresh_interval(),
+            auto_refresh: default_auto_refresh(),
+            refresh_interval_secs: default_refresh_interval_secs(),
             portfolio_mode: PortfolioMode::default(),
             theme: default_theme(),
             home_tab: default_home_tab(),
@@ -291,6 +308,8 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.base_currency, "USD");
         assert_eq!(config.refresh_interval, 60);
+        assert!(config.auto_refresh);
+        assert_eq!(config.refresh_interval_secs, 300);
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
@@ -314,6 +333,8 @@ mod tests {
         let config = Config {
             base_currency: "EUR".to_string(),
             refresh_interval: 30,
+            auto_refresh: false,
+            refresh_interval_secs: 120,
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
             home_tab: "watchlist".to_string(),
@@ -329,6 +350,8 @@ mod tests {
         let loaded: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(loaded.base_currency, "EUR");
         assert_eq!(loaded.refresh_interval, 30);
+        assert!(!loaded.auto_refresh);
+        assert_eq!(loaded.refresh_interval_secs, 120);
         assert_eq!(loaded.portfolio_mode, PortfolioMode::Percentage);
         assert_eq!(loaded.theme, "nord");
         assert_eq!(loaded.home_tab, "watchlist");
@@ -341,6 +364,8 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.base_currency, "GBP");
         assert_eq!(config.refresh_interval, 60);
+        assert!(config.auto_refresh);
+        assert_eq!(config.refresh_interval_secs, 300);
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
@@ -352,6 +377,8 @@ mod tests {
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.base_currency, "USD");
         assert_eq!(config.refresh_interval, 60);
+        assert!(config.auto_refresh);
+        assert_eq!(config.refresh_interval_secs, 300);
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");

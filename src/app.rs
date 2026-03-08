@@ -474,6 +474,7 @@ pub struct App {
     price_service: Option<PriceService>,
     pub prices_live: bool,
     pub last_refresh: Option<Instant>,
+    auto_refresh_enabled: bool,
     refresh_interval_secs: u64,
     pub chart_sma_periods: Vec<usize>,
 
@@ -731,7 +732,8 @@ impl App {
             price_service: None,
             prices_live: false,
             last_refresh: None,
-            refresh_interval_secs: config.refresh_interval,
+            auto_refresh_enabled: config.auto_refresh,
+            refresh_interval_secs: config.refresh_interval_secs,
             chart_sma_periods: config.chart_sma.clone(),
             total_value: dec!(0),
             total_cost: dec!(0),
@@ -836,6 +838,8 @@ impl App {
         let config = Config {
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
+            auto_refresh: self.auto_refresh_enabled,
+            refresh_interval_secs: self.refresh_interval_secs,
             portfolio_mode: self.portfolio_mode,
             theme: self.theme_name.clone(),
             home_tab: if self.view_mode == ViewMode::Watchlist {
@@ -870,6 +874,8 @@ impl App {
         let config = Config {
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
+            auto_refresh: self.auto_refresh_enabled,
+            refresh_interval_secs: self.refresh_interval_secs,
             portfolio_mode: self.portfolio_mode,
             theme: self.theme_name.clone(),
             home_tab: if self.view_mode == ViewMode::Watchlist {
@@ -1970,9 +1976,11 @@ impl App {
             }
         }
 
-        if let Some(last) = self.last_refresh {
-            if last.elapsed().as_secs() >= self.refresh_interval_secs {
-                self.force_refresh();
+        if self.auto_refresh_enabled {
+            if let Some(last) = self.last_refresh {
+                if last.elapsed().as_secs() >= self.refresh_interval_secs {
+                    self.force_refresh();
+                }
             }
         }
     }
@@ -4428,6 +4436,8 @@ mod vim_motion_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -4670,6 +4680,8 @@ mod search_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -4998,6 +5010,8 @@ mod timeframe_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -5017,6 +5031,8 @@ mod timeframe_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -5104,6 +5120,8 @@ mod crosshair_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -5262,6 +5280,8 @@ mod responsive_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -5322,6 +5342,8 @@ mod on_demand_history_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -5390,6 +5412,8 @@ mod daily_change_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -5527,6 +5551,8 @@ mod portfolio_value_history_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -6388,6 +6414,8 @@ mod sort_flash_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -6484,6 +6512,8 @@ mod prev_day_alloc_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -6652,6 +6682,8 @@ mod mouse_tests {
         let config = crate::config::Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "midnight".to_string(),
             home_tab: "positions".to_string(),
@@ -7350,6 +7382,8 @@ mod mouse_tests {
         let config = Config {
             base_currency: "USD".to_string(),
             refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Full,
             theme: "default".to_string(),
             home_tab: "positions".to_string(),

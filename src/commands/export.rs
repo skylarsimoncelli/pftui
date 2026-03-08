@@ -44,6 +44,8 @@ struct FullSnapshot {
 struct ConfigExport {
     base_currency: String,
     refresh_interval: u64,
+    auto_refresh: bool,
+    refresh_interval_secs: u64,
     portfolio_mode: PortfolioMode,
     theme: String,
 }
@@ -53,6 +55,8 @@ impl From<&Config> for ConfigExport {
         ConfigExport {
             base_currency: c.base_currency.clone(),
             refresh_interval: c.refresh_interval,
+            auto_refresh: c.auto_refresh,
+            refresh_interval_secs: c.refresh_interval_secs,
             portfolio_mode: c.portfolio_mode,
             theme: c.theme.clone(),
         }
@@ -226,6 +230,8 @@ mod tests {
         let config = Config {
             base_currency: "EUR".to_string(),
             refresh_interval: 30,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
             portfolio_mode: PortfolioMode::Percentage,
             theme: "nord".to_string(),
             home_tab: "positions".to_string(),
@@ -249,7 +255,9 @@ mod tests {
             config: ConfigExport {
                 base_currency: "USD".to_string(),
                 refresh_interval: 60,
-                portfolio_mode: PortfolioMode::Full,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
+            portfolio_mode: PortfolioMode::Full,
                 theme: "midnight".to_string(),
             },
             transactions: vec![],
@@ -271,7 +279,9 @@ mod tests {
             config: ConfigExport {
                 base_currency: "USD".to_string(),
                 refresh_interval: 60,
-                portfolio_mode: PortfolioMode::Full,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
+            portfolio_mode: PortfolioMode::Full,
                 theme: "midnight".to_string(),
             },
             transactions: vec![],
