@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:43 UTC — Add first-run onboarding tour overlay
+
+- What: added a new onboarding tour modal with 5 guided steps (core views, command palette, daily workflow) shown on first run and dismissible with Enter/Right/Esc. Added persistent seen marker storage and quick reopen via `Shift+O` and command palette `onboarding`.
+- Why: TODO item for first-run walkthrough so new users can discover core workflows without leaving the TUI.
+- Files: `src/tui/views/onboarding.rs` (new), `src/tui/views/mod.rs`, `src/tui/ui.rs` (overlay render wiring), `src/app.rs` (onboarding state, key handling, seen marker persistence, command palette support), `src/tui/views/command_palette.rs`, `src/tui/views/help.rs`, `docs/KEYBINDINGS.md`, `TODO.md`
+- Tests: `cargo test -q` (1166 passed)
+- TODO: Onboarding tour — First-run walkthrough for new users
+
 ### 2026-03-08 05:40 UTC — Add Chart Grid view for mini multi-asset trend cards
 
 - What: added a new TUI `Chart Grid` view with up to 9 mini chart cards (symbol, price, braille-style trend line, and 1D change). Wired it into navigation (`8`), command palette (`view chartgrid`), header tabs (`[8]Grid`, journal moved to `[9]`), UI rendering, status hints, and help/docs.

@@ -90,7 +90,6 @@
 - [ ] **Homebrew Core** — Needs 50+ GitHub stars (currently 1)
 
 ### Other
-- [ ] **Onboarding tour** — First-run walkthrough for new users. Files: new `views/onboarding.rs`
 
 ---
 

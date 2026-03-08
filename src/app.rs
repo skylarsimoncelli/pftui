@@ -149,6 +149,8 @@ pub enum ScanBuilderMode {
     LoadName,
 }
 
+const ONBOARDING_STEPS: usize = 5;
+
 impl ChangeTimeframe {
     pub fn label(self) -> &'static str {
         match self {
@@ -474,6 +476,8 @@ pub struct App {
     pub command_palette_open: bool,
     pub command_palette_input: String,
     pub command_palette_selected: usize,
+    pub onboarding_open: bool,
+    pub onboarding_step: usize,
     pub scan_builder_open: bool,
     pub scan_builder_mode: ScanBuilderMode,
     pub scan_builder_clause_input: String,
@@ -654,6 +658,25 @@ fn merge_history_into(
     }
 }
 
+fn onboarding_marker_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("pftui")
+        .join("onboarding_seen")
+}
+
+fn has_seen_onboarding() -> bool {
+    onboarding_marker_path().exists()
+}
+
+fn mark_onboarding_seen() {
+    let path = onboarding_marker_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, b"1");
+}
+
 /// Base64-encode a symbol string for OSC 52 clipboard.
 fn base64_encode_symbol(symbol: &str) -> String {
     use std::io::Write;
@@ -749,6 +772,8 @@ impl App {
             command_palette_open: false,
             command_palette_input: String::new(),
             command_palette_selected: 0,
+            onboarding_open: if cfg!(test) { false } else { !has_seen_onboarding() },
+            onboarding_step: 0,
             scan_builder_open: false,
             scan_builder_mode: ScanBuilderMode::Edit,
             scan_builder_clause_input: String::new(),
@@ -2186,6 +2211,11 @@ impl App {
             return;
         }
 
+        if self.onboarding_open {
+            self.handle_onboarding_key(key);
+            return;
+        }
+
         if self.scan_builder_open {
             self.handle_scan_builder_key(key);
             return;
@@ -2241,6 +2271,11 @@ impl App {
                 if self.show_help {
                     self.help_scroll = 0;
                 }
+                return;
+            }
+            KeyCode::Char('O') => {
+                self.onboarding_open = true;
+                self.onboarding_step = 0;
                 return;
             }
             KeyCode::Char(':') => {
@@ -2760,6 +2795,7 @@ impl App {
             MouseEventKind::ScrollUp => {
                 // Dismiss overlays with scroll if active
                 if self.show_help
+                    || self.onboarding_open
                     || self.command_palette_open
                     || self.scan_builder_open
                     || self.search_overlay_open
@@ -2771,6 +2807,7 @@ impl App {
             }
             MouseEventKind::ScrollDown => {
                 if self.show_help
+                    || self.onboarding_open
                     || self.command_palette_open
                     || self.scan_builder_open
                     || self.search_overlay_open
@@ -2790,6 +2827,10 @@ impl App {
                 // If help overlay is open, click anywhere to dismiss
                 if self.show_help {
                     self.show_help = false;
+                    return;
+                }
+                if self.onboarding_open {
+                    self.finish_onboarding();
                     return;
                 }
                 // If command palette is open, click anywhere to dismiss
@@ -3879,6 +3920,10 @@ impl App {
                 self.view_mode = ViewMode::ChartGrid
             }
             "view journal" => self.view_mode = ViewMode::Journal,
+            "onboarding" => {
+                self.onboarding_open = true;
+                self.onboarding_step = 0;
+            }
             "scan" => self.open_scan_builder(),
             _ => {}
         }
@@ -4044,6 +4089,31 @@ impl App {
             cfg.layout = layout;
             let _ = config::save_config(&cfg);
         }
+    }
+
+    fn handle_onboarding_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Left | KeyCode::Backspace => {
+                self.onboarding_step = self.onboarding_step.saturating_sub(1);
+            }
+            KeyCode::Esc => {
+                self.finish_onboarding();
+            }
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ') => {
+                if self.onboarding_step + 1 >= ONBOARDING_STEPS {
+                    self.finish_onboarding();
+                } else {
+                    self.onboarding_step += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn finish_onboarding(&mut self) {
+        self.onboarding_open = false;
+        self.onboarding_step = 0;
+        mark_onboarding_seen();
     }
 
     /// Handle key input in the global asset search overlay.

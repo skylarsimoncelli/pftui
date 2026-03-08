@@ -10,6 +10,7 @@ pub mod help;
 pub mod journal;
 pub mod markets;
 pub mod news;
+pub mod onboarding;
 pub mod position_detail;
 pub mod position_detail_pane;
 pub mod positions;

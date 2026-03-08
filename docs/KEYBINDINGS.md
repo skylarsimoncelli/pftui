@@ -16,6 +16,7 @@ Full keybinding reference for pftui. Press `?` in the TUI for an interactive ver
 | `Enter` | Open position detail popup (press again for chart) |
 | `Esc` | Close popup / chart / help overlay |
 | `/` | Search / filter by symbol or name |
+| `O` | Reopen onboarding tour |
 | `q` / `Ctrl+C` | Quit |
 
 ## Views
