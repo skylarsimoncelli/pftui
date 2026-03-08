@@ -59,6 +59,8 @@
 ### Data & Display
 
 ### CLI Enhancements
+- [ ] [Feedback] **`pftui status --json`** — Structured JSON output for agent health checks. All other data commands support `--json` but status doesn't, breaking the pattern for automated monitoring. Files: `commands/status.rs`
+- [ ] [Feedback] **Fix `pftui sector` data — only returns 1 of 18 ETFs** — Sector command should return all 18 configured sector ETFs (XLK, XLF, XLV, etc.) but most show no data. Likely Yahoo Finance fetch failure for batch sector ETF quotes. Files: `commands/sector.rs`, `price/yahoo.rs`
 
 ### Analytics
 - [ ] **Correlation grid in Markets tab** — Color-coded matrix (green/red). Toggle 7d/30d/90d. Files: `views/markets.rs`, new `views/correlation_grid.rs`
@@ -110,6 +112,8 @@
 - [ ] **Homebrew Core** — Needs 50+ GitHub stars (currently 1)
 
 ### Other
+- [ ] [Feedback] **`pftui config` discoverability** — Add config command to TUI help popup (`?`) under new 'Configuration' section, and mention `pftui config set brave_api_key <key>` in README Quick Start. Currently invisible to users. Files: `tui/views/help.rs`, `README.md`
+- [ ] [Feedback] **Agricultural commodity tracking** — Add wheat, corn, soybeans, coffee as watchable assets in macro dashboard. Inflation leading indicators. Files: `commands/macro_cmd.rs`
 - [ ] **Workspace presets** — Config: `layout = "compact" | "split" | "analyst"`. Files: `config.rs`, `tui/ui.rs`
 - [ ] **Chart grid view** — Mini braille charts for all positions (6-9 per screen). New view `8`. Files: new `views/chart_grid.rs`
 - [ ] **Onboarding tour** — First-run walkthrough for new users. Files: new `views/onboarding.rs`
@@ -129,33 +133,35 @@
 - [ ] **Options chains** — If a free data source exists
 - [ ] [Feedback] **Oil-specific dashboard** — `pftui oil` showing WTI, Brent, spread, RSI, OPEC+ context, Hormuz status. Niche but high-value during geopolitical crises.
 - [ ] [Feedback] **War/crisis mode dashboard** — Configurable crisis dashboard tracking oil, VIX, defense sector, safe havens, shipping rates in one view.
+- [ ] [Feedback] **CME FedWatch integration** — Track Fed funds futures implied probabilities. Critical macro indicator. Files: new `data/fedwatch.rs`
+- [ ] [Feedback] **Defense sector tracking** — Add ITA (defense ETF) and individual defense stocks (LMT, RTX, PLTR) as a trackable sector/group. War is creating a structural new sector. Files: `commands/sector.rs`
 
 ---
 
 ## Feedback Summary
 
-> Updated: 2026-03-07
+> Updated: 2026-03-08
 
 ### Current Scores (latest per tester)
 
 | Tester | Usefulness | Overall | Trend |
 |--------|-----------|---------|-------|
-| Market Research | 78% | 74% | ↑ (40→72→78→78→74) |
-| Eventuality Planner | 82% | 80% | ↑ (38→85→92→85→80) |
-| Sentinel (Portfolio Analyst) | 78% | 82% | → (78→82→82→78→82) |
+| Market Research | 88% | 82% | ↑ (40→72→78→78→74→88) |
+| Eventuality Planner | 82% | 80% | ↑ (38→85→92→85→80→82) |
+| Sentinel (Portfolio Analyst) | 85% | 88% | ↑ (78→82→82→78→82→88) |
 | Market Close | 92% | 88% | ↑ (68→80→72→88) |
-| UX Analyst | — | 73% | → (78→68→72→73) |
+| UX Analyst | — | 75% | → (78→68→72→73→75) |
 
 ### Score Trends
 
-- **Market Research:** Strong recovery from 40→74. Plateaued around 74-78. Main blocker: still needs Python script for RSI/MACD/SMA on macro assets.
-- **Eventuality Planner:** Best improvement arc (38→92 peak). Slight dip to 80 on Mar 7. Macro dashboard is the star feature. ETF flows failure and prediction markets filtering are pain points.
-- **Sentinel (Portfolio Analyst):** Stable at 78-82. Consistently asks for day P&L dollar column, sector grouping, and enhanced watchlist signals. TUI visual quality highly praised.
-- **Market Close:** Strongest recent score (92/88). `brief + movers + macro` pipeline now covers most of the routine. Python script nearly eliminated. Wants correlations and sector heatmap.
-- **UX Analyst:** Lowest scorer at 73. Focus is on CLI consistency (--json gaps), data pipeline reliability (predictions/COT/BLS parse errors), and feature discoverability. Watchlist --json was fixed (Mar 7).
+- **Market Research:** Strong upswing to 88/82 — best scores yet. Macro technicals (RSI/MACD/SMA) landed on Mar 7 and this tester noticed. Remaining gap: oil technicals in brief (now in macro), and prediction markets showing sports instead of geopolitical. Python script dependency nearly eliminated.
+- **Eventuality Planner:** Stable at 82/80. `eod` command and macro dashboard are star features. Pain points: sector command returning only 1 ETF, prediction markets filtering for geopolitics, and missing ag commodity tracking. Wants CME FedWatch.
+- **Sentinel (Portfolio Analyst):** Best overall score yet (85/88). TUI visual quality consistently praised. Still requests day P&L dollar column and sector grouping in positions — these are in P2. Ratio charts context header (added Mar 7) well received.
+- **Market Close:** Strongest absolute scores (92/88) — no new review since Mar 6. `brief + movers + macro` pipeline covers most of the routine. Python script nearly eliminated.
+- **UX Analyst:** Slight uptick to 75. Focus shifted from CLI consistency (mostly fixed) to feature discoverability (`pftui config` invisible) and `status --json` gap. Data pipeline reliability improving but predictions/COT still intermittent.
 
 ### Top 3 Priorities (Feedback-Driven)
 
-1. **Fix data pipeline stubs** (P0) — Predictions returns sports only, ETF flows fails, COT/BLS intermittent. Half the advertised features show "no data". This is the UX Analyst's core complaint and the biggest trust issue.
-2. **Add technicals to macro + watchlist** (P1) — RSI/MACD/SMA on macro dashboard and watchlist. This single feature eliminates the Python script dependency that 3/4 testers still rely on. Highest-leverage feature for score improvement.
-3. **`pftui status --data` command** (P1) — Per-source data health transparency. Makes it clear which integrations work vs which are broken, instead of silent failures.
+1. **Brave Search API integration** (P0) — Unifies broken data pipelines (predictions, news depth, economic data) behind one reliable API. The single highest-leverage infrastructure investment. 4 data integrations still intermittent.
+2. **Fix `pftui sector` data bug** (P1) — Only returns 1 of 18 ETFs. Quick win that directly improves Eventuality Planner scores. Likely a batch Yahoo Finance fetch issue.
+3. **`pftui status --json` + config discoverability** (P1/P2) — Completes CLI consistency for agent health checks. Config command is invisible to users — needs help popup and README mention.

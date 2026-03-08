@@ -48,6 +48,7 @@ pub fn insert_news(
 }
 
 /// Insert a news item with an explicit source type ("rss" or "brave").
+#[allow(clippy::too_many_arguments)]
 pub fn insert_news_with_source_type(
     conn: &Connection,
     title: &str,
