@@ -32,6 +32,7 @@ pub mod predictions_history;
 pub mod price_cache;
 pub mod price_history;
 pub mod scan_queries;
+pub mod scenarios;
 pub mod schema;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)
 pub mod sentiment_cache;

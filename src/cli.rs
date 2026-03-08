@@ -338,6 +338,72 @@ pub enum Command {
         json: bool,
     },
 
+    /// Manage macro scenarios and probability tracking
+    #[command(name = "scenario")]
+    Scenario {
+        /// Action: add, list, update, remove, signal-add, signal-list, signal-update, signal-remove, history
+        action: String,
+
+        /// Scenario name (for add/update/remove/history) or signal text (for signal-add)
+        value: Option<String>,
+
+        /// Scenario ID
+        #[arg(long)]
+        id: Option<i64>,
+
+        /// Signal ID (for signal-update/signal-remove)
+        #[arg(long)]
+        signal_id: Option<i64>,
+
+        /// Probability 0-100
+        #[arg(long)]
+        probability: Option<f64>,
+
+        /// Description text
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Asset impact as JSON string
+        #[arg(long)]
+        impact: Option<String>,
+
+        /// Trigger conditions text
+        #[arg(long)]
+        triggers: Option<String>,
+
+        /// Historical precedent text
+        #[arg(long)]
+        precedent: Option<String>,
+
+        /// Status: active, resolved, archived (scenarios) or watching, triggered, invalidated (signals)
+        #[arg(long)]
+        status: Option<String>,
+
+        /// What drove the probability change
+        #[arg(long)]
+        driver: Option<String>,
+
+        /// Evidence for signal update
+        #[arg(long)]
+        evidence: Option<String>,
+
+        /// Source of signal
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Scenario name for signal operations
+        #[arg(long)]
+        scenario: Option<String>,
+
+        /// Max results
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// JSON output
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show prediction market odds from Polymarket and Manifold
     Predictions {
         /// Filter by category: crypto, economics, geopolitics, ai

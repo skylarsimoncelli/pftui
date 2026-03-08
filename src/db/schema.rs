@@ -329,6 +329,39 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             last_count INTEGER NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS scenarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            probability REAL NOT NULL DEFAULT 0.0,
+            description TEXT,
+            asset_impact TEXT,
+            triggers TEXT,
+            historical_precedent TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS scenario_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            signal TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'watching',
+            evidence TEXT,
+            source TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_scenario_signals_scenario ON scenario_signals(scenario_id);
+
+        CREATE TABLE IF NOT EXISTS scenario_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            probability REAL NOT NULL,
+            driver TEXT,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_scenario_history_scenario ON scenario_history(scenario_id);
         ",
     )?;
 

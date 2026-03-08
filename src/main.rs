@@ -280,6 +280,44 @@ fn main() -> Result<()> {
             )
         }
 
+        Some(Command::Scenario {
+            action,
+            value,
+            id,
+            signal_id,
+            probability,
+            description,
+            impact,
+            triggers,
+            precedent,
+            status,
+            driver,
+            evidence,
+            source,
+            scenario,
+            limit,
+            json,
+        }) => {
+            commands::scenario::run(
+                &action,
+                value.as_deref(),
+                id,
+                signal_id,
+                probability,
+                description.as_deref(),
+                impact.as_deref(),
+                triggers.as_deref(),
+                precedent.as_deref(),
+                status.as_deref(),
+                driver.as_deref(),
+                evidence.as_deref(),
+                source.as_deref(),
+                scenario.as_deref(),
+                limit,
+                json,
+            )
+        }
+
         Some(Command::Predictions { category, search, limit, json }) => {
             commands::predictions::run(conn, category.as_deref(), search.as_deref(), limit, json)
         }
