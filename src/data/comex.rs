@@ -117,7 +117,7 @@ pub fn fetch_inventory(symbol: &str) -> Result<ComexInventory> {
                 // Check if this is a header row
                 if reg_col.is_none() {
                     for (idx, cell) in row.iter().enumerate() {
-                        let cell_str = format!("{:?}", cell).to_uppercase();
+                        let cell_str = cell_to_text(cell).to_uppercase();
                         if cell_str.contains("REGISTERED") {
                             reg_col = Some(idx);
                         }
@@ -127,26 +127,26 @@ pub fn fetch_inventory(symbol: &str) -> Result<ComexInventory> {
                     }
                 }
                 
-                // Look for TOTAL row
-                if let Some(cell) = row.first() {
-                    let cell_str = format!("{:?}", cell).to_uppercase();
-                    if cell_str.contains("TOTAL") {
-                        // Use discovered columns or fall back to 1, 2
-                        let r_idx = reg_col.unwrap_or(1);
-                        let e_idx = elig_col.unwrap_or(2);
-                        
-                        if let Some(reg_cell) = row.get(r_idx) {
-                            if let Ok(reg_val) = parse_cell_as_float(reg_cell) {
-                                total_registered += reg_val;
-                            }
+                // Look for TOTAL row (can appear in multiple formats/columns)
+                let has_total = row
+                    .iter()
+                    .any(|cell| cell_to_text(cell).to_uppercase().contains("TOTAL"));
+                if has_total {
+                    // Use discovered columns or common fallback indices
+                    let r_idx = reg_col.unwrap_or(2);
+                    let e_idx = elig_col.unwrap_or(3);
+
+                    if let Some(reg_cell) = row.get(r_idx) {
+                        if let Ok(reg_val) = parse_cell_as_float(reg_cell) {
+                            total_registered += reg_val;
                         }
-                        if let Some(elig_cell) = row.get(e_idx) {
-                            if let Ok(elig_val) = parse_cell_as_float(elig_cell) {
-                                total_eligible += elig_val;
-                            }
-                        }
-                        break;
                     }
+                    if let Some(elig_cell) = row.get(e_idx) {
+                        if let Ok(elig_val) = parse_cell_as_float(elig_cell) {
+                            total_eligible += elig_val;
+                        }
+                    }
+                    break;
                 }
             }
         }
@@ -181,12 +181,22 @@ fn parse_cell_as_float(cell: &calamine::Data) -> Result<f64> {
         calamine::Data::Int(i) => Ok(*i as f64),
         calamine::Data::Float(f) => Ok(*f),
         calamine::Data::String(s) => {
-            let cleaned = s.replace([',', '$'], "").trim().to_string();
+            let cleaned = s.replace([',', '$', '*'], "").trim().to_string();
             cleaned
                 .parse::<f64>()
                 .map_err(|e| anyhow!("Failed to parse '{}' as float: {}", s, e))
         }
         _ => Err(anyhow!("Cell type not numeric: {:?}", cell)),
+    }
+}
+
+fn cell_to_text(cell: &calamine::Data) -> String {
+    match cell {
+        calamine::Data::String(s) => s.clone(),
+        calamine::Data::Float(f) => format!("{}", f),
+        calamine::Data::Int(i) => format!("{}", i),
+        calamine::Data::Bool(b) => format!("{}", b),
+        _ => String::new(),
     }
 }
 
@@ -257,5 +267,12 @@ mod tests {
             reg_ratio: 33.55,
         };
         assert_eq!(stable.trend_vs(&prev), "stable");
+    }
+
+    #[test]
+    fn test_parse_cell_as_float_string_with_commas() {
+        let cell = calamine::Data::String("1,234,567".to_string());
+        let parsed = parse_cell_as_float(&cell).unwrap();
+        assert_eq!(parsed, 1_234_567.0);
     }
 }
