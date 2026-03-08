@@ -4,6 +4,14 @@ use rusqlite::{params, Connection};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
+fn parse_worldbank_value(raw: &str) -> Option<Decimal> {
+    Decimal::from_str(raw).ok().or_else(|| {
+        raw.parse::<f64>()
+            .ok()
+            .and_then(|f| Decimal::try_from(f).ok())
+    })
+}
+
 /// Initialize World Bank cache table.
 pub fn init_worldbank_cache(conn: &Connection) -> Result<()> {
     conn.execute(
@@ -85,7 +93,7 @@ pub fn get_cached_worldbank_data(
 
     let rows = stmt.query_map(params.as_slice(), |row| {
         let value_str: Option<String> = row.get(5)?;
-        let value = value_str.and_then(|s| Decimal::from_str(&s).ok());
+        let value = value_str.and_then(|s| parse_worldbank_value(&s));
 
         Ok(WorldBankDataPoint {
             country_code: row.get(0)?,
@@ -115,7 +123,7 @@ pub fn get_all_cached_worldbank_data(conn: &Connection) -> Result<Vec<WorldBankD
 
     let rows = stmt.query_map([], |row| {
         let value_str: Option<String> = row.get(5)?;
-        let value = value_str.and_then(|s| Decimal::from_str(&s).ok());
+        let value = value_str.and_then(|s| parse_worldbank_value(&s));
 
         Ok(WorldBankDataPoint {
             country_code: row.get(0)?,
@@ -166,7 +174,7 @@ pub fn get_latest_indicators(conn: &Connection) -> Result<Vec<WorldBankDataPoint
 
     let rows = stmt.query_map([], |row| {
         let value_str: Option<String> = row.get(5)?;
-        let value = value_str.and_then(|s| Decimal::from_str(&s).ok());
+        let value = value_str.and_then(|s| parse_worldbank_value(&s));
 
         Ok(WorldBankDataPoint {
             country_code: row.get(0)?,
@@ -234,5 +242,12 @@ mod tests {
 
         // Now should not need refresh
         assert!(!needs_refresh(&conn).unwrap());
+    }
+
+    #[test]
+    fn parses_scientific_notation_values() {
+        let parsed = parse_worldbank_value("1.23E+12");
+        assert!(parsed.is_some());
+        assert!(parsed.unwrap() > Decimal::ZERO);
     }
 }
