@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 18:58 UTC — F32 Phase 3: backend-dispatch targets flow (`target`, `drift`, `rebalance`)
+
+- What: added native backend-dispatch implementation for `allocation_targets` and rewired `target`, `drift`, and `rebalance` commands to use backend-aware target reads/writes.
+- Why: removes additional SQLite-only command paths and advances F32 core migration for allocation-target workflows.
+- Files: `src/db/allocation_targets.rs`, `src/commands/target.rs`, `src/commands/drift.rs`, `src/commands/rebalance.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q` (1184 passed), `cargo clippy -q --all-targets --all-features` (passes)
+- TODO: F32.3 core modules migration (partial: allocation_targets call paths)
+
 ### 2026-03-08 18:56 UTC — F32 Phase 2: migrate scenario command/data path to backend-dispatched native SQL
 
 - What: converted `scenario` command path to backend-dispatched DB operations and added native Postgres SQL implementations for scenario CRUD, signal CRUD, and history operations in `db/scenarios.rs`.

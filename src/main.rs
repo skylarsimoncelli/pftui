@@ -376,18 +376,18 @@ fn main() -> Result<()> {
                 "set" => {
                     let sym = symbol.as_ref().ok_or_else(|| anyhow::anyhow!("--symbol required for 'set'"))?;
                     let tgt = target.as_ref().ok_or_else(|| anyhow::anyhow!("--target required for 'set'"))?;
-                    commands::target::run(&db_path, sym, tgt, band.as_deref())
+                    commands::target::run(&backend, sym, tgt, band.as_deref())
                 }
-                "list" => commands::target::list(&db_path, json),
+                "list" => commands::target::list(&backend, json),
                 "remove" => {
                     let sym = symbol.as_ref().ok_or_else(|| anyhow::anyhow!("--symbol required for 'remove'"))?;
-                    commands::target::remove(&db_path, sym)
+                    commands::target::remove(&backend, sym)
                 }
                 _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
             }
         }
-        Some(Command::Drift { json }) => commands::drift::run(&db_path, json),
-        Some(Command::Rebalance { json }) => commands::rebalance::run(&db_path, json),
+        Some(Command::Drift { json }) => commands::drift::run(&backend, &db_path, json),
+        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, &db_path, json),
         Some(Command::Journal {
             action,
             value,

@@ -1,7 +1,11 @@
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
 use std::str::FromStr;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AllocationTarget {
@@ -72,6 +76,143 @@ pub fn list_targets(conn: &Connection) -> Result<Vec<AllocationTarget>> {
 
 pub fn remove_target(conn: &Connection, symbol: &str) -> Result<()> {
     conn.execute("DELETE FROM allocation_targets WHERE symbol = ?1", params![symbol])?;
+    Ok(())
+}
+
+pub fn set_target_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    target_pct: Decimal,
+    drift_band_pct: Decimal,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| set_target(conn, symbol, target_pct, drift_band_pct),
+        |pool| set_target_postgres(pool, symbol, target_pct, drift_band_pct),
+    )
+}
+
+#[allow(dead_code)]
+pub fn get_target_backend(backend: &BackendConnection, symbol: &str) -> Result<Option<AllocationTarget>> {
+    query::dispatch(
+        backend,
+        |conn| get_target(conn, symbol),
+        |pool| get_target_postgres(pool, symbol),
+    )
+}
+
+pub fn list_targets_backend(backend: &BackendConnection) -> Result<Vec<AllocationTarget>> {
+    query::dispatch(backend, list_targets, list_targets_postgres)
+}
+
+pub fn remove_target_backend(backend: &BackendConnection, symbol: &str) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| remove_target(conn, symbol),
+        |pool| remove_target_postgres(pool, symbol),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS allocation_targets (
+                symbol TEXT PRIMARY KEY,
+                target_pct TEXT NOT NULL,
+                drift_band_pct TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn set_target_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    target_pct: Decimal,
+    drift_band_pct: Decimal,
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO allocation_targets (symbol, target_pct, drift_band_pct, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT(symbol) DO UPDATE SET
+                target_pct = EXCLUDED.target_pct,
+                drift_band_pct = EXCLUDED.drift_band_pct,
+                updated_at = NOW()",
+        )
+        .bind(symbol)
+        .bind(target_pct.to_string())
+        .bind(drift_band_pct.to_string())
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn get_target_postgres(pool: &PgPool, symbol: &str) -> Result<Option<AllocationTarget>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<(String, String, String, String)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT symbol, target_pct, drift_band_pct, updated_at::text
+             FROM allocation_targets
+             WHERE symbol = $1",
+        )
+        .bind(symbol)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(|r| AllocationTarget {
+        symbol: r.0,
+        target_pct: Decimal::from_str(&r.1).unwrap_or_default(),
+        drift_band_pct: Decimal::from_str(&r.2).unwrap_or_default(),
+        updated_at: r.3,
+    }))
+}
+
+fn list_targets_postgres(pool: &PgPool) -> Result<Vec<AllocationTarget>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, String, String, String)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT symbol, target_pct, drift_band_pct, updated_at::text
+             FROM allocation_targets
+             ORDER BY symbol",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| AllocationTarget {
+            symbol: r.0,
+            target_pct: Decimal::from_str(&r.1).unwrap_or_default(),
+            drift_band_pct: Decimal::from_str(&r.2).unwrap_or_default(),
+            updated_at: r.3,
+        })
+        .collect())
+}
+
+fn remove_target_postgres(pool: &PgPool, symbol: &str) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query("DELETE FROM allocation_targets WHERE symbol = $1")
+            .bind(symbol)
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
     Ok(())
 }
 

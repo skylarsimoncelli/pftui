@@ -3,12 +3,13 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 
 use crate::db;
+use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices;
 use crate::models::position::compute_positions;
 
-pub fn run(db_path: &std::path::Path, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, db_path: &std::path::Path, json: bool) -> Result<()> {
     let conn = db::open_db(db_path)?;
-    let targets = db::allocation_targets::list_targets(&conn)?;
+    let targets = db::allocation_targets::list_targets_backend(backend)?;
     
     if targets.is_empty() {
         if json {

@@ -2,16 +2,15 @@ use anyhow::{bail, Result};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-use crate::db;
+use crate::db::backend::BackendConnection;
+use crate::db::allocation_targets;
 
 pub fn run(
-    db_path: &std::path::Path,
+    backend: &BackendConnection,
     symbol: &str,
     target_pct: &str,
     drift_band_pct: Option<&str>,
 ) -> Result<()> {
-    let conn = db::open_db(db_path)?;
-
     let target = Decimal::from_str(target_pct.trim_end_matches('%'))
         .map_err(|_| anyhow::anyhow!("Invalid target percentage: {}", target_pct))?;
 
@@ -30,7 +29,7 @@ pub fn run(
         bail!("Drift band must be between 0 and 50");
     }
 
-    db::allocation_targets::set_target(&conn, symbol, target, drift_band)?;
+    allocation_targets::set_target_backend(backend, symbol, target, drift_band)?;
 
     println!(
         "Set target for {} to {}% (drift band: ±{}%)",
@@ -40,9 +39,8 @@ pub fn run(
     Ok(())
 }
 
-pub fn list(db_path: &std::path::Path, json: bool) -> Result<()> {
-    let conn = db::open_db(db_path)?;
-    let targets = db::allocation_targets::list_targets(&conn)?;
+pub fn list(backend: &BackendConnection, json: bool) -> Result<()> {
+    let targets = allocation_targets::list_targets_backend(backend)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&targets)?);
@@ -65,9 +63,8 @@ pub fn list(db_path: &std::path::Path, json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn remove(db_path: &std::path::Path, symbol: &str) -> Result<()> {
-    let conn = db::open_db(db_path)?;
-    db::allocation_targets::remove_target(&conn, symbol)?;
+pub fn remove(backend: &BackendConnection, symbol: &str) -> Result<()> {
+    allocation_targets::remove_target_backend(backend, symbol)?;
     println!("Removed target for {}", symbol);
     Ok(())
 }
