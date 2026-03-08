@@ -42,13 +42,11 @@ pftui centralises all your market data, news, economic indicators, sentiment, pr
 
 The fastest way to get started: **ask your AI agent to do it.**
 
-```bash
-# 1. Install (or upgrade) pftui, re-running this script updates to the latest version
-curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
+Give your agent the below prompt:
 
-# 2. Tell your agent:
-# "Read AGENTS.md in the pftui repo and set up pftui with my portfolio"
-```
+> Read AGENTS.md in the pftui repo: https://github.com/skylarsimoncelli/pftui
+>
+> Install pftui, help me to set up pftui with my portfolio and watchlist, and walk me through the functionality
 
 Whether you use **Claude Code**, **Codex**, **OpenClaw**, or any AI coding agent, point it at this repo and tell it to set up pftui for you. It will read [AGENTS.md](AGENTS.md), ask you about your holdings, risk tolerance, and market views, populate the database, configure your watchlist, and deliver your first brief. Setup takes 15-20 minutes of conversation.
 
