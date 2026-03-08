@@ -104,7 +104,6 @@
 - [ ] [Feedback] **Oil-specific dashboard** — `pftui oil` showing WTI, Brent, spread, RSI, OPEC+ context, Hormuz status. Niche but high-value during geopolitical crises.
 - [ ] [Feedback] **War/crisis mode dashboard** — Configurable crisis dashboard tracking oil, VIX, defense sector, safe havens, shipping rates in one view.
 - [ ] [Feedback] **CME FedWatch integration** — Track Fed funds futures implied probabilities. Critical macro indicator. Files: new `data/fedwatch.rs`
-- [ ] [Feedback] **Defense sector tracking** — Add ITA (defense ETF) and individual defense stocks (LMT, RTX, PLTR) as a trackable sector/group. War is creating a structural new sector. Files: `commands/sector.rs`
 
 ---
 

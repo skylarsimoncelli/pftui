@@ -601,7 +601,7 @@ pub enum Command {
         no_auth: bool,
     },
 
-    /// Show sector ETF performance (XLE, XLF, XLK, etc.)
+    /// Show sector + defense performance (XLE/XLF/XLK + ITA/LMT/RTX/PLTR)
     Sector {
         /// Output as JSON for agent/script consumption
         #[arg(long)]

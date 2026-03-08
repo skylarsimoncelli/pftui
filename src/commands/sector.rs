@@ -16,7 +16,7 @@ use crate::db::price_history::get_history;
 use crate::indicators::{compute_macd, compute_rsi};
 use crate::price::yahoo;
 
-/// Sector ETF definitions (symbol, name).
+/// Sector and defense universe definitions (symbol, name).
 const SECTOR_ETFS: &[(&str, &str)] = &[
     ("XLE", "Energy"),
     ("XLF", "Financials"),
@@ -36,6 +36,11 @@ const SECTOR_ETFS: &[(&str, &str)] = &[
     ("XHB", "Homebuilders"),
     ("ITB", "Building Materials"),
     ("GDX", "Gold Miners"),
+    // Defense tracking (feedback-driven)
+    ("ITA", "Aerospace & Defense ETF"),
+    ("LMT", "Lockheed Martin"),
+    ("RTX", "RTX Corp"),
+    ("PLTR", "Palantir"),
 ];
 
 /// Technical indicators for a sector ETF.
@@ -208,7 +213,7 @@ fn print_json(data: &[(String, String, Decimal, Option<Decimal>, Technicals)]) -
 
 fn print_terminal(data: &[(String, String, Decimal, Option<Decimal>, Technicals)]) -> Result<()> {
     println!("\n┌─────────────────────────────────────────────────────────────────┐");
-    println!("│                        SECTOR ETF PERFORMANCE                   │");
+    println!("│                 SECTOR + DEFENSE PERFORMANCE                   │");
     println!("├──────┬─────────────────────────┬──────────┬─────────┬────┬──────┤");
     println!("│ Sym  │ Sector                  │  Price   │  Day %  │RSI │ MACD │");
     println!("├──────┼─────────────────────────┼──────────┼─────────┼────┼──────┤");
@@ -273,5 +278,9 @@ mod tests {
         assert!(!missing.contains(&"XLK"));
         assert!(missing.contains(&"XLF"));
         assert!(missing.contains(&"GDX"));
+        assert!(missing.contains(&"ITA"));
+        assert!(missing.contains(&"LMT"));
+        assert!(missing.contains(&"RTX"));
+        assert!(missing.contains(&"PLTR"));
     }
 }

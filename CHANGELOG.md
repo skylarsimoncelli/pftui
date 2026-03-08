@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-08 05:44 UTC — Extend `pftui sector` with defense tracking symbols
+
+- What: expanded `pftui sector` coverage to include defense-focused tracking: `ITA` (Aerospace & Defense ETF), `LMT`, `RTX`, and `PLTR`, while preserving existing sector universe behavior and backfill logic. Updated command description and missing-symbol test coverage.
+- Why: feedback TODO item. Defense is now a structurally important thematic group and needed direct inclusion in the sector dashboard.
+- Files: `src/commands/sector.rs` (expanded universe, title, tests), `src/cli.rs` (command description), `TODO.md` (removed completed item)
+- Tests: `cargo test -q` (1166 passed)
+- TODO: [Feedback] Defense sector tracking — Add ITA, LMT, RTX, PLTR
+
 ### 2026-03-08 05:43 UTC — Add first-run onboarding tour overlay
 
 - What: added a new onboarding tour modal with 5 guided steps (core views, command palette, daily workflow) shown on first run and dismissible with Enter/Right/Esc. Added persistent seen marker storage and quick reopen via `Shift+O` and command palette `onboarding`.
