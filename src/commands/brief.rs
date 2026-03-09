@@ -10,6 +10,7 @@ use serde::Serialize;
 use crate::alerts::AlertStatus;
 use crate::analytics::risk;
 use crate::config::{Config, PortfolioMode};
+use crate::db::backend::BackendConnection;
 use crate::db::allocations::list_allocations;
 use crate::db::economic_cache;
 use crate::db::price_cache::{get_all_cached_prices, get_cached_price};
@@ -769,6 +770,18 @@ pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) ->
             run_percentage(conn, config, &prices, &hist_1d, &technicals_data)
         }
     }
+}
+
+pub fn run_backend(
+    backend: &BackendConnection,
+    config: &Config,
+    technicals: bool,
+    agent: bool,
+) -> Result<()> {
+    if let Some(conn) = backend.sqlite_native() {
+        return run(conn, config, technicals, agent);
+    }
+    crate::commands::summary::run(backend, config, None, None, None, technicals, agent)
 }
 
 fn run_full(
