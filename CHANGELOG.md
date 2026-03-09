@@ -51,6 +51,14 @@
 - Tests: script lint/smoke (`chmod +x`, invocation path validation). Full parity run requires `PFTUI_TEST_POSTGRES_URL`/`DATABASE_URL`.
 - TODO: P32.9 Parity acceptance suite
 
+### 2026-03-09 — P32.10 phase: backend parity signoff doc
+
+- What: added `docs/BACKEND-PARITY.md` with defined parity scope, verification commands, backend-switch runbook, and known intentional differences; linked from README docs index.
+- Why: centralizes parity expectations and final signoff steps into one operator-facing runbook.
+- Files: `docs/BACKEND-PARITY.md`, `README.md`, `TODO.md`
+- Tests: docs-only changes
+- TODO: P32.10 Final parity signoff docs
+
 ### 2026-03-09 — Implement structural cycles CLI (F31.11)
 
 - What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.

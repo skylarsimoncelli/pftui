@@ -908,6 +908,8 @@ These are the most-used modules. Migrate them first to validate the pattern.
   Progress:
   - Added `scripts/parity_check.sh` with isolated env homes, sqlite/postgres import parity setup, normalized JSON diff checks for `value`, `summary`, `watchlist`, and `drift`.
 - [ ] **P32.10 Final parity signoff docs** — publish a single doc section that defines supported parity scope, known intentional differences, and backend switching runbook with verification commands.
+  Progress:
+  - Added `docs/BACKEND-PARITY.md` covering scope, verification runbook, switching steps, and known intentional differences.
 
 **Key SQL differences to handle per-module:**
 
