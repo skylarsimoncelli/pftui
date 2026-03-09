@@ -1,6 +1,6 @@
 <p align="center">
   <b>pftui</b><br>
-  Portfolio intelligence for humans and their AI agents.<br>
+  portfolio intelligence in your terminal<br>
   <a href="https://pftui.com">pftui.com</a>
 </p>
 
