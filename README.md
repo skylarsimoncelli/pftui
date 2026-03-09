@@ -1,9 +1,9 @@
 
 
 <p align="center">
-  <b>The Portfolio Intelligence Platform.</b><br>
-  A data-rich financial battle station designed for human operators and their AI agents.<br>
-  TUI · Web Dashboard · CLI · Agent API · Local-first.<br>
+  <b>Your Financial Intelligence Engine</b><br>
+  A data-rich data analysis battle station designed for human investors and their AI agents.<br>
+  https://pftui.com
 </p>
 
 <p align="center">
