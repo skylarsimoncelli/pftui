@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use chrono::Utc;
+use rusqlite::Connection;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::alerts::AlertStatus;
@@ -53,6 +53,8 @@ struct AgentBrief {
     regime: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     correlations: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeframe_signal: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -139,10 +141,8 @@ struct CorrelationSummary {
 /// Agent mode: single comprehensive JSON blob
 fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let cached = get_all_cached_prices(conn)?;
-    let prices: HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
@@ -201,7 +201,11 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         total_cost: total_cost.to_string(),
         total_gain: total_gain.to_string(),
         total_gain_pct: total_gain_pct.round_dp(2).to_string(),
-        daily_pnl: if has_daily { Some(daily_pnl.to_string()) } else { None },
+        daily_pnl: if has_daily {
+            Some(daily_pnl.to_string())
+        } else {
+            None
+        },
         daily_pnl_pct: daily_pnl_pct.map(|p| p.round_dp(2).to_string()),
         base_currency: base.to_string(),
     };
@@ -210,7 +214,9 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let positions_json: Vec<PositionJson> = positions
         .iter()
         .map(|pos| {
-            let daily_change = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+            let daily_change = if let (Some(current), Some(&prev)) =
+                (pos.current_price, hist_1d.get(&pos.symbol))
+            {
                 if prev > dec!(0) {
                     Some((current - prev) * pos.quantity)
                 } else {
@@ -220,31 +226,40 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
                 None
             };
 
-            let daily_change_pct = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+            let daily_change_pct = if let (Some(current), Some(&prev)) =
+                (pos.current_price, hist_1d.get(&pos.symbol))
+            {
                 pct_change(current, prev)
             } else {
                 None
             };
 
             let allocation_pct = if total_value > dec!(0) {
-                pos.current_value.map(|v| ((v / total_value) * dec!(100)).round_dp(2))
+                pos.current_value
+                    .map(|v| ((v / total_value) * dec!(100)).round_dp(2))
             } else {
                 None
             };
 
-            let technicals_json = technicals_data.get(&pos.symbol).map(|t| TechnicalSnapshotJson {
-                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
-                rsi_signal: t.rsi_14.map(|v| {
-                    if v > 70.0 { "overbought".to_string() }
-                    else if v < 30.0 { "oversold".to_string() }
-                    else { "neutral".to_string() }
-                }),
-                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
-                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
-                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
-                sma_20: None, // Not available in current TechnicalSnapshot
-                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
-            });
+            let technicals_json = technicals_data
+                .get(&pos.symbol)
+                .map(|t| TechnicalSnapshotJson {
+                    rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                    rsi_signal: t.rsi_14.map(|v| {
+                        if v > 70.0 {
+                            "overbought".to_string()
+                        } else if v < 30.0 {
+                            "oversold".to_string()
+                        } else {
+                            "neutral".to_string()
+                        }
+                    }),
+                    macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
+                    macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
+                    macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                    sma_20: None, // Not available in current TechnicalSnapshot
+                    sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+                });
 
             PositionJson {
                 symbol: pos.symbol.clone(),
@@ -287,6 +302,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let predictions = get_predictions_json(conn).unwrap_or_default();
     let sentiment = get_sentiment_json(conn).ok();
     let correlations = correlation_summary_to_json(&corr_summary);
+    let timeframe_signal = get_top_timeframe_signal_json(conn).ok();
 
     let brief = AgentBrief {
         timestamp,
@@ -303,6 +319,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         drift: drift_json,
         regime: regime_json,
         correlations,
+        timeframe_signal,
     };
 
     let json = serde_json::to_string_pretty(&brief)?;
@@ -317,31 +334,38 @@ fn get_watchlist_json(
     technicals_data: &HashMap<String, TechnicalSnapshot>,
 ) -> Result<Vec<WatchlistItemJson>> {
     use crate::db::watchlist::list_watchlist;
-    
+
     let watchlist = list_watchlist(conn)?;
     let items: Vec<WatchlistItemJson> = watchlist
         .iter()
         .map(|w| {
             let current_price = prices.get(&w.symbol).copied();
-            let daily_change_pct = if let (Some(current), Some(&prev)) = (current_price, hist_1d.get(&w.symbol)) {
-                pct_change(current, prev)
-            } else {
-                None
-            };
+            let daily_change_pct =
+                if let (Some(current), Some(&prev)) = (current_price, hist_1d.get(&w.symbol)) {
+                    pct_change(current, prev)
+                } else {
+                    None
+                };
 
-            let technicals_json = technicals_data.get(&w.symbol).map(|t| TechnicalSnapshotJson {
-                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
-                rsi_signal: t.rsi_14.map(|v| {
-                    if v > 70.0 { "overbought".to_string() }
-                    else if v < 30.0 { "oversold".to_string() }
-                    else { "neutral".to_string() }
-                }),
-                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
-                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
-                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
-                sma_20: None,
-                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
-            });
+            let technicals_json = technicals_data
+                .get(&w.symbol)
+                .map(|t| TechnicalSnapshotJson {
+                    rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                    rsi_signal: t.rsi_14.map(|v| {
+                        if v > 70.0 {
+                            "overbought".to_string()
+                        } else if v < 30.0 {
+                            "oversold".to_string()
+                        } else {
+                            "neutral".to_string()
+                        }
+                    }),
+                    macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
+                    macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
+                    macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                    sma_20: None,
+                    sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+                });
 
             WatchlistItemJson {
                 symbol: w.symbol.clone(),
@@ -358,7 +382,7 @@ fn get_watchlist_json(
 
 fn get_movers_json(positions: &[Position], hist_1d: &HashMap<String, Decimal>) -> Vec<MoverJson> {
     let mut movers: Vec<(String, String, Decimal)> = Vec::new();
-    
+
     for pos in positions {
         if pos.category == AssetCategory::Cash {
             continue;
@@ -387,9 +411,9 @@ fn get_movers_json(positions: &[Position], hist_1d: &HashMap<String, Decimal>) -
 fn get_macro_json(conn: &Connection) -> Result<serde_json::Value> {
     // Try to get macro data from the macro command
     use crate::db::price_cache::get_cached_price;
-    
+
     let mut macro_map = serde_json::Map::new();
-    
+
     // Standard macro symbols
     let macro_symbols = vec![
         ("DX-Y.NYB", "Dollar Index"),
@@ -400,30 +424,41 @@ fn get_macro_json(conn: &Connection) -> Result<serde_json::Value> {
         ("SI=F", "Silver"),
         ("HG=F", "Copper"),
     ];
-    
+
     for (symbol, name) in macro_symbols {
         if let Ok(Some(quote)) = get_cached_price(conn, symbol, "USD") {
             let mut item = serde_json::Map::new();
-            item.insert("name".to_string(), serde_json::Value::String(name.to_string()));
-            item.insert("price".to_string(), serde_json::Value::String(quote.price.to_string()));
-            item.insert("fetched_at".to_string(), serde_json::Value::String(quote.fetched_at));
+            item.insert(
+                "name".to_string(),
+                serde_json::Value::String(name.to_string()),
+            );
+            item.insert(
+                "price".to_string(),
+                serde_json::Value::String(quote.price.to_string()),
+            );
+            item.insert(
+                "fetched_at".to_string(),
+                serde_json::Value::String(quote.fetched_at),
+            );
             macro_map.insert(symbol.to_string(), serde_json::Value::Object(item));
         }
     }
-    
+
     if macro_map.is_empty() {
         anyhow::bail!("No macro data available");
     }
-    
+
     Ok(serde_json::Value::Object(macro_map))
 }
 
 fn get_alerts_json(conn: &Connection) -> Vec<serde_json::Value> {
     use crate::alerts::engine::check_alerts;
-    
+
     match check_alerts(conn) {
-        Ok(results) => {
-            results.iter().filter(|r| r.newly_triggered).map(|r| {
+        Ok(results) => results
+            .iter()
+            .filter(|r| r.newly_triggered)
+            .map(|r| {
                 serde_json::json!({
                     "kind": format!("{:?}", r.rule.kind),
                     "symbol": r.rule.symbol,
@@ -434,8 +469,8 @@ fn get_alerts_json(conn: &Connection) -> Vec<serde_json::Value> {
                     "newly_triggered": r.newly_triggered,
                     "distance_pct": r.distance_pct.map(|d| d.round_dp(2).to_string()),
                 })
-            }).collect()
-        }
+            })
+            .collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -444,26 +479,24 @@ fn get_drift_json(conn: &Connection) -> Result<serde_json::Value> {
     // Simplified drift data - just return whether drift exists
     use crate::db::allocations::list_allocations;
     use crate::db::price_cache::get_all_cached_prices;
-    
+
     let allocs = list_allocations(conn)?;
     if allocs.is_empty() {
         anyhow::bail!("No allocations (not in percentage mode)");
     }
-    
+
     let cached = get_all_cached_prices(conn)?;
-    let prices: HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
-    
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+
     let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
     let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
     let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
-    
+
     if total_value <= dec!(0) {
         anyhow::bail!("No priced positions");
     }
-    
+
     let mut drift_items = Vec::new();
     for pos in positions {
         if let Some(current_value) = pos.current_value {
@@ -482,7 +515,7 @@ fn get_drift_json(conn: &Connection) -> Result<serde_json::Value> {
             }
         }
     }
-    
+
     Ok(serde_json::json!({
         "items": drift_items,
         "has_drift": !drift_items.is_empty(),
@@ -561,6 +594,22 @@ fn get_sentiment_json(conn: &Connection) -> Result<serde_json::Value> {
             "timestamp": r.timestamp,
         })),
     }))
+}
+
+fn get_top_timeframe_signal_json(conn: &Connection) -> Result<serde_json::Value> {
+    if let Some(sig) = crate::db::timeframe_signals::latest_signal(conn)? {
+        Ok(serde_json::json!({
+            "id": sig.id,
+            "signal_type": sig.signal_type,
+            "layers": sig.layers,
+            "assets": sig.assets,
+            "description": sig.description,
+            "severity": sig.severity,
+            "detected_at": sig.detected_at,
+        }))
+    } else {
+        anyhow::bail!("No timeframe signals available")
+    }
 }
 
 /// Format a decimal with commas as thousands separators.
@@ -684,10 +733,8 @@ pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) ->
         return run_agent_mode(conn, config);
     }
     let cached = get_all_cached_prices(conn)?;
-    let prices: HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     // Get 1-day historical prices for top movers
     let today = Utc::now().date_naive();
@@ -705,7 +752,9 @@ pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) ->
 
     match config.portfolio_mode {
         PortfolioMode::Full => run_full(conn, config, &prices, &hist_1d, &technicals_data),
-        PortfolioMode::Percentage => run_percentage(conn, config, &prices, &hist_1d, &technicals_data),
+        PortfolioMode::Percentage => {
+            run_percentage(conn, config, &prices, &hist_1d, &technicals_data)
+        }
     }
 }
 
@@ -735,7 +784,10 @@ fn run_full(
     let total_gain_pct = pct_change(total_value, total_cost).unwrap_or(dec!(0));
     let base = &config.base_currency;
 
-    let priced_count = positions.iter().filter(|p| p.current_price.is_some()).count();
+    let priced_count = positions
+        .iter()
+        .filter(|p| p.current_price.is_some())
+        .count();
     let total_count = positions.len();
 
     // Compute daily P&L
@@ -842,7 +894,10 @@ fn run_percentage(
     let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
     let base = &config.base_currency;
 
-    let priced: Vec<_> = positions.iter().filter(|p| p.current_price.is_some()).collect();
+    let priced: Vec<_> = positions
+        .iter()
+        .filter(|p| p.current_price.is_some())
+        .collect();
     if priced.is_empty() {
         println!("# Portfolio Brief\n\nNo prices cached. Run `pftui refresh` first.");
         return Ok(());
@@ -895,7 +950,10 @@ fn run_percentage(
                 _ => "—".to_string(),
             }
         };
-        println!("| {} | {} | {} | {} | {} |", symbol_display, pos.category, price_str, day_str, alloc_str);
+        println!(
+            "| {} | {} | {} | {} | {} |",
+            symbol_display, pos.category, price_str, day_str, alloc_str
+        );
     }
 
     // Technicals section
@@ -921,10 +979,7 @@ fn print_risk_summary(conn: &Connection, positions: &[Position]) {
 
     let live_values: Vec<Decimal> = positions.iter().filter_map(|p| p.current_value).collect();
     let concentration_values: Vec<Decimal> = if live_values.is_empty() {
-        positions
-            .iter()
-            .filter_map(|p| p.allocation_pct)
-            .collect()
+        positions.iter().filter_map(|p| p.allocation_pct).collect()
     } else {
         live_values
     };
@@ -1044,9 +1099,7 @@ fn print_technicals_section(
     // Only show positions that have technicals (skip cash)
     let relevant: Vec<&Position> = positions
         .iter()
-        .filter(|p| {
-            p.category != AssetCategory::Cash && technicals_data.contains_key(&p.symbol)
-        })
+        .filter(|p| p.category != AssetCategory::Cash && technicals_data.contains_key(&p.symbol))
         .collect();
 
     if relevant.is_empty() {
@@ -1157,19 +1210,13 @@ fn print_category_allocation_pct(positions: &[Position]) {
 
     let parts: Vec<String> = sorted
         .iter()
-        .map(|(cat, pct)| {
-            format!("**{}** {}%", format_category(cat), pct.round_dp(0))
-        })
+        .map(|(cat, pct)| format!("**{}** {}%", format_category(cat), pct.round_dp(0)))
         .collect();
 
     println!("{}\n", parts.join(" · "));
 }
 
-fn print_top_movers(
-    positions: &[Position],
-    hist_1d: &HashMap<String, Decimal>,
-    base: &str,
-) {
+fn print_top_movers(positions: &[Position], hist_1d: &HashMap<String, Decimal>, base: &str) {
     let mut movers: Vec<(&str, Decimal, Decimal)> = Vec::new(); // (symbol, current, pct_change)
 
     for pos in positions {
@@ -1196,7 +1243,11 @@ fn print_top_movers(
     }
 
     // Sort by absolute change descending
-    movers.sort_by(|a, b| b.2.abs().partial_cmp(&a.2.abs()).unwrap_or(std::cmp::Ordering::Equal));
+    movers.sort_by(|a, b| {
+        b.2.abs()
+            .partial_cmp(&a.2.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     println!("## Top Movers (1D)\n");
 
@@ -1408,69 +1459,66 @@ fn latest_corr(prices_a: &[f64], prices_b: &[f64], window: usize) -> Option<f64>
 
 fn print_alerts(conn: &Connection) {
     use crate::alerts::engine::check_alerts;
-    
+
     let results = match check_alerts(conn) {
         Ok(r) => r,
         Err(_) => return, // Silently skip if check fails
     };
-    
+
     // Separate triggered and armed alerts
-    let triggered: Vec<_> = results.iter()
+    let triggered: Vec<_> = results
+        .iter()
         .filter(|r| r.rule.status == AlertStatus::Triggered)
         .collect();
-    
-    let armed_near: Vec<_> = results.iter()
+
+    let armed_near: Vec<_> = results
+        .iter()
         .filter(|r| {
-            r.rule.status == AlertStatus::Armed 
-                && r.distance_pct.is_some() 
+            r.rule.status == AlertStatus::Armed
+                && r.distance_pct.is_some()
                 && r.distance_pct.unwrap().abs() <= dec!(5) // Within 5%
         })
         .collect();
-    
+
     if triggered.is_empty() && armed_near.is_empty() {
         return; // No alerts to show
     }
-    
+
     println!("## Alerts\n");
-    
+
     // Show triggered alerts first
     if !triggered.is_empty() {
         for result in triggered {
-            let current = result.current_value
+            let current = result
+                .current_value
                 .map(|v| v.round_dp(2).to_string())
                 .unwrap_or_else(|| "N/A".to_string());
             println!(
                 "🔴 **TRIGGERED** — {} (current: {})",
-                result.rule.rule_text,
-                current
+                result.rule.rule_text, current
             );
         }
     }
-    
+
     // Show near-threshold armed alerts
     if !armed_near.is_empty() {
         for result in armed_near {
             let distance = result.distance_pct.unwrap().abs().round_dp(1);
-            let current = result.current_value
+            let current = result
+                .current_value
                 .map(|v| v.round_dp(2).to_string())
                 .unwrap_or_else(|| "N/A".to_string());
             println!(
                 "🟡 **NEAR** — {} (current: {}, {}% away)",
-                result.rule.rule_text,
-                current,
-                distance
+                result.rule.rule_text, current, distance
             );
         }
     }
-    
+
     println!();
 }
 
-fn print_pnl_attribution(
-    positions: &[Position],
-    hist_1d: &HashMap<String, Decimal>,
-    base: &str,
-) {
+fn print_pnl_attribution(positions: &[Position], hist_1d: &HashMap<String, Decimal>, base: &str) {
     let mut contributions: Vec<(&str, Decimal)> = Vec::new(); // (symbol, dollar_pnl)
 
     for pos in positions {
@@ -1497,7 +1545,11 @@ fn print_pnl_attribution(
     }
 
     // Sort by absolute dollar contribution descending
-    contributions.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap_or(std::cmp::Ordering::Equal));
+    contributions.sort_by(|a, b| {
+        b.1.abs()
+            .partial_cmp(&a.1.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     println!("## P&L Attribution (1D)\n");
 
@@ -1511,13 +1563,7 @@ fn print_pnl_attribution(
         } else {
             format!("{} ({})", symbol, name)
         };
-        println!(
-            "- **{}**: {}{} {}",
-            label,
-            sign,
-            fmt_commas(*pnl, 2),
-            base,
-        );
+        println!("- **{}**: {}{} {}", label, sign, fmt_commas(*pnl, 2), base,);
     }
     println!();
 }
@@ -1584,7 +1630,13 @@ fn print_position_table_full(
 
         println!(
             "| {} | {} | {} | {} | {} | {} | {} | {} |",
-            symbol_display, pos.category, pos.quantity, price_str, value_str, gain_str, day_str,
+            symbol_display,
+            pos.category,
+            pos.quantity,
+            price_str,
+            value_str,
+            gain_str,
+            day_str,
             alloc_str,
         );
     }
@@ -1748,11 +1800,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
 
@@ -1764,11 +1816,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
 
@@ -1799,11 +1851,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
 
@@ -1815,11 +1867,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
 
@@ -1883,9 +1935,30 @@ mod tests {
     #[test]
     fn top_movers_sorts_by_absolute_change() {
         let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(150), Some(dec!(200)), Some(dec!(100000))),
-            make_position("GOOG", AssetCategory::Equity, dec!(5), dec!(100), Some(dec!(90)), Some(dec!(100000))),
-            make_position("BTC", AssetCategory::Crypto, dec!(1), dec!(30000), Some(dec!(85000)), Some(dec!(100000))),
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(150),
+                Some(dec!(200)),
+                Some(dec!(100000)),
+            ),
+            make_position(
+                "GOOG",
+                AssetCategory::Equity,
+                dec!(5),
+                dec!(100),
+                Some(dec!(90)),
+                Some(dec!(100000)),
+            ),
+            make_position(
+                "BTC",
+                AssetCategory::Crypto,
+                dec!(1),
+                dec!(30000),
+                Some(dec!(85000)),
+                Some(dec!(100000)),
+            ),
         ];
 
         let mut hist_1d: HashMap<String, Decimal> = HashMap::new();
@@ -1900,9 +1973,30 @@ mod tests {
     #[test]
     fn category_allocation_groups_correctly() {
         let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(100), Some(dec!(150)), Some(dec!(2600))),
-            make_position("GOOG", AssetCategory::Equity, dec!(5), dec!(100), Some(dec!(120)), Some(dec!(2600))),
-            make_position("BTC", AssetCategory::Crypto, dec!(1), dec!(500), Some(dec!(1000)), Some(dec!(2600))),
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(100),
+                Some(dec!(150)),
+                Some(dec!(2600)),
+            ),
+            make_position(
+                "GOOG",
+                AssetCategory::Equity,
+                dec!(5),
+                dec!(100),
+                Some(dec!(120)),
+                Some(dec!(2600)),
+            ),
+            make_position(
+                "BTC",
+                AssetCategory::Crypto,
+                dec!(1),
+                dec!(500),
+                Some(dec!(1000)),
+                Some(dec!(2600)),
+            ),
         ];
 
         // Verify it doesn't panic — output goes to stdout
@@ -1912,8 +2006,22 @@ mod tests {
     #[test]
     fn technicals_section_skips_cash_positions() {
         let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(150), Some(dec!(200)), Some(dec!(100000))),
-            make_position("USD", AssetCategory::Cash, dec!(50000), dec!(1), Some(dec!(1)), Some(dec!(100000))),
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(150),
+                Some(dec!(200)),
+                Some(dec!(100000)),
+            ),
+            make_position(
+                "USD",
+                AssetCategory::Cash,
+                dec!(50000),
+                dec!(1),
+                Some(dec!(1)),
+                Some(dec!(100000)),
+            ),
         ];
 
         let mut technicals = HashMap::new();
@@ -1921,7 +2029,11 @@ mod tests {
             "AAPL".to_string(),
             TechnicalSnapshot {
                 rsi_14: Some(55.0),
-                macd: Some(MacdResult { macd: 1.5, signal: 1.0, histogram: 0.5 }),
+                macd: Some(MacdResult {
+                    macd: 1.5,
+                    signal: 1.0,
+                    histogram: 0.5,
+                }),
                 sma_50: Some(190.0),
                 sma_200: Some(175.0),
             },
@@ -1933,9 +2045,14 @@ mod tests {
 
     #[test]
     fn technicals_section_empty_data_produces_no_output() {
-        let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(150), Some(dec!(200)), Some(dec!(100000))),
-        ];
+        let positions = vec![make_position(
+            "AAPL",
+            AssetCategory::Equity,
+            dec!(10),
+            dec!(150),
+            Some(dec!(200)),
+            Some(dec!(100000)),
+        )];
 
         let technicals: HashMap<String, TechnicalSnapshot> = HashMap::new();
 
@@ -1954,11 +2071,23 @@ mod tests {
 
     #[test]
     fn macd_label_categories() {
-        let bullish = MacdResult { macd: 1.0, signal: 0.5, histogram: 0.5 };
+        let bullish = MacdResult {
+            macd: 1.0,
+            signal: 0.5,
+            histogram: 0.5,
+        };
         assert_eq!(macd_label(&bullish), "bullish");
-        let bearish = MacdResult { macd: -1.0, signal: -0.5, histogram: -0.5 };
+        let bearish = MacdResult {
+            macd: -1.0,
+            signal: -0.5,
+            histogram: -0.5,
+        };
         assert_eq!(macd_label(&bearish), "bearish");
-        let neutral = MacdResult { macd: 0.0, signal: 0.0, histogram: 0.0 };
+        let neutral = MacdResult {
+            macd: 0.0,
+            signal: 0.0,
+            histogram: 0.0,
+        };
         assert_eq!(macd_label(&neutral), "neutral");
     }
 
@@ -1967,10 +2096,10 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
 
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
         use crate::db::price_cache::upsert_price;
+        use crate::db::transactions::insert_transaction;
         use crate::models::price::PriceQuote;
+        use crate::models::transaction::{NewTransaction, TxType};
 
         insert_transaction(
             &conn,
@@ -1995,11 +2124,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-06-15T00:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
 

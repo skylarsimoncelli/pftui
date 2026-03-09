@@ -27,13 +27,13 @@ pub mod journal;
 pub mod news_cache;
 #[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)
 pub mod onchain_cache;
+pub mod postgres_schema;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
 pub mod predictions_cache;
 pub mod predictions_history;
 pub mod price_cache;
 pub mod price_history;
-pub mod postgres_schema;
 pub mod query;
 pub mod scan_queries;
 pub mod scenarios;
@@ -42,6 +42,7 @@ pub mod schema;
 pub mod sentiment_cache;
 pub mod snapshots;
 pub mod thesis;
+pub mod timeframe_signals;
 pub mod transactions;
 pub mod watchlist;
 pub mod watchlist_groups;

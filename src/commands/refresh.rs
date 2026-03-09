@@ -3,23 +3,28 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Result;
+use rusqlite::Connection;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
-use crate::data::{bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank};
+use crate::data::{
+    bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank,
+};
 use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
 use crate::db::backend::BackendConnection;
-use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
-use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::db::economic_data as economic_data_db;
-use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
+use crate::db::price_cache::{
+    get_all_cached_prices_backend, get_cached_price, upsert_price_backend,
+};
 use crate::db::price_history::get_price_at_date_backend;
 use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
+use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions};
 use crate::db::watchlist::get_watchlist_symbols_backend;
+use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
+use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 use crate::models::price::PriceQuote;
@@ -78,7 +83,7 @@ fn prices_need_refresh(backend: &BackendConnection) -> Result<bool> {
     if prices.is_empty() {
         return Ok(true);
     }
-    
+
     // Check if any price is older than threshold
     let now = chrono::Utc::now();
     for quote in prices {
@@ -99,7 +104,7 @@ fn news_needs_refresh(conn: &Connection) -> Result<bool> {
     if news.is_empty() {
         return Ok(true);
     }
-    
+
     let now = chrono::Utc::now();
     if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&news[0].fetched_at) {
         let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
@@ -193,11 +198,11 @@ fn sentiment_needs_refresh(conn: &Connection) -> Result<bool> {
     // Check both crypto and traditional FNG
     let crypto = sentiment_cache::get_latest(conn, "crypto_fng")?;
     let trad = sentiment_cache::get_latest(conn, "traditional_fng")?;
-    
+
     if crypto.is_none() || trad.is_none() {
         return Ok(true);
     }
-    
+
     let now = chrono::Utc::now().timestamp();
     if let Some(c) = crypto {
         if (now - c.timestamp) > SENTIMENT_FRESHNESS_SECS {
@@ -219,7 +224,7 @@ fn calendar_needs_refresh(conn: &Connection) -> Result<bool> {
     if events.is_empty() {
         return Ok(true);
     }
-    
+
     // Check fetched_at timestamp of the first event
     let now = chrono::Utc::now();
     if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&events[0].fetched_at) {
@@ -235,7 +240,7 @@ fn cot_needs_refresh(conn: &Connection) -> Result<bool> {
     if reports.is_empty() {
         return Ok(true);
     }
-    
+
     let now = chrono::Utc::now();
     for report in reports {
         if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&report.fetched_at) {
@@ -361,7 +366,10 @@ async fn fetch_all_prices(
                 errors.push("CoinGecko returned empty, falling back to Yahoo".to_string());
             }
             Err(e) => {
-                errors.push(format!("CoinGecko batch failed: {}, falling back to Yahoo", e));
+                errors.push(format!(
+                    "CoinGecko batch failed: {}, falling back to Yahoo",
+                    e
+                ));
             }
         }
 
@@ -394,12 +402,12 @@ struct RefreshLock {
 impl RefreshLock {
     fn acquire() -> Result<Self> {
         let lock_path = refresh_lock_path();
-        
+
         // Ensure parent directory exists
         if let Some(parent) = lock_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         // Check if lock exists and is recent
         if lock_path.exists() {
             if let Ok(metadata) = std::fs::metadata(&lock_path) {
@@ -415,10 +423,10 @@ impl RefreshLock {
             // Stale lock, remove it
             let _ = std::fs::remove_file(&lock_path);
         }
-        
+
         // Create lock file
         std::fs::write(&lock_path, "")?;
-        
+
         Ok(RefreshLock { path: lock_path })
     }
 }
@@ -437,7 +445,12 @@ impl Drop for RefreshLock {
     }
 }
 
-pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, notify: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    conn: &Connection,
+    config: &Config,
+    notify: bool,
+) -> Result<()> {
     let _lock = RefreshLock::acquire()?;
 
     println!("Refreshing all data sources...\n");
@@ -469,20 +482,17 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
                 .iter()
                 .filter(|(_, cat)| *cat != AssetCategory::Cash)
                 .collect();
-            
+
             let (quotes, _errors) = rt.block_on(fetch_all_prices(&symbols, config));
-            
+
             for quote in &quotes {
                 if let Err(e) = upsert_price_backend(backend, quote) {
                     eprintln!("Failed to cache {}: {}", quote.symbol, e);
                 }
             }
-            
-            let fetched: Vec<_> = quotes
-                .iter()
-                .filter(|q| q.source != "static")
-                .collect();
-            
+
+            let fetched: Vec<_> = quotes.iter().filter(|q| q.source != "static").collect();
+
             println!("✓ Prices ({} symbols)", fetched.len());
         } else {
             println!("⊘ Prices (no symbols)");
@@ -510,7 +520,12 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     if news_needs_refresh(conn)? {
         let mut inserted = 0usize;
         let mut brave_inserted = 0usize;
-        let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+        let brave_key = config
+            .brave_api_key
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         if !brave_key.is_empty() {
             let queries = build_brave_news_queries(backend, conn, config)?;
@@ -530,7 +545,9 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
                                 chrono::Utc::now().timestamp(),
                                 Some(&item.description),
                                 &item.extra_snippets,
-                            ).is_ok() {
+                            )
+                            .is_ok()
+                            {
                                 inserted += 1;
                                 brave_inserted += 1;
                             }
@@ -607,7 +624,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
                 }
             }
         }
-        
+
         if total > 0 {
             println!("✓ COT ({} reports)", total);
         } else {
@@ -620,7 +637,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     // 6. Sentiment (Fear & Greed)
     if sentiment_needs_refresh(conn)? {
         let mut count = 0;
-        
+
         if let Ok(crypto) = sentiment::fetch_crypto_fng() {
             let reading = crate::db::sentiment_cache::SentimentReading {
                 index_type: "crypto_fng".to_string(),
@@ -632,7 +649,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
             sentiment_cache::upsert_reading(conn, &reading)?;
             count += 1;
         }
-        
+
         if let Ok(trad) = sentiment::fetch_traditional_fng() {
             let reading = crate::db::sentiment_cache::SentimentReading {
                 index_type: "traditional_fng".to_string(),
@@ -644,7 +661,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
             sentiment_cache::upsert_reading(conn, &reading)?;
             count += 1;
         }
-        
+
         println!("✓ Sentiment ({} indices)", count);
     } else {
         println!("⊘ Sentiment (fresh, skipping)");
@@ -654,7 +671,12 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     if calendar_needs_refresh(conn)? {
         match calendar::fetch_events(7) {
             Ok(mut events) => {
-                let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+                let brave_key = config
+                    .brave_api_key
+                    .as_deref()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if !brave_key.is_empty() {
                     let _ = rt.block_on(calendar::enrich_with_brave(&mut events, &brave_key));
                 }
@@ -682,7 +704,12 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
 
     // 8. Economy indicators (Brave primary, BLS fallback)
     {
-        let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim().to_string();
+        let brave_key = config
+            .brave_api_key
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         let mut used_brave = false;
         let readings = if !brave_key.is_empty() {
             match rt.block_on(economic::fetch_via_brave(&brave_key)) {
@@ -755,7 +782,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     if comex_needs_refresh(conn)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
-        
+
         for (symbol, result) in results {
             if let Ok(inv) = result {
                 let entry = crate::db::comex_cache::ComexCacheEntry {
@@ -772,7 +799,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
                 }
             }
         }
-        
+
         if count > 0 {
             println!("✓ COMEX ({} metals)", count);
         } else {
@@ -793,12 +820,15 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
                 metric: "network".to_string(),
                 date: today,
                 value: metrics.hash_rate.to_string(),
-                metadata: Some(serde_json::json!({
-                    "difficulty": metrics.difficulty,
-                    "blocks_24h": metrics.blocks_24h,
-                    "mempool_size": metrics.mempool_size,
-                    "avg_fee_sat_b": metrics.avg_fee_sat_b,
-                }).to_string()),
+                metadata: Some(
+                    serde_json::json!({
+                        "difficulty": metrics.difficulty,
+                        "blocks_24h": metrics.blocks_24h,
+                        "mempool_size": metrics.mempool_size,
+                        "avg_fee_sat_b": metrics.avg_fee_sat_b,
+                    })
+                    .to_string(),
+                ),
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
             let _ = onchain_cache::upsert_metric(conn, &metric);
@@ -815,10 +845,13 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
                     metric: format!("etf_flow_{}", flow.fund),
                     date: flow.date.clone(),
                     value: flow.net_flow_btc.to_string(),
-                    metadata: Some(serde_json::json!({
-                        "fund": flow.fund,
-                        "net_flow_usd": flow.net_flow_usd,
-                    }).to_string()),
+                    metadata: Some(
+                        serde_json::json!({
+                            "fund": flow.fund,
+                            "net_flow_usd": flow.net_flow_usd,
+                        })
+                        .to_string(),
+                    ),
                     fetched_at: fetched_at.clone(),
                 };
                 let _ = onchain_cache::upsert_metric(conn, &metric);
@@ -837,6 +870,12 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     // Store daily portfolio snapshot
     if let Err(e) = store_portfolio_snapshot(backend, conn, config) {
         eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
+    }
+    if let Err(e) = detect_timeframe_signals(conn) {
+        eprintln!(
+            "\nWarning: failed to compute cross-timeframe signals: {}",
+            e
+        );
     }
 
     // Check for newly triggered alerts
@@ -868,10 +907,7 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
                         let title = format!("pftui Alert: {}", result.rule.symbol);
                         let body = format!(
                             "{} {} {} (current: {})",
-                            result.rule.kind,
-                            dir_emoji,
-                            result.rule.threshold,
-                            current_str
+                            result.rule.kind, dir_emoji, result.rule.threshold, current_str
                         );
                         if let Err(e) = notify::send_notification(&title, &body) {
                             eprintln!("  Warning: failed to send notification: {}", e);
@@ -889,6 +925,308 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, noti
     Ok(())
 }
 
+fn table_exists(conn: &Connection, table_name: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+        [table_name],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap_or(0)
+        > 0
+}
+
+fn classify_regime_bias(conn: &Connection) -> Option<String> {
+    let vix = get_cached_price(conn, "^VIX", "USD")
+        .ok()
+        .flatten()
+        .map(|q| q.price);
+    let dxy = get_cached_price(conn, "DX-Y.NYB", "USD")
+        .ok()
+        .flatten()
+        .map(|q| q.price);
+    let spy = get_cached_price(conn, "SPY", "USD")
+        .ok()
+        .flatten()
+        .map(|q| q.price);
+    let gold = get_cached_price(conn, "GC=F", "USD")
+        .ok()
+        .flatten()
+        .map(|q| q.price);
+
+    let mut risk_off = 0;
+    let mut risk_on = 0;
+
+    if let Some(v) = vix {
+        if v > dec!(25) {
+            risk_off += 1;
+        } else if v < dec!(20) {
+            risk_on += 1;
+        }
+    }
+    if let Some(d) = dxy {
+        if d > dec!(102) {
+            risk_off += 1;
+        } else if d < dec!(99) {
+            risk_on += 1;
+        }
+    }
+    if let (Some(s), Some(g)) = (spy, gold) {
+        if g > dec!(0) && s > dec!(0) {
+            let ratio = g / s;
+            if ratio > dec!(1.0) {
+                risk_off += 1;
+            } else {
+                risk_on += 1;
+            }
+        }
+    }
+
+    if risk_off >= 2 {
+        Some("bear".to_string())
+    } else if risk_on >= 2 {
+        Some("bull".to_string())
+    } else {
+        Some("neutral".to_string())
+    }
+}
+
+fn top_scenario_bias(conn: &Connection) -> Option<String> {
+    if !table_exists(conn, "scenarios") {
+        return None;
+    }
+    let row = conn
+        .query_row(
+            "SELECT name, COALESCE(description, ''), COALESCE(asset_impact, '')
+             FROM scenarios
+             WHERE status = 'active'
+             ORDER BY probability DESC
+             LIMIT 1",
+            [],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .ok()?;
+    let text = format!("{} {} {}", row.0, row.1, row.2).to_lowercase();
+    if text.contains("war")
+        || text.contains("stagflation")
+        || text.contains("recession")
+        || text.contains("crisis")
+        || text.contains("risk-off")
+    {
+        Some("bear".to_string())
+    } else if text.contains("growth") || text.contains("soft landing") || text.contains("risk-on") {
+        Some("bull".to_string())
+    } else {
+        Some("neutral".to_string())
+    }
+}
+
+fn trend_layer_bias(conn: &Connection) -> Option<String> {
+    if !table_exists(conn, "trend_tracker") {
+        return None;
+    }
+    let mut bull = 0usize;
+    let mut bear = 0usize;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT COALESCE(direction, ''), COALESCE(asset_impact, '')
+             FROM trend_tracker
+             WHERE status = 'active'
+             ORDER BY updated_at DESC
+             LIMIT 25",
+        )
+        .ok()?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .ok()?;
+
+    for row in rows.flatten() {
+        let direction = row.0.to_lowercase();
+        let impact = row.1.to_lowercase();
+        if direction.contains("accelerating") || impact.contains("bullish") {
+            bull += 1;
+        }
+        if direction.contains("decelerating")
+            || direction.contains("reversing")
+            || impact.contains("bearish")
+        {
+            bear += 1;
+        }
+    }
+
+    if bear > bull {
+        Some("bear".to_string())
+    } else if bull > bear {
+        Some("bull".to_string())
+    } else {
+        Some("neutral".to_string())
+    }
+}
+
+fn structural_layer_bias(conn: &Connection) -> Option<String> {
+    if !table_exists(conn, "structural_outcomes") {
+        return None;
+    }
+    let row = conn
+        .query_row(
+            "SELECT name, COALESCE(description, ''), COALESCE(asset_implications, '')
+             FROM structural_outcomes
+             WHERE status = 'active'
+             ORDER BY probability DESC, updated_at DESC
+             LIMIT 1",
+            [],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .ok()?;
+    let text = format!("{} {} {}", row.0, row.1, row.2).to_lowercase();
+    if text.contains("decline")
+        || text.contains("fragmentation")
+        || text.contains("crisis")
+        || text.contains("bearish")
+    {
+        Some("bear".to_string())
+    } else if text.contains("dominance") || text.contains("bullish") || text.contains("expansion") {
+        Some("bull".to_string())
+    } else {
+        Some("neutral".to_string())
+    }
+}
+
+fn maybe_insert_signal(
+    conn: &Connection,
+    signal_type: &str,
+    layers: &[String],
+    assets: &[String],
+    description: &str,
+    severity: &str,
+) -> Result<()> {
+    let layers_json = serde_json::to_string(layers)?;
+    let assets_json = serde_json::to_string(assets)?;
+
+    let recent_count: i64 = conn.query_row(
+        "SELECT COUNT(*)
+         FROM timeframe_signals
+         WHERE signal_type = ?1
+           AND description = ?2
+           AND detected_at >= datetime('now', '-6 hours')",
+        rusqlite::params![signal_type, description],
+        |r| r.get(0),
+    )?;
+    if recent_count > 0 {
+        return Ok(());
+    }
+
+    let _ = timeframe_signals::add_signal(
+        conn,
+        signal_type,
+        &layers_json,
+        &assets_json,
+        description,
+        severity,
+    )?;
+    Ok(())
+}
+
+fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "timeframe_signals") {
+        return Ok(());
+    }
+
+    let low = classify_regime_bias(conn).unwrap_or_else(|| "neutral".to_string());
+    let medium = top_scenario_bias(conn).unwrap_or_else(|| "neutral".to_string());
+    let high = trend_layer_bias(conn).unwrap_or_else(|| "neutral".to_string());
+    let macro_bias = structural_layer_bias(conn).unwrap_or_else(|| "neutral".to_string());
+
+    let layers = vec![
+        format!("low:{}", low),
+        format!("medium:{}", medium),
+        format!("high:{}", high),
+        format!("macro:{}", macro_bias),
+    ];
+    let values = [
+        low.clone(),
+        medium.clone(),
+        high.clone(),
+        macro_bias.clone(),
+    ];
+
+    let bull_count = values.iter().filter(|v| v.as_str() == "bull").count();
+    let bear_count = values.iter().filter(|v| v.as_str() == "bear").count();
+    let neutral_count = values.iter().filter(|v| v.as_str() == "neutral").count();
+
+    if bull_count >= 3 || bear_count >= 3 {
+        let stance = if bull_count >= 3 {
+            "bullish"
+        } else {
+            "bearish"
+        };
+        let severity = if bull_count == 4 || bear_count == 4 {
+            "critical"
+        } else {
+            "notable"
+        };
+        let description = format!(
+            "{} cross-timeframe alignment ({} / 4 layers agree)",
+            stance,
+            bull_count.max(bear_count)
+        );
+        maybe_insert_signal(
+            conn,
+            "alignment",
+            &layers,
+            &vec!["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
+            &description,
+            severity,
+        )?;
+    } else if bull_count >= 1 && bear_count >= 1 && neutral_count <= 1 {
+        let description = format!(
+            "cross-timeframe divergence (bull={} bear={} neutral={})",
+            bull_count, bear_count, neutral_count
+        );
+        maybe_insert_signal(
+            conn,
+            "divergence",
+            &layers,
+            &vec!["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
+            &description,
+            "notable",
+        )?;
+    }
+
+    if table_exists(conn, "regime_snapshots") {
+        let mut stmt =
+            conn.prepare("SELECT regime FROM regime_snapshots ORDER BY recorded_at DESC LIMIT 2")?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        if let (Some(Ok(curr)), Some(Ok(prev))) = (rows.next(), rows.next()) {
+            if curr != prev {
+                let description = format!("regime transition detected: {} -> {}", prev, curr);
+                maybe_insert_signal(
+                    conn,
+                    "transition",
+                    &vec!["low".to_string()],
+                    &vec!["SPY".to_string(), "^VIX".to_string()],
+                    &description,
+                    "critical",
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Compute current positions and store a daily portfolio snapshot.
 fn store_portfolio_snapshot(
     backend: &BackendConnection,
@@ -896,10 +1234,8 @@ fn store_portfolio_snapshot(
     config: &Config,
 ) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     let fx_rates = fx_cache::get_all_fx_rates(conn).unwrap_or_default();
 
@@ -1007,16 +1343,17 @@ mod tests {
 
     #[test]
     fn refresh_lock_prevents_concurrent_runs() {
-        let tmp = std::env::temp_dir().join(format!(
-            "pftui-refresh-lock-test-{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("pftui-refresh-lock-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&tmp);
         std::env::set_var("PFTUI_REFRESH_LOCK_DIR", tmp.to_string_lossy().to_string());
 
         let first = RefreshLock::acquire().expect("first lock should succeed");
         let second = RefreshLock::acquire();
-        assert!(second.is_err(), "second lock should fail while first is held");
+        assert!(
+            second.is_err(),
+            "second lock should fail while first is held"
+        );
 
         drop(first);
         let third = RefreshLock::acquire();

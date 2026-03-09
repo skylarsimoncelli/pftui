@@ -3,6 +3,22 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 00:45 UTC — F31.14 milestone 1: cross-timeframe signals pipeline + analytics CLI
+
+- What: implemented cross-timeframe signal infrastructure with `timeframe_signals` table, refresh-time alignment/divergence/transition detection, `pftui analytics signals` CLI view, and top signal inclusion in `brief --json` payload.
+- Why: completes the core F31.14 behavior to detect and expose cross-timeframe signals and makes the signal available to agent briefs.
+- Files: `src/db/schema.rs`, `src/db/timeframe_signals.rs`, `src/db/mod.rs`, `src/commands/analytics.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/refresh.rs`, `src/commands/brief.rs`, `CHANGELOG.md`
+- Tests: `cargo fmt`, `cargo check`
+- TODO: F31.14 (partial, code milestones)
+
+### 2026-03-09 00:42 UTC — F32 Phase 14: backend-dispatch movers command data path
+
+- What: migrated `movers` to backend-dispatched reads for held symbols, allocation symbols, watchlist rows, cached prices, and prior-day prices; added native Postgres allocation read helpers and updated `eod` + `main` routing for the new movers signature.
+- Why: removes a frequently used market-monitoring command from SQLite-only query execution in Postgres mode.
+- Files: `src/commands/movers.rs`, `src/commands/eod.rs`, `src/main.rs`, `src/db/allocations.rs`, `src/db/postgres_schema.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: movers/eod paths)
+
 ### 2026-03-09 00:33 UTC — F31.2: Thesis CLI — versioned macro outlook by section
 
 - What: implemented thesis command (F31.2) — versioned macro outlook management by user-defined section. `pftui thesis update <section> --content "..." [--conviction high|medium|low]` auto-snapshots previous value to `thesis_history` table before upserting. `list` shows all sections with content preview. `history <section>` shows full version history. `remove <section>` deletes a section. Section is unique key (one active thesis per section). Conviction defaults to previous or "medium" if new.

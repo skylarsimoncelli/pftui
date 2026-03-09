@@ -247,7 +247,7 @@ fn main() -> Result<()> {
             commands::economy::run(conn, indicator.as_deref(), json)
         }
 
-        Some(Command::Eod { json }) => commands::eod::run(conn, &config, json),
+        Some(Command::Eod { json }) => commands::eod::run(&backend, conn, &config, json),
 
         Some(Command::Global { country, indicator, json }) => {
             commands::global::run(conn, country.as_deref(), indicator.as_deref(), json)
@@ -262,7 +262,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Movers { threshold, json }) => {
-            commands::movers::run(conn, &config, Some(&threshold), json)
+            commands::movers::run(&backend, conn, &config, Some(&threshold), json)
         }
         Some(Command::Scan {
             filter,
@@ -320,6 +320,22 @@ fn main() -> Result<()> {
                 json,
             )
         }
+        Some(Command::Analytics {
+            action,
+            symbol,
+            signal_type,
+            severity,
+            limit,
+            json,
+        }) => commands::analytics::run(
+            conn,
+            &action,
+            symbol.as_deref(),
+            signal_type.as_deref(),
+            severity.as_deref(),
+            limit,
+            json,
+        ),
         Some(Command::Thesis {
             action,
             value,

@@ -406,6 +406,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_convictions_symbol ON convictions(symbol);
         CREATE INDEX IF NOT EXISTS idx_convictions_recorded ON convictions(recorded_at);
+
+        CREATE TABLE IF NOT EXISTS timeframe_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_type TEXT NOT NULL,
+            layers TEXT NOT NULL,
+            assets TEXT NOT NULL,
+            description TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            detected_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_timeframe_signals_detected ON timeframe_signals(detected_at);
+        CREATE INDEX IF NOT EXISTS idx_timeframe_signals_type ON timeframe_signals(signal_type);
         ",
     )?;
 

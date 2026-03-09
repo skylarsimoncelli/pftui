@@ -1,5 +1,6 @@
 pub mod add_tx;
 pub mod alerts;
+pub mod analytics;
 pub mod annotate;
 pub mod brief;
 pub mod calendar;

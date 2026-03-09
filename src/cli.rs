@@ -404,6 +404,33 @@ pub enum Command {
         json: bool,
     },
 
+    /// Multi-timeframe analytics engine views
+    #[command(name = "analytics")]
+    Analytics {
+        /// Action: signals, summary, low, medium, high, macro, alignment
+        action: String,
+
+        /// Symbol filter (mainly for `signals`)
+        #[arg(long)]
+        symbol: Option<String>,
+
+        /// Signal type filter: alignment, divergence, transition
+        #[arg(long)]
+        signal_type: Option<String>,
+
+        /// Severity filter: info, notable, critical
+        #[arg(long)]
+        severity: Option<String>,
+
+        /// Max results
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage your macro thesis — versioned outlook by section
     #[command(name = "thesis")]
     Thesis {
