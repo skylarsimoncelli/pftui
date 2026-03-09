@@ -3,6 +3,15 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — F31.12: High-Timeframe Trends — Trend tracking [HIGH]
+
+- What: implemented trend tracker CLI (`pftui trends add/list/update/evidence-add/evidence-list/impact-add/impact-list/dashboard`) with three tables: `trend_tracker` (multi-quarter structural trends), `trend_evidence` (dated evidence entries with direction impact), `trend_asset_impact` (per-asset impact: bullish/bearish/neutral with mechanism). Supports trend categorization (ai|energy|demographics|politics|trade|technology|regulation), direction (accelerating|stable|decelerating|reversing), conviction (high|medium|low), and status (active|paused|resolved). Evidence entries track what strengthens/weakens each trend with source attribution. Asset impacts show which symbols are bullish/bearish to a trend. Dashboard action aggregates trends with recent evidence and asset impacts for human-readable output.
+- Why: completes the four-layer analytics engine. LOW (hours→days) covers correlations, regime, price technicals. MEDIUM (weeks→months) covers scenarios, convictions, thesis. MACRO (years→decades) covers structural cycles, power metrics, outcomes. HIGH (months→years) is the missing layer — multi-quarter trends like AI displacement, nuclear renaissance, BRICS de-dollarization. Trends bridge MEDIUM and MACRO: they evolve faster than empire cycles but slower than scenario probabilities.
+- Files: `src/db/trends.rs` (NEW, SQLite + Postgres CRUD), `src/commands/trends.rs` (NEW, CLI actions + dashboard), `src/cli.rs` (updated Trends variant with all 21 fields), `src/main.rs` (router with corrected field bindings), `src/db/mod.rs` (trends module already declared), `src/commands/mod.rs` (trends module already declared), `src/db/schema.rs` (tables already present)
+- Tests: `cargo test` — all 1197 tests pass
+- Clippy: clean without `-D warnings` (3 needless_borrow warnings in `calendar.rs` pre-existing, not introduced by this task)
+- TODO: removed F31.12 from HIGH-timeframe layer section
+
 ### 2026-03-09 — Fix Postgres structural module type mismatches
 
 - What: resolved database schema/code type mismatches in structural module. Fixed `power_metrics.score`, `structural_outcomes.probability`, and `structural_outcome_history.probability` columns (were NUMERIC, needed DOUBLE PRECISION to match Rust f64). Added type aliases (`PowerMetricRow`, `StructuralCycleRow`, `StructuralOutcomeRow`, `HistoricalParallelRow`, `StructuralLogRow`) to eliminate 8 clippy::type_complexity warnings in Postgres query row types.

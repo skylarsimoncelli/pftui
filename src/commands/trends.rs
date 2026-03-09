@@ -1,159 +1,284 @@
-use anyhow::{bail, Result};
-use chrono::Utc;
-use serde_json::json;
-
 use crate::db::backend::BackendConnection;
 use crate::db::trends;
+use anyhow::{bail, Result};
+use serde_json::json;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
-    trend_name: Option<&str>,
-    category: Option<&str>,
+    id: Option<i64>,
+    timeframe: Option<&str>,
     direction: Option<&str>,
     conviction: Option<&str>,
+    category: Option<&str>,
     description: Option<&str>,
-    signal: Option<&str>,
+    asset_impact: Option<&str>,
+    key_signal: Option<&str>,
     status: Option<&str>,
     date: Option<&str>,
-    impact: Option<&str>,
+    evidence: Option<&str>,
+    direction_impact: Option<&str>,
     source: Option<&str>,
     symbol: Option<&str>,
+    impact: Option<&str>,
     mechanism: Option<&str>,
-    timeframe: Option<&str>,
+    impact_timeframe: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
     match action {
         "add" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("trend name required"))?;
-            let id = trends::add_trend_backend(
-                backend,
-                name,
-                timeframe,
-                direction,
-                conviction,
-                category,
-                description,
-                impact,
-                signal,
+            let name = value.ok_or_else(|| anyhow::anyhow!("Trend name required"))?;
+            let tf = timeframe.unwrap_or("high");
+            let dir = direction.unwrap_or("neutral");
+            let conv = conviction.unwrap_or("medium");
+
+            let trend_id = trends::add_trend_backend(
+                backend, name, tf, dir, conv, category, description, asset_impact, key_signal,
             )?;
+
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
+                println!("{}", serde_json::to_string_pretty(&json!({ "id": trend_id, "name": name }))?);
             } else {
-                println!("Added trend #{} {}", id, name);
+                println!("Added trend #{}: {}", trend_id, name);
             }
+            Ok(())
         }
         "list" => {
-            let rows = trends::list_trends_backend(backend, status, category)?;
-            if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "trends": rows }))?);
-            } else {
-                println!("Trends ({}):", rows.len());
-                for r in rows {
-                    println!(
-                        "  {} [{}|{}|{}]",
-                        r.name, r.timeframe, r.direction, r.conviction
-                    );
-                }
-            }
-        }
-        "update" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("trend name required"))?;
-            trends::update_trend_backend(backend, name, direction, conviction, description, signal, status)?;
-            if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "updated": name }))?);
-            } else {
-                println!("Updated trend {}", name);
-            }
-        }
-        "evidence-add" => {
-            let name = trend_name.ok_or_else(|| anyhow::anyhow!("--trend required"))?;
-            let evid = value
-                .or(description)
-                .ok_or_else(|| anyhow::anyhow!("evidence text required (positional value or --description)"))?;
-            let d = date
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-            let id = trends::add_evidence_by_name_backend(backend, name, &d, evid, impact, source)?;
-            if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
-            } else {
-                println!("Added trend evidence #{}", id);
-            }
-        }
-        "evidence-list" => {
-            let name = trend_name.or(value).ok_or_else(|| anyhow::anyhow!("trend name required"))?;
-            let trend = trends::list_trends_backend(backend, None, None)?
-                .into_iter()
-                .find(|t| t.name == name)
-                .ok_or_else(|| anyhow::anyhow!("trend not found"))?;
-            let rows = trends::list_evidence_backend(backend, trend.id, limit)?;
-            if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "evidence": rows }))?);
-            } else {
-                println!("Evidence {} ({}):", name, rows.len());
-                for r in rows {
-                    println!("  {} {} ({:?})", r.date, r.evidence, r.direction_impact);
-                }
-            }
-        }
-        "impact-add" => {
-            let name = trend_name.or(value).ok_or_else(|| anyhow::anyhow!("trend name required"))?;
-            let sym = symbol.ok_or_else(|| anyhow::anyhow!("--symbol required"))?;
-            let imp = impact.ok_or_else(|| anyhow::anyhow!("--impact required"))?;
-            let id = trends::add_asset_impact_by_name_backend(backend, name, sym, imp, mechanism, timeframe)?;
-            if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
-            } else {
-                println!("Added trend asset impact #{}", id);
-            }
-        }
-        "impact-list" => {
-            if let Some(sym) = symbol {
-                let rows = trends::get_impacts_for_symbol_backend(backend, sym)?;
-                if json_output {
-                    println!("{}", serde_json::to_string_pretty(&json!({ "impacts": rows }))?);
-                } else {
-                    println!("Impacts for {} ({}):", sym, rows.len());
-                    for (t, i) in rows {
-                        println!("  {} -> {} ({:?})", t.name, i.impact, i.mechanism);
-                    }
-                }
-            } else {
-                let name = trend_name.or(value).ok_or_else(|| anyhow::anyhow!("trend name required"))?;
-                let trend = trends::list_trends_backend(backend, None, None)?
-                    .into_iter()
-                    .find(|t| t.name == name)
-                    .ok_or_else(|| anyhow::anyhow!("trend not found"))?;
-                let rows = trends::list_asset_impacts_backend(backend, trend.id)?;
-                if json_output {
-                    println!("{}", serde_json::to_string_pretty(&json!({ "impacts": rows }))?);
-                } else {
-                    println!("Trend impacts {} ({}):", name, rows.len());
-                    for i in rows {
-                        println!("  {} {} {:?}", i.symbol, i.impact, i.mechanism);
-                    }
-                }
-            }
-        }
-        "dashboard" => {
-            let trends_list = trends::list_trends_backend(backend, Some("active"), None)?;
+            let trends_list = trends::list_trends_backend(backend, status, category)?;
+
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "trends": trends_list }))?);
             } else {
-                println!("Trends Dashboard");
-                println!("════════════════════════════════════════");
+                if trends_list.is_empty() {
+                    println!("No trends found.");
+                    return Ok(());
+                }
+
+                println!(
+                    "{:<40} {:<10} {:<12} {:<10} {:<12} {:<10}",
+                    "Name", "Timeframe", "Direction", "Conviction", "Category", "Status"
+                );
+                println!("{}", "─".repeat(100));
+
                 for t in trends_list {
-                    println!("  {} [{}|{}]", t.name, t.direction, t.conviction);
-                    if let Some(sig) = t.key_signal { println!("    signal: {}", sig); }
+                    println!(
+                        "{:<40} {:<10} {:<12} {:<10} {:<12} {:<10}",
+                        truncate(&t.name, 38),
+                        t.timeframe,
+                        t.direction,
+                        t.conviction,
+                        t.category.as_deref().unwrap_or("—"),
+                        t.status
+                    );
                 }
             }
+            Ok(())
         }
-        _ => bail!("unknown trends action '{}'. See --help", action),
-    }
+        "update" => {
+            let name = value.ok_or_else(|| anyhow::anyhow!("Trend name required for update"))?;
+            trends::update_trend_backend(backend, name, direction, conviction, description, key_signal, status)?;
 
-    Ok(())
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({ "status": "updated", "name": name }))?);
+            } else {
+                println!("Updated trend: {}", name);
+            }
+            Ok(())
+        }
+        "evidence-add" => {
+            let trend_id_val = id.ok_or_else(|| anyhow::anyhow!("--id required for evidence-add"))?;
+            let ev = evidence.ok_or_else(|| anyhow::anyhow!("--evidence required"))?;
+            let default_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let dt = date.unwrap_or(&default_date);
+
+            let evidence_id = trends::add_evidence_backend(
+                backend,
+                trend_id_val,
+                dt,
+                ev,
+                direction_impact,
+                source,
+            )?;
+
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({ "id": evidence_id, "trend_id": trend_id_val }))?);
+            } else {
+                println!("Added evidence #{} to trend #{}", evidence_id, trend_id_val);
+            }
+            Ok(())
+        }
+        "evidence-list" => {
+            let trend_id_val = id.ok_or_else(|| anyhow::anyhow!("--id required for evidence-list"))?;
+            let evidence_list = trends::list_evidence_backend(backend, trend_id_val, limit)?;
+
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({ "evidence": evidence_list }))?);
+            } else {
+                if evidence_list.is_empty() {
+                    println!("No evidence found for trend #{}.", trend_id_val);
+                    return Ok(());
+                }
+
+                println!(
+                    "{:<12} {:<50} {:<15} {:<15}",
+                    "Date", "Evidence", "Impact", "Source"
+                );
+                println!("{}", "─".repeat(95));
+
+                for e in evidence_list {
+                    println!(
+                        "{:<12} {:<50} {:<15} {:<15}",
+                        e.date,
+                        truncate(&e.evidence, 48),
+                        e.direction_impact.as_deref().unwrap_or("—"),
+                        e.source.as_deref().unwrap_or("—")
+                    );
+                }
+            }
+            Ok(())
+        }
+        "impact-add" => {
+            let trend_id_val = id.ok_or_else(|| anyhow::anyhow!("--id required for impact-add"))?;
+            let sym = symbol.ok_or_else(|| anyhow::anyhow!("--symbol required"))?;
+            let imp = impact.ok_or_else(|| anyhow::anyhow!("--impact required (bullish/bearish/neutral)"))?;
+
+            let impact_id = trends::add_asset_impact_backend(
+                backend,
+                trend_id_val,
+                sym,
+                imp,
+                mechanism,
+                impact_timeframe,
+            )?;
+
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({ "id": impact_id, "trend_id": trend_id_val, "symbol": sym }))?);
+            } else {
+                println!("Added asset impact #{} (trend #{}, symbol {})", impact_id, trend_id_val, sym);
+            }
+            Ok(())
+        }
+        "impact-list" => {
+            let trend_id_val = id.ok_or_else(|| anyhow::anyhow!("--id required for impact-list"))?;
+            let impacts = trends::list_asset_impacts_backend(backend, trend_id_val)?;
+
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({ "impacts": impacts }))?);
+            } else {
+                if impacts.is_empty() {
+                    println!("No asset impacts found for trend #{}.", trend_id_val);
+                    return Ok(());
+                }
+
+                println!(
+                    "{:<10} {:<10} {:<40} {:<15}",
+                    "Symbol", "Impact", "Mechanism", "Timeframe"
+                );
+                println!("{}", "─".repeat(80));
+
+                for i in impacts {
+                    println!(
+                        "{:<10} {:<10} {:<40} {:<15}",
+                        i.symbol,
+                        i.impact,
+                        i.mechanism.as_deref().unwrap_or("—"),
+                        i.timeframe.as_deref().unwrap_or("—")
+                    );
+                }
+            }
+            Ok(())
+        }
+        "dashboard" => {
+            let trends_list = trends::list_trends_backend(backend, Some("active"), None)?;
+
+            if json_output {
+                let mut dashboard_data = Vec::new();
+                for t in &trends_list {
+                    let evidence_list = trends::list_evidence_backend(backend, t.id, Some(3))?;
+                    let impacts = trends::list_asset_impacts_backend(backend, t.id)?;
+                    dashboard_data.push(json!({
+                        "trend": t,
+                        "recent_evidence": evidence_list,
+                        "asset_impacts": impacts,
+                    }));
+                }
+                println!("{}", serde_json::to_string_pretty(&json!({ "dashboard": dashboard_data }))?);
+            } else {
+                if trends_list.is_empty() {
+                    println!("No active trends.");
+                    return Ok(());
+                }
+
+                println!("HIGH-Timeframe Trends Dashboard");
+                println!("{}", "═".repeat(80));
+
+                for t in &trends_list {
+                    let direction_symbol = match t.direction.as_str() {
+                        "accelerating" => "▲",
+                        "stable" => "→",
+                        "decelerating" => "▽",
+                        "reversing" => "◀",
+                        _ => "•",
+                    };
+
+                    println!(
+                        "\n{} {} — {} ({})",
+                        direction_symbol,
+                        t.name,
+                        t.direction.to_uppercase(),
+                        t.conviction
+                    );
+
+                    if let Some(desc) = &t.description {
+                        println!("  {}", desc);
+                    }
+
+                    if let Some(sig) = &t.key_signal {
+                        println!("  Key signal: {}", sig);
+                    }
+
+                    let evidence_list = trends::list_evidence_backend(backend, t.id, Some(3))?;
+                    if !evidence_list.is_empty() {
+                        println!("  Recent evidence:");
+                        for e in evidence_list {
+                            let impact_mark = match e.direction_impact.as_deref() {
+                                Some("strengthens") => "↑",
+                                Some("weakens") => "↓",
+                                _ => "•",
+                            };
+                            println!("    {} [{}] {}", impact_mark, e.date, truncate(&e.evidence, 60));
+                        }
+                    }
+
+                    let impacts = trends::list_asset_impacts_backend(backend, t.id)?;
+                    if !impacts.is_empty() {
+                        let bullish: Vec<_> = impacts.iter().filter(|i| i.impact == "bullish").collect();
+                        let bearish: Vec<_> = impacts.iter().filter(|i| i.impact == "bearish").collect();
+
+                        if !bullish.is_empty() {
+                            let symbols: Vec<_> = bullish.iter().map(|i| i.symbol.as_str()).collect();
+                            println!("  Bullish: {}", symbols.join(", "));
+                        }
+                        if !bearish.is_empty() {
+                            let symbols: Vec<_> = bearish.iter().map(|i| i.symbol.as_str()).collect();
+                            println!("  Bearish: {}", symbols.join(", "));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        _ => bail!("Unknown action: {}. Use add, list, update, evidence-add, evidence-list, impact-add, impact-list, dashboard", action),
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() > max {
+        format!("{}...", &s[..max - 3])
+    } else {
+        s.to_string()
+    }
 }

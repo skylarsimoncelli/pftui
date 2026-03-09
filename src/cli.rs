@@ -1232,35 +1232,43 @@ pub enum Command {
         /// Action: add, list, update, evidence-add, evidence-list, impact-add, impact-list, dashboard
         action: String,
 
-        /// Value (trend name or free text depending on action)
+        /// Value (trend name for add/update, evidence text for evidence-add)
         value: Option<String>,
 
         #[arg(long)]
-        trend: Option<String>,
+        id: Option<i64>,
         #[arg(long)]
-        category: Option<String>,
+        timeframe: Option<String>,
         #[arg(long)]
         direction: Option<String>,
         #[arg(long)]
         conviction: Option<String>,
         #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
         description: Option<String>,
         #[arg(long)]
-        signal: Option<String>,
+        asset_impact: Option<String>,
+        #[arg(long)]
+        key_signal: Option<String>,
         #[arg(long)]
         status: Option<String>,
         #[arg(long)]
         date: Option<String>,
         #[arg(long)]
-        impact: Option<String>,
+        evidence: Option<String>,
+        #[arg(long)]
+        direction_impact: Option<String>,
         #[arg(long)]
         source: Option<String>,
         #[arg(long)]
         symbol: Option<String>,
         #[arg(long)]
+        impact: Option<String>,
+        #[arg(long)]
         mechanism: Option<String>,
         #[arg(long)]
-        timeframe: Option<String>,
+        impact_timeframe: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
         #[arg(long)]
