@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 11:04 UTC — F32 Phase 61: backend-native calendar refresh path
+
+- What: added postgres/backend-dispatched calendar cache APIs (`upsert`, `upcoming`, `impact`, `delete_old`) and migrated refresh calendar freshness check + writes to backend methods.
+- Why: removes sqlite-only calendar ingestion and enables native postgres updates for economic calendar data.
+- Files: `src/db/calendar_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh writes for BLS remain sqlite-only)
+
 ### 2026-03-09 10:49 UTC — F32 Phase 60: backend-native COT refresh path
 
 - What: added postgres/backend-dispatched COT cache APIs (`upsert`, `latest`, `history`, `all_latest`, `delete_old`) and migrated refresh COT freshness check + writes to backend methods.

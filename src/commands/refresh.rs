@@ -216,9 +216,9 @@ fn sentiment_needs_refresh(backend: &BackendConnection) -> Result<bool> {
 }
 
 /// Check if calendar needs refreshing
-fn calendar_needs_refresh(conn: &Connection) -> Result<bool> {
+fn calendar_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let events = calendar_cache::get_upcoming_events(conn, &today, 10)?;
+    let events = calendar_cache::get_upcoming_events_backend(backend, &today, 10)?;
     if events.is_empty() {
         return Ok(true);
     }
@@ -666,8 +666,7 @@ pub fn run(
     }
 
     // 7. Calendar (TradingEconomics)
-    if let Some(conn) = sqlite_conn {
-    if calendar_needs_refresh(conn)? {
+    if calendar_needs_refresh(backend)? {
         match calendar::fetch_events(7) {
             Ok(mut events) => {
                 let brave_key = config
@@ -680,8 +679,8 @@ pub fn run(
                     let _ = rt.block_on(calendar::enrich_with_brave(&mut events, &brave_key));
                 }
                 for event in &events {
-                    let _ = calendar_cache::upsert_event(
-                        conn,
+                    let _ = calendar_cache::upsert_event_backend(
+                        backend,
                         &event.date,
                         &event.name,
                         &event.impact,
@@ -699,9 +698,6 @@ pub fn run(
         }
     } else {
         println!("⊘ Calendar (fresh, skipping)");
-    }
-    } else {
-        println!("⊘ Calendar (sqlite-only cache path, skipping on postgres)");
     }
 
     // 8. Economy indicators (Brave primary, BLS fallback)
