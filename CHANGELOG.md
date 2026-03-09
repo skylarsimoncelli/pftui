@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 04:48 UTC — F32 Phase 34: remove sqlite-conn dependency for drift + rebalance
+
+- What: removed SQLite connection parameter requirements from `drift` and `rebalance`; both now use backend-dispatched data paths and optional SQLite FX lookup when available.
+- Why: further reduces postgres command gating in `main` and improves native backend behavior for allocation management workflows.
+- Files: `src/commands/drift.rs`, `src/commands/rebalance.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 command-path parity (partial: drift/rebalance gating removed)
+
 ### 2026-03-09 04:38 UTC — F32 Phase 33: remove sqlite-conn dependency for stress-test + research
 
 - What: removed SQLite connection parameter requirements from `stress-test` and `research` command paths; `stress-test` now sources FX rates opportunistically from sqlite backend when present, otherwise defaults cleanly.

@@ -478,14 +478,8 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
             }
         }
-        Some(Command::Drift { json }) => {
-            let conn = sqlite_conn_for_command(&backend, "drift")?;
-            commands::drift::run(&backend, conn, json)
-        }
-        Some(Command::Rebalance { json }) => {
-            let conn = sqlite_conn_for_command(&backend, "rebalance")?;
-            commands::rebalance::run(&backend, conn, json)
-        }
+        Some(Command::Drift { json }) => commands::drift::run(&backend, json),
+        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, json),
         Some(Command::Conviction {
             action,
             value,

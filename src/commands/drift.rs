@@ -7,7 +7,7 @@ use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::models::position::compute_positions;
 
-pub fn run(backend: &BackendConnection, conn: &rusqlite::Connection, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     let targets = db::allocation_targets::list_targets_backend(backend)?;
     
     if targets.is_empty() {
@@ -34,7 +34,10 @@ pub fn run(backend: &BackendConnection, conn: &rusqlite::Connection, json: bool)
         }
     }
     
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = backend
+        .sqlite_native()
+        .map(|conn| crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default())
+        .unwrap_or_default();
     let positions = compute_positions(&txs, &prices, &fx_rates);
 
     let target_map: HashMap<String, (Decimal, Decimal)> = targets
