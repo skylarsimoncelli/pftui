@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone)]
 pub struct EconomicDataEntry {
@@ -60,3 +64,31 @@ pub fn get_all(conn: &Connection) -> Result<Vec<EconomicDataEntry>> {
     Ok(out)
 }
 
+pub fn get_all_backend(backend: &BackendConnection) -> Result<Vec<EconomicDataEntry>> {
+    query::dispatch(backend, get_all, get_all_postgres)
+}
+
+fn get_all_postgres(pool: &PgPool) -> Result<Vec<EconomicDataEntry>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query_as::<_, (String, String, Option<String>, Option<String>, String, String)>(
+            "SELECT indicator, value, previous, change, source_url, fetched_at
+             FROM economic_data
+             ORDER BY indicator",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(indicator, value, previous, change, source_url, fetched_at)| EconomicDataEntry {
+            indicator,
+            value: value.parse().unwrap_or(Decimal::ZERO),
+            previous: previous.and_then(|v| v.parse().ok()),
+            change: change.and_then(|v| v.parse().ok()),
+            source_url,
+            fetched_at,
+        })
+        .collect())
+}

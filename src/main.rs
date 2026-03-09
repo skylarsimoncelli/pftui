@@ -280,8 +280,7 @@ fn main() -> Result<()> {
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
         Some(Command::Sovereign { json }) => commands::sovereign::run(json),
         Some(Command::Economy { indicator, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "economy")?;
-            commands::economy::run(conn, indicator.as_deref(), json)
+            commands::economy::run(&backend, indicator.as_deref(), json)
         }
 
         Some(Command::Eod { json }) => {
@@ -290,13 +289,11 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Global { country, indicator, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "global")?;
-            commands::global::run(conn, country.as_deref(), indicator.as_deref(), json)
+            commands::global::run(&backend, country.as_deref(), indicator.as_deref(), json)
         }
 
         Some(Command::Performance { since, period, vs, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "performance")?;
-            commands::performance::run(conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
+            commands::performance::run(&backend, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
         }
 
         Some(Command::EtfFlows { days, fund, json }) => {

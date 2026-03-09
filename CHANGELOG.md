@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 06:36 UTC — F32 Phase 40: backend-dispatch economy/global/performance reads
+
+- What: added backend-dispatched read APIs for `economic_data`, `worldbank_cache` (latest indicators), and `portfolio_snapshots`, updated `economy`, `global`, and `performance` commands to consume `BackendConnection`, and removed sqlite gating for those commands in `main`; also added missing Postgres schema tables/indexes for these datasets.
+- Why: removes another set of sqlite-only command blocks and improves postgres parity for macro and performance reporting paths.
+- Files: `src/db/economic_data.rs`, `src/db/worldbank_cache.rs`, `src/db/snapshots.rs`, `src/db/postgres_schema.rs`, `src/commands/economy.rs`, `src/commands/global.rs`, `src/commands/performance.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/import/eod/scan/migrate-journal/setup/tui and `alerts check`)
+
 ### 2026-03-09 06:15 UTC — F32 Phase 39: un-gate watchlist command from sqlite-only reads
 
 - What: migrated `watchlist_cli` to backend-dispatched price cache/history reads (`get_all_cached_prices_backend`, `get_history_backend`), removed SQLite connection argument from command signature, and dropped sqlite gating for `pftui watchlist` in `main`.

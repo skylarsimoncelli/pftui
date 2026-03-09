@@ -1,10 +1,10 @@
 use anyhow::Result;
-use rusqlite::Connection;
 
+use crate::db::backend::BackendConnection;
 use crate::db::economic_data;
 
-pub fn run(conn: &Connection, indicator: Option<&str>, json: bool) -> Result<()> {
-    let mut rows = economic_data::get_all(conn)?;
+pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> Result<()> {
+    let mut rows = economic_data::get_all_backend(backend)?;
     if let Some(ind) = indicator {
         let needle = ind.to_lowercase();
         rows.retain(|r| r.indicator.to_lowercase() == needle);
@@ -81,4 +81,3 @@ fn truncate_url(url: &str, max: usize) -> String {
     }
     format!("{}...", &url[..max.saturating_sub(3)])
 }
-

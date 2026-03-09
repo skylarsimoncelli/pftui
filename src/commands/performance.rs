@@ -2,10 +2,10 @@ use anyhow::{bail, Result};
 use chrono::{Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::config::Config;
-use crate::db::snapshots::{get_all_portfolio_snapshots, PortfolioSnapshot};
+use crate::db::backend::BackendConnection;
+use crate::db::snapshots::{get_all_portfolio_snapshots_backend, PortfolioSnapshot};
 
 /// Compute the return percentage between two values.
 fn return_pct(start: Decimal, end: Decimal) -> Option<Decimal> {
@@ -50,7 +50,7 @@ fn fmt_dollar(change: Option<Decimal>, currency: &str) -> String {
 }
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     config: &Config,
     since: Option<&str>,
     period: Option<&str>,
@@ -59,7 +59,7 @@ pub fn run(
 ) -> Result<()> {
     let today = Utc::now().date_naive();
     // Get all snapshots for standard periods
-    let all_snapshots = get_all_portfolio_snapshots(conn)?;
+    let all_snapshots = get_all_portfolio_snapshots_backend(backend)?;
 
     if all_snapshots.is_empty() {
         println!("No portfolio snapshots found.");
@@ -71,18 +71,18 @@ pub fn run(
     let earliest = all_snapshots.first().unwrap();
 
     if json {
-        return print_json(conn, config, &all_snapshots, since, period, vs_benchmark, &today);
+        return print_json(config, &all_snapshots, since, period, vs_benchmark, &today);
     }
 
     // If --since is provided, show custom period return
     if let Some(since_date) = since {
         validate_date(since_date)?;
-        return print_since(conn, config, &all_snapshots, since_date, latest, vs_benchmark);
+        return print_since(config, &all_snapshots, since_date, latest, vs_benchmark);
     }
 
     // If --period is provided, show return series
     if let Some(period_str) = period {
-        return print_period_series(conn, config, &all_snapshots, period_str, &today);
+        return print_period_series(config, &all_snapshots, period_str, &today);
     }
 
     // Default: show standard period returns (1D, 1W, 1M, MTD, QTD, YTD, since inception)
@@ -194,7 +194,6 @@ fn print_standard_returns(
 }
 
 fn print_since(
-    _conn: &Connection,
     config: &Config,
     snapshots: &[PortfolioSnapshot],
     since_date: &str,
@@ -271,7 +270,6 @@ fn print_since(
 }
 
 fn print_period_series(
-    _conn: &Connection,
     config: &Config,
     snapshots: &[PortfolioSnapshot],
     period: &str,
@@ -366,7 +364,6 @@ fn group_monthly(snapshots: &[PortfolioSnapshot]) -> Vec<(String, PortfolioSnaps
 }
 
 fn print_json(
-    _conn: &Connection,
     config: &Config,
     snapshots: &[PortfolioSnapshot],
     since: Option<&str>,
@@ -447,6 +444,10 @@ fn print_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn to_backend(conn: rusqlite::Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
 
     #[test]
     fn test_return_pct_basic() {
@@ -579,7 +580,8 @@ mod tests {
     fn test_performance_no_snapshots() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
-        let result = run(&conn, &config, None, None, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, None, None, false);
         assert!(result.is_ok());
     }
 
@@ -598,7 +600,8 @@ mod tests {
         upsert_portfolio_snapshot(&conn, "2026-03-01", dec!(110000), dec!(20000), dec!(90000))
             .unwrap();
 
-        let result = run(&conn, &config, None, None, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, None, None, false);
         assert!(result.is_ok());
     }
 
@@ -614,7 +617,8 @@ mod tests {
         upsert_portfolio_snapshot(&conn, "2026-03-01", dec!(110000), dec!(20000), dec!(90000))
             .unwrap();
 
-        let result = run(&conn, &config, Some("2026-02-01"), None, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, Some("2026-02-01"), None, None, false);
         assert!(result.is_ok());
     }
 
@@ -632,7 +636,8 @@ mod tests {
         upsert_portfolio_snapshot(&conn, "2026-03-02", dec!(102000), dec!(20000), dec!(82000))
             .unwrap();
 
-        let result = run(&conn, &config, None, Some("weekly"), None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, Some("weekly"), None, false);
         assert!(result.is_ok());
     }
 
@@ -648,7 +653,8 @@ mod tests {
         upsert_portfolio_snapshot(&conn, "2026-03-01", dec!(110000), dec!(20000), dec!(90000))
             .unwrap();
 
-        let result = run(&conn, &config, None, None, None, true);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, None, None, true);
         assert!(result.is_ok());
     }
 
@@ -661,7 +667,8 @@ mod tests {
         upsert_portfolio_snapshot(&conn, "2026-02-01", dec!(100000), dec!(20000), dec!(80000))
             .unwrap();
 
-        let result = run(&conn, &config, Some("not-a-date"), None, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, Some("not-a-date"), None, None, false);
         assert!(result.is_err());
     }
 
@@ -674,7 +681,8 @@ mod tests {
         upsert_portfolio_snapshot(&conn, "2026-02-01", dec!(100000), dec!(20000), dec!(80000))
             .unwrap();
 
-        let result = run(&conn, &config, None, Some("yearly"), None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, Some("yearly"), None, false);
         assert!(result.is_err());
     }
 
@@ -698,7 +706,7 @@ mod tests {
         assert_eq!(since[1].date, "2026-03-01");
 
         // Test get_all_portfolio_snapshots
-        let all = get_all_portfolio_snapshots(&conn).unwrap();
+        let all = crate::db::snapshots::get_all_portfolio_snapshots(&conn).unwrap();
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].date, "2026-02-01");
         assert_eq!(all[2].date, "2026-03-01");

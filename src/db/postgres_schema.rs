@@ -153,6 +153,55 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                date TEXT PRIMARY KEY,
+                total_value TEXT NOT NULL,
+                cash_value TEXT NOT NULL,
+                invested_value TEXT NOT NULL,
+                snapshot_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS position_snapshots (
+                date TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                quantity TEXT NOT NULL,
+                price TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (date, symbol)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS worldbank_cache (
+                country_code TEXT NOT NULL,
+                country_name TEXT NOT NULL,
+                indicator_code TEXT NOT NULL,
+                indicator_name TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                value TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (country_code, indicator_code, year)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS economic_data (
+                indicator TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                previous TEXT,
+                change TEXT,
+                source_url TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_signals_scenario ON scenario_signals(scenario_id)")
             .execute(pool)
@@ -161,6 +210,9 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_worldbank_country_indicator ON worldbank_cache(country_code, indicator_code, year)")
             .execute(pool)
             .await?;
 

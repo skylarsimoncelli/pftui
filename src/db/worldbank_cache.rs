@@ -2,7 +2,11 @@ use crate::data::worldbank::WorldBankDataPoint;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use rust_decimal::Decimal;
+use sqlx::PgPool;
 use std::str::FromStr;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 fn parse_worldbank_value(raw: &str) -> Option<Decimal> {
     Decimal::from_str(raw).ok().or_else(|| {
@@ -192,6 +196,48 @@ pub fn get_latest_indicators(conn: &Connection) -> Result<Vec<WorldBankDataPoint
     }
 
     Ok(result)
+}
+
+pub fn get_latest_indicators_backend(backend: &BackendConnection) -> Result<Vec<WorldBankDataPoint>> {
+    query::dispatch(backend, get_latest_indicators, get_latest_indicators_postgres)
+}
+
+fn get_latest_indicators_postgres(pool: &PgPool) -> Result<Vec<WorldBankDataPoint>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query_as::<_, (String, String, String, String, i32, Option<String>)>(
+            "SELECT wb.country_code, wb.country_name, wb.indicator_code, wb.indicator_name, wb.year, wb.value
+             FROM worldbank_cache wb
+             INNER JOIN (
+                 SELECT country_code, indicator_code, MAX(year) as max_year
+                 FROM worldbank_cache
+                 WHERE value IS NOT NULL AND value != ''
+                 GROUP BY country_code, indicator_code
+             ) latest
+             ON wb.country_code = latest.country_code
+             AND wb.indicator_code = latest.indicator_code
+             AND wb.year = latest.max_year
+             ORDER BY wb.country_code, wb.indicator_code",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(country_code, country_name, indicator_code, indicator_name, year, value_str)| {
+                WorldBankDataPoint {
+                    country_code,
+                    country_name,
+                    indicator_code,
+                    indicator_name,
+                    year,
+                    value: value_str.and_then(|s| parse_worldbank_value(&s)),
+                }
+            },
+        )
+        .collect())
 }
 
 #[cfg(test)]

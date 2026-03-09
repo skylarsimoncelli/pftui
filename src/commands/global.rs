@@ -6,24 +6,24 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use rusqlite::Connection;
 
 use crate::data::worldbank::{
     COUNTRY_BRAZIL, COUNTRY_CHINA, COUNTRY_EU, COUNTRY_INDIA, COUNTRY_RUSSIA,
     COUNTRY_SOUTH_AFRICA, COUNTRY_UK, COUNTRY_US, INDICATOR_CURRENT_ACCOUNT, INDICATOR_DEBT_GDP,
     INDICATOR_GDP_GROWTH, INDICATOR_RESERVES,
 };
+use crate::db::backend::BackendConnection;
 use crate::db::worldbank_cache;
 
 /// Run the global macro dashboard command.
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     country_filter: Option<&str>,
     indicator_filter: Option<&str>,
     json: bool,
 ) -> Result<()> {
     // Load all cached World Bank data
-    let all_data = worldbank_cache::get_latest_indicators(conn)?;
+    let all_data = worldbank_cache::get_latest_indicators_backend(backend)?;
 
     // Apply filters
     let filtered_data: Vec<_> = all_data
