@@ -562,6 +562,17 @@ body {
     gap: var(--spacing-md);
 }
 
+.stack-cards {
+    grid-template-columns: 1fr;
+    max-width: 980px;
+    margin: 0 auto;
+    gap: 1.15rem;
+}
+
+.stack-cards .agent-card {
+    padding: 1.35rem 1.5rem;
+}
+
 .agent-card {
     background: rgba(13, 17, 23, 0.85);
     border: 1px solid var(--border);
