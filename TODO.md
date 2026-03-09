@@ -1110,6 +1110,104 @@ TOP INSIGHT (Druckenmiller):
 
 ---
 
+### F37: "AI Layer" — README + Website section for agent capabilities
+
+> pftui's agent integration is a major differentiator that isn't documented anywhere
+> user-facing. The README mentions "agent-native" but doesn't explain what that means
+> in practice. The website has no section on it. This is a standalone product feature
+> that deserves prominent placement — alongside "Your Database" and "Analytics Engine."
+
+**The AI Layer is three capabilities:**
+
+**1. Bootstrapping & Bidirectional Communication**
+- `pftui brief --json` gives agents a complete portfolio snapshot in one call
+- `pftui agent-msg` enables structured inter-agent message passing with priorities, categories, layers
+- `pftui conviction`, `pftui notes`, `pftui predict` — agents write observations, humans review and override
+- Every command supports `--json` — the CLI IS the API
+- Agents and humans operate on the same data, same tool, same database. Not separate systems.
+- The human sets conviction, the agent tracks evidence. The agent proposes scenarios, the human adjusts probabilities. Bidirectional by design.
+
+**2. Scheduled Routines & Reports**
+- Daily briefs, market close summaries, weekly reviews — all generated from pftui data
+- Cron-driven: morning research pulls `pftui refresh` + `pftui analytics summary`, evening planner updates scenarios
+- Multi-agent feedback loops: morning agent passes signals to evening agent via `pftui agent-msg`, evening agent guides tomorrow's priorities
+- Alert system: `pftui alerts` triggers notifications on price/allocation thresholds
+- No external APIs required — all intelligence derived from pftui's own database
+
+**3. Investor Perspectives Panel (F36)**
+- Feed analytics engine data to sub-agents prompted as famous investors or investment styles
+- 15 named legends (Dalio, Druckenmiller, Buffett, etc.) + 10 generic archetypes (Momentum Trader, Doomsday Prepper, etc.)
+- Each interprets the same data through a different philosophy
+- Consensus and divergence detection — the disagreements are the most valuable output
+- Custom personas: drop a markdown file, add an investor
+
+**README section (add after "Analytics Engine" or "Your Database"):**
+
+```markdown
+## AI Layer
+
+pftui is designed to be operated by AI agents alongside humans.
+Every command outputs `--json`. Every table is read/write via CLI.
+The result: your AI agent and you operate on the **same data,
+same tool, same database** — not separate systems stitched together.
+
+### What agents can do with pftui
+
+**Daily Intelligence Loop**
+Your agent runs `pftui refresh` at market open, reads `pftui analytics summary`,
+writes observations to `pftui notes`, updates `pftui scenario` probabilities,
+and delivers a brief to your phone. You reply with your read. The agent logs
+your conviction via `pftui conviction set`. Tomorrow's brief incorporates
+your feedback. The loop compounds.
+
+**Inter-Agent Communication**
+Multiple agents coordinate via `pftui agent-msg` — a structured message bus
+with priorities, categories, and analytics engine layer tags. A low-timeframe
+agent detects a correlation break, escalates to the medium-timeframe agent,
+which investigates whether it's a scenario shift. Signals flow up, context
+flows down.
+
+**Investor Perspectives Panel**
+Feed your analytics engine data to sub-agents prompted as Warren Buffett,
+Stanley Druckenmiller, Michael Burry, or 22 other investor personas.
+Each interprets your portfolio through a different philosophy. When 7 of 8
+agree on gold but split on BTC — that's signal. Custom personas: just add
+a markdown file.
+
+**Your agent setup (example with OpenClaw):**
+\`\`\`bash
+# Morning cron: refresh data, generate brief
+pftui refresh
+pftui brief --json | openclaw agent send --stdin
+
+# Agent writes back:
+pftui conviction set GC=F --score 4 --notes "War premium + BRICS"
+pftui scenario update "Inflation Spike" --probability 38
+pftui agent-msg send "Gold alignment: all 4 layers bullish" \\
+  --from morning-agent --priority high --layer cross
+\`\`\`
+
+No vendor lock-in. Any agent framework that can call CLI commands can
+operate pftui. OpenClaw, LangChain, AutoGPT, Claude Code, a bash script.
+The database is yours. The intelligence compounds.
+```
+
+**Website section (new card/section after Analytics Engine):**
+- Hero: "AI Layer — Your Agent's Operating System"
+- 3-column layout: Bidirectional Comms | Scheduled Routines | Investor Panel
+- Terminal demo scene showing agent writing conviction + reading brief
+- Comparison table row: "AI Agent Integration" — pftui ✓, Bloomberg ✗, TradingView ✗, Yahoo ✗
+- CTA: "See AGENTS.md for the full agent operator guide"
+
+**Files to update:**
+- [ ] `/root/pftui/README.md` — new "AI Layer" section
+- [ ] `/root/pftui/website/index.html` — new section + comparison table row
+- [ ] `/root/pftui/website/script.js` — new terminal demo scene showing agent interaction
+- [ ] `/root/pftui/PRODUCT-VISION.md` — integrate AI Layer as third pillar (Database + Analytics + AI)
+- [ ] `/root/pftui/AGENTS.md` — cross-reference from AI Layer section
+
+---
+
 ## Feedback Summary
 
 > Updated: 2026-03-09
