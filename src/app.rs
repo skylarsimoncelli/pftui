@@ -938,10 +938,17 @@ impl App {
             watchlist: config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
         };
-        let service = PriceService::start(config);
-        self.request_price_fetch(&service);
-        self.request_all_history(&service);
-        self.price_service = Some(service);
+        match PriceService::start(config) {
+            Ok(service) => {
+                self.request_price_fetch(&service);
+                self.request_all_history(&service);
+                self.price_service = Some(service);
+            }
+            Err(e) => {
+                eprintln!("Failed to start price service: {}", e);
+                self.price_service = None;
+            }
+        }
         self.request_market_data();
         self.request_economy_data();
         self.request_sentiment_data();

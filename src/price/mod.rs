@@ -1,6 +1,7 @@
 pub mod coingecko;
 pub mod yahoo;
 
+use anyhow::{Context, Result};
 use std::sync::mpsc;
 use std::time::Duration;
 use crate::config::Config;
@@ -76,26 +77,25 @@ pub struct PriceService {
 }
 
 impl PriceService {
-    pub fn start(config: Config) -> Self {
+    pub fn start(config: Config) -> Result<Self> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<PriceCommand>();
         let (update_tx, update_rx) = mpsc::channel::<PriceUpdate>();
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .context("Failed to build tokio runtime for PriceService")?;
 
         let handle = std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to build tokio runtime");
-
             rt.block_on(async move {
                 Self::run_loop(cmd_rx, update_tx, &config).await;
             });
         });
 
-        PriceService {
+        Ok(PriceService {
             cmd_tx,
             update_rx,
             rt_handle: handle,
-        }
+        })
     }
 
     async fn run_loop(

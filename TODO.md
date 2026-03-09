@@ -790,7 +790,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Code Quality Quick Wins (audit-driven)
 
-- [ ] [Audit] Price service startup hardening — avoid panic on runtime build failure; return `Result` and handle in app init.
 
 ### F32: Native PostgreSQL Backend (epic)
 

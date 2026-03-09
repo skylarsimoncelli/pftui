@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Price service startup hardening (no panic path)
+
+- What: changed `PriceService::start` to return `Result` and moved Tokio runtime construction to a fallible pre-spawn path; app init now handles startup failure gracefully.
+- Why: avoids panic-on-startup behavior for runtime creation failure and improves TUI startup reliability.
+- Files: `src/price/mod.rs`, `src/app.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit quick-win (`price service` startup hardening)
+
 ### 2026-03-09 — `db-info` reliability/performance hardening
 
 - What: added per-table error reporting in `db-info` table counts (instead of silently returning zero) and parallelized PostgreSQL row-count queries.
