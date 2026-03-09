@@ -798,6 +798,10 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 - [ ] **P1: Prediction decode NULL crash blocks refresh completion** — `pftui refresh` exits with code 1 after "Error: unexpected null; try decoding as an `Option`" from `predictions_cache::get_last_update_postgres`. Root cause: `SELECT MAX(updated_at)` returns SQL NULL on empty table, but sqlx `query_scalar` doesn't handle `Option<Option<i64>>`. Workaround: seeded a dummy row. Proper fix: use `.flatten()` or `COALESCE(MAX(updated_at), 0)` in the query.
 
+- [ ] **P1-BUG: `bls_cache` Postgres timestamp parse crash — blocks full refresh** — `pftui refresh` exits code 1 with "Failed to parse updated_at timestamp / trailing input" after BLS data is fetched. Root cause: `is_cache_fresh_postgres()` in `src/db/bls_cache.rs:234` casts `updated_at::text` which produces Postgres format `2026-03-09 17:50:54.672147+00`. The parser tries rfc3339 (needs `T` separator + `+00:00`) then `NaiveDateTime` (no timezone) — neither matches `+00` suffix. Fix: add a third parse attempt for `%Y-%m-%d %H:%M:%S%.f+00` or use `TO_CHAR(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"')` in the SQL cast.
+
+- [ ] **P1-BUG: `correlation_snapshots` schema mismatch — was manually fixed, verify code** — Rust schema expects `symbol_a TEXT, symbol_b TEXT, recorded_at TEXT` but initial Postgres migration created `pair TEXT, computed_at TIMESTAMPTZ`. Manually recreated with correct schema. Correlations now computing (33 rows). Verify the Postgres migration code matches `schema.rs` to prevent this on fresh installs.
+
 ### Infrastructure
 
 ### Code Quality Quick Wins (audit-driven)
