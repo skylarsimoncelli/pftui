@@ -716,6 +716,17 @@ body {
     border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
+.analytics-engine .agent-grid {
+    grid-template-columns: 1fr;
+    max-width: 980px;
+    margin: 0 auto;
+    gap: 1.15rem;
+}
+
+.analytics-engine .agent-card {
+    padding: 1.35rem 1.5rem;
+}
+
 .cli-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
