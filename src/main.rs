@@ -205,7 +205,7 @@ fn main() -> Result<()> {
         Some(Command::Refresh { notify }) => commands::refresh::run(&backend, conn, &config, notify),
         Some(Command::Status { json, .. }) => commands::status::run(conn, json),
         Some(Command::Config { .. }) => unreachable!(),
-        Some(Command::Value { json }) => commands::value::run(conn, &config, json),
+        Some(Command::Value { json }) => commands::value::run(&backend, conn, &config, json),
         Some(Command::Brief { json }) => commands::brief::run(conn, &config, true, json),
         Some(Command::Watchlist { approaching, json }) => {
             commands::watchlist_cli::run(&backend, conn, &config, approaching.as_deref(), json)

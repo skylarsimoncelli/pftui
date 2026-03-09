@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:02 UTC — F32 Phase 15: backend-dispatch value command reads
+
+- What: rewired `value` command to backend-dispatched reads for cached prices, transactions, and percentage-mode allocations; updated main routing to pass `BackendConnection`.
+- Why: removes another common operator command from SQLite-only reads in Postgres mode.
+- Files: `src/commands/value.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: value command path)
+
 ### 2026-03-09 00:45 UTC — F31.14 milestone 1: cross-timeframe signals pipeline + analytics CLI
 
 - What: implemented cross-timeframe signal infrastructure with `timeframe_signals` table, refresh-time alignment/divergence/transition detection, `pftui analytics signals` CLI view, and top signal inclusion in `brief --json` payload.

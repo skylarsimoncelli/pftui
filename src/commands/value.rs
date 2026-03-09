@@ -6,9 +6,10 @@ use rust_decimal_macros::dec;
 use rusqlite::Connection;
 
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::list_allocations;
-use crate::db::price_cache::get_all_cached_prices;
-use crate::db::transactions::list_transactions;
+use crate::db::allocations::list_allocations_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::transactions::list_transactions_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 
@@ -46,26 +47,27 @@ fn format_with_commas(value: Decimal, dp: u32) -> String {
     }
 }
 
-pub fn run(conn: &Connection, config: &Config, json: bool) -> Result<()> {
-    let cached = get_all_cached_prices(conn)?;
+pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, json: bool) -> Result<()> {
+    let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, &prices, json),
-        PortfolioMode::Percentage => run_percentage(conn, config, &prices, json),
+        PortfolioMode::Full => run_full(backend, conn, config, &prices, json),
+        PortfolioMode::Percentage => run_percentage(backend, conn, config, &prices, json),
     }
 }
 
 fn run_full(
+    backend: &BackendConnection,
     conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
     json: bool,
 ) -> Result<()> {
-    let txs = list_transactions(conn)?;
+    let txs = list_transactions_backend(backend)?;
     if txs.is_empty() {
         if json {
             println!("{{\"error\": \"No positions\"}}");
@@ -165,12 +167,13 @@ fn run_full(
 }
 
 fn run_percentage(
+    backend: &BackendConnection,
     conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
     json: bool,
 ) -> Result<()> {
-    let allocs = list_allocations(conn)?;
+    let allocs = list_allocations_backend(backend)?;
     if allocs.is_empty() {
         if json {
             println!("{{\"error\": \"No allocations\"}}");
@@ -252,6 +255,10 @@ fn format_category(cat: &AssetCategory) -> &'static str {
 mod tests {
     use super::*;
 
+    fn to_backend(conn: Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
+
     #[test]
     fn format_with_commas_basic() {
         assert_eq!(format_with_commas(dec!(1234567.89), 2), "1,234,567.89");
@@ -287,7 +294,8 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
         // Should not panic, just prints "No positions"
-        let result = run(&conn, &config, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, false);
         assert!(result.is_ok());
     }
 
@@ -314,7 +322,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, false);
         assert!(result.is_ok());
     }
 
@@ -359,7 +368,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, false);
         assert!(result.is_ok());
     }
 
@@ -375,7 +385,8 @@ mod tests {
         insert_allocation(&conn, "BTC", AssetCategory::Crypto, dec!(50)).unwrap();
         insert_allocation(&conn, "GC=F", AssetCategory::Commodity, dec!(50)).unwrap();
 
-        let result = run(&conn, &config, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, false);
         assert!(result.is_ok());
     }
 }
