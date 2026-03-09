@@ -1,12 +1,12 @@
 use anyhow::{bail, Result};
 use rust_decimal::Decimal;
-use rusqlite::Connection;
 use serde::Deserialize;
 
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::insert_allocation;
-use crate::db::transactions::{insert_transaction, list_transactions};
-use crate::db::watchlist::{add_to_watchlist, list_watchlist};
+use crate::db::allocations::insert_allocation_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::transactions::{insert_transaction_backend, list_transactions_backend};
+use crate::db::watchlist::{add_to_watchlist_backend, list_watchlist_backend};
 use crate::models::asset::AssetCategory;
 use crate::models::transaction::NewTransaction;
 
@@ -79,7 +79,7 @@ pub enum ImportMode {
     Merge,
 }
 
-pub fn run(conn: &Connection, config: &Config, path: &str, mode: ImportMode) -> Result<()> {
+pub fn run(backend: &BackendConnection, config: &Config, path: &str, mode: ImportMode) -> Result<()> {
     // Read and parse
     let content = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", path, e))?;
@@ -101,8 +101,8 @@ pub fn run(conn: &Connection, config: &Config, path: &str, mode: ImportMode) -> 
     }
 
     match mode {
-        ImportMode::Replace => import_replace(conn, &snapshot)?,
-        ImportMode::Merge => import_merge(conn, &snapshot)?,
+        ImportMode::Replace => import_replace(backend, &snapshot)?,
+        ImportMode::Merge => import_merge(backend, &snapshot)?,
     }
 
     let mode_label = match mode {
@@ -203,18 +203,35 @@ fn validate_snapshot(snapshot: &Snapshot, config: &Config) -> Result<()> {
 }
 
 /// Replace mode: wipe existing data, then insert everything from snapshot.
-fn import_replace(conn: &Connection, snapshot: &Snapshot) -> Result<()> {
-    // Wipe in a transaction
-    let tx = conn.unchecked_transaction()?;
-
-    tx.execute_batch("DELETE FROM transactions")?;
-    tx.execute_batch("DELETE FROM portfolio_allocations")?;
-    tx.execute_batch("DELETE FROM watchlist")?;
+fn import_replace(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()> {
+    crate::db::query::dispatch(
+        backend,
+        |conn| {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch("DELETE FROM transactions")?;
+            tx.execute_batch("DELETE FROM portfolio_allocations")?;
+            tx.execute_batch("DELETE FROM watchlist")?;
+            tx.commit()?;
+            Ok(())
+        },
+        |pool| {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(async {
+                sqlx::query("DELETE FROM transactions").execute(pool).await?;
+                sqlx::query("DELETE FROM portfolio_allocations")
+                    .execute(pool)
+                    .await?;
+                sqlx::query("DELETE FROM watchlist").execute(pool).await?;
+                Ok::<(), sqlx::Error>(())
+            })?;
+            Ok(())
+        },
+    )?;
 
     // Insert transactions
     for t in &snapshot.transactions {
-        insert_transaction(
-            &tx,
+        insert_transaction_backend(
+            backend,
             &NewTransaction {
                 symbol: t.symbol.clone(),
                 category: t.category,
@@ -230,26 +247,22 @@ fn import_replace(conn: &Connection, snapshot: &Snapshot) -> Result<()> {
 
     // Insert allocations
     for a in &snapshot.allocations {
-        insert_allocation(&tx, &a.symbol, a.category, a.allocation_pct)?;
+        insert_allocation_backend(backend, &a.symbol, a.category, a.allocation_pct)?;
     }
 
     // Insert watchlist
     for w in &snapshot.watchlist {
         let cat: AssetCategory = w.category.parse().unwrap_or(AssetCategory::Equity);
-        add_to_watchlist(&tx, &w.symbol, cat)?;
+        add_to_watchlist_backend(backend, &w.symbol, cat)?;
     }
-
-    tx.commit()?;
     Ok(())
 }
 
 /// Merge mode: add new entries without deleting existing data.
-fn import_merge(conn: &Connection, snapshot: &Snapshot) -> Result<()> {
-    let tx = conn.unchecked_transaction()?;
-
+fn import_merge(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()> {
     // For transactions, we add all (no unique constraint to conflict on).
     // To avoid exact duplicates, check if an identical transaction already exists.
-    let existing_txs = list_transactions(&tx)?;
+    let existing_txs = list_transactions_backend(backend)?;
 
     for t in &snapshot.transactions {
         let is_dup = existing_txs.iter().any(|e| {
@@ -262,8 +275,8 @@ fn import_merge(conn: &Connection, snapshot: &Snapshot) -> Result<()> {
         });
 
         if !is_dup {
-            insert_transaction(
-                &tx,
+            insert_transaction_backend(
+                backend,
                 &NewTransaction {
                     symbol: t.symbol.clone(),
                     category: t.category,
@@ -280,22 +293,20 @@ fn import_merge(conn: &Connection, snapshot: &Snapshot) -> Result<()> {
 
     // Allocations use upsert (ON CONFLICT), so insert_allocation handles merge naturally
     for a in &snapshot.allocations {
-        insert_allocation(&tx, &a.symbol, a.category, a.allocation_pct)?;
+        insert_allocation_backend(backend, &a.symbol, a.category, a.allocation_pct)?;
     }
 
     // Watchlist uses upsert (ON CONFLICT), so add_to_watchlist handles merge naturally
-    let existing_watch = list_watchlist(&tx)?;
+    let existing_watch = list_watchlist_backend(backend)?;
     for w in &snapshot.watchlist {
         let already = existing_watch
             .iter()
             .any(|e| e.symbol.eq_ignore_ascii_case(&w.symbol));
         if !already {
             let cat: AssetCategory = w.category.parse().unwrap_or(AssetCategory::Equity);
-            add_to_watchlist(&tx, &w.symbol, cat)?;
+            add_to_watchlist_backend(backend, &w.symbol, cat)?;
         }
     }
-
-    tx.commit()?;
     Ok(())
 }
 
@@ -306,8 +317,13 @@ mod tests {
     use crate::db::transactions::{insert_transaction, list_transactions};
     use crate::db::allocations::{list_allocations, insert_allocation};
     use crate::db::watchlist::{add_to_watchlist, list_watchlist};
+    use crate::db::backend::BackendConnection;
     use crate::models::transaction::{NewTransaction, TxType};
     use rust_decimal_macros::dec;
+
+    fn to_backend(conn: rusqlite::Connection) -> BackendConnection {
+        BackendConnection::Sqlite { conn }
+    }
 
     fn make_snapshot_json(
         txs: &str,
@@ -340,11 +356,12 @@ mod tests {
 
     #[test]
     fn import_replace_transactions() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
+        let conn = backend.sqlite();
         let config = Config::default();
 
         // Pre-existing transaction
-        insert_transaction(&conn, &NewTransaction {
+        insert_transaction(conn, &NewTransaction {
             symbol: "OLD".to_string(),
             category: AssetCategory::Equity,
             tx_type: TxType::Buy,
@@ -363,9 +380,9 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        run(&conn, &config, &path_str, ImportMode::Replace).unwrap();
+        run(&backend, &config, &path_str, ImportMode::Replace).unwrap();
 
-        let txs = list_transactions(&conn).unwrap();
+        let txs = list_transactions(conn).unwrap();
         assert_eq!(txs.len(), 1);
         assert_eq!(txs[0].symbol, "AAPL");
         assert_eq!(txs[0].quantity, dec!(10));
@@ -375,14 +392,15 @@ mod tests {
 
     #[test]
     fn import_replace_allocations() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
+        let conn = backend.sqlite();
         let config = Config {
             portfolio_mode: PortfolioMode::Percentage,
             ..Config::default()
         };
 
         // Pre-existing allocation
-        insert_allocation(&conn, "OLD", AssetCategory::Equity, dec!(50)).unwrap();
+        insert_allocation(conn, "OLD", AssetCategory::Equity, dec!(50)).unwrap();
 
         let json = make_snapshot_json(
             "",
@@ -392,9 +410,9 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        run(&conn, &config, &path_str, ImportMode::Replace).unwrap();
+        run(&backend, &config, &path_str, ImportMode::Replace).unwrap();
 
-        let allocs = list_allocations(&conn).unwrap();
+        let allocs = list_allocations(conn).unwrap();
         assert_eq!(allocs.len(), 1);
         assert_eq!(allocs[0].symbol, "BTC");
         assert_eq!(allocs[0].allocation_pct, dec!(25));
@@ -404,10 +422,11 @@ mod tests {
 
     #[test]
     fn import_replace_watchlist() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
+        let conn = backend.sqlite();
         let config = Config::default();
 
-        add_to_watchlist(&conn, "OLD", AssetCategory::Equity).unwrap();
+        add_to_watchlist(conn, "OLD", AssetCategory::Equity).unwrap();
 
         let json = make_snapshot_json(
             "",
@@ -417,9 +436,9 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        run(&conn, &config, &path_str, ImportMode::Replace).unwrap();
+        run(&backend, &config, &path_str, ImportMode::Replace).unwrap();
 
-        let entries = list_watchlist(&conn).unwrap();
+        let entries = list_watchlist(conn).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].symbol, "ETH");
 
@@ -428,10 +447,11 @@ mod tests {
 
     #[test]
     fn import_merge_adds_new_transactions() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
+        let conn = backend.sqlite();
         let config = Config::default();
 
-        insert_transaction(&conn, &NewTransaction {
+        insert_transaction(conn, &NewTransaction {
             symbol: "AAPL".to_string(),
             category: AssetCategory::Equity,
             tx_type: TxType::Buy,
@@ -450,9 +470,9 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        run(&conn, &config, &path_str, ImportMode::Merge).unwrap();
+        run(&backend, &config, &path_str, ImportMode::Merge).unwrap();
 
-        let txs = list_transactions(&conn).unwrap();
+        let txs = list_transactions(conn).unwrap();
         assert_eq!(txs.len(), 2);
         let symbols: Vec<&str> = txs.iter().map(|t| t.symbol.as_str()).collect();
         assert!(symbols.contains(&"AAPL"));
@@ -463,10 +483,11 @@ mod tests {
 
     #[test]
     fn import_merge_skips_duplicate_transactions() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
+        let conn = backend.sqlite();
         let config = Config::default();
 
-        insert_transaction(&conn, &NewTransaction {
+        insert_transaction(conn, &NewTransaction {
             symbol: "AAPL".to_string(),
             category: AssetCategory::Equity,
             tx_type: TxType::Buy,
@@ -486,9 +507,9 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        run(&conn, &config, &path_str, ImportMode::Merge).unwrap();
+        run(&backend, &config, &path_str, ImportMode::Merge).unwrap();
 
-        let txs = list_transactions(&conn).unwrap();
+        let txs = list_transactions(conn).unwrap();
         assert_eq!(txs.len(), 1);
 
         std::fs::remove_file(&_path).ok();
@@ -496,10 +517,11 @@ mod tests {
 
     #[test]
     fn import_merge_watchlist_no_duplicates() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
+        let conn = backend.sqlite();
         let config = Config::default();
 
-        add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
+        add_to_watchlist(conn, "BTC", AssetCategory::Crypto).unwrap();
 
         let json = make_snapshot_json(
             "",
@@ -509,9 +531,9 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        run(&conn, &config, &path_str, ImportMode::Merge).unwrap();
+        run(&backend, &config, &path_str, ImportMode::Merge).unwrap();
 
-        let entries = list_watchlist(&conn).unwrap();
+        let entries = list_watchlist(conn).unwrap();
         assert_eq!(entries.len(), 2); // BTC kept, ETH added
 
         std::fs::remove_file(&_path).ok();
@@ -519,13 +541,13 @@ mod tests {
 
     #[test]
     fn import_rejects_mode_mismatch() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config::default(); // Full mode
 
         let json = make_snapshot_json("", "", "", "percentage");
         let (_path, path_str) = write_tmp_file(&json);
 
-        let result = run(&conn, &config, &path_str, ImportMode::Replace);
+        let result = run(&backend, &config, &path_str, ImportMode::Replace);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("mode mismatch"));
 
@@ -534,7 +556,7 @@ mod tests {
 
     #[test]
     fn import_rejects_empty_symbol() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config::default();
 
         let json = make_snapshot_json(
@@ -545,7 +567,7 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        let result = run(&conn, &config, &path_str, ImportMode::Replace);
+        let result = run(&backend, &config, &path_str, ImportMode::Replace);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty symbol"));
 
@@ -554,7 +576,7 @@ mod tests {
 
     #[test]
     fn import_rejects_negative_quantity() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config::default();
 
         let json = make_snapshot_json(
@@ -565,7 +587,7 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        let result = run(&conn, &config, &path_str, ImportMode::Replace);
+        let result = run(&backend, &config, &path_str, ImportMode::Replace);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("non-positive quantity"));
 
@@ -574,7 +596,7 @@ mod tests {
 
     #[test]
     fn import_rejects_invalid_date() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config::default();
 
         let json = make_snapshot_json(
@@ -585,7 +607,7 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        let result = run(&conn, &config, &path_str, ImportMode::Replace);
+        let result = run(&backend, &config, &path_str, ImportMode::Replace);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("invalid date"));
 
@@ -594,7 +616,7 @@ mod tests {
 
     #[test]
     fn import_rejects_invalid_allocation_pct() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config {
             portfolio_mode: PortfolioMode::Percentage,
             ..Config::default()
@@ -608,7 +630,7 @@ mod tests {
         );
         let (_path, path_str) = write_tmp_file(&json);
 
-        let result = run(&conn, &config, &path_str, ImportMode::Replace);
+        let result = run(&backend, &config, &path_str, ImportMode::Replace);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("invalid percentage"));
 
@@ -617,28 +639,28 @@ mod tests {
 
     #[test]
     fn import_empty_snapshot() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config::default();
 
         let json = make_snapshot_json("", "", "", "full");
         let (_path, path_str) = write_tmp_file(&json);
 
         // Should succeed with "nothing to import" message
-        run(&conn, &config, &path_str, ImportMode::Replace).unwrap();
+        run(&backend, &config, &path_str, ImportMode::Replace).unwrap();
 
         std::fs::remove_file(&_path).ok();
     }
 
     #[test]
     fn import_invalid_json() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config::default();
 
         let dir = std::env::temp_dir();
         let path = dir.join("pftui_import_bad.json");
         std::fs::write(&path, "not valid json {{{").unwrap();
 
-        let result = run(&conn, &config, path.to_str().unwrap(), ImportMode::Replace);
+        let result = run(&backend, &config, path.to_str().unwrap(), ImportMode::Replace);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Invalid JSON"));
 
@@ -647,10 +669,10 @@ mod tests {
 
     #[test]
     fn import_file_not_found() {
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
         let config = Config::default();
 
-        let result = run(&conn, &config, "/tmp/nonexistent_pftui_file.json", ImportMode::Replace);
+        let result = run(&backend, &config, "/tmp/nonexistent_pftui_file.json", ImportMode::Replace);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to read"));
     }
@@ -658,11 +680,12 @@ mod tests {
     #[test]
     fn import_replace_full_roundtrip() {
         // Export → import replace should produce same data
-        let conn = open_in_memory();
+        let backend = to_backend(open_in_memory());
+        let conn = backend.sqlite();
         let config = Config::default();
 
         // Add data
-        insert_transaction(&conn, &NewTransaction {
+        insert_transaction(conn, &NewTransaction {
             symbol: "SPY".to_string(),
             category: AssetCategory::Fund,
             tx_type: TxType::Buy,
@@ -673,7 +696,7 @@ mod tests {
             notes: Some("initial".to_string()),
         }).unwrap();
 
-        insert_transaction(&conn, &NewTransaction {
+        insert_transaction(conn, &NewTransaction {
             symbol: "BTC".to_string(),
             category: AssetCategory::Crypto,
             tx_type: TxType::Buy,
@@ -684,13 +707,12 @@ mod tests {
             notes: None,
         }).unwrap();
 
-        add_to_watchlist(&conn, "ETH", AssetCategory::Crypto).unwrap();
-        add_to_watchlist(&conn, "GLD", AssetCategory::Commodity).unwrap();
+        add_to_watchlist(conn, "ETH", AssetCategory::Crypto).unwrap();
+        add_to_watchlist(conn, "GLD", AssetCategory::Commodity).unwrap();
 
         // Export
         let dir = std::env::temp_dir();
         let export_path = dir.join("pftui_roundtrip.json");
-        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
         crate::commands::export::run(
             &backend,
             &crate::cli::ExportFormat::Json,
@@ -699,18 +721,19 @@ mod tests {
         ).unwrap();
 
         // Import into fresh DB
-        let conn2 = open_in_memory();
-        run(&conn2, &config, export_path.to_str().unwrap(), ImportMode::Replace).unwrap();
+        let backend2 = to_backend(open_in_memory());
+        run(&backend2, &config, export_path.to_str().unwrap(), ImportMode::Replace).unwrap();
+        let conn2 = backend2.sqlite();
 
         // Verify
-        let txs = list_transactions(&conn2).unwrap();
+        let txs = list_transactions(conn2).unwrap();
         assert_eq!(txs.len(), 2);
         assert_eq!(txs[0].symbol, "SPY");
         assert_eq!(txs[0].quantity, dec!(10));
         assert_eq!(txs[1].symbol, "BTC");
         assert_eq!(txs[1].quantity, dec!(0.5));
 
-        let entries = list_watchlist(&conn2).unwrap();
+        let entries = list_watchlist(conn2).unwrap();
         assert_eq!(entries.len(), 2);
 
         std::fs::remove_file(&export_path).ok();

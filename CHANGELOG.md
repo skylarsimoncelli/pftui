@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 07:55 UTC — F32 Phase 45: backend-dispatch import command path
+
+- What: migrated `import` command to `BackendConnection`, added backend insert API for `portfolio_allocations`, replaced SQLite-only replace/merge flows with backend-dispatched write/read operations (including Postgres delete path), and removed sqlite gating for `pftui import` in `main`.
+- Why: removes a major data-migration sqlite-only path and enables native import workflows in postgres mode.
+- Files: `src/commands/import.rs`, `src/db/allocations.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/eod/setup/tui)
+
 ### 2026-03-09 07:41 UTC — F32 Phase 44: backend-native alerts check path + un-gating
 
 - What: added backend-native alert evaluation path (`check_alerts_backend_only`) including backend-dispatched review-date and scan-change alert synchronization, added Postgres `scan_alert_state` schema, migrated `alerts check` command path to backend-only execution, and removed sqlite gating for `alerts check` in `main`.

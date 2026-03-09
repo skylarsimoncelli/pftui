@@ -25,6 +25,19 @@ pub fn insert_allocation(
     Ok(conn.last_insert_rowid())
 }
 
+pub fn insert_allocation_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    category: AssetCategory,
+    pct: Decimal,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| insert_allocation(conn, symbol, category, pct),
+        |pool| insert_allocation_postgres(pool, symbol, category, pct),
+    )
+}
+
 pub fn list_allocations(conn: &Connection) -> Result<Vec<Allocation>> {
     let mut stmt = conn.prepare(
         "SELECT id, symbol, category, allocation_pct, created_at
@@ -152,6 +165,32 @@ fn list_allocations_postgres(pool: &PgPool) -> Result<Vec<Allocation>> {
         .await
     })?;
     Ok(rows.into_iter().map(allocation_from_row).collect())
+}
+
+fn insert_allocation_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    category: AssetCategory,
+    pct: Decimal,
+) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO portfolio_allocations (symbol, category, allocation_pct)
+             VALUES ($1, $2, $3)
+             ON CONFLICT(symbol) DO UPDATE SET
+               category = EXCLUDED.category,
+               allocation_pct = EXCLUDED.allocation_pct
+             RETURNING id",
+        )
+        .bind(symbol)
+        .bind(category.to_string())
+        .bind(pct.to_string())
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
 }
 
 fn count_allocations_postgres(pool: &PgPool) -> Result<i64> {

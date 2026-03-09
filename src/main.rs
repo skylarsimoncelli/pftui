@@ -261,12 +261,11 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Import { path, mode }) => {
-            let conn = sqlite_conn_for_command(&backend, "import")?;
             let import_mode = match mode {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,
                 cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
             };
-            commands::import::run(conn, &config, &path, import_mode)
+            commands::import::run(&backend, &config, &path, import_mode)
         }
 
         Some(Command::History { date, group_by }) => {
