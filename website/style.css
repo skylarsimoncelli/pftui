@@ -804,6 +804,8 @@ body {
 /* ===== INSTALLATION SECTION ===== */
 .installation {
     padding: var(--spacing-xl) 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
 .install-tabs {
