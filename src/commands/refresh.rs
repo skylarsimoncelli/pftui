@@ -97,9 +97,9 @@ fn prices_need_refresh(backend: &BackendConnection) -> Result<bool> {
 }
 
 /// Check if news needs refreshing
-fn news_needs_refresh(conn: &Connection) -> Result<bool> {
+fn news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check most recent news entry
-    let news = news_cache::get_latest_news(conn, 1, None, None, None, None)?;
+    let news = news_cache::get_latest_news_backend(backend, 1, None, None, None, None)?;
     if news.is_empty() {
         return Ok(true);
     }
@@ -515,8 +515,7 @@ pub fn run(
     }
 
     // 4. News (Brave primary when configured, RSS supplements)
-    if let Some(conn) = sqlite_conn {
-        if news_needs_refresh(conn)? {
+    if news_needs_refresh(backend)? {
         let mut inserted = 0usize;
         let mut brave_inserted = 0usize;
         let brave_key = config
@@ -533,8 +532,8 @@ pub fn run(
                     Ok(results) => {
                         for item in &results {
                             let source = item.source.as_deref().unwrap_or("Brave");
-                            if news_cache::insert_news_with_source_type(
-                                conn,
+                            if news_cache::insert_news_with_source_type_backend(
+                                backend,
                                 &item.title,
                                 &item.url,
                                 source,
@@ -570,8 +569,8 @@ pub fn run(
                 rss::NewsCategory::Markets => "markets",
             };
 
-            if news_cache::insert_news_with_source_type(
-                conn,
+            if news_cache::insert_news_with_source_type_backend(
+                backend,
                 &item.title,
                 &item.url,
                 &item.source,
@@ -592,11 +591,8 @@ pub fn run(
         } else {
             println!("✓ News ({} articles via RSS)", inserted);
         }
-        } else {
-            println!("⊘ News (fresh, skipping)");
-        }
     } else {
-        println!("⊘ News (sqlite-only cache path, skipping on postgres)");
+        println!("⊘ News (fresh, skipping)");
     }
 
     // 5. COT (CFTC)

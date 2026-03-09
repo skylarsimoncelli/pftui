@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 09:56 UTC — F32 Phase 56: backend-native refresh news path
+
+- What: switched refresh news freshness check and article writes to backend-dispatched `news_cache` APIs and removed sqlite-only news skip behavior.
+- Why: ensures postgres refresh mode ingests Brave/RSS news into native backend tables instead of silently skipping the source.
+- Files: `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
 ### 2026-03-09 09:44 UTC — F32 Phase 55: backend-native World Bank refresh writes
 
 - What: added backend-dispatched World Bank cache APIs for upsert/refresh-check and migrated refresh World Bank section to call backend methods instead of sqlite-only paths.
