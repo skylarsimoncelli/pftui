@@ -1199,7 +1199,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             conn,
             "alignment",
             &layers,
-            &vec!["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
+            &["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
             &description,
             severity,
         )?;
@@ -1212,7 +1212,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             conn,
             "divergence",
             &layers,
-            &vec!["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
+            &["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
             &description,
             "notable",
         )?;
@@ -1228,8 +1228,8 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
                 maybe_insert_signal(
                     conn,
                     "transition",
-                    &vec!["low".to_string()],
-                    &vec!["SPY".to_string(), "^VIX".to_string()],
+                    &["low".to_string()],
+                    &["SPY".to_string(), "^VIX".to_string()],
                     &description,
                     "critical",
                 )?;

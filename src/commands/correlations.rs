@@ -24,6 +24,7 @@ pub struct PairCorrelation {
     pub break_delta: Option<f64>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     conn: &Connection,
     action: Option<&str>,

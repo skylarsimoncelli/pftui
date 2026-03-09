@@ -85,7 +85,14 @@ impl PostgresSqliteBridge {
         let runtime = tokio::runtime::Runtime::new()
             .context("Failed to create Tokio runtime for PostgreSQL backend")?;
         let pool = runtime
-            .block_on(async { PgPoolOptions::new().max_connections(5).connect(url).await })
+            .block_on(async {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    PgPoolOptions::new().max_connections(5).connect(url),
+                )
+                .await
+            })
+            .context("Database connection timed out after 5 seconds — check database_url in config and verify PostgreSQL is reachable")?
             .context("Failed to connect to PostgreSQL using database_url")?;
 
         crate::db::postgres_schema::run_migrations(&pool)
