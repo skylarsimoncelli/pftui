@@ -11,7 +11,7 @@ use crate::config::{self, Config, PortfolioMode, WatchlistColumn, WorkspaceLayou
 use crate::data::brave;
 use crate::db::{allocations, price_cache, price_history};
 use crate::db::scan_queries;
-use crate::db::transactions::{self, get_unique_symbols, insert_transaction, list_transactions};
+use crate::db::transactions::{self, insert_transaction};
 use crate::models::allocation::Allocation;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
@@ -620,6 +620,8 @@ pub struct App {
 
     // DB
     pub db_path: std::path::PathBuf,
+    pub database_backend: crate::config::DatabaseBackend,
+    pub database_url: Option<String>,
     last_saved_home_tab: ViewMode,
 
     // Background refresh state
@@ -711,6 +713,15 @@ pub fn is_privacy_view(app: &App) -> bool {
 }
 
 impl App {
+    fn open_backend(&self) -> Option<crate::db::backend::BackendConnection> {
+        let cfg = Config {
+            database_backend: self.database_backend,
+            database_url: self.database_url.clone(),
+            ..Config::default()
+        };
+        crate::db::backend::open_from_config(&cfg, &self.db_path).ok()
+    }
+
     pub fn new(config: &Config, db_path: std::path::PathBuf) -> Self {
         let initial_view = if config.home_tab == "watchlist" {
             ViewMode::Watchlist
@@ -848,6 +859,8 @@ impl App {
             economic_data: HashMap::new(),
             worldbank_data: HashMap::new(),
             db_path,
+            database_backend: config.database_backend,
+            database_url: config.database_url.clone(),
             last_saved_home_tab: initial_view,
             is_background_refreshing: false,
             background_refresh_complete_rx: None,
@@ -895,8 +908,8 @@ impl App {
 
         // Start price service
         let config = Config {
-            database_backend: crate::config::DatabaseBackend::Sqlite,
-            database_url: None,
+            database_backend: self.database_backend,
+            database_url: self.database_url.clone(),
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
             auto_refresh: self.auto_refresh_enabled,
@@ -935,8 +948,8 @@ impl App {
     fn start_background_refresh(&mut self) {
         let db_path = self.db_path.clone();
         let config = Config {
-            database_backend: crate::config::DatabaseBackend::Sqlite,
-            database_url: None,
+            database_backend: self.database_backend,
+            database_url: self.database_url.clone(),
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
             auto_refresh: self.auto_refresh_enabled,
@@ -964,9 +977,8 @@ impl App {
         self.is_background_refreshing = true;
 
         std::thread::spawn(move || {
-            if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+            if let Ok(backend) = crate::db::backend::open_from_config(&config, &db_path) {
                 // Run refresh silently (notify=false to avoid desktop notifications)
-                let backend = crate::db::backend::BackendConnection::Sqlite { conn };
                 let _ = crate::commands::refresh::run(&backend, &config, false);
             }
             // Signal completion (ignore if receiver was dropped)
@@ -975,21 +987,22 @@ impl App {
     }
 
     fn load_data(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
+        if let Some(backend) = self.open_backend() {
             match self.portfolio_mode {
                 PortfolioMode::Full => {
-                    self.transactions = list_transactions(&conn).unwrap_or_default();
+                    self.transactions = crate::db::transactions::list_transactions_backend(&backend)
+                        .unwrap_or_default();
                 }
                 PortfolioMode::Percentage => {
-                    self.allocations = allocations::list_allocations(&conn).unwrap_or_default();
+                    self.allocations = allocations::list_allocations_backend(&backend).unwrap_or_default();
                 }
             }
         }
     }
 
     fn load_cached_prices(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(cached) = price_cache::get_all_cached_prices(&conn) {
+        if let Some(backend) = self.open_backend() {
+            if let Ok(cached) = price_cache::get_all_cached_prices_backend(&backend) {
                 for quote in cached {
                     self.prices.insert(quote.symbol, quote.price);
                 }
@@ -998,16 +1011,19 @@ impl App {
     }
 
     fn load_fx_rates(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(rates) = crate::db::fx_cache::get_all_fx_rates(&conn) {
+        if let Some(backend) = self.open_backend() {
+            if let Ok(rates) = crate::db::fx_cache::get_all_fx_rates_backend(&backend) {
                 self.fx_rates = rates;
             }
         }
     }
 
     fn load_cached_history(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(all) = price_history::get_all_symbols_history(&conn, ChartTimeframe::FiveYears.days()) {
+        if let Some(backend) = self.open_backend() {
+            if let Ok(all) = price_history::get_all_symbols_history_backend(
+                &backend,
+                ChartTimeframe::FiveYears.days(),
+            ) {
                 for (symbol, records) in all {
                     self.price_history.insert(symbol, records);
                 }
@@ -1019,22 +1035,31 @@ impl App {
     }
 
     fn load_watchlist(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            self.watchlist_entries = db_watchlist::list_watchlist_by_group(&conn, self.watchlist_active_group).unwrap_or_default();
+        if let Some(backend) = self.open_backend() {
+            self.watchlist_entries =
+                db_watchlist::list_watchlist_by_group_backend(&backend, self.watchlist_active_group)
+                    .unwrap_or_default();
         }
     }
 
     fn load_journal(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            self.journal_entries = crate::db::journal::list_entries(&conn, Some(100), None, None, None, None)
-                .unwrap_or_default();
+        if let Some(backend) = self.open_backend() {
+            self.journal_entries = crate::db::journal::list_entries_backend(
+                &backend,
+                Some(100),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap_or_default();
         }
     }
 
     fn load_news(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            self.news_entries = crate::db::news_cache::get_latest_news(
-                &conn,
+        if let Some(backend) = self.open_backend() {
+            self.news_entries = crate::db::news_cache::get_latest_news_backend(
+                &backend,
                 100, // limit
                 self.news_filter_source.as_deref(),
                 self.news_filter_category.as_deref(),
@@ -1069,11 +1094,11 @@ impl App {
             Err(_) => return,
         };
 
-        if let Ok(conn) = Connection::open(&self.db_path) {
+        if let Some(backend) = self.open_backend() {
             for item in &results {
                 let source = item.source.as_deref().unwrap_or("Brave");
-                let _ = crate::db::news_cache::insert_news_with_source_type(
-                    &conn,
+                let _ = crate::db::news_cache::insert_news_with_source_type_backend(
+                    &backend,
                     &item.title,
                     &item.url,
                     source,
@@ -1090,15 +1115,16 @@ impl App {
     }
 
     fn load_predictions(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            self.prediction_markets = crate::db::predictions_cache::get_cached_predictions(&conn, 10)
-                .unwrap_or_default();
+        if let Some(backend) = self.open_backend() {
+            self.prediction_markets =
+                crate::db::predictions_cache::get_cached_predictions_backend(&backend, 10)
+                    .unwrap_or_default();
         }
     }
 
     fn load_allocation_targets(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(targets) = crate::db::allocation_targets::list_targets(&conn) {
+        if let Some(backend) = self.open_backend() {
+            if let Ok(targets) = crate::db::allocation_targets::list_targets_backend(&backend) {
                 self.allocation_targets = targets
                     .into_iter()
                     .map(|t| (t.symbol.clone(), t))
@@ -1108,8 +1134,8 @@ impl App {
     }
 
     fn load_alerts(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(results) = crate::alerts::engine::check_alerts(&conn) {
+        if let Some(backend) = self.open_backend() {
+            if let Ok(results) = crate::alerts::engine::check_alerts_backend_only(&backend) {
                 self.triggered_alert_count = results
                     .iter()
                     .filter(|r| r.newly_triggered || r.rule.status == crate::alerts::AlertStatus::Triggered)
@@ -1119,11 +1145,13 @@ impl App {
     }
 
     fn load_sentiment(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(Some(reading)) = crate::db::sentiment_cache::get_latest(&conn, "crypto") {
+        if let Some(backend) = self.open_backend() {
+            if let Ok(Some(reading)) = crate::db::sentiment_cache::get_latest_backend(&backend, "crypto") {
                 self.crypto_fng = Some((reading.value, reading.classification));
             }
-            if let Ok(Some(reading)) = crate::db::sentiment_cache::get_latest(&conn, "traditional") {
+            if let Ok(Some(reading)) =
+                crate::db::sentiment_cache::get_latest_backend(&backend, "traditional")
+            {
                 self.traditional_fng = Some((reading.value, reading.classification));
             }
         }
@@ -1137,7 +1165,7 @@ impl App {
     }
 
     fn load_bls_data(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
+        if let Some(backend) = self.open_backend() {
             // Load latest data for each BLS series
             let series_ids = [
                 crate::data::bls::SERIES_CPI_U,
@@ -1147,7 +1175,9 @@ impl App {
             ];
             
             for series_id in &series_ids {
-                if let Ok(Some(data)) = crate::db::bls_cache::get_latest_bls_data(&conn, series_id) {
+                if let Ok(Some(data)) =
+                    crate::db::bls_cache::get_latest_bls_data_backend(&backend, series_id)
+                {
                     self.bls_data.insert(series_id.to_string(), data);
                 }
             }
@@ -1155,8 +1185,8 @@ impl App {
     }
 
     fn load_economic_data(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            if let Ok(entries) = crate::db::economic_data::get_all(&conn) {
+        if let Some(backend) = self.open_backend() {
+            if let Ok(entries) = crate::db::economic_data::get_all_backend(&backend) {
                 self.economic_data = entries
                     .into_iter()
                     .map(|e| (e.indicator.clone(), e))
@@ -1166,33 +1196,16 @@ impl App {
     }
 
     fn load_worldbank_data(&mut self) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
+        if let Some(backend) = self.open_backend() {
             self.worldbank_data.clear();
-            // Load latest data for tracked countries and indicators
-            let countries = [
-                crate::data::worldbank::COUNTRY_US,
-                crate::data::worldbank::COUNTRY_CHINA,
-                crate::data::worldbank::COUNTRY_INDIA,
-                crate::data::worldbank::COUNTRY_RUSSIA,
-                crate::data::worldbank::COUNTRY_BRAZIL,
-            ];
-            
-            let indicators = [
-                crate::data::worldbank::INDICATOR_GDP_GROWTH,
-                crate::data::worldbank::INDICATOR_DEBT_GDP,
-                crate::data::worldbank::INDICATOR_RESERVES,
-            ];
-
-            let load_from_cache = |store: &mut HashMap<(String, String), crate::data::worldbank::WorldBankDataPoint>| {
-                for country in &countries {
-                    for indicator in &indicators {
-                        if let Ok(data_points) = crate::db::worldbank_cache::get_cached_worldbank_data(&conn, &[country], indicator) {
-                            // Take the most recent year for this country+indicator
-                            if let Some(latest) = data_points.first() {
-                                let key = (country.to_string(), indicator.to_string());
-                                store.insert(key, latest.clone());
-                            }
-                        }
+            let load_from_cache = |store: &mut HashMap<
+                (String, String),
+                crate::data::worldbank::WorldBankDataPoint,
+            >| {
+                if let Ok(points) = crate::db::worldbank_cache::get_latest_indicators_backend(&backend)
+                {
+                    for p in points {
+                        store.insert((p.country_code.clone(), p.indicator_code.clone()), p);
                     }
                 }
             };
@@ -1205,7 +1218,10 @@ impl App {
                 if let Ok(rt) = tokio::runtime::Runtime::new() {
                     if let Ok(points) = rt.block_on(crate::data::worldbank::fetch_all_indicators()) {
                         if !points.is_empty() {
-                            let _ = crate::db::worldbank_cache::upsert_worldbank_data(&conn, &points);
+                            let _ = crate::db::worldbank_cache::upsert_worldbank_data_backend(
+                                &backend,
+                                &points,
+                            );
                             load_from_cache(&mut self.worldbank_data);
                         }
                     }
@@ -1215,11 +1231,13 @@ impl App {
     }
 
     fn get_symbols(&self) -> Vec<(String, AssetCategory)> {
-        if let Ok(conn) = Connection::open(&self.db_path) {
+        if let Some(backend) = self.open_backend() {
             match self.portfolio_mode {
-                PortfolioMode::Full => get_unique_symbols(&conn).unwrap_or_default(),
+                PortfolioMode::Full => {
+                    crate::db::transactions::get_unique_symbols_backend(&backend).unwrap_or_default()
+                }
                 PortfolioMode::Percentage => {
-                    allocations::get_unique_allocation_symbols(&conn).unwrap_or_default()
+                    allocations::get_unique_allocation_symbols_backend(&backend).unwrap_or_default()
                 }
             }
         } else {
