@@ -89,7 +89,7 @@ jobs:
           if-no-files-found: warn
 
   postgres-parity:
-    name: Postgres Parity Smoke
+    name: Postgres Parity Suite
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -125,4 +125,12 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run Postgres backend smoke test
-        run: cargo test postgres_roundtrip_when_env_set
+        run: cargo test -q postgres_roundtrip_when_env_set
+
+      - name: Run backend switch roundtrip tests
+        run: |
+          cargo test -q sqlite_export_import_into_postgres_when_env_set
+          cargo test -q postgres_export_import_into_sqlite_when_env_set
+
+      - name: Run setup backend selection tests
+        run: cargo test -q commands::setup::tests::
