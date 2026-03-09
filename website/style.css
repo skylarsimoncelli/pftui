@@ -597,7 +597,7 @@ body {
 
 .database-feature {
     background: var(--bg-secondary);
-    border: 1px solid var(--border-primary);
+    border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
     transition: border-color 0.2s ease, transform 0.2s ease;
@@ -614,7 +614,7 @@ body {
 }
 
 .database-feature h3 {
-    font-family: var(--font-main);
+    font-family: var(--font-sans);
     font-size: 1.1rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -638,7 +638,16 @@ body {
 
 .database-schema {
     max-width: 680px;
-    margin: 0 auto var(--spacing-lg);
+    margin: var(--spacing-lg) auto var(--spacing-lg);
+}
+
+.architecture-overview {
+    max-width: 900px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(160deg, rgba(13, 17, 23, 0.96) 0%, rgba(22, 27, 34, 0.96) 100%);
+    box-shadow: var(--shadow-md);
+    padding: var(--spacing-md);
 }
 
 .database-schema .terminal-body {
@@ -690,7 +699,17 @@ body {
 /* ===== CLI SECTION ===== */
 .cli {
     padding: var(--spacing-xl) 0;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
+    border-top: 1px solid rgba(137, 220, 235, 0.08);
+}
+
+.architecture-analytics {
+    background: linear-gradient(180deg, rgba(22, 27, 34, 1) 0%, rgba(13, 17, 23, 1) 100%);
+}
+
+.architecture-ai {
+    background: linear-gradient(180deg, rgba(22, 27, 34, 1) 0%, rgba(22, 27, 34, 1) 100%);
+    border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
 .cli-grid {

@@ -110,39 +110,21 @@
         <div class="container">
             <h2 class="section-title">Architecture</h2>
             <p class="section-subtitle">pftui is built as a four-layer intelligence stack. The aggregation engine collects and computes. The database stores and shares. The analytics engine interprets across timeframes. The AI layer acts on the interpretation.</p>
-            <div class="database-schema" style="margin-bottom: 2rem;">
-                <div class="terminal-window">
-                    <div class="terminal-header">
-                        <div class="terminal-buttons">
-                            <span class="btn-close"></span>
-                            <span class="btn-minimize"></span>
-                            <span class="btn-maximize"></span>
-                        </div>
-                        <div class="terminal-title">Product Stack</div>
-                    </div>
-                    <div class="terminal-body schema-body">
+            <div class="database-schema architecture-overview">
 <pre class="schema-pre">
-             <span class="schema-table">┌──────────────────────────────────┐</span>
-             <span class="schema-table">│</span>          <span class="green">AI Layer</span>                 <span class="schema-table">│</span>  <span class="schema-desc">Agents, routines, investor panel</span>
-             <span class="schema-table">├──────────────────────────────────┤</span>
-             <span class="schema-table">│</span>  <span class="green">Multi-timeframe Analytics Engine</span> <span class="schema-table">│</span>  <span class="schema-desc">LOW / MEDIUM / HIGH / MACRO</span>
-             <span class="schema-table">├──────────────────────────────────┤</span>
-             <span class="schema-table">│</span>     <span class="green">Data Aggregation Engine</span>       <span class="schema-table">│</span>  <span class="schema-desc">10+ sources, technicals, compute</span>
-             <span class="schema-table">└───────────────┬──────────────────┘</span>
-                             <span class="schema-table">│</span> <span class="schema-desc">read / write</span>
-             <span class="schema-table">┌───────────────▼──────────────────┐</span>
-             <span class="schema-table">│</span>           <span class="green">Database</span>                <span class="schema-table">│</span>  <span class="schema-desc">SQLite or PostgreSQL</span>
-             <span class="schema-table">│</span>     <span class="schema-desc">shared state for all layers</span>   <span class="schema-table">│</span>
-             <span class="schema-table">└──────────────────────────────────┘</span>
+<span class="schema-table">Product Stack</span>
+
+<span class="schema-table">AI Layer</span>                         <span class="schema-desc">Agents, routines, investor panel</span>
+<span class="schema-table">Multi-timeframe Analytics Engine</span>  <span class="schema-desc">LOW / MEDIUM / HIGH / MACRO</span>
+<span class="schema-table">Data Aggregation Engine</span>           <span class="schema-desc">10+ sources, compute + normalization</span>
+<span class="schema-table">Database</span>                         <span class="schema-desc">SQLite or PostgreSQL shared state</span>
 </pre>
-                    </div>
-                </div>
             </div>
         </div>
     </section>
 
     <!-- Data Aggregation Engine -->
-    <section class="agent-workflows">
+    <section class="agent-workflows architecture-analytics">
         <div class="container">
             <h2 class="section-title">Data Aggregation Engine</h2>
             <p class="section-subtitle">One <code>pftui refresh</code> pulls from 10+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.</p>
@@ -223,7 +205,7 @@
     </section>
 
     <!-- Multi-timeframe Analytics Engine -->
-    <section class="agent-workflows">
+    <section class="agent-workflows architecture-ai">
         <div class="container">
             <h2 class="section-title">Multi-timeframe Analytics Engine</h2>
             <p class="section-subtitle">Four intelligence layers operating simultaneously across different time horizons. Each uses different data, updates at different frequencies, and produces different signals. When all layers align on an asset, that is the highest conviction signal in the system.</p>
