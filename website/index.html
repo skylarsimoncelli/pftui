@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>pftui, Agent-native financial battle station</title>
-    <meta name="description" content="PFTUI - The Portfolio TUI. Agent-native financial battle station for equities, crypto, forex, commodities, macro, sentiment, and news in your terminal.">
+    <title>pftui | Local-first portfolio intelligence in your terminal</title>
+    <meta name="description" content="pftui is a local-first portfolio terminal for self-directed investors and technical operators. Track positions, markets, macro, sentiment, news, and analytics in one system.">
     
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://pftui.com/">
-    <meta property="og:title" content="pftui, Agent-native financial battle station">
-    <meta property="og:description" content="PFTUI - The Portfolio TUI. Equities, crypto, forex, macro, sentiment, and news in a sleek terminal-native command center.">
+    <meta property="og:title" content="pftui | Local-first portfolio intelligence">
+    <meta property="og:description" content="Track positions, markets, macro, sentiment, news, and analytics in one system, with a browser dashboard and an agent-ready CLI.">
     <meta property="og:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://pftui.com/">
-    <meta property="twitter:title" content="pftui, Agent-native financial battle station">
-    <meta property="twitter:description" content="PFTUI - The Portfolio TUI. Terminal-native intelligence for macro, sentiment, crypto, forex, equities, and news.">
+    <meta property="twitter:title" content="pftui | Local-first portfolio intelligence">
+    <meta property="twitter:description" content="A local-first portfolio terminal for positions, markets, macro, sentiment, news, and analytics.">
     <meta property="twitter:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
     <!-- Favicon -->
@@ -35,9 +35,9 @@
     <section class="hero">
         <div class="container">
             <div class="hero-content">
-                <p class="hero-kicker"><em>"pftui, The Portfolio TUI"</em></p>
-                <h1 class="hero-title">Your financial <span class="gradient-text">battle station</span></h1>
-                <p class="hero-subtitle">A data-rich, agent-native intelligence platform that centralises all your market data, news, and portfolio analytics into one tool.</p>
+                <p class="hero-kicker"><em>pftui</em></p>
+                <h1 class="hero-title">Local-first portfolio intelligence <span class="gradient-text">in your terminal</span></h1>
+                <p class="hero-subtitle">Track positions, markets, macro, sentiment, news, and analytics in one system, with a browser dashboard and a structured CLI your AI agent can work with directly.</p>
                 <div class="hero-install">
                     <div class="install-command">
                         <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
@@ -89,17 +89,254 @@
         </div>
     </section>
 
+    <!-- Why pftui -->
+    <section class="highlights">
+        <div class="container">
+            <h2 class="section-title">Why pftui</h2>
+            <p class="section-subtitle">A local-first system for investors and technical operators who want their portfolio, market context, and research state in one place.</p>
+            <div class="agent-grid stack-cards">
+                <div class="agent-card">
+                    <h3>One system, not five</h3>
+                    <p>Portfolio tracking, watchlists, markets, macro, news, and research state in one place instead of across scattered apps and spreadsheets.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Built for daily use</h3>
+                    <p>Fast, keyboard-driven, practical enough to live in every day, with both a terminal UI and a web dashboard backed by the same local data.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Agent-ready</h3>
+                    <p>Every major feature is accessible through the CLI with structured JSON output, so humans and agents can work from the same live state.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshot Gallery -->
+    <section class="demo">
+        <div class="container">
+            <h2 class="section-title">See it in action</h2>
+            <p class="section-subtitle">A quick look at pftui across the terminal UI, web dashboard, analytics views, and CLI.</p>
+            <div class="gallery-tabs">
+                <button class="gallery-tab active" data-target="ss-portfolio">Portfolio</button>
+                <button class="gallery-tab" data-target="ss-transactions">Transactions</button>
+                <button class="gallery-tab" data-target="ss-economy">Economy</button>
+                <button class="gallery-tab" data-target="ss-analytics">Analytics</button>
+                <button class="gallery-tab" data-target="ss-web">Web Dashboard</button>
+                <button class="gallery-tab" data-target="ss-web-search">Web Search</button>
+                <button class="gallery-tab" data-target="ss-web-economy">Web Economy</button>
+                <button class="gallery-tab" data-target="ss-web-detail">Asset Detail</button>
+                <button class="gallery-tab" data-target="ss-cli">CLI</button>
+            </div>
+            <div class="gallery-viewport">
+                <div class="gallery-slide active" id="ss-portfolio">
+                    <img src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" alt="pftui portfolio overview" loading="lazy">
+                    <p class="gallery-caption">Positions, live prices, allocation, sparklines, and interactive price chart</p>
+                </div>
+                <div class="gallery-slide" id="ss-transactions">
+                    <img src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" alt="pftui transactions" loading="lazy">
+                    <p class="gallery-caption">Buy/sell history with cost basis tracking</p>
+                </div>
+                <div class="gallery-slide" id="ss-economy">
+                    <img src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" alt="pftui economy dashboard" loading="lazy">
+                    <p class="gallery-caption">Macro indicators, regime detection, predictions, and economic calendar</p>
+                </div>
+                <div class="gallery-slide" id="ss-analytics">
+                    <img src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" alt="pftui analytics" loading="lazy">
+                    <p class="gallery-caption">Technical indicators, correlations, and portfolio analysis</p>
+                </div>
+                <div class="gallery-slide" id="ss-web">
+                    <img src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" alt="pftui web dashboard" loading="lazy">
+                    <p class="gallery-caption">Browser-based dashboard backed by the same local data</p>
+                </div>
+                <div class="gallery-slide" id="ss-web-search">
+                    <img src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" alt="pftui web search" loading="lazy">
+                    <p class="gallery-caption">Global search across positions, watchlist, and market data</p>
+                </div>
+                <div class="gallery-slide" id="ss-web-economy">
+                    <img src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" alt="pftui web economy" loading="lazy">
+                    <p class="gallery-caption">Economy dashboard with macro indicators and regime analysis</p>
+                </div>
+                <div class="gallery-slide" id="ss-web-detail">
+                    <img src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" alt="pftui web asset detail" loading="lazy">
+                    <p class="gallery-caption">TradingView charts, technicals, transactions, and news</p>
+                </div>
+                <div class="gallery-slide" id="ss-cli">
+                    <img src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" alt="pftui CLI output" loading="lazy">
+                    <p class="gallery-caption">Agent-ready CLI, with structured output available across the system</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation -->
+    <section class="installation">
+        <div class="container">
+            <h2 class="section-title">Install anywhere</h2>
+            <p class="section-subtitle">Use the install script for the fastest path. Re-running it upgrades pftui while preserving your local data and config.</p>
+            <div class="install-tabs" role="tablist" aria-label="Installation methods">
+                <button class="install-tab active" role="tab" aria-selected="true" data-install="curl">curl</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="brew">Homebrew</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="cargo">Cargo</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="docker">Docker</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="nix">Nix</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="apt">apt</button>
+                <button class="install-tab" role="tab" aria-selected="false" data-install="dnf">dnf</button>
+            </div>
+            <div class="install-panel">
+                <h3 id="install-method-title">curl install script</h3>
+                <p id="install-method-description">Fastest path for Linux and macOS.</p>
+                <div class="code-block">
+                    <code id="install-method-code">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
+                    <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Agent Setup CTA -->
     <section class="agent-setup">
         <div class="container">
-            <h2 class="section-title">The recommended way to start</h2>
-            <p class="section-subtitle">Ask <strong>Claude Code</strong>, <strong>Codex</strong>, or <strong>OpenClaw</strong> to install pftui and set it up for you. Your agent will read <code>AGENTS.md</code>, ask for your holdings and targets, populate transactions, configure the watchlist, and run the first <code>pftui brief</code> in one guided setup session.</p>
+            <h2 class="section-title">Recommended setup</h2>
+            <p class="section-subtitle">Ask <strong>Claude Code</strong>, <strong>Codex</strong>, or <strong>OpenClaw</strong> to install pftui and set it up with you. Your agent can read <code>AGENTS.md</code>, configure your watchlist, and walk you through the system.</p>
             <div class="agent-setup-code">
                 <div class="agent-setup-block">
                     <span class="agent-highlight">
                         Read AGENTS.md in the pftui repo: https://github.com/skylarsimoncelli/pftui<br><br>
-                        Install pftui, help me to set up pftui with my portfolio and watchlist, and walk me through the functionality
+                        Install pftui, help me set up pftui with my portfolio and watchlist, and walk me through the functionality
                     </span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Human Operators -->
+    <section class="agent-workflows">
+        <div class="container">
+            <h2 class="section-title">For human operators</h2>
+            <p class="section-subtitle">pftui’s core experience is a fast, keyboard-driven interface built for daily portfolio and market monitoring.</p>
+            <div class="agent-grid">
+                <div class="agent-card">
+                    <h3>Terminal UI</h3>
+                    <p>Track positions, transactions, markets, macro, watchlists, news, and journal state in one place, with braille charts, fast navigation, and privacy mode built in.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Web dashboard</h3>
+                    <p>Use the same local data through a browser with responsive layouts, TradingView charts, click-through asset views, and auto-refreshing pages.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Daily workflow</h3>
+                    <p>Designed to replace scattered tabs and spreadsheets with one practical system you can actually live in every day.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- AI Layer -->
+    <section class="agent-workflows">
+        <div class="container">
+            <h2 class="section-title">For AI agents</h2>
+            <p class="section-subtitle">Every major feature is available through the CLI with structured output, so agents can refresh data, inspect state, update research, and contribute to the same system the human operator uses.</p>
+            <div class="agent-grid">
+                <div class="agent-card">
+                    <h3>Shared live state</h3>
+                    <p>Your agent can refresh market data, inspect portfolio state, manage watchlists, record notes, review macro conditions, and generate briefs through the same local database and CLI.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Automated workflows</h3>
+                    <p>Run morning briefs, market-close summaries, weekly reviews, scenario tracking, and monitoring loops without building a separate stack around the product.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>Bidirectional collaboration</h3>
+                    <p>Agents do not just read data. They can update scenario probabilities, log evidence, set conviction scores, and write notes that remain reviewable and queryable over time.</p>
+                </div>
+            </div>
+            <div class="database-schema">
+                <div class="terminal-window">
+                    <div class="terminal-header">
+                        <div class="terminal-buttons">
+                            <span class="btn-close"></span>
+                            <span class="btn-minimize"></span>
+                            <span class="btn-maximize"></span>
+                        </div>
+                        <div class="terminal-title">Agent morning routine</div>
+                    </div>
+                    <div class="terminal-body schema-body">
+<pre class="schema-pre">
+<span class="schema-table">$ pftui refresh</span>
+<span class="schema-desc">12 sources updated, 84 symbols, regime classified</span>
+
+<span class="schema-table">$ pftui brief --json</span>
+<span class="schema-desc">{"value": 287345, "regime": "risk-off", "movers": [...]}</span>
+
+<span class="schema-table">$ pftui conviction set GC=F --score 4 --notes "War + BRICS"</span>
+<span class="schema-desc">Gold conviction: +4 (strong bullish)</span>
+
+<span class="schema-table">$ pftui agent-msg send "All 4 layers agree: gold bullish"</span>
+<span class="schema-desc">Message logged to cross-layer feed</span>
+</pre>
+                    </div>
+                </div>
+            </div>
+            <div class="section-meta">
+                <a class="meta-link" href="https://github.com/skylarsimoncelli/pftui/blob/master/AGENTS.md" target="_blank" rel="noopener">Full agent guide: AGENTS.md</a>
+                <a class="meta-link" href="https://github.com/skylarsimoncelli/pftui/blob/master/docs/AI-LAYER.md" target="_blank" rel="noopener">AI layer docs: docs/AI-LAYER.md</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- CLI Showcase -->
+    <section class="cli">
+        <div class="container">
+            <h2 class="section-title">Agent-ready CLI</h2>
+            <p class="section-subtitle">Every major feature is available as a composable CLI primitive, with structured output available across the system.</p>
+            <div class="cli-grid">
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui refresh</div>
+                    <div class="cli-output">✓ Prices (51) ✓ Macro (18) ✓ COT (4) ✓ F&amp;G ✓ Predictions (50) ✓ News (47) ✓ COMEX (2)</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui value</div>
+                    <div class="cli-output">Portfolio: $287,345.42 <span class="green">(+$3,892 / +1.5%)</span> Cash: 35% │ Comd: 30% │ Crypto: 25%</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui macro</div>
+                    <div class="cli-output">DXY 98.86 RSI 56 │ VIX 29.5 ⚠️ │ 10Y 4.13% │ Gold $5,181 │ Oil $91.27 RSI 89 🔥</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui sentiment</div>
+                    <div class="cli-output">Crypto F&amp;G: 🔴 10 Extreme Fear │ COT Gold: 🟢 Net Long 142k (+8k) │ Oil: 🟢 264k</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui movers</div>
+                    <div class="cli-output"><span class="green">▲ Oil +12.7%</span> │ <span class="green">▲ VIX +24.2%</span> │ <span class="green">▲ Silver +3.7%</span> │ <span class="red">▼ BTC -6.0%</span> │ <span class="red">▼ GLXY -9.6%</span></div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui sector</div>
+                    <div class="cli-output"><span class="green">XLE +4.2%</span> │ <span class="green">GDX +3.1%</span> │ <span class="green">XLU +1.8%</span> │ <span class="red">XLK -2.1%</span> │ <span class="red">SMH -3.7%</span></div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui predictions --category crypto</div>
+                    <div class="cli-output">BTC &gt;$100k by Dec? 45% ↓ │ ETH flippening? 8% → │ Stablecoin regulation? 72% ↑</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui supply</div>
+                    <div class="cli-output">Gold COMEX: 18.2M oz (Reg 89%) │ Silver COMEX: 25.7M oz │ Reg Ratio declining ▼</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui calendar --impact high</div>
+                    <div class="cli-output">🔴 CPI Mar 12 (5d) │ 🔴 FOMC Mar 17 (10d) │ 🔴 NFP Apr 3 │ 🔴 GDP Mar 27</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui eod</div>
+                    <div class="cli-output">$287,345 +$3,892 │ 7 movers &gt;3% │ VIX 29.5 ⚠️ │ F&amp;G 🔴 10 │ Next: CPI in 5d</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui drift</div>
+                    <div class="cli-output">Cash: 35% (target 40%) ⚠️ +9pp │ Gold: 25% ✓ │ BTC: 19% ✓ │ Equity: 10% ✓</div>
+                </div>
+                <div class="cli-example">
+                    <div class="cli-command">$ pftui brief --agent --json</div>
+                    <div class="cli-output">{"value":287345,"pnl":3892,"movers":[...],"macro":{...},"regime":"risk-off"}</div>
                 </div>
             </div>
         </div>
@@ -191,7 +428,7 @@
                 <div class="database-feature">
                     <div class="database-icon">📐</div>
                     <h3>Shared state, not a pipe</h3>
-                    <p>An agent reads regime classification (written by aggregation), combines it with scenario probabilities (written by the evening planner), and writes a conviction score (consumed by the alignment view). The database is where all layers meet.</p>
+                    <p>An agent reads regime classification, combines it with scenario probabilities, and writes a conviction score consumed elsewhere in the system. The database is where all layers meet.</p>
                 </div>
                 <div class="database-feature">
                     <div class="database-icon">⚡</div>
@@ -255,200 +492,6 @@
             </div>
         </div>
     </section>
-
-    <!-- AI Layer -->
-    <section class="agent-workflows">
-        <div class="container">
-            <h2 class="section-title">AI Layer</h2>
-            <p class="section-subtitle">Every feature has a CLI command with <code>--json</code> output. Agents use the same database, same commands, and same analysis frameworks that humans do. The result is genuine bidirectional intelligence where both operators contribute to a shared understanding over time.</p>
-            <div class="agent-grid">
-                <div class="agent-card">
-                    <h3>Bidirectional communication</h3>
-                    <p>Your agent does not just read your data. It contributes to it. Agents update scenario probabilities, log evidence, set conviction scores, and write daily notes using the same pftui commands. You review what the agent wrote, adjust where you disagree, and the system incorporates both perspectives.</p>
-                </div>
-                <div class="agent-card">
-                    <h3>Scheduled routines</h3>
-                    <p>Morning briefs, market close summaries, weekly reviews, scenario analysis. All cron-driven, all reading from and writing to the same database. Multiple agents coordinate through a structured message bus with priority levels and analytics layer tags.</p>
-                </div>
-                <div class="agent-card">
-                    <h3>Investor Perspectives Panel</h3>
-                    <p>Feed your analytics engine data to sub-agents prompted as famous investors. Warren Buffett, Ray Dalio, Stanley Druckenmiller, Michael Burry, and 21 others. The consensus tells you where conviction is strongest. The divergence tells you where the interesting questions are.</p>
-                </div>
-            </div>
-            <div class="database-schema">
-                <div class="terminal-window">
-                    <div class="terminal-header">
-                        <div class="terminal-buttons">
-                            <span class="btn-close"></span>
-                            <span class="btn-minimize"></span>
-                            <span class="btn-maximize"></span>
-                        </div>
-                        <div class="terminal-title">Agent morning routine</div>
-                    </div>
-                    <div class="terminal-body schema-body">
-<pre class="schema-pre">
-<span class="schema-table">$ pftui refresh</span>
-<span class="schema-desc">12 sources updated, 84 symbols, regime classified</span>
-
-<span class="schema-table">$ pftui brief --json</span>
-<span class="schema-desc">{"value": 287345, "regime": "risk-off", "movers": [...]}</span>
-
-<span class="schema-table">$ pftui conviction set GC=F --score 4 --notes "War + BRICS"</span>
-<span class="schema-desc">Gold conviction: +4 (strong bullish)</span>
-
-<span class="schema-table">$ pftui agent-msg send "All 4 layers agree: gold bullish"</span>
-<span class="schema-desc">Message logged to cross-layer feed</span>
-</pre>
-                    </div>
-                </div>
-            </div>
-            <div class="section-meta">
-                <a class="meta-link" href="https://github.com/skylarsimoncelli/pftui/blob/master/AGENTS.md" target="_blank" rel="noopener">Full agent guide: AGENTS.md</a>
-                <a class="meta-link" href="https://github.com/skylarsimoncelli/pftui/blob/master/docs/AI-LAYER.md" target="_blank" rel="noopener">AI layer docs: docs/AI-LAYER.md</a>
-            </div>
-        </div>
-    </section>
-
-    <!-- CLI Showcase -->
-    <section class="cli">
-        <div class="container">
-            <h2 class="section-title">35+ headless commands</h2>
-            <p class="section-subtitle">Every feature in the TUI, available as composable CLI primitives. All support <code>--json</code>.</p>
-            <div class="cli-grid">
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui refresh</div>
-                    <div class="cli-output">✓ Prices (51) ✓ Macro (18) ✓ COT (4) ✓ F&G ✓ Predictions (50) ✓ News (47) ✓ COMEX (2)</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui value</div>
-                    <div class="cli-output">Portfolio: $287,345.42 <span class="green">(+$3,892 / +1.5%)</span>  Cash: 35% │ Comd: 30% │ Crypto: 25%</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui macro</div>
-                    <div class="cli-output">DXY 98.86 RSI 56 │ VIX 29.5 ⚠️ │ 10Y 4.13% │ Gold $5,181 │ Oil $91.27 RSI 89 🔥</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui sentiment</div>
-                    <div class="cli-output">Crypto F&G: 🔴 10 Extreme Fear │ COT Gold: 🟢 Net Long 142k (+8k) │ Oil: 🟢 264k</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui movers</div>
-                    <div class="cli-output"><span class="green">▲ Oil +12.7%</span> │ <span class="green">▲ VIX +24.2%</span> │ <span class="green">▲ Silver +3.7%</span> │ <span class="red">▼ BTC -6.0%</span> │ <span class="red">▼ GLXY -9.6%</span></div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui sector</div>
-                    <div class="cli-output"><span class="green">XLE +4.2%</span> │ <span class="green">GDX +3.1%</span> │ <span class="green">XLU +1.8%</span> │ <span class="red">XLK -2.1%</span> │ <span class="red">SMH -3.7%</span></div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui predictions --category crypto</div>
-                    <div class="cli-output">BTC >$100k by Dec? 45% ↓ │ ETH flippening? 8% → │ Stablecoin regulation? 72% ↑</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui supply</div>
-                    <div class="cli-output">Gold COMEX: 18.2M oz (Reg 89%) │ Silver COMEX: 25.7M oz │ Reg Ratio declining ▼</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui calendar --impact high</div>
-                    <div class="cli-output">🔴 CPI Mar 12 (5d) │ 🔴 FOMC Mar 17 (10d) │ 🔴 NFP Apr 3 │ 🔴 GDP Mar 27</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui eod</div>
-                    <div class="cli-output">$287,345 +$3,892 │ 7 movers >3% │ VIX 29.5 ⚠️ │ F&G 🔴 10 │ Next: CPI in 5d</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui drift</div>
-                    <div class="cli-output">Cash: 35% (target 40%) ⚠️ +9pp │ Gold: 25% ✓ │ BTC: 19% ✓ │ Equity: 10% ✓</div>
-                </div>
-                <div class="cli-example">
-                    <div class="cli-command">$ pftui brief --agent --json</div>
-                    <div class="cli-output">{"value":287345,"pnl":3892,"movers":[...],"macro":{...},"regime":"risk-off"}</div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Screenshot Gallery -->
-    <section class="demo">
-        <div class="container">
-            <h2 class="section-title">See it in action</h2>
-            <div class="gallery-tabs">
-                <button class="gallery-tab active" data-target="ss-portfolio">Portfolio</button>
-                <button class="gallery-tab" data-target="ss-transactions">Transactions</button>
-                <button class="gallery-tab" data-target="ss-economy">Economy</button>
-                <button class="gallery-tab" data-target="ss-analytics">Analytics</button>
-                <button class="gallery-tab" data-target="ss-web">Web Dashboard</button>
-                <button class="gallery-tab" data-target="ss-web-search">Web Search</button>
-                <button class="gallery-tab" data-target="ss-web-economy">Web Economy</button>
-                <button class="gallery-tab" data-target="ss-web-detail">Asset Detail</button>
-                <button class="gallery-tab" data-target="ss-cli">CLI</button>
-            </div>
-            <div class="gallery-viewport">
-                <div class="gallery-slide active" id="ss-portfolio">
-                    <img src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" alt="pftui portfolio overview" loading="lazy">
-                    <p class="gallery-caption">Positions, live prices, allocation, sparklines, and interactive price chart</p>
-                </div>
-                <div class="gallery-slide" id="ss-transactions">
-                    <img src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" alt="pftui transactions" loading="lazy">
-                    <p class="gallery-caption">Buy/sell history with cost basis tracking</p>
-                </div>
-                <div class="gallery-slide" id="ss-economy">
-                    <img src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" alt="pftui economy dashboard" loading="lazy">
-                    <p class="gallery-caption">Macro indicators, regime detection, predictions, and economic calendar</p>
-                </div>
-                <div class="gallery-slide" id="ss-analytics">
-                    <img src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" alt="pftui analytics" loading="lazy">
-                    <p class="gallery-caption">Technical indicators, correlations, and portfolio analysis</p>
-                </div>
-                <div class="gallery-slide" id="ss-web">
-                    <img src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" alt="pftui web dashboard" loading="lazy">
-                    <p class="gallery-caption">Browser-based dashboard, same data, responsive layout</p>
-                </div>
-                <div class="gallery-slide" id="ss-web-search">
-                    <img src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" alt="pftui web search" loading="lazy">
-                    <p class="gallery-caption">Global search across positions, watchlist, and market data</p>
-                </div>
-                <div class="gallery-slide" id="ss-web-economy">
-                    <img src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" alt="pftui web economy" loading="lazy">
-                    <p class="gallery-caption">Economy dashboard with macro indicators and regime analysis</p>
-                </div>
-                <div class="gallery-slide" id="ss-web-detail">
-                    <img src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" alt="pftui web asset detail" loading="lazy">
-                    <p class="gallery-caption">TradingView charts, technicals, transactions, and news</p>
-                </div>
-                <div class="gallery-slide" id="ss-cli">
-                    <img src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" alt="pftui CLI output" loading="lazy">
-                    <p class="gallery-caption">Agent-ready CLI, every command supports <code>--json</code></p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Installation -->
-    <section class="installation">
-        <div class="container">
-            <h2 class="section-title">Install anywhere</h2>
-            <p class="section-subtitle">The install script is the recommended method, it installs AND upgrades pftui. Re-run it anytime to update to the latest release. Your data is always preserved.</p>
-            <div class="install-tabs" role="tablist" aria-label="Installation methods">
-                <button class="install-tab active" role="tab" aria-selected="true" data-install="curl">curl</button>
-                <button class="install-tab" role="tab" aria-selected="false" data-install="brew">Homebrew</button>
-                <button class="install-tab" role="tab" aria-selected="false" data-install="cargo">Cargo</button>
-                <button class="install-tab" role="tab" aria-selected="false" data-install="docker">Docker</button>
-                <button class="install-tab" role="tab" aria-selected="false" data-install="nix">Nix</button>
-                <button class="install-tab" role="tab" aria-selected="false" data-install="apt">apt</button>
-                <button class="install-tab" role="tab" aria-selected="false" data-install="dnf">dnf</button>
-            </div>
-            <div class="install-panel">
-                <h3 id="install-method-title">curl install script</h3>
-                <p id="install-method-description">Fastest path for Linux/macOS.</p>
-                <div class="code-block">
-                    <code id="install-method-code">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
-                    <button class="copy-btn-small" onclick="copyCode(this)">Copy</button>
-                </div>
-            </div>
-        </div>
-    </section>
-
-
 
     <!-- Comparison -->
     <section class="comparison">
@@ -516,8 +559,8 @@
                             <td>Manual</td>
                         </tr>
                         <tr>
-                            <td>Agent-Native CLI</td>
-                            <td class="highlight">30+ commands, --json</td>
+                            <td>Agent-ready CLI</td>
+                            <td class="highlight">30+ commands, structured output</td>
                             <td>No</td>
                             <td>Bloomberg API ($)</td>
                             <td>No</td>
@@ -531,7 +574,7 @@
                         </tr>
                         <tr>
                             <td>Multi-Timeframe Analytics</td>
-                            <td class="highlight">LOW/MEDIUM/HIGH/MACRO engine</td>
+                            <td class="highlight">LOW / MEDIUM / HIGH / MACRO engine</td>
                             <td>No</td>
                             <td>Partial</td>
                             <td>No</td>
@@ -545,7 +588,7 @@
                         </tr>
                         <tr>
                             <td>AI Layer Workflows</td>
-                            <td class="highlight">Morning brief + scenario + conviction loops</td>
+                            <td class="highlight">Briefs, scenarios, conviction loops</td>
                             <td>No</td>
                             <td>Custom build</td>
                             <td>Manual</td>
@@ -608,7 +651,7 @@
             <div class="footer-content">
                 <div class="footer-logo">
                     <span class="logo-text">pftui</span>
-                    <span class="footer-tagline">Portfolio intelligence for humans and agents</span>
+                    <span class="footer-tagline">Local-first portfolio intelligence for humans and agents</span>
                 </div>
                 <div class="footer-links">
                     <div class="footer-column">
