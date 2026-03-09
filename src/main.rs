@@ -24,6 +24,7 @@ use crate::db::default_db_path;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let cached_only = cli.cached_only;
     let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
 
@@ -214,7 +215,12 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Refresh { notify }) => {
-            commands::refresh::run(&backend, &config, notify)
+            if cached_only {
+                println!("Cached-only mode enabled; skipping refresh network calls.");
+                Ok(())
+            } else {
+                commands::refresh::run(&backend, &config, notify)
+            }
         }
         Some(Command::Status { json, .. }) => {
             commands::status::run_backend(&backend, json)
@@ -266,9 +272,9 @@ fn main() -> Result<()> {
             commands::history::run(&backend, &config, &date, group_by.as_ref())
         }
 
-        Some(Command::Macro { json }) => commands::macro_cmd::run(&backend, &config, json),
-        Some(Command::Oil { json }) => commands::oil::run(&backend, json),
-        Some(Command::Crisis { json }) => commands::crisis::run(&backend, json),
+        Some(Command::Macro { json }) => commands::macro_cmd::run(&backend, &config, json, cached_only),
+        Some(Command::Oil { json }) => commands::oil::run(&backend, json, cached_only),
+        Some(Command::Crisis { json }) => commands::crisis::run(&backend, json, cached_only),
         Some(Command::Regime { action, limit, json }) => {
             commands::regime::run(&backend, &action, limit, json)
         }

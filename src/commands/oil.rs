@@ -8,14 +8,14 @@ use crate::db::price_history::get_history_backend;
 use crate::indicators::compute_rsi;
 use crate::price::yahoo;
 
-pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, json: bool, cached_only: bool) -> Result<()> {
     let mut prices = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|p| (p.symbol, p.price))
         .collect::<std::collections::HashMap<_, _>>();
 
-    ensure_symbol(backend, &mut prices, "CL=F")?;
-    ensure_symbol(backend, &mut prices, "BZ=F")?;
+    ensure_symbol(backend, &mut prices, "CL=F", cached_only)?;
+    ensure_symbol(backend, &mut prices, "BZ=F", cached_only)?;
 
     let wti = prices.get("CL=F").copied();
     let brent = prices.get("BZ=F").copied();
@@ -67,7 +67,11 @@ fn ensure_symbol(
     backend: &BackendConnection,
     prices: &mut std::collections::HashMap<String, Decimal>,
     symbol: &str,
+    cached_only: bool,
 ) -> Result<()> {
+    if cached_only {
+        return Ok(());
+    }
     if prices.contains_key(symbol) {
         return Ok(());
     }

@@ -105,7 +105,11 @@ fn backfill_market_prices(
     backend: &BackendConnection,
     price_map: &mut HashMap<String, Decimal>,
     symbols: &[&str],
+    cached_only: bool,
 ) -> Result<()> {
+    if cached_only {
+        return Ok(());
+    }
     if symbols.is_empty() {
         return Ok(());
     }
@@ -122,7 +126,7 @@ fn backfill_market_prices(
 }
 
 /// Run the macro dashboard command.
-pub fn run(backend: &BackendConnection, _config: &Config, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, _config: &Config, json: bool, cached_only: bool) -> Result<()> {
     // Build price map from cached data (yahoo symbol -> price)
     let all_prices = get_all_cached_prices_backend(backend)?;
     let mut price_map: HashMap<String, Decimal> = all_prices
@@ -133,7 +137,7 @@ pub fn run(backend: &BackendConnection, _config: &Config, json: bool) -> Result<
     // Ensure macro dashboard can display the full market basket even when
     // some symbols were not previously fetched during refresh.
     let missing = missing_market_symbols(&price_map);
-    backfill_market_prices(backend, &mut price_map, &missing)?;
+    backfill_market_prices(backend, &mut price_map, &missing, cached_only)?;
 
     // Build FRED data map (series_id -> latest observation)
     let fred_data: HashMap<String, (Decimal, String)> = economic_cache::get_all_latest_backend(backend)?
@@ -765,7 +769,7 @@ mod tests {
         let backend = to_backend(conn);
         let config = Config::default();
         // Empty DB — should print gracefully with "---" placeholders
-        assert!(run(&backend, &config, false).is_ok());
+        assert!(run(&backend, &config, false, true).is_ok());
     }
 
     #[test]
@@ -773,7 +777,7 @@ mod tests {
         let conn = open_in_memory();
         let backend = to_backend(conn);
         let config = Config::default();
-        assert!(run(&backend, &config, true).is_ok());
+        assert!(run(&backend, &config, true, true).is_ok());
     }
 
     #[test]
@@ -783,7 +787,7 @@ mod tests {
         seed_fred(&conn);
         let backend = to_backend(conn);
         let config = Config::default();
-        assert!(run(&backend, &config, false).is_ok());
+        assert!(run(&backend, &config, false, true).is_ok());
     }
 
     #[test]
@@ -793,7 +797,7 @@ mod tests {
         seed_fred(&conn);
         let backend = to_backend(conn);
         let config = Config::default();
-        assert!(run(&backend, &config, true).is_ok());
+        assert!(run(&backend, &config, true, true).is_ok());
     }
 
     #[test]

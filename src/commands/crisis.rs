@@ -20,12 +20,12 @@ const REQUIRED: &[&str] = &[
     "PLTR",
 ];
 
-pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, json: bool, cached_only: bool) -> Result<()> {
     let mut prices = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|p| (p.symbol, p.price))
         .collect::<std::collections::HashMap<_, _>>();
-    backfill_missing(backend, &mut prices)?;
+    backfill_missing(backend, &mut prices, cached_only)?;
 
     let spread = match (prices.get("CL=F"), prices.get("BZ=F")) {
         (Some(wti), Some(brent)) => Some(*wti - *brent),
@@ -130,7 +130,11 @@ fn day_change_pct(backend: &BackendConnection, symbol: &str) -> Option<f64> {
 fn backfill_missing(
     backend: &BackendConnection,
     prices: &mut std::collections::HashMap<String, Decimal>,
+    cached_only: bool,
 ) -> Result<()> {
+    if cached_only {
+        return Ok(());
+    }
     let missing: Vec<&str> = REQUIRED
         .iter()
         .copied()

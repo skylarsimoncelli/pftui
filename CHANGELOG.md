@@ -99,6 +99,14 @@
 - Tests: `cargo check -q`, `cargo test -q` (1193 passed). CI now runs Postgres smoke, backend-switch tests, setup tests, and parity acceptance script.
 - TODO: P32 complete
 
+### 2026-03-09 — Add global `--cached-only` mode for offline/cache-first workflows
+
+- What: added a global CLI flag `--cached-only` that suppresses network calls in cache-sensitive workflows. `refresh` now no-ops in cached-only mode; `macro`, `oil`, and `crisis` skip Yahoo backfill fetches and render purely from cached DB data.
+- Why: enables reliable “use last known data” operation when APIs are down or users intentionally want offline/cache-only behavior.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/macro_cmd.rs`, `src/commands/oil.rs`, `src/commands/crisis.rs`, `src/commands/eod.rs`, `src/commands/macro_cmd.rs` tests, `TODO.md`
+- Tests: `cargo test -q` (1193 passed)
+- TODO: Feedback item (`--offline`/`--cached-only`) completed
+
 ### 2026-03-09 — Implement structural cycles CLI (F31.11)
 
 - What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.
