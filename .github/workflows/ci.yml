@@ -39,6 +39,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Distribution manifest version gate
+        run: scripts/check_distribution_versions.sh
+
       - name: Test
         run: cargo test
 

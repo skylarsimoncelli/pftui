@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:50 UTC — Distribution readiness prep (non-F32 remaining TODO support)
+
+- What: added distribution readiness tooling and docs: `scripts/check_distribution_versions.sh`, `scripts/update_distribution_manifests.sh`, `docs/DISTRIBUTION-READINESS.md`; added CI gate for manifest-version parity; updated Scoop/Snap/Homebrew manifest versions to `0.6.0`.
+- Why: remaining non-F32 TODO items are externally blocked (accounts/stars). This reduces in-repo friction and prevents stale manifest drift while waiting for external prerequisites.
+- Files: `.github/workflows/ci.yml`, `scripts/check_distribution_versions.sh`, `scripts/update_distribution_manifests.sh`, `docs/DISTRIBUTION-READINESS.md`, `Formula/pftui.rb`, `snap/snapcraft.yaml`, `scoop/pftui.json`, `CHANGELOG.md`
+- Tests: `scripts/check_distribution_versions.sh`, `cargo check`
+- TODO: Distribution blockers prep (P2)
+
 ### 2026-03-09 01:46 UTC — F31.13: Analytics engine CLI views
 
 - What: expanded `pftui analytics` from signals-only to full multi-timeframe views: `summary`, `low`, `medium`, `high`, `macro`, `alignment`, plus existing `signals`.
