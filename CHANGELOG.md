@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:22 UTC — F32 Phase 18: backend-dispatch drift/rebalance reads
+
+- What: removed sqlite-only DB reopen flow from `drift` and `rebalance`; both commands now consume backend-dispatched transactions/prices with the existing live connection, and main routing passes `conn` directly.
+- Why: eliminates hybrid sqlite reads in target-rebalancing workflows under Postgres backend mode.
+- Files: `src/commands/drift.rs`, `src/commands/rebalance.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: drift/rebalance paths)
+
 ### 2026-03-09 01:16 UTC — F32 Phase 17: backend-dispatch history command reads
 
 - What: migrated `history` command to backend-dispatched reads for transactions, allocations, and historical price lookups; updated main routing to pass `BackendConnection`.

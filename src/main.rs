@@ -434,8 +434,8 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
             }
         }
-        Some(Command::Drift { json }) => commands::drift::run(&backend, &db_path, json),
-        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, &db_path, json),
+        Some(Command::Drift { json }) => commands::drift::run(&backend, conn, json),
+        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, conn, json),
         Some(Command::Conviction {
             action,
             value,
