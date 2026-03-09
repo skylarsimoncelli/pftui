@@ -12,16 +12,16 @@ use crate::config::{Config, PortfolioMode};
 use crate::data::{
     bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank,
 };
-use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations};
+use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
 use crate::db::backend::BackendConnection;
 use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{
     get_all_cached_prices_backend, get_cached_price, upsert_price_backend,
 };
 use crate::db::price_history::get_price_at_date_backend;
-use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
+use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
 use crate::db::timeframe_signals;
-use crate::db::transactions::{get_unique_symbols_backend, list_transactions};
+use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
 use crate::db::watchlist::get_watchlist_symbols_backend;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
@@ -866,10 +866,10 @@ pub fn run(
     }
 
     // Store daily portfolio snapshot
+    if let Err(e) = store_portfolio_snapshot(backend, config) {
+        eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
+    }
     if let Some(conn) = sqlite_conn {
-        if let Err(e) = store_portfolio_snapshot(backend, conn, config) {
-            eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
-        }
         if let Err(e) = detect_timeframe_signals(backend, conn) {
             eprintln!(
                 "\nWarning: failed to compute cross-timeframe signals: {}",
@@ -1234,25 +1234,24 @@ fn detect_timeframe_signals(backend: &BackendConnection, conn: &Connection) -> R
 /// Compute current positions and store a daily portfolio snapshot.
 fn store_portfolio_snapshot(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
 ) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> =
         cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
-    let fx_rates = fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
 
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
-            let transactions = list_transactions(conn)?;
+            let transactions = list_transactions_backend(backend)?;
             if transactions.is_empty() {
                 return Ok(());
             }
             compute_positions(&transactions, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
-            let allocations = list_allocations(conn)?;
+            let allocations = list_allocations_backend(backend)?;
             if allocations.is_empty() {
                 return Ok(());
             }
@@ -1280,13 +1279,13 @@ fn store_portfolio_snapshot(
     }
 
     // Store portfolio-level snapshot
-    upsert_portfolio_snapshot(conn, &today, total_value, cash_value, invested_value)?;
+    upsert_portfolio_snapshot_backend(backend, &today, total_value, cash_value, invested_value)?;
 
     // Store per-position snapshots
     for pos in &positions {
         let price = pos.current_price.unwrap_or(dec!(0));
         let value = pos.current_value.unwrap_or(dec!(0));
-        upsert_position_snapshot(conn, &today, &pos.symbol, pos.quantity, price, value)?;
+        upsert_position_snapshot_backend(backend, &today, &pos.symbol, pos.quantity, price, value)?;
     }
 
     let snap_count = positions.len();

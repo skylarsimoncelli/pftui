@@ -54,6 +54,22 @@ pub fn upsert_portfolio_snapshot(
     Ok(())
 }
 
+pub fn upsert_portfolio_snapshot_backend(
+    backend: &BackendConnection,
+    date: &str,
+    total_value: Decimal,
+    cash_value: Decimal,
+    invested_value: Decimal,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_portfolio_snapshot(conn, date, total_value, cash_value, invested_value),
+        |pool| {
+            upsert_portfolio_snapshot_postgres(pool, date, total_value, cash_value, invested_value)
+        },
+    )
+}
+
 /// Store (or update) a daily position snapshot. One row per (date, symbol).
 pub fn upsert_position_snapshot(
     conn: &Connection,
@@ -79,6 +95,21 @@ pub fn upsert_position_snapshot(
         ],
     )?;
     Ok(())
+}
+
+pub fn upsert_position_snapshot_backend(
+    backend: &BackendConnection,
+    date: &str,
+    symbol: &str,
+    quantity: Decimal,
+    price: Decimal,
+    value: Decimal,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_position_snapshot(conn, date, symbol, quantity, price, value),
+        |pool| upsert_position_snapshot_postgres(pool, date, symbol, quantity, price, value),
+    )
 }
 
 /// Get portfolio snapshots for the last N days, ordered by date ascending.
@@ -255,6 +286,65 @@ fn get_all_portfolio_snapshots_postgres(pool: &PgPool) -> Result<Vec<PortfolioSn
             },
         )
         .collect())
+}
+
+fn upsert_portfolio_snapshot_postgres(
+    pool: &PgPool,
+    date: &str,
+    total_value: Decimal,
+    cash_value: Decimal,
+    invested_value: Decimal,
+) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO portfolio_snapshots (date, total_value, cash_value, invested_value)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (date) DO UPDATE SET
+               total_value = EXCLUDED.total_value,
+               cash_value = EXCLUDED.cash_value,
+               invested_value = EXCLUDED.invested_value,
+               snapshot_at = NOW()",
+        )
+        .bind(date)
+        .bind(total_value.to_string())
+        .bind(cash_value.to_string())
+        .bind(invested_value.to_string())
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_position_snapshot_postgres(
+    pool: &PgPool,
+    date: &str,
+    symbol: &str,
+    quantity: Decimal,
+    price: Decimal,
+    value: Decimal,
+) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO position_snapshots (date, symbol, quantity, price, value)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (date, symbol) DO UPDATE SET
+               quantity = EXCLUDED.quantity,
+               price = EXCLUDED.price,
+               value = EXCLUDED.value",
+        )
+        .bind(date)
+        .bind(symbol)
+        .bind(quantity.to_string())
+        .bind(price.to_string())
+        .bind(value.to_string())
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
 }
 
 /// Count total portfolio snapshots.

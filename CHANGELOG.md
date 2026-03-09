@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 11:33 UTC — F32 Phase 63: backend-native snapshot persistence in refresh
+
+- What: added backend-dispatched snapshot upsert APIs (`portfolio_snapshots`, `position_snapshots`) and migrated refresh snapshot storage to backend-native reads/writes (transactions/allocations/fx + snapshot inserts).
+- Why: removes sqlite-only snapshot persistence so postgres refresh now stores daily portfolio/position snapshots natively; only timeframe-signal detection remains sqlite-gated.
+- Files: `src/db/snapshots.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh timeframe-signal detection still sqlite-gated)
+
 ### 2026-03-09 11:19 UTC — F32 Phase 62: backend-native BLS refresh path
 
 - What: added backend-dispatched BLS cache APIs for upsert/freshness checks and migrated refresh BLS freshness check + writes to backend methods.
