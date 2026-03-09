@@ -689,8 +689,7 @@ fn main() -> Result<()> {
             commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "stress-test")?;
-            commands::stress_test::run(&backend, conn, &config, &scenario, json)
+            commands::stress_test::run(&backend, &config, &scenario, json)
         }
         Some(Command::Research {
             query,
@@ -705,7 +704,6 @@ fn main() -> Result<()> {
             etf,
             opec,
         }) => {
-            let conn = sqlite_conn_for_command(&backend, "research")?;
             let freshness_checked = match freshness.as_deref() {
                 Some(v) => Some(commands::research::validate_freshness(v)?),
                 None => None,
@@ -719,7 +717,6 @@ fn main() -> Result<()> {
                 opec,
             };
             commands::research::run(
-                conn,
                 query.as_deref(),
                 news,
                 freshness_checked.as_deref(),

@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::analytics::scenarios::{apply_preset, parse_preset};
 use crate::config::{Config, PortfolioMode};
@@ -15,7 +14,6 @@ use crate::models::position::{compute_positions, compute_positions_from_allocati
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     scenario: &str,
     json: bool,
@@ -32,7 +30,10 @@ pub fn run(
         anyhow::bail!("No cached prices. Run `pftui refresh` first.");
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = backend
+        .sqlite_native()
+        .map(|conn| crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default())
+        .unwrap_or_default();
     let base_positions = match config.portfolio_mode {
         PortfolioMode::Full => {
             let txs = list_transactions_backend(backend)?;

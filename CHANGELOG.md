@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 04:38 UTC — F32 Phase 33: remove sqlite-conn dependency for stress-test + research
+
+- What: removed SQLite connection parameter requirements from `stress-test` and `research` command paths; `stress-test` now sources FX rates opportunistically from sqlite backend when present, otherwise defaults cleanly.
+- Why: reduces postgres command gating in `main` and keeps command execution backend-native where possible.
+- Files: `src/commands/stress_test.rs`, `src/commands/research.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 command-path parity (partial: stress-test/research)
+
 ### 2026-03-09 04:29 UTC — F32 Phase 32: reduce postgres gating for group/movers/correlations
 
 - What: completed backend-native `group` metadata path (db+command), removed SQLite-connection requirement from `movers` and `correlations` command signatures, and updated routing/callsites (`main`, `eod`, tests) accordingly.
