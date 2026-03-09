@@ -167,6 +167,13 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("INSERT INTO pftui_migrations (version) VALUES (1) ON CONFLICT DO NOTHING")
             .execute(pool)
             .await?;
+        // v2: remove legacy bridge table from hybrid implementation.
+        sqlx::query("DROP TABLE IF EXISTS pftui_sqlite_state")
+            .execute(pool)
+            .await?;
+        sqlx::query("INSERT INTO pftui_migrations (version) VALUES (2) ON CONFLICT DO NOTHING")
+            .execute(pool)
+            .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:49 UTC — F32 Phase 28: remove SQLite blob bridge backend path
+
+- What: removed `PostgresSqliteBridge` and `pftui_sqlite_state` sync behavior from `db/backend.rs`, switched Postgres backend open to native pool+migrations only, added migration drop for legacy `pftui_sqlite_state`, and updated main dispatch to fail gracefully (non-panicking) for SQLite-only commands when postgres backend is active.
+- Why: closes the core hybrid-bridge architecture gap and ensures Postgres mode no longer materializes or syncs a hidden SQLite database blob.
+- Files: `src/db/backend.rs`, `src/db/postgres_schema.rs`, `src/main.rs`, `docs/MIGRATING.md`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.7 bridge removal complete; remaining F32 parity work is command/module migration to eliminate sqlite-only callsites.
+
 ### 2026-03-09 03:33 UTC — F32 Phase 27: backend-dispatch predictions cache + CLI path
 
 - What: added backend-dispatched APIs and native Postgres implementations for `predictions_cache`, migrated `pftui predictions` command to `BackendConnection`, and switched refresh staleness check to backend-aware `get_last_update_backend`.

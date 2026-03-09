@@ -16,11 +16,22 @@ mod web;
 
 use anyhow::{bail, Result};
 use clap::Parser;
+use rusqlite::Connection;
 
 use crate::cli::{Cli, Command};
 use crate::config::load_config_with_first_run_prompt;
 use crate::db::backend::open_from_config;
 use crate::db::default_db_path;
+
+fn sqlite_conn_for_command<'a>(backend: &'a crate::db::backend::BackendConnection, command: &str) -> Result<&'a Connection> {
+    backend.sqlite_native().ok_or_else(|| {
+        anyhow::anyhow!(
+            "`{}` is not yet available with database_backend=postgres. \
+This command still depends on SQLite-only paths.",
+            command
+        )
+    })
+}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -38,10 +49,10 @@ fn main() -> Result<()> {
     }
 
     let backend = open_from_config(&config, &db_path)?;
-    let conn = backend.sqlite();
 
     let result = match cli.command {
         None => {
+            let conn = sqlite_conn_for_command(&backend, "tui")?;
             // Auto-detect: run setup if no portfolio data
             if !commands::setup::has_portfolio_data(conn) {
                 commands::setup::run(conn, &config, false)?;
@@ -63,10 +74,12 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Setup) => {
+            let conn = sqlite_conn_for_command(&backend, "setup")?;
             commands::setup::run(conn, &config, true)
         }
 
         Some(Command::Summary { group_by, period, what_if, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "summary")?;
             commands::summary::run(
                 &backend,
                 conn,
@@ -79,6 +92,7 @@ fn main() -> Result<()> {
             )
         }
         Some(Command::Export { format, output }) => {
+            let conn = sqlite_conn_for_command(&backend, "export")?;
             commands::export::run(&backend, conn, &format, &config, output.as_deref())
         }
 
@@ -215,16 +229,30 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        Some(Command::Refresh { notify }) => commands::refresh::run(&backend, conn, &config, notify),
-        Some(Command::Status { json, .. }) => commands::status::run(conn, json),
+        Some(Command::Refresh { notify }) => {
+            let conn = sqlite_conn_for_command(&backend, "refresh")?;
+            commands::refresh::run(&backend, conn, &config, notify)
+        }
+        Some(Command::Status { json, .. }) => {
+            let conn = sqlite_conn_for_command(&backend, "status")?;
+            commands::status::run(conn, json)
+        }
         Some(Command::Config { .. }) => unreachable!(),
-        Some(Command::Value { json }) => commands::value::run(&backend, conn, &config, json),
-        Some(Command::Brief { json }) => commands::brief::run(conn, &config, true, json),
+        Some(Command::Value { json }) => {
+            let conn = sqlite_conn_for_command(&backend, "value")?;
+            commands::value::run(&backend, conn, &config, json)
+        }
+        Some(Command::Brief { json }) => {
+            let conn = sqlite_conn_for_command(&backend, "brief")?;
+            commands::brief::run(conn, &config, true, json)
+        }
         Some(Command::Watchlist { approaching, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "watchlist")?;
             commands::watchlist_cli::run(&backend, conn, &config, approaching.as_deref(), json)
         }
 
         Some(Command::SetCash { symbol, amount }) => {
+            let conn = sqlite_conn_for_command(&backend, "set-cash")?;
             if config.is_percentage_mode() {
                 bail!("set-cash is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
@@ -240,6 +268,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Import { path, mode }) => {
+            let conn = sqlite_conn_for_command(&backend, "import")?;
             let import_mode = match mode {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,
                 cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
@@ -248,6 +277,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::History { date, group_by }) => {
+            let conn = sqlite_conn_for_command(&backend, "history")?;
             commands::history::run(&backend, conn, &config, &date, group_by.as_ref())
         }
 
@@ -257,16 +287,22 @@ fn main() -> Result<()> {
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
         Some(Command::Sovereign { json }) => commands::sovereign::run(json),
         Some(Command::Economy { indicator, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "economy")?;
             commands::economy::run(conn, indicator.as_deref(), json)
         }
 
-        Some(Command::Eod { json }) => commands::eod::run(&backend, conn, &config, json),
+        Some(Command::Eod { json }) => {
+            let conn = sqlite_conn_for_command(&backend, "eod")?;
+            commands::eod::run(&backend, conn, &config, json)
+        }
 
         Some(Command::Global { country, indicator, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "global")?;
             commands::global::run(conn, country.as_deref(), indicator.as_deref(), json)
         }
 
         Some(Command::Performance { since, period, vs, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "performance")?;
             commands::performance::run(conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
         }
 
@@ -275,6 +311,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Movers { threshold, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "movers")?;
             commands::movers::run(&backend, conn, &config, Some(&threshold), json)
         }
         Some(Command::Scan {
@@ -284,6 +321,7 @@ fn main() -> Result<()> {
             list,
             json,
         }) => {
+            let conn = sqlite_conn_for_command(&backend, "scan")?;
             commands::scan::run(
                 &backend,
                 conn,
@@ -341,15 +379,18 @@ fn main() -> Result<()> {
             severity,
             limit,
             json,
-        }) => commands::analytics::run(
-            conn,
-            &action,
-            symbol.as_deref(),
-            signal_type.as_deref(),
-            severity.as_deref(),
-            limit,
-            json,
-        ),
+        }) => {
+            let conn = sqlite_conn_for_command(&backend, "analytics")?;
+            commands::analytics::run(
+                conn,
+                &action,
+                symbol.as_deref(),
+                signal_type.as_deref(),
+                severity.as_deref(),
+                limit,
+                json,
+            )
+        }
         Some(Command::Thesis {
             action,
             value,
@@ -390,6 +431,7 @@ fn main() -> Result<()> {
             commands::predictions::run(&backend, category.as_deref(), search.as_deref(), limit, json)
         }
         Some(Command::Correlations { window, limit, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "correlations")?;
             commands::correlations::run(&backend, conn, window, limit, json)
         }
 
@@ -410,6 +452,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Alerts { action, value, json, status }) => {
+            let conn = sqlite_conn_for_command(&backend, "alerts")?;
             // Parse value as either a rule string (for add) or an ID (for remove/ack/rearm)
             let id = value.as_deref().and_then(|v| v.parse::<i64>().ok());
             let rule = if id.is_none() { value.clone() } else { None };
@@ -437,8 +480,14 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
             }
         }
-        Some(Command::Drift { json }) => commands::drift::run(&backend, conn, json),
-        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, conn, json),
+        Some(Command::Drift { json }) => {
+            let conn = sqlite_conn_for_command(&backend, "drift")?;
+            commands::drift::run(&backend, conn, json)
+        }
+        Some(Command::Rebalance { json }) => {
+            let conn = sqlite_conn_for_command(&backend, "rebalance")?;
+            commands::rebalance::run(&backend, conn, json)
+        }
         Some(Command::Conviction {
             action,
             value,
@@ -554,6 +603,7 @@ fn main() -> Result<()> {
             notes,
             json,
         }) => {
+            let conn = sqlite_conn_for_command(&backend, "dividends")?;
             let args = commands::dividends::DividendsArgs {
                 value,
                 amount,
@@ -576,6 +626,7 @@ fn main() -> Result<()> {
             remove,
             json,
         }) => {
+            let conn = sqlite_conn_for_command(&backend, "annotate")?;
             let args = commands::annotate::AnnotateArgs {
                 symbol: symbol.as_deref(),
                 thesis: thesis.as_deref(),
@@ -594,29 +645,35 @@ fn main() -> Result<()> {
             name,
             symbols,
             json,
-        }) => commands::group::run(
-            &backend,
-            conn,
-            &config,
-            &action,
-            name.as_deref(),
-            symbols.as_deref(),
-            json,
-        ),
+        }) => {
+            let conn = sqlite_conn_for_command(&backend, "group")?;
+            commands::group::run(
+                &backend,
+                conn,
+                &config,
+                &action,
+                name.as_deref(),
+                symbols.as_deref(),
+                json,
+            )
+        }
         Some(Command::MigrateJournal {
             path,
             dry_run,
             default_tag,
             default_status,
             json,
-        }) => commands::migrate_journal::run(
-            conn,
-            &path,
-            dry_run,
-            default_tag.as_deref(),
-            &default_status,
-            json,
-        ),
+        }) => {
+            let conn = sqlite_conn_for_command(&backend, "migrate-journal")?;
+            commands::migrate_journal::run(
+                conn,
+                &path,
+                dry_run,
+                default_tag.as_deref(),
+                &default_status,
+                json,
+            )
+        }
 
         Some(Command::Web { port, bind, no_auth }) => {
             // Web server runs in async context
@@ -638,6 +695,7 @@ fn main() -> Result<()> {
             commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {
+            let conn = sqlite_conn_for_command(&backend, "stress-test")?;
             commands::stress_test::run(&backend, conn, &config, &scenario, json)
         }
         Some(Command::Research {
@@ -653,6 +711,7 @@ fn main() -> Result<()> {
             etf,
             opec,
         }) => {
+            let conn = sqlite_conn_for_command(&backend, "research")?;
             let freshness_checked = match freshness.as_deref() {
                 Some(v) => Some(commands::research::validate_freshness(v)?),
                 None => None,
