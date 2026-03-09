@@ -231,8 +231,7 @@ fn main() -> Result<()> {
             commands::refresh::run(&backend, conn, &config, notify)
         }
         Some(Command::Status { json, .. }) => {
-            let conn = sqlite_conn_for_command(&backend, "status")?;
-            commands::status::run(conn, json)
+            commands::status::run_backend(&backend, json)
         }
         Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => {

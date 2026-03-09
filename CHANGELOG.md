@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 07:15 UTC — F32 Phase 42: add postgres-native status path and remove sqlite gate
+
+- What: added `status::run_backend` with a native Postgres status implementation (table-count + recency checks) while preserving existing SQLite behavior, and removed sqlite gating for `pftui status` in `main`.
+- Why: unlocks status diagnostics under postgres backend and removes another sqlite-only command block.
+- Files: `src/commands/status.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/import/eod/migrate-journal/setup/tui and `alerts check`)
+
 ### 2026-03-09 07:04 UTC — F32 Phase 41: backend-dispatch scan query storage + command un-gating
 
 - What: added backend-dispatched `scan_queries` CRUD with native Postgres SQL, migrated `scan` command saved-query paths (`--save/--load/--list`) to backend APIs, switched runtime FX lookup to optional SQLite-native fallback, removed sqlite gating for `pftui scan` in `main`, and added Postgres `scan_queries` schema.

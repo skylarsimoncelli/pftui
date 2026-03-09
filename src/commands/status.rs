@@ -1,7 +1,9 @@
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
+use sqlx::PgPool;
 
 use crate::config::load_config;
+use crate::db::backend::BackendConnection;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, price_cache, sentiment_cache, worldbank_cache};
 
@@ -481,6 +483,185 @@ pub fn run(conn: &Connection, json: bool) -> Result<()> {
     }
     
     Ok(())
+}
+
+pub fn run_backend(backend: &BackendConnection, json: bool) -> Result<()> {
+    if let Some(conn) = backend.sqlite_native() {
+        return run(conn, json);
+    }
+    if let Some(pool) = backend.postgres_pool() {
+        return run_postgres(pool, json);
+    }
+    Err(anyhow::anyhow!("Unsupported database backend state"))
+}
+
+fn run_postgres(pool: &PgPool, json: bool) -> Result<()> {
+    let config = load_config()?;
+
+    let sources = vec![
+        check_source_postgres(
+            pool,
+            "Prices",
+            "price_cache",
+            "MAX(fetched_at)",
+            Some(PRICE_FRESHNESS_SECS),
+        ),
+        check_source_postgres(
+            pool,
+            "Predictions",
+            "predictions_cache",
+            "MAX(updated_at)::TEXT",
+            Some(PREDICTIONS_FRESHNESS_SECS),
+        ),
+        check_source_postgres(
+            pool,
+            "News",
+            "news_cache",
+            "MAX(fetched_at)",
+            Some(NEWS_FRESHNESS_SECS),
+        ),
+        check_source_postgres(
+            pool,
+            "COT",
+            "cot_cache",
+            "MAX(fetched_at)",
+            Some(COT_FRESHNESS_SECS),
+        ),
+        check_source_postgres(
+            pool,
+            "Sentiment",
+            "sentiment_cache",
+            "MAX(fetched_at)",
+            Some(SENTIMENT_FRESHNESS_SECS),
+        ),
+        check_source_postgres(
+            pool,
+            "Calendar",
+            "calendar_events",
+            "MAX(fetched_at)",
+            Some(CALENDAR_FRESHNESS_SECS),
+        ),
+        check_source_postgres(
+            pool,
+            "BLS",
+            "bls_cache",
+            "MAX(fetched_at)::TEXT",
+            Some(BLS_FRESHNESS_DAYS * 24 * 60 * 60),
+        ),
+        check_source_postgres(
+            pool,
+            "World Bank",
+            "worldbank_cache",
+            "TO_CHAR(MAX(updated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')",
+            Some(30 * 24 * 60 * 60),
+        ),
+        check_source_postgres(
+            pool,
+            "COMEX",
+            "comex_cache",
+            "MAX(fetched_at)",
+            Some(COMEX_FRESHNESS_SECS),
+        ),
+        check_source_postgres(
+            pool,
+            "On-chain",
+            "onchain_cache",
+            "MAX(fetched_at)",
+            Some(24 * 60 * 60),
+        ),
+    ];
+
+    if json {
+        print_json(&config, &sources)?;
+    } else {
+        print_table(&config, &sources);
+    }
+
+    Ok(())
+}
+
+fn check_source_postgres(
+    pool: &PgPool,
+    name: &'static str,
+    table: &str,
+    last_fetch_expr: &str,
+    freshness_secs: Option<i64>,
+) -> DataSourceStatus {
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(_) => {
+            return DataSourceStatus {
+                name,
+                last_fetch: None,
+                records: 0,
+                status: SourceStatus::Empty,
+            };
+        }
+    };
+
+    let count_sql = format!("SELECT COUNT(*)::BIGINT FROM {}", table);
+    let count: i64 = match runtime.block_on(async { sqlx::query_scalar::<_, i64>(&count_sql).fetch_one(pool).await }) {
+        Ok(v) => v,
+        Err(_) => {
+            return DataSourceStatus {
+                name,
+                last_fetch: None,
+                records: 0,
+                status: SourceStatus::Empty,
+            };
+        }
+    };
+
+    if count == 0 {
+        return DataSourceStatus {
+            name,
+            last_fetch: None,
+            records: 0,
+            status: SourceStatus::Empty,
+        };
+    }
+
+    let last_sql = format!("SELECT {} FROM {}", last_fetch_expr, table);
+    let last_fetch: Option<String> =
+        runtime.block_on(async { sqlx::query_scalar::<_, Option<String>>(&last_sql).fetch_one(pool).await }).ok().flatten();
+
+    let status = match (freshness_secs, last_fetch.as_deref()) {
+        (Some(max_age), Some(ts)) => {
+            if is_stale_timestamp(ts, max_age) {
+                SourceStatus::Stale
+            } else {
+                SourceStatus::Fresh
+            }
+        }
+        (Some(_), None) => SourceStatus::Stale,
+        (None, _) => SourceStatus::Fresh,
+    };
+
+    DataSourceStatus {
+        name,
+        last_fetch,
+        records: count as usize,
+        status,
+    }
+}
+
+fn is_stale_timestamp(raw: &str, max_age_secs: i64) -> bool {
+    let now = chrono::Utc::now();
+
+    if let Ok(ts) = raw.parse::<i64>() {
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+            return now.signed_duration_since(dt).num_seconds() > max_age_secs;
+        }
+    }
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return now
+            .signed_duration_since(dt.with_timezone(&chrono::Utc))
+            .num_seconds()
+            > max_age_secs;
+    }
+
+    true
 }
 
 fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> Result<()> {
