@@ -3,11 +3,14 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::db::backend::BackendConnection;
 use crate::db::allocations::get_unique_allocation_symbols;
+use crate::db::allocations::get_unique_allocation_symbols_backend;
+use crate::db::backend::BackendConnection;
 use crate::db::correlation_snapshots;
 use crate::db::price_history::get_history;
+use crate::db::price_history::get_history_backend;
 use crate::db::transactions::get_unique_symbols;
+use crate::db::transactions::get_unique_symbols_backend;
 use crate::indicators::correlation::compute_rolling_correlation;
 use crate::models::asset::AssetCategory;
 
@@ -37,26 +40,30 @@ pub fn run(
     limit: usize,
     json: bool,
 ) -> Result<()> {
-    let Some(conn) = backend.sqlite_native() else {
-        anyhow::bail!("correlations currently requires database_backend=sqlite");
-    };
     if !WINDOWS.contains(&window) {
         anyhow::bail!("Invalid --window '{}'. Use 7, 30, or 90.", window);
     }
 
     match action.unwrap_or("compute") {
         "compute" => {
-            let pairs = compute_pairs(conn, window, limit)?;
+            let pairs = compute_pairs_backend(backend, window, limit)?;
             if store {
+                let Some(conn) = backend.sqlite_native() else {
+                    anyhow::bail!("correlations --store currently requires database_backend=sqlite");
+                };
                 let period_tag = period.unwrap_or("30d");
                 let stored = store_pairs(conn, &pairs, period_tag)?;
                 if !json {
                     println!("Stored {} correlation snapshots ({})", stored, period_tag);
                 }
             }
-            print_pairs(conn, pairs, window, limit, json)
+            let held = collect_held_symbols_backend(backend);
+            print_pairs(held, pairs, window, limit, json)
         }
         "history" => {
+            let Some(conn) = backend.sqlite_native() else {
+                anyhow::bail!("correlations history currently requires database_backend=sqlite");
+            };
             let symbol_a = value.ok_or_else(|| anyhow::anyhow!("symbol A required"))?;
             let symbol_b = value2.ok_or_else(|| anyhow::anyhow!("symbol B required"))?;
             let rows = correlation_snapshots::get_history(conn, symbol_a, symbol_b, period, Some(limit))?;
@@ -84,6 +91,89 @@ pub fn run(
     }
 }
 
+pub fn compute_pairs_backend(
+    backend: &BackendConnection,
+    window: usize,
+    limit: usize,
+) -> Result<Vec<PairCorrelation>> {
+    let held = collect_held_symbols_backend(backend);
+    if held.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates: HashSet<String> = held.clone();
+    for anchor in ANCHORS {
+        candidates.insert(anchor.to_string());
+    }
+
+    let history_limit = 180u32;
+    let mut series_map: HashMap<String, Vec<f64>> = HashMap::new();
+    for symbol in &candidates {
+        if let Some((resolved, closes)) = load_closes_with_fallback_backend(backend, symbol, history_limit) {
+            if closes.len() >= 91 {
+                series_map.entry(symbol.clone()).or_insert(closes.clone());
+                series_map.entry(resolved).or_insert(closes);
+            }
+        }
+    }
+
+    let mut pairs = Vec::new();
+    let mut symbols: Vec<String> = candidates.into_iter().collect();
+    symbols.sort();
+
+    for i in 0..symbols.len() {
+        for j in (i + 1)..symbols.len() {
+            let a = &symbols[i];
+            let b = &symbols[j];
+            if !held.contains(a) && !held.contains(b) {
+                continue;
+            }
+            let series_a = match series_map.get(a) {
+                Some(v) => v,
+                None => continue,
+            };
+            let series_b = match series_map.get(b) {
+                Some(v) => v,
+                None => continue,
+            };
+            let min_len = series_a.len().min(series_b.len());
+            if min_len < 91 {
+                continue;
+            }
+            let aligned_a = &series_a[series_a.len() - min_len..];
+            let aligned_b = &series_b[series_b.len() - min_len..];
+            let corr_7d = latest_corr(aligned_a, aligned_b, 7);
+            let corr_30d = latest_corr(aligned_a, aligned_b, 30);
+            let corr_90d = latest_corr(aligned_a, aligned_b, 90);
+            let break_delta = match (corr_7d, corr_90d) {
+                (Some(c7), Some(c90)) if (c7 - c90).abs() >= BREAK_THRESHOLD => Some(c7 - c90),
+                _ => None,
+            };
+            if corr_7d.is_some() || corr_30d.is_some() || corr_90d.is_some() {
+                pairs.push(PairCorrelation {
+                    symbol_a: a.clone(),
+                    symbol_b: b.clone(),
+                    corr_7d,
+                    corr_30d,
+                    corr_90d,
+                    break_delta,
+                });
+            }
+        }
+    }
+
+    let score = |p: &PairCorrelation| match window {
+        7 => p.corr_7d.map(|v| v.abs()).unwrap_or(0.0),
+        30 => p.corr_30d.map(|v| v.abs()).unwrap_or(0.0),
+        90 => p.corr_90d.map(|v| v.abs()).unwrap_or(0.0),
+        _ => 0.0,
+    };
+    pairs.sort_by(|a, b| score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.truncate(limit.max(1));
+    Ok(pairs)
+}
+
+#[allow(dead_code)]
 pub fn compute_pairs(conn: &Connection, window: usize, limit: usize) -> Result<Vec<PairCorrelation>> {
     let held = collect_held_symbols(conn);
     if held.is_empty() {
@@ -229,14 +319,12 @@ pub fn compute_and_store_default_snapshots(conn: &Connection) -> Result<usize> {
 }
 
 fn print_pairs(
-    conn: &Connection,
+    held: HashSet<String>,
     pairs: Vec<PairCorrelation>,
     window: usize,
     limit: usize,
     json: bool,
 ) -> Result<()> {
-    let held = collect_held_symbols(conn);
-
     if json {
         let output = serde_json::json!({
             "window": window,
@@ -301,6 +389,25 @@ fn collect_held_symbols(conn: &Connection) -> HashSet<String> {
     held
 }
 
+fn collect_held_symbols_backend(backend: &BackendConnection) -> HashSet<String> {
+    let mut held = HashSet::new();
+    if let Ok(rows) = get_unique_symbols_backend(backend) {
+        for (sym, cat) in rows {
+            if cat != AssetCategory::Cash {
+                held.insert(sym);
+            }
+        }
+    }
+    if let Ok(rows) = get_unique_allocation_symbols_backend(backend) {
+        for (sym, cat) in rows {
+            if cat != AssetCategory::Cash {
+                held.insert(sym);
+            }
+        }
+    }
+    held
+}
+
 fn load_closes_with_fallback(
     conn: &Connection,
     symbol: &str,
@@ -325,8 +432,45 @@ fn load_closes_with_fallback(
     None
 }
 
+fn load_closes_with_fallback_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    limit: u32,
+) -> Option<(String, Vec<f64>)> {
+    if let Some(closes) = load_closes_backend(backend, symbol, limit) {
+        return Some((symbol.to_string(), closes));
+    }
+
+    if symbol.ends_with("-USD") {
+        let stripped = symbol.trim_end_matches("-USD");
+        if let Some(closes) = load_closes_backend(backend, stripped, limit) {
+            return Some((stripped.to_string(), closes));
+        }
+    } else {
+        let usd = format!("{}-USD", symbol);
+        if let Some(closes) = load_closes_backend(backend, &usd, limit) {
+            return Some((usd, closes));
+        }
+    }
+    None
+}
+
 fn load_closes(conn: &Connection, symbol: &str, limit: u32) -> Option<Vec<f64>> {
     let history = get_history(conn, symbol, limit).ok()?;
+    let closes: Vec<f64> = history
+        .into_iter()
+        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+        .filter(|v| *v > 0.0)
+        .collect();
+    if closes.len() < 2 {
+        None
+    } else {
+        Some(closes)
+    }
+}
+
+fn load_closes_backend(backend: &BackendConnection, symbol: &str, limit: u32) -> Option<Vec<f64>> {
+    let history = get_history_backend(backend, symbol, limit).ok()?;
     let closes: Vec<f64> = history
         .into_iter()
         .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))

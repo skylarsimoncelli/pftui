@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:39 UTC — F32 Phase 64: backend-native correlations compute path
+
+- What: restored backend-dispatched `correlations compute` flow by loading held symbols and price history through backend APIs; kept `history` and `--store` snapshot actions sqlite-gated with explicit backend message.
+- Why: avoids full-command sqlite lockout and keeps postgres users able to run rolling correlation analysis while correlation snapshot-history storage migration remains pending.
+- Files: `src/commands/correlations.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo test -q` (1185 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; correlations snapshot history/store still sqlite-only)
+
 ### 2026-03-09 03:27 UTC — Fix PostgreSQL connection timeout + clippy warnings
 
 - What: added 5-second timeout to PostgreSQL connection attempts (previously hung indefinitely if unreachable). Fixed 7 clippy warnings: large enum variant, too many arguments, field reassign with default, useless vec allocations.
