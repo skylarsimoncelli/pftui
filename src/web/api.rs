@@ -995,14 +995,14 @@ pub async fn get_transactions(
         ));
     }
 
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
 
-    let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
+    let transactions = db::transactions::list_transactions_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load transactions: {}", e),
@@ -1084,14 +1084,14 @@ pub async fn post_transaction(
             "Transactions not available in percentage mode".to_string(),
         ));
     }
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
     let tx = parse_transaction_request(&body)?;
-    let id = db::transactions::insert_transaction(&conn, &tx).map_err(|e| {
+    let id = db::transactions::insert_transaction_backend(&backend, &tx).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to create transaction: {}", e),
@@ -1115,14 +1115,14 @@ pub async fn patch_transaction(
             "Transactions not available in percentage mode".to_string(),
         ));
     }
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
     let tx = parse_transaction_request(&body)?;
-    let ok = db::transactions::update_transaction(&conn, id, &tx).map_err(|e| {
+    let ok = db::transactions::update_transaction_backend(&backend, id, &tx).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to update transaction: {}", e),
@@ -1145,13 +1145,13 @@ pub async fn delete_transaction(
             "Transactions not available in percentage mode".to_string(),
         ));
     }
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-    let ok = db::transactions::delete_transaction(&conn, id).map_err(|e| {
+    let ok = db::transactions::delete_transaction_backend(&backend, id).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to delete transaction: {}", e),
@@ -1349,14 +1349,14 @@ pub async fn get_macro(
 pub async fn get_alerts(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<AlertsResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
 
-    let alerts_data = db::alerts::list_alerts(&conn).map_err(|e| {
+    let alerts_data = db::alerts::list_alerts_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load alerts: {}", e),
@@ -1387,7 +1387,7 @@ pub async fn post_alert(
     State(state): State<Arc<AppState>>,
     Json(body): Json<AlertCreateRequest>,
 ) -> Result<Json<AlertMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
@@ -1426,8 +1426,8 @@ pub async fn post_alert(
         })?
     };
 
-    let id = db::alerts::add_alert(
-        &conn,
+    let id = db::alerts::add_alert_backend(
+        &backend,
         &parsed.kind.to_string(),
         &parsed.symbol,
         &parsed.direction.to_string(),
@@ -1452,13 +1452,13 @@ pub async fn delete_alert(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<AlertMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-    let removed = db::alerts::remove_alert(&conn, id).map_err(|e| {
+    let removed = db::alerts::remove_alert_backend(&backend, id).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to remove alert: {}", e),
@@ -1479,13 +1479,13 @@ pub async fn post_alert_ack(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<AlertMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-    let ok = db::alerts::acknowledge_alert(&conn, id).map_err(|e| {
+    let ok = db::alerts::acknowledge_alert_backend(&backend, id).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to acknowledge alert: {}", e),
@@ -1502,13 +1502,13 @@ pub async fn post_alert_rearm(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<AlertMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-    let exists = db::alerts::get_alert(&conn, id).map_err(|e| {
+    let exists = db::alerts::get_alert_backend(&backend, id).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load alert: {}", e),
@@ -1523,7 +1523,7 @@ pub async fn post_alert_rearm(
     };
     let ok = match alert.status {
         AlertStatus::Triggered | AlertStatus::Acknowledged => {
-            db::alerts::rearm_alert(&conn, id).map_err(|e| {
+            db::alerts::rearm_alert_backend(&backend, id).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to rearm alert: {}", e),

@@ -143,6 +143,18 @@ pub fn delete_transaction_backend(backend: &BackendConnection, id: i64) -> Resul
     )
 }
 
+pub fn update_transaction_backend(
+    backend: &BackendConnection,
+    id: i64,
+    tx: &NewTransaction,
+) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| update_transaction(conn, id, tx),
+        |pool| update_transaction_postgres(pool, id, tx),
+    )
+}
+
 pub fn get_transaction_backend(backend: &BackendConnection, id: i64) -> Result<Option<Transaction>> {
     query::dispatch(
         backend,
@@ -219,6 +231,30 @@ fn delete_transaction_postgres(pool: &PgPool, id: i64) -> Result<bool> {
             .bind(id)
             .execute(pool)
             .await
+    })?;
+    Ok(rows.rows_affected() > 0)
+}
+
+fn update_transaction_postgres(pool: &PgPool, id: i64, tx: &NewTransaction) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query(
+            "UPDATE transactions
+             SET symbol = $1, category = $2, tx_type = $3, quantity = $4, price_per = $5, currency = $6, date = $7, notes = $8
+             WHERE id = $9",
+        )
+        .bind(&tx.symbol)
+        .bind(tx.category.to_string())
+        .bind(tx.tx_type.to_string())
+        .bind(tx.quantity.to_string())
+        .bind(tx.price_per.to_string())
+        .bind(&tx.currency)
+        .bind(&tx.date)
+        .bind(&tx.notes)
+        .bind(id)
+        .execute(pool)
+        .await
     })?;
     Ok(rows.rows_affected() > 0)
 }
