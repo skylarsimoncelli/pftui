@@ -44,7 +44,7 @@ Or install via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
 
 **🎨 11 Stunning Themes** — Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox, Inferno, Neon, Hacker, Pastel, Miasma. Every pixel themed. Cycle with `t`.
 
-**🔒 Privacy First** — Percentage-only mode stores zero dollar amounts. Toggle `p` to hide values instantly. Your portfolio stays on your machine, in a local SQLite database. Nothing is sent anywhere.
+**🔒 Privacy First** — Percentage-only mode stores zero dollar amounts. Toggle `p` to hide values instantly. Your portfolio stays on your machine, in your configured local backend (SQLite by default or PostgreSQL). Nothing is sent anywhere.
 
 **⌨️ Vim-Native** — `j`/`k` to navigate, `/` to search, `gg`/`G` to jump. If you've used vim, you already know pftui. If you haven't — you'll learn in 30 seconds.
 

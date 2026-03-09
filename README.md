@@ -121,7 +121,7 @@ Details: [WEB_DASHBOARD.md](WEB_DASHBOARD.md)
 
 ## 🤖 For AI Agents
 
-pftui is designed to be the data backbone for AI-powered financial workflows. Every feature in the TUI and web dashboard has a CLI counterpart with structured JSON output. The SQLite database is the single source of truth, agents read from it, write to it, and build on top of it.
+pftui is designed to be the data backbone for AI-powered financial workflows. Every feature in the TUI and web dashboard has a CLI counterpart with structured JSON output. The active database backend (SQLite or PostgreSQL) is the single source of truth, agents read from it, write to it, and build on top of it.
 
 ### Portfolio & Market Data
 
@@ -163,13 +163,13 @@ pftui config set brave_api_key <key>  # Set Brave Search API key
 
 ### Your Database, Your Edge
 
-Every `pftui refresh` pulls data from 10+ sources and writes it into a **persistent local SQLite database**. This isn't a cache that gets thrown away, it's a compounding dataset that grows more valuable every day you run it.
+Every `pftui refresh` pulls data from 10+ sources and writes it into your configured persistent database backend (**SQLite by default or PostgreSQL**). This isn't a cache that gets thrown away, it's a compounding dataset that grows more valuable every day you run it.
 
 **Day 1:** You get a snapshot of prices, sentiment, COT positioning, and economic data.
 **Day 30:** You have a month of cross-asset price history, weekly COT shifts, and sentiment trends.
 **Day 300:** You have a proprietary dataset, daily OHLCV across every asset class, CFTC positioning history, COMEX inventory trends, sentiment cycles, prediction market accuracy, the kind of data trading desks pay six figures for.
 
-You own this data completely. No cloud sync. No third-party accounts. One SQLite file you can query, back up, version, or export however you want. Build your own backtests, correlation models, and regime analysis on top of it.
+You own this data completely. No cloud sync. No third-party accounts. Query, back up, version, or export your SQLite file (or PostgreSQL database) however you want. Build your own backtests, correlation models, and regime analysis on top of it.
 
 ```
 ~/.local/share/pftui/pftui.db     # SQLite, single source of truth
@@ -189,6 +189,12 @@ You own this data completely. No cloud sync. No third-party accounts. One SQLite
 ├── bls_cache                      # BLS economic data
 ├── worldbank_cache                # Global macro indicators
 └── onchain_cache                  # BTC on-chain + ETF flows
+```
+
+If using PostgreSQL backend:
+
+```bash
+psql "$DATABASE_URL" -c "SELECT symbol, quantity, price_per FROM transactions LIMIT 20;"
 ```
 
 The longer you run pftui, the more powerful it becomes. This is the core design principle, **your data compounds.**

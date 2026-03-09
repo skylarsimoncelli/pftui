@@ -43,6 +43,14 @@
 - Tests: `cargo test -q commands::setup::tests::`, `cargo test -q commands::import::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.6 Setup/backend switch validation
 
+### 2026-03-09 15:01 UTC — P32.1: docs parity sweep for SQLite/Postgres
+
+- What: removed stale SQLite-only wording from agent-facing docs and updated backend language to reflect true dual-backend support; added explicit PostgreSQL direct-query example alongside SQLite examples.
+- Why: backend docs should match runtime behavior so setup/migration guidance is accurate and operators can use either backend confidently.
+- Files: `README.md`, `docs/README.md`, `AGENTS.md`, `CHANGELOG.md`
+- Tests: docs-only changes (no code execution)
+- TODO: P32.1 Docs parity sweep
+
 ### 2026-03-09 15:01 UTC — P32.4: migrate hot-path Postgres numeric/time columns
 
 - What: upgraded Postgres schema/types for hot-path columns (`price_cache.price/fetched_at`, `transactions.quantity/price_per`, `portfolio_allocations.allocation_pct`, `allocation_targets.target_pct/drift_band_pct`) and added migration v3 to cast legacy TEXT values safely. Updated affected Postgres query paths to cast numeric/timestamp fields to text when reading and use explicit numeric/timestamptz casts when writing.

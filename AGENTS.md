@@ -718,11 +718,11 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 ## Data Model
 
-### SQLite Database
+### Database Backends
 
 Location: `~/.local/share/pftui/pftui.db`
 
-The database is the single source of truth. All interfaces (TUI, Web, CLI) read from and write to it.
+The active backend database is the single source of truth. All interfaces (TUI, Web, CLI) read from and write to it.
 
 ```
 ~/.local/share/pftui/pftui.db
@@ -751,7 +751,7 @@ The database is the single source of truth. All interfaces (TUI, Web, CLI) read 
 
 You can query the database directly if needed:
 ```bash
-sqlite3 ~/.local/share/pftui/pftui.db "SELECT symbol, quantity, cost_per_unit FROM transactions"
+sqlite3 ~/.local/share/pftui/pftui.db "SELECT symbol, quantity, price_per FROM transactions"
 ```
 
 If using PostgreSQL backend, query via your configured `database_url`:
