@@ -193,3 +193,196 @@ Automated detection of alignment and divergence across timeframes.
 - Website section: multi-timeframe diagram, explanation
 - AGENTS.md: how agents use each timeframe layer
 - PRODUCT-VISION.md update
+
+---
+
+# User Guide — Analytics Engine
+
+## Overview
+
+pftui's Analytics Engine is a multi-timeframe intelligence system that gives you a complete picture of market forces from intraday noise to decade-long empire cycles. Unlike traditional tools that focus on a single timeframe, the Analytics Engine tracks four distinct layers simultaneously, each providing different types of market signals that inform your investment decisions.
+
+The system automatically detects when all timeframes align (strong conviction signals) or diverge (investigation opportunities), giving you the same kind of multi-dimensional market analysis that institutional traders use, but in a simple, actionable format.
+
+## The Four Timeframes
+
+### **LOW — Hours to Days** ("What's happening right now?")
+
+**What it tracks:** Real-time market conditions, sentiment, and tactical signals for immediate market movements.
+
+- **Prices (84 symbols):** Real-time quotes across equities, crypto, commodities, currencies, and indices
+- **VIX:** Market volatility and fear gauge with historical context
+- **Fear & Greed:** Both crypto and traditional market sentiment indices  
+- **Technical indicators:** RSI, MACD, SMA overlays for momentum and trend strength
+- **Prediction markets:** Polymarket odds on near-term events and outcomes
+- **Correlation snapshots:** How different assets are moving relative to each other
+- **Regime classification:** Current market state (risk-on/risk-off/transition) with confidence scores
+- **Calendar events:** Upcoming economic releases, earnings, FOMC meetings
+- **Triggered alerts:** Price breakouts, volatility spikes, unusual moves
+
+**Update frequency:** Every refresh cycle (typically 2x daily for automated systems)
+
+**Signal type:** Tactical — "Gold is overbought on RSI." "BTC-SPX correlation just broke." "VIX spiked above 28."
+
+**Commands:**
+```bash
+pftui refresh           # Update all LOW layer data
+pftui movers            # Today's significant price moves  
+pftui sentiment         # Fear & Greed indices + context
+pftui predictions       # Prediction market odds
+pftui calendar          # Economic calendar with impact ratings
+pftui regime current    # Current market regime classification
+pftui correlations      # Asset correlation matrix
+pftui alerts            # Active price and volume alerts
+```
+
+### **MEDIUM — Weeks to Months** ("What scenarios are playing out?")
+
+**What it tracks:** Macro scenarios and directional thesis development based on economic data and geopolitical events.
+
+- **Macro scenarios with probabilities:** Recession, stagflation, soft landing, war escalation scenarios with assigned probabilities
+- **Versioned thesis by section:** Your evolving macro view organized by theme (monetary policy, geopolitics, technology)
+- **Conviction scores per asset (-5 to +5):** How bullish or bearish you are on each holding with numerical precision
+- **Research questions with evidence:** Open questions you're tracking with accumulating evidence for each side
+- **Economic data (BLS 101 series, COT, COMEX):** Employment, inflation, positioning data that drives scenario probabilities
+- **User predictions with accuracy scoring:** Your own predictions with tracked accuracy over time
+- **Opportunity cost tracking:** What you're NOT buying and why, with regular review prompts
+
+**Update frequency:** Daily updates by agents or manual analysis
+
+**Signal type:** Directional — "Stagflation scenario gaining evidence." "Gold conviction +4." "Fed 97% pricing 75bp cut."
+
+**Commands:**
+```bash
+pftui scenario          # View and update scenario probabilities
+pftui thesis            # Read and edit your evolving macro thesis  
+pftui conviction        # Set/view conviction scores for assets
+pftui predict           # Log predictions and track accuracy
+pftui opportunity       # Track opportunity cost decisions
+pftui economy           # Economic data dashboard
+pftui supply            # Commodity supply/demand data
+pftui fedwatch          # Federal Reserve policy tracking
+pftui question          # Research questions with evidence logs
+```
+
+### **HIGH — Months to Years** ("What structural trends are reshaping markets?")
+
+**What it tracks:** Multi-quarter structural trends that reshape entire industries and asset classes over years.
+
+- **Multi-quarter structural trends:** Named trends with direction tracking (accelerating/stable/decelerating/reversing)
+- **Evidence logs:** Dated evidence entries that support or contradict each trend
+- **Conviction levels:** How confident you are in each trend's direction and timeline
+- **Per-asset impact mappings:** Which specific assets/sectors each trend favors or hurts
+
+**Example trends:**
+- **AI disruption:** Workplace automation, productivity gains, job displacement effects
+- **Nuclear renaissance:** New reactor builds, uranium demand, energy mix shifts  
+- **BRICS de-dollarisation:** Alternative payment systems, reserve currency diversification
+- **Commodity supercycles:** Infrastructure build-out driving metal and energy demand
+
+**Update frequency:** Weekly review or when significant evidence emerges
+
+**Signal type:** Thematic — "AI displacement accelerating — bullish defense contractors, bearish consumer discretionary." "Commodity supercycle: oil, copper, uranium all structurally tight."
+
+**Commands:**
+```bash
+pftui trends add        # Add a new structural trend to track
+pftui trends list       # View all tracked trends with status
+pftui trends update     # Update trend direction and conviction  
+pftui trends evidence-add  # Log new evidence for a trend
+pftui trends impact-add    # Map trend impact to specific assets
+pftui trends dashboard     # Overview of all HIGH layer trends
+```
+
+### **MACRO — Years to Decades** ("Where are we in the big cycle?")
+
+**What it tracks:** Empire lifecycle analysis and structural regime changes that unfold over decades.
+
+- **Empire lifecycle analysis:** Ray Dalio's framework tracking where major powers are in their rise/decline cycles
+- **Power metrics across 8 dimensions:** Education, innovation, military strength, trade share, financial center status, governance quality, reserve currency usage
+- **Structural cycles with stage tracking:** Big debt cycle, technology cycle, generational cycle with current stage identification
+- **Structural outcomes with probabilities (10-30yr):** Long-term scenarios like reserve currency transition, demographic shifts, climate adaptation
+- **Historical parallels with similarity scoring:** Pattern matching to previous empire transitions and crisis periods
+
+**Update frequency:** Weekly review (structural data changes slowly)
+
+**Signal type:** Structural — "US at Stage 5→6 transition in empire cycle." "1973-74 parallel: similarity score 8/10."
+
+**Commands:**
+```bash  
+pftui structural metric-set     # Update power metrics for countries
+pftui structural metric-list    # View current power metric scores
+pftui structural cycle-set      # Set current stage in structural cycles
+pftui structural outcome-add    # Add long-term outcome probability
+pftui structural parallel-add   # Log historical parallel with similarity
+pftui structural dashboard      # MACRO layer overview
+```
+
+## Cross-Timeframe Intelligence
+
+The real power of the Analytics Engine comes from how the four timeframes interact and inform each other:
+
+**Key Commands:**
+- `pftui analytics summary` — All four layers in one comprehensive view
+- `pftui analytics alignment` — Per-asset consensus across all timeframes
+
+**Signal Flow Patterns:**
+
+**Signals flow UPWARD (tactical → structural):**
+- Correlation break in LOW layer → flags potential regime shift to MEDIUM
+- MEDIUM scenario shift → provides evidence for HIGH layer trend  
+- HIGH trend acceleration → confirms MACRO layer structural transition
+
+**Context flows DOWNWARD (structural → tactical):**
+- MACRO structural bias → weights MEDIUM scenario probabilities
+- MEDIUM scenario dominance → influences HIGH trend interpretation  
+- HIGH trend momentum → provides context for LOW layer signal interpretation
+
+**Inter-layer Communication:**
+Use `pftui agent-msg` with `--layer` and `--category escalation/feedback` to log when information moves between timeframes.
+
+## Example: How Layers Interact
+
+**Scenario:** Oil breaks $100
+
+1. **LOW layer** detects the price alert and regime shift from risk-on to risk-off based on VIX spike and correlation changes
+2. **MEDIUM layer** raises the probability of the "War Escalation" scenario from 20% to 45% based on the oil breakout
+3. **HIGH layer** logs this as evidence strengthening the "Commodity Supercycle" trend, updating its direction from "stable" to "accelerating"  
+4. **MACRO layer** notes this fits the Stage 6 conflict pattern in empire lifecycle analysis, where resource competition intensifies
+
+**Result:** All four layers now agree that gold is bullish:
+- LOW: Technical breakout above resistance
+- MEDIUM: War scenario supports hard assets  
+- HIGH: Commodity supercycle trend accelerating
+- MACRO: Late-stage empire pattern favors gold
+
+When `pftui analytics alignment --symbol GC=F` shows all four timeframes aligned, that's a ████ **STRONG** signal — maximum conviction for deployment.
+
+## Quick Start
+
+Get started with the Analytics Engine in 5 minutes:
+
+```bash
+# 1. Populate the LOW layer with current market data
+pftui refresh
+
+# 2. Set up a MEDIUM layer scenario 
+pftui scenario add "Recession" --probability 30
+
+# 3. Express conviction on an asset in MEDIUM layer
+pftui conviction set GC=F --score 4
+
+# 4. Add a HIGH layer structural trend
+pftui trends add "AI Disruption" --direction accelerating
+
+# 5. Set MACRO layer structural cycle stage  
+pftui structural cycle-set "Big Debt Cycle" --stage 6
+
+# 6. See all layers at once
+pftui analytics summary
+
+# 7. Check consensus on specific asset
+pftui analytics alignment --symbol GC=F
+```
+
+The Analytics Engine transforms pftui from a portfolio tracker into a complete intelligence system that helps you understand market forces across every relevant timeframe. Whether you're making a quick tactical trade or a multi-year strategic allocation, you'll have the context you need to act with conviction.

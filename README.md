@@ -22,24 +22,77 @@ pftui centralises all your market data, news, economic indicators, sentiment, pr
 
 ## Analytics Engine
 
-The core differentiator is a multi-timeframe analytics engine:
+pftui's core differentiator is a **multi-timeframe analytics engine** that tracks market forces from intraday noise to decade-long empire cycles. Unlike traditional tools that focus on a single timeframe, pftui operates four intelligence layers simultaneously:
 
 ```text
-LOW (hours->days)      : prices, sentiment, alerts, correlations, regime
-MEDIUM (weeks->months) : scenarios, thesis, convictions, questions, predictions
-HIGH (months->years)   : trend tracker + evidence + per-asset impacts
-MACRO (years->decades) : structural cycles, power metrics, outcome probabilities
+┌─────────────────────────────────────────────────────────────┐
+│                    ANALYTICS ENGINE                         │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
+│  │     MACRO     │  │     HIGH      │  │    MEDIUM     │   │
+│  │ years→decades │──│ months→years  │──│ weeks→months  │   │
+│  │ empire cycles │  │ AI disruption │  │ Fed scenarios │   │
+│  └───────────────┘  └───────────────┘  └───────────────┘   │
+│                              │                             │
+│          Context flows DOWN  │  Signals flow UP            │
+│                              ▼                             │
+│                    ┌───────────────┐                       │
+│                    │      LOW      │                       │
+│                    │  hours→days   │                       │
+│                    │ prices, VIX   │                       │
+│                    └───────────────┘                       │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-Each layer has its own cadence and signal type. Signals flow up (low -> macro), context flows down (macro -> low). Use:
+**Four Intelligence Layers:**
 
+- **LOW (hours→days):** Prices (84 symbols), VIX, Fear & Greed, technical indicators, prediction markets, correlations, regime classification, calendar events, alerts
+- **MEDIUM (weeks→months):** Macro scenarios with probabilities, versioned thesis, conviction scores (-5 to +5), research questions, economic data, user predictions with accuracy tracking
+- **HIGH (months→years):** Structural trends (AI disruption, nuclear renaissance, BRICS de-dollarisation) with evidence logs and per-asset impact mappings  
+- **MACRO (years→decades):** Empire lifecycle analysis, 8-dimension power metrics, structural cycles, long-term outcome probabilities, historical parallels
+
+**Cross-Timeframe Intelligence:** Signals flow upward (correlation break in LOW → scenario shift in MEDIUM → trend evidence in HIGH), while context flows downward (MACRO constraint → scenario weighting → signal interpretation). When all layers align, you get maximum conviction deployment signals.
+
+**Quick Commands:**
 ```bash
-pftui refresh
-pftui analytics signals --json
-pftui brief --json
+pftui refresh                    # Populate LOW layer
+pftui analytics summary          # All four layers at once  
+pftui analytics alignment --symbol GC=F  # Per-asset consensus
+pftui scenario add "Recession" --probability 30  # MEDIUM layer
+pftui trends add "AI Disruption" --direction accelerating  # HIGH layer
+pftui structural cycle-set "Big Debt Cycle" --stage 6  # MACRO layer
 ```
 
-Marketing line: **The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles.**
+**Example:** Oil breaks $100 → LOW detects price alert + regime shift → MEDIUM raises war scenario probability → HIGH logs commodity supercycle evidence → MACRO notes Stage 6 conflict pattern. Result: all four layers agree gold is bullish = ████ **STRONG** signal.
+
+See the full documentation: [docs/ANALYTICS-ENGINE.md](docs/ANALYTICS-ENGINE.md)
+
+**The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles.**
+
+## AI Layer
+
+pftui is designed to be your **AI agent's financial intelligence operating system**. Every feature has a CLI counterpart with `--json` output, and agents use the same database, same commands, and same analysis frameworks you do.
+
+**Bidirectional Human-Agent Communication:**
+Your agent doesn't just read your data — it contributes to it. Agents update scenarios, log evidence, set conviction scores, and write daily briefs using the same `pftui` commands. You and your agent build shared intelligence over time using one tool and one database.
+
+**Scheduled Routines and Reports:**
+Set up cron jobs for automated market monitoring. Your agent runs `pftui refresh` twice daily, generates morning briefs with `pftui brief --json`, tracks scenario updates, and handles the research grunt work while you focus on decision-making. Multi-agent feedback loops where different agents handle different market sectors.
+
+**Investor Perspectives Panel:**
+Configure sub-agents as famous investors analyzing your data through their frameworks. Warren Buffett agent focuses on intrinsic value and long-term scenarios. Ray Dalio agent tracks empire cycles and structural transitions. Stan Druckenmiller agent watches macro regime changes and position sizing. Each perspective runs on your live data.
+
+**Agent Integration Example:**
+```bash
+# Agent morning routine
+pftui refresh && pftui brief --json  # Get full portfolio state
+pftui scenario update "Stagflation" --probability 35  # Update thesis
+pftui conviction set BTC --score 3   # Express conviction 
+pftui agent-msg "Oil breakout confirms commodity supercycle thesis"
+```
+
+Your agent becomes a sophisticated macro analyst, not just a data fetcher. It develops views, tracks accuracy, and helps you build conviction through continuous market intelligence.
+
+See the full agent operator guide: [AGENTS.md](AGENTS.md)
 
 <table>
   <tr>
