@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 07:25 UTC — F32 Phase 43: backend-dispatch migrate-journal command path
+
+- What: migrated `migrate-journal` to `BackendConnection`, switched journal insert/dedupe checks to backend-dispatched logic with native Postgres query path, and removed sqlite gating for `pftui migrate-journal` in `main`.
+- Why: removes another sqlite-only utility workflow and keeps journal migration tooling available in postgres backend mode.
+- Files: `src/commands/migrate_journal.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/import/eod/setup/tui and `alerts check`)
+
 ### 2026-03-09 07:15 UTC — F32 Phase 42: add postgres-native status path and remove sqlite gate
 
 - What: added `status::run_backend` with a native Postgres status implementation (table-count + recency checks) while preserving existing SQLite behavior, and removed sqlite gating for `pftui status` in `main`.

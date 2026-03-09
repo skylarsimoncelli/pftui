@@ -640,9 +640,8 @@ fn main() -> Result<()> {
             default_status,
             json,
         }) => {
-            let conn = sqlite_conn_for_command(&backend, "migrate-journal")?;
             commands::migrate_journal::run(
-                conn,
+                &backend,
                 &path,
                 dry_run,
                 default_tag.as_deref(),
