@@ -162,8 +162,7 @@ pub fn prune_old_backend(backend: &BackendConnection, days: u32) -> Result<usize
 }
 
 fn upsert_reading_postgres(pool: &PgPool, reading: &SentimentReading) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO sentiment_cache (index_type, value, classification, timestamp, fetched_at)
              VALUES ($1, $2, $3, $4, $5::timestamptz)
@@ -198,8 +197,7 @@ fn upsert_reading_postgres(pool: &PgPool, reading: &SentimentReading) -> Result<
 }
 
 fn get_latest_postgres(pool: &PgPool, index_type: &str) -> Result<Option<SentimentReading>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<(String, i64, String, i64, String)> = runtime.block_on(async {
+        let row: Option<(String, i64, String, i64, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT index_type, value, classification, timestamp, fetched_at::text
              FROM sentiment_cache
@@ -220,8 +218,7 @@ fn get_latest_postgres(pool: &PgPool, index_type: &str) -> Result<Option<Sentime
 }
 
 fn get_history_postgres(pool: &PgPool, index_type: &str, days: u32) -> Result<Vec<(String, u8)>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, i64)> = runtime.block_on(async {
+        let rows: Vec<(String, i64)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT date, value
              FROM sentiment_history
@@ -238,8 +235,7 @@ fn get_history_postgres(pool: &PgPool, index_type: &str, days: u32) -> Result<Ve
 }
 
 fn prune_old_postgres(pool: &PgPool, days: u32) -> Result<usize> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let pruned = runtime.block_on(async {
+        let pruned = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "DELETE FROM sentiment_history
              WHERE date < TO_CHAR(NOW() - ($1 * INTERVAL '1 day'), 'YYYY-MM-DD')",

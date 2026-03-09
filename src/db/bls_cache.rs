@@ -187,8 +187,7 @@ pub fn is_cache_fresh_backend(
 }
 
 fn upsert_bls_data_postgres(pool: &PgPool, data: &[BlsDataPoint]) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         for point in data {
             sqlx::query(
                 "INSERT INTO bls_cache (series_id, year, period, value, date, updated_at)
@@ -212,8 +211,7 @@ fn upsert_bls_data_postgres(pool: &PgPool, data: &[BlsDataPoint]) -> Result<()> 
 }
 
 fn is_cache_fresh_postgres(pool: &PgPool, series_id: &str, max_age_days: i64) -> Result<bool> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let updated_at: Option<String> = runtime.block_on(async {
+        let updated_at: Option<String> = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "SELECT updated_at::text
              FROM bls_cache
@@ -241,8 +239,7 @@ fn is_cache_fresh_postgres(pool: &PgPool, series_id: &str, max_age_days: i64) ->
 }
 
 fn get_latest_bls_data_postgres(pool: &PgPool, series_id: &str) -> Result<Option<BlsDataPoint>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<(String, i32, String, String, String)> = runtime.block_on(async {
+        let row: Option<(String, i32, String, String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT series_id, year, period, value, date
              FROM bls_cache

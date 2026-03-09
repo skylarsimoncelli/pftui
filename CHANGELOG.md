@@ -75,6 +75,14 @@
 - Tests: `cargo check -q`, `cargo test -q db::onchain_cache::tests::`, `cargo test -q db::economic_cache::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.7 Runtime cleanup completion
 
+### 2026-03-09 — P32.7 batch F: shared runtime migration (bls_cache/sentiment_cache)
+
+- What: migrated Postgres execution paths in `bls_cache` and `sentiment_cache` DB modules from per-function `tokio::runtime::Runtime::new()` to shared `pg_runtime::block_on`.
+- Why: continues runtime strategy cleanup across cache modules with repeatable low-risk slices.
+- Files: `src/db/bls_cache.rs`, `src/db/sentiment_cache.rs`, `TODO.md`
+- Tests: `cargo check -q`, `cargo test -q db::bls_cache::tests::`, `cargo test -q db::sentiment_cache::tests::`, `cargo test -q` (1193 passed)
+- TODO: P32.7 Runtime cleanup completion
+
 ### 2026-03-09 — Implement structural cycles CLI (F31.11)
 
 - What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.

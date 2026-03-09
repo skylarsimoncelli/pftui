@@ -903,6 +903,7 @@ These are the most-used modules. Migrate them first to validate the pattern.
   - Batch C: `scan_queries`, `annotations`
   - Batch D: `thesis`, `daily_notes`
   - Batch E: `onchain_cache`, `economic_cache`
+  - Batch F: `bls_cache`, `sentiment_cache`
 - [ ] **P32.8 Postgres CI expansion** — extend CI beyond smoke to run a backend-dispatched command suite against Postgres (`refresh`-safe modules + import/export roundtrip assertions).
   Progress:
   - Added CI coverage for: postgres cache roundtrip + sqlite↔postgres import/export switch tests + setup backend-selection tests.
