@@ -35,6 +35,22 @@
 - Tests: none (diagnostic command, manual verification). Tested on VPS with Postgres backend — DB check passed, some API rate limits hit (expected), cache check showed "no cached prices" (expected before refresh).
 - TODO: `pftui doctor` command (P0)
 
+### 2026-03-09 15:01 UTC — P32.6: setup/backend-switch validation tests
+
+- What: added setup-unit tests for backend selection parsing and Postgres URL validation; added env-gated cross-backend workflow tests for SQLite→Postgres and Postgres→SQLite export/import replace roundtrips (`PFTUI_TEST_POSTGRES_URL`).
+- Why: validates the backend-selection path and the documented backend switch workflow continuously, reducing regression risk in parity-critical paths.
+- Files: `src/commands/setup.rs`, `src/commands/import.rs`, `CHANGELOG.md`
+- Tests: `cargo test -q commands::setup::tests::`, `cargo test -q commands::import::tests::`, `cargo test -q` (1193 passed)
+- TODO: P32.6 Setup/backend switch validation
+
+### 2026-03-09 15:01 UTC — P32.5: Postgres pooling config knobs
+
+- What: added configurable Postgres connection pool settings in config (`postgres_max_connections`, `postgres_connect_timeout_secs`) with defaults, CLI config get/list/set support, backend wiring in SQLx pool options, and App config propagation for backend opens.
+- Why: makes Postgres performance and reliability tunable without code changes and avoids hardcoded pool behavior.
+- Files: `src/config.rs`, `src/commands/config_cmd.rs`, `src/db/backend.rs`, `src/app.rs`, `src/commands/export.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo test -q` (1186 passed at implementation; 1193 passed after follow-up test additions)
+- TODO: P32.5 Pooling config
+
 ### 2026-03-09 03:42 UTC — F32 Phase 66: backend-aware web watchlist endpoints
 
 - What: migrated web API `GET/POST/DELETE /watchlist` handlers to backend-dispatched watchlist/price queries; preserved day-change enrichment only when sqlite-native history access is available.

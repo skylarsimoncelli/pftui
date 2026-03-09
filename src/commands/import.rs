@@ -79,7 +79,12 @@ pub enum ImportMode {
     Merge,
 }
 
-pub fn run(backend: &BackendConnection, config: &Config, path: &str, mode: ImportMode) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    config: &Config,
+    path: &str,
+    mode: ImportMode,
+) -> Result<()> {
     // Read and parse
     let content = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", path, e))?;
@@ -217,7 +222,9 @@ fn import_replace(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()
         |pool| {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
-                sqlx::query("DELETE FROM transactions").execute(pool).await?;
+                sqlx::query("DELETE FROM transactions")
+                    .execute(pool)
+                    .await?;
                 sqlx::query("DELETE FROM portfolio_allocations")
                     .execute(pool)
                     .await?;
@@ -313,11 +320,16 @@ fn import_merge(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::open_in_memory;
-    use crate::db::transactions::{insert_transaction, list_transactions};
-    use crate::db::allocations::{list_allocations, insert_allocation};
-    use crate::db::watchlist::{add_to_watchlist, list_watchlist};
+    use crate::db::allocations::{insert_allocation, list_allocations};
     use crate::db::backend::BackendConnection;
+    use crate::db::open_in_memory;
+    use crate::db::transactions::{
+        insert_transaction, insert_transaction_backend, list_transactions,
+        list_transactions_backend,
+    };
+    use crate::db::watchlist::{
+        add_to_watchlist, add_to_watchlist_backend, list_watchlist, list_watchlist_backend,
+    };
     use crate::models::transaction::{NewTransaction, TxType};
     use rust_decimal_macros::dec;
 
@@ -325,12 +337,7 @@ mod tests {
         BackendConnection::Sqlite { conn }
     }
 
-    fn make_snapshot_json(
-        txs: &str,
-        allocs: &str,
-        watchlist: &str,
-        mode: &str,
-    ) -> String {
+    fn make_snapshot_json(txs: &str, allocs: &str, watchlist: &str, mode: &str) -> String {
         format!(
             r#"{{
                 "config": {{ "base_currency": "USD", "refresh_interval": 60, "portfolio_mode": "{mode}", "theme": "midnight" }},
@@ -354,6 +361,48 @@ mod tests {
         (path, path_str)
     }
 
+    fn clear_portfolio_tables(backend: &BackendConnection) {
+        crate::db::query::dispatch(
+            backend,
+            |conn| {
+                conn.execute_batch(
+                    "DELETE FROM transactions;
+                     DELETE FROM portfolio_allocations;
+                     DELETE FROM watchlist;",
+                )?;
+                Ok(())
+            },
+            |pool| {
+                let runtime = tokio::runtime::Runtime::new().expect("runtime");
+                runtime
+                    .block_on(async {
+                        sqlx::query("DELETE FROM transactions")
+                            .execute(pool)
+                            .await?;
+                        sqlx::query("DELETE FROM portfolio_allocations")
+                            .execute(pool)
+                            .await?;
+                        sqlx::query("DELETE FROM watchlist").execute(pool).await?;
+                        Ok::<(), sqlx::Error>(())
+                    })
+                    .expect("clear tables");
+                Ok(())
+            },
+        )
+        .expect("clear portfolio tables");
+    }
+
+    fn postgres_backend_from_env() -> Option<BackendConnection> {
+        let url = std::env::var("PFTUI_TEST_POSTGRES_URL").ok()?;
+        let cfg = Config {
+            database_backend: crate::config::DatabaseBackend::Postgres,
+            database_url: Some(url),
+            ..Config::default()
+        };
+        let db_path = crate::db::default_db_path();
+        crate::db::backend::open_from_config(&cfg, &db_path).ok()
+    }
+
     #[test]
     fn import_replace_transactions() {
         let backend = to_backend(open_in_memory());
@@ -361,16 +410,20 @@ mod tests {
         let config = Config::default();
 
         // Pre-existing transaction
-        insert_transaction(conn, &NewTransaction {
-            symbol: "OLD".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(1),
-            price_per: dec!(100),
-            currency: "USD".to_string(),
-            date: "2025-01-01".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "OLD".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(1),
+                price_per: dec!(100),
+                currency: "USD".to_string(),
+                date: "2025-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
         let json = make_snapshot_json(
             r#"{"symbol":"AAPL","category":"equity","tx_type":"buy","quantity":"10","price_per":"150","currency":"USD","date":"2025-06-01","notes":null}"#,
@@ -451,16 +504,20 @@ mod tests {
         let conn = backend.sqlite();
         let config = Config::default();
 
-        insert_transaction(conn, &NewTransaction {
-            symbol: "AAPL".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(5),
-            price_per: dec!(150),
-            currency: "USD".to_string(),
-            date: "2025-01-01".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(5),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
         let json = make_snapshot_json(
             r#"{"symbol":"GOOG","category":"equity","tx_type":"buy","quantity":"3","price_per":"100","currency":"USD","date":"2025-02-01","notes":null}"#,
@@ -487,16 +544,20 @@ mod tests {
         let conn = backend.sqlite();
         let config = Config::default();
 
-        insert_transaction(conn, &NewTransaction {
-            symbol: "AAPL".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(10),
-            price_per: dec!(150),
-            currency: "USD".to_string(),
-            date: "2025-06-01".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-06-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
         // Import same transaction — should be skipped
         let json = make_snapshot_json(
@@ -589,7 +650,10 @@ mod tests {
 
         let result = run(&backend, &config, &path_str, ImportMode::Replace);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("non-positive quantity"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("non-positive quantity"));
 
         std::fs::remove_file(&_path).ok();
     }
@@ -632,7 +696,10 @@ mod tests {
 
         let result = run(&backend, &config, &path_str, ImportMode::Replace);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid percentage"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid percentage"));
 
         std::fs::remove_file(&_path).ok();
     }
@@ -660,7 +727,12 @@ mod tests {
         let path = dir.join("pftui_import_bad.json");
         std::fs::write(&path, "not valid json {{{").unwrap();
 
-        let result = run(&backend, &config, path.to_str().unwrap(), ImportMode::Replace);
+        let result = run(
+            &backend,
+            &config,
+            path.to_str().unwrap(),
+            ImportMode::Replace,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Invalid JSON"));
 
@@ -672,7 +744,12 @@ mod tests {
         let backend = to_backend(open_in_memory());
         let config = Config::default();
 
-        let result = run(&backend, &config, "/tmp/nonexistent_pftui_file.json", ImportMode::Replace);
+        let result = run(
+            &backend,
+            &config,
+            "/tmp/nonexistent_pftui_file.json",
+            ImportMode::Replace,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to read"));
     }
@@ -685,27 +762,35 @@ mod tests {
         let config = Config::default();
 
         // Add data
-        insert_transaction(conn, &NewTransaction {
-            symbol: "SPY".to_string(),
-            category: AssetCategory::Fund,
-            tx_type: TxType::Buy,
-            quantity: dec!(10),
-            price_per: dec!(420),
-            currency: "USD".to_string(),
-            date: "2025-01-01".to_string(),
-            notes: Some("initial".to_string()),
-        }).unwrap();
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "SPY".to_string(),
+                category: AssetCategory::Fund,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(420),
+                currency: "USD".to_string(),
+                date: "2025-01-01".to_string(),
+                notes: Some("initial".to_string()),
+            },
+        )
+        .unwrap();
 
-        insert_transaction(conn, &NewTransaction {
-            symbol: "BTC".to_string(),
-            category: AssetCategory::Crypto,
-            tx_type: TxType::Buy,
-            quantity: dec!(0.5),
-            price_per: dec!(28000),
-            currency: "USD".to_string(),
-            date: "2025-02-01".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            conn,
+            &NewTransaction {
+                symbol: "BTC".to_string(),
+                category: AssetCategory::Crypto,
+                tx_type: TxType::Buy,
+                quantity: dec!(0.5),
+                price_per: dec!(28000),
+                currency: "USD".to_string(),
+                date: "2025-02-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
         add_to_watchlist(conn, "ETH", AssetCategory::Crypto).unwrap();
         add_to_watchlist(conn, "GLD", AssetCategory::Commodity).unwrap();
@@ -718,11 +803,18 @@ mod tests {
             &crate::cli::ExportFormat::Json,
             &config,
             Some(export_path.to_str().unwrap()),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Import into fresh DB
         let backend2 = to_backend(open_in_memory());
-        run(&backend2, &config, export_path.to_str().unwrap(), ImportMode::Replace).unwrap();
+        run(
+            &backend2,
+            &config,
+            export_path.to_str().unwrap(),
+            ImportMode::Replace,
+        )
+        .unwrap();
         let conn2 = backend2.sqlite();
 
         // Verify
@@ -737,5 +829,118 @@ mod tests {
         assert_eq!(entries.len(), 2);
 
         std::fs::remove_file(&export_path).ok();
+    }
+
+    #[test]
+    fn sqlite_export_import_into_postgres_when_env_set() {
+        let Some(pg_backend) = postgres_backend_from_env() else {
+            return;
+        };
+        clear_portfolio_tables(&pg_backend);
+
+        let sqlite_backend = to_backend(open_in_memory());
+        let sqlite_conn = sqlite_backend.sqlite();
+        let config = Config::default();
+
+        insert_transaction(
+            sqlite_conn,
+            &NewTransaction {
+                symbol: "SPY".to_string(),
+                category: AssetCategory::Fund,
+                tx_type: TxType::Buy,
+                quantity: dec!(12),
+                price_per: dec!(430),
+                currency: "USD".to_string(),
+                date: "2025-01-01".to_string(),
+                notes: Some("from sqlite".to_string()),
+            },
+        )
+        .unwrap();
+        add_to_watchlist(sqlite_conn, "ETH", AssetCategory::Crypto).unwrap();
+
+        let export_path = std::env::temp_dir().join("pftui_sqlite_to_postgres_roundtrip.json");
+        crate::commands::export::run(
+            &sqlite_backend,
+            &crate::cli::ExportFormat::Json,
+            &config,
+            Some(export_path.to_str().unwrap()),
+        )
+        .unwrap();
+
+        run(
+            &pg_backend,
+            &config,
+            export_path.to_str().unwrap(),
+            ImportMode::Replace,
+        )
+        .unwrap();
+
+        let txs = list_transactions_backend(&pg_backend).unwrap();
+        assert_eq!(txs.len(), 1);
+        assert_eq!(txs[0].symbol, "SPY");
+        assert_eq!(txs[0].quantity, dec!(12));
+
+        let watch = list_watchlist_backend(&pg_backend).unwrap();
+        assert_eq!(watch.len(), 1);
+        assert_eq!(watch[0].symbol, "ETH");
+
+        std::fs::remove_file(&export_path).ok();
+        clear_portfolio_tables(&pg_backend);
+    }
+
+    #[test]
+    fn postgres_export_import_into_sqlite_when_env_set() {
+        let Some(pg_backend) = postgres_backend_from_env() else {
+            return;
+        };
+        clear_portfolio_tables(&pg_backend);
+
+        let config = Config::default();
+        insert_transaction_backend(
+            &pg_backend,
+            &NewTransaction {
+                symbol: "BTC".to_string(),
+                category: AssetCategory::Crypto,
+                tx_type: TxType::Buy,
+                quantity: dec!(0.25),
+                price_per: dec!(50000),
+                currency: "USD".to_string(),
+                date: "2025-03-01".to_string(),
+                notes: Some("from postgres".to_string()),
+            },
+        )
+        .unwrap();
+        add_to_watchlist_backend(&pg_backend, "AAPL", AssetCategory::Equity).unwrap();
+
+        let export_path = std::env::temp_dir().join("pftui_postgres_to_sqlite_roundtrip.json");
+        crate::commands::export::run(
+            &pg_backend,
+            &crate::cli::ExportFormat::Json,
+            &config,
+            Some(export_path.to_str().unwrap()),
+        )
+        .unwrap();
+
+        let sqlite_backend = to_backend(open_in_memory());
+        run(
+            &sqlite_backend,
+            &config,
+            export_path.to_str().unwrap(),
+            ImportMode::Replace,
+        )
+        .unwrap();
+        let sqlite_conn = sqlite_backend.sqlite();
+
+        let txs = list_transactions(sqlite_conn).unwrap();
+        assert_eq!(txs.len(), 1);
+        assert_eq!(txs[0].symbol, "BTC");
+        assert_eq!(txs[0].quantity, dec!(0.25));
+
+        let watch = list_watchlist(sqlite_conn).unwrap();
+        assert_eq!(watch.len(), 1);
+        assert_eq!(watch[0].symbol, "AAPL");
+
+        std::fs::remove_file(&export_path).ok();
+        clear_portfolio_tables(&pg_backend);
     }
 }

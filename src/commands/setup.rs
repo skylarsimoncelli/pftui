@@ -43,7 +43,9 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
     println!();
 
     // Currency selection
-    println!("  \x1b[1mBase currency:\x1b[0m \x1b[90m(all values displayed in this currency)\x1b[0m");
+    println!(
+        "  \x1b[1mBase currency:\x1b[0m \x1b[90m(all values displayed in this currency)\x1b[0m"
+    );
     println!();
     let cols = 2;
     let per_col = SUPPORTED_CURRENCIES.len().div_ceil(cols);
@@ -52,10 +54,7 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
         for col in 0..cols {
             let idx = row + col * per_col;
             if let Some((code, label)) = SUPPORTED_CURRENCIES.get(idx) {
-                line.push_str(&format!(
-                    "\x1b[1m[{:<3}]\x1b[0m {:<28}",
-                    code, label
-                ));
+                line.push_str(&format!("\x1b[1m[{:<3}]\x1b[0m {:<28}", code, label));
             }
         }
         println!("{}", line);
@@ -69,11 +68,17 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
             input.to_uppercase()
         };
         // Accept any code from our list, or any 3-letter code
-        if SUPPORTED_CURRENCIES.iter().any(|(c, _)| *c == code.as_str()) {
+        if SUPPORTED_CURRENCIES
+            .iter()
+            .any(|(c, _)| *c == code.as_str())
+        {
             break code;
         }
         if code.len() == 3 && code.chars().all(|c| c.is_ascii_alphabetic()) {
-            println!("    \x1b[90mCustom currency: {}. Prices will still be fetched in USD.\x1b[0m", code);
+            println!(
+                "    \x1b[90mCustom currency: {}. Prices will still be fetched in USD.\x1b[0m",
+                code
+            );
             break code;
         }
         println!("    \x1b[33mEnter a valid 3-letter currency code (e.g. USD, EUR, GBP).\x1b[0m");
@@ -83,10 +88,16 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
 
     // Mode selection
     println!("  Select portfolio mode:");
-    println!("    \x1b[1m[1]\x1b[0m Full \x1b[90m— track values, quantities, and transactions\x1b[0m");
-    println!("    \x1b[1m[2]\x1b[0m Percentage \x1b[90m— allocation percentages only (privacy)\x1b[0m");
+    println!(
+        "    \x1b[1m[1]\x1b[0m Full \x1b[90m— track values, quantities, and transactions\x1b[0m"
+    );
+    println!(
+        "    \x1b[1m[2]\x1b[0m Percentage \x1b[90m— allocation percentages only (privacy)\x1b[0m"
+    );
     println!();
-    println!("  \x1b[90mTip: Full mode lets you press 'p' anytime to hide values for privacy.\x1b[0m");
+    println!(
+        "  \x1b[90mTip: Full mode lets you press 'p' anytime to hide values for privacy.\x1b[0m"
+    );
     println!("  \x1b[90m     Percentage mode cannot be switched to full mode later.\x1b[0m");
     println!();
 
@@ -177,12 +188,16 @@ fn reset_setup_tables(backend: &BackendConnection) -> Result<()> {
         |pool| {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
-                sqlx::query("DELETE FROM transactions").execute(pool).await?;
+                sqlx::query("DELETE FROM transactions")
+                    .execute(pool)
+                    .await?;
                 sqlx::query("DELETE FROM portfolio_allocations")
                     .execute(pool)
                     .await?;
                 sqlx::query("DELETE FROM price_cache").execute(pool).await?;
-                sqlx::query("DELETE FROM price_history").execute(pool).await?;
+                sqlx::query("DELETE FROM price_history")
+                    .execute(pool)
+                    .await?;
                 Ok::<(), sqlx::Error>(())
             })?;
             Ok(())
@@ -203,15 +218,12 @@ fn prompt_database_backend(config: &Config) -> Result<(DatabaseBackend, Option<S
 
     let backend = loop {
         let choice = prompt(&format!("  Select [1/2] (default: {}): ", default_choice))?;
-        let normalized = if choice.trim().is_empty() {
-            default_choice.to_string()
-        } else {
-            choice
-        };
-        match normalized.trim() {
-            "1" => break DatabaseBackend::Sqlite,
-            "2" => break DatabaseBackend::Postgres,
-            _ => println!("  Please enter 1 or 2."),
+        match parse_database_backend_choice(&choice, config.database_backend) {
+            Ok(backend) => break backend,
+            Err(_) => {
+                println!("  Please enter 1 or 2.");
+                continue;
+            }
         }
     };
 
@@ -219,7 +231,7 @@ fn prompt_database_backend(config: &Config) -> Result<(DatabaseBackend, Option<S
         loop {
             let raw = prompt("  PostgreSQL URL (postgres://...): ")?;
             let trimmed = raw.trim();
-            if trimmed.starts_with("postgres://") || trimmed.starts_with("postgresql://") {
+            if is_valid_postgres_url(trimmed) {
                 break Some(trimmed.to_string());
             }
             println!("  Enter a valid PostgreSQL URL starting with postgres:// or postgresql://");
@@ -230,6 +242,24 @@ fn prompt_database_backend(config: &Config) -> Result<(DatabaseBackend, Option<S
 
     println!();
     Ok((backend, url))
+}
+
+fn parse_database_backend_choice(
+    choice: &str,
+    default_backend: DatabaseBackend,
+) -> Result<DatabaseBackend> {
+    if choice.trim().is_empty() {
+        return Ok(default_backend);
+    }
+    match choice.trim() {
+        "1" => Ok(DatabaseBackend::Sqlite),
+        "2" => Ok(DatabaseBackend::Postgres),
+        _ => bail!("invalid backend choice"),
+    }
+}
+
+fn is_valid_postgres_url(url: &str) -> bool {
+    url.starts_with("postgres://") || url.starts_with("postgresql://")
 }
 
 fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
@@ -284,10 +314,7 @@ fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
         let (value, pct) = parse_value_or_pct(&val_input, total)?;
 
         let csym = crate::config::currency_symbol(&config.base_currency);
-        println!(
-            "    → {}{:.2} ({:.1}% of portfolio)",
-            csym, value, pct
-        );
+        println!("    → {}{:.2} ({:.1}% of portfolio)", csym, value, pct);
         println!();
 
         seen_symbols.insert(symbol.clone());
@@ -326,7 +353,10 @@ fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
     println!("    {}", "─".repeat(42));
     println!(
         "    {:<20} {:>1}{:>12.2}  {:>5.1}%",
-        "Allocated", csym, allocated, dec!(100) - remaining_pct
+        "Allocated",
+        csym,
+        allocated,
+        dec!(100) - remaining_pct
     );
     if remaining > dec!(0) {
         println!(
@@ -354,29 +384,17 @@ fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
         let (price, qty) = if entry.category == AssetCategory::Cash {
             (dec!(1), value)
         } else {
-            let fetched = rt.block_on(fetch_price_for_symbol(
-                &entry.symbol,
-                entry.category,
-            ));
+            let fetched = rt.block_on(fetch_price_for_symbol(&entry.symbol, entry.category));
             match fetched {
                 Ok(p) if p > dec!(0) => {
                     let q = value / p;
-                    println!(
-                        "    {}: {}{:.2} → qty {:.4}",
-                        entry.symbol, csym, p, q
-                    );
+                    println!("    {}: {}{:.2} → qty {:.4}", entry.symbol, csym, p, q);
                     (p, q)
                 }
                 _ => {
-                    println!(
-                        "    \x1b[33m{}: Could not fetch price\x1b[0m",
-                        entry.symbol
-                    );
+                    println!("    \x1b[33m{}: Could not fetch price\x1b[0m", entry.symbol);
                     let manual = prompt("    Enter current price: ")?;
-                    let p: Decimal = manual
-                        .replace([',', '$'], "")
-                        .parse()
-                        .unwrap_or(dec!(1));
+                    let p: Decimal = manual.replace([',', '$'], "").parse().unwrap_or(dec!(1));
                     let q = if p > dec!(0) { value / p } else { value };
                     (p, q)
                 }
@@ -473,10 +491,7 @@ fn percentage_mode_setup(backend: &BackendConnection) -> Result<()> {
     println!("    {:<24} {:>5.1}%", "Total", total_pct);
     if total_pct < dec!(100) {
         let rem = dec!(100) - total_pct;
-        println!(
-            "    {:<24} {:>5.1}%",
-            "Remaining", rem
-        );
+        println!("    {:<24} {:>5.1}%", "Remaining", rem);
     }
     if total_pct > dec!(100) {
         println!("    \x1b[33m! Allocations exceed 100%\x1b[0m");
@@ -650,7 +665,11 @@ fn interactive_symbol_search(label: &str) -> Result<Option<(String, String, Asse
                 if total > shown {
                     print!("  \x1b[90m({} of {} matches)\x1b[0m", shown, total);
                 } else {
-                    print!("  \x1b[90m({} match{})\x1b[0m", total, if total == 1 { "" } else { "es" });
+                    print!(
+                        "  \x1b[90m({} match{})\x1b[0m",
+                        total,
+                        if total == 1 { "" } else { "es" }
+                    );
                 }
             }
 
@@ -661,9 +680,7 @@ fn interactive_symbol_search(label: &str) -> Result<Option<(String, String, Asse
                     let idx = i + 1;
                     if highlight == idx {
                         // Highlighted row
-                        print!(
-                            "\r\n    \x1b[7m [{idx}] {name} ({ticker}) [{cat}] \x1b[0m",
-                        );
+                        print!("\r\n    \x1b[7m [{idx}] {name} ({ticker}) [{cat}] \x1b[0m",);
                     } else {
                         print!(
                             "\r\n    \x1b[1m[{idx}]\x1b[0m {name} ({ticker}) \x1b[90m[{cat}]\x1b[0m",
@@ -699,8 +716,6 @@ fn clear_suggestions(count: usize) {
     }
 }
 
-
-
 fn parse_value_or_pct(input: &str, total: Decimal) -> Result<(Decimal, Decimal)> {
     let trimmed = input.replace([',', '$'], "");
     let trimmed = trimmed.trim();
@@ -727,10 +742,7 @@ fn parse_value_or_pct(input: &str, total: Decimal) -> Result<(Decimal, Decimal)>
     }
 }
 
-async fn fetch_price_for_symbol(
-    symbol: &str,
-    category: AssetCategory,
-) -> Result<Decimal> {
+async fn fetch_price_for_symbol(symbol: &str, category: AssetCategory) -> Result<Decimal> {
     match category {
         AssetCategory::Crypto => {
             let quotes = coingecko::fetch_prices(&[symbol.to_string()]).await?;
@@ -760,4 +772,47 @@ pub fn has_portfolio_data(backend: &BackendConnection) -> bool {
     let tx_count = transactions::count_transactions_backend(backend).unwrap_or(0);
     let alloc_count = allocations::count_allocations_backend(backend).unwrap_or(0);
     tx_count > 0 || alloc_count > 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_choice_uses_default_when_blank() {
+        let selected = parse_database_backend_choice("", DatabaseBackend::Postgres).unwrap();
+        assert_eq!(selected, DatabaseBackend::Postgres);
+    }
+
+    #[test]
+    fn backend_choice_parses_numeric_options() {
+        assert_eq!(
+            parse_database_backend_choice("1", DatabaseBackend::Postgres).unwrap(),
+            DatabaseBackend::Sqlite
+        );
+        assert_eq!(
+            parse_database_backend_choice("2", DatabaseBackend::Sqlite).unwrap(),
+            DatabaseBackend::Postgres
+        );
+    }
+
+    #[test]
+    fn backend_choice_rejects_invalid_values() {
+        assert!(parse_database_backend_choice("sqlite", DatabaseBackend::Sqlite).is_err());
+        assert!(parse_database_backend_choice("3", DatabaseBackend::Sqlite).is_err());
+    }
+
+    #[test]
+    fn postgres_url_validation_accepts_expected_schemes() {
+        assert!(is_valid_postgres_url("postgres://localhost:5432/pftui"));
+        assert!(is_valid_postgres_url(
+            "postgresql://user:pass@localhost/pftui"
+        ));
+    }
+
+    #[test]
+    fn postgres_url_validation_rejects_other_schemes() {
+        assert!(!is_valid_postgres_url("http://localhost:5432/pftui"));
+        assert!(!is_valid_postgres_url("sqlite:///tmp/pftui.db"));
+    }
 }
