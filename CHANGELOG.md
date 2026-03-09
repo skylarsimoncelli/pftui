@@ -11,6 +11,14 @@
 - Tests: `cargo test -q`
 - TODO: audit P1 (`runtime strategy consistency`)
 
+### 2026-03-09 — Refresh-time price history backfill for sparse symbols
+
+- What: added refresh-time backfill that fetches and upserts history for symbols with insufficient local history (`<30` points), with source-aware fetch logic (CoinGecko primary for crypto, Yahoo fallback/primary otherwise).
+- Why: keeps `price_history` populated from normal `refresh` runs so history-dependent features (movers, daily deltas, technicals/correlations) do not degrade on sparse/new databases.
+- Files: `src/commands/refresh.rs`
+- Tests: `cargo test -q`
+- TODO: price_history population parity
+
 ### 2026-03-09 — Structural module PostgreSQL dispatch implementation
 
 - What: implemented native Postgres execution paths for structural storage/read APIs (`power_metrics`, `structural_cycles`, `structural_outcomes`, `structural_outcome_history`, `historical_parallels`, `structural_log`) and removed “not yet implemented” backend bails.

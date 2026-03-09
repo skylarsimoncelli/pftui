@@ -17,7 +17,7 @@ use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{
     get_all_cached_prices_backend, get_cached_price_backend, upsert_price_backend,
 };
-use crate::db::price_history::get_price_at_date_backend;
+use crate::db::price_history::{get_history_backend, get_price_at_date_backend, upsert_history_backend};
 use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
 use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
@@ -306,6 +306,30 @@ fn yahoo_crypto_symbol(symbol: &str) -> String {
     }
 }
 
+async fn fetch_history_for_symbol(
+    symbol: &str,
+    category: AssetCategory,
+    days: u32,
+) -> Result<(Vec<crate::models::price::HistoryRecord>, &'static str)> {
+    match category {
+        AssetCategory::Crypto => {
+            match coingecko::fetch_history(symbol, days).await {
+                Ok(records) if !records.is_empty() => Ok((records, "coingecko")),
+                _ => {
+                    let yahoo_sym = yahoo_crypto_symbol(symbol);
+                    let records = yahoo::fetch_history(&yahoo_sym, days).await?;
+                    Ok((records, "yahoo"))
+                }
+            }
+        }
+        AssetCategory::Cash => Ok((Vec::new(), "static")),
+        _ => {
+            let records = yahoo::fetch_history(symbol, days).await?;
+            Ok((records, "yahoo"))
+        }
+    }
+}
+
 /// Fetch prices for all given symbols and return the results.
 async fn fetch_all_prices(
     symbols: &[(String, AssetCategory)],
@@ -495,6 +519,32 @@ pub fn run(
             let fetched: Vec<_> = quotes.iter().filter(|q| q.source != "static").collect();
 
             println!("✓ Prices ({} symbols)", fetched.len());
+
+            // Backfill history for symbols missing sufficient history so
+            // technicals/day-change consumers have data after refresh-only runs.
+            let mut history_updated = 0usize;
+            let mut history_attempted = 0usize;
+            for (sym, cat) in &symbols {
+                if *cat == AssetCategory::Cash {
+                    continue;
+                }
+                let history_len = get_history_backend(backend, sym, 40).map(|h| h.len()).unwrap_or(0);
+                if history_len >= 30 {
+                    continue;
+                }
+                history_attempted += 1;
+                match rt.block_on(fetch_history_for_symbol(sym, *cat, 180)) {
+                    Ok((records, source)) if !records.is_empty() => {
+                        if upsert_history_backend(backend, sym, source, &records).is_ok() {
+                            history_updated += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if history_attempted > 0 {
+                println!("✓ Price history ({} symbol backfills)", history_updated);
+            }
         } else {
             println!("⊘ Prices (no symbols)");
         }
