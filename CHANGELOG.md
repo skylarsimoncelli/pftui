@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 09:44 UTC — F32 Phase 55: backend-native World Bank refresh writes
+
+- What: added backend-dispatched World Bank cache APIs for upsert/refresh-check and migrated refresh World Bank section to call backend methods instead of sqlite-only paths.
+- Why: removes the postgres skip for World Bank cache refresh so global macro dataset updates are persisted natively on either backend.
+- Files: `src/db/worldbank_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
 ### 2026-03-09 09:31 UTC — F32 Phase 54: backend-native on-chain cache writes
 
 - What: added postgres/backend-dispatched on-chain cache APIs (`upsert/get/list/prune`), added `onchain_cache` table + indexes to postgres schema migration, and switched refresh on-chain metric writes to backend dispatch.

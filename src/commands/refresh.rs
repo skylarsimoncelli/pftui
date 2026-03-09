@@ -274,8 +274,8 @@ fn bls_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if World Bank needs refreshing
-fn worldbank_needs_refresh(conn: &Connection) -> Result<bool> {
-    worldbank_cache::needs_refresh(conn)
+fn worldbank_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    worldbank_cache::needs_refresh_backend(backend)
 }
 
 /// Format a price for display: compact representation.
@@ -784,11 +784,10 @@ pub fn run(
     }
 
     // 10. World Bank
-    if let Some(conn) = sqlite_conn {
-    if worldbank_needs_refresh(conn)? {
+    if worldbank_needs_refresh(backend)? {
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
-                worldbank_cache::upsert_worldbank_data(conn, &data)?;
+                worldbank_cache::upsert_worldbank_data_backend(backend, &data)?;
                 println!("✓ World Bank ({} indicators)", data.len());
             }
             Err(e) => {
@@ -797,9 +796,6 @@ pub fn run(
         }
     } else {
         println!("⊘ World Bank (fresh, skipping)");
-    }
-    } else {
-        println!("⊘ World Bank (sqlite-only cache path, skipping on postgres)");
     }
 
     // 11. COMEX
