@@ -189,8 +189,11 @@ fn get_all_cached_prices_postgres(pool: &PgPool) -> Result<Vec<PriceQuote>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Config, DatabaseBackend};
+    use crate::db::backend::{open_from_config, BackendConnection};
     use crate::db::open_in_memory;
     use rust_decimal_macros::dec;
+    use std::path::Path;
 
     #[test]
     fn test_upsert_and_get() {
@@ -220,5 +223,40 @@ mod tests {
 
         let cached = get_cached_price(&conn, "AAPL", "USD").unwrap().unwrap();
         assert_eq!(cached.price, dec!(195.00));
+    }
+
+    #[test]
+    fn postgres_roundtrip_when_env_set() {
+        let url = match std::env::var("PFTUI_TEST_POSTGRES_URL") {
+            Ok(v) if !v.trim().is_empty() => v,
+            _ => return,
+        };
+
+        let cfg = Config {
+            database_backend: DatabaseBackend::Postgres,
+            database_url: Some(url),
+            ..Default::default()
+        };
+        let backend = open_from_config(&cfg, Path::new("/tmp/unused.db")).unwrap();
+        let BackendConnection::Postgres { .. } = backend else {
+            panic!("expected postgres backend");
+        };
+
+        let quote = PriceQuote {
+            symbol: "AAPL".to_string(),
+            price: dec!(201.25),
+            currency: "USD".to_string(),
+            fetched_at: "2026-03-09T12:00:00Z".to_string(),
+            source: "test".to_string(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+        };
+
+        upsert_price_backend(&backend, &quote).unwrap();
+        let cached = get_cached_price_backend(&backend, "AAPL", "USD")
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.price, dec!(201.25));
     }
 }
