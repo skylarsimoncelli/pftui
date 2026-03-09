@@ -882,6 +882,18 @@ These are the most-used modules. Migrate them first to validate the pattern.
 - [ ] **Connection pooling config** — expose `max_connections`, `connect_timeout` in config for Postgres
 - [ ] **Test suite** — run full test suite against both backends in CI. Ensure feature parity.
 
+#### P32: Backend Parity Hardening (production quality)
+
+> F32 established native Postgres paths. P32 closes remaining production-grade parity gaps:
+> performance, CI validation, and docs consistency.
+
+- [ ] **P32.1 Docs parity sweep** — remove stale "runtime bridge" wording across docs (AGENTS/README/docs), and document backend-specific direct-query examples for both SQLite and Postgres.
+- [ ] **P32.2 Postgres CI job** — add a CI job with real Postgres service container + backend smoke tests so parity is continuously validated.
+- [ ] **P32.3 Runtime strategy cleanup** — remove per-function Tokio runtime creation in DB modules; use a shared runtime/async boundary to cut overhead and improve latency.
+- [ ] **P32.4 Postgres schema type upgrades** — migrate hot-path numeric/time columns from `TEXT` to native Postgres types (`NUMERIC`, `DOUBLE PRECISION`, `TIMESTAMPTZ`) with safe migrations.
+- [ ] **P32.5 Pooling config** — expose Postgres pool knobs in config (`max_connections`, `connect_timeout`) and wire into backend opening.
+- [ ] **P32.6 Setup/backend switch validation** — add tests for setup backend selection and export→switch→import workflow correctness.
+
 **Key SQL differences to handle per-module:**
 
 | SQLite | PostgreSQL | Notes |
