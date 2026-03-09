@@ -5,6 +5,7 @@
 >
 > For code contribution (making changes to pftui itself), see [CLAUDE.md](CLAUDE.md).
 > For architecture reference, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> For AI operating model details, see [docs/AI-LAYER.md](docs/AI-LAYER.md).
 
 ---
 

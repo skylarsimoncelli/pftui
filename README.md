@@ -92,7 +92,7 @@ pftui agent-msg "Oil breakout confirms commodity supercycle thesis"
 
 Your agent becomes a sophisticated macro analyst, not just a data fetcher. It develops views, tracks accuracy, and helps you build conviction through continuous market intelligence.
 
-See the full agent operator guide: [AGENTS.md](AGENTS.md)
+See the full AI layer guide: [docs/AI-LAYER.md](docs/AI-LAYER.md) and agent operator guide: [AGENTS.md](AGENTS.md)
 
 <table>
   <tr>
@@ -213,6 +213,18 @@ pftui journal add --content "Gold thesis validated by CPI" --tag macro
 pftui config list --json           # List all config fields
 pftui config set brave_api_key <key>  # Set Brave Search API key
 ```
+
+### Data Aggregation Engine
+
+pftui includes a dedicated **Data Aggregation Engine** that unifies market and macro ingestion into one repeatable local pipeline.
+
+```bash
+pftui refresh
+```
+
+That single command updates prices, price history, sentiment, COT, COMEX, predictions, news, and economic datasets into your configured backend (SQLite or PostgreSQL), so both humans and agents operate on one coherent, owned dataset.
+
+Read the full model and pipeline details: [docs/DATA-AGGREGATION.md](docs/DATA-AGGREGATION.md)
 
 ### Your Personal Database, Your Proprietary Edge
 
@@ -386,7 +398,9 @@ Full roadmap: [TODO.md](TODO.md) · Feature specs: [docs/ANALYTICS-SPEC.md](docs
 | [AGENTS.md](AGENTS.md) | Agent operator guide, setup, workflows, integration patterns |
 | [CLAUDE.md](CLAUDE.md) | Development guide for AI coding agents |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Code architecture, file map, line ranges |
+| [docs/DATA-AGGREGATION.md](docs/DATA-AGGREGATION.md) | Data ingestion pipeline and source-unification model |
 | [docs/ANALYTICS-SPEC.md](docs/ANALYTICS-SPEC.md) | Feature specifications |
+| [docs/AI-LAYER.md](docs/AI-LAYER.md) | Agent operating model and multi-agent workflows |
 | [docs/API-SOURCES.md](docs/API-SOURCES.md) | Free data source reference |
 | [docs/MIGRATING.md](docs/MIGRATING.md) | Backend migration guide (SQLite/PostgreSQL) |
 | [docs/BACKEND-PARITY.md](docs/BACKEND-PARITY.md) | Backend parity scope + verification/signoff runbook |

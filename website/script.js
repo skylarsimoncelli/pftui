@@ -310,6 +310,22 @@ const scenes = [
         ],
         hold: 3000,
     },
+    {
+        lines: [
+            { text: '$ pftui refresh && pftui brief --agent --json', type: 'command', delay: 60 },
+            { text: '', type: 'output', delay: 200 },
+            { text: '$ pftui scenario update "Stagflation Risk" --probability 38', type: 'command', delay: 30 },
+            { text: '✓ updated scenario: Stagflation Risk (38%)', type: 'output', delay: 30 },
+            { text: '$ pftui conviction set GC=F --score 4 --notes "energy shock hedge"', type: 'command', delay: 30 },
+            { text: '✓ conviction logged: GC=F = +4', type: 'output', delay: 30 },
+            { text: '$ pftui agent-msg "Oil>90 + VIX spike; increase gold watch"', type: 'command', delay: 30 },
+            { text: '✓ message queued for operator review', type: 'output', delay: 30 },
+            { text: '$ pftui analytics alignment', type: 'command', delay: 30 },
+            { text: 'GC=F  bull bull bull bull  STRONG BUY 100%', type: 'output', delay: 30 },
+            { text: 'BTC   bear neutral bear neutral  BEARISH 50%', type: 'output', delay: 30 },
+        ],
+        hold: 3200,
+    },
 ];
 
 let currentScene = 0;

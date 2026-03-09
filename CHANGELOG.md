@@ -13,6 +13,14 @@
 - Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
 - TODO: removed P1-BUG "Postgres structural storage not yet implemented"
 
+### 2026-03-09 — Docs stack expansion: Data Aggregation Engine + AI Layer
+
+- What: added dedicated docs pages for aggregation and AI layers, added README documentation table entries, inserted a new README Data Aggregation section, linked AI layer docs from README/AGENTS, updated product vision to explicit four-pillar stack (Aggregation → Database → Analytics → AI), refreshed website language to Data Aggregation Engine naming, added AI workflow row in comparison table, and added a new AI interaction scene in website terminal demo.
+- Why: closes the remaining documentation TODO bundle and aligns product language across docs/README/website around the shipped architecture.
+- Files: `docs/DATA-AGGREGATION.md`, `docs/AI-LAYER.md`, `README.md`, `website/index.html`, `website/script.js`, `PRODUCT-VISION.md`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed docs TODO bundle for Data Aggregation Engine + AI Layer
+
 ### 2026-03-09 — Regime confidence weighting tune for risk-off states
 
 - What: updated risk-off classification to treat oil shock as a first-class trigger and switched confidence from flat counts to weighted scoring (`vix/oil` weighted higher than secondary confirmations).

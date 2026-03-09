@@ -1251,11 +1251,6 @@ Website section — "Data Aggregation Engine — 10+ Sources, One Command"
 - Emphasize: no API keys for core sources, free forever
 
 **Files to update:**
-- [ ] `/root/pftui/docs/DATA-AGGREGATION.md` — full dedicated documentation page (NEW)
-- [ ] `/root/pftui/README.md` — new "Data Aggregation Engine" section (before "Your Database")
-- [ ] `/root/pftui/website/index.html` — new section + update existing "Integrated Market Intelligence" to use "Data Aggregation Engine" naming
-- [ ] `/root/pftui/PRODUCT-VISION.md` — update to four-pillar stack (Aggregation → Database → Analytics → AI)
-- [ ] `/root/pftui/docs/` entry in README documentation table for DATA-AGGREGATION.md
 
 ---
 
@@ -1374,13 +1369,6 @@ Website "AI Layer" section — visual product feature section. 3-card layout.
 Terminal demo scene. Comparison table row.
 
 **Files to update:**
-- [ ] `/root/pftui/docs/AI-LAYER.md` — full dedicated documentation page (NEW)
-- [ ] `/root/pftui/README.md` — new "AI Layer" section (high-level, links to docs)
-- [ ] `/root/pftui/website/index.html` — new section + comparison table row
-- [ ] `/root/pftui/website/script.js` — new terminal demo scene showing agent interaction
-- [ ] `/root/pftui/PRODUCT-VISION.md` — integrate AI Layer as third pillar (Database + Analytics + AI)
-- [ ] `/root/pftui/AGENTS.md` — cross-reference from AI Layer section
-- [ ] `/root/pftui/docs/` entry in README documentation table for AI-LAYER.md
 
 ---
 

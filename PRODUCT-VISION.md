@@ -20,6 +20,13 @@ pftui centralises everything into one tool with three interfaces:
 
 **For both:** A shared database that serves as the single source of truth. The agent writes analysis, the human reads it. The human makes decisions, the agent tracks them. Both operate on the same data, in the same tool, building institutional knowledge that compounds over time.
 
+The product is built as a four-pillar stack:
+
+1. **Aggregation** — one refresh pipeline that unifies cross-source data.
+2. **Database** — your local, owned SQLite/PostgreSQL system of record.
+3. **Analytics** — LOW/MEDIUM/HIGH/MACRO multi-timeframe reasoning.
+4. **AI** — agent workflows that monitor, synthesize, and update state.
+
 At the center is the analytics engine with four layers: LOW (hours->days), MEDIUM (weeks->months), HIGH (months->years), and MACRO (years->decades). Each layer uses different data and cadence, constrains interpretation downward, and sends signal updates upward.
 
 ## Who This Is For
