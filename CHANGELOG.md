@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 09:05 UTC — F32 Phase 52: backend-aware web RSS ingest loop
+
+- What: updated web background RSS ingest loop to open the configured backend and call backend-dispatched news cache APIs (`insert_news_backend`, `cleanup_old_news_backend`) instead of opening a raw SQLite connection.
+- Why: removes another hidden sqlite-only path in web mode so postgres deployments ingest and retain RSS news natively.
+- Files: `src/web/server.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API request handlers and TUI runtime still sqlite-native)
+
 ### 2026-03-09 08:55 UTC — F32 Phase 51: backend-native FX cache path
 
 - What: added postgres-native `fx_cache` support with backend-dispatched upsert/read APIs, wired `refresh` FX ingestion to write through backend dispatch (no postgres skip), and migrated command FX loaders (`summary`, `history`, `export`, `value`, `drift`, `rebalance`, `scan`, `group`, `stress-test`) off sqlite-only reads.

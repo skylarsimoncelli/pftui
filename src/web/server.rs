@@ -27,7 +27,6 @@ use super::api::{
 use super::auth::{auth_middleware, get_csrf, get_session, login, logout, AuthState};
 use crate::config::Config;
 use crate::data::rss::{self, NewsCategory, RssFeed};
-use crate::db;
 
 pub async fn run_server(
     db_path: String,
@@ -175,11 +174,12 @@ async fn run_rss_ingest_loop(db_path: String, config: Config) {
         }
 
         let db_path = db_path.clone();
+        let config = config.clone();
         let result = tokio::task::spawn_blocking(move || -> anyhow::Result<usize> {
-            let conn = db::open_db(Path::new(&db_path))?;
+            let backend = crate::db::backend::open_from_config(&config, Path::new(&db_path))?;
             for item in items {
-                db::news_cache::insert_news(
-                    &conn,
+                crate::db::news_cache::insert_news_backend(
+                    &backend,
                     &item.title,
                     &item.url,
                     &item.source,
@@ -187,7 +187,7 @@ async fn run_rss_ingest_loop(db_path: String, config: Config) {
                     item.published_at,
                 )?;
             }
-            let deleted = db::news_cache::cleanup_old_news(&conn)?;
+            let deleted = crate::db::news_cache::cleanup_old_news_backend(&backend)?;
             Ok(deleted)
         })
         .await;
