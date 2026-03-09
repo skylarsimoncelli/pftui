@@ -746,9 +746,7 @@ pub fn run(
                         source_url: item.source_url.clone(),
                         fetched_at: now.clone(),
                     };
-                    if let Some(conn) = sqlite_conn {
-                        let _ = economic_data_db::upsert_entry(conn, &entry);
-                    }
+                    let _ = economic_data_db::upsert_entry_backend(backend, &entry);
                 }
                 if used_brave {
                     println!("✓ Economy ({} indicators via Brave)", items.len());
