@@ -327,15 +327,34 @@ fn main() -> Result<()> {
             conviction,
             limit,
             json,
-        }) => commands::thesis::run(
-            &backend,
-            &action,
-            value.as_deref(),
-            content.as_deref(),
-            conviction.as_deref(),
-            limit,
-            json,
-        ),
+        }) => match action.as_str() {
+            "list" => commands::thesis::run_list(json),
+            "update" => {
+                let section = value.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing section name. Usage: pftui thesis update <section> --content \"...\"")
+                })?;
+                let content_text = content.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing content. Usage: pftui thesis update <section> --content \"...\"")
+                })?;
+                commands::thesis::run_update(section, content_text, conviction.as_deref(), json)
+            }
+            "history" => {
+                let section = value.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing section name. Usage: pftui thesis history <section>")
+                })?;
+                commands::thesis::run_history(section, limit, json)
+            }
+            "remove" => {
+                let section = value.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing section name. Usage: pftui thesis remove <section>")
+                })?;
+                commands::thesis::run_remove(section, json)
+            }
+            _ => Err(anyhow::anyhow!(
+                "Unknown action '{}'. Available: list, update, history, remove",
+                action
+            )),
+        },
 
         Some(Command::Predictions { category, search, limit, json }) => {
             commands::predictions::run(conn, category.as_deref(), search.as_deref(), limit, json)

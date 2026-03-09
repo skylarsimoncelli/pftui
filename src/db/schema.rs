@@ -116,6 +116,23 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_journal_symbol ON journal(symbol);
         CREATE INDEX IF NOT EXISTS idx_journal_status ON journal(status);
 
+        CREATE TABLE IF NOT EXISTS thesis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            section TEXT NOT NULL UNIQUE,
+            content TEXT NOT NULL,
+            conviction TEXT NOT NULL DEFAULT 'medium',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS thesis_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            section TEXT NOT NULL,
+            content TEXT NOT NULL,
+            conviction TEXT NOT NULL,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section);
+
         CREATE TABLE IF NOT EXISTS dividends (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL,
