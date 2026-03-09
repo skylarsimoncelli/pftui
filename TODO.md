@@ -1012,7 +1012,17 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Data & Display
 
+- [ ] [Feedback] **DB connection timeout** — All data commands hang indefinitely when Postgres is unreachable instead of failing with a clear error. Add 5s connection timeout with actionable error message (`Database connection failed: [reason]`). This caused Evening Planner to drop from 82→35 usefulness. Files: `src/db/backend.rs`, connection init path.
+- [ ] [Feedback] **`pftui doctor` command** — Test DB connection, API endpoints, and cache freshness in sequence. Report what's working vs broken. Essential for diagnosing issues like the Mar 9 hang. Files: new `src/commands/doctor.rs`.
+- [ ] [Feedback] **`--offline`/`--cached-only` flag** — Show last cached data without attempting refresh or API calls. For evenings when APIs are down or DB is unreachable.
+- [ ] [Feedback] **Fix Brent crude data** — Shows `---` in macro dashboard. WTI-Brent spread is critical for war premium analysis. (Morning Research, Evening Planner × multiple reviews)
+- [ ] [Feedback] **Fix USD/JPY percentage calculation** — Showing +15697% change which is obviously a data bug. (Morning Research Mar 7)
+- [ ] [Feedback] **Fix sector command** — Only returns XLE, should populate all 11 SPDR sector ETFs (XLK, XLF, XLV, XLI, XLC, XLY, XLP, XLB, XLRE, XLU, XLE). (Evening Planner × multiple reviews)
+
 ### CLI Enhancements
+
+- [ ] [Feedback] **Filter prediction markets by category** — `pftui predictions --category geopolitics|finance|macro` to filter out sports/entertainment noise. Currently returns NHL hockey odds instead of geopolitical/macro predictions. (Morning Research, Evening Planner × 4+ reviews)
+- [ ] [Feedback] **Oil technicals in macro dashboard** — Add RSI/MACD/SMA for WTI and Brent in `pftui macro`. Oil is the most important macro indicator during wartime and technicals are missing. (Morning Research, Evening Planner × 3+ reviews)
 
 ### Analytics
 
@@ -1154,28 +1164,28 @@ These are the most-used modules. Migrate them first to validate the pattern.
 
 ## Feedback Summary
 
-> Updated: 2026-03-08
+> Updated: 2026-03-09
 
 ### Current Scores (latest per tester)
 
 | Tester | Usefulness | Overall | Trend |
 |--------|-----------|---------|-------|
-| Market Research | 88% | 82% | ↑ (40→72→78→78→74→88) |
-| Eventuality Planner | 82% | 80% | ↑ (38→85→92→85→80→82) |
-| Sentinel (Portfolio Analyst) | 85% | 88% | ↑ (78→82→82→78→82→88) |
-| Market Close | 92% | 88% | ↑ (68→80→72→88) |
+| Morning Market Research | 88% | 82% | ↑ (25→65→82→78→82→88) |
+| Evening Eventuality Planner | 35% | 55% | ↓ (20→88→92→85→80→82→35) |
+| Sentinel (Portfolio Analyst) | 85% | 78% | → (75→85→85→78→85→85) |
+| Market Close | 92% | 88% | ↑ (72→82→78→92) |
 | UX Analyst | — | 75% | → (78→68→72→73→75) |
 
 ### Score Trends
 
-- **Market Research:** Strong upswing to 88/82 — best scores yet. Macro technicals (RSI/MACD/SMA) landed on Mar 7 and this tester noticed. Remaining gap: oil technicals in brief (now in macro), and prediction markets showing sports instead of geopolitical. Python script dependency nearly eliminated.
-- **Eventuality Planner:** Stable at 82/80. `eod` command and macro dashboard are star features. Pain points: sector command returning only 1 ETF, prediction markets filtering for geopolitics, and missing ag commodity tracking. Wants CME FedWatch.
-- **Sentinel (Portfolio Analyst):** Best overall score yet (85/88). TUI visual quality consistently praised. Ratio charts context header (added Mar 7) well received.
-- **Market Close:** Strongest absolute scores (92/88) — no new review since Mar 6. `brief + movers + macro` pipeline covers most of the routine. Python script nearly eliminated.
-- **UX Analyst:** Slight uptick to 75. Focus shifted from CLI consistency (mostly fixed) to feature discoverability (`pftui config` invisible) and `status --json` gap. Data pipeline reliability improving but predictions/COT still intermittent.
+- **Morning Market Research:** Steady at 88/82 — best scores since launch. Macro technicals (RSI/MACD/SMA) landed on Mar 7. Remaining gaps: oil technicals in macro, prediction markets showing sports instead of geopolitical, ag commodity tracking. Python script nearly eliminated.
+- **Evening Eventuality Planner:** ⚠️ CRASHED to 35/55 on Mar 9. ALL commands hung indefinitely with Postgres backend — zero functionality. Previous session (Mar 8) also hit SQLite migration blocker (0/15). Reliability is the #1 issue. When working (Mar 5-7), scores were 82-92. The tool's feature set is strong but backend stability is destroying trust.
+- **Sentinel (Portfolio Analyst):** Stable at 85/78. TUI visual quality consistently praised. Day P&L dollar column still the most requested missing feature. Correlation grid and ratio charts well received.
+- **Market Close:** Strongest absolute scores (92/88) — no new review since Mar 6. `brief + movers + macro` pipeline covers most of the routine. Python script dependency eliminated for closing data.
+- **UX Analyst:** Holding at 75. Focus on feature discoverability (`pftui config` invisible) and data pipeline reliability. `--json` consistency improving but `status --json` still missing.
 
 ### Top 3 Priorities (Feedback-Driven)
 
-1. ✅ **Brave Search API integration** — COMPLETE (Mar 7, 2026). Config, client, news, economic data, research command all shipped.
-2. ✅ **Config discoverability** — COMPLETE. Config command is documented in README + AGENTS.
-3. ✅ **PostgreSQL backend support** — COMPLETE (Mar 8, 2026).
+1. 🔴 **DB connection timeout + reliability** — Commands hang indefinitely when Postgres is unreachable. This single issue dropped Evening Planner from 82→35. Need 5s timeout with clear error messages, plus a `pftui doctor` diagnostic command.
+2. 🟡 **Fix broken data sources** — Sector command (only returns XLE/11), Brent crude (shows ---), USD/JPY (+15697%), predictions (sports only). Multiple testers hitting these every session.
+3. 🟡 **Oil technicals in macro** — Oil is the #1 macro variable during wartime. RSI/MACD/SMA missing from `pftui macro` for WTI/Brent. Requested by Morning Research + Evening Planner across 3+ reviews.
