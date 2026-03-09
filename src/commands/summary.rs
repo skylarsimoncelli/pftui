@@ -9,10 +9,11 @@ use rusqlite::Connection;
 
 use crate::cli::{SummaryGroupBy, SummaryPeriod};
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::list_allocations;
-use crate::db::price_cache::get_all_cached_prices;
-use crate::db::price_history::{get_history, get_prices_at_date};
-use crate::db::transactions::list_transactions;
+use crate::db::allocations::list_allocations_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::price_history::{get_history_backend, get_prices_at_date_backend};
+use crate::db::transactions::list_transactions_backend;
 use crate::indicators::macd::{compute_macd, MacdResult};
 use crate::indicators::rsi::compute_rsi;
 use crate::indicators::sma::compute_sma;
@@ -89,6 +90,7 @@ fn parse_what_if(input: &str, prices: &HashMap<String, Decimal>) -> Result<HashM
 }
 
 pub fn run(
+    backend: &BackendConnection,
     conn: &Connection,
     config: &Config,
     group_by: Option<&SummaryGroupBy>,
@@ -97,7 +99,7 @@ pub fn run(
     technicals: bool,
     json: bool,
 ) -> Result<()> {
-    let cached = get_all_cached_prices(conn)?;
+    let cached = get_all_cached_prices_backend(backend)?;
     let mut prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|q| (q.symbol, q.price))
@@ -126,7 +128,7 @@ pub fn run(
     let historical_prices = match (&period_start, period) {
         (Some(date), Some(_)) => {
             let symbols: Vec<String> = prices.keys().cloned().collect();
-            Some(get_prices_at_date(conn, &symbols, date)?)
+            Some(get_prices_at_date_backend(backend, &symbols, date)?)
         }
         _ => None,
     };
@@ -136,7 +138,8 @@ pub fn run(
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let all_symbols: Vec<String> = prices.keys().cloned().collect();
-    let hist_1d = get_prices_at_date(conn, &all_symbols, &yesterday_str).unwrap_or_default();
+    let hist_1d = get_prices_at_date_backend(backend, &all_symbols, &yesterday_str)
+        .unwrap_or_default();
 
     if let Some(ref ov) = overrides {
         print_what_if_banner(ov);
@@ -144,7 +147,7 @@ pub fn run(
 
     // Load price history for technicals if requested
     let technicals_data = if technicals {
-        compute_technicals_for_symbols(conn, &all_symbols)
+        compute_technicals_for_symbols(backend, &all_symbols)
     } else {
         HashMap::new()
     };
@@ -152,14 +155,50 @@ pub fn run(
     if json {
         // JSON output mode
         return match config.portfolio_mode {
-            PortfolioMode::Full => run_full_json(conn, config, &prices, group_by, period, &historical_prices, &hist_1d),
-            PortfolioMode::Percentage => run_percentage_json(conn, &prices, group_by, period, &historical_prices, &hist_1d),
+            PortfolioMode::Full => run_full_json(
+                backend,
+                conn,
+                config,
+                &prices,
+                group_by,
+                period,
+                &historical_prices,
+                &hist_1d,
+            ),
+            PortfolioMode::Percentage => run_percentage_json(
+                backend,
+                conn,
+                &prices,
+                group_by,
+                period,
+                &historical_prices,
+                &hist_1d,
+            ),
         };
     }
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, &prices, group_by, period, &historical_prices, &hist_1d, &technicals_data),
-        PortfolioMode::Percentage => run_percentage(conn, &prices, group_by, period, &historical_prices, &hist_1d, &technicals_data),
+        PortfolioMode::Full => run_full(
+            backend,
+            conn,
+            config,
+            &prices,
+            group_by,
+            period,
+            &historical_prices,
+            &hist_1d,
+            &technicals_data,
+        ),
+        PortfolioMode::Percentage => run_percentage(
+            backend,
+            conn,
+            &prices,
+            group_by,
+            period,
+            &historical_prices,
+            &hist_1d,
+            &technicals_data,
+        ),
     }
 }
 
@@ -179,6 +218,7 @@ fn print_what_if_banner(overrides: &HashMap<String, Decimal>) {
 
 #[allow(clippy::too_many_arguments)]
 fn run_full(
+    backend: &BackendConnection,
     conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
@@ -188,7 +228,7 @@ fn run_full(
     hist_1d: &HashMap<String, Decimal>,
     technicals_data: &HashMap<String, TechnicalSnapshot>,
 ) -> Result<()> {
-    let txs = list_transactions(conn)?;
+    let txs = list_transactions_backend(backend)?;
     if txs.is_empty() {
         println!("No transactions found. Add one with: pftui add-tx");
         return Ok(());
@@ -222,6 +262,7 @@ fn run_full(
 }
 
 fn run_percentage(
+    backend: &BackendConnection,
     conn: &Connection,
     prices: &HashMap<String, Decimal>,
     group_by: Option<&SummaryGroupBy>,
@@ -230,7 +271,7 @@ fn run_percentage(
     _hist_1d: &HashMap<String, Decimal>,
     technicals_data: &HashMap<String, TechnicalSnapshot>,
 ) -> Result<()> {
-    let allocs = list_allocations(conn)?;
+    let allocs = list_allocations_backend(backend)?;
     if allocs.is_empty() {
         println!("No allocations found. Run: pftui setup");
         return Ok(());
@@ -828,14 +869,14 @@ struct TechnicalSnapshot {
 
 /// Compute technical indicators for a list of symbols from cached price history.
 fn compute_technicals_for_symbols(
-    conn: &Connection,
+    backend: &BackendConnection,
     symbols: &[String],
 ) -> HashMap<String, TechnicalSnapshot> {
     let mut result = HashMap::new();
 
     for symbol in symbols {
         // Need at least 14 days for RSI; fetch 250 for SMA-200
-        let history = match get_history(conn, symbol, 250) {
+        let history = match get_history_backend(backend, symbol, 250) {
             Ok(h) if h.len() >= 14 => h,
             _ => continue,
         };
@@ -1028,6 +1069,7 @@ fn format_percent_2(d: Decimal) -> String {
 
 #[allow(clippy::too_many_arguments)]
 fn run_full_json(
+    backend: &BackendConnection,
     conn: &Connection,
     _config: &Config,
     prices: &HashMap<String, Decimal>,
@@ -1036,7 +1078,7 @@ fn run_full_json(
     _historical_prices: &Option<HashMap<String, Decimal>>,
     _hist_1d: &HashMap<String, Decimal>,
 ) -> Result<()> {
-    let txs = list_transactions(conn)?;
+    let txs = list_transactions_backend(backend)?;
     if txs.is_empty() {
         println!("{{\"error\": \"No transactions\"}}");
         return Ok(());
@@ -1071,6 +1113,7 @@ fn run_full_json(
 }
 
 fn run_percentage_json(
+    backend: &BackendConnection,
     conn: &Connection,
     prices: &HashMap<String, Decimal>,
     _group_by: Option<&SummaryGroupBy>,
@@ -1078,7 +1121,7 @@ fn run_percentage_json(
     _historical_prices: &Option<HashMap<String, Decimal>>,
     _hist_1d: &HashMap<String, Decimal>,
 ) -> Result<()> {
-    let allocs = list_allocations(conn)?;
+    let allocs = list_allocations_backend(backend)?;
     if allocs.is_empty() {
         println!("{{\"error\": \"No allocations\"}}");
         return Ok(());
@@ -1107,6 +1150,10 @@ fn run_percentage_json(
 mod tests {
     use super::*;
     use crate::models::asset::AssetCategory;
+
+    fn to_backend(conn: Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
 
     fn make_position(
         symbol: &str,
@@ -1269,7 +1316,8 @@ mod tests {
         }).unwrap();
 
         // Should succeed even with no history data
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1313,7 +1361,8 @@ mod tests {
         ]).unwrap();
 
         // Should succeed with historical data available
-        let result = run(&conn, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1351,7 +1400,8 @@ mod tests {
         }).unwrap();
 
         // Both --group-by category and --period together
-        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1480,7 +1530,8 @@ mod tests {
         }).unwrap();
 
         // With what-if override, should succeed and use hypothetical price
-        let result = run(&conn, &config, None, None, Some("AAPL:300"), false, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, None, None, Some("AAPL:300"), false, false);
         assert!(result.is_ok());
     }
 
@@ -1518,7 +1569,8 @@ mod tests {
         }).unwrap();
 
         // What-if + group-by should work together
-        let result = run(&conn, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, backend.sqlite(), &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false, false);
         assert!(result.is_ok());
     }
 }

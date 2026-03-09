@@ -66,7 +66,18 @@ fn main() -> Result<()> {
             commands::setup::run(conn, &config, true)
         }
 
-        Some(Command::Summary { group_by, period, what_if, json }) => commands::summary::run(conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref(), true, json),
+        Some(Command::Summary { group_by, period, what_if, json }) => {
+            commands::summary::run(
+                &backend,
+                conn,
+                &config,
+                group_by.as_ref(),
+                period.as_ref(),
+                what_if.as_deref(),
+                true,
+                json,
+            )
+        }
         Some(Command::Export { format, output }) => commands::export::run(conn, &format, &config, output.as_deref()),
 
         Some(Command::ListTx { notes, json }) => {
