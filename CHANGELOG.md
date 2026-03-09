@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Add `pftui doctor` diagnostic command
+
+- What: new `pftui doctor` command tests DB connection, API endpoints (Yahoo, CoinGecko, Brave, FRED, Polymarket, COT, BLS), and cache freshness in sequence. Reports what's working vs broken with ✓/✗ status, clear error messages, and timing info. Essential for diagnosing connectivity issues like the Mar 9 Evening Planner hang where all commands froze.
+- Why: Evening Planner crashed to 0/15 usefulness on Mar 9 due to all commands hanging indefinitely. Proactive health checks are critical for reliability. Addresses P0 feedback item from multiple testers.
+- Files: `src/commands/doctor.rs` (new, 617 lines), `src/cli.rs`, `src/main.rs`, `src/commands/mod.rs`, clippy fixes in `src/db/agent_messages.rs`, `src/db/daily_notes.rs`, `src/db/opportunity_cost.rs`, `src/db/structural.rs`
+- Tests: none (diagnostic command, manual verification). Tested on VPS with Postgres backend — DB check passed, some API rate limits hit (expected), cache check showed "no cached prices" (expected before refresh).
+- TODO: `pftui doctor` command (P0)
+
 ### 2026-03-09 03:42 UTC — F32 Phase 66: backend-aware web watchlist endpoints
 
 - What: migrated web API `GET/POST/DELETE /watchlist` handlers to backend-dispatched watchlist/price queries; preserved day-change enrichment only when sqlite-native history access is available.

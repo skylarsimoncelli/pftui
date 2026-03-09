@@ -1011,7 +1011,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [ ] [Feedback] **`pftui doctor` command** — Test DB connection, API endpoints, and cache freshness in sequence. Report what's working vs broken. Essential for diagnosing issues like the Mar 9 hang. Files: new `src/commands/doctor.rs`.
 - [ ] [Feedback] **`--offline`/`--cached-only` flag** — Show last cached data without attempting refresh or API calls. For evenings when APIs are down or DB is unreachable.
 - [ ] [Feedback] **Fix Brent crude data** — Shows `---` in macro dashboard. WTI-Brent spread is critical for war premium analysis. (Morning Research, Evening Planner × multiple reviews)
 - [ ] [Feedback] **Fix USD/JPY percentage calculation** — Showing +15697% change which is obviously a data bug. (Morning Research Mar 7)
