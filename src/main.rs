@@ -246,7 +246,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::History { date, group_by }) => {
-            commands::history::run(conn, &config, &date, group_by.as_ref())
+            commands::history::run(&backend, conn, &config, &date, group_by.as_ref())
         }
 
         Some(Command::Macro { json }) => commands::macro_cmd::run(conn, &config, json),

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:16 UTC — F32 Phase 17: backend-dispatch history command reads
+
+- What: migrated `history` command to backend-dispatched reads for transactions, allocations, and historical price lookups; updated main routing to pass `BackendConnection`.
+- Why: removes historical-valuation command execution from SQLite-only reads in Postgres mode.
+- Files: `src/commands/history.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: history command path)
+
 ### 2026-03-09 01:10 UTC — F32 Phase 16: backend-dispatch summary command reads
 
 - What: migrated `summary` command to backend-dispatched reads for cached prices, transactions, allocations, and historical prices (including technical indicators/history lookups), and updated main routing to pass `BackendConnection`.
