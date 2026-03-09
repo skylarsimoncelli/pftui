@@ -855,6 +855,175 @@ Current authoritative validation/signoff references:
 
 ## P3 — Long Term
 
+### F36: Investor Perspectives Panel — Multi-lens analysis via sub-agents
+
+> Inspired by [virattt/ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).
+> pftui provides the data engine; investor perspectives are pure agent orchestration.
+> Each "investor agent" receives the same analytics engine data but interprets it
+> through a fundamentally different investment philosophy, producing independent
+> bull/bear/neutral signals with confidence and reasoning.
+>
+> **Key difference from ai-hedge-fund:** Their project uses a financial API for
+> per-stock fundamentals (P/E, FCF, balance sheet). We feed MACRO data — scenarios,
+> regime, trends, structural cycles, convictions, correlations — from pftui's
+> four-timeframe analytics engine. This makes our version a MACRO hedge fund panel,
+> not a stock-picker panel. The question isn't "should I buy AAPL" — it's "how
+> should I position across asset classes given the current macro environment."
+
+**Implementation: OpenClaw skill + sub-agent orchestration (no Rust changes)**
+
+**Architecture:**
+```
+pftui analytics summary --json  ─┐
+pftui analytics low --json       │
+pftui analytics medium --json    ├─→ Data blob (JSON)
+pftui analytics high --json      │
+pftui analytics macro --json     │
+pftui brief --json               │
+pftui conviction list --json    ─┘
+         │
+         ▼
+┌─────────────────────────────────────────────────┐
+│  Orchestrator (OpenClaw skill or cron)           │
+│  Spawns N sub-agents, each with:                 │
+│  - Investor persona system prompt                │
+│  - Same data blob                                │
+│  - Structured output schema (signal + reasoning) │
+│  Collects all responses, builds consensus view   │
+└─────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────┐
+│  Output: Investor Panel      │
+│  - Per-investor signal       │
+│  - Consensus / divergence    │
+│  - Stored via pftui agent-msg│
+│  - Optional: Telegram brief  │
+└──────────────────────────────┘
+```
+
+**Investor Roster (curated for MACRO relevance):**
+
+| Investor | Philosophy | Why relevant |
+|----------|-----------|--------------|
+| Ray Dalio | All-weather, risk parity, big cycle transitions | Our structural/MACRO layer is literally his framework |
+| Stanley Druckenmiller | Macro legend, asymmetric bets, liquidity focus | Best match for Skylar's style — patient, conviction-driven, big when right |
+| George Soros | Reflexivity, regime change, currency crises | BRICS de-dollarization, DXY dynamics, war premium |
+| Michael Burry | Deep contrarian, short bias, systemic risk | G2 scenario, housing/credit parallels, "everyone is wrong" thesis |
+| Jim Rogers | Commodities supercycle, emerging markets | Commodity supercycle trend, agricultural inflation, gold |
+| Warren Buffett | Wonderful companies at fair prices, cash as weapon | Cash optionality (Berkshire $300B+ cash), waiting for fat pitch |
+| Cathie Wood | Innovation disruption, 5-year horizon | Counter-view on AI/tech, TSLA/RKLB thesis |
+| Peter Lynch | Practical value in everyday businesses | Ground-truth check on consumer economy, earnings quality |
+
+**Structured Output Schema (per investor):**
+```json
+{
+  "investor": "stanley_druckenmiller",
+  "overall_signal": "bearish",
+  "confidence": 78,
+  "positioning": {
+    "cash": { "signal": "bullish", "weight": "overweight", "reasoning": "Optionality in chaos" },
+    "gold": { "signal": "bullish", "weight": "overweight", "reasoning": "Stagflation + war premium" },
+    "btc": { "signal": "bearish", "weight": "underweight", "reasoning": "Risk asset in risk-off" },
+    "equities": { "signal": "bearish", "weight": "avoid", "reasoning": "Margin compression from oil" },
+    "oil": { "signal": "neutral", "weight": "tactical", "reasoning": "War premium, watch ceasefire" }
+  },
+  "key_insight": "The asymmetric bet is gold — every scenario except risk-on rally is bullish.",
+  "what_would_change_my_mind": "BTC holding $72k post-FOMC for 5+ days = risk-on confirmed"
+}
+```
+
+**Data Collection (single shell script or skill step):**
+```bash
+#!/bin/bash
+# Collect analytics engine data for investor panel
+DATA=$(cat <<EOF
+{
+  "summary": $(pftui analytics summary --json 2>/dev/null),
+  "low": $(pftui analytics low --json 2>/dev/null),
+  "medium": $(pftui analytics medium --json 2>/dev/null),
+  "high": $(pftui analytics high --json 2>/dev/null),
+  "macro": $(pftui analytics macro --json 2>/dev/null),
+  "brief": $(pftui brief --json 2>/dev/null),
+  "convictions": $(pftui conviction list --json 2>/dev/null),
+  "scenarios": $(pftui scenario list --json 2>/dev/null),
+  "trends": $(pftui trends list --json 2>/dev/null),
+  "predictions": $(pftui predict list --json 2>/dev/null),
+  "regime": $(pftui regime current --json 2>/dev/null)
+}
+EOF
+)
+echo "$DATA"
+```
+
+**Skill Files:**
+```
+skills/investor-panel/
+├── SKILL.md                    # Orchestrator instructions
+├── personas/
+│   ├── ray_dalio.md            # System prompt: All-Weather, big cycles
+│   ├── stanley_druckenmiller.md # System prompt: Macro, asymmetric bets
+│   ├── george_soros.md          # System prompt: Reflexivity, currencies
+│   ├── michael_burry.md         # System prompt: Contrarian, systemic risk
+│   ├── jim_rogers.md            # System prompt: Commodities, EM
+│   ├── warren_buffett.md        # System prompt: Quality, cash, patience
+│   ├── cathie_wood.md           # System prompt: Innovation disruption
+│   └── peter_lynch.md           # System prompt: Practical value
+├── collect-data.sh             # Gathers pftui --json output
+└── schema.json                 # Structured output format
+```
+
+**Execution Model:**
+- Cron-driven (weekly, or on-demand via `/panel` command)
+- Orchestrator spawns 8 sub-agents in parallel via `sessions_spawn`
+- Each gets: investor persona prompt + full data blob + output schema
+- Orchestrator collects responses, computes consensus, stores via `pftui agent-msg`
+- Optional: Telegram delivery with consensus summary + notable divergences
+
+**Consensus Computation:**
+- Count bull/bear/neutral per asset class across all 8 investors
+- Flag "strong consensus" (6+/8 agree) and "divergence" (4/4 split)
+- The most valuable output is DIVERGENCE — when Buffett says buy and Burry says sell, that's the conversation worth having
+
+**Example Output (Telegram):**
+```
+🎯 INVESTOR PANEL — Mar 9, 2026
+
+CONSENSUS:
+  Gold:     ████████ 8/8 BULLISH (strongest signal)
+  Cash:     ██████░░ 6/8 BULLISH (Buffett, Druckenmiller lead)
+  Equities: ██████░░ 6/8 BEARISH (Wood dissents — AI thesis)
+  BTC:      ████░░░░ 4/8 SPLIT (Soros bearish, Wood bullish)
+  Oil:      ███░░░░░ 3/8 mixed (Rogers bullish, most neutral)
+
+NOTABLE DIVERGENCE:
+  🔴 Burry vs 🟢 Dalio on BTC:
+    Burry: "BTC is a risk asset in a risk-off world. $40k."
+    Dalio: "BTC serves as neutral reserve in multipolar transition."
+
+TOP INSIGHT (Druckenmiller):
+  "The asymmetric bet is gold — every scenario except risk-on
+  rally is bullish. That's 95% of probability space."
+```
+
+**Why this works as a pftui feature (not just our private agent):**
+- Any pftui user with an AI agent can use this skill
+- The data collection script uses only `pftui` CLI commands
+- Persona files are open source, customizable, and educational
+- Users can add their own investor personas or remove ones they don't care about
+- The `--json` output from every pftui command is the API surface
+- Positions pftui as "the data engine that powers AI investment analysis"
+
+**Dependencies:**
+- F31 analytics engine complete (especially `--json` on all commands)
+- OpenClaw sub-agent spawning (sessions_spawn)
+- Persona prompt engineering (the hard part — each investor needs 2-3 pages of philosophy, decision criteria, and known biases)
+
+**NOT in scope:**
+- No per-stock fundamental analysis (no Financial Datasets API)
+- No trade execution or order generation
+- No backtesting (different problem)
+- No real-time data (uses pftui cached data from last refresh)
 
 ---
 
