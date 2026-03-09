@@ -243,8 +243,7 @@ fn main() -> Result<()> {
             commands::brief::run(conn, &config, true, json)
         }
         Some(Command::Watchlist { approaching, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "watchlist")?;
-            commands::watchlist_cli::run(&backend, conn, &config, approaching.as_deref(), json)
+            commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json)
         }
 
         Some(Command::SetCash { symbol, amount }) => {

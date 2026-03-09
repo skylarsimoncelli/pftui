@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 06:15 UTC — F32 Phase 39: un-gate watchlist command from sqlite-only reads
+
+- What: migrated `watchlist_cli` to backend-dispatched price cache/history reads (`get_all_cached_prices_backend`, `get_history_backend`), removed SQLite connection argument from command signature, and dropped sqlite gating for `pftui watchlist` in `main`.
+- Why: eliminates another operator-facing sqlite-only command gate and improves postgres command parity for daily monitoring workflows.
+- Files: `src/commands/watchlist_cli.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/import/economy/eod/global/performance/scan/migrate-journal/setup/tui)
+
 ### 2026-03-09 06:03 UTC — F32 Phase 38: un-gate summary/value/export/history from sqlite-only FX reads
 
 - What: removed hard SQLite connection requirements from `summary`, `value`, `export`, and `history` command paths by switching FX-cache lookup to optional SQLite-native access when available; all four commands now run under postgres backend without `sqlite_conn_for_command` gating.
