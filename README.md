@@ -161,15 +161,15 @@ pftui config list --json           # List all config fields
 pftui config set brave_api_key <key>  # Set Brave Search API key
 ```
 
-### Your Database, Your Edge
+### Your Personal Database, Your Proprietary Edge
 
-Every `pftui refresh` pulls data from 10+ sources and writes it into your configured persistent database backend (**SQLite by default or PostgreSQL**). This isn't a cache that gets thrown away, it's a compounding dataset that grows more valuable every day you run it.
+Every `pftui refresh` pulls data from 10+ sources and writes it into your configured persistent database backend (**SQLite by default or PostgreSQL**). This is your personal market database and proprietary data collection, compounding every day you run it.
 
 **Day 1:** You get a snapshot of prices, sentiment, COT positioning, and economic data.
 **Day 30:** You have a month of cross-asset price history, weekly COT shifts, and sentiment trends.
 **Day 300:** You have a proprietary dataset, daily OHLCV across every asset class, CFTC positioning history, COMEX inventory trends, sentiment cycles, prediction market accuracy, the kind of data trading desks pay six figures for.
 
-You own this data completely. No cloud sync. No third-party accounts. Query, back up, version, or export your SQLite file (or PostgreSQL database) however you want. Build your own backtests, correlation models, and regime analysis on top of it.
+You own this data completely. No cloud sync. No third-party accounts. Query, back up, version, or export your SQLite file (or PostgreSQL database) however you want. Build your own backtests, correlation models, and regime analysis on top of a proprietary dataset that stays fully under your control.
 
 ```
 ~/.local/share/pftui/pftui.db     # SQLite, single source of truth

@@ -161,7 +161,7 @@
                         <article class="highlight-card fade-in">
                             <div class="highlight-icon">🔒</div>
                             <h3>Privacy by Design</h3>
-                            <p>Local SQLite storage and percentage-only view for safer screen sharing.</p>
+                            <p>Local-first storage with SQLite or PostgreSQL, plus percentage-only view for safer screen sharing.</p>
                         </article>
                         <article class="highlight-card fade-in">
                             <div class="highlight-icon">📡</div>
@@ -202,8 +202,8 @@
     <!-- Your Database Section -->
     <section class="your-database">
         <div class="container">
-            <h2 class="section-title">Your data. Your database. Your edge.</h2>
-            <p class="section-subtitle">Every refresh seeds a persistent local database with market data from 10+ sources (SQLite by default, PostgreSQL also supported). Over time, you build a proprietary dataset, the kind trading desks pay six figures for.</p>
+            <h2 class="section-title">Your personal database. Your proprietary edge.</h2>
+            <p class="section-subtitle">Every refresh seeds your personal market database with data from 10+ sources (SQLite or PostgreSQL). Over time, you build a proprietary data collection the kind trading desks pay six figures for, and you fully own it.</p>
             <div class="database-grid">
                 <div class="database-feature">
                     <div class="database-icon">🏦</div>
@@ -213,7 +213,7 @@
                 <div class="database-feature">
                     <div class="database-icon">🔐</div>
                     <h3>Full data sovereignty</h3>
-                    <p>No cloud sync. No third-party accounts. No data harvesting. One SQLite file at <code>~/.local/share/pftui/pftui.db</code> that you own completely. Back it up, version it, or migrate it, it's yours.</p>
+                    <p>No cloud sync. No third-party accounts. No data harvesting. Use a local SQLite file at <code>~/.local/share/pftui/pftui.db</code> or your own PostgreSQL instance. Back it up, version it, or migrate it, your data stays yours.</p>
                 </div>
                 <div class="database-feature">
                     <div class="database-icon">📐</div>
@@ -474,7 +474,7 @@
                         </tr>
                         <tr>
                             <td>Privacy</td>
-                            <td class="highlight">Local SQLite</td>
+                            <td class="highlight">Local SQLite or your Postgres</td>
                             <td>Cloud</td>
                             <td>Enterprise</td>
                             <td>Local</td>

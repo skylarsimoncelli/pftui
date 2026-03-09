@@ -43,6 +43,13 @@
 - Tests: `cargo test -q commands::setup::tests::`, `cargo test -q commands::import::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.6 Setup/backend switch validation
 
+### 2026-03-09 15:01 UTC — Docs/website messaging: dual-backend + full data ownership
+
+- What: updated README and website copy to explicitly frame SQLite and PostgreSQL as first-class options and strengthened language around pftui as your personal database + proprietary data collection you fully own.
+- Why: product messaging should match implementation parity and clearly communicate the local-first ownership model.
+- Files: `README.md`, `website/index.html`, `CHANGELOG.md`
+- Tests: content-only changes (`cargo check -q` already green from adjacent changes)
+
 ### 2026-03-09 15:01 UTC — P32.3 phase: shared Postgres runtime in core DB modules
 
 - What: replaced per-function Tokio runtime creation with the shared `pg_runtime::block_on` path in `postgres_schema`, `transactions`, `allocations`, and `allocation_targets`.
