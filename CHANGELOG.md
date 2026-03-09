@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Fix sector command: include all sector ETFs in refresh
+
+- What: sector ETFs (SECTOR_ETFS: 23 symbols including all 11 SPDR sectors + defense/specialty) are now fetched during `pftui refresh`. Previously only portfolio and watchlist symbols were fetched, leaving sector command to rely on best-effort backfill which failed silently.
+- Why: `pftui sector` was only returning XLE because other sector ETFs weren't cached. Feedback from Evening Planner across multiple reviews (Mar 5-9) reported missing data. Now all sectors are pre-fetched like economy symbols.
+- Files: `src/commands/refresh.rs` (added SECTOR_ETFS to collect_symbols)
+- Tests: all 1185 tests pass (no test changes needed)
+- TODO: Fix sector command (P1)
+
 ### 2026-03-09 — Add `pftui doctor` diagnostic command
 
 - What: new `pftui doctor` command tests DB connection, API endpoints (Yahoo, CoinGecko, Brave, FRED, Polymarket, COT, BLS), and cache freshness in sequence. Reports what's working vs broken with ✓/✗ status, clear error messages, and timing info. Essential for diagnosing connectivity issues like the Mar 9 Evening Planner hang where all commands froze.
