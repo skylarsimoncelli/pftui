@@ -1,9 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use chrono::{Duration, Utc};
-use rusqlite::Connection;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+use crate::db::backend::BackendConnection;
 use crate::db::dividends as dividends_db;
 use crate::db::price_cache;
 use crate::db::transactions;
@@ -33,11 +33,11 @@ struct DividendViewRow {
     notes: Option<String>,
 }
 
-pub fn run(conn: &Connection, action: &str, args: DividendsArgs) -> Result<()> {
+pub fn run(backend: &BackendConnection, action: &str, args: DividendsArgs) -> Result<()> {
     match action {
-        "add" => run_add(conn, &args),
-        "list" => run_list(conn, &args),
-        "remove" => run_remove(conn, &args),
+        "add" => run_add(backend, &args),
+        "list" => run_list(backend, &args),
+        "remove" => run_remove(backend, &args),
         _ => bail!(
             "Unknown dividends action '{}'. Use: add, list, remove",
             action
@@ -45,7 +45,7 @@ pub fn run(conn: &Connection, action: &str, args: DividendsArgs) -> Result<()> {
     }
 }
 
-fn run_add(conn: &Connection, args: &DividendsArgs) -> Result<()> {
+fn run_add(backend: &BackendConnection, args: &DividendsArgs) -> Result<()> {
     let symbol = args
         .value
         .as_deref()
@@ -70,8 +70,8 @@ fn run_add(conn: &Connection, args: &DividendsArgs) -> Result<()> {
         validate_date(ex_date)?;
     }
 
-    let id = dividends_db::add(
-        conn,
+    let id = dividends_db::add_backend(
+        backend,
         &dividends_db::NewDividendEntry {
             symbol: symbol.clone(),
             amount_per_share: amount,
@@ -104,13 +104,13 @@ fn run_add(conn: &Connection, args: &DividendsArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_list(conn: &Connection, args: &DividendsArgs) -> Result<()> {
+fn run_list(backend: &BackendConnection, args: &DividendsArgs) -> Result<()> {
     let symbol_filter = args
         .value
         .as_deref()
         .map(|s| s.to_uppercase())
         .filter(|s| !s.is_empty());
-    let rows = dividends_db::list(conn, symbol_filter.as_deref())?;
+    let rows = dividends_db::list_backend(backend, symbol_filter.as_deref())?;
 
     if rows.is_empty() {
         if args.json {
@@ -121,9 +121,9 @@ fn run_list(conn: &Connection, args: &DividendsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let share_map = current_shares_by_symbol(conn)?;
-    let ttm_map = trailing_12m_div_per_share(conn)?;
-    let price_map = price_cache::get_all_cached_prices(conn)?
+    let share_map = current_shares_by_symbol(backend)?;
+    let ttm_map = trailing_12m_div_per_share(backend)?;
+    let price_map = price_cache::get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|p| (p.symbol, p.price))
         .collect::<std::collections::HashMap<_, _>>();
@@ -181,7 +181,7 @@ fn run_list(conn: &Connection, args: &DividendsArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_remove(conn: &Connection, args: &DividendsArgs) -> Result<()> {
+fn run_remove(backend: &BackendConnection, args: &DividendsArgs) -> Result<()> {
     let id = args
         .value
         .as_deref()
@@ -189,7 +189,7 @@ fn run_remove(conn: &Connection, args: &DividendsArgs) -> Result<()> {
         .parse::<i64>()
         .map_err(|_| anyhow!("ID must be an integer"))?;
 
-    if !dividends_db::remove(conn, id)? {
+    if !dividends_db::remove_backend(backend, id)? {
         bail!("No dividend found with id {}", id);
     }
     if args.json {
@@ -204,9 +204,9 @@ fn run_remove(conn: &Connection, args: &DividendsArgs) -> Result<()> {
 }
 
 fn current_shares_by_symbol(
-    conn: &Connection,
+    backend: &BackendConnection,
 ) -> Result<std::collections::HashMap<String, Decimal>> {
-    let txs = transactions::list_transactions(conn)?;
+    let txs = transactions::list_transactions_backend(backend)?;
     let mut out: std::collections::HashMap<String, Decimal> = std::collections::HashMap::new();
     for tx in txs {
         let entry = out.entry(tx.symbol.to_uppercase()).or_insert(Decimal::ZERO);
@@ -219,22 +219,16 @@ fn current_shares_by_symbol(
 }
 
 fn trailing_12m_div_per_share(
-    conn: &Connection,
+    backend: &BackendConnection,
 ) -> Result<std::collections::HashMap<String, Decimal>> {
     let cutoff = (Utc::now().date_naive() - Duration::days(365))
         .format("%Y-%m-%d")
         .to_string();
-    let mut stmt =
-        conn.prepare("SELECT symbol, amount_per_share FROM dividends WHERE pay_date >= ?1")?;
-    let mut rows = stmt.query([cutoff])?;
     let mut out: std::collections::HashMap<String, Decimal> = std::collections::HashMap::new();
-    while let Some(row) = rows.next()? {
-        let symbol: String = row.get(0)?;
-        let amount: Decimal = row
-            .get::<_, String>(1)?
-            .parse::<Decimal>()
-            .unwrap_or(Decimal::ZERO);
-        *out.entry(symbol).or_insert(Decimal::ZERO) += amount;
+    for row in dividends_db::list_backend(backend, None)? {
+        if row.pay_date >= cutoff {
+            *out.entry(row.symbol).or_insert(Decimal::ZERO) += row.amount_per_share;
+        }
     }
     Ok(out)
 }

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 04:00 UTC — F32 Phase 29: backend-dispatch dividends command/data path
+
+- What: migrated `dividends` storage module to backend-dispatched CRUD with native Postgres SQL, rewired `pftui dividends` command to `BackendConnection`, and removed its SQLite-only dependency in `main`.
+- Why: closes another sqlite-only analytics workflow and improves backend feature parity for income tracking.
+- Files: `src/db/dividends.rs`, `src/commands/dividends.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics migration (partial: dividends)
+
 ### 2026-03-09 03:49 UTC — F32 Phase 28: remove SQLite blob bridge backend path
 
 - What: removed `PostgresSqliteBridge` and `pftui_sqlite_state` sync behavior from `db/backend.rs`, switched Postgres backend open to native pool+migrations only, added migration drop for legacy `pftui_sqlite_state`, and updated main dispatch to fail gracefully (non-panicking) for SQLite-only commands when postgres backend is active.

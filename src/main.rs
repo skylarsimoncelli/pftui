@@ -603,7 +603,6 @@ fn main() -> Result<()> {
             notes,
             json,
         }) => {
-            let conn = sqlite_conn_for_command(&backend, "dividends")?;
             let args = commands::dividends::DividendsArgs {
                 value,
                 amount,
@@ -613,7 +612,7 @@ fn main() -> Result<()> {
                 notes,
                 json,
             };
-            commands::dividends::run(conn, &action, args)
+            commands::dividends::run(&backend, &action, args)
         }
         Some(Command::Annotate {
             symbol,

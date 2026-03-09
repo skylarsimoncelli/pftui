@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use rust_decimal::Decimal;
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DividendEntry {
@@ -58,6 +62,14 @@ pub fn add(conn: &Connection, entry: &NewDividendEntry) -> Result<i64> {
     Ok(conn.last_insert_rowid())
 }
 
+pub fn add_backend(backend: &BackendConnection, entry: &NewDividendEntry) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add(conn, entry),
+        |pool| add_postgres(pool, entry),
+    )
+}
+
 pub fn list(conn: &Connection, symbol: Option<&str>) -> Result<Vec<DividendEntry>> {
     let mut out = Vec::new();
     if let Some(sym) = symbol {
@@ -82,9 +94,122 @@ pub fn list(conn: &Connection, symbol: Option<&str>) -> Result<Vec<DividendEntry
     Ok(out)
 }
 
+pub fn list_backend(backend: &BackendConnection, symbol: Option<&str>) -> Result<Vec<DividendEntry>> {
+    query::dispatch(
+        backend,
+        |conn| list(conn, symbol),
+        |pool| list_postgres(pool, symbol),
+    )
+}
+
 pub fn remove(conn: &Connection, id: i64) -> Result<bool> {
     let n = conn.execute("DELETE FROM dividends WHERE id = ?1", params![id])?;
     Ok(n > 0)
+}
+
+pub fn remove_backend(backend: &BackendConnection, id: i64) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| remove(conn, id),
+        |pool| remove_postgres(pool, id),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS dividends (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                amount_per_share TEXT NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                ex_date TEXT,
+                pay_date TEXT NOT NULL,
+                notes TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+type DividendRow = (i64, String, String, String, Option<String>, String, Option<String>, String);
+
+fn to_entry(r: DividendRow) -> DividendEntry {
+    DividendEntry {
+        id: r.0,
+        symbol: r.1,
+        amount_per_share: r.2.parse::<Decimal>().unwrap_or(Decimal::ZERO),
+        currency: r.3,
+        ex_date: r.4,
+        pay_date: r.5,
+        notes: r.6,
+        created_at: r.7,
+    }
+}
+
+fn add_postgres(pool: &PgPool, entry: &NewDividendEntry) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO dividends (symbol, amount_per_share, currency, ex_date, pay_date, notes)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id",
+        )
+        .bind(&entry.symbol)
+        .bind(entry.amount_per_share.to_string())
+        .bind(&entry.currency)
+        .bind(&entry.ex_date)
+        .bind(&entry.pay_date)
+        .bind(&entry.notes)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_postgres(pool: &PgPool, symbol: Option<&str>) -> Result<Vec<DividendEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<DividendRow> = runtime.block_on(async {
+        if let Some(sym) = symbol {
+            sqlx::query_as(
+                "SELECT id, symbol, amount_per_share, currency, ex_date, pay_date, notes, created_at::text
+                 FROM dividends
+                 WHERE symbol = $1
+                 ORDER BY pay_date DESC, id DESC",
+            )
+            .bind(sym.to_uppercase())
+            .fetch_all(pool)
+            .await
+        } else {
+            sqlx::query_as(
+                "SELECT id, symbol, amount_per_share, currency, ex_date, pay_date, notes, created_at::text
+                 FROM dividends
+                 ORDER BY pay_date DESC, id DESC",
+            )
+            .fetch_all(pool)
+            .await
+        }
+    })?;
+    Ok(rows.into_iter().map(to_entry).collect())
+}
+
+fn remove_postgres(pool: &PgPool, id: i64) -> Result<bool> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let result = runtime.block_on(async {
+        sqlx::query("DELETE FROM dividends WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await
+    })?;
+    Ok(result.rows_affected() > 0)
 }
 
 #[cfg(test)]
