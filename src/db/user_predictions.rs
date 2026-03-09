@@ -121,8 +121,10 @@ pub fn score_prediction(conn: &Connection, id: i64, outcome: &str, notes: Option
 }
 
 fn compute_stats(items: &[UserPrediction]) -> ConvictionStats {
-    let mut s = ConvictionStats::default();
-    s.total = items.len();
+    let mut s = ConvictionStats {
+        total: items.len(),
+        ..Default::default()
+    };
 
     for item in items {
         match item.outcome.as_str() {
