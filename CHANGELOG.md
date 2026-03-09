@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 10:20 UTC — F32 Phase 58: postgres schema parity for refresh caches
+
+- What: added missing Postgres schema tables/indexes for `calendar_events`, `cot_cache`, `sentiment_cache`, `sentiment_history`, and `bls_cache`, plus parity indexes for COMEX and existing cache tables.
+- Why: closes major schema gaps that caused postgres refresh/status paths to hit missing-table failures for several data sources.
+- Files: `src/db/postgres_schema.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh writes for COT/sentiment/calendar/BLS remain sqlite-only)
+
 ### 2026-03-09 10:06 UTC — F32 Phase 57: backend economic data write path
 
 - What: added postgres/backend-dispatched upsert API for `economic_data` and switched refresh economy ingestion to write via backend dispatch instead of sqlite-only guard.

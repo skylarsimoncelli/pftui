@@ -80,6 +80,61 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS calendar_events (
+                id BIGSERIAL PRIMARY KEY,
+                date TEXT NOT NULL,
+                name TEXT NOT NULL,
+                impact TEXT NOT NULL,
+                previous TEXT,
+                forecast TEXT,
+                event_type TEXT NOT NULL DEFAULT 'economic',
+                symbol TEXT,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (date, name)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS cot_cache (
+                cftc_code TEXT NOT NULL,
+                report_date TEXT NOT NULL,
+                open_interest BIGINT NOT NULL,
+                managed_money_long BIGINT NOT NULL,
+                managed_money_short BIGINT NOT NULL,
+                managed_money_net BIGINT NOT NULL,
+                commercial_long BIGINT NOT NULL,
+                commercial_short BIGINT NOT NULL,
+                commercial_net BIGINT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (cftc_code, report_date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS sentiment_cache (
+                index_type TEXT PRIMARY KEY,
+                value BIGINT NOT NULL,
+                classification TEXT NOT NULL,
+                timestamp BIGINT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS sentiment_history (
+                index_type TEXT NOT NULL,
+                date TEXT NOT NULL,
+                value BIGINT NOT NULL,
+                classification TEXT NOT NULL,
+                PRIMARY KEY (index_type, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS allocation_targets (
                 symbol TEXT PRIMARY KEY,
                 target_pct TEXT NOT NULL,
@@ -238,6 +293,19 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS bls_cache (
+                series_id TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                period TEXT NOT NULL,
+                value TEXT NOT NULL,
+                date TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (series_id, year, period)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS scan_queries (
                 name TEXT PRIMARY KEY,
                 filter_expr TEXT NOT NULL,
@@ -266,6 +334,21 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_worldbank_country_indicator ON worldbank_cache(country_code, indicator_code, year)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_cot_report_date ON cot_cache(report_date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sentiment_history_date ON sentiment_history(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_bls_series_date ON bls_cache(series_id, date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_comex_date ON comex_cache(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_comex_symbol ON comex_cache(symbol)")
             .execute(pool)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_date ON onchain_cache(date)")
