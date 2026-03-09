@@ -644,10 +644,8 @@ fn main() -> Result<()> {
             symbols,
             json,
         }) => {
-            let conn = sqlite_conn_for_command(&backend, "group")?;
             commands::group::run(
                 &backend,
-                conn,
                 &config,
                 &action,
                 name.as_deref(),

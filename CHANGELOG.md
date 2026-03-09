@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 04:17 UTC — F32 Phase 31: backend-dispatch groups/group-members + command path
+
+- What: migrated `db/groups.rs` to backend-dispatched CRUD/member operations with native Postgres SQL and rewired `pftui group` command to run without SQLite-only metadata queries.
+- Why: removes another operator-facing command from SQLite lock-in and reduces `sqlite_conn_for_command` gating in postgres mode.
+- Files: `src/db/groups.rs`, `src/commands/group.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics migration (partial: groups)
+
 ### 2026-03-09 04:08 UTC — F32 Phase 30: backend-dispatch annotations/annotate path
 
 - What: added backend-dispatched + native Postgres implementations for `db/annotations.rs`, migrated `pftui annotate` command to use `BackendConnection`, and removed SQLite-only dependency from annotate routing in `main`.
