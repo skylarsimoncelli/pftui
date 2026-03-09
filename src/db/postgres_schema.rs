@@ -81,6 +81,17 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS portfolio_allocations (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL,
+                allocation_pct TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS scenarios (
                 id BIGSERIAL PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,

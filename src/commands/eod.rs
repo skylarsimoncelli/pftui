@@ -9,18 +9,19 @@ use rusqlite::Connection;
 use crate::config::Config;
 use crate::data::cot::{fetch_latest_report, COT_CONTRACTS};
 use crate::data::sentiment::{fetch_crypto_fng, fetch_traditional_fng};
+use crate::db::backend::BackendConnection;
 
 /// Run the `pftui eod` command.
-pub fn run(conn: &Connection, config: &Config, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, json: bool) -> Result<()> {
     if json {
-        run_json(conn, config)
+        run_json(backend, conn, config)
     } else {
-        run_human(conn, config)
+        run_human(backend, conn, config)
     }
 }
 
 /// Human-readable output.
-fn run_human(conn: &Connection, config: &Config) -> Result<()> {
+fn run_human(backend: &BackendConnection, conn: &Connection, config: &Config) -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║                   END OF DAY SUMMARY                         ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
@@ -32,7 +33,7 @@ fn run_human(conn: &Connection, config: &Config) -> Result<()> {
 
     // 2. Movers (threshold: 3%)
     println!("┌─ TOP MOVERS ───────────────────────────────────────────────┐");
-    super::movers::run(conn, config, Some("3"), false)?;
+    super::movers::run(backend, conn, config, Some("3"), false)?;
     println!("└────────────────────────────────────────────────────────────┘\n");
 
     // 3. Macro Dashboard
@@ -49,12 +50,12 @@ fn run_human(conn: &Connection, config: &Config) -> Result<()> {
 }
 
 /// JSON output.
-fn run_json(conn: &Connection, config: &Config) -> Result<()> {
+fn run_json(backend: &BackendConnection, conn: &Connection, config: &Config) -> Result<()> {
     use serde_json::json;
 
     // Fetch all components
     let brief_output = capture_json_output(|| super::brief::run(conn, config, false, true))?;
-    let movers_output = capture_json_output(|| super::movers::run(conn, config, Some("3"), true))?;
+    let movers_output = capture_json_output(|| super::movers::run(backend, conn, config, Some("3"), true))?;
     let macro_output = capture_json_output(|| super::macro_cmd::run(conn, config, true))?;
     let sentiment_output = capture_json_output(|| super::sentiment::run(None, None, true))?;
 
