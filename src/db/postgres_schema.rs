@@ -17,9 +17,9 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS price_cache (
                 symbol TEXT NOT NULL,
-                price TEXT NOT NULL,
+                price NUMERIC NOT NULL,
                 currency TEXT NOT NULL DEFAULT 'USD',
-                fetched_at TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL,
                 source TEXT NOT NULL,
                 PRIMARY KEY (symbol, currency)
             )",
@@ -41,8 +41,8 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 symbol TEXT NOT NULL,
                 category TEXT NOT NULL,
                 tx_type TEXT NOT NULL,
-                quantity TEXT NOT NULL,
-                price_per TEXT NOT NULL,
+                quantity NUMERIC NOT NULL,
+                price_per NUMERIC NOT NULL,
                 currency TEXT NOT NULL DEFAULT 'USD',
                 date TEXT NOT NULL,
                 notes TEXT,
@@ -137,8 +137,8 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS allocation_targets (
                 symbol TEXT PRIMARY KEY,
-                target_pct TEXT NOT NULL,
-                drift_band_pct TEXT NOT NULL,
+                target_pct NUMERIC NOT NULL,
+                drift_band_pct NUMERIC NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
@@ -149,7 +149,7 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 id BIGSERIAL PRIMARY KEY,
                 symbol TEXT NOT NULL UNIQUE,
                 category TEXT NOT NULL,
-                allocation_pct TEXT NOT NULL,
+                allocation_pct NUMERIC NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
@@ -366,6 +366,65 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
         sqlx::query("INSERT INTO pftui_migrations (version) VALUES (2) ON CONFLICT DO NOTHING")
+            .execute(pool)
+            .await?;
+        // v3: migrate hot-path numeric/time columns from legacy TEXT types.
+        sqlx::query(
+            "ALTER TABLE price_cache
+               ALTER COLUMN price TYPE NUMERIC
+               USING CASE
+                    WHEN TRIM(price::TEXT) = '' THEN NULL
+                    ELSE price::NUMERIC
+               END,
+               ALTER COLUMN fetched_at TYPE TIMESTAMPTZ
+               USING COALESCE(
+                    NULLIF(TRIM(fetched_at::TEXT), '')::TIMESTAMPTZ,
+                    NOW()
+               )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE transactions
+               ALTER COLUMN quantity TYPE NUMERIC
+               USING CASE
+                    WHEN TRIM(quantity::TEXT) = '' THEN NULL
+                    ELSE quantity::NUMERIC
+               END,
+               ALTER COLUMN price_per TYPE NUMERIC
+               USING CASE
+                    WHEN TRIM(price_per::TEXT) = '' THEN NULL
+                    ELSE price_per::NUMERIC
+               END",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE portfolio_allocations
+               ALTER COLUMN allocation_pct TYPE NUMERIC
+               USING CASE
+                    WHEN TRIM(allocation_pct::TEXT) = '' THEN NULL
+                    ELSE allocation_pct::NUMERIC
+               END",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE allocation_targets
+               ALTER COLUMN target_pct TYPE NUMERIC
+               USING CASE
+                    WHEN TRIM(target_pct::TEXT) = '' THEN NULL
+                    ELSE target_pct::NUMERIC
+               END,
+               ALTER COLUMN drift_band_pct TYPE NUMERIC
+               USING CASE
+                    WHEN TRIM(drift_band_pct::TEXT) = '' THEN NULL
+                    ELSE drift_band_pct::NUMERIC
+               END",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("INSERT INTO pftui_migrations (version) VALUES (3) ON CONFLICT DO NOTHING")
             .execute(pool)
             .await?;
         Ok::<(), sqlx::Error>(())

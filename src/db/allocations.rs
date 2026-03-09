@@ -126,7 +126,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 id BIGSERIAL PRIMARY KEY,
                 symbol TEXT NOT NULL UNIQUE,
                 category TEXT NOT NULL,
-                allocation_pct TEXT NOT NULL,
+                allocation_pct NUMERIC NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
@@ -157,9 +157,9 @@ fn list_allocations_postgres(pool: &PgPool) -> Result<Vec<Allocation>> {
     let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<AllocationRow> = runtime.block_on(async {
         sqlx::query_as(
-            "SELECT id, symbol, category, allocation_pct, created_at::text
+            "SELECT id, symbol, category, allocation_pct::TEXT, created_at::text
              FROM portfolio_allocations
-             ORDER BY allocation_pct::numeric DESC",
+             ORDER BY allocation_pct DESC",
         )
         .fetch_all(pool)
         .await
@@ -178,7 +178,7 @@ fn insert_allocation_postgres(
     let id: i64 = runtime.block_on(async {
         sqlx::query_scalar(
             "INSERT INTO portfolio_allocations (symbol, category, allocation_pct)
-             VALUES ($1, $2, $3)
+             VALUES ($1, $2, $3::NUMERIC)
              ON CONFLICT(symbol) DO UPDATE SET
                category = EXCLUDED.category,
                allocation_pct = EXCLUDED.allocation_pct

@@ -119,8 +119,8 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS allocation_targets (
                 symbol TEXT PRIMARY KEY,
-                target_pct TEXT NOT NULL,
-                drift_band_pct TEXT NOT NULL,
+                target_pct NUMERIC NOT NULL,
+                drift_band_pct NUMERIC NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
@@ -142,7 +142,7 @@ fn set_target_postgres(
     runtime.block_on(async {
         sqlx::query(
             "INSERT INTO allocation_targets (symbol, target_pct, drift_band_pct, updated_at)
-             VALUES ($1, $2, $3, NOW())
+             VALUES ($1, $2::NUMERIC, $3::NUMERIC, NOW())
              ON CONFLICT(symbol) DO UPDATE SET
                 target_pct = EXCLUDED.target_pct,
                 drift_band_pct = EXCLUDED.drift_band_pct,
@@ -164,7 +164,7 @@ fn get_target_postgres(pool: &PgPool, symbol: &str) -> Result<Option<AllocationT
     let runtime = tokio::runtime::Runtime::new()?;
     let row: Option<(String, String, String, String)> = runtime.block_on(async {
         sqlx::query_as(
-            "SELECT symbol, target_pct, drift_band_pct, updated_at::text
+            "SELECT symbol, target_pct::TEXT, drift_band_pct::TEXT, updated_at::text
              FROM allocation_targets
              WHERE symbol = $1",
         )
@@ -185,7 +185,7 @@ fn list_targets_postgres(pool: &PgPool) -> Result<Vec<AllocationTarget>> {
     let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<(String, String, String, String)> = runtime.block_on(async {
         sqlx::query_as(
-            "SELECT symbol, target_pct, drift_band_pct, updated_at::text
+            "SELECT symbol, target_pct::TEXT, drift_band_pct::TEXT, updated_at::text
              FROM allocation_targets
              ORDER BY symbol",
         )

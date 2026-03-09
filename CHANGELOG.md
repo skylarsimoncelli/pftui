@@ -43,6 +43,14 @@
 - Tests: `cargo test -q commands::setup::tests::`, `cargo test -q commands::import::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.6 Setup/backend switch validation
 
+### 2026-03-09 15:01 UTC — P32.4: migrate hot-path Postgres numeric/time columns
+
+- What: upgraded Postgres schema/types for hot-path columns (`price_cache.price/fetched_at`, `transactions.quantity/price_per`, `portfolio_allocations.allocation_pct`, `allocation_targets.target_pct/drift_band_pct`) and added migration v3 to cast legacy TEXT values safely. Updated affected Postgres query paths to cast numeric/timestamp fields to text when reading and use explicit numeric/timestamptz casts when writing.
+- Why: removes string-typed arithmetic/timestamp fields from performance-sensitive paths and improves correctness/performance on Postgres while preserving backward compatibility for existing deployments.
+- Files: `src/db/postgres_schema.rs`, `src/db/price_cache.rs`, `src/db/transactions.rs`, `src/db/allocations.rs`, `src/db/allocation_targets.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, targeted db tests (`price_cache`, `transactions`, `allocations`, `allocation_targets`), `cargo test -q` (1193 passed)
+- TODO: P32.4 Postgres schema type upgrades
+
 ### 2026-03-09 15:01 UTC — P32.5: Postgres pooling config knobs
 
 - What: added configurable Postgres connection pool settings in config (`postgres_max_connections`, `postgres_connect_timeout_secs`) with defaults, CLI config get/list/set support, backend wiring in SQLx pool options, and App config propagation for backend opens.

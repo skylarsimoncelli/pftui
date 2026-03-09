@@ -185,8 +185,8 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 symbol TEXT NOT NULL,
                 category TEXT NOT NULL,
                 tx_type TEXT NOT NULL,
-                quantity TEXT NOT NULL,
-                price_per TEXT NOT NULL,
+                quantity NUMERIC NOT NULL,
+                price_per NUMERIC NOT NULL,
                 currency TEXT NOT NULL DEFAULT 'USD',
                 date TEXT NOT NULL,
                 notes TEXT,
@@ -206,7 +206,7 @@ fn insert_transaction_postgres(pool: &PgPool, tx: &NewTransaction) -> Result<i64
     let id: i64 = runtime.block_on(async {
         sqlx::query_scalar(
             "INSERT INTO transactions (symbol, category, tx_type, quantity, price_per, currency, date, notes)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             VALUES ($1, $2, $3, $4::NUMERIC, $5::NUMERIC, $6, $7, $8)
              RETURNING id",
         )
         .bind(&tx.symbol)
@@ -241,7 +241,7 @@ fn update_transaction_postgres(pool: &PgPool, id: i64, tx: &NewTransaction) -> R
     let rows = runtime.block_on(async {
         sqlx::query(
             "UPDATE transactions
-             SET symbol = $1, category = $2, tx_type = $3, quantity = $4, price_per = $5, currency = $6, date = $7, notes = $8
+             SET symbol = $1, category = $2, tx_type = $3, quantity = $4::NUMERIC, price_per = $5::NUMERIC, currency = $6, date = $7, notes = $8
              WHERE id = $9",
         )
         .bind(&tx.symbol)
@@ -292,7 +292,7 @@ fn list_transactions_postgres(pool: &PgPool) -> Result<Vec<Transaction>> {
     let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<TxRow> = runtime.block_on(async {
         sqlx::query_as(
-            "SELECT id, symbol, category, tx_type, quantity, price_per, currency, date, notes, created_at::text
+            "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
              FROM transactions
              ORDER BY date ASC, id ASC",
         )
@@ -307,7 +307,7 @@ fn get_transaction_postgres(pool: &PgPool, id: i64) -> Result<Option<Transaction
     let runtime = tokio::runtime::Runtime::new()?;
     let row: Option<TxRow> = runtime.block_on(async {
         sqlx::query_as(
-            "SELECT id, symbol, category, tx_type, quantity, price_per, currency, date, notes, created_at::text
+            "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
              FROM transactions
              WHERE id = $1",
         )

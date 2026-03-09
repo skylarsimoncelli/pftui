@@ -103,9 +103,9 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS price_cache (
                 symbol TEXT NOT NULL,
-                price TEXT NOT NULL,
+                price NUMERIC NOT NULL,
                 currency TEXT NOT NULL DEFAULT 'USD',
-                fetched_at TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL,
                 source TEXT NOT NULL,
                 PRIMARY KEY (symbol, currency)
             )",
@@ -136,7 +136,7 @@ fn get_cached_price_postgres(pool: &PgPool, symbol: &str, currency: &str) -> Res
     ensure_tables_postgres(pool)?;
     let row: Option<PriceCacheRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT symbol, price, currency, fetched_at, source
+            "SELECT symbol, price::TEXT, currency, fetched_at::TEXT, source
              FROM price_cache
              WHERE symbol = $1 AND currency = $2",
         )
@@ -153,7 +153,7 @@ fn upsert_price_postgres(pool: &PgPool, quote: &PriceQuote) -> Result<()> {
     crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO price_cache (symbol, price, currency, fetched_at, source)
-             VALUES ($1, $2, $3, $4, $5)
+             VALUES ($1, $2::NUMERIC, $3, $4::TIMESTAMPTZ, $5)
              ON CONFLICT (symbol, currency)
              DO UPDATE SET
                 price = EXCLUDED.price,
@@ -175,7 +175,9 @@ fn upsert_price_postgres(pool: &PgPool, quote: &PriceQuote) -> Result<()> {
 fn get_all_cached_prices_postgres(pool: &PgPool) -> Result<Vec<PriceQuote>> {
     ensure_tables_postgres(pool)?;
     let rows: Vec<PriceCacheRow> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as("SELECT symbol, price, currency, fetched_at, source FROM price_cache")
+        sqlx::query_as(
+            "SELECT symbol, price::TEXT, currency, fetched_at::TEXT, source FROM price_cache",
+        )
             .fetch_all(pool)
             .await
     })?;
