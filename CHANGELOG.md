@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:47 UTC — F32 Phase 22: backend-dispatch correlations command reads
+
+- What: migrated `correlations` command runtime data reads to backend-dispatched symbol discovery and history retrieval; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only data reads from rolling-correlation analytics in Postgres mode.
+- Files: `src/commands/correlations.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics command-path migration (partial: correlations path)
+
 ### 2026-03-09 01:43 UTC — F32 Phase 21: backend-dispatch stress-test reads
 
 - What: migrated `stress-test` scenario command to backend-dispatched reads for prices, transactions, and allocations; updated main routing to pass `BackendConnection`.

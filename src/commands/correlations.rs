@@ -3,9 +3,10 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::db::allocations::get_unique_allocation_symbols;
-use crate::db::price_history::get_history;
-use crate::db::transactions::get_unique_symbols;
+use crate::db::allocations::get_unique_allocation_symbols_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_history::get_history_backend;
+use crate::db::transactions::get_unique_symbols_backend;
 use crate::indicators::correlation::compute_rolling_correlation;
 use crate::models::asset::AssetCategory;
 
@@ -23,12 +24,18 @@ struct PairCorrelation {
     break_delta: Option<f64>,
 }
 
-pub fn run(conn: &Connection, window: usize, limit: usize, json: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    _conn: &Connection,
+    window: usize,
+    limit: usize,
+    json: bool,
+) -> Result<()> {
     if !WINDOWS.contains(&window) {
         anyhow::bail!("Invalid --window '{}'. Use 7, 30, or 90.", window);
     }
 
-    let held = collect_held_symbols(conn);
+    let held = collect_held_symbols(backend);
     if held.is_empty() {
         println!("No held symbols found. Add positions first.");
         return Ok(());
@@ -42,7 +49,7 @@ pub fn run(conn: &Connection, window: usize, limit: usize, json: bool) -> Result
     let history_limit = 180u32;
     let mut series_map: HashMap<String, Vec<f64>> = HashMap::new();
     for symbol in &candidates {
-        if let Some((resolved, closes)) = load_closes_with_fallback(conn, symbol, history_limit) {
+        if let Some((resolved, closes)) = load_closes_with_fallback(backend, symbol, history_limit) {
             if closes.len() >= 91 {
                 series_map.entry(symbol.clone()).or_insert(closes.clone());
                 series_map.entry(resolved).or_insert(closes);
@@ -150,16 +157,16 @@ pub fn run(conn: &Connection, window: usize, limit: usize, json: bool) -> Result
     Ok(())
 }
 
-fn collect_held_symbols(conn: &Connection) -> HashSet<String> {
+fn collect_held_symbols(backend: &BackendConnection) -> HashSet<String> {
     let mut held = HashSet::new();
-    if let Ok(rows) = get_unique_symbols(conn) {
+    if let Ok(rows) = get_unique_symbols_backend(backend) {
         for (sym, cat) in rows {
             if cat != AssetCategory::Cash {
                 held.insert(sym);
             }
         }
     }
-    if let Ok(rows) = get_unique_allocation_symbols(conn) {
+    if let Ok(rows) = get_unique_allocation_symbols_backend(backend) {
         for (sym, cat) in rows {
             if cat != AssetCategory::Cash {
                 held.insert(sym);
@@ -170,23 +177,23 @@ fn collect_held_symbols(conn: &Connection) -> HashSet<String> {
 }
 
 fn load_closes_with_fallback(
-    conn: &Connection,
+    backend: &BackendConnection,
     symbol: &str,
     limit: u32,
 ) -> Option<(String, Vec<f64>)> {
-    if let Some(closes) = load_closes(conn, symbol, limit) {
+    if let Some(closes) = load_closes(backend, symbol, limit) {
         return Some((symbol.to_string(), closes));
     }
 
     // Common crypto fallback: BTC <-> BTC-USD
     if symbol.ends_with("-USD") {
         let stripped = symbol.trim_end_matches("-USD");
-        if let Some(closes) = load_closes(conn, stripped, limit) {
+        if let Some(closes) = load_closes(backend, stripped, limit) {
             return Some((stripped.to_string(), closes));
         }
     } else {
         let usd = format!("{}-USD", symbol);
-        if let Some(closes) = load_closes(conn, &usd, limit) {
+        if let Some(closes) = load_closes(backend, &usd, limit) {
             return Some((usd, closes));
         }
     }
@@ -194,8 +201,8 @@ fn load_closes_with_fallback(
     None
 }
 
-fn load_closes(conn: &Connection, symbol: &str, limit: u32) -> Option<Vec<f64>> {
-    let history = get_history(conn, symbol, limit).ok()?;
+fn load_closes(backend: &BackendConnection, symbol: &str, limit: u32) -> Option<Vec<f64>> {
+    let history = get_history_backend(backend, symbol, limit).ok()?;
     let closes: Vec<f64> = history
         .into_iter()
         .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
