@@ -334,7 +334,7 @@ fn list_entries_postgres(
         .await
     })?;
     if let Some(s) = since {
-        rows.retain(|r| r.1 >= s.to_string());
+        rows.retain(|r| r.1.as_str() >= s);
     }
     if let Some(a) = asset {
         rows.retain(|r| r.3.as_deref().is_some_and(|v| v == a));

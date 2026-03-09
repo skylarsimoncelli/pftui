@@ -604,6 +604,7 @@ type ParallelRow = (
 );
 type LogRow = (i64, String, String, Option<String>, Option<String>, String);
 
+#[allow(clippy::too_many_arguments)]
 fn set_metric_postgres(
     pool: &PgPool,
     country: &str,

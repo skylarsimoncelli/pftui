@@ -222,6 +222,12 @@ fn main() -> Result<()> {
         Some(Command::DbInfo { json }) => {
             commands::db_info::run(&backend, &db_path, config.database_url.as_deref(), json)
         }
+        Some(Command::Doctor { json }) => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(async {
+                commands::doctor::run(json).await
+            })
+        }
         Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => {
             commands::value::run(&backend, &config, json)

@@ -262,7 +262,7 @@ fn search_notes_postgres(
         .await
     })?;
     if let Some(s) = since {
-        rows.retain(|r| r.1 >= s.to_string());
+        rows.retain(|r| r.1.as_str() >= s);
     }
     if let Some(n) = limit {
         rows.truncate(n);

@@ -325,7 +325,7 @@ fn list_messages_postgres(
                 rows.retain(|r| r.7 == 0);
             }
             if let Some(s) = since {
-                rows.retain(|r| r.8 >= s.to_string());
+                rows.retain(|r| r.8.as_str() >= s);
             }
             if let Some(n) = limit {
                 rows.truncate(n);

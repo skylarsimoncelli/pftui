@@ -128,6 +128,13 @@ pub enum Command {
         json: bool,
     },
 
+    /// Run system diagnostics: test DB connection, API endpoints, and cache freshness
+    Doctor {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// View and update pftui configuration fields
     Config {
         /// Action: list, get, set
