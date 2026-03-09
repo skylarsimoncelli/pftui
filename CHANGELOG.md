@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Cleanup TODO backlog after F32/P32 completion
+
+- What: replaced stale unchecked F32 migration checklist with an archived-complete summary and canonical parity references (`docs/BACKEND-PARITY.md`, `docs/MIGRATING.md`, `scripts/parity_check.sh`, CI parity job); refreshed feedback priority statuses to reflect shipped fixes.
+- Why: the old TODO section still implied major Postgres gaps that were already completed, creating backlog noise and incorrect project status.
+- Files: `TODO.md`
+- Tests: docs/taskboard-only change
+- TODO: backlog hygiene / status accuracy
+
 ### 2026-03-09 — Make oil technicals reliable in macro dashboard
 
 - What: added on-demand oil history backfill in `pftui macro` for `CL=F` and `BZ=F` before technical calculations, using cached-history sufficiency checks and honoring `--cached-only`.
