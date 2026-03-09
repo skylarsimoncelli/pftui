@@ -91,6 +91,14 @@
 - Tests: `cargo check -q`, `cargo test -q db::comex_cache::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.7 Runtime cleanup completion
 
+### 2026-03-09 — P32 completion: runtime cleanup finalization + CI acceptance parity
+
+- What: completed runtime strategy cleanup across all DB Postgres paths by removing per-function Tokio runtime construction in `src/db` and standardizing on shared `pg_runtime::block_on`. Expanded Postgres CI suite to also run `scripts/parity_check.sh` (sqlite vs postgres normalized output diff) after building `target/debug/pftui`.
+- Why: closes the remaining P32 parity-hardening gap: lower runtime overhead, stronger regression detection, and a reproducible acceptance signal in CI.
+- Files: `src/db/*.rs` (remaining runtime-cleanup modules), `src/db/backend.rs`, `.github/workflows/ci.yml`, `TODO.md`
+- Tests: `cargo check -q`, `cargo test -q` (1193 passed). CI now runs Postgres smoke, backend-switch tests, setup tests, and parity acceptance script.
+- TODO: P32 complete
+
 ### 2026-03-09 — Implement structural cycles CLI (F31.11)
 
 - What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.

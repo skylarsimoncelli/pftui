@@ -219,8 +219,7 @@ fn from_pg_row(r: AgentMsgRow) -> AgentMessage {
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS agent_messages (
                 id BIGSERIAL PRIMARY KEY,
@@ -259,8 +258,7 @@ fn send_message_postgres(
     layer: Option<&str>,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO agent_messages (from_agent, to_agent, priority, content, category, layer)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -287,9 +285,8 @@ fn list_messages_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<AgentMessage>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<AgentMsgRow> = match (to, layer, unacked_only, since, limit) {
-        (Some(t), Some(l), true, Some(s), Some(n)) => runtime.block_on(async {
+        (Some(t), Some(l), true, Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
                  FROM agent_messages
@@ -306,7 +303,7 @@ fn list_messages_postgres(
         })?,
         _ => {
             // Simpler incremental filtering for maintainability.
-            let mut rows: Vec<AgentMsgRow> = runtime.block_on(async {
+            let mut rows: Vec<AgentMsgRow> = crate::db::pg_runtime::block_on(async {
                 sqlx::query_as(
                     "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
                      FROM agent_messages
@@ -338,8 +335,7 @@ fn list_messages_postgres(
 
 fn acknowledge_postgres(pool: &PgPool, id: i64) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE agent_messages
              SET acknowledged = 1, acknowledged_at = NOW()
@@ -355,8 +351,7 @@ fn acknowledge_postgres(pool: &PgPool, id: i64) -> Result<()> {
 
 fn acknowledge_all_postgres(pool: &PgPool, to: &str) -> Result<usize> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE agent_messages
              SET acknowledged = 1, acknowledged_at = NOW()
@@ -371,8 +366,7 @@ fn acknowledge_all_postgres(pool: &PgPool, to: &str) -> Result<usize> {
 
 fn purge_old_postgres(pool: &PgPool, days: usize) -> Result<usize> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "DELETE FROM agent_messages
              WHERE acknowledged = 1

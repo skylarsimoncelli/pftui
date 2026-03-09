@@ -209,8 +209,7 @@ fn from_pg_row(r: QuestionRow) -> ResearchQuestion {
 
 #[allow(dead_code)]
 fn add_question_postgres(pool: &PgPool, question: &str, key_signal: Option<&str>) -> Result<i64> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO research_questions (question, key_signal)
              VALUES ($1, $2)
@@ -225,9 +224,8 @@ fn add_question_postgres(pool: &PgPool, question: &str, key_signal: Option<&str>
 }
 
 fn list_questions_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result<Vec<ResearchQuestion>> {
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<QuestionRow> = if let Some(status) = status_filter {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, question, evidence_tilt, key_signal, evidence, first_raised, last_updated::text, status, resolution
                  FROM research_questions
@@ -239,7 +237,7 @@ fn list_questions_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result
             .await
         })?
     } else {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, question, evidence_tilt, key_signal, evidence, first_raised, last_updated::text, status, resolution
                  FROM research_questions
@@ -263,8 +261,7 @@ fn update_question_postgres(
     if tilt.is_none() && evidence.is_none() && key_signal.is_none() {
         return Ok(());
     }
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         if let Some(v) = tilt {
             sqlx::query(
                 "UPDATE research_questions SET evidence_tilt = $1, last_updated = NOW() WHERE id = $2",
@@ -305,8 +302,7 @@ fn update_question_postgres(
 
 #[allow(dead_code)]
 fn resolve_question_postgres(pool: &PgPool, id: i64, resolution: &str, status: &str) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE research_questions
              SET status = $1, resolution = $2, last_updated = NOW()

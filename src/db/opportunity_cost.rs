@@ -249,8 +249,7 @@ fn from_pg_row(r: OpportunityRow) -> OpportunityCostEntry {
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS opportunity_cost (
                 id BIGSERIAL PRIMARY KEY,
@@ -293,8 +292,7 @@ fn add_entry_postgres(
     notes: Option<&str>,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO opportunity_cost
              (date, event, asset, missed_gain_pct, missed_gain_usd, avoided_loss_pct, avoided_loss_usd, was_rational, notes)
@@ -323,8 +321,7 @@ fn list_entries_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<OpportunityCostEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let mut rows: Vec<OpportunityRow> = runtime.block_on(async {
+    let mut rows: Vec<OpportunityRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, event, asset, missed_gain_pct, missed_gain_usd, avoided_loss_pct, avoided_loss_usd, was_rational, notes, created_at::text
              FROM opportunity_cost

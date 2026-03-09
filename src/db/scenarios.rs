@@ -490,8 +490,7 @@ pub fn get_history_backend(
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS scenarios (
                 id BIGSERIAL PRIMARY KEY,
@@ -553,8 +552,7 @@ fn add_scenario_postgres(
     precedent: Option<&str>,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO scenarios (name, probability, description, asset_impact, triggers, historical_precedent)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -574,10 +572,9 @@ fn add_scenario_postgres(
 
 fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result<Vec<Scenario>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<ScenarioRow> =
         if let Some(status) = status_filter {
-            runtime.block_on(async {
+            crate::db::pg_runtime::block_on(async {
                 sqlx::query_as(
                     "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
                      FROM scenarios
@@ -589,7 +586,7 @@ fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result
                 .await
             })?
         } else {
-            runtime.block_on(async {
+            crate::db::pg_runtime::block_on(async {
                 sqlx::query_as(
                     "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
                      FROM scenarios
@@ -619,9 +616,8 @@ fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result
 
 fn get_scenario_by_name_postgres(pool: &PgPool, name: &str) -> Result<Option<Scenario>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
     let row: Option<ScenarioRow> =
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
                  FROM scenarios
@@ -652,8 +648,7 @@ fn update_scenario_probability_postgres(
     driver: Option<&str>,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO scenario_history (scenario_id, probability, driver)
              SELECT id, probability, $1 FROM scenarios WHERE id = $2",
@@ -681,8 +676,7 @@ fn update_scenario_postgres(
     status: Option<&str>,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE scenarios
              SET description = COALESCE($1, description),
@@ -706,8 +700,7 @@ fn update_scenario_postgres(
 
 fn remove_scenario_postgres(pool: &PgPool, id: i64) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM scenarios WHERE id = $1")
             .bind(id)
             .execute(pool)
@@ -726,8 +719,7 @@ fn add_signal_postgres(
     source: Option<&str>,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO scenario_signals (scenario_id, signal, status, evidence, source)
              VALUES ($1, $2, $3, $4, $5)
@@ -750,10 +742,9 @@ fn list_signals_postgres(
     status_filter: Option<&str>,
 ) -> Result<Vec<ScenarioSignal>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<ScenarioSignalRow> =
         if let Some(status) = status_filter {
-            runtime.block_on(async {
+            crate::db::pg_runtime::block_on(async {
                 sqlx::query_as(
                     "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
                      FROM scenario_signals
@@ -766,7 +757,7 @@ fn list_signals_postgres(
                 .await
             })?
         } else {
-            runtime.block_on(async {
+            crate::db::pg_runtime::block_on(async {
                 sqlx::query_as(
                     "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
                      FROM scenario_signals
@@ -799,8 +790,7 @@ fn update_signal_postgres(
     evidence: Option<&str>,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE scenario_signals
              SET status = COALESCE($1, status),
@@ -820,8 +810,7 @@ fn update_signal_postgres(
 
 fn remove_signal_postgres(pool: &PgPool, signal_id: i64) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM scenario_signals WHERE id = $1")
             .bind(signal_id)
             .execute(pool)
@@ -837,9 +826,8 @@ fn get_history_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<ScenarioHistoryEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<(i64, i64, f64, Option<String>, String)> = if let Some(limit) = limit {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, scenario_id, probability, driver, recorded_at::text
                  FROM scenario_history
@@ -853,7 +841,7 @@ fn get_history_postgres(
             .await
         })?
     } else {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, scenario_id, probability, driver, recorded_at::text
                  FROM scenario_history

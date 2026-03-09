@@ -134,3 +134,11 @@ jobs:
 
       - name: Run setup backend selection tests
         run: cargo test -q commands::setup::tests::
+
+      - name: Build pftui binary for parity script
+        run: cargo build -q
+
+      - name: Run sqlite vs postgres parity acceptance script
+        env:
+          PFTUI_BIN: target/debug/pftui
+        run: scripts/parity_check.sh

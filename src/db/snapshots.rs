@@ -263,8 +263,7 @@ pub fn get_all_portfolio_snapshots_backend(backend: &BackendConnection) -> Resul
 }
 
 fn get_all_portfolio_snapshots_postgres(pool: &PgPool) -> Result<Vec<PortfolioSnapshot>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query_as::<_, (String, String, String, String, String)>(
             "SELECT date, total_value, cash_value, invested_value, snapshot_at
              FROM portfolio_snapshots
@@ -295,8 +294,7 @@ fn upsert_portfolio_snapshot_postgres(
     cash_value: Decimal,
     invested_value: Decimal,
 ) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO portfolio_snapshots (date, total_value, cash_value, invested_value)
              VALUES ($1, $2, $3, $4)
@@ -325,8 +323,7 @@ fn upsert_position_snapshot_postgres(
     price: Decimal,
     value: Decimal,
 ) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO position_snapshots (date, symbol, quantity, price, value)
              VALUES ($1, $2, $3, $4, $5)

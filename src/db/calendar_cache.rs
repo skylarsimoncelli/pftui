@@ -189,8 +189,7 @@ fn upsert_event_postgres(
     event_type: &str,
     symbol: Option<&str>,
 ) -> Result<i64> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id = runtime.block_on(async {
+    let id = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO calendar_events (date, name, impact, previous, forecast, event_type, symbol)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -215,8 +214,7 @@ fn upsert_event_postgres(
 }
 
 fn get_upcoming_events_postgres(pool: &PgPool, from_date: &str, limit: usize) -> Result<Vec<CalendarEvent>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<CalendarRow> = runtime.block_on(async {
+    let rows: Vec<CalendarRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, name, impact, previous, forecast, event_type, symbol, fetched_at::text
              FROM calendar_events
@@ -251,8 +249,7 @@ fn get_events_by_impact_postgres(
     impact: &str,
     limit: usize,
 ) -> Result<Vec<CalendarEvent>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<CalendarRow> = runtime.block_on(async {
+    let rows: Vec<CalendarRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, name, impact, previous, forecast, event_type, symbol, fetched_at::text
              FROM calendar_events
@@ -283,8 +280,7 @@ fn get_events_by_impact_postgres(
 }
 
 fn delete_old_events_postgres(pool: &PgPool, before_date: &str) -> Result<usize> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let deleted = runtime.block_on(async {
+    let deleted = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM calendar_events WHERE date < $1")
             .bind(before_date)
             .execute(pool)

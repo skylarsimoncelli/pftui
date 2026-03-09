@@ -178,8 +178,7 @@ fn store_snapshot_postgres(
     correlation: f64,
     period: &str,
 ) -> Result<i64> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period)
              VALUES ($1, $2, $3, $4)
@@ -197,9 +196,8 @@ fn store_snapshot_postgres(
 
 #[allow(dead_code)]
 fn list_current_postgres(pool: &PgPool, period: Option<&str>) -> Result<Vec<CorrelationSnapshot>> {
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<CorrelationRow> = if let Some(p) = period {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT DISTINCT ON (symbol_a, symbol_b, period)
                     id, symbol_a, symbol_b, correlation, period, recorded_at::text
@@ -212,7 +210,7 @@ fn list_current_postgres(pool: &PgPool, period: Option<&str>) -> Result<Vec<Corr
             .await
         })?
     } else {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT DISTINCT ON (symbol_a, symbol_b, period)
                     id, symbol_a, symbol_b, correlation, period, recorded_at::text
@@ -240,9 +238,8 @@ fn get_history_postgres(
     period: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<CorrelationSnapshot>> {
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<CorrelationRow> = match (period, limit) {
-        (Some(p), Some(n)) => runtime.block_on(async {
+        (Some(p), Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
                  FROM correlation_snapshots
@@ -257,7 +254,7 @@ fn get_history_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (Some(p), None) => runtime.block_on(async {
+        (Some(p), None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
                  FROM correlation_snapshots
@@ -270,7 +267,7 @@ fn get_history_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, Some(n)) => runtime.block_on(async {
+        (None, Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
                  FROM correlation_snapshots
@@ -284,7 +281,7 @@ fn get_history_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, None) => runtime.block_on(async {
+        (None, None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
                  FROM correlation_snapshots

@@ -202,8 +202,7 @@ pub fn get_changes_backend(backend: &BackendConnection, days: usize) -> Result<V
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS convictions (
                 id BIGSERIAL PRIMARY KEY,
@@ -242,8 +241,7 @@ fn set_conviction_postgres(
         anyhow::bail!("Score must be between -5 and +5, got {}", score);
     }
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO convictions (symbol, score, notes)
              VALUES ($1, $2, $3)
@@ -260,8 +258,7 @@ fn set_conviction_postgres(
 
 fn list_current_postgres(pool: &PgPool) -> Result<Vec<ConvictionEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<ConvictionRow> = runtime.block_on(async {
+    let rows: Vec<ConvictionRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "WITH latest AS (
                  SELECT symbol, MAX(id) AS max_id
@@ -285,8 +282,7 @@ fn get_history_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<ConvictionEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<ConvictionRow> = runtime.block_on(async {
+    let rows: Vec<ConvictionRow> = crate::db::pg_runtime::block_on(async {
         if let Some(limit) = limit {
             sqlx::query_as(
                 "SELECT id, symbol, score, notes, recorded_at::text
@@ -318,8 +314,7 @@ type ConvictionChangeRow = (String, i32, i32, String, String, i32);
 
 fn get_changes_postgres(pool: &PgPool, days: usize) -> Result<Vec<ConvictionChange>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<ConvictionChangeRow> = runtime.block_on(async {
+    let rows: Vec<ConvictionChangeRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "WITH recent AS (
                  SELECT id, symbol, score, recorded_at

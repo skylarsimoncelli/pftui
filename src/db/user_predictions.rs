@@ -314,8 +314,7 @@ fn add_prediction_postgres(
     conviction: Option<&str>,
     target_date: Option<&str>,
 ) -> Result<i64> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO user_predictions (claim, symbol, conviction, target_date)
              VALUES ($1, $2, $3, $4)
@@ -337,9 +336,8 @@ fn list_predictions_postgres(
     symbol: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<UserPrediction>> {
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<PredictionRow> = match (outcome_filter, symbol, limit) {
-        (Some(o), Some(s), Some(n)) => runtime.block_on(async {
+        (Some(o), Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -353,7 +351,7 @@ fn list_predictions_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (Some(o), Some(s), None) => runtime.block_on(async {
+        (Some(o), Some(s), None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -365,7 +363,7 @@ fn list_predictions_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (Some(o), None, Some(n)) => runtime.block_on(async {
+        (Some(o), None, Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -378,7 +376,7 @@ fn list_predictions_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (Some(o), None, None) => runtime.block_on(async {
+        (Some(o), None, None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -389,7 +387,7 @@ fn list_predictions_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, Some(s), Some(n)) => runtime.block_on(async {
+        (None, Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -402,7 +400,7 @@ fn list_predictions_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, Some(s), None) => runtime.block_on(async {
+        (None, Some(s), None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -413,7 +411,7 @@ fn list_predictions_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, None, Some(n)) => runtime.block_on(async {
+        (None, None, Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -424,7 +422,7 @@ fn list_predictions_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, None, None) => runtime.block_on(async {
+        (None, None, None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
                  FROM user_predictions
@@ -439,8 +437,7 @@ fn list_predictions_postgres(
 
 #[allow(dead_code)]
 fn score_prediction_postgres(pool: &PgPool, id: i64, outcome: &str, notes: Option<&str>) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE user_predictions
              SET outcome = $1, score_notes = $2, scored_at = NOW()

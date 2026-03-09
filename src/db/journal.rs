@@ -289,8 +289,7 @@ pub fn get_stats_backend(backend: &BackendConnection) -> Result<JournalStats> {
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS journal (
                 id BIGSERIAL PRIMARY KEY,
@@ -336,8 +335,7 @@ fn to_journal_entry(r: JournalRow) -> JournalEntry {
 
 fn add_entry_postgres(pool: &PgPool, entry: &NewJournalEntry) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO journal (timestamp, content, tag, symbol, conviction, status)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -357,8 +355,7 @@ fn add_entry_postgres(pool: &PgPool, entry: &NewJournalEntry) -> Result<i64> {
 
 fn get_entry_postgres(pool: &PgPool, id: i64) -> Result<Option<JournalEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<JournalRow> = runtime.block_on(async {
+    let row: Option<JournalRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
              FROM journal
@@ -380,8 +377,7 @@ fn list_entries_postgres(
     status: Option<&str>,
 ) -> Result<Vec<JournalEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
             "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
              FROM journal
@@ -444,8 +440,7 @@ fn search_entries_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<JournalEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
             "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
              FROM journal
@@ -485,8 +480,7 @@ fn update_entry_postgres(
     status: Option<&str>,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         if let Some(content) = content {
             sqlx::query("UPDATE journal SET content = $1 WHERE id = $2")
                 .bind(content)
@@ -508,8 +502,7 @@ fn update_entry_postgres(
 
 fn remove_entry_postgres(pool: &PgPool, id: i64) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM journal WHERE id = $1")
             .bind(id)
             .execute(pool)
@@ -521,8 +514,7 @@ fn remove_entry_postgres(pool: &PgPool, id: i64) -> Result<()> {
 
 fn get_all_tags_postgres(pool: &PgPool) -> Result<Vec<(String, usize)>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, i64)> = runtime.block_on(async {
+    let rows: Vec<(String, i64)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT tag, COUNT(*)::bigint
              FROM journal
@@ -538,14 +530,13 @@ fn get_all_tags_postgres(pool: &PgPool) -> Result<Vec<(String, usize)>> {
 
 fn get_stats_postgres(pool: &PgPool) -> Result<JournalStats> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let total: i64 = runtime.block_on(async {
+    let total: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM journal")
             .fetch_one(pool)
             .await
     })?;
     let entries_by_tag = get_all_tags_postgres(pool)?;
-    let months: Vec<(String, i64)> = runtime.block_on(async {
+    let months: Vec<(String, i64)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT TO_CHAR(date_trunc('month', timestamp::timestamptz), 'YYYY-MM') AS month, COUNT(*)::bigint
              FROM journal

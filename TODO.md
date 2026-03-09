@@ -887,33 +887,17 @@ These are the most-used modules. Migrate them first to validate the pattern.
 > F32 established native Postgres paths. P32 closes remaining production-grade parity gaps:
 > performance, CI validation, and docs consistency.
 
-**Completed**
+**Completed (P32 complete)**
 - P32.1 Docs parity sweep
 - P32.2 Postgres CI job
-- P32.3 Runtime strategy cleanup (partial: shared runtime introduced + core modules migrated)
+- P32.3 Runtime strategy cleanup (complete: all `src/db` Postgres paths now use shared `pg_runtime`)
 - P32.4 Postgres schema type upgrades (hot path columns)
 - P32.5 Pooling config
 - P32.6 Setup/backend switch validation
-
-**Remaining (new work items)**
-- [ ] **P32.7 Runtime cleanup completion** — migrate remaining DB Postgres paths from per-function `Runtime::new()` to shared `pg_runtime::block_on` (batch in phases to keep risk low).
-  Completed batches so far:
-  - Batch A: `watchlist`, `dividends`
-  - Batch B: `groups`, `chart_state`
-  - Batch C: `scan_queries`, `annotations`
-  - Batch D: `thesis`, `daily_notes`
-  - Batch E: `onchain_cache`, `economic_cache`
-  - Batch F: `bls_cache`, `sentiment_cache`
-  - Batch G: `cot_cache`, `comex_cache`
-- [ ] **P32.8 Postgres CI expansion** — extend CI beyond smoke to run a backend-dispatched command suite against Postgres (`refresh`-safe modules + import/export roundtrip assertions).
-  Progress:
-  - Added CI coverage for: postgres cache roundtrip + sqlite↔postgres import/export switch tests + setup backend-selection tests.
-- [ ] **P32.9 Parity acceptance suite** — add a reproducible backend parity checklist script (`scripts/parity_check.sh`) to run key commands on sqlite and postgres and diff normalized outputs.
-  Progress:
-  - Added `scripts/parity_check.sh` with isolated env homes, sqlite/postgres import parity setup, normalized JSON diff checks for `value`, `summary`, `watchlist`, and `drift`.
-- [ ] **P32.10 Final parity signoff docs** — publish a single doc section that defines supported parity scope, known intentional differences, and backend switching runbook with verification commands.
-  Progress:
-  - Added `docs/BACKEND-PARITY.md` covering scope, verification runbook, switching steps, and known intentional differences.
+- P32.7 Runtime cleanup completion (batches A-G complete)
+- P32.8 Postgres CI expansion (includes parity suite + acceptance script run)
+- P32.9 Parity acceptance suite (`scripts/parity_check.sh`)
+- P32.10 Final parity signoff docs (`docs/BACKEND-PARITY.md`)
 
 **Key SQL differences to handle per-module:**
 

@@ -77,8 +77,7 @@ pub fn get_all_backend(backend: &BackendConnection) -> Result<Vec<EconomicDataEn
 }
 
 fn get_all_postgres(pool: &PgPool) -> Result<Vec<EconomicDataEntry>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query_as::<_, (String, String, Option<String>, Option<String>, String, String)>(
             "SELECT indicator, value, previous, change, source_url, fetched_at
              FROM economic_data
@@ -102,8 +101,7 @@ fn get_all_postgres(pool: &PgPool) -> Result<Vec<EconomicDataEntry>> {
 }
 
 fn upsert_entry_postgres(pool: &PgPool, entry: &EconomicDataEntry) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO economic_data (indicator, value, previous, change, source_url, fetched_at)
              VALUES ($1, $2, $3, $4, $5, $6)

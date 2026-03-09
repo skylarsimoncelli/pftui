@@ -105,8 +105,7 @@ pub fn get_all_fx_rates_backend(
 }
 
 fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS fx_cache (
                 currency TEXT PRIMARY KEY,
@@ -123,8 +122,7 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
 
 fn upsert_fx_rate_postgres(pool: &PgPool, currency: &str, rate: Decimal) -> Result<()> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO fx_cache (currency, rate, fetched_at)
              VALUES ($1, $2, NOW())
@@ -143,8 +141,7 @@ fn upsert_fx_rate_postgres(pool: &PgPool, currency: &str, rate: Decimal) -> Resu
 
 fn get_all_fx_rates_postgres(pool: &PgPool) -> Result<std::collections::HashMap<String, Decimal>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String, i64)> = runtime.block_on(async {
+    let rows: Vec<(String, String, i64)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT currency, rate, EXTRACT(EPOCH FROM fetched_at)::BIGINT
              FROM fx_cache",

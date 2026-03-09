@@ -115,8 +115,7 @@ pub fn batch_insert_history_backend(
 }
 
 fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS predictions_history (
                 id TEXT NOT NULL,
@@ -135,8 +134,7 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
 
 fn insert_history_postgres(pool: &PgPool, id: &str, date: &str, probability: f64) -> Result<()> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO predictions_history (id, date, probability)
              VALUES ($1, $2, $3)
@@ -154,8 +152,7 @@ fn insert_history_postgres(pool: &PgPool, id: &str, date: &str, probability: f64
 
 fn get_history_postgres(pool: &PgPool, id: &str, days: usize) -> Result<Vec<PredictionHistoryRecord>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String, f64)> = runtime.block_on(async {
+    let rows: Vec<(String, String, f64)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, probability
              FROM predictions_history

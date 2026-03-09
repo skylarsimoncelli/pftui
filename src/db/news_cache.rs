@@ -271,8 +271,7 @@ pub fn get_sources_backend(backend: &BackendConnection) -> Result<Vec<String>> {
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS news_cache (
                 id BIGSERIAL PRIMARY KEY,
@@ -332,8 +331,7 @@ fn insert_news_with_source_type_postgres(
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
     let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO news_cache
              (title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at)
@@ -365,8 +363,7 @@ fn get_latest_news_postgres(
     hours_back: Option<i64>,
 ) -> Result<Vec<NewsEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
             "SELECT id, title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at::text
              FROM news_cache
@@ -414,8 +411,7 @@ fn get_latest_news_postgres(
 fn cleanup_old_news_postgres(pool: &PgPool) -> Result<usize> {
     ensure_tables_postgres(pool)?;
     let cutoff = chrono::Utc::now().timestamp() - (48 * 3600);
-    let runtime = tokio::runtime::Runtime::new()?;
-    let result = runtime.block_on(async {
+    let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM news_cache WHERE published_at < $1")
             .bind(cutoff)
             .execute(pool)
@@ -426,8 +422,7 @@ fn cleanup_old_news_postgres(pool: &PgPool) -> Result<usize> {
 
 fn get_sources_postgres(pool: &PgPool) -> Result<Vec<String>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let values = runtime.block_on(async {
+    let values = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar::<_, String>(
             "SELECT DISTINCT source
              FROM news_cache

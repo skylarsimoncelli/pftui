@@ -167,8 +167,7 @@ pub fn get_all_symbols_history_backend(
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS price_history (
                 symbol TEXT NOT NULL,
@@ -193,8 +192,7 @@ fn upsert_history_postgres(
     records: &[HistoryRecord],
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         for rec in records {
             let volume = rec.volume.map(|v| v.to_string());
             sqlx::query(
@@ -235,8 +233,7 @@ fn history_record_from_row(row: HistoryRow) -> HistoryRecord {
 
 fn get_history_postgres(pool: &PgPool, symbol: &str, limit: u32) -> Result<Vec<HistoryRecord>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<HistoryRow> = runtime.block_on(async {
+    let rows: Vec<HistoryRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT date, close, volume
              FROM price_history
@@ -256,8 +253,7 @@ fn get_history_postgres(pool: &PgPool, symbol: &str, limit: u32) -> Result<Vec<H
 
 fn get_price_at_date_postgres(pool: &PgPool, symbol: &str, date: &str) -> Result<Option<Decimal>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let close: Option<String> = runtime.block_on(async {
+    let close: Option<String> = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "SELECT close
              FROM price_history
@@ -292,8 +288,7 @@ fn get_all_symbols_history_postgres(
     limit: u32,
 ) -> Result<Vec<(String, Vec<HistoryRecord>)>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let symbols: Vec<String> = runtime.block_on(async {
+    let symbols: Vec<String> = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT DISTINCT symbol FROM price_history")
             .fetch_all(pool)
             .await

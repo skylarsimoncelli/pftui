@@ -469,8 +469,7 @@ fn trend_from_pg_row(r: TrendRow) -> Trend {
 }
 
 fn trend_id_by_name_postgres(pool: &PgPool, name: &str) -> Result<i64> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT id FROM trend_tracker WHERE name = $1")
             .bind(name)
             .fetch_one(pool)
@@ -491,8 +490,7 @@ fn add_trend_postgres(
     asset_impact: Option<&str>,
     key_signal: Option<&str>,
 ) -> Result<i64> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO trend_tracker
              (name, timeframe, direction, conviction, category, description, asset_impact, key_signal)
@@ -518,9 +516,8 @@ fn list_trends_postgres(
     status: Option<&str>,
     category: Option<&str>,
 ) -> Result<Vec<Trend>> {
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<TrendRow> = match (status, category) {
-        (Some(s), Some(c)) => runtime.block_on(async {
+        (Some(s), Some(c)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at::text, updated_at::text
                  FROM trend_tracker
@@ -532,7 +529,7 @@ fn list_trends_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (Some(s), None) => runtime.block_on(async {
+        (Some(s), None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at::text, updated_at::text
                  FROM trend_tracker
@@ -543,7 +540,7 @@ fn list_trends_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, Some(c)) => runtime.block_on(async {
+        (None, Some(c)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at::text, updated_at::text
                  FROM trend_tracker
@@ -554,7 +551,7 @@ fn list_trends_postgres(
             .fetch_all(pool)
             .await
         })?,
-        (None, None) => runtime.block_on(async {
+        (None, None) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at::text, updated_at::text
                  FROM trend_tracker
@@ -576,8 +573,7 @@ fn update_trend_postgres(
     key_signal: Option<&str>,
     status: Option<&str>,
 ) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         if let Some(v) = direction {
             sqlx::query("UPDATE trend_tracker SET direction = $1, updated_at = NOW() WHERE name = $2")
                 .bind(v)
@@ -627,8 +623,7 @@ fn add_evidence_by_name_postgres(
     source: Option<&str>,
 ) -> Result<i64> {
     let trend_id = trend_id_by_name_postgres(pool, trend_name)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO trend_evidence (trend_id, date, evidence, direction_impact, source)
              VALUES ($1, $2, $3, $4, $5)
@@ -650,9 +645,8 @@ fn list_evidence_postgres(
     trend_id: i64,
     limit: Option<usize>,
 ) -> Result<Vec<TrendEvidence>> {
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<EvidenceRow> = if let Some(n) = limit {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, trend_id, date, evidence, direction_impact, source, created_at::text
                  FROM trend_evidence
@@ -666,7 +660,7 @@ fn list_evidence_postgres(
             .await
         })?
     } else {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, trend_id, date, evidence, direction_impact, source, created_at::text
                  FROM trend_evidence
@@ -701,8 +695,7 @@ fn add_asset_impact_by_name_postgres(
     timeframe: Option<&str>,
 ) -> Result<i64> {
     let trend_id = trend_id_by_name_postgres(pool, trend_name)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO trend_asset_impact (trend_id, symbol, impact, mechanism, timeframe)
              VALUES ($1, $2, $3, $4, $5)
@@ -720,8 +713,7 @@ fn add_asset_impact_by_name_postgres(
 }
 
 fn list_asset_impacts_postgres(pool: &PgPool, trend_id: i64) -> Result<Vec<TrendAssetImpact>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<ImpactRow> = runtime.block_on(async {
+    let rows: Vec<ImpactRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, trend_id, symbol, impact, mechanism, timeframe, updated_at::text
              FROM trend_asset_impact
@@ -750,8 +742,7 @@ fn get_impacts_for_symbol_postgres(
     pool: &PgPool,
     symbol: &str,
 ) -> Result<Vec<(Trend, TrendAssetImpact)>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "SELECT t.id, t.name, t.timeframe, t.direction, t.conviction, t.category, t.description, t.asset_impact, t.key_signal, t.status, t.created_at::text, t.updated_at::text,
                     i.id, i.trend_id, i.symbol, i.impact, i.mechanism, i.timeframe, i.updated_at::text

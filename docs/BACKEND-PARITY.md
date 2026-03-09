@@ -39,6 +39,8 @@ PFTUI_TEST_POSTGRES_URL=postgres://... scripts/parity_check.sh
 
 The script runs key commands on isolated sqlite and postgres profiles and diffs normalized JSON output.
 
+CI also runs this script in the Postgres parity job, using `target/debug/pftui` as `PFTUI_BIN`.
+
 ## Backend Switch Runbook
 
 SQLite -> PostgreSQL (same steps in reverse for PostgreSQL -> SQLite):

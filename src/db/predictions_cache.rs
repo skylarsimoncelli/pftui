@@ -124,8 +124,7 @@ pub fn get_last_update_backend(backend: &BackendConnection) -> Result<Option<i64
 }
 
 fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS predictions_cache (
                 id TEXT PRIMARY KEY,
@@ -149,8 +148,7 @@ fn upsert_predictions_postgres(pool: &PgPool, markets: &[PredictionMarket]) -> R
     if markets.is_empty() {
         return Ok(());
     }
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         let mut tx = pool.begin().await?;
         for market in markets {
             let category_str = match market.category {
@@ -208,8 +206,7 @@ fn to_prediction_market(row: PredictionRow) -> PredictionMarket {
 
 fn get_cached_predictions_postgres(pool: &PgPool, limit: usize) -> Result<Vec<PredictionMarket>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<PredictionRow> = runtime.block_on(async {
+    let rows: Vec<PredictionRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, question, probability, volume_24h, category, updated_at
              FROM predictions_cache
@@ -225,8 +222,7 @@ fn get_cached_predictions_postgres(pool: &PgPool, limit: usize) -> Result<Vec<Pr
 
 fn get_last_update_postgres(pool: &PgPool) -> Result<Option<i64>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let ts = runtime.block_on(async {
+    let ts = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT MAX(updated_at) FROM predictions_cache")
             .fetch_optional(pool)
             .await

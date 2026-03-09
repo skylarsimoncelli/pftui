@@ -65,12 +65,9 @@ pub fn open_from_config(config: &Config, sqlite_path: &Path) -> Result<BackendCo
                         "database_backend is set to postgres but database_url is not set"
                     )
                 })?;
-            let runtime = tokio::runtime::Runtime::new()
-                .context("Failed to create Tokio runtime for PostgreSQL backend")?;
             let max_connections = config.postgres_max_connections.max(1);
             let connect_timeout = Duration::from_secs(config.postgres_connect_timeout_secs.max(1));
-            let pool = runtime
-                .block_on(async {
+            let pool = crate::db::pg_runtime::block_on(async {
                     PgPoolOptions::new()
                         .max_connections(max_connections)
                         .acquire_timeout(connect_timeout)

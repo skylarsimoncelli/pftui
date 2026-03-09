@@ -245,8 +245,7 @@ fn store_regime_postgres(
     gold: Option<f64>,
     btc: Option<f64>,
 ) -> Result<i64> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO regime_snapshots
              (regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc)
@@ -269,8 +268,7 @@ fn store_regime_postgres(
 }
 
 fn get_current_postgres(pool: &PgPool) -> Result<Option<RegimeSnapshot>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<RegimeRow> = runtime.block_on(async {
+    let row: Option<RegimeRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc, recorded_at::text
              FROM regime_snapshots
@@ -284,9 +282,8 @@ fn get_current_postgres(pool: &PgPool) -> Result<Option<RegimeSnapshot>> {
 }
 
 fn get_history_postgres(pool: &PgPool, limit: Option<usize>) -> Result<Vec<RegimeSnapshot>> {
-    let runtime = tokio::runtime::Runtime::new()?;
     let rows: Vec<RegimeRow> = if let Some(n) = limit {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc, recorded_at::text
                  FROM regime_snapshots
@@ -298,7 +295,7 @@ fn get_history_postgres(pool: &PgPool, limit: Option<usize>) -> Result<Vec<Regim
             .await
         })?
     } else {
-        runtime.block_on(async {
+        crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc, recorded_at::text
                  FROM regime_snapshots

@@ -130,8 +130,7 @@ pub fn latest_signal_backend(backend: &BackendConnection) -> Result<Option<Timef
 }
 
 fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS timeframe_signals (
                 id BIGSERIAL PRIMARY KEY,
@@ -159,8 +158,7 @@ fn add_signal_postgres(
     severity: &str,
 ) -> Result<i64> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO timeframe_signals (signal_type, layers, assets, description, severity)
              VALUES ($1, $2, $3, $4, $5)
@@ -198,8 +196,7 @@ fn list_signals_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<TimeframeSignal>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<SignalRow> = runtime.block_on(async {
+    let rows: Vec<SignalRow> = crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
             "SELECT id, signal_type, layers, assets, description, severity, detected_at::text
              FROM timeframe_signals
@@ -223,8 +220,7 @@ fn list_signals_postgres(
 #[allow(dead_code)]
 fn latest_signal_postgres(pool: &PgPool) -> Result<Option<TimeframeSignal>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<SignalRow> = runtime.block_on(async {
+    let row: Option<SignalRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, signal_type, layers, assets, description, severity, detected_at::text
              FROM timeframe_signals

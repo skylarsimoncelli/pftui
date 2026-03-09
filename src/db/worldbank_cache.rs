@@ -218,8 +218,7 @@ pub fn get_latest_indicators_backend(backend: &BackendConnection) -> Result<Vec<
 }
 
 fn get_latest_indicators_postgres(pool: &PgPool) -> Result<Vec<WorldBankDataPoint>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query_as::<_, (String, String, String, String, i32, Option<String>)>(
             "SELECT wb.country_code, wb.country_name, wb.indicator_code, wb.indicator_name, wb.year, wb.value
              FROM worldbank_cache wb
@@ -256,8 +255,7 @@ fn get_latest_indicators_postgres(pool: &PgPool) -> Result<Vec<WorldBankDataPoin
 }
 
 fn upsert_worldbank_data_postgres(pool: &PgPool, data: &[WorldBankDataPoint]) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         for point in data {
             let value_str = point.value.map(|v| v.to_string());
             sqlx::query(
@@ -285,8 +283,7 @@ fn upsert_worldbank_data_postgres(pool: &PgPool, data: &[WorldBankDataPoint]) ->
 }
 
 fn needs_refresh_postgres(pool: &PgPool) -> Result<bool> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let count: i64 = runtime.block_on(async {
+    let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "SELECT COUNT(*) FROM worldbank_cache
              WHERE updated_at > NOW() - INTERVAL '30 days'",
