@@ -426,6 +426,8 @@ body {
 /* ===== DEMO SECTION ===== */
 .demo {
     padding: var(--spacing-xl) 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
 .demo-terminal {
@@ -704,7 +706,9 @@ body {
 }
 
 .architecture-analytics {
-    background: linear-gradient(180deg, rgba(22, 27, 34, 1) 0%, rgba(13, 17, 23, 1) 100%);
+    background: linear-gradient(180deg, rgba(33, 38, 45, 1) 0%, rgba(22, 27, 34, 1) 100%);
+    border-top: 1px solid rgba(137, 220, 235, 0.08);
+    border-bottom: 1px solid rgba(137, 220, 235, 0.08);
 }
 
 .architecture-ai {
