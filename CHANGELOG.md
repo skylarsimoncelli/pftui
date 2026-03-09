@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Setup manual price validation hardening
+
+- What: replaced setup manual-price fallback behavior with a strict validation loop that re-prompts until a positive decimal is entered.
+- Why: invalid manual input previously defaulted silently to `1`, which could produce materially incorrect quantities/cost basis.
+- Files: `src/commands/setup.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit quick-win (`setup` manual price validation)
+
 ### 2026-03-09 — Cleanup TODO backlog after F32/P32 completion
 
 - What: replaced stale unchecked F32 migration checklist with an archived-complete summary and canonical parity references (`docs/BACKEND-PARITY.md`, `docs/MIGRATING.md`, `scripts/parity_check.sh`, CI parity job); refreshed feedback priority statuses to reflect shipped fixes.

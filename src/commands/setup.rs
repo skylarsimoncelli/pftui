@@ -393,9 +393,17 @@ fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
                 }
                 _ => {
                     println!("    \x1b[33m{}: Could not fetch price\x1b[0m", entry.symbol);
-                    let manual = prompt("    Enter current price: ")?;
-                    let p: Decimal = manual.replace([',', '$'], "").parse().unwrap_or(dec!(1));
-                    let q = if p > dec!(0) { value / p } else { value };
+                    let p = loop {
+                        let manual = prompt("    Enter current price: ")?;
+                        let cleaned = manual.replace([',', '$'], "").trim().to_string();
+                        match cleaned.parse::<Decimal>() {
+                            Ok(parsed) if parsed > dec!(0) => break parsed,
+                            _ => {
+                                println!("    \x1b[31mInvalid price. Enter a positive number (e.g. 123.45).\x1b[0m");
+                            }
+                        }
+                    };
+                    let q = value / p;
                     (p, q)
                 }
             }
