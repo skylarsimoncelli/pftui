@@ -786,9 +786,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Analytics
 
-- [ ] **P1-BUG: `pftui analytics summary` — minimal output, no alignment score** — Currently shows only 4 one-line summaries (LOW/MEDIUM/HIGH/MACRO). Missing: prices row, alert count, triggered alert count, combined alignment score (████████░░ 80%), divergence notes, signal count. Compare current output to the spec in TODO F31.13 — it's about 20% of what was designed. The `analytics low/medium/high` subcommands are similarly sparse (just counts, no actual data).
-
-- [ ] **P1-BUG: `pftui analytics alignment` — only shows one asset at a time** — Should show a matrix of all held + watchlist assets with per-layer signals. Currently requires `--symbol` flag and only returns one asset. The multi-asset alignment table from the F31.13 spec isn't implemented.
 
 - [ ] **P1: `pftui regime current` — confidence 0.25 is suspiciously low** — Risk-off regime detected but confidence only 0.25 with VIX 27.85, DXY 99.12, oil $94.31. In a war with oil at $100 and VIX near 30, confidence should be much higher. The classification logic may need tuning or the weighting formula may not account for all inputs. Regime is a foundation for the LOW layer — inaccurate confidence undermines downstream analytics.
 

@@ -13,6 +13,14 @@
 - Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
 - TODO: removed P1-BUG "Postgres structural storage not yet implemented"
 
+### 2026-03-09 — Analytics summary/alignment parity pass
+
+- What: upgraded `analytics summary` to include prices tracked, alert totals/triggered count, total signal count, combined alignment score with bar visualization, and divergence notes. Reworked `analytics alignment` to default to a multi-asset matrix (held + watchlist) while still supporting single-symbol filtering.
+- Why: closes major analytics-output parity gaps where summary was minimal and alignment only handled one symbol.
+- Files: `src/commands/analytics.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 analytics summary + multi-asset alignment bugs
+
 ### 2026-03-09 — Align Postgres correlation snapshot schema and dispatch guardrails
 
 - What: added `correlation_snapshots` table/index creation to Postgres schema migrations and added runtime `ensure_table_postgres` guard in correlation snapshot Postgres read/write paths.
