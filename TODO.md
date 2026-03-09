@@ -1199,12 +1199,39 @@ The database is yours. The intelligence compounds.
 - Comparison table row: "AI Agent Integration" — pftui ✓, Bloomberg ✗, TradingView ✗, Yahoo ✗
 - CTA: "See AGENTS.md for the full agent operator guide"
 
+**Documentation structure (same pattern as Analytics Engine):**
+
+`docs/AI-LAYER.md` — Full dedicated documentation page. Covers:
+- Overview: what the AI Layer is and why pftui is different from every other tool
+- Bidirectional Communication: how agents and humans share the same data/tool/DB.
+  Every `--json` command, the agent-msg bus, conviction/notes/predict as shared state.
+  Include example workflow: agent writes observation → human reviews → agent incorporates
+  feedback → loop compounds.
+- Scheduled Routines: cron-driven intelligence loops. Morning brief → market close →
+  evening analysis → weekly review. Multi-agent feedback loops via agent-msg with
+  layer escalation. Include example cron schedule and what each routine does.
+- Investor Perspectives Panel (F36): sub-agents as famous investors/styles.
+  15 legends + 10 archetypes + custom. Data collection via pftui --json.
+  Consensus/divergence as the primary output. Include example panel output.
+- Integration Patterns: how to connect pftui to OpenClaw, LangChain, Claude Code,
+  or any agent framework. The CLI IS the API — no SDK needed.
+- Quick Start: 5-command example showing agent setup end-to-end.
+
+README "AI Layer" section — high-level product overview (~30-40 lines). Covers the
+three capabilities in 2-3 sentences each. Links to `docs/AI-LAYER.md` for full details.
+Positioned after "Analytics Engine" section.
+
+Website "AI Layer" section — visual product feature section. 3-card layout.
+Terminal demo scene. Comparison table row.
+
 **Files to update:**
-- [ ] `/root/pftui/README.md` — new "AI Layer" section
+- [ ] `/root/pftui/docs/AI-LAYER.md` — full dedicated documentation page (NEW)
+- [ ] `/root/pftui/README.md` — new "AI Layer" section (high-level, links to docs)
 - [ ] `/root/pftui/website/index.html` — new section + comparison table row
 - [ ] `/root/pftui/website/script.js` — new terminal demo scene showing agent interaction
 - [ ] `/root/pftui/PRODUCT-VISION.md` — integrate AI Layer as third pillar (Database + Analytics + AI)
 - [ ] `/root/pftui/AGENTS.md` — cross-reference from AI Layer section
+- [ ] `/root/pftui/docs/` entry in README documentation table for AI-LAYER.md
 
 ---
 
