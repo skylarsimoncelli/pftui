@@ -252,10 +252,10 @@ fn cot_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if COMEX needs refreshing
-fn comex_needs_refresh(conn: &Connection) -> Result<bool> {
+fn comex_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check common metals
     for symbol in &["GC", "SI", "HG", "PL"] {
-        if !comex_cache::has_fresh_data(conn, symbol)? {
+        if !comex_cache::has_fresh_data_backend(backend, symbol)? {
             return Ok(true);
         }
     }
@@ -803,8 +803,7 @@ pub fn run(
     }
 
     // 11. COMEX
-    if let Some(conn) = sqlite_conn {
-    if comex_needs_refresh(conn)? {
+    if comex_needs_refresh(backend)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
 
@@ -819,7 +818,7 @@ pub fn run(
                     reg_ratio: inv.reg_ratio,
                     fetched_at: chrono::Utc::now().to_rfc3339(),
                 };
-                if comex_cache::upsert_inventory(conn, &entry).is_ok() {
+                if comex_cache::upsert_inventory_backend(backend, &entry).is_ok() {
                     count += 1;
                 }
             }
@@ -832,9 +831,6 @@ pub fn run(
         }
     } else {
         println!("⊘ COMEX (fresh, skipping)");
-    }
-    } else {
-        println!("⊘ COMEX (sqlite-only cache path, skipping on postgres)");
     }
 
     // 12. On-chain (network + ETF flows)

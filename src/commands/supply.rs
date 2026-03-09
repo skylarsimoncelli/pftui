@@ -5,11 +5,13 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::data::comex::{fetch_inventory, COMEX_METALS};
-use crate::db::{comex_cache::{get_latest_inventory, upsert_inventory, ComexCacheEntry}, default_db_path};
+use crate::db::backend::BackendConnection;
+use crate::db::comex_cache::{
+    get_latest_inventory_backend, upsert_inventory_backend, ComexCacheEntry,
+};
 
 #[derive(Serialize)]
 struct SupplyOutput {
@@ -27,27 +29,24 @@ struct SupplyOutput {
 ///
 /// Fetches or displays cached COMEX inventory data.
 /// Symbols: GC=F (gold), SI=F (silver).
-pub fn run(symbol: Option<String>, json: bool) -> Result<()> {
-    let db_path = default_db_path();
-    let conn = Connection::open(&db_path)?;
-
+pub fn run(backend: &BackendConnection, symbol: Option<String>, json: bool) -> Result<()> {
     if let Some(sym) = symbol {
         // Fetch or display single metal
-        display_metal(&conn, &sym, json)?;
+        display_metal(backend, &sym, json)?;
     } else {
         // Fetch or display all metals
-        display_all(&conn, json)?;
+        display_all(backend, json)?;
     }
 
     Ok(())
 }
 
 /// Display inventory for all tracked metals.
-fn display_all(conn: &Connection, json: bool) -> Result<()> {
+fn display_all(backend: &BackendConnection, json: bool) -> Result<()> {
     let mut outputs = Vec::new();
 
     for metal_meta in COMEX_METALS {
-        match get_or_fetch_inventory(conn, metal_meta.symbol)? {
+        match get_or_fetch_inventory(backend, metal_meta.symbol)? {
             Some(data) => outputs.push(data),
             None => {
                 if !json {
@@ -79,7 +78,7 @@ fn display_all(conn: &Connection, json: bool) -> Result<()> {
 }
 
 /// Display inventory for a single metal.
-fn display_metal(conn: &Connection, symbol: &str, json: bool) -> Result<()> {
+fn display_metal(backend: &BackendConnection, symbol: &str, json: bool) -> Result<()> {
     // Validate symbol
     if !COMEX_METALS.iter().any(|m| m.symbol == symbol) {
         let valid: Vec<_> = COMEX_METALS.iter().map(|m| m.symbol).collect();
@@ -90,7 +89,7 @@ fn display_metal(conn: &Connection, symbol: &str, json: bool) -> Result<()> {
         );
     }
 
-    let output = get_or_fetch_inventory(conn, symbol)?;
+    let output = get_or_fetch_inventory(backend, symbol)?;
 
     if let Some(data) = output {
         if json {
@@ -113,9 +112,12 @@ fn display_metal(conn: &Connection, symbol: &str, json: bool) -> Result<()> {
 /// Get cached inventory or fetch fresh if stale.
 ///
 /// Cache policy: refresh if data is >24 hours old.
-fn get_or_fetch_inventory(conn: &Connection, symbol: &str) -> Result<Option<SupplyOutput>> {
+fn get_or_fetch_inventory(
+    backend: &BackendConnection,
+    symbol: &str,
+) -> Result<Option<SupplyOutput>> {
     // Try cache first
-    if let Some(cached) = get_latest_inventory(conn, symbol)? {
+    if let Some(cached) = get_latest_inventory_backend(backend, symbol)? {
         // Parse fetched_at timestamp
         let fetched_at = chrono::DateTime::parse_from_rfc3339(&cached.fetched_at)
             .map(|dt| dt.with_timezone(&Utc))
@@ -164,7 +166,7 @@ fn get_or_fetch_inventory(conn: &Connection, symbol: &str) -> Result<Option<Supp
                 fetched_at: Utc::now().to_rfc3339(),
             };
 
-            upsert_inventory(conn, &entry)?;
+            upsert_inventory_backend(backend, &entry)?;
 
             let metal_name = COMEX_METALS
                 .iter()

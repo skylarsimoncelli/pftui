@@ -418,7 +418,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Supply { symbol, json }) => {
-            commands::supply::run(symbol, json)
+            commands::supply::run(&backend, symbol, json)
         }
 
         Some(Command::Calendar { days, impact, json }) => {

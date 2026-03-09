@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 09:18 UTC — F32 Phase 53: backend-native COMEX cache + supply command
+
+- What: added postgres/backend-dispatched COMEX cache CRUD/freshness APIs, added `comex_cache` table to postgres schema migration, migrated refresh COMEX writes/freshness checks to backend dispatch, and converted `pftui supply` to operate via `BackendConnection` instead of opening SQLite directly.
+- Why: removes sqlite-only COMEX storage paths and enables native COMEX data workflows for postgres users in both refresh and supply command flows.
+- Files: `src/db/comex_cache.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `src/commands/supply.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
 ### 2026-03-09 09:05 UTC — F32 Phase 52: backend-aware web RSS ingest loop
 
 - What: updated web background RSS ingest loop to open the configured backend and call backend-dispatched news cache APIs (`insert_news_backend`, `cleanup_old_news_backend`) instead of opening a raw SQLite connection.

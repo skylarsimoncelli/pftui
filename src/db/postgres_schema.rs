@@ -200,6 +200,20 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS comex_cache (
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                registered DOUBLE PRECISION NOT NULL,
+                eligible DOUBLE PRECISION NOT NULL,
+                total DOUBLE PRECISION NOT NULL,
+                reg_ratio DOUBLE PRECISION NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (symbol, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS economic_data (
                 indicator TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
