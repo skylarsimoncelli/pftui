@@ -1011,8 +1011,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 > User-requested features and high-value improvements.
 
 ### Data & Display
-
-- [ ] [Feedback] **DB connection timeout** — All data commands hang indefinitely when Postgres is unreachable instead of failing with a clear error. Add 5s connection timeout with actionable error message (`Database connection failed: [reason]`). This caused Evening Planner to drop from 82→35 usefulness. Files: `src/db/backend.rs`, connection init path.
 - [ ] [Feedback] **`pftui doctor` command** — Test DB connection, API endpoints, and cache freshness in sequence. Report what's working vs broken. Essential for diagnosing issues like the Mar 9 hang. Files: new `src/commands/doctor.rs`.
 - [ ] [Feedback] **`--offline`/`--cached-only` flag** — Show last cached data without attempting refresh or API calls. For evenings when APIs are down or DB is unreachable.
 - [ ] [Feedback] **Fix Brent crude data** — Shows `---` in macro dashboard. WTI-Brent spread is critical for war premium analysis. (Morning Research, Evening Planner × multiple reviews)
@@ -1186,6 +1184,6 @@ These are the most-used modules. Migrate them first to validate the pattern.
 
 ### Top 3 Priorities (Feedback-Driven)
 
-1. 🔴 **DB connection timeout + reliability** — Commands hang indefinitely when Postgres is unreachable. This single issue dropped Evening Planner from 82→35. Need 5s timeout with clear error messages, plus a `pftui doctor` diagnostic command.
+1. ✅ **DB connection timeout** — DONE (5s timeout added, clear error message). Next: `pftui doctor` diagnostic command for proactive health checks.
 2. 🟡 **Fix broken data sources** — Sector command (only returns XLE/11), Brent crude (shows ---), USD/JPY (+15697%), predictions (sports only). Multiple testers hitting these every session.
 3. 🟡 **Oil technicals in macro** — Oil is the #1 macro variable during wartime. RSI/MACD/SMA missing from `pftui macro` for WTI/Brent. Requested by Morning Research + Evening Planner across 3+ reviews.
