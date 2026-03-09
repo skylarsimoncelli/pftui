@@ -1,9 +1,7 @@
-
-
 <p align="center">
-  <b>Your Financial Intelligence Engine</b><br>
-  A data-rich data analysis battle station designed for human investors and their AI agents.<br>
-  https://pftui.com
+  <b>pftui</b><br>
+  Portfolio intelligence for humans and their AI agents.<br>
+  <a href="https://pftui.com">pftui.com</a>
 </p>
 
 <p align="center">
@@ -14,69 +12,80 @@
 
 ---
 
-**pftui** is a data-rich, full-functionality financial battle station built for two operators working together: **a human** who makes the decisions, and **an AI agent** that does the research, monitors the markets, and keeps the system running.
+**pftui** is a local-first portfolio terminal for investors and their AI agents.
+Track positions, markets, macro, sentiment, news, and analytics in one system.
+Built for self-directed investors and technical operators, it gives you a fast terminal UI, a browser dashboard, and a structured CLI your AI agent can work with directly.
 
-pftui centralises all your market data, news, economic indicators, sentiment, prediction markets, and portfolio analytics into one local-first tool, relieving both you and your agent from constantly monitoring scattered sources of market information.
+---
 
-**The tool is fully agent-native.** Every feature ships with a CLI command and `--json` output. The database schema is documented. The [agent operator guide](AGENTS.md) is as thorough as the user manual. pftui is designed to be set up, operated, and maintained by your AI agent, with you in the decision seat.
+## Why pftui
+
+- **One place for everything** — portfolio tracking, watchlists, markets, macro, news, and research state
+- **Local-first by default** — your data stays with you, not inside a hosted black box
+- **Fast and practical** — built for daily use in the terminal, not just occasional reporting
+- **Agent-ready** — every major feature has CLI access and JSON output
+- **Compounds over time** — the longer you run it, the more useful your local dataset becomes
 
 ---
 
 ### 🚀 Recommended Setup
 
-The fastest way to get started: **ask your AI agent to do it.**
+The easiest way to get started is to let your AI agent set up pftui with you.
 
-Give your agent the below prompt:
+Give it this prompt:
 
 > Read AGENTS.md in the pftui repo: https://github.com/skylarsimoncelli/pftui
 >
-> Install pftui, help me to set up pftui with my portfolio and watchlist, and walk me through the functionality
+> Install pftui, help me set up pftui with my portfolio and watchlist, and walk me through the functionality
 
-Whether you use **Claude Code**, **Codex**, **OpenClaw**, or any AI coding agent, point it at this repo and tell it to set up pftui for you. It will read [AGENTS.md](AGENTS.md), ask you about your holdings, risk tolerance, and market views, populate the database, configure your watchlist, and deliver your first brief. Setup takes 15-20 minutes of conversation.
+If you use **Claude Code**, **Codex**, **OpenClaw**, or another coding agent, it can read [AGENTS.md](AGENTS.md), install pftui, and guide you through the initial setup.
 
-Or install manually via [Homebrew, Cargo, Docker, apt, dnf, or Nix →](#-installation)
+Manual install options are below in [Installation](#-installation).
 
 ---
 
 ## 🧑‍💻 For Human Operators
 
-### Terminal UI, Your Financial Battle Station
+### Terminal UI
 
-A Bloomberg Terminal-grade interface in your terminal. Vim-native keybindings, 11 hand-tuned themes, braille charts, and every data point you need at a glance.
+pftui’s core experience is a fast, keyboard-driven terminal interface built for daily portfolio and market monitoring.
 
 | Key | View | What You Get |
 |:---:|---|---|
 | `1` | **Positions** | Live prices, daily P&L, allocation bars, sparklines, RSI, 52W range |
 | `2` | **Transactions** | Buy/sell history with cost basis tracking |
-| `3` | **Markets** | S&P, NASDAQ, BTC, Gold, DXY, VIX, oil, copper, the macro pulse |
+| `3` | **Markets** | S&P, NASDAQ, BTC, Gold, DXY, VIX, oil, copper |
 | `4` | **Economy** | Yields, currencies, commodities, FRED data, economic calendar, prediction markets, F&G |
-| `5` | **Watchlist** | Assets you're stalking with price targets and proximity alerts |
-| `6` | **News** | Aggregated financial news from RSS feeds, Reuters, CoinDesk, Bloomberg |
+| `5` | **Watchlist** | Symbols with price targets and proximity alerts |
+| `6` | **News** | Aggregated financial news from major feeds |
 | `7` | **Journal** | Trade log, decision history, predictions, searchable notes |
 
-**Charts:** High-resolution Unicode braille rendering with SMA overlays, Bollinger bands, volume bars, ratio analysis (vs SPX, QQQ, BTC, Gold), and 6 timeframes (1W → 5Y). Not ASCII art, actual data visualization.
+**Highlights**
 
-**Themes:** 11 production-ready themes, Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox, Inferno, Neon, Hacker, Pastel, Miasma. Cycle with `t`. Your choice persists.
+- **Braille charts** with SMA overlays, Bollinger bands, volume bars, ratio analysis, and 6 timeframes
+- **11 built-in themes** including Midnight, Catppuccin, Nord, Dracula, Solarized, Gruvbox, Inferno, Neon, Hacker, Pastel, and Miasma
+- **Privacy mode** with instant value masking and percentage-only operation
+- **Vim-style navigation** with mouse support
 
-**Privacy:** Press `p` to instantly mask all monetary values. Percentage-only mode stores no dollar amounts at all.
+Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
 
-**Keys:** Vim-native, `j`/`k`, `gg`/`G`, `/` search, `Enter` to drill down, `Esc` to back out, `?` for help. Mouse works too. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
+### Web Dashboard
 
-### Web Dashboard, Your Portfolio on Any Screen
-
-A responsive web interface serving the same data as the TUI, accessible from any browser.
+pftui also includes a responsive browser interface backed by the same local data.
 
 ```bash
 pftui web                          # Start on localhost:8080 with auth
 pftui web --port 3000 --bind 0.0.0.0   # Custom port, remote access
 ```
 
-- **Responsive layout**, 2-column desktop, 1-column mobile
-- **TradingView charts**, professional interactive charts via the free Advanced Chart Widget
-- **Click-to-chart**, click any position, watchlist item, or macro indicator
-- **Auto-refresh**, data updates every 60 seconds
-- **Dark theme** matching the TUI aesthetic
-- **REST API**, 9 JSON endpoints for custom integrations
+Features include:
+
+- responsive desktop and mobile layout
+- TradingView charts
+- click-through asset views
+- auto-refreshing data
+- all native TUI themes
+- REST API endpoints for integrations
 
 Details: [WEB_DASHBOARD.md](WEB_DASHBOARD.md)
 
@@ -84,26 +93,30 @@ Details: [WEB_DASHBOARD.md](WEB_DASHBOARD.md)
 
 ## 🤖 For AI Agents
 
-pftui is designed to be the data backbone for AI-powered financial workflows. Every feature in the TUI and web dashboard has a CLI counterpart with structured JSON output. The active database backend (SQLite or PostgreSQL) is the single source of truth, agents read from it, write to it, and build on top of it.
+pftui gives AI agents structured access to the same system the human operator uses.
 
-### Portfolio & Market Data
+Your agent can refresh market data, inspect portfolio state, manage watchlists, record journal entries, review macro conditions, and generate briefs, all through a local database and a CLI with structured JSON output.
+
+That makes pftui a strong foundation for:
+
+- daily and weekly portfolio briefs
+- automated monitoring and alerts
+- scenario tracking
+- research workflows
+- multi-agent financial systems
+
+
+### Core commands
 
 ```bash
-pftui refresh                      # Fetch all prices + macro + sentiment + news
-pftui brief --json                 # Full portfolio state as structured JSON
-pftui value --json                 # Total value with category breakdown
-pftui summary --json               # Detailed position-level breakdown
-pftui macro --json                 # DXY, VIX, yields, commodities, derived ratios
-pftui watchlist --json             # All watched symbols with prices
-pftui movers --json                # Today's significant moves (held + watchlist)
-pftui predictions --json           # Polymarket prediction market odds
-pftui sentiment --json             # Fear & Greed indices + COT positioning
+pftui refresh --json               # Refresh prices, macro, sentiment, news
+pftui brief --json                 # Full portfolio state
+pftui summary --json               # Position-level breakdown
+pftui macro --json                 # Macro, rates, commodities, sentiment
+pftui watchlist --json             # Watched symbols and targets
 pftui news --json                  # Aggregated financial news
-pftui supply --json                # COMEX inventory data
-pftui global --json                # World Bank macro (BRICS, G7)
-pftui performance --json           # Returns (1D, MTD, QTD, YTD)
+pftui performance --json           # Returns across key periods
 pftui drift --json                 # Allocation drift vs targets
-pftui history --date 2026-03-01 --json  # Historical snapshot
 pftui status --json                # Data source freshness
 ```
 
@@ -123,55 +136,6 @@ pftui journal add --content "Gold thesis validated by CPI" --tag macro
 pftui config list --json           # List all config fields
 pftui config set brave_api_key <key>  # Set Brave Search API key
 ```
-
-### Data Sources, Zero Configuration
-
-Every data source works out of the box with no API keys:
-
-| Source | Data | Update Cadence |
-|---|---|---|
-| Yahoo Finance | Equities, ETFs, forex, crypto, commodities | Real-time |
-| CoinGecko | Crypto prices, market cap, volume | Real-time |
-| Polymarket | Prediction market probabilities | 15-min |
-| CFTC Socrata | Commitments of Traders (COT) positioning | Weekly |
-| Alternative.me | Crypto Fear & Greed Index | Daily |
-| BLS API v1 | CPI, unemployment, NFP, wages | Monthly |
-| World Bank | GDP, debt/GDP, reserves for 8 economies | Quarterly |
-| CME Group | COMEX gold/silver inventory | Daily |
-| Blockchair | BTC on-chain data | Real-time |
-| RSS Feeds | Reuters, CoinDesk, Bloomberg, Kitco, CNBC | 10-min |
-
-Optional API keys unlock additional sources (Finnhub, FRED, Alpha Vantage). See [docs/API-SOURCES.md](docs/API-SOURCES.md).
-
----
-
-## 🚀 Quick Start
-
-```bash
-# Install
-curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
-
-# Launch, the setup wizard handles the rest
-pftui
-
-# Optional: enable Brave-powered news/research/economic data
-pftui config set brave_api_key <key>
-```
-
-The setup wizard walks you through adding your first positions with symbol autocomplete and auto-categorization. Choose between **Full mode** (transactions with cost basis) or **Percentage mode** (allocations only, no monetary data).
-
----
-
-## 🏗️ Built With
-
-- **Rust**, fast, safe, single binary
-- **ratatui**, terminal UI framework
-- **SQLite** default backend, with PostgreSQL backend support via `sqlx`
-- **Actix-web**, web dashboard server
-- **TradingView Widget**, interactive web charts
-
-No runtime dependencies. No Node. No Python. No Docker required. Just one binary.
-
 ---
 
 ## 📦 Installation
@@ -261,6 +225,23 @@ pftui status      # Check freshness per source
 pftui doctor      # Connectivity diagnostics
 ```
 
+Every data source works out of the box with no API keys:
+
+| Source | Data | Update Cadence |
+|---|---|---|
+| Yahoo Finance | Equities, ETFs, forex, crypto, commodities | Real-time |
+| CoinGecko | Crypto prices, market cap, volume | Real-time |
+| Polymarket | Prediction market probabilities | 15-min |
+| CFTC Socrata | Commitments of Traders (COT) positioning | Weekly |
+| Alternative.me | Crypto Fear & Greed Index | Daily |
+| BLS API v1 | CPI, unemployment, NFP, wages | Monthly |
+| World Bank | GDP, debt/GDP, reserves for 8 economies | Quarterly |
+| CME Group | COMEX gold/silver inventory | Daily |
+| Blockchair | BTC on-chain data | Real-time |
+| RSS Feeds | Reuters, CoinDesk, Bloomberg, Kitco, CNBC | 10-min |
+
+Optional API keys unlock additional sources (Finnhub, FRED, Alpha Vantage). See [docs/API-SOURCES.md](docs/API-SOURCES.md).
+
 ---
 
 ### Database
@@ -344,6 +325,21 @@ See the full AI layer guide: [docs/AI-LAYER.md](docs/AI-LAYER.md) and agent oper
     <td align="center"><img width="400" alt="pftui cli" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" /><br><sub>cli</sub></td>
   </tr>
 </table>
+
+---
+
+## 🏗️ Built With
+
+pftui is built in **Rust** as a fast, single-binary application.
+
+It uses:
+
+- **ratatui** for the terminal UI
+- **SQLite** by default, with **PostgreSQL** support via `sqlx`
+- **Actix-web** for the web dashboard
+- **TradingView Widget** for interactive web charts
+
+No Node required. No Python required. No Docker required.
 
 ---
 
