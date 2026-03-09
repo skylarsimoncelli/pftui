@@ -754,9 +754,14 @@ You can query the database directly if needed:
 sqlite3 ~/.local/share/pftui/pftui.db "SELECT symbol, quantity, cost_per_unit FROM transactions"
 ```
 
+If using PostgreSQL backend, query via your configured `database_url`:
+```bash
+psql "$DATABASE_URL" -c "SELECT symbol, quantity, price_per FROM transactions LIMIT 20;"
+```
+
 Backend status:
 - `sqlite` (default): fully supported
-- `postgres`: fully supported via runtime backend bridge (`database_backend`, `database_url`)
+- `postgres`: fully supported natively (`database_backend`, `database_url`)
 
 Migration guide: [docs/MIGRATING.md](docs/MIGRATING.md)
 
