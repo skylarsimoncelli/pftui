@@ -230,8 +230,7 @@ pub fn is_watched_backend(backend: &BackendConnection, symbol: &str) -> Result<b
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS watchlist (
                 id BIGSERIAL PRIMARY KEY,
@@ -258,8 +257,7 @@ fn add_to_watchlist_postgres(
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
     let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+        let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO watchlist (symbol, category, group_id)
              VALUES ($1, $2, $3)
@@ -284,8 +282,7 @@ fn set_watchlist_target_postgres(
     target_direction: Option<&str>,
 ) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+        let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE watchlist
              SET target_price = $1, target_direction = $2
@@ -302,8 +299,7 @@ fn set_watchlist_target_postgres(
 
 fn remove_from_watchlist_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+        let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM watchlist WHERE UPPER(symbol) = UPPER($1)")
             .bind(symbol)
             .execute(pool)
@@ -331,8 +327,7 @@ fn watchlist_entry_from_row(row: WatchlistRow) -> WatchlistEntry {
 #[allow(dead_code)]
 fn list_watchlist_postgres(pool: &PgPool) -> Result<Vec<WatchlistEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<WatchlistRow> = runtime.block_on(async {
+        let rows: Vec<WatchlistRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, group_id, added_at::text, target_price, target_direction
              FROM watchlist
@@ -348,8 +343,7 @@ fn list_watchlist_postgres(pool: &PgPool) -> Result<Vec<WatchlistEntry>> {
 fn list_watchlist_by_group_postgres(pool: &PgPool, group_id: i64) -> Result<Vec<WatchlistEntry>> {
     ensure_tables_postgres(pool)?;
     let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<WatchlistRow> = runtime.block_on(async {
+        let rows: Vec<WatchlistRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, group_id, added_at::text, target_price, target_direction
              FROM watchlist
@@ -366,8 +360,7 @@ fn list_watchlist_by_group_postgres(pool: &PgPool, group_id: i64) -> Result<Vec<
 #[allow(dead_code)]
 fn get_watchlist_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCategory)>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String)> = runtime.block_on(async {
+        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as("SELECT symbol, category FROM watchlist ORDER BY symbol")
             .fetch_all(pool)
             .await
@@ -380,8 +373,7 @@ fn get_watchlist_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCat
 
 fn is_watched_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let count: i64 = runtime.block_on(async {
+        let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM watchlist WHERE UPPER(symbol) = UPPER($1)")
             .bind(symbol)
             .fetch_one(pool)

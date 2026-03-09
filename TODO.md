@@ -887,12 +887,19 @@ These are the most-used modules. Migrate them first to validate the pattern.
 > F32 established native Postgres paths. P32 closes remaining production-grade parity gaps:
 > performance, CI validation, and docs consistency.
 
-- [ ] **P32.1 Docs parity sweep** — remove stale "runtime bridge" wording across docs (AGENTS/README/docs), and document backend-specific direct-query examples for both SQLite and Postgres.
-- [ ] **P32.2 Postgres CI job** — add a CI job with real Postgres service container + backend smoke tests so parity is continuously validated.
-- [ ] **P32.3 Runtime strategy cleanup** — remove per-function Tokio runtime creation in DB modules; use a shared runtime/async boundary to cut overhead and improve latency.
-- [ ] **P32.4 Postgres schema type upgrades** — migrate hot-path numeric/time columns from `TEXT` to native Postgres types (`NUMERIC`, `DOUBLE PRECISION`, `TIMESTAMPTZ`) with safe migrations.
-- [ ] **P32.5 Pooling config** — expose Postgres pool knobs in config (`max_connections`, `connect_timeout`) and wire into backend opening.
-- [ ] **P32.6 Setup/backend switch validation** — add tests for setup backend selection and export→switch→import workflow correctness.
+**Completed**
+- P32.1 Docs parity sweep
+- P32.2 Postgres CI job
+- P32.3 Runtime strategy cleanup (partial: shared runtime introduced + core modules migrated)
+- P32.4 Postgres schema type upgrades (hot path columns)
+- P32.5 Pooling config
+- P32.6 Setup/backend switch validation
+
+**Remaining (new work items)**
+- [ ] **P32.7 Runtime cleanup completion** — migrate remaining DB Postgres paths from per-function `Runtime::new()` to shared `pg_runtime::block_on` (batch in phases to keep risk low).
+- [ ] **P32.8 Postgres CI expansion** — extend CI beyond smoke to run a backend-dispatched command suite against Postgres (`refresh`-safe modules + import/export roundtrip assertions).
+- [ ] **P32.9 Parity acceptance suite** — add a reproducible backend parity checklist script (`scripts/parity_check.sh`) to run key commands on sqlite and postgres and diff normalized outputs.
+- [ ] **P32.10 Final parity signoff docs** — publish a single doc section that defines supported parity scope, known intentional differences, and backend switching runbook with verification commands.
 
 **Key SQL differences to handle per-module:**
 
