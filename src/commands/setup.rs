@@ -186,8 +186,7 @@ fn reset_setup_tables(backend: &BackendConnection) -> Result<()> {
             Ok(())
         },
         |pool| {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(async {
+            crate::db::pg_runtime::block_on(async {
                 sqlx::query("DELETE FROM transactions")
                     .execute(pool)
                     .await?;
@@ -374,7 +373,6 @@ fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
     // Fetch prices and create transactions
     println!();
     println!("  Fetching current prices...");
-    let rt = tokio::runtime::Runtime::new()?;
 
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
@@ -384,7 +382,10 @@ fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
         let (price, qty) = if entry.category == AssetCategory::Cash {
             (dec!(1), value)
         } else {
-            let fetched = rt.block_on(fetch_price_for_symbol(&entry.symbol, entry.category));
+            let fetched = crate::db::pg_runtime::block_on(fetch_price_for_symbol(
+                &entry.symbol,
+                entry.category,
+            ));
             match fetched {
                 Ok(p) if p > dec!(0) => {
                     let q = value / p;

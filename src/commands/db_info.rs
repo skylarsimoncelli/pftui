@@ -107,8 +107,7 @@ fn sqlite_tables_with_counts(conn: &rusqlite::Connection) -> Result<Vec<TableInf
 }
 
 fn postgres_tables_with_counts(pool: &sqlx::PgPool) -> Result<Vec<TableInfo>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let mut tables = runtime.block_on(async {
+    let mut tables = crate::db::pg_runtime::block_on(async {
         let names: Vec<String> = sqlx::query_scalar(
             "SELECT table_name
              FROM information_schema.tables

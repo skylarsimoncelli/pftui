@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Runtime strategy consistency pass (command hot paths)
+
+- What: removed remaining ad-hoc `Runtime::new()` usage in command paths and switched to shared runtime helpers (`pg_runtime::block_on`) for Postgres/async calls.
+- Why: reduces runtime spin-up overhead and keeps async execution strategy consistent across backend-dispatched command code.
+- Files: `src/commands/set_cash.rs`, `src/commands/heatmap.rs`, `src/commands/setup.rs`, `src/commands/db_info.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit P1 (`runtime strategy consistency`)
+
 ### 2026-03-09 — Structural module PostgreSQL dispatch implementation
 
 - What: implemented native Postgres execution paths for structural storage/read APIs (`power_metrics`, `structural_cycles`, `structural_outcomes`, `structural_outcome_history`, `historical_parallels`, `structural_log`) and removed “not yet implemented” backend bails.

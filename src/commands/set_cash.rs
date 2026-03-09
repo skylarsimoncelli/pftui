@@ -93,8 +93,7 @@ pub fn run(backend: &BackendConnection, symbol: &str, amount: &str) -> Result<()
 }
 
 fn delete_all_for_symbol_postgres(pool: &PgPool, symbol: &str) -> Result<usize> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let result = runtime.block_on(async {
+    let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM transactions WHERE symbol = $1")
             .bind(symbol)
             .execute(pool)

@@ -42,9 +42,8 @@ fn backfill_prices(
         return Ok(());
     }
 
-    let rt = tokio::runtime::Runtime::new()?;
     for symbol in symbols {
-        if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
+        if let Ok(quote) = crate::db::pg_runtime::block_on(yahoo::fetch_price(symbol)) {
             upsert_price_backend(backend, &quote)?;
             price_map.insert(symbol.to_string(), quote.price);
         }
