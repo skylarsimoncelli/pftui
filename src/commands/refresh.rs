@@ -871,7 +871,7 @@ pub fn run(
     if let Err(e) = store_portfolio_snapshot(backend, conn, config) {
         eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
     }
-    if let Err(e) = detect_timeframe_signals(conn) {
+    if let Err(e) = detect_timeframe_signals(backend, conn) {
         eprintln!(
             "\nWarning: failed to compute cross-timeframe signals: {}",
             e
@@ -1105,6 +1105,7 @@ fn structural_layer_bias(conn: &Connection) -> Option<String> {
 }
 
 fn maybe_insert_signal(
+    backend: &BackendConnection,
     conn: &Connection,
     signal_type: &str,
     layers: &[String],
@@ -1128,8 +1129,8 @@ fn maybe_insert_signal(
         return Ok(());
     }
 
-    let _ = timeframe_signals::add_signal(
-        conn,
+    let _ = timeframe_signals::add_signal_backend(
+        backend,
         signal_type,
         &layers_json,
         &assets_json,
@@ -1139,7 +1140,7 @@ fn maybe_insert_signal(
     Ok(())
 }
 
-fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
+fn detect_timeframe_signals(backend: &BackendConnection, conn: &Connection) -> Result<()> {
     if !table_exists(conn, "timeframe_signals") {
         return Ok(());
     }
@@ -1183,6 +1184,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             bull_count.max(bear_count)
         );
         maybe_insert_signal(
+            backend,
             conn,
             "alignment",
             &layers,
@@ -1196,6 +1198,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             bull_count, bear_count, neutral_count
         );
         maybe_insert_signal(
+            backend,
             conn,
             "divergence",
             &layers,
@@ -1213,6 +1216,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             if curr != prev {
                 let description = format!("regime transition detected: {} -> {}", prev, curr);
                 maybe_insert_signal(
+                    backend,
                     conn,
                     "transition",
                     &vec!["low".to_string()],

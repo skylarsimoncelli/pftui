@@ -378,18 +378,15 @@ fn main() -> Result<()> {
             severity,
             limit,
             json,
-        }) => {
-            let conn = sqlite_conn_for_command(&backend, "analytics")?;
-            commands::analytics::run(
-                conn,
-                &action,
-                symbol.as_deref(),
-                signal_type.as_deref(),
-                severity.as_deref(),
-                limit,
-                json,
-            )
-        }
+        }) => commands::analytics::run(
+            &backend,
+            &action,
+            symbol.as_deref(),
+            signal_type.as_deref(),
+            severity.as_deref(),
+            limit,
+            json,
+        ),
         Some(Command::Thesis {
             action,
             value,

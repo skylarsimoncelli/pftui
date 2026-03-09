@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 05:01 UTC — F32 Phase 35: backend-dispatch timeframe signals + analytics command
+
+- What: migrated `db/timeframe_signals.rs` to backend-dispatched APIs with native Postgres implementation, switched `analytics signals` command to backend routing, and updated refresh signal insertion to use backend-dispatched writes.
+- Why: removes another SQLite-only intelligence path and clears `analytics` command gating in postgres mode.
+- Files: `src/db/timeframe_signals.rs`, `src/commands/analytics.rs`, `src/commands/refresh.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5/F32.6 command parity (partial: analytics un-gated)
+
 ### 2026-03-09 04:48 UTC — F32 Phase 34: remove sqlite-conn dependency for drift + rebalance
 
 - What: removed SQLite connection parameter requirements from `drift` and `rebalance`; both now use backend-dispatched data paths and optional SQLite FX lookup when available.

@@ -1,11 +1,11 @@
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 use serde_json::json;
 
+use crate::db::backend::BackendConnection;
 use crate::db::timeframe_signals;
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     action: &str,
     symbol: Option<&str>,
     signal_type: Option<&str>,
@@ -16,7 +16,7 @@ pub fn run(
     match action {
         "signals" => {
             let mut rows =
-                timeframe_signals::list_signals(conn, signal_type, severity, limit.or(Some(25)))?;
+                timeframe_signals::list_signals_backend(backend, signal_type, severity, limit.or(Some(25)))?;
             if let Some(sym) = symbol {
                 let needle = format!("\"{}\"", sym.to_uppercase());
                 rows.retain(|r| r.assets.to_uppercase().contains(&needle));
