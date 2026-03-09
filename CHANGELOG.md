@@ -13,6 +13,14 @@
 - Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
 - TODO: removed P1-BUG "Postgres structural storage not yet implemented"
 
+### 2026-03-09 — Regime confidence weighting tune for risk-off states
+
+- What: updated risk-off classification to treat oil shock as a first-class trigger and switched confidence from flat counts to weighted scoring (`vix/oil` weighted higher than secondary confirmations).
+- Why: avoids unrealistically low risk-off confidence readings in stress regimes where volatility and energy are elevated.
+- Files: `src/commands/regime.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 regime-confidence tuning item
+
 ### 2026-03-09 — Refresh history stamping + correlations history clarity
 
 - What: refresh now writes a daily `price_history` close row for each non-static fetched quote, and correlations empty-state output now states the concrete minimum history needed for 90d windows (~91 daily closes).

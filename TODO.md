@@ -787,7 +787,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 ### Analytics
 
 
-- [ ] **P1: `pftui regime current` — confidence 0.25 is suspiciously low** — Risk-off regime detected but confidence only 0.25 with VIX 27.85, DXY 99.12, oil $94.31. In a war with oil at $100 and VIX near 30, confidence should be much higher. The classification logic may need tuning or the weighting formula may not account for all inputs. Regime is a foundation for the LOW layer — inaccurate confidence undermines downstream analytics.
 
 
 

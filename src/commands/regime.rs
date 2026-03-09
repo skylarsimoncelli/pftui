@@ -69,9 +69,10 @@ pub fn classify_regime(backend: &BackendConnection) -> RegimeAssessment {
     }
 
     let risk_off_match = vix.map(|x| x > 25.0).unwrap_or(false)
+        || oil.map(|x| x > 90.0).unwrap_or(false)
         || (dxy_up.unwrap_or(false) && gold_up.unwrap_or(false) && eq_up.map(|v| !v).unwrap_or(false));
     if risk_off_match {
-        drivers.push("VIX high or DXY/gold up with equities down".to_string());
+        drivers.push("VIX/oil stress or DXY/gold up with equities down".to_string());
     }
 
     let risk_on_match = vix.map(|x| x < 20.0).unwrap_or(false)
@@ -86,17 +87,26 @@ pub fn classify_regime(backend: &BackendConnection) -> RegimeAssessment {
     } else if stagflation_match {
         ("stagflation", 4.0, 4.0)
     } else if risk_off_match {
-        let mut m = 0.0;
-        let mut t = 0.0;
-        t += 1.0;
-        if vix.map(|x| x > 25.0).unwrap_or(false) { m += 1.0; }
-        t += 1.0;
-        if dxy_up.unwrap_or(false) { m += 1.0; }
-        t += 1.0;
-        if gold_up.unwrap_or(false) { m += 1.0; }
-        t += 1.0;
-        if eq_up.map(|v| !v).unwrap_or(false) { m += 1.0; }
-        ("risk-off", m, t)
+        // Weighted confidence: volatility and energy shock should move confidence
+        // more than secondary confirming signals.
+        let mut matched_weight = 0.0;
+        let total_weight = 1.0;
+        if vix.map(|x| x > 25.0).unwrap_or(false) {
+            matched_weight += 0.35;
+        }
+        if oil.map(|x| x > 90.0).unwrap_or(false) {
+            matched_weight += 0.25;
+        }
+        if dxy_up.unwrap_or(false) {
+            matched_weight += 0.15;
+        }
+        if gold_up.unwrap_or(false) {
+            matched_weight += 0.10;
+        }
+        if eq_up.map(|v| !v).unwrap_or(false) {
+            matched_weight += 0.15;
+        }
+        ("risk-off", matched_weight, total_weight)
     } else if risk_on_match {
         let mut m = 0.0;
         let mut t = 0.0;
