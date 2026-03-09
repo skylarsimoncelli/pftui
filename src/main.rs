@@ -252,11 +252,10 @@ fn main() -> Result<()> {
         }
 
         Some(Command::SetCash { symbol, amount }) => {
-            let conn = sqlite_conn_for_command(&backend, "set-cash")?;
             if config.is_percentage_mode() {
                 bail!("set-cash is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
-            commands::set_cash::run(conn, &symbol, &amount)
+            commands::set_cash::run(&backend, &symbol, &amount)
         }
 
         Some(Command::Demo) => {

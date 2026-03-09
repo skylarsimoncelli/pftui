@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 05:24 UTC — F32 Phase 37: backend-dispatch `set-cash` command path
+
+- What: migrated `set-cash` to accept `BackendConnection`, added backend-dispatched symbol transaction deletion with native Postgres SQL, and switched insertion to `insert_transaction_backend`; removed SQLite-only gating for `set-cash` in `main`.
+- Why: removes another hybrid command path and ensures cash position management works in full postgres mode.
+- Files: `src/commands/set_cash.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated command paths in `main`)
+
 ### 2026-03-09 05:12 UTC — F32 Phase 36: remove sqlite gating for non-check alert actions
 
 - What: updated alerts command dispatch so only `alerts check` requires a SQLite connection; `add/list/remove/ack/rearm` now run backend-native without sqlite gating in `main`.
