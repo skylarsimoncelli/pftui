@@ -48,8 +48,7 @@ pub fn load_timeframe_backend(backend: &BackendConnection, symbol: &str) -> Resu
 }
 
 fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS chart_state (
                 symbol TEXT PRIMARY KEY,
@@ -66,8 +65,7 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
 
 fn save_timeframe_postgres(pool: &PgPool, symbol: &str, timeframe: &str) -> Result<()> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO chart_state (symbol, timeframe, updated_at)
              VALUES ($1, $2, NOW())
@@ -86,8 +84,7 @@ fn save_timeframe_postgres(pool: &PgPool, symbol: &str, timeframe: &str) -> Resu
 
 fn load_timeframe_postgres(pool: &PgPool, symbol: &str) -> Result<Option<String>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<(String,)> = runtime.block_on(async {
+        let row: Option<(String,)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as("SELECT timeframe FROM chart_state WHERE symbol = $1")
             .bind(symbol.to_uppercase())
             .fetch_optional(pool)

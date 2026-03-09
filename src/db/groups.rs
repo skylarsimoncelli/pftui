@@ -102,8 +102,7 @@ pub fn get_group_members_backend(backend: &BackendConnection, group_name: &str) 
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS groups (
                 name TEXT PRIMARY KEY,
@@ -128,8 +127,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
 
 fn create_group_postgres(pool: &PgPool, name: &str) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO groups (name) VALUES ($1)
              ON CONFLICT(name) DO NOTHING",
@@ -144,8 +142,7 @@ fn create_group_postgres(pool: &PgPool, name: &str) -> Result<()> {
 
 fn remove_group_postgres(pool: &PgPool, name: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let result = runtime.block_on(async {
+        let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM groups WHERE name = $1")
             .bind(name)
             .execute(pool)
@@ -156,8 +153,7 @@ fn remove_group_postgres(pool: &PgPool, name: &str) -> Result<bool> {
 
 fn list_groups_postgres(pool: &PgPool) -> Result<Vec<GroupRow>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String)> = runtime.block_on(async {
+        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as("SELECT name, created_at::text FROM groups ORDER BY name ASC")
             .fetch_all(pool)
             .await
@@ -170,8 +166,7 @@ fn list_groups_postgres(pool: &PgPool) -> Result<Vec<GroupRow>> {
 
 fn set_group_members_postgres(pool: &PgPool, group_name: &str, symbols: &[String]) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         let mut tx = pool.begin().await?;
         sqlx::query(
             "INSERT INTO groups (name) VALUES ($1)
@@ -199,8 +194,7 @@ fn set_group_members_postgres(pool: &PgPool, group_name: &str, symbols: &[String
 
 fn get_group_members_postgres(pool: &PgPool, group_name: &str) -> Result<Vec<String>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+        let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar::<_, String>(
             "SELECT symbol
              FROM group_members

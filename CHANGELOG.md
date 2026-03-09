@@ -19,6 +19,14 @@
 - Tests: `cargo check -q`, `cargo test -q db::watchlist::tests::`, `cargo test -q db::dividends::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.7 Runtime cleanup completion
 
+### 2026-03-09 — P32.7 batch B: shared runtime migration (groups/chart_state)
+
+- What: migrated Postgres execution paths in `groups` and `chart_state` DB modules from per-function `tokio::runtime::Runtime::new()` to shared `pg_runtime::block_on`.
+- Why: continues incremental runtime cleanup while keeping each batch small and verifiable.
+- Files: `src/db/groups.rs`, `src/db/chart_state.rs`, `TODO.md`
+- Tests: `cargo check -q`, `cargo test -q db::groups::tests::`, `cargo test -q db::chart_state::tests::`, `cargo test -q` (1193 passed)
+- TODO: P32.7 Runtime cleanup completion
+
 ### 2026-03-09 — Implement structural cycles CLI (F31.11)
 
 - What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.

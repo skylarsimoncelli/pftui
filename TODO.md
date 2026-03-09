@@ -897,6 +897,9 @@ These are the most-used modules. Migrate them first to validate the pattern.
 
 **Remaining (new work items)**
 - [ ] **P32.7 Runtime cleanup completion** — migrate remaining DB Postgres paths from per-function `Runtime::new()` to shared `pg_runtime::block_on` (batch in phases to keep risk low).
+  Completed batches so far:
+  - Batch A: `watchlist`, `dividends`
+  - Batch B: `groups`, `chart_state`
 - [ ] **P32.8 Postgres CI expansion** — extend CI beyond smoke to run a backend-dispatched command suite against Postgres (`refresh`-safe modules + import/export roundtrip assertions).
 - [ ] **P32.9 Parity acceptance suite** — add a reproducible backend parity checklist script (`scripts/parity_check.sh`) to run key commands on sqlite and postgres and diff normalized outputs.
 - [ ] **P32.10 Final parity signoff docs** — publish a single doc section that defines supported parity scope, known intentional differences, and backend switching runbook with verification commands.
