@@ -602,6 +602,25 @@ fn main() -> Result<()> {
                 action
             )),
         },
+        Some(Command::Notes {
+            action,
+            value,
+            id,
+            date,
+            section,
+            since,
+            limit,
+            json,
+        }) => commands::notes::run(
+            &action,
+            value.as_deref(),
+            id,
+            date.as_deref(),
+            section.as_deref(),
+            since.as_deref(),
+            limit,
+            json,
+        ),
         Some(Command::Dividends {
             action,
             value,

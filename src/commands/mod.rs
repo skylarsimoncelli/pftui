@@ -11,6 +11,7 @@ pub mod correlations;
 pub mod cot;
 pub mod crisis;
 pub mod demo;
+pub mod notes;
 pub mod dividends;
 pub mod drift;
 pub mod economy;

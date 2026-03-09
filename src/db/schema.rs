@@ -450,6 +450,16 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_agent_messages_to ON agent_messages(to_agent);
         CREATE INDEX IF NOT EXISTS idx_agent_messages_ack ON agent_messages(acknowledged);
 
+        CREATE TABLE IF NOT EXISTS daily_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            section TEXT NOT NULL DEFAULT 'general',
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_notes_date ON daily_notes(date);
+        CREATE INDEX IF NOT EXISTS idx_daily_notes_section ON daily_notes(section);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,

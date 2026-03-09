@@ -809,6 +809,36 @@ pub enum Command {
         json: bool,
     },
 
+    /// Date-keyed research notes and narrative entries
+    #[command(name = "notes")]
+    Notes {
+        /// Action: add, list, search, remove
+        action: String,
+
+        /// Content (for add) or search query (for search)
+        value: Option<String>,
+
+        #[arg(long)]
+        id: Option<i64>,
+
+        /// Date YYYY-MM-DD (defaults to today for add)
+        #[arg(long)]
+        date: Option<String>,
+
+        /// Section: market, decisions, system, analysis, events, general
+        #[arg(long)]
+        section: Option<String>,
+
+        #[arg(long)]
+        since: Option<String>,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Track dividend payments, ex-dates, and trailing yield
     Dividends {
         /// Action: add, list, remove

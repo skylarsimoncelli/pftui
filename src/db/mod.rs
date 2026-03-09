@@ -16,6 +16,7 @@ pub mod comex_cache;
 pub mod convictions;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot_cache;
+pub mod daily_notes;
 pub mod dividends;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod economic_cache;

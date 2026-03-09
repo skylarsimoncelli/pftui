@@ -683,6 +683,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui agent-msg send "TEXT" --from agent-a [--to agent-b]` | Send a structured message between agent roles |
 | `pftui agent-msg list [--unacked] --json` | Query queued agent messages |
 | `pftui agent-msg ack --id N` | Acknowledge a single message |
+| `pftui notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
+| `pftui notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |

@@ -305,6 +305,8 @@ analysis and structural context constrains intraday interpretation.
 
 ### F31.7: Daily Notes — Date-keyed narrative entries [CROSS]
 
+- [x] Implemented (`pftui notes add/list/search/remove` + `daily_notes` table)
+
 **Files:** `src/db/daily_notes.rs`, `src/commands/notes.rs`, schema/cli/main/mod updates.
 
 **Schema:**
