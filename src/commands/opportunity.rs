@@ -2,10 +2,12 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use serde_json::json;
 
-use crate::db::{self, opportunity_cost};
+use crate::db::backend::BackendConnection;
+use crate::db::opportunity_cost;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     date: Option<&str>,
@@ -20,8 +22,6 @@ pub fn run(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     match action {
         "add" => {
             let event = value.ok_or_else(|| anyhow::anyhow!("event description required"))?;
@@ -30,8 +30,8 @@ pub fn run(
                 .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
             let was_rational = rational.unwrap_or(true);
 
-            let id = opportunity_cost::add_entry(
-                &conn,
+            let id = opportunity_cost::add_entry_backend(
+                backend,
                 &entry_date,
                 event,
                 asset,
@@ -44,7 +44,7 @@ pub fn run(
             )?;
 
             if json_output {
-                let rows = opportunity_cost::list_entries(&conn, None, None, None)?;
+                let rows = opportunity_cost::list_entries_backend(backend, None, None, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 }
@@ -54,7 +54,7 @@ pub fn run(
         }
 
         "list" => {
-            let rows = opportunity_cost::list_entries(&conn, since, asset, limit)?;
+            let rows = opportunity_cost::list_entries_backend(backend, since, asset, limit)?;
             if json_output {
                 println!(
                     "{}",
@@ -79,7 +79,7 @@ pub fn run(
         }
 
         "stats" => {
-            let stats = opportunity_cost::get_stats(&conn, since)?;
+            let stats = opportunity_cost::get_stats_backend(backend, since)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&stats)?);
             } else {

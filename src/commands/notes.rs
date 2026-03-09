@@ -2,7 +2,8 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use serde_json::json;
 
-use crate::db::{self, daily_notes};
+use crate::db::backend::BackendConnection;
+use crate::db::daily_notes;
 
 fn validate_section(section: &str) -> Result<()> {
     match section {
@@ -16,6 +17,7 @@ fn validate_section(section: &str) -> Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     id: Option<i64>,
@@ -25,8 +27,6 @@ pub fn run(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     match action {
         "add" => {
             let content = value.ok_or_else(|| anyhow::anyhow!("note content required"))?;
@@ -36,9 +36,9 @@ pub fn run(
             let sec = section.unwrap_or("general");
             validate_section(sec)?;
 
-            let new_id = daily_notes::add_note(&conn, &note_date, sec, content)?;
+            let new_id = daily_notes::add_note_backend(backend, &note_date, sec, content)?;
             if json_output {
-                let rows = daily_notes::list_notes(&conn, None, None, None)?;
+                let rows = daily_notes::list_notes_backend(backend, None, None, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 }
@@ -51,7 +51,7 @@ pub fn run(
             if let Some(s) = section {
                 validate_section(s)?;
             }
-            let rows = daily_notes::list_notes(&conn, date, section, limit)?;
+            let rows = daily_notes::list_notes_backend(backend, date, section, limit)?;
             if json_output {
                 println!(
                     "{}",
@@ -69,7 +69,7 @@ pub fn run(
 
         "search" => {
             let query = value.ok_or_else(|| anyhow::anyhow!("search query required"))?;
-            let rows = daily_notes::search_notes(&conn, query, since, limit)?;
+            let rows = daily_notes::search_notes_backend(backend, query, since, limit)?;
 
             if json_output {
                 println!(
@@ -88,7 +88,7 @@ pub fn run(
 
         "remove" => {
             let note_id = id.ok_or_else(|| anyhow::anyhow!("--id required for remove"))?;
-            daily_notes::remove_note(&conn, note_id)?;
+            daily_notes::remove_note_backend(backend, note_id)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "removed": note_id }))?);
             } else {

@@ -1,7 +1,8 @@
 use anyhow::{bail, Result};
 use serde_json::json;
 
-use crate::db::{self, agent_messages};
+use crate::db::agent_messages;
+use crate::db::backend::BackendConnection;
 
 fn validate_priority(priority: &str) -> Result<()> {
     match priority {
@@ -29,6 +30,7 @@ fn validate_layer(layer: &str) -> Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     id: Option<i64>,
@@ -43,8 +45,6 @@ pub fn run(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     match action {
         "send" => {
             let content = value.ok_or_else(|| anyhow::anyhow!("message content required"))?;
@@ -58,8 +58,8 @@ pub fn run(
             if let Some(l) = layer {
                 validate_layer(l)?;
             }
-            let new_id = agent_messages::send_message(
-                &conn,
+            let new_id = agent_messages::send_message_backend(
+                backend,
                 from_agent,
                 to,
                 priority,
@@ -69,7 +69,9 @@ pub fn run(
             )?;
 
             if json_output {
-                let rows = agent_messages::list_messages(&conn, None, None, false, None, None)?;
+                let rows = agent_messages::list_messages_backend(
+                    backend, None, None, false, None, None,
+                )?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 }
@@ -82,7 +84,9 @@ pub fn run(
             if let Some(l) = layer {
                 validate_layer(l)?;
             }
-            let rows = agent_messages::list_messages(&conn, to, layer, unacked, since, limit)?;
+            let rows = agent_messages::list_messages_backend(
+                backend, to, layer, unacked, since, limit,
+            )?;
             if json_output {
                 println!(
                     "{}",
@@ -108,7 +112,7 @@ pub fn run(
 
         "ack" => {
             let msg_id = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
-            agent_messages::acknowledge(&conn, msg_id)?;
+            agent_messages::acknowledge_backend(backend, msg_id)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "acked": msg_id }))?);
             } else {
@@ -118,7 +122,7 @@ pub fn run(
 
         "ack-all" => {
             let recipient = to.ok_or_else(|| anyhow::anyhow!("--to required for ack-all"))?;
-            let count = agent_messages::acknowledge_all(&conn, recipient)?;
+            let count = agent_messages::acknowledge_all_backend(backend, recipient)?;
             if json_output {
                 println!(
                     "{}",
@@ -131,7 +135,7 @@ pub fn run(
 
         "purge" => {
             let n_days = days.unwrap_or(30);
-            let count = agent_messages::purge_old(&conn, n_days)?;
+            let count = agent_messages::purge_old_backend(backend, n_days)?;
             if json_output {
                 println!(
                     "{}",

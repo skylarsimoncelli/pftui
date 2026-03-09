@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentMessage {
@@ -128,4 +132,255 @@ pub fn purge_old(conn: &Connection, days: usize) -> Result<usize> {
         [format!("-{} days", days)],
     )?;
     Ok(n)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn send_message_backend(
+    backend: &BackendConnection,
+    from: &str,
+    to: Option<&str>,
+    priority: Option<&str>,
+    content: &str,
+    category: Option<&str>,
+    layer: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| send_message(conn, from, to, priority, content, category, layer),
+        |pool| send_message_postgres(pool, from, to, priority, content, category, layer),
+    )
+}
+
+pub fn list_messages_backend(
+    backend: &BackendConnection,
+    to: Option<&str>,
+    layer: Option<&str>,
+    unacked_only: bool,
+    since: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<AgentMessage>> {
+    query::dispatch(
+        backend,
+        |conn| list_messages(conn, to, layer, unacked_only, since, limit),
+        |pool| list_messages_postgres(pool, to, layer, unacked_only, since, limit),
+    )
+}
+
+pub fn acknowledge_backend(backend: &BackendConnection, id: i64) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| acknowledge(conn, id),
+        |pool| acknowledge_postgres(pool, id),
+    )
+}
+
+pub fn acknowledge_all_backend(backend: &BackendConnection, to: &str) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| acknowledge_all(conn, to),
+        |pool| acknowledge_all_postgres(pool, to),
+    )
+}
+
+pub fn purge_old_backend(backend: &BackendConnection, days: usize) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| purge_old(conn, days),
+        |pool| purge_old_postgres(pool, days),
+    )
+}
+
+type AgentMsgRow = (
+    i64,
+    String,
+    Option<String>,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    i64,
+    String,
+    Option<String>,
+);
+
+fn from_pg_row(r: AgentMsgRow) -> AgentMessage {
+    AgentMessage {
+        id: r.0,
+        from_agent: r.1,
+        to_agent: r.2,
+        priority: r.3,
+        content: r.4,
+        category: r.5,
+        layer: r.6,
+        acknowledged: r.7,
+        created_at: r.8,
+        acknowledged_at: r.9,
+    }
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS agent_messages (
+                id BIGSERIAL PRIMARY KEY,
+                from_agent TEXT NOT NULL,
+                to_agent TEXT,
+                priority TEXT NOT NULL DEFAULT 'normal',
+                content TEXT NOT NULL,
+                category TEXT,
+                layer TEXT,
+                acknowledged BIGINT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                acknowledged_at TIMESTAMPTZ
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_agent_messages_to ON agent_messages(to_agent)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_agent_messages_ack ON agent_messages(acknowledged)")
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn send_message_postgres(
+    pool: &PgPool,
+    from: &str,
+    to: Option<&str>,
+    priority: Option<&str>,
+    content: &str,
+    category: Option<&str>,
+    layer: Option<&str>,
+) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO agent_messages (from_agent, to_agent, priority, content, category, layer)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id",
+        )
+        .bind(from)
+        .bind(to)
+        .bind(priority.unwrap_or("normal"))
+        .bind(content)
+        .bind(category)
+        .bind(layer)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_messages_postgres(
+    pool: &PgPool,
+    to: Option<&str>,
+    layer: Option<&str>,
+    unacked_only: bool,
+    since: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<AgentMessage>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<AgentMsgRow> = match (to, layer, unacked_only, since, limit) {
+        (Some(t), Some(l), true, Some(s), Some(n)) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
+                 FROM agent_messages
+                 WHERE (to_agent IS NULL OR to_agent = $1) AND layer = $2 AND acknowledged = 0 AND created_at::text >= $3
+                 ORDER BY created_at DESC
+                 LIMIT $4",
+            )
+            .bind(t)
+            .bind(l)
+            .bind(s)
+            .bind(n as i64)
+            .fetch_all(pool)
+            .await
+        })?,
+        _ => {
+            // Simpler incremental filtering for maintainability.
+            let mut rows: Vec<AgentMsgRow> = runtime.block_on(async {
+                sqlx::query_as(
+                    "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
+                     FROM agent_messages
+                     ORDER BY created_at DESC",
+                )
+                .fetch_all(pool)
+                .await
+            })?;
+            if let Some(t) = to {
+                rows.retain(|r| r.2.as_deref().is_none_or(|v| v == t));
+            }
+            if let Some(l) = layer {
+                rows.retain(|r| r.6.as_deref().is_some_and(|v| v == l));
+            }
+            if unacked_only {
+                rows.retain(|r| r.7 == 0);
+            }
+            if let Some(s) = since {
+                rows.retain(|r| r.8 >= s.to_string());
+            }
+            if let Some(n) = limit {
+                rows.truncate(n);
+            }
+            rows
+        }
+    };
+    Ok(rows.into_iter().map(from_pg_row).collect())
+}
+
+fn acknowledge_postgres(pool: &PgPool, id: i64) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "UPDATE agent_messages
+             SET acknowledged = 1, acknowledged_at = NOW()
+             WHERE id = $1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn acknowledge_all_postgres(pool: &PgPool, to: &str) -> Result<usize> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query(
+            "UPDATE agent_messages
+             SET acknowledged = 1, acknowledged_at = NOW()
+             WHERE acknowledged = 0 AND (to_agent = $1 OR to_agent IS NULL)",
+        )
+        .bind(to)
+        .execute(pool)
+        .await
+    })?;
+    Ok(rows.rows_affected() as usize)
+}
+
+fn purge_old_postgres(pool: &PgPool, days: usize) -> Result<usize> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query(
+            "DELETE FROM agent_messages
+             WHERE acknowledged = 1
+               AND created_at < NOW() - (($1::TEXT || ' days')::INTERVAL)",
+        )
+        .bind(days as i64)
+        .execute(pool)
+        .await
+    })?;
+    Ok(rows.rows_affected() as usize)
 }

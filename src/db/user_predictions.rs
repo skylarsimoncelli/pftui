@@ -156,6 +156,7 @@ fn compute_stats(items: &[UserPrediction]) -> ConvictionStats {
     s
 }
 
+#[allow(dead_code)]
 pub fn get_stats(conn: &Connection) -> Result<PredictionStats> {
     let all = list_predictions(conn, None, None, None)?;
     let overall = compute_stats(&all);

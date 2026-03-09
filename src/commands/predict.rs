@@ -1,7 +1,8 @@
 use anyhow::{bail, Result};
 use serde_json::json;
 
-use crate::db::{self, user_predictions};
+use crate::db::backend::BackendConnection;
+use crate::db::user_predictions;
 
 fn validate_conviction(value: &str) -> Result<()> {
     match value {
@@ -19,6 +20,7 @@ fn validate_outcome(value: &str) -> Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     id: Option<i64>,
@@ -31,18 +33,22 @@ pub fn run(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     match action {
         "add" => {
             let claim = value.ok_or_else(|| anyhow::anyhow!("prediction claim required"))?;
             if let Some(c) = conviction {
                 validate_conviction(c)?;
             }
-            let new_id = user_predictions::add_prediction(&conn, claim, symbol, conviction, target_date)?;
+            let new_id = user_predictions::add_prediction_backend(
+                backend,
+                claim,
+                symbol,
+                conviction,
+                target_date,
+            )?;
 
             if json_output {
-                let rows = user_predictions::list_predictions(&conn, None, None, None)?;
+                let rows = user_predictions::list_predictions_backend(backend, None, None, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 }
@@ -55,7 +61,7 @@ pub fn run(
             if let Some(f) = filter {
                 validate_outcome(f)?;
             }
-            let rows = user_predictions::list_predictions(&conn, filter, symbol, limit)?;
+            let rows = user_predictions::list_predictions_backend(backend, filter, symbol, limit)?;
 
             if json_output {
                 println!(
@@ -80,10 +86,10 @@ pub fn run(
             let pid = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
             let out = outcome.ok_or_else(|| anyhow::anyhow!("--outcome required"))?;
             validate_outcome(out)?;
-            user_predictions::score_prediction(&conn, pid, out, notes)?;
+            user_predictions::score_prediction_backend(backend, pid, out, notes)?;
 
             if json_output {
-                let rows = user_predictions::list_predictions(&conn, None, None, None)?;
+                let rows = user_predictions::list_predictions_backend(backend, None, None, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == pid) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 } else {
@@ -95,7 +101,7 @@ pub fn run(
         }
 
         "stats" => {
-            let stats = user_predictions::get_stats(&conn)?;
+            let stats = user_predictions::get_stats_backend(backend)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&stats)?);
             } else {

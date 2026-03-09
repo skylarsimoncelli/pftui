@@ -1,4 +1,5 @@
-use crate::db::{self, research_questions};
+use crate::db::backend::BackendConnection;
+use crate::db::research_questions;
 use anyhow::{bail, Result};
 use serde_json::json;
 
@@ -25,6 +26,7 @@ fn validate_status(status: &str) -> Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     id: Option<i64>,
@@ -35,15 +37,13 @@ pub fn run(
     status: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     match action {
         "add" => {
             let question = value.ok_or_else(|| anyhow::anyhow!("question text required"))?;
-            let new_id = research_questions::add_question(&conn, question, signal)?;
+            let new_id = research_questions::add_question_backend(backend, question, signal)?;
 
             if json_output {
-                let rows = research_questions::list_questions(&conn, None)?;
+                let rows = research_questions::list_questions_backend(backend, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 }
@@ -55,7 +55,7 @@ pub fn run(
             if let Some(s) = status {
                 validate_status(s)?;
             }
-            let mut rows = research_questions::list_questions(&conn, status)?;
+            let mut rows = research_questions::list_questions_backend(backend, status)?;
 
             if let Some(query) = value {
                 let q = query.to_lowercase();
@@ -90,10 +90,10 @@ pub fn run(
             if let Some(t) = tilt {
                 validate_tilt(t)?;
             }
-            research_questions::update_question(&conn, qid, tilt, evidence, signal)?;
+            research_questions::update_question_backend(backend, qid, tilt, evidence, signal)?;
 
             if json_output {
-                let rows = research_questions::list_questions(&conn, None)?;
+                let rows = research_questions::list_questions_backend(backend, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == qid) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 } else {
@@ -108,10 +108,10 @@ pub fn run(
             let res = resolution.ok_or_else(|| anyhow::anyhow!("--resolution required"))?;
             let st = status.unwrap_or("resolved");
             validate_status(st)?;
-            research_questions::resolve_question(&conn, qid, res, st)?;
+            research_questions::resolve_question_backend(backend, qid, res, st)?;
 
             if json_output {
-                let rows = research_questions::list_questions(&conn, None)?;
+                let rows = research_questions::list_questions_backend(backend, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == qid) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 } else {

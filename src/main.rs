@@ -364,6 +364,7 @@ fn main() -> Result<()> {
             status,
             json,
         }) => commands::question::run(
+            &backend,
             &action,
             value.as_deref(),
             id,
@@ -389,6 +390,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::agent_msg::run(
+            &backend,
             &action,
             value.as_deref(),
             id,
@@ -471,6 +473,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::predict::run(
+            &backend,
             &action,
             value.as_deref(),
             id,
@@ -665,6 +668,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::notes::run(
+            &backend,
             &action,
             value.as_deref(),
             id,
@@ -689,6 +693,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::opportunity::run(
+            &backend,
             &action,
             value.as_deref(),
             date.as_deref(),
