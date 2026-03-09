@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:20 UTC — F32 Phase 26: backend-dispatch journal command/data paths
+
+- What: migrated `journal` command flow to backend-dispatched data access and added native Postgres implementations for `db/journal.rs` CRUD/search/stats/tag aggregation methods.
+- Why: removes another major SQLite-only intelligence workflow and eliminates direct SQLite-open behavior in journaling operations.
+- Files: `src/db/journal.rs`, `src/commands/journal.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5/F32.6 analytics + intelligence migration (partial: journal)
+
 ### 2026-03-09 03:03 UTC — F32 Phase 25: backend-dispatch thesis + conviction command/data paths
 
 - What: migrated `thesis` and `conviction` flows from SQLite-only open-by-path behavior to shared `BackendConnection` dispatch; added native Postgres query implementations for `db/thesis.rs` and `db/convictions.rs` and updated CLI routing in `main`.

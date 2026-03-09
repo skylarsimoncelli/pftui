@@ -495,6 +495,7 @@ fn main() -> Result<()> {
                     anyhow::anyhow!("Missing content text. Usage: pftui journal add \"your entry text\"")
                 })?;
                 commands::journal::run_add(
+                    &backend,
                     content_text,
                     date.as_deref(),
                     tag.as_deref(),
@@ -504,6 +505,7 @@ fn main() -> Result<()> {
                 )
             }
             "list" => commands::journal::run_list(
+                &backend,
                 limit,
                 since.as_deref(),
                 tag.as_deref(),
@@ -515,13 +517,14 @@ fn main() -> Result<()> {
                 let query = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing search query. Usage: pftui journal search \"query\"")
                 })?;
-                commands::journal::run_search(query, since.as_deref(), limit, json)
+                commands::journal::run_search(&backend, query, since.as_deref(), limit, json)
             }
             "update" => {
                 let entry_id = id.ok_or_else(|| {
                     anyhow::anyhow!("Missing entry ID. Usage: pftui journal update --id N [--content \"...\"] [--status ...]")
                 })?;
                 commands::journal::run_update(
+                    &backend,
                     entry_id,
                     content.as_deref(),
                     status.as_deref(),
@@ -532,10 +535,10 @@ fn main() -> Result<()> {
                 let entry_id = id.ok_or_else(|| {
                     anyhow::anyhow!("Missing entry ID. Usage: pftui journal remove --id N")
                 })?;
-                commands::journal::run_remove(entry_id, json)
+                commands::journal::run_remove(&backend, entry_id, json)
             }
-            "tags" => commands::journal::run_tags(json),
-            "stats" => commands::journal::run_stats(json),
+            "tags" => commands::journal::run_tags(&backend, json),
+            "stats" => commands::journal::run_stats(&backend, json),
             _ => Err(anyhow::anyhow!(
                 "Unknown journal action '{}'. Valid actions: add, list, search, update, remove, tags, stats",
                 action

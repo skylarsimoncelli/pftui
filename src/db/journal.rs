@@ -1,6 +1,10 @@
 use anyhow::Result;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, Row as SqliteRow};
 use serde::{Deserialize, Serialize};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JournalEntry {
@@ -25,7 +29,7 @@ pub struct NewJournalEntry {
 }
 
 impl JournalEntry {
-    fn from_row(row: &Row) -> Result<Self, rusqlite::Error> {
+    fn from_row(row: &SqliteRow) -> Result<Self, rusqlite::Error> {
         Ok(Self {
             id: row.get(0)?,
             timestamp: row.get(1)?,
@@ -55,6 +59,14 @@ pub fn add_entry(conn: &Connection, entry: &NewJournalEntry) -> Result<i64> {
     Ok(conn.last_insert_rowid())
 }
 
+pub fn add_entry_backend(backend: &BackendConnection, entry: &NewJournalEntry) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_entry(conn, entry),
+        |pool| add_entry_postgres(pool, entry),
+    )
+}
+
 pub fn get_entry(conn: &Connection, id: i64) -> Result<Option<JournalEntry>> {
     let mut stmt = conn.prepare(
         "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at
@@ -66,6 +78,14 @@ pub fn get_entry(conn: &Connection, id: i64) -> Result<Option<JournalEntry>> {
     } else {
         Ok(None)
     }
+}
+
+pub fn get_entry_backend(backend: &BackendConnection, id: i64) -> Result<Option<JournalEntry>> {
+    query::dispatch(
+        backend,
+        |conn| get_entry(conn, id),
+        |pool| get_entry_postgres(pool, id),
+    )
 }
 
 pub fn list_entries(
@@ -119,6 +139,21 @@ pub fn list_entries(
     Ok(entries)
 }
 
+pub fn list_entries_backend(
+    backend: &BackendConnection,
+    limit: Option<usize>,
+    since: Option<&str>,
+    tag: Option<&str>,
+    symbol: Option<&str>,
+    status: Option<&str>,
+) -> Result<Vec<JournalEntry>> {
+    query::dispatch(
+        backend,
+        |conn| list_entries(conn, limit, since, tag, symbol, status),
+        |pool| list_entries_postgres(pool, limit, since, tag, symbol, status),
+    )
+}
+
 pub fn search_entries(
     conn: &Connection,
     query: &str,
@@ -151,6 +186,19 @@ pub fn search_entries(
     Ok(entries)
 }
 
+pub fn search_entries_backend(
+    backend: &BackendConnection,
+    query_text: &str,
+    since: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<JournalEntry>> {
+    query::dispatch(
+        backend,
+        |conn| search_entries(conn, query_text, since, limit),
+        |pool| search_entries_postgres(pool, query_text, since, limit),
+    )
+}
+
 pub fn update_entry(
     conn: &Connection,
     id: i64,
@@ -166,9 +214,30 @@ pub fn update_entry(
     Ok(())
 }
 
+pub fn update_entry_backend(
+    backend: &BackendConnection,
+    id: i64,
+    content: Option<&str>,
+    status: Option<&str>,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| update_entry(conn, id, content, status),
+        |pool| update_entry_postgres(pool, id, content, status),
+    )
+}
+
 pub fn remove_entry(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM journal WHERE id = ?", params![id])?;
     Ok(())
+}
+
+pub fn remove_entry_backend(backend: &BackendConnection, id: i64) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| remove_entry(conn, id),
+        |pool| remove_entry_postgres(pool, id),
+    )
 }
 
 pub fn get_all_tags(conn: &Connection) -> Result<Vec<(String, usize)>> {
@@ -180,6 +249,10 @@ pub fn get_all_tags(conn: &Connection) -> Result<Vec<(String, usize)>> {
         tags.push(tag?);
     }
     Ok(tags)
+}
+
+pub fn get_all_tags_backend(backend: &BackendConnection) -> Result<Vec<(String, usize)>> {
+    query::dispatch(backend, get_all_tags, get_all_tags_postgres)
 }
 
 #[derive(Debug, Serialize)]
@@ -207,6 +280,289 @@ pub fn get_stats(conn: &Connection) -> Result<JournalStats> {
     Ok(JournalStats {
         total_entries: total,
         entries_by_tag: tags,
+        entries_by_month,
+    })
+}
+
+pub fn get_stats_backend(backend: &BackendConnection) -> Result<JournalStats> {
+    query::dispatch(backend, get_stats, get_stats_postgres)
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS journal (
+                id BIGSERIAL PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tag TEXT,
+                symbol TEXT,
+                conviction TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+type JournalRow = (
+    i64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+);
+
+fn to_journal_entry(r: JournalRow) -> JournalEntry {
+    JournalEntry {
+        id: r.0,
+        timestamp: r.1,
+        content: r.2,
+        tag: r.3,
+        symbol: r.4,
+        conviction: r.5,
+        status: r.6,
+        created_at: r.7,
+    }
+}
+
+fn add_entry_postgres(pool: &PgPool, entry: &NewJournalEntry) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO journal (timestamp, content, tag, symbol, conviction, status)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id",
+        )
+        .bind(&entry.timestamp)
+        .bind(&entry.content)
+        .bind(&entry.tag)
+        .bind(&entry.symbol)
+        .bind(&entry.conviction)
+        .bind(&entry.status)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn get_entry_postgres(pool: &PgPool, id: i64) -> Result<Option<JournalEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<JournalRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
+             FROM journal
+             WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(to_journal_entry))
+}
+
+fn list_entries_postgres(
+    pool: &PgPool,
+    limit: Option<usize>,
+    since: Option<&str>,
+    tag: Option<&str>,
+    symbol: Option<&str>,
+    status: Option<&str>,
+) -> Result<Vec<JournalEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+            "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
+             FROM journal
+             WHERE TRUE",
+        );
+
+        if let Some(since_date) = since {
+            qb.push(" AND timestamp >= ").push_bind(since_date);
+        }
+        if let Some(sym) = symbol {
+            qb.push(" AND symbol = ").push_bind(sym);
+        }
+        if let Some(st) = status {
+            qb.push(" AND status = ").push_bind(st);
+        }
+        if let Some(tag_filter) = tag {
+            let tags: Vec<&str> = tag_filter
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !tags.is_empty() {
+                qb.push(" AND tag IN (");
+                let mut separated = qb.separated(", ");
+                for t in tags {
+                    separated.push_bind(t);
+                }
+                separated.push_unseparated(")");
+            }
+        }
+
+        qb.push(" ORDER BY timestamp DESC");
+        if let Some(limit) = limit {
+            qb.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        qb.build().fetch_all(pool).await
+    })?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(to_journal_entry((
+                row.try_get(0)?,
+                row.try_get(1)?,
+                row.try_get(2)?,
+                row.try_get(3)?,
+                row.try_get(4)?,
+                row.try_get(5)?,
+                row.try_get(6)?,
+                row.try_get(7)?,
+            )))
+        })
+        .collect()
+}
+
+fn search_entries_postgres(
+    pool: &PgPool,
+    query_text: &str,
+    since: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<JournalEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+            "SELECT id, timestamp, content, tag, symbol, conviction, status, created_at::text
+             FROM journal
+             WHERE content ILIKE ",
+        );
+        qb.push_bind(format!("%{}%", query_text));
+        if let Some(since_date) = since {
+            qb.push(" AND timestamp >= ").push_bind(since_date);
+        }
+        qb.push(" ORDER BY timestamp DESC");
+        if let Some(limit) = limit {
+            qb.push(" LIMIT ").push_bind(limit as i64);
+        }
+        qb.build().fetch_all(pool).await
+    })?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(to_journal_entry((
+                row.try_get(0)?,
+                row.try_get(1)?,
+                row.try_get(2)?,
+                row.try_get(3)?,
+                row.try_get(4)?,
+                row.try_get(5)?,
+                row.try_get(6)?,
+                row.try_get(7)?,
+            )))
+        })
+        .collect()
+}
+
+fn update_entry_postgres(
+    pool: &PgPool,
+    id: i64,
+    content: Option<&str>,
+    status: Option<&str>,
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        if let Some(content) = content {
+            sqlx::query("UPDATE journal SET content = $1 WHERE id = $2")
+                .bind(content)
+                .bind(id)
+                .execute(pool)
+                .await?;
+        }
+        if let Some(status) = status {
+            sqlx::query("UPDATE journal SET status = $1 WHERE id = $2")
+                .bind(status)
+                .bind(id)
+                .execute(pool)
+                .await?;
+        }
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn remove_entry_postgres(pool: &PgPool, id: i64) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query("DELETE FROM journal WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_all_tags_postgres(pool: &PgPool) -> Result<Vec<(String, usize)>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, i64)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT tag, COUNT(*)::bigint
+             FROM journal
+             WHERE tag IS NOT NULL
+             GROUP BY tag
+             ORDER BY COUNT(*) DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(|(tag, count)| (tag, count as usize)).collect())
+}
+
+fn get_stats_postgres(pool: &PgPool) -> Result<JournalStats> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let total: i64 = runtime.block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal")
+            .fetch_one(pool)
+            .await
+    })?;
+    let entries_by_tag = get_all_tags_postgres(pool)?;
+    let months: Vec<(String, i64)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT TO_CHAR(date_trunc('month', timestamp::timestamptz), 'YYYY-MM') AS month, COUNT(*)::bigint
+             FROM journal
+             GROUP BY month
+             ORDER BY month DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    let entries_by_month = months
+        .into_iter()
+        .map(|(month, count)| (month, count as usize))
+        .collect();
+
+    Ok(JournalStats {
+        total_entries: total as usize,
+        entries_by_tag,
         entries_by_month,
     })
 }

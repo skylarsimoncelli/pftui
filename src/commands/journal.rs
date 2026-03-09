@@ -1,9 +1,11 @@
-use crate::db::{self, journal};
+use crate::db::backend::BackendConnection;
+use crate::db::journal;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde_json::json;
 
 pub fn run_add(
+    backend: &BackendConnection,
     content: &str,
     date: Option<&str>,
     tag: Option<&str>,
@@ -11,8 +13,6 @@ pub fn run_add(
     conviction: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     let timestamp = if let Some(d) = date {
         // Parse user-provided date — try ISO 8601 first, then fallback to date-only
         if let Ok(dt) = DateTime::parse_from_rfc3339(d) {
@@ -38,10 +38,10 @@ pub fn run_add(
         status: "open".to_string(),
     };
 
-    let id = journal::add_entry(&conn, &entry)?;
+    let id = journal::add_entry_backend(backend, &entry)?;
 
     if json_output {
-        let inserted = journal::get_entry(&conn, id)?.unwrap();
+        let inserted = journal::get_entry_backend(backend, id)?.unwrap();
         println!("{}", serde_json::to_string_pretty(&inserted)?);
     } else {
         println!("Added journal entry #{}", id);
@@ -51,6 +51,7 @@ pub fn run_add(
 }
 
 pub fn run_list(
+    backend: &BackendConnection,
     limit: Option<usize>,
     since: Option<&str>,
     tag: Option<&str>,
@@ -58,16 +59,14 @@ pub fn run_list(
     status: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     let since_timestamp = if let Some(s) = since {
         Some(parse_since(s)?)
     } else {
         None
     };
 
-    let entries = journal::list_entries(
-        &conn,
+    let entries = journal::list_entries_backend(
+        backend,
         limit,
         since_timestamp.as_deref(),
         tag,
@@ -112,20 +111,19 @@ pub fn run_list(
 }
 
 pub fn run_search(
+    backend: &BackendConnection,
     query: &str,
     since: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
     let since_timestamp = if let Some(s) = since {
         Some(parse_since(s)?)
     } else {
         None
     };
 
-    let entries = journal::search_entries(&conn, query, since_timestamp.as_deref(), limit)?;
+    let entries = journal::search_entries_backend(backend, query, since_timestamp.as_deref(), limit)?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&json!({ "entries": entries }))?);
@@ -162,17 +160,16 @@ pub fn run_search(
 }
 
 pub fn run_update(
+    backend: &BackendConnection,
     id: i64,
     content: Option<&str>,
     status: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    journal::update_entry(&conn, id, content, status)?;
+    journal::update_entry_backend(backend, id, content, status)?;
 
     if json_output {
-        let updated = journal::get_entry(&conn, id)?.unwrap();
+        let updated = journal::get_entry_backend(backend, id)?.unwrap();
         println!("{}", serde_json::to_string_pretty(&updated)?);
     } else {
         println!("Updated journal entry #{}", id);
@@ -181,10 +178,8 @@ pub fn run_update(
     Ok(())
 }
 
-pub fn run_remove(id: i64, json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    journal::remove_entry(&conn, id)?;
+pub fn run_remove(backend: &BackendConnection, id: i64, json_output: bool) -> Result<()> {
+    journal::remove_entry_backend(backend, id)?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&json!({ "removed": id }))?);
@@ -195,10 +190,8 @@ pub fn run_remove(id: i64, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run_tags(json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    let tags = journal::get_all_tags(&conn)?;
+pub fn run_tags(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let tags = journal::get_all_tags_backend(backend)?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&json!({ "tags": tags }))?);
@@ -219,10 +212,8 @@ pub fn run_tags(json_output: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run_stats(json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    let stats = journal::get_stats(&conn)?;
+pub fn run_stats(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let stats = journal::get_stats_backend(backend)?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&stats)?);
