@@ -11,6 +11,14 @@
 - Tests: `cargo test -q`
 - TODO: audit P1 (`runtime strategy consistency`)
 
+### 2026-03-09 — Scraper selector resilience/perf hardening
+
+- What: added cached CSS selector initialization (`OnceLock`) and replaced panic-style selector parse assumptions in calendar and FedWatch scrapers with fallible error-returning helper paths.
+- Why: removes unnecessary per-call selector parsing overhead and avoids panic behavior in scraping code paths.
+- Files: `src/data/calendar.rs`, `src/data/fedwatch.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit P1 (`selector parsing resilience/perf`)
+
 ### 2026-03-09 — Status freshness helper cleanup
 
 - What: refactored repeated freshness scans into shared timestamp helpers (`parse_rfc3339_utc`, `update_most_recent`, `most_recent_and_stale_from_fetched`) and removed repeated `Option` update/`unwrap` patterns across status data-source checks.

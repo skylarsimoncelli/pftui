@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use scraper::{Html, Selector};
+use std::sync::OnceLock;
 
 const FEDWATCH_URL: &str =
     "https://cmegroup-tools.quikstrike.net/User/QuikStrikeView.aspx?viewitemid=IntegratedFedWatchTool&userId=lwolf";
@@ -65,7 +66,7 @@ pub fn fetch_snapshot() -> Result<FedWatchSnapshot> {
 fn parse_snapshot(html: &str) -> Result<FedWatchSnapshot> {
     let doc = Html::parse_document(html);
 
-    let meetings = parse_meetings(&doc);
+    let meetings = parse_meetings(&doc)?;
     let (meeting_info, summary) = parse_meeting_and_summary_tables(&doc)?;
     let target_probabilities = parse_target_probabilities(&doc)?;
 
@@ -79,9 +80,22 @@ fn parse_snapshot(html: &str) -> Result<FedWatchSnapshot> {
     })
 }
 
-fn parse_meetings(doc: &Html) -> Vec<String> {
-    let li_sel = Selector::parse("ul.inner-tabs li").expect("valid selector");
-    let a_sel = Selector::parse("a").expect("valid selector");
+fn cached_selector<'a>(slot: &'a OnceLock<Selector>, css: &str) -> Result<&'a Selector> {
+    if slot.get().is_none() {
+        let parsed = Selector::parse(css)
+            .map_err(|e| anyhow!("invalid CSS selector '{}': {:?}", css, e))?;
+        let _ = slot.set(parsed);
+    }
+    slot.get()
+        .ok_or_else(|| anyhow!("failed to initialize CSS selector '{}'", css))
+}
+
+fn parse_meetings(doc: &Html) -> Result<Vec<String>> {
+    static LI_SEL: OnceLock<Selector> = OnceLock::new();
+    static A_SEL: OnceLock<Selector> = OnceLock::new();
+
+    let li_sel = cached_selector(&LI_SEL, "ul.inner-tabs li")?;
+    let a_sel = cached_selector(&A_SEL, "a")?;
     let mut meetings = Vec::new();
 
     for li in doc.select(&li_sel) {
@@ -102,13 +116,17 @@ fn parse_meetings(doc: &Html) -> Vec<String> {
         }
     }
 
-    meetings
+    Ok(meetings)
 }
 
 fn parse_meeting_and_summary_tables(doc: &Html) -> Result<(MeetingInfo, SummaryProbabilities)> {
-    let table_sel = Selector::parse("table.grid-thm.grid-thm-v2.no-shadow.w-lg").expect("valid");
-    let row_sel = Selector::parse("tr").expect("valid");
-    let cell_sel = Selector::parse("td").expect("valid");
+    static TABLE_SEL: OnceLock<Selector> = OnceLock::new();
+    static ROW_SEL: OnceLock<Selector> = OnceLock::new();
+    static CELL_SEL: OnceLock<Selector> = OnceLock::new();
+
+    let table_sel = cached_selector(&TABLE_SEL, "table.grid-thm.grid-thm-v2.no-shadow.w-lg")?;
+    let row_sel = cached_selector(&ROW_SEL, "tr")?;
+    let cell_sel = cached_selector(&CELL_SEL, "td")?;
 
     let mut meeting_info: Option<MeetingInfo> = None;
     let mut summary: Option<SummaryProbabilities> = None;
@@ -163,9 +181,13 @@ fn parse_meeting_and_summary_tables(doc: &Html) -> Result<(MeetingInfo, SummaryP
 }
 
 fn parse_target_probabilities(doc: &Html) -> Result<Vec<TargetProbability>> {
-    let table_sel = Selector::parse("table.grid-thm.grid-thm-v2.w-lg").expect("valid selector");
-    let row_sel = Selector::parse("tr").expect("valid selector");
-    let cell_sel = Selector::parse("td").expect("valid selector");
+    static TABLE_SEL: OnceLock<Selector> = OnceLock::new();
+    static ROW_SEL: OnceLock<Selector> = OnceLock::new();
+    static CELL_SEL: OnceLock<Selector> = OnceLock::new();
+
+    let table_sel = cached_selector(&TABLE_SEL, "table.grid-thm.grid-thm-v2.w-lg")?;
+    let row_sel = cached_selector(&ROW_SEL, "tr")?;
+    let cell_sel = cached_selector(&CELL_SEL, "td")?;
 
     for table in doc.select(&table_sel) {
         let header_text = text_of(&table);

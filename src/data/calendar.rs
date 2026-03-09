@@ -3,9 +3,10 @@
 //! Scrapes TradingEconomics calendar for upcoming market-moving events.
 //! Free, no API key required. Falls back to sample data on scrape failure.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use scraper::{Html, Selector};
+use std::sync::OnceLock;
 
 use crate::data::brave;
 
@@ -109,13 +110,20 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
     let html_content = response.text()?;
     let document = Html::parse_document(&html_content);
 
-    // Selectors for calendar table rows
-    let row_selector = Selector::parse("table#calendar tbody tr").unwrap();
-    let date_selector = Selector::parse("td:nth-child(1)").unwrap();
-    let name_selector = Selector::parse("td:nth-child(4) a").unwrap();
-    let actual_selector = Selector::parse("td:nth-child(5)").unwrap();
-    let previous_selector = Selector::parse("td:nth-child(6)").unwrap();
-    let forecast_selector = Selector::parse("td:nth-child(7)").unwrap();
+    // Cached selectors for calendar table rows/cells.
+    static ROW_SELECTOR: OnceLock<Selector> = OnceLock::new();
+    static DATE_SELECTOR: OnceLock<Selector> = OnceLock::new();
+    static NAME_SELECTOR: OnceLock<Selector> = OnceLock::new();
+    static ACTUAL_SELECTOR: OnceLock<Selector> = OnceLock::new();
+    static PREVIOUS_SELECTOR: OnceLock<Selector> = OnceLock::new();
+    static FORECAST_SELECTOR: OnceLock<Selector> = OnceLock::new();
+
+    let row_selector = cached_selector(&ROW_SELECTOR, "table#calendar tbody tr")?;
+    let date_selector = cached_selector(&DATE_SELECTOR, "td:nth-child(1)")?;
+    let name_selector = cached_selector(&NAME_SELECTOR, "td:nth-child(4) a")?;
+    let actual_selector = cached_selector(&ACTUAL_SELECTOR, "td:nth-child(5)")?;
+    let previous_selector = cached_selector(&PREVIOUS_SELECTOR, "td:nth-child(6)")?;
+    let forecast_selector = cached_selector(&FORECAST_SELECTOR, "td:nth-child(7)")?;
 
     let mut events = Vec::new();
     let mut current_date = today;
@@ -190,6 +198,16 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
     }
 
     Ok(events)
+}
+
+fn cached_selector<'a>(slot: &'a OnceLock<Selector>, css: &str) -> Result<&'a Selector> {
+    if slot.get().is_none() {
+        let parsed = Selector::parse(css)
+            .map_err(|e| anyhow!("invalid CSS selector '{}': {:?}", css, e))?;
+        let _ = slot.set(parsed);
+    }
+    slot.get()
+        .ok_or_else(|| anyhow!("failed to initialize CSS selector '{}'", css))
 }
 
 /// Parse TradingEconomics date format (e.g., "2026-03-05", "Mar 5", etc.)
