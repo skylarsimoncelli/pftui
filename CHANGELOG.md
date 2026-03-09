@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 07:04 UTC — F32 Phase 41: backend-dispatch scan query storage + command un-gating
+
+- What: added backend-dispatched `scan_queries` CRUD with native Postgres SQL, migrated `scan` command saved-query paths (`--save/--load/--list`) to backend APIs, switched runtime FX lookup to optional SQLite-native fallback, removed sqlite gating for `pftui scan` in `main`, and added Postgres `scan_queries` schema.
+- Why: removes another sqlite-only analytics workflow and enables scanner usage in postgres mode without hybrid table dependencies.
+- Files: `src/db/scan_queries.rs`, `src/commands/scan.rs`, `src/db/postgres_schema.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/import/eod/migrate-journal/setup/tui and `alerts check`)
+
 ### 2026-03-09 06:36 UTC — F32 Phase 40: backend-dispatch economy/global/performance reads
 
 - What: added backend-dispatched read APIs for `economic_data`, `worldbank_cache` (latest indicators), and `portfolio_snapshots`, updated `economy`, `global`, and `performance` commands to consume `BackendConnection`, and removed sqlite gating for those commands in `main`; also added missing Postgres schema tables/indexes for these datasets.

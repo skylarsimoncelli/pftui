@@ -310,10 +310,8 @@ fn main() -> Result<()> {
             list,
             json,
         }) => {
-            let conn = sqlite_conn_for_command(&backend, "scan")?;
             commands::scan::run(
                 &backend,
-                conn,
                 &config,
                 filter.as_deref(),
                 save.as_deref(),

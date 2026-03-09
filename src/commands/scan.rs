@@ -8,7 +8,9 @@ use crate::db::allocations::{list_allocations, list_allocations_backend};
 use crate::db::backend::BackendConnection;
 use crate::db::fx_cache::get_all_fx_rates;
 use crate::db::price_cache::{get_all_cached_prices, get_all_cached_prices_backend};
-use crate::db::scan_queries::{get_scan_query, list_scan_queries, upsert_scan_query};
+use crate::db::scan_queries::{
+    get_scan_query_backend, list_scan_queries_backend, upsert_scan_query_backend,
+};
 use crate::db::transactions::{list_transactions, list_transactions_backend};
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
@@ -43,7 +45,6 @@ struct ScanRow {
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     filter: Option<&str>,
     save: Option<&str>,
@@ -52,12 +53,12 @@ pub fn run(
     json: bool,
 ) -> Result<()> {
     if list {
-        return print_saved_queries(conn, json);
+        return print_saved_queries(backend, json);
     }
 
     let mut effective_filter: Option<String> = filter.map(|s| s.to_string());
     if let Some(query_name) = load {
-        let Some(saved) = get_scan_query(conn, query_name)? else {
+        let Some(saved) = get_scan_query_backend(backend, query_name)? else {
             bail!("Saved scan query '{}' not found", query_name);
         };
         effective_filter = Some(saved.filter_expr);
@@ -69,7 +70,7 @@ pub fn run(
     };
 
     if let Some(name) = save {
-        upsert_scan_query(conn, name, &filter_expr)?;
+        upsert_scan_query_backend(backend, name, &filter_expr)?;
         if !json {
             println!("Saved scan query '{}' as: {}", name, filter_expr);
             println!();
@@ -79,7 +80,7 @@ pub fn run(
     let clauses = parse_filter(&filter_expr)?;
     validate_clauses(&clauses)?;
 
-    let rows = load_rows_backend(backend, conn, Some(config.portfolio_mode))?;
+    let rows = load_rows_backend(backend, Some(config.portfolio_mode))?;
     if rows.is_empty() {
         println!("No positions to scan. Add holdings first.");
         return Ok(());
@@ -120,8 +121,8 @@ pub fn count_matches(conn: &Connection, filter: &str) -> Result<usize> {
     Ok(count)
 }
 
-fn print_saved_queries(conn: &Connection, json: bool) -> Result<()> {
-    let rows = list_scan_queries(conn)?;
+fn print_saved_queries(backend: &BackendConnection, json: bool) -> Result<()> {
+    let rows = list_scan_queries_backend(backend)?;
     if json {
         let output = serde_json::json!({
             "count": rows.len(),
@@ -208,14 +209,16 @@ fn load_rows(conn: &Connection, mode_hint: Option<PortfolioMode>) -> Result<Vec<
 
 fn load_rows_backend(
     backend: &BackendConnection,
-    conn: &Connection,
     mode_hint: Option<PortfolioMode>,
 ) -> Result<Vec<ScanRow>> {
     let prices = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
-    let fx_rates = get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = backend
+        .sqlite_native()
+        .and_then(|conn| crate::db::fx_cache::get_all_fx_rates(conn).ok())
+        .unwrap_or_default();
     let txs = list_transactions_backend(backend)?;
     let use_mode = match mode_hint {
         Some(m) => m,
