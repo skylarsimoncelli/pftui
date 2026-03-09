@@ -222,9 +222,9 @@ fn get_cached_predictions_postgres(pool: &PgPool, limit: usize) -> Result<Vec<Pr
 
 fn get_last_update_postgres(pool: &PgPool) -> Result<Option<i64>> {
     ensure_table_postgres(pool)?;
-    let ts = crate::db::pg_runtime::block_on(async {
-        sqlx::query_scalar("SELECT MAX(updated_at) FROM predictions_cache")
-            .fetch_optional(pool)
+    let ts: Option<i64> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, Option<i64>>("SELECT MAX(updated_at) FROM predictions_cache")
+            .fetch_one(pool)
             .await
     })?;
     Ok(ts)

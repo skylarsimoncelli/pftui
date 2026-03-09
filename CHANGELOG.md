@@ -13,6 +13,14 @@
 - Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
 - TODO: removed P1-BUG "Postgres structural storage not yet implemented"
 
+### 2026-03-09 — Fix Postgres predictions `MAX(updated_at)` NULL decode crash
+
+- What: changed Postgres `get_last_update_postgres` query decoding to `Option<i64>` directly for `SELECT MAX(updated_at)`, removing the null-to-non-null decode failure path on empty tables.
+- Why: `pftui refresh` could abort on fresh Postgres databases when predictions cache was empty.
+- Files: `src/db/predictions_cache.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 prediction NULL decode crash blocker
+
 ### 2026-03-09 — Runtime strategy consistency pass (command hot paths)
 
 - What: removed remaining ad-hoc `Runtime::new()` usage in command paths and switched to shared runtime helpers (`pg_runtime::block_on`) for Postgres/async calls.
