@@ -32,8 +32,21 @@ fn get_price_map(conn: &Connection) -> anyhow::Result<HashMap<String, Decimal>> 
     Ok(cached.into_iter().map(|q| (q.symbol, q.price)).collect())
 }
 
+fn get_price_map_backend(
+    backend: &crate::db::backend::BackendConnection,
+) -> anyhow::Result<HashMap<String, Decimal>> {
+    let cached = db::price_cache::get_all_cached_prices_backend(backend)?;
+    Ok(cached.into_iter().map(|q| (q.symbol, q.price)).collect())
+}
+
 fn get_fx_rates(conn: &Connection) -> HashMap<String, Decimal> {
     crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default()
+}
+
+fn get_fx_rates_backend(
+    backend: &crate::db::backend::BackendConnection,
+) -> HashMap<String, Decimal> {
+    crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default()
 }
 
 pub struct AppState {
@@ -1167,14 +1180,14 @@ pub async fn delete_transaction(
 pub async fn get_macro(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<MacroResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
 
-    let prices = get_price_map(&conn).map_err(|e| {
+    let prices = get_price_map_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load prices: {}", e),
@@ -1188,7 +1201,9 @@ pub async fn get_macro(
             symbol: spec.symbol.clone(),
             name: spec.name,
             value: prices.get(&spec.symbol).copied(),
-            change_pct: view_model::day_change_pct(&conn, &spec.symbol),
+            change_pct: backend
+                .sqlite_native()
+                .and_then(|conn| view_model::day_change_pct(conn, &spec.symbol)),
         })
         .collect();
 
@@ -1202,7 +1217,9 @@ pub async fn get_macro(
                     symbol: spec.symbol.clone(),
                     name: spec.name,
                     value: prices.get(&spec.symbol).copied(),
-                    change_pct: view_model::day_change_pct(&conn, &spec.symbol),
+                    change_pct: backend
+                        .sqlite_native()
+                        .and_then(|conn| view_model::day_change_pct(conn, &spec.symbol)),
                 })
                 .collect();
             EconomySection {
@@ -1281,7 +1298,11 @@ pub async fn get_macro(
     ];
     let bls_metrics: Vec<BlsMetric> = bls_series
         .iter()
-        .filter_map(|series| db::bls_cache::get_latest_bls_data(&conn, series).ok().flatten())
+        .filter_map(|series| {
+            db::bls_cache::get_latest_bls_data_backend(&backend, series)
+                .ok()
+                .flatten()
+        })
         .map(|row| BlsMetric {
             key: row.series_id.clone(),
             label: series_label(&row.series_id).to_string(),
@@ -1292,7 +1313,7 @@ pub async fn get_macro(
 
     let sentiment: Vec<SentimentSnapshot> = ["crypto", "traditional"]
         .iter()
-        .filter_map(|kind| db::sentiment_cache::get_latest(&conn, kind).ok().flatten())
+        .filter_map(|kind| db::sentiment_cache::get_latest_backend(&backend, kind).ok().flatten())
         .map(|row| SentimentSnapshot {
             index_type: row.index_type,
             value: row.value,
@@ -1302,7 +1323,7 @@ pub async fn get_macro(
         .collect();
 
     let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
-    let upcoming_events: Vec<CalendarSnapshot> = db::calendar_cache::get_upcoming_events(&conn, &today, 6)
+    let upcoming_events: Vec<CalendarSnapshot> = db::calendar_cache::get_upcoming_events_backend(&backend, &today, 6)
         .unwrap_or_default()
         .into_iter()
         .map(|e| CalendarSnapshot {
@@ -1313,7 +1334,7 @@ pub async fn get_macro(
         })
         .collect();
 
-    let predictions: Vec<PredictionSnapshot> = db::predictions_cache::get_cached_predictions(&conn, 5)
+    let predictions: Vec<PredictionSnapshot> = db::predictions_cache::get_cached_predictions_backend(&backend, 5)
         .unwrap_or_default()
         .into_iter()
         .map(|p| PredictionSnapshot {
@@ -1543,14 +1564,14 @@ pub async fn get_chart_data(
     State(state): State<Arc<AppState>>,
     Path(symbol): Path<String>,
 ) -> Result<Json<ChartDataResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
 
-    let history = db::price_history::get_history(&conn, &symbol, 365).map_err(|e| {
+    let history = db::price_history::get_history_backend(&backend, &symbol, 365).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load history: {}", e),
@@ -1577,14 +1598,14 @@ pub async fn get_performance(
     State(state): State<Arc<AppState>>,
     Query(query): Query<PerformanceQuery>,
 ) -> Result<Json<PerformanceResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
 
-    let mut snapshots = db::snapshots::get_all_portfolio_snapshots(&conn).map_err(|e| {
+    let mut snapshots = db::snapshots::get_all_portfolio_snapshots_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load portfolio snapshots: {}", e),
@@ -1627,15 +1648,15 @@ pub async fn get_performance(
     if daily_values.len() < 2 {
         source = "estimated_history".to_string();
         estimated = true;
-        let fx_rates = get_fx_rates(&conn);
+        let fx_rates = get_fx_rates_backend(&backend);
         let positions = if state.config.is_percentage_mode() {
-            let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
+            let allocations = db::allocations::list_allocations_backend(&backend).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to load allocations: {}", e),
                 )
             })?;
-            let prices = get_price_map(&conn).map_err(|e| {
+            let prices = get_price_map_backend(&backend).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to load prices: {}", e),
@@ -1643,13 +1664,13 @@ pub async fn get_performance(
             })?;
             compute_positions_from_allocations(&allocations, &prices, &fx_rates)
         } else {
-            let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
+            let transactions = db::transactions::list_transactions_backend(&backend).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to load transactions: {}", e),
                 )
             })?;
-            let prices = get_price_map(&conn).map_err(|e| {
+            let prices = get_price_map_backend(&backend).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to load prices: {}", e),
@@ -1660,7 +1681,7 @@ pub async fn get_performance(
 
         let mut by_date: BTreeMap<String, Decimal> = BTreeMap::new();
         for pos in positions.into_iter().filter(|p| p.quantity > dec!(0)) {
-            let history = db::price_history::get_history(&conn, &pos.symbol, days as u32 + 14)
+            let history = db::price_history::get_history_backend(&backend, &pos.symbol, days as u32 + 14)
                 .unwrap_or_default();
             for rec in history {
                 if let Ok(d) = NaiveDate::parse_from_str(&rec.date, "%Y-%m-%d") {
@@ -1719,7 +1740,7 @@ pub async fn get_performance(
 
     let benchmark_values = if query.benchmark.as_deref() == Some("spx") && !daily_values.is_empty() {
         let bench_history =
-            db::price_history::get_history(&conn, "^GSPC", days as u32 + 14).unwrap_or_default();
+            db::price_history::get_history_backend(&backend, "^GSPC", days as u32 + 14).unwrap_or_default();
         let base_portfolio = daily_values[0].value;
         let mut base_bench: Option<Decimal> = None;
         let mut series = Vec::new();
@@ -1768,14 +1789,14 @@ pub async fn get_news(
     State(state): State<Arc<AppState>>,
     Query(query): Query<NewsQuery>,
 ) -> Result<Json<NewsResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-    let entries = db::news_cache::get_latest_news(
-        &conn,
+    let entries = db::news_cache::get_latest_news_backend(
+        &backend,
         query.limit.unwrap_or(150),
         query.source.as_deref(),
         query.category.as_deref(),
@@ -1810,7 +1831,7 @@ pub async fn get_journal(
     State(state): State<Arc<AppState>>,
     Query(query): Query<JournalQuery>,
 ) -> Result<Json<JournalResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
@@ -1818,15 +1839,15 @@ pub async fn get_journal(
     })?;
 
     let entries = if let Some(search) = query.search.as_deref() {
-        db::journal::search_entries(
-            &conn,
+        db::journal::search_entries_backend(
+            &backend,
             search,
             query.since.as_deref(),
             query.limit,
         )
     } else {
-        db::journal::list_entries(
-            &conn,
+        db::journal::list_entries_backend(
+            &backend,
             query.limit,
             query.since.as_deref(),
             query.tag.as_deref(),
@@ -1851,7 +1872,7 @@ pub async fn post_journal(
     State(state): State<Arc<AppState>>,
     Json(body): Json<JournalCreateRequest>,
 ) -> Result<Json<JournalMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
@@ -1881,7 +1902,7 @@ pub async fn post_journal(
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "open".to_string()),
     };
-    let id = db::journal::add_entry(&conn, &entry).map_err(|e| {
+    let id = db::journal::add_entry_backend(&backend, &entry).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to create journal entry: {}", e),
@@ -1899,13 +1920,13 @@ pub async fn patch_journal(
     Path(id): Path<i64>,
     Json(body): Json<JournalUpdateRequest>,
 ) -> Result<Json<JournalMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-    let existing = db::journal::get_entry(&conn, id).map_err(|e| {
+    let existing = db::journal::get_entry_backend(&backend, id).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load journal entry: {}", e),
@@ -1926,7 +1947,7 @@ pub async fn patch_journal(
             "at least one of content or status must be provided".to_string(),
         ));
     }
-    db::journal::update_entry(&conn, id, content, status).map_err(|e| {
+    db::journal::update_entry_backend(&backend, id, content, status).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to update journal entry: {}", e),
@@ -1943,13 +1964,13 @@ pub async fn delete_journal(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<JournalMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-    let existing = db::journal::get_entry(&conn, id).map_err(|e| {
+    let existing = db::journal::get_entry_backend(&backend, id).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load journal entry: {}", e),
@@ -1962,7 +1983,7 @@ pub async fn delete_journal(
             action: "noop".to_string(),
         }));
     }
-    db::journal::remove_entry(&conn, id).map_err(|e| {
+    db::journal::remove_entry_backend(&backend, id).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to remove journal entry: {}", e),
@@ -2060,23 +2081,23 @@ pub async fn set_theme(
 pub async fn get_summary(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SummaryResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
 
-    let fx_rates = get_fx_rates(&conn);
+    let fx_rates = get_fx_rates_backend(&backend);
 
     let positions = if state.config.is_percentage_mode() {
-        let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
+        let allocations = db::allocations::list_allocations_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load allocations: {}", e),
             )
         })?;
-        let prices = get_price_map(&conn).map_err(|e| {
+        let prices = get_price_map_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load prices: {}", e),
@@ -2084,13 +2105,13 @@ pub async fn get_summary(
         })?;
         compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
-        let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
+        let transactions = db::transactions::list_transactions_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load transactions: {}", e),
             )
         })?;
-        let prices = get_price_map(&conn).map_err(|e| {
+        let prices = get_price_map_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load prices: {}", e),
