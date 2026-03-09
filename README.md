@@ -140,7 +140,7 @@ pftui config set brave_api_key <key>  # Set Brave Search API key
 
 ## 📦 Installation
 
-**Recommended:** The install script is the canonical way to install AND upgrade pftui. Re-running it will detect your existing installation and update to the latest release version. Your data (SQLite database, config) is preserved across upgrades.
+**Recommended:** use the install script. Re-running it upgrades pftui while preserving your local data and config.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash
