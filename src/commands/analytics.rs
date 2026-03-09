@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 use serde_json::json;
 
 use crate::db::backend::BackendConnection;
@@ -17,22 +16,14 @@ pub fn run(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    if action == "signals" {
-        return run_signals(backend, symbol, signal_type, severity, limit, json_output);
-    }
-    let Some(conn) = backend.sqlite_native() else {
-        bail!(
-            "analytics '{}' currently requires database_backend=sqlite",
-            action
-        );
-    };
     match action {
-        "summary" => run_summary(conn, json_output),
-        "low" => run_low(conn, json_output),
-        "medium" => run_medium(conn, json_output),
-        "high" => run_high(conn, json_output),
-        "macro" => run_macro(conn, json_output),
-        "alignment" => run_alignment(conn, symbol, json_output),
+        "signals" => run_signals(backend, symbol, signal_type, severity, limit, json_output),
+        "summary" => run_summary(backend, json_output),
+        "low" => run_low(backend, json_output),
+        "medium" => run_medium(backend, json_output),
+        "high" => run_high(backend, json_output),
+        "macro" => run_macro(backend, json_output),
+        "alignment" => run_alignment(backend, symbol, json_output),
         _ => bail!(
             "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment",
             action
@@ -78,15 +69,16 @@ fn run_signals(
     Ok(())
 }
 
-fn run_summary(conn: &Connection, json_output: bool) -> Result<()> {
-    let regime = regime_snapshots::get_current(conn)?;
-    let scenarios_list = scenarios::list_scenarios(conn, Some("active")).unwrap_or_default();
+fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let regime = regime_snapshots::get_current_backend(backend)?;
+    let scenarios_list =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let top_scenario = scenarios_list.first().cloned();
-    let trends_list = trends::list_trends(conn, Some("active"), None).unwrap_or_default();
+    let trends_list = trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default();
     let top_trend = trends_list.first().cloned();
-    let cycles = structural::list_cycles(conn).unwrap_or_default();
+    let cycles = structural::list_cycles_backend(backend).unwrap_or_default();
     let top_cycle = cycles.first().cloned();
-    let signal = timeframe_signals::latest_signal(conn)?;
+    let signal = timeframe_signals::latest_signal_backend(backend)?;
 
     if json_output {
         println!(
@@ -129,10 +121,11 @@ fn run_summary(conn: &Connection, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_low(conn: &Connection, json_output: bool) -> Result<()> {
-    let regime = regime_snapshots::get_current(conn)?;
-    let corr = correlation_snapshots::list_current(conn, Some("30d")).unwrap_or_default();
-    let signals = timeframe_signals::list_signals(conn, None, None, Some(10)).unwrap_or_default();
+fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let regime = regime_snapshots::get_current_backend(backend)?;
+    let corr = correlation_snapshots::list_current_backend(backend, Some("30d")).unwrap_or_default();
+    let signals =
+        timeframe_signals::list_signals_backend(backend, None, None, Some(10)).unwrap_or_default();
 
     if json_output {
         println!(
@@ -155,12 +148,13 @@ fn run_low(conn: &Connection, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_medium(conn: &Connection, json_output: bool) -> Result<()> {
-    let scenarios_list = scenarios::list_scenarios(conn, Some("active")).unwrap_or_default();
-    let thesis_sections = thesis::list_thesis(conn).unwrap_or_default();
-    let conviction_rows = convictions::list_current(conn).unwrap_or_default();
-    let questions = research_questions::list_questions(conn, Some("open")).unwrap_or_default();
-    let predictions = user_predictions::list_predictions(conn, Some("pending"), None, Some(20)).unwrap_or_default();
+fn run_medium(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let scenarios_list = scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    let thesis_sections = thesis::list_thesis_backend(backend).unwrap_or_default();
+    let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
+    let questions = research_questions::list_questions_backend(backend, Some("open")).unwrap_or_default();
+    let predictions = user_predictions::list_predictions_backend(backend, Some("pending"), None, Some(20))
+        .unwrap_or_default();
 
     if json_output {
         println!(
@@ -185,14 +179,14 @@ fn run_medium(conn: &Connection, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_high(conn: &Connection, json_output: bool) -> Result<()> {
-    let trends_list = trends::list_trends(conn, Some("active"), None).unwrap_or_default();
+fn run_high(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let trends_list = trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default();
     let mut evidence = Vec::new();
     let mut impacts = Vec::new();
     for t in &trends_list {
-        let ev = trends::list_evidence(conn, t.id, Some(3)).unwrap_or_default();
+        let ev = trends::list_evidence_backend(backend, t.id, Some(3)).unwrap_or_default();
         evidence.push(json!({ "trend": t.name, "items": ev }));
-        let imp = trends::list_asset_impacts(conn, t.id).unwrap_or_default();
+        let imp = trends::list_asset_impacts_backend(backend, t.id).unwrap_or_default();
         impacts.push(json!({ "trend": t.name, "items": imp }));
     }
 
@@ -213,12 +207,12 @@ fn run_high(conn: &Connection, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_macro(conn: &Connection, json_output: bool) -> Result<()> {
-    let metrics = structural::list_metrics(conn, None, None).unwrap_or_default();
-    let cycles = structural::list_cycles(conn).unwrap_or_default();
-    let outcomes = structural::list_outcomes(conn).unwrap_or_default();
-    let parallels = structural::list_parallels(conn, None).unwrap_or_default();
-    let log_rows = structural::list_log(conn, None, Some(10)).unwrap_or_default();
+fn run_macro(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let metrics = structural::list_metrics_backend(backend, None, None).unwrap_or_default();
+    let cycles = structural::list_cycles_backend(backend).unwrap_or_default();
+    let outcomes = structural::list_outcomes_backend(backend).unwrap_or_default();
+    let parallels = structural::list_parallels_backend(backend, None).unwrap_or_default();
+    let log_rows = structural::list_log_backend(backend, None, Some(10)).unwrap_or_default();
 
     if json_output {
         println!(
@@ -250,14 +244,18 @@ fn regime_to_bias(regime: &str) -> &'static str {
     }
 }
 
-fn run_alignment(conn: &Connection, symbol: Option<&str>, json_output: bool) -> Result<()> {
+fn run_alignment(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
     let sym = symbol.unwrap_or("GC=F").to_uppercase();
 
-    let low = regime_snapshots::get_current(conn)?
+    let low = regime_snapshots::get_current_backend(backend)?
         .map(|r| regime_to_bias(&r.regime).to_string())
         .unwrap_or_else(|| "neutral".to_string());
 
-    let medium = convictions::list_current(conn)
+    let medium = convictions::list_current_backend(backend)
         .unwrap_or_default()
         .into_iter()
         .find(|c| c.symbol.to_uppercase() == sym)
@@ -272,7 +270,7 @@ fn run_alignment(conn: &Connection, symbol: Option<&str>, json_output: bool) -> 
         })
         .unwrap_or_else(|| "neutral".to_string());
 
-    let high_impacts = trends::get_impacts_for_symbol(conn, &sym).unwrap_or_default();
+    let high_impacts = trends::get_impacts_for_symbol_backend(backend, &sym).unwrap_or_default();
     let bull_high = high_impacts.iter().filter(|(_, i)| i.impact == "bullish").count();
     let bear_high = high_impacts.iter().filter(|(_, i)| i.impact == "bearish").count();
     let high = if bull_high > bear_high {
@@ -284,7 +282,7 @@ fn run_alignment(conn: &Connection, symbol: Option<&str>, json_output: bool) -> 
     }
     .to_string();
 
-    let macro_outcomes = structural::list_outcomes(conn).unwrap_or_default();
+    let macro_outcomes = structural::list_outcomes_backend(backend).unwrap_or_default();
     let mut macro_bias = "neutral".to_string();
     for o in macro_outcomes {
         if let Some(ai) = o.asset_implications.as_ref() {

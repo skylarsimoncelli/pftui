@@ -1,13 +1,13 @@
 use anyhow::{bail, Result};
 use chrono::Utc;
-use rusqlite::Connection;
 use serde_json::json;
 
+use crate::db::backend::BackendConnection;
 use crate::db::structural;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
     country: Option<&str>,
@@ -41,7 +41,7 @@ pub fn run(
         "metric-set" => {
             let c = country.or(value).ok_or_else(|| anyhow::anyhow!("--country required"))?;
             let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
-            let id = structural::set_metric(conn, c, m, score, rank, trend, notes, source)?;
+            let id = structural::set_metric_backend(backend, c, m, score, rank, trend, notes, source)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
             } else {
@@ -49,7 +49,7 @@ pub fn run(
             }
         }
         "metric-list" => {
-            let rows = structural::list_metrics(conn, country, metric)?;
+            let rows = structural::list_metrics_backend(backend, country, metric)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "metrics": rows }))?);
             } else {
@@ -65,7 +65,7 @@ pub fn run(
         "metric-history" => {
             let c = country.or(value).ok_or_else(|| anyhow::anyhow!("country required"))?;
             let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
-            let rows = structural::get_metric_history(conn, c, m, limit)?;
+            let rows = structural::get_metric_history_backend(backend, c, m, limit)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "history": rows }))?);
             } else {
@@ -79,7 +79,7 @@ pub fn run(
         "cycle-set" => {
             let name = value.ok_or_else(|| anyhow::anyhow!("cycle name required"))?;
             let stg = stage.ok_or_else(|| anyhow::anyhow!("--stage required"))?;
-            structural::set_cycle(conn, name, stg, entered, description, evidence)?;
+            structural::set_cycle_backend(backend, name, stg, entered, description, evidence)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "updated": name }))?);
             } else {
@@ -87,7 +87,7 @@ pub fn run(
             }
         }
         "cycle-list" => {
-            let rows = structural::list_cycles(conn)?;
+            let rows = structural::list_cycles_backend(backend)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "cycles": rows }))?);
             } else {
@@ -101,7 +101,7 @@ pub fn run(
         "outcome-add" => {
             let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required"))?;
             let p = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
-            let id = structural::add_outcome(conn, name, p, horizon, description, parallel, impact, signals)?;
+            let id = structural::add_outcome_backend(backend, name, p, horizon, description, parallel, impact, signals)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
             } else {
@@ -109,7 +109,7 @@ pub fn run(
             }
         }
         "outcome-list" => {
-            let rows = structural::list_outcomes(conn)?;
+            let rows = structural::list_outcomes_backend(backend)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "outcomes": rows }))?);
             } else {
@@ -122,7 +122,7 @@ pub fn run(
         "outcome-update" => {
             let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required"))?;
             let p = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
-            structural::update_outcome_probability(conn, name, p, driver)?;
+            structural::update_outcome_probability_backend(backend, name, p, driver)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "updated": name, "probability": p }))?);
             } else {
@@ -131,7 +131,7 @@ pub fn run(
         }
         "outcome-history" => {
             let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required"))?;
-            let rows = structural::get_outcome_history(conn, name, limit)?;
+            let rows = structural::get_outcome_history_backend(backend, name, limit)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "history": rows }))?);
             } else {
@@ -146,7 +146,7 @@ pub fn run(
             let p = period.ok_or_else(|| anyhow::anyhow!("--period required"))?;
             let ev = event.ok_or_else(|| anyhow::anyhow!("--event required"))?;
             let pt = parallel_to.ok_or_else(|| anyhow::anyhow!("--parallel-to required"))?;
-            let id = structural::add_parallel(conn, p, ev, pt, similarity, outcome, notes, source)?;
+            let id = structural::add_parallel_backend(backend, p, ev, pt, similarity, outcome, notes, source)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
             } else {
@@ -154,7 +154,7 @@ pub fn run(
             }
         }
         "parallel-list" => {
-            let rows = structural::list_parallels(conn, period)?;
+            let rows = structural::list_parallels_backend(backend, period)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "parallels": rows }))?);
             } else {
@@ -166,7 +166,7 @@ pub fn run(
         }
         "parallel-search" => {
             let q = value.ok_or_else(|| anyhow::anyhow!("search query required"))?;
-            let rows = structural::search_parallels(conn, q)?;
+            let rows = structural::search_parallels_backend(backend, q)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "parallels": rows }))?);
             } else {
@@ -182,7 +182,7 @@ pub fn run(
                 .map(|x| x.to_string())
                 .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
             let dev = value.ok_or_else(|| anyhow::anyhow!("development text required"))?;
-            let id = structural::add_log(conn, &d, dev, impact, outcome)?;
+            let id = structural::add_log_backend(backend, &d, dev, impact, outcome)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
             } else {
@@ -190,7 +190,7 @@ pub fn run(
             }
         }
         "log-list" => {
-            let rows = structural::list_log(conn, since, limit)?;
+            let rows = structural::list_log_backend(backend, since, limit)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "log": rows }))?);
             } else {
@@ -202,10 +202,10 @@ pub fn run(
         }
 
         "dashboard" => {
-            let cycles = structural::list_cycles(conn)?;
-            let outcomes = structural::list_outcomes(conn)?;
-            let metrics = structural::list_metrics(conn, None, None)?;
-            let log_rows = structural::list_log(conn, None, Some(5))?;
+            let cycles = structural::list_cycles_backend(backend)?;
+            let outcomes = structural::list_outcomes_backend(backend)?;
+            let metrics = structural::list_metrics_backend(backend, None, None)?;
+            let log_rows = structural::list_log_backend(backend, None, Some(5))?;
 
             if json_output {
                 println!(

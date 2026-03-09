@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PowerMetric {
@@ -383,4 +387,752 @@ pub fn list_log(conn: &Connection, since: Option<&str>, limit: Option<usize>) ->
     let mut out = Vec::new();
     for row in rows { out.push(row?); }
     Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn set_metric_backend(
+    backend: &BackendConnection,
+    country: &str,
+    metric: &str,
+    score: Option<f64>,
+    rank: Option<i32>,
+    trend: Option<&str>,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| set_metric(conn, country, metric, score, rank, trend, notes, source),
+        |pool| set_metric_postgres(pool, country, metric, score, rank, trend, notes, source),
+    )
+}
+
+pub fn list_metrics_backend(
+    backend: &BackendConnection,
+    country: Option<&str>,
+    metric: Option<&str>,
+) -> Result<Vec<PowerMetric>> {
+    query::dispatch(
+        backend,
+        |conn| list_metrics(conn, country, metric),
+        |pool| list_metrics_postgres(pool, country, metric),
+    )
+}
+
+pub fn get_metric_history_backend(
+    backend: &BackendConnection,
+    country: &str,
+    metric: &str,
+    limit: Option<usize>,
+) -> Result<Vec<PowerMetric>> {
+    query::dispatch(
+        backend,
+        |conn| get_metric_history(conn, country, metric, limit),
+        |pool| get_metric_history_postgres(pool, country, metric, limit),
+    )
+}
+
+pub fn set_cycle_backend(
+    backend: &BackendConnection,
+    name: &str,
+    stage: &str,
+    entered: Option<&str>,
+    description: Option<&str>,
+    evidence: Option<&str>,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| set_cycle(conn, name, stage, entered, description, evidence),
+        |pool| set_cycle_postgres(pool, name, stage, entered, description, evidence),
+    )
+}
+
+pub fn list_cycles_backend(backend: &BackendConnection) -> Result<Vec<StructuralCycle>> {
+    query::dispatch(backend, list_cycles, list_cycles_postgres)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn add_outcome_backend(
+    backend: &BackendConnection,
+    name: &str,
+    probability: f64,
+    horizon: Option<&str>,
+    description: Option<&str>,
+    parallel: Option<&str>,
+    impact: Option<&str>,
+    signals: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_outcome(conn, name, probability, horizon, description, parallel, impact, signals),
+        |pool| {
+            add_outcome_postgres(pool, name, probability, horizon, description, parallel, impact, signals)
+        },
+    )
+}
+
+pub fn list_outcomes_backend(backend: &BackendConnection) -> Result<Vec<StructuralOutcome>> {
+    query::dispatch(backend, list_outcomes, list_outcomes_postgres)
+}
+
+pub fn update_outcome_probability_backend(
+    backend: &BackendConnection,
+    name: &str,
+    probability: f64,
+    driver: Option<&str>,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| update_outcome_probability(conn, name, probability, driver),
+        |pool| update_outcome_probability_postgres(pool, name, probability, driver),
+    )
+}
+
+pub fn get_outcome_history_backend(
+    backend: &BackendConnection,
+    name: &str,
+    limit: Option<usize>,
+) -> Result<Vec<(f64, Option<String>, String)>> {
+    query::dispatch(
+        backend,
+        |conn| get_outcome_history(conn, name, limit),
+        |pool| get_outcome_history_postgres(pool, name, limit),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn add_parallel_backend(
+    backend: &BackendConnection,
+    period: &str,
+    event: &str,
+    parallel_to: &str,
+    score: Option<i32>,
+    outcome: Option<&str>,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_parallel(conn, period, event, parallel_to, score, outcome, notes, source),
+        |pool| add_parallel_postgres(pool, period, event, parallel_to, score, outcome, notes, source),
+    )
+}
+
+pub fn list_parallels_backend(
+    backend: &BackendConnection,
+    period: Option<&str>,
+) -> Result<Vec<HistoricalParallel>> {
+    query::dispatch(
+        backend,
+        |conn| list_parallels(conn, period),
+        |pool| list_parallels_postgres(pool, period),
+    )
+}
+
+pub fn search_parallels_backend(
+    backend: &BackendConnection,
+    search: &str,
+) -> Result<Vec<HistoricalParallel>> {
+    query::dispatch(
+        backend,
+        |conn| search_parallels(conn, search),
+        |pool| search_parallels_postgres(pool, search),
+    )
+}
+
+pub fn add_log_backend(
+    backend: &BackendConnection,
+    date: &str,
+    development: &str,
+    cycle_impact: Option<&str>,
+    outcome_shift: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_log(conn, date, development, cycle_impact, outcome_shift),
+        |pool| add_log_postgres(pool, date, development, cycle_impact, outcome_shift),
+    )
+}
+
+pub fn list_log_backend(
+    backend: &BackendConnection,
+    since: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<StructuralLog>> {
+    query::dispatch(
+        backend,
+        |conn| list_log(conn, since, limit),
+        |pool| list_log_postgres(pool, since, limit),
+    )
+}
+
+type MetricRow = (
+    i64,
+    String,
+    String,
+    Option<f64>,
+    Option<i32>,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+);
+type CycleRow = (i64, String, String, Option<String>, Option<String>, Option<String>, String);
+type OutcomeRow = (
+    i64,
+    String,
+    f64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+);
+type ParallelRow = (
+    i64,
+    String,
+    String,
+    String,
+    Option<i32>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
+type LogRow = (i64, String, String, Option<String>, Option<String>, String);
+
+fn set_metric_postgres(
+    pool: &PgPool,
+    country: &str,
+    metric: &str,
+    score: Option<f64>,
+    rank: Option<i32>,
+    trend: Option<&str>,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO power_metrics (country, metric, score, rank, trend, notes, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+        )
+        .bind(country)
+        .bind(metric)
+        .bind(score)
+        .bind(rank)
+        .bind(trend.unwrap_or("stable"))
+        .bind(notes)
+        .bind(source)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_metrics_postgres(
+    pool: &PgPool,
+    country: Option<&str>,
+    metric: Option<&str>,
+) -> Result<Vec<PowerMetric>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<MetricRow> = match (country, metric) {
+        (Some(c), Some(m)) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::text
+                 FROM power_metrics
+                 WHERE country = $1 AND metric = $2
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(c)
+            .bind(m)
+            .fetch_all(pool)
+            .await
+        })?,
+        (Some(c), None) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::text
+                 FROM power_metrics
+                 WHERE country = $1
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(c)
+            .fetch_all(pool)
+            .await
+        })?,
+        (None, Some(m)) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::text
+                 FROM power_metrics
+                 WHERE metric = $1
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(m)
+            .fetch_all(pool)
+            .await
+        })?,
+        (None, None) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::text
+                 FROM power_metrics
+                 ORDER BY recorded_at DESC",
+            )
+            .fetch_all(pool)
+            .await
+        })?,
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| PowerMetric {
+            id: r.0,
+            country: r.1,
+            metric: r.2,
+            score: r.3,
+            rank: r.4,
+            trend: r.5,
+            notes: r.6,
+            source: r.7,
+            recorded_at: r.8,
+        })
+        .collect())
+}
+
+fn get_metric_history_postgres(
+    pool: &PgPool,
+    country: &str,
+    metric: &str,
+    limit: Option<usize>,
+) -> Result<Vec<PowerMetric>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<MetricRow> = if let Some(n) = limit {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::text
+                 FROM power_metrics
+                 WHERE country = $1 AND metric = $2
+                 ORDER BY recorded_at DESC
+                 LIMIT $3",
+            )
+            .bind(country)
+            .bind(metric)
+            .bind(n as i64)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::text
+                 FROM power_metrics
+                 WHERE country = $1 AND metric = $2
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(country)
+            .bind(metric)
+            .fetch_all(pool)
+            .await
+        })?
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| PowerMetric {
+            id: r.0,
+            country: r.1,
+            metric: r.2,
+            score: r.3,
+            rank: r.4,
+            trend: r.5,
+            notes: r.6,
+            source: r.7,
+            recorded_at: r.8,
+        })
+        .collect())
+}
+
+fn set_cycle_postgres(
+    pool: &PgPool,
+    name: &str,
+    stage: &str,
+    entered: Option<&str>,
+    description: Option<&str>,
+    evidence: Option<&str>,
+) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO structural_cycles (cycle_name, current_stage, stage_entered, description, evidence)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT(cycle_name) DO UPDATE SET
+               current_stage = EXCLUDED.current_stage,
+               stage_entered = EXCLUDED.stage_entered,
+               description = COALESCE(EXCLUDED.description, structural_cycles.description),
+               evidence = COALESCE(EXCLUDED.evidence, structural_cycles.evidence),
+               updated_at = NOW()",
+        )
+        .bind(name)
+        .bind(stage)
+        .bind(entered)
+        .bind(description)
+        .bind(evidence)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn list_cycles_postgres(pool: &PgPool) -> Result<Vec<StructuralCycle>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<CycleRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, cycle_name, current_stage, stage_entered, description, evidence, updated_at::text
+             FROM structural_cycles
+             ORDER BY updated_at DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StructuralCycle {
+            id: r.0,
+            cycle_name: r.1,
+            current_stage: r.2,
+            stage_entered: r.3,
+            description: r.4,
+            evidence: r.5,
+            updated_at: r.6,
+        })
+        .collect())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_outcome_postgres(
+    pool: &PgPool,
+    name: &str,
+    probability: f64,
+    horizon: Option<&str>,
+    description: Option<&str>,
+    parallel: Option<&str>,
+    impact: Option<&str>,
+    signals: Option<&str>,
+) -> Result<i64> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO structural_outcomes
+             (name, probability, time_horizon, description, historical_parallel, asset_implications, key_signals)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+        )
+        .bind(name)
+        .bind(probability)
+        .bind(horizon)
+        .bind(description)
+        .bind(parallel)
+        .bind(impact)
+        .bind(signals)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_outcomes_postgres(pool: &PgPool) -> Result<Vec<StructuralOutcome>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<OutcomeRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, name, probability, time_horizon, description, historical_parallel, asset_implications, key_signals, status, created_at::text, updated_at::text
+             FROM structural_outcomes
+             ORDER BY probability DESC, updated_at DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StructuralOutcome {
+            id: r.0,
+            name: r.1,
+            probability: r.2,
+            time_horizon: r.3,
+            description: r.4,
+            historical_parallel: r.5,
+            asset_implications: r.6,
+            key_signals: r.7,
+            status: r.8,
+            created_at: r.9,
+            updated_at: r.10,
+        })
+        .collect())
+}
+
+fn update_outcome_probability_postgres(
+    pool: &PgPool,
+    name: &str,
+    probability: f64,
+    driver: Option<&str>,
+) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        let outcome_id: i64 = sqlx::query_scalar("SELECT id FROM structural_outcomes WHERE name = $1")
+            .bind(name)
+            .fetch_one(pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO structural_outcome_history (outcome_id, probability, driver)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(outcome_id)
+        .bind(probability)
+        .bind(driver)
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "UPDATE structural_outcomes SET probability = $1, updated_at = NOW() WHERE id = $2",
+        )
+        .bind(probability)
+        .bind(outcome_id)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_outcome_history_postgres(
+    pool: &PgPool,
+    name: &str,
+    limit: Option<usize>,
+) -> Result<Vec<(f64, Option<String>, String)>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(f64, Option<String>, String)> = if let Some(n) = limit {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT h.probability, h.driver, h.recorded_at::text
+                 FROM structural_outcome_history h
+                 INNER JOIN structural_outcomes o ON o.id = h.outcome_id
+                 WHERE o.name = $1
+                 ORDER BY h.recorded_at DESC
+                 LIMIT $2",
+            )
+            .bind(name)
+            .bind(n as i64)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT h.probability, h.driver, h.recorded_at::text
+                 FROM structural_outcome_history h
+                 INNER JOIN structural_outcomes o ON o.id = h.outcome_id
+                 WHERE o.name = $1
+                 ORDER BY h.recorded_at DESC",
+            )
+            .bind(name)
+            .fetch_all(pool)
+            .await
+        })?
+    };
+    Ok(rows)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_parallel_postgres(
+    pool: &PgPool,
+    period: &str,
+    event: &str,
+    parallel_to: &str,
+    score: Option<i32>,
+    outcome: Option<&str>,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO historical_parallels
+             (period, event, parallel_to, similarity_score, asset_outcome, notes, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+        )
+        .bind(period)
+        .bind(event)
+        .bind(parallel_to)
+        .bind(score)
+        .bind(outcome)
+        .bind(notes)
+        .bind(source)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_parallels_postgres(
+    pool: &PgPool,
+    period: Option<&str>,
+) -> Result<Vec<HistoricalParallel>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<ParallelRow> = if let Some(p) = period {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, period, event, parallel_to, similarity_score, asset_outcome, notes, source, created_at::text
+                 FROM historical_parallels
+                 WHERE period = $1
+                 ORDER BY created_at DESC",
+            )
+            .bind(p)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, period, event, parallel_to, similarity_score, asset_outcome, notes, source, created_at::text
+                 FROM historical_parallels
+                 ORDER BY created_at DESC",
+            )
+            .fetch_all(pool)
+            .await
+        })?
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| HistoricalParallel {
+            id: r.0,
+            period: r.1,
+            event: r.2,
+            parallel_to: r.3,
+            similarity_score: r.4,
+            asset_outcome: r.5,
+            notes: r.6,
+            source: r.7,
+            created_at: r.8,
+        })
+        .collect())
+}
+
+fn search_parallels_postgres(pool: &PgPool, search: &str) -> Result<Vec<HistoricalParallel>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let pattern = format!("%{}%", search);
+    let rows: Vec<ParallelRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, period, event, parallel_to, similarity_score, asset_outcome, notes, source, created_at::text
+             FROM historical_parallels
+             WHERE period LIKE $1 OR event LIKE $1 OR parallel_to LIKE $1 OR notes LIKE $1
+             ORDER BY created_at DESC",
+        )
+        .bind(pattern)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| HistoricalParallel {
+            id: r.0,
+            period: r.1,
+            event: r.2,
+            parallel_to: r.3,
+            similarity_score: r.4,
+            asset_outcome: r.5,
+            notes: r.6,
+            source: r.7,
+            created_at: r.8,
+        })
+        .collect())
+}
+
+fn add_log_postgres(
+    pool: &PgPool,
+    date: &str,
+    development: &str,
+    cycle_impact: Option<&str>,
+    outcome_shift: Option<&str>,
+) -> Result<i64> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO structural_log (date, development, cycle_impact, outcome_shift)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id",
+        )
+        .bind(date)
+        .bind(development)
+        .bind(cycle_impact)
+        .bind(outcome_shift)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_log_postgres(
+    pool: &PgPool,
+    since: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<StructuralLog>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<LogRow> = match (since, limit) {
+        (Some(s), Some(n)) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, date, development, cycle_impact, outcome_shift, created_at::text
+                 FROM structural_log
+                 WHERE date >= $1
+                 ORDER BY date DESC, created_at DESC
+                 LIMIT $2",
+            )
+            .bind(s)
+            .bind(n as i64)
+            .fetch_all(pool)
+            .await
+        })?,
+        (Some(s), None) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, date, development, cycle_impact, outcome_shift, created_at::text
+                 FROM structural_log
+                 WHERE date >= $1
+                 ORDER BY date DESC, created_at DESC",
+            )
+            .bind(s)
+            .fetch_all(pool)
+            .await
+        })?,
+        (None, Some(n)) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, date, development, cycle_impact, outcome_shift, created_at::text
+                 FROM structural_log
+                 ORDER BY date DESC, created_at DESC
+                 LIMIT $1",
+            )
+            .bind(n as i64)
+            .fetch_all(pool)
+            .await
+        })?,
+        (None, None) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, date, development, cycle_impact, outcome_shift, created_at::text
+                 FROM structural_log
+                 ORDER BY date DESC, created_at DESC",
+            )
+            .fetch_all(pool)
+            .await
+        })?,
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| StructuralLog {
+            id: r.0,
+            date: r.1,
+            development: r.2,
+            cycle_impact: r.3,
+            outcome_shift: r.4,
+            created_at: r.5,
+        })
+        .collect())
 }

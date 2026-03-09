@@ -866,11 +866,8 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => {
-            let Some(conn) = backend.sqlite_native() else {
-                bail!("structural is currently available only with database_backend=sqlite");
-            };
             commands::structural::run(
-                conn,
+                &backend,
                 &action,
                 value.as_deref(),
                 country.as_deref(),
@@ -920,11 +917,8 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => {
-            let Some(conn) = backend.sqlite_native() else {
-                bail!("trends is currently available only with database_backend=sqlite");
-            };
             commands::trends::run(
-                conn,
+                &backend,
                 &action,
                 value.as_deref(),
                 trend.as_deref(),

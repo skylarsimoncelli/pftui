@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResearchQuestion {
@@ -121,5 +125,199 @@ pub fn resolve_question(conn: &Connection, id: i64, resolution: &str, status: &s
          WHERE id = ?",
         params![status, resolution, id],
     )?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn add_question_backend(
+    backend: &BackendConnection,
+    question: &str,
+    key_signal: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_question(conn, question, key_signal),
+        |pool| add_question_postgres(pool, question, key_signal),
+    )
+}
+
+pub fn list_questions_backend(
+    backend: &BackendConnection,
+    status_filter: Option<&str>,
+) -> Result<Vec<ResearchQuestion>> {
+    query::dispatch(
+        backend,
+        |conn| list_questions(conn, status_filter),
+        |pool| list_questions_postgres(pool, status_filter),
+    )
+}
+
+#[allow(dead_code)]
+pub fn update_question_backend(
+    backend: &BackendConnection,
+    id: i64,
+    tilt: Option<&str>,
+    evidence: Option<&str>,
+    key_signal: Option<&str>,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| update_question(conn, id, tilt, evidence, key_signal),
+        |pool| update_question_postgres(pool, id, tilt, evidence, key_signal),
+    )
+}
+
+#[allow(dead_code)]
+pub fn resolve_question_backend(
+    backend: &BackendConnection,
+    id: i64,
+    resolution: &str,
+    status: &str,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| resolve_question(conn, id, resolution, status),
+        |pool| resolve_question_postgres(pool, id, resolution, status),
+    )
+}
+
+type QuestionRow = (
+    i64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+    Option<String>,
+);
+
+fn from_pg_row(r: QuestionRow) -> ResearchQuestion {
+    ResearchQuestion {
+        id: r.0,
+        question: r.1,
+        evidence_tilt: r.2,
+        key_signal: r.3,
+        evidence: r.4,
+        first_raised: r.5,
+        last_updated: r.6,
+        status: r.7,
+        resolution: r.8,
+    }
+}
+
+#[allow(dead_code)]
+fn add_question_postgres(pool: &PgPool, question: &str, key_signal: Option<&str>) -> Result<i64> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO research_questions (question, key_signal)
+             VALUES ($1, $2)
+             RETURNING id",
+        )
+        .bind(question)
+        .bind(key_signal)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_questions_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result<Vec<ResearchQuestion>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<QuestionRow> = if let Some(status) = status_filter {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, question, evidence_tilt, key_signal, evidence, first_raised, last_updated::text, status, resolution
+                 FROM research_questions
+                 WHERE status = $1
+                 ORDER BY last_updated DESC",
+            )
+            .bind(status)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, question, evidence_tilt, key_signal, evidence, first_raised, last_updated::text, status, resolution
+                 FROM research_questions
+                 ORDER BY last_updated DESC",
+            )
+            .fetch_all(pool)
+            .await
+        })?
+    };
+    Ok(rows.into_iter().map(from_pg_row).collect())
+}
+
+#[allow(dead_code)]
+fn update_question_postgres(
+    pool: &PgPool,
+    id: i64,
+    tilt: Option<&str>,
+    evidence: Option<&str>,
+    key_signal: Option<&str>,
+) -> Result<()> {
+    if tilt.is_none() && evidence.is_none() && key_signal.is_none() {
+        return Ok(());
+    }
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        if let Some(v) = tilt {
+            sqlx::query(
+                "UPDATE research_questions SET evidence_tilt = $1, last_updated = NOW() WHERE id = $2",
+            )
+            .bind(v)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        }
+        if let Some(v) = evidence {
+            sqlx::query(
+                "UPDATE research_questions
+                 SET evidence = CASE
+                     WHEN evidence IS NULL OR evidence = '' THEN $1
+                     ELSE evidence || E'\\n' || $1
+                 END,
+                 last_updated = NOW()
+                 WHERE id = $2",
+            )
+            .bind(v)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        }
+        if let Some(v) = key_signal {
+            sqlx::query(
+                "UPDATE research_questions SET key_signal = $1, last_updated = NOW() WHERE id = $2",
+            )
+            .bind(v)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        }
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn resolve_question_postgres(pool: &PgPool, id: i64, resolution: &str, status: &str) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "UPDATE research_questions
+             SET status = $1, resolution = $2, last_updated = NOW()
+             WHERE id = $3",
+        )
+        .bind(status)
+        .bind(resolution)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
     Ok(())
 }
