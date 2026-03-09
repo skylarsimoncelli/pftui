@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Implement structural cycles CLI (F31.11)
+
+- What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.
+- Why: completes F31 Analytics Engine highest-timeframe layer. Provides structural context for multi-decade empire cycles, reserve currency transitions, power metrics. Data structures from TODO spec, schema existed, now fully wired with CLI + --json support.
+- Files: `src/db/structural.rs` (624 lines, 5 storage subsystems + backend wrappers), `src/commands/structural.rs` (424 lines, 15 action router + dashboard generator), CLI/main already wired from previous partial implementation
+- Tests: all 1185 tests pass, zero clippy warnings
+- TODO: F31.11 Structural Cycles (P0)
+
 ### 2026-03-09 — Fix sector command: include all sector ETFs in refresh
 
 - What: sector ETFs (SECTOR_ETFS: 23 symbols including all 11 SPDR sectors + defense/specialty) are now fetched during `pftui refresh`. Previously only portfolio and watchlist symbols were fetched, leaving sector command to rely on best-effort backfill which failed silently.
