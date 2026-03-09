@@ -13,6 +13,14 @@
 - Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
 - TODO: removed P1-BUG "Postgres structural storage not yet implemented"
 
+### 2026-03-09 — Fix BLS Postgres freshness timestamp parse failure
+
+- What: replaced `updated_at::text` parsing in Postgres BLS freshness checks with epoch-based SQL (`EXTRACT(EPOCH FROM updated_at)::BIGINT`) and direct age comparison.
+- Why: avoids Postgres timestamp string-format parsing mismatches that could terminate refresh runs.
+- Files: `src/db/bls_cache.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 BLS timestamp parse crash blocker
+
 ### 2026-03-09 — Fix Postgres predictions `MAX(updated_at)` NULL decode crash
 
 - What: changed Postgres `get_last_update_postgres` query decoding to `Option<i64>` directly for `SELECT MAX(updated_at)`, removing the null-to-non-null decode failure path on empty tables.

@@ -211,9 +211,9 @@ fn upsert_bls_data_postgres(pool: &PgPool, data: &[BlsDataPoint]) -> Result<()> 
 }
 
 fn is_cache_fresh_postgres(pool: &PgPool, series_id: &str, max_age_days: i64) -> Result<bool> {
-        let updated_at: Option<String> = crate::db::pg_runtime::block_on(async {
+    let updated_at_epoch: Option<i64> = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "SELECT updated_at::text
+            "SELECT EXTRACT(EPOCH FROM updated_at)::BIGINT
              FROM bls_cache
              WHERE series_id = $1
              ORDER BY updated_at DESC
@@ -224,18 +224,13 @@ fn is_cache_fresh_postgres(pool: &PgPool, series_id: &str, max_age_days: i64) ->
         .await
     })?;
 
-    let Some(updated_raw) = updated_at else {
+    let Some(updated_ts) = updated_at_epoch else {
         return Ok(false);
     };
 
-    let parsed = chrono::DateTime::parse_from_rfc3339(&updated_raw)
-        .map(|d| d.naive_utc())
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(&updated_raw, "%Y-%m-%d %H:%M:%S%.f"))
-        .context("Failed to parse updated_at timestamp")?;
-
-    let now = chrono::Utc::now().naive_utc();
-    let age = now.signed_duration_since(parsed);
-    Ok(age.num_days() < max_age_days)
+    let now_ts = chrono::Utc::now().timestamp();
+    let max_age_secs = max_age_days * 24 * 60 * 60;
+    Ok((now_ts - updated_ts) < max_age_secs)
 }
 
 fn get_latest_bls_data_postgres(pool: &PgPool, series_id: &str) -> Result<Option<BlsDataPoint>> {
