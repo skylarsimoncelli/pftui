@@ -905,6 +905,8 @@ These are the most-used modules. Migrate them first to validate the pattern.
   Progress:
   - Added CI coverage for: postgres cache roundtrip + sqlite↔postgres import/export switch tests + setup backend-selection tests.
 - [ ] **P32.9 Parity acceptance suite** — add a reproducible backend parity checklist script (`scripts/parity_check.sh`) to run key commands on sqlite and postgres and diff normalized outputs.
+  Progress:
+  - Added `scripts/parity_check.sh` with isolated env homes, sqlite/postgres import parity setup, normalized JSON diff checks for `value`, `summary`, `watchlist`, and `drift`.
 - [ ] **P32.10 Final parity signoff docs** — publish a single doc section that defines supported parity scope, known intentional differences, and backend switching runbook with verification commands.
 
 **Key SQL differences to handle per-module:**

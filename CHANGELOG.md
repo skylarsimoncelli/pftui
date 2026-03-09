@@ -43,6 +43,14 @@
 - Tests: `cargo check -q`, `cargo test -q db::scan_queries::tests::`, `cargo test -q db::annotations::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.7 Runtime cleanup completion
 
+### 2026-03-09 — P32.9 phase: add backend parity acceptance script
+
+- What: added `scripts/parity_check.sh`, a reproducible sqlite-vs-postgres parity script that uses isolated config/data homes, imports the same snapshot into both backends, normalizes JSON output with `jq`, and diffs key command outputs (`value`, `summary`, `watchlist`, `drift`).
+- Why: provides a concrete acceptance harness for backend parity validation outside unit tests.
+- Files: `scripts/parity_check.sh`, `TODO.md`
+- Tests: script lint/smoke (`chmod +x`, invocation path validation). Full parity run requires `PFTUI_TEST_POSTGRES_URL`/`DATABASE_URL`.
+- TODO: P32.9 Parity acceptance suite
+
 ### 2026-03-09 — Implement structural cycles CLI (F31.11)
 
 - What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.
