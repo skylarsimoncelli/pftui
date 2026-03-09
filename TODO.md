@@ -1121,17 +1121,32 @@ TOP INSIGHT (Druckenmiller):
 >
 > **The full product stack:**
 > ```
-> ┌─────────────────────────────────────────────┐
-> │            AI Layer                          │  Agents, routines, investor panel
-> ├─────────────────────────────────────────────┤
-> │         Analytics Engine                     │  4-timeframe intelligence
-> ├─────────────────────────────────────────────┤
-> │          Your Database                       │  SQLite / Postgres, compounds over time
-> ├─────────────────────────────────────────────┤
-> │      Data Aggregation Engine                 │  10+ sources, caching, pre-processing
-> └─────────────────────────────────────────────┘
+>                  ┌──────────────────────────┐
+>                  │        AI Layer           │  Agents, routines, investor panel
+>                  ├──────────────────────────┤
+>                  │    Analytics Engine       │  4-timeframe intelligence
+>                  ├──────────────────────────┤
+>                  │  Data Aggregation Engine  │  10+ sources, pre-processing, compute
+>                  └────────────┬─────────────┘
+>                               │ read/write
+>                  ┌────────────▼─────────────┐
+>                  │      Your Database        │  SQLite / Postgres
+>                  │   (shared state layer)    │  The single source of truth
+>                  └──────────────────────────┘
 > ```
-> Each layer builds on the one below. Aggregation → Database → Analytics → AI.
+> The Database is NOT a passive layer between aggregation and analytics — it's the
+> **shared state layer** that ALL other layers read from and write to. The aggregation
+> engine writes raw data + pre-computed technicals. The analytics engine writes
+> scenarios, convictions, regime classifications. The AI layer writes agent messages,
+> notes, predictions. Every layer's output is another layer's input, and the database
+> is the meeting point.
+>
+> The Data Aggregation Engine also performs **significant compute** against raw data —
+> technical analysis (RSI, MACD, SMA, Bollinger), correlation matrices, regime
+> classification, trend change detection, probability shifts. This pre-processing
+> reduces the analytical burden on the Analytics Engine, which can focus on
+> higher-order interpretation (scenario weighting, cross-timeframe alignment,
+> structural cycle positioning) rather than re-deriving technicals from scratch.
 
 **What the Data Aggregation Engine does:**
 
@@ -1199,10 +1214,29 @@ On-chain         2m ago             1        ✓ Fresh
 - `pftui doctor` — connectivity diagnostics for all sources
 - `pftui config set brave_api_key <key>` — unlock additional sources
 
+**The aggregation engine doesn't just collect — it computes.** When `pftui refresh` runs,
+it doesn't just cache raw prices. It computes RSI, MACD, SMA across all symbols. It runs
+correlation matrices across held assets. It classifies the market regime (risk-on/risk-off)
+with a confidence score. It detects which alerts are triggered, which movers crossed
+thresholds, which prediction market probabilities shifted. By the time the Analytics Engine
+reads from the database, the heavy numerical work is already done. The Analytics Engine's
+job is interpretation and cross-referencing — "what does RSI 89 on oil MEAN given the
+current war scenario?" — not "calculate RSI from 14 days of closes."
+
+**The database as shared state:** The aggregation engine writes price_cache, sentiment_cache,
+cot_cache. The analytics engine writes scenarios, thesis, convictions, regime_snapshots.
+The AI layer writes agent_messages, daily_notes, user_predictions. Every layer's output
+becomes queryable state for every other layer. An agent reads `pftui regime current` (written
+by aggregation's classifier), combines it with `pftui scenario list` (written by an evening
+planner agent), and writes `pftui conviction set GC=F --score 4` (consumed by the analytics
+alignment view). The database is the meeting point — not a pipe between layers.
+
 **Key product differentiator:** Most tools show you data from ONE source. TradingView shows
 charts (one source). Yahoo shows prices (one source). Bloomberg aggregates but costs $25k/yr.
-pftui aggregates 10+ free sources into one local database with one command. The aggregation
-layer is invisible when it works — but it's the foundation everything else depends on.
+pftui aggregates 10+ free sources into one local database with one command, pre-processes
+technicals and classifications, and makes it all available to both human and AI operators
+through a unified CLI. The aggregation layer is invisible when it works — but it's the
+foundation everything else depends on.
 
 **Documentation structure (same pattern as Analytics Engine and AI Layer):**
 
