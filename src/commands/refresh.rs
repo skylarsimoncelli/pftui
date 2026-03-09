@@ -263,10 +263,10 @@ fn comex_needs_refresh(backend: &BackendConnection) -> Result<bool> {
 }
 
 /// Check if BLS needs refreshing
-fn bls_needs_refresh(conn: &Connection) -> Result<bool> {
+fn bls_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check a few key series
     for series in &["CUUR0000SA0", "CUSR0000SA0", "LNS14000000"] {
-        if !bls_cache::is_cache_fresh(conn, series, BLS_FRESHNESS_DAYS)? {
+        if !bls_cache::is_cache_fresh_backend(backend, series, BLS_FRESHNESS_DAYS)? {
             return Ok(true);
         }
     }
@@ -747,11 +747,10 @@ pub fn run(
     }
 
     // 9. BLS
-    if let Some(conn) = sqlite_conn {
-    if bls_needs_refresh(conn)? {
+    if bls_needs_refresh(backend)? {
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
-                bls_cache::upsert_bls_data(conn, &data)?;
+                bls_cache::upsert_bls_data_backend(backend, &data)?;
                 println!("✓ BLS ({} series)", data.len());
             }
             Err(e) => {
@@ -760,9 +759,6 @@ pub fn run(
         }
     } else {
         println!("⊘ BLS (fresh, skipping)");
-    }
-    } else {
-        println!("⊘ BLS (sqlite-only cache path, skipping on postgres)");
     }
 
     // 10. World Bank

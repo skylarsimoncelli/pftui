@@ -3,7 +3,11 @@ use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use rusqlite::{params, Connection};
 use rust_decimal::Decimal;
+use sqlx::PgPool;
 use std::str::FromStr;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// Initialize BLS cache table.
 pub fn init_bls_cache(conn: &Connection) -> Result<()> {
@@ -49,6 +53,14 @@ pub fn upsert_bls_data(conn: &Connection, data: &[BlsDataPoint]) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn upsert_bls_data_backend(backend: &BackendConnection, data: &[BlsDataPoint]) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_bls_data(conn, data),
+        |pool| upsert_bls_data_postgres(pool, data),
+    )
 }
 
 /// Get cached BLS data for a series, optionally filtered by date range.
@@ -149,6 +161,72 @@ pub fn is_cache_fresh(conn: &Connection, series_id: &str, max_age_days: i64) -> 
     } else {
         Ok(false)
     }
+}
+
+pub fn is_cache_fresh_backend(
+    backend: &BackendConnection,
+    series_id: &str,
+    max_age_days: i64,
+) -> Result<bool> {
+    query::dispatch(
+        backend,
+        |conn| is_cache_fresh(conn, series_id, max_age_days),
+        |pool| is_cache_fresh_postgres(pool, series_id, max_age_days),
+    )
+}
+
+fn upsert_bls_data_postgres(pool: &PgPool, data: &[BlsDataPoint]) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        for point in data {
+            sqlx::query(
+                "INSERT INTO bls_cache (series_id, year, period, value, date, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, NOW())
+                 ON CONFLICT (series_id, year, period) DO UPDATE SET
+                   value = EXCLUDED.value,
+                   date = EXCLUDED.date,
+                   updated_at = NOW()",
+            )
+            .bind(&point.series_id)
+            .bind(point.year)
+            .bind(&point.period)
+            .bind(point.value.to_string())
+            .bind(point.date.format("%Y-%m-%d").to_string())
+            .execute(pool)
+            .await?;
+        }
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn is_cache_fresh_postgres(pool: &PgPool, series_id: &str, max_age_days: i64) -> Result<bool> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let updated_at: Option<String> = runtime.block_on(async {
+        sqlx::query_scalar(
+            "SELECT updated_at::text
+             FROM bls_cache
+             WHERE series_id = $1
+             ORDER BY updated_at DESC
+             LIMIT 1",
+        )
+        .bind(series_id)
+        .fetch_optional(pool)
+        .await
+    })?;
+
+    let Some(updated_raw) = updated_at else {
+        return Ok(false);
+    };
+
+    let parsed = chrono::DateTime::parse_from_rfc3339(&updated_raw)
+        .map(|d| d.naive_utc())
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(&updated_raw, "%Y-%m-%d %H:%M:%S%.f"))
+        .context("Failed to parse updated_at timestamp")?;
+
+    let now = chrono::Utc::now().naive_utc();
+    let age = now.signed_duration_since(parsed);
+    Ok(age.num_days() < max_age_days)
 }
 
 #[cfg(test)]

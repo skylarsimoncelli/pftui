@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 11:19 UTC — F32 Phase 62: backend-native BLS refresh path
+
+- What: added backend-dispatched BLS cache APIs for upsert/freshness checks and migrated refresh BLS freshness check + writes to backend methods.
+- Why: removes sqlite-only BLS ingestion and enables native postgres updates for key macro series cache.
+- Files: `src/db/bls_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh end-of-run snapshot/signals write still sqlite-gated)
+
 ### 2026-03-09 11:04 UTC — F32 Phase 61: backend-native calendar refresh path
 
 - What: added postgres/backend-dispatched calendar cache APIs (`upsert`, `upcoming`, `impact`, `delete_old`) and migrated refresh calendar freshness check + writes to backend methods.
