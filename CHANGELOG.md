@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 06:03 UTC — F32 Phase 38: un-gate summary/value/export/history from sqlite-only FX reads
+
+- What: removed hard SQLite connection requirements from `summary`, `value`, `export`, and `history` command paths by switching FX-cache lookup to optional SQLite-native access when available; all four commands now run under postgres backend without `sqlite_conn_for_command` gating.
+- Why: closes a major postgres parity gap where core portfolio reporting commands were blocked by hybrid FX-cache coupling.
+- Files: `src/commands/summary.rs`, `src/commands/value.rs`, `src/commands/export.rs`, `src/commands/history.rs`, `src/commands/import.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/watchlist/import/economy/eod/global/performance/scan/migrate-journal/setup/tui)
+
 ### 2026-03-09 05:24 UTC — F32 Phase 37: backend-dispatch `set-cash` command path
 
 - What: migrated `set-cash` to accept `BackendConnection`, added backend-dispatched symbol transaction deletion with native Postgres SQL, and switched insertion to `insert_transaction_backend`; removed SQLite-only gating for `set-cash` in `main`.

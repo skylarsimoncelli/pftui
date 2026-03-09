@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+#[cfg(test)]
 use rusqlite::Connection;
 
 use crate::config::{Config, PortfolioMode};
@@ -47,7 +48,7 @@ fn format_with_commas(value: Decimal, dp: u32) -> String {
     }
 }
 
-pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, config: &Config, json: bool) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
@@ -55,14 +56,20 @@ pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, json
         .collect();
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(backend, conn, config, &prices, json),
-        PortfolioMode::Percentage => run_percentage(backend, conn, config, &prices, json),
+        PortfolioMode::Full => run_full(backend, config, &prices, json),
+        PortfolioMode::Percentage => run_percentage(backend, config, &prices, json),
     }
+}
+
+fn load_fx_rates(backend: &BackendConnection) -> HashMap<String, Decimal> {
+    backend
+        .sqlite_native()
+        .and_then(|conn| crate::db::fx_cache::get_all_fx_rates(conn).ok())
+        .unwrap_or_default()
 }
 
 fn run_full(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
     json: bool,
@@ -77,7 +84,7 @@ fn run_full(
         return Ok(());
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         if json {
@@ -168,7 +175,6 @@ fn run_full(
 
 fn run_percentage(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
     json: bool,
@@ -183,7 +189,7 @@ fn run_percentage(
         return Ok(());
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
 
     let priced: Vec<_> = positions
@@ -295,7 +301,7 @@ mod tests {
         let config = Config::default();
         // Should not panic, just prints "No positions"
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, false);
+        let result = run(&backend, &config, false);
         assert!(result.is_ok());
     }
 
@@ -323,7 +329,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, false);
+        let result = run(&backend, &config, false);
         assert!(result.is_ok());
     }
 
@@ -369,7 +375,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, false);
+        let result = run(&backend, &config, false);
         assert!(result.is_ok());
     }
 
@@ -386,7 +392,7 @@ mod tests {
         insert_allocation(&conn, "GC=F", AssetCategory::Commodity, dec!(50)).unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, false);
+        let result = run(&backend, &config, false);
         assert!(result.is_ok());
     }
 }

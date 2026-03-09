@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+#[cfg(test)]
 use rusqlite::Connection;
 
 use crate::cli::SummaryGroupBy;
@@ -24,7 +25,6 @@ fn validate_date(date: &str) -> Result<()> {
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     date: &str,
     group_by: Option<&SummaryGroupBy>,
@@ -39,14 +39,20 @@ pub fn run(
     }
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(backend, conn, config, date, group_by),
-        PortfolioMode::Percentage => run_percentage(backend, conn, config, date, group_by),
+        PortfolioMode::Full => run_full(backend, config, date, group_by),
+        PortfolioMode::Percentage => run_percentage(backend, config, date, group_by),
     }
+}
+
+fn load_fx_rates(backend: &BackendConnection) -> HashMap<String, Decimal> {
+    backend
+        .sqlite_native()
+        .and_then(|conn| crate::db::fx_cache::get_all_fx_rates(conn).ok())
+        .unwrap_or_default()
 }
 
 fn run_full(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     date: &str,
     group_by: Option<&SummaryGroupBy>,
@@ -88,7 +94,7 @@ fn run_full(
         }
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions(&txs_at_date, &prices, &fx_rates);
     if positions.is_empty() {
         println!("No open positions as of {}.", date);
@@ -106,7 +112,6 @@ fn run_full(
 
 fn run_percentage(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     date: &str,
     group_by: Option<&SummaryGroupBy>,
@@ -127,7 +132,7 @@ fn run_percentage(
         }
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
 
     print_date_banner(date);
@@ -396,7 +401,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, "2026-01-15", None);
+        let result = run(&backend, &config, "2026-01-15", None);
         assert!(result.is_ok());
     }
 
@@ -425,7 +430,7 @@ mod tests {
 
         // Looking at a date before the only transaction
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, "2026-01-01", None);
+        let result = run(&backend, &config, "2026-01-01", None);
         assert!(result.is_ok());
     }
 
@@ -480,7 +485,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, "2025-06-10", None);
+        let result = run(&backend, &config, "2025-06-10", None);
         assert!(result.is_ok());
     }
 
@@ -555,7 +560,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, "2025-06-01", Some(&SummaryGroupBy::Category));
+        let result = run(&backend, &config, "2025-06-01", Some(&SummaryGroupBy::Category));
         assert!(result.is_ok());
     }
 
@@ -584,7 +589,7 @@ mod tests {
 
         // Cash should always show value even without price history
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, "2025-06-01", None);
+        let result = run(&backend, &config, "2025-06-01", None);
         assert!(result.is_ok());
     }
 
@@ -650,7 +655,7 @@ mod tests {
 
         // Query at a date BEFORE the cash transaction — cash must still appear
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, "2025-06-01", None);
+        let result = run(&backend, &config, "2025-06-01", None);
         assert!(result.is_ok());
 
         // Verify positions include both equity and cash
@@ -710,7 +715,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, "2025-06-01", None);
+        let result = run(&backend, &config, "2025-06-01", None);
         assert!(result.is_ok());
     }
 }

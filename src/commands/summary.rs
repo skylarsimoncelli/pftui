@@ -5,6 +5,7 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::str::FromStr;
+#[cfg(test)]
 use rusqlite::Connection;
 
 use crate::cli::{SummaryGroupBy, SummaryPeriod};
@@ -91,7 +92,6 @@ fn parse_what_if(input: &str, prices: &HashMap<String, Decimal>) -> Result<HashM
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     group_by: Option<&SummaryGroupBy>,
     period: Option<&SummaryPeriod>,
@@ -157,7 +157,6 @@ pub fn run(
         return match config.portfolio_mode {
             PortfolioMode::Full => run_full_json(
                 backend,
-                conn,
                 config,
                 &prices,
                 group_by,
@@ -167,7 +166,6 @@ pub fn run(
             ),
             PortfolioMode::Percentage => run_percentage_json(
                 backend,
-                conn,
                 &prices,
                 group_by,
                 period,
@@ -180,7 +178,6 @@ pub fn run(
     match config.portfolio_mode {
         PortfolioMode::Full => run_full(
             backend,
-            conn,
             config,
             &prices,
             group_by,
@@ -191,7 +188,6 @@ pub fn run(
         ),
         PortfolioMode::Percentage => run_percentage(
             backend,
-            conn,
             &prices,
             group_by,
             period,
@@ -200,6 +196,13 @@ pub fn run(
             &technicals_data,
         ),
     }
+}
+
+fn load_fx_rates(backend: &BackendConnection) -> HashMap<String, Decimal> {
+    backend
+        .sqlite_native()
+        .and_then(|conn| crate::db::fx_cache::get_all_fx_rates(conn).ok())
+        .unwrap_or_default()
 }
 
 /// Print a banner showing the hypothetical price overrides being applied.
@@ -219,7 +222,6 @@ fn print_what_if_banner(overrides: &HashMap<String, Decimal>) {
 #[allow(clippy::too_many_arguments)]
 fn run_full(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     prices: &HashMap<String, Decimal>,
     group_by: Option<&SummaryGroupBy>,
@@ -234,7 +236,7 @@ fn run_full(
         return Ok(());
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         println!("No open positions.");
@@ -263,7 +265,6 @@ fn run_full(
 
 fn run_percentage(
     backend: &BackendConnection,
-    conn: &Connection,
     prices: &HashMap<String, Decimal>,
     group_by: Option<&SummaryGroupBy>,
     period: Option<&SummaryPeriod>,
@@ -277,7 +278,7 @@ fn run_percentage(
         return Ok(());
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
 
     let result = match (group_by, period) {
@@ -1070,7 +1071,6 @@ fn format_percent_2(d: Decimal) -> String {
 #[allow(clippy::too_many_arguments)]
 fn run_full_json(
     backend: &BackendConnection,
-    conn: &Connection,
     _config: &Config,
     prices: &HashMap<String, Decimal>,
     _group_by: Option<&SummaryGroupBy>,
@@ -1084,7 +1084,7 @@ fn run_full_json(
         return Ok(());
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         println!("{{\"error\": \"No positions\"}}");
@@ -1114,7 +1114,6 @@ fn run_full_json(
 
 fn run_percentage_json(
     backend: &BackendConnection,
-    conn: &Connection,
     prices: &HashMap<String, Decimal>,
     _group_by: Option<&SummaryGroupBy>,
     _period: Option<&SummaryPeriod>,
@@ -1127,7 +1126,7 @@ fn run_percentage_json(
         return Ok(());
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
 
     let data: Vec<_> = positions.iter().map(|p| {
@@ -1317,7 +1316,7 @@ mod tests {
 
         // Should succeed even with no history data
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
+        let result = run(&backend, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1362,7 +1361,7 @@ mod tests {
 
         // Should succeed with historical data available
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
+        let result = run(&backend, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1401,7 +1400,7 @@ mod tests {
 
         // Both --group-by category and --period together
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false, false);
+        let result = run(&backend, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false, false);
         assert!(result.is_ok());
     }
 
@@ -1531,7 +1530,7 @@ mod tests {
 
         // With what-if override, should succeed and use hypothetical price
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, None, Some("AAPL:300"), false, false);
+        let result = run(&backend, &config, None, None, Some("AAPL:300"), false, false);
         assert!(result.is_ok());
     }
 
@@ -1570,7 +1569,7 @@ mod tests {
 
         // What-if + group-by should work together
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false, false);
+        let result = run(&backend, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false, false);
         assert!(result.is_ok());
     }
 }

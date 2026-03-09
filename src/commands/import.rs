@@ -693,7 +693,6 @@ mod tests {
         let backend = crate::db::backend::BackendConnection::Sqlite { conn };
         crate::commands::export::run(
             &backend,
-            backend.sqlite(),
             &crate::cli::ExportFormat::Json,
             &config,
             Some(export_path.to_str().unwrap()),

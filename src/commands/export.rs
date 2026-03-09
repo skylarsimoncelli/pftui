@@ -3,6 +3,7 @@ use std::io::Write;
 
 use anyhow::Result;
 use rust_decimal::Decimal;
+#[cfg(test)]
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -77,7 +78,6 @@ fn get_writer(output: Option<&str>) -> Result<Box<dyn Write>> {
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     format: &ExportFormat,
     config: &Config,
     output: Option<&str>,
@@ -88,7 +88,10 @@ pub fn run(
         .map(|q| (q.symbol, q.price))
         .collect();
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = backend
+        .sqlite_native()
+        .and_then(|conn| crate::db::fx_cache::get_all_fx_rates(conn).ok())
+        .unwrap_or_default();
 
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
@@ -401,7 +404,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         let backend = to_backend(conn);
-        run(&backend, backend.sqlite(), &ExportFormat::Json, &config, Some(path_str)).unwrap();
+        run(&backend, &ExportFormat::Json, &config, Some(path_str)).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("\"transactions\""));
@@ -446,7 +449,7 @@ mod tests {
         let path_str = path.to_str().unwrap();
 
         let backend = to_backend(conn);
-        run(&backend, backend.sqlite(), &ExportFormat::Csv, &config, Some(path_str)).unwrap();
+        run(&backend, &ExportFormat::Csv, &config, Some(path_str)).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("symbol,name,category,quantity"));

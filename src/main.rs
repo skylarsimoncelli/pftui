@@ -79,10 +79,8 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Summary { group_by, period, what_if, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "summary")?;
             commands::summary::run(
                 &backend,
-                conn,
                 &config,
                 group_by.as_ref(),
                 period.as_ref(),
@@ -92,8 +90,7 @@ fn main() -> Result<()> {
             )
         }
         Some(Command::Export { format, output }) => {
-            let conn = sqlite_conn_for_command(&backend, "export")?;
-            commands::export::run(&backend, conn, &format, &config, output.as_deref())
+            commands::export::run(&backend, &format, &config, output.as_deref())
         }
 
         Some(Command::ListTx { notes, json }) => {
@@ -239,8 +236,7 @@ fn main() -> Result<()> {
         }
         Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => {
-            let conn = sqlite_conn_for_command(&backend, "value")?;
-            commands::value::run(&backend, conn, &config, json)
+            commands::value::run(&backend, &config, json)
         }
         Some(Command::Brief { json }) => {
             let conn = sqlite_conn_for_command(&backend, "brief")?;
@@ -276,8 +272,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::History { date, group_by }) => {
-            let conn = sqlite_conn_for_command(&backend, "history")?;
-            commands::history::run(&backend, conn, &config, &date, group_by.as_ref())
+            commands::history::run(&backend, &config, &date, group_by.as_ref())
         }
 
         Some(Command::Macro { json }) => commands::macro_cmd::run(&backend, &config, json),
