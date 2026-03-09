@@ -5,6 +5,13 @@ use crate::data::predictions::{MarketCategory, PredictionMarket};
 use crate::db::backend::BackendConnection;
 use crate::db::predictions_cache::get_cached_predictions_backend;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CategorySelector {
+    Exact(MarketCategory),
+    Finance,
+    Macro,
+}
+
 /// Run the `pftui predictions` command.
 pub fn run(
     backend: &BackendConnection,
@@ -27,8 +34,8 @@ pub fn run(
 
     // Filter by category if specified
     if let Some(cat_str) = category {
-        let cat_filter = parse_category(cat_str)?;
-        markets.retain(|m| m.category == cat_filter);
+        let selectors = parse_category_selectors(cat_str)?;
+        markets.retain(|m| market_matches_any_selector(m, &selectors));
     }
 
     // Filter by search query if specified
@@ -49,19 +56,58 @@ pub fn run(
     Ok(())
 }
 
-/// Parse category string into enum.
-fn parse_category(s: &str) -> Result<MarketCategory> {
-    match s.to_lowercase().as_str() {
-        "crypto" => Ok(MarketCategory::Crypto),
-        "economics" | "econ" => Ok(MarketCategory::Economics),
-        "geopolitics" | "geo" => Ok(MarketCategory::Geopolitics),
-        "ai" => Ok(MarketCategory::AI),
-        "other" => Ok(MarketCategory::Other),
-        _ => anyhow::bail!(
-            "Invalid category '{}'. Valid: crypto, economics, geopolitics, ai, other",
-            s
+fn parse_category_selectors(s: &str) -> Result<Vec<CategorySelector>> {
+    let mut selectors = Vec::new();
+    for raw in s.split('|') {
+        let token = raw.trim().to_lowercase();
+        if token.is_empty() {
+            continue;
+        }
+        let selector = match token.as_str() {
+            "crypto" => CategorySelector::Exact(MarketCategory::Crypto),
+            "economics" | "econ" => CategorySelector::Exact(MarketCategory::Economics),
+            "geopolitics" | "geo" => CategorySelector::Exact(MarketCategory::Geopolitics),
+            "ai" => CategorySelector::Exact(MarketCategory::AI),
+            "other" => CategorySelector::Exact(MarketCategory::Other),
+            "finance" => CategorySelector::Finance,
+            "macro" => CategorySelector::Macro,
+            _ => anyhow::bail!(
+                "Invalid category '{}'. Valid: crypto, economics, geopolitics, ai, other, finance, macro. Multiple allowed via '|'.",
+                token
+            ),
+        };
+        if !selectors.contains(&selector) {
+            selectors.push(selector);
+        }
+    }
+
+    if selectors.is_empty() {
+        anyhow::bail!(
+            "Category filter is empty. Valid: crypto, economics, geopolitics, ai, other, finance, macro."
+        );
+    }
+
+    Ok(selectors)
+}
+
+fn market_matches_selector(market: &PredictionMarket, selector: CategorySelector) -> bool {
+    match selector {
+        CategorySelector::Exact(c) => market.category == c,
+        CategorySelector::Finance => {
+            matches!(market.category, MarketCategory::Economics | MarketCategory::Crypto)
+        }
+        CategorySelector::Macro => matches!(
+            market.category,
+            MarketCategory::Economics | MarketCategory::Geopolitics | MarketCategory::Crypto
         ),
     }
+}
+
+fn market_matches_any_selector(market: &PredictionMarket, selectors: &[CategorySelector]) -> bool {
+    selectors
+        .iter()
+        .copied()
+        .any(|selector| market_matches_selector(market, selector))
 }
 
 /// Print prediction markets as a formatted table.
@@ -252,20 +298,88 @@ mod tests {
 
     #[test]
     fn test_parse_category() {
-        assert_eq!(parse_category("crypto").unwrap(), MarketCategory::Crypto);
         assert_eq!(
-            parse_category("economics").unwrap(),
-            MarketCategory::Economics
+            parse_category_selectors("crypto").unwrap(),
+            vec![CategorySelector::Exact(MarketCategory::Crypto)]
         );
-        assert_eq!(parse_category("econ").unwrap(), MarketCategory::Economics);
         assert_eq!(
-            parse_category("geopolitics").unwrap(),
-            MarketCategory::Geopolitics
+            parse_category_selectors("economics").unwrap(),
+            vec![CategorySelector::Exact(MarketCategory::Economics)]
         );
-        assert_eq!(parse_category("geo").unwrap(), MarketCategory::Geopolitics);
-        assert_eq!(parse_category("ai").unwrap(), MarketCategory::AI);
-        assert_eq!(parse_category("other").unwrap(), MarketCategory::Other);
-        assert!(parse_category("invalid").is_err());
+        assert_eq!(
+            parse_category_selectors("econ").unwrap(),
+            vec![CategorySelector::Exact(MarketCategory::Economics)]
+        );
+        assert_eq!(
+            parse_category_selectors("geopolitics").unwrap(),
+            vec![CategorySelector::Exact(MarketCategory::Geopolitics)]
+        );
+        assert_eq!(
+            parse_category_selectors("geo").unwrap(),
+            vec![CategorySelector::Exact(MarketCategory::Geopolitics)]
+        );
+        assert_eq!(
+            parse_category_selectors("ai").unwrap(),
+            vec![CategorySelector::Exact(MarketCategory::AI)]
+        );
+        assert_eq!(
+            parse_category_selectors("other").unwrap(),
+            vec![CategorySelector::Exact(MarketCategory::Other)]
+        );
+        assert_eq!(
+            parse_category_selectors("finance").unwrap(),
+            vec![CategorySelector::Finance]
+        );
+        assert_eq!(
+            parse_category_selectors("macro").unwrap(),
+            vec![CategorySelector::Macro]
+        );
+        assert!(parse_category_selectors("invalid").is_err());
+    }
+
+    #[test]
+    fn test_parse_category_pipe_list() {
+        let selectors = parse_category_selectors("geopolitics|finance|macro").unwrap();
+        assert_eq!(
+            selectors,
+            vec![
+                CategorySelector::Exact(MarketCategory::Geopolitics),
+                CategorySelector::Finance,
+                CategorySelector::Macro,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_market_matches_macro_selector() {
+        let crypto = PredictionMarket {
+            id: "m1".into(),
+            question: "BTC question".into(),
+            probability: 0.5,
+            volume_24h: 1.0,
+            category: MarketCategory::Crypto,
+            updated_at: 0,
+        };
+        let geo = PredictionMarket {
+            id: "m2".into(),
+            question: "Geo question".into(),
+            probability: 0.5,
+            volume_24h: 1.0,
+            category: MarketCategory::Geopolitics,
+            updated_at: 0,
+        };
+        let other = PredictionMarket {
+            id: "m3".into(),
+            question: "Other question".into(),
+            probability: 0.5,
+            volume_24h: 1.0,
+            category: MarketCategory::Other,
+            updated_at: 0,
+        };
+
+        assert!(market_matches_selector(&crypto, CategorySelector::Macro));
+        assert!(market_matches_selector(&geo, CategorySelector::Macro));
+        assert!(!market_matches_selector(&other, CategorySelector::Macro));
     }
 
     #[test]

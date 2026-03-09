@@ -781,7 +781,7 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### CLI Enhancements
 
-- [ ] [Feedback] **Filter prediction markets by category** — `pftui predictions --category geopolitics|finance|macro` to filter out sports/entertainment noise. Currently returns NHL hockey odds instead of geopolitical/macro predictions. (Morning Research, Evening Planner × 4+ reviews)
+- [x] [Feedback] **Filter prediction markets by category** — `pftui predictions --category` now supports `finance`/`macro` aliases and pipe-separated filters (e.g. `geopolitics|finance|macro`) to focus out sports/entertainment noise. (Completed 2026-03-09)
 - [ ] [Feedback] **Oil technicals in macro dashboard** — Add RSI/MACD/SMA for WTI and Brent in `pftui macro`. Oil is the most important macro indicator during wartime and technicals are missing. (Morning Research, Evening Planner × 3+ reviews)
 
 ### Analytics

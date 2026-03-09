@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Extend predictions category filters with finance/macro pipe support
+
+- What: upgraded `pftui predictions --category` to accept alias groups (`finance`, `macro`) and pipe-separated filters (e.g. `geopolitics|finance|macro`) in addition to exact categories.
+- Why: users needed a direct way to suppress sports/entertainment noise and focus on geopolitics/macro-relevant markets.
+- Files: `src/commands/predictions.rs`, `src/cli.rs`, `TODO.md`
+- Tests: `cargo test -q` (full suite)
+- TODO: Filter prediction markets by category (P1)
+
 ### 2026-03-09 — Fix Brent availability in macro/economy refresh set
 
 - What: added Brent crude (`BZ=F`) to the shared `economy_symbols()` list and added an explicit economy-symbol test for Brent presence.
