@@ -48,11 +48,8 @@ pub fn run(
         "compute" => {
             let pairs = compute_pairs_backend(backend, window, limit)?;
             if store {
-                let Some(conn) = backend.sqlite_native() else {
-                    anyhow::bail!("correlations --store currently requires database_backend=sqlite");
-                };
                 let period_tag = period.unwrap_or("30d");
-                let stored = store_pairs(conn, &pairs, period_tag)?;
+                let stored = store_pairs_backend(backend, &pairs, period_tag)?;
                 if !json {
                     println!("Stored {} correlation snapshots ({})", stored, period_tag);
                 }
@@ -61,12 +58,15 @@ pub fn run(
             print_pairs(held, pairs, window, limit, json)
         }
         "history" => {
-            let Some(conn) = backend.sqlite_native() else {
-                anyhow::bail!("correlations history currently requires database_backend=sqlite");
-            };
             let symbol_a = value.ok_or_else(|| anyhow::anyhow!("symbol A required"))?;
             let symbol_b = value2.ok_or_else(|| anyhow::anyhow!("symbol B required"))?;
-            let rows = correlation_snapshots::get_history(conn, symbol_a, symbol_b, period, Some(limit))?;
+            let rows = correlation_snapshots::get_history_backend(
+                backend,
+                symbol_a,
+                symbol_b,
+                period,
+                Some(limit),
+            )?;
             if json {
                 println!(
                     "{}",
@@ -252,6 +252,7 @@ pub fn compute_pairs(conn: &Connection, window: usize, limit: usize) -> Result<V
     Ok(pairs)
 }
 
+#[allow(dead_code)]
 fn store_pairs(conn: &Connection, pairs: &[PairCorrelation], period: &str) -> Result<usize> {
     let mut n = 0usize;
     for p in pairs {
@@ -269,6 +270,34 @@ fn store_pairs(conn: &Connection, pairs: &[PairCorrelation], period: &str) -> Re
     Ok(n)
 }
 
+fn store_pairs_backend(
+    backend: &BackendConnection,
+    pairs: &[PairCorrelation],
+    period: &str,
+) -> Result<usize> {
+    let mut n = 0usize;
+    for p in pairs {
+        let corr = match period {
+            "7d" => p.corr_7d,
+            "30d" => p.corr_30d,
+            "90d" => p.corr_90d,
+            _ => p.corr_30d,
+        };
+        if let Some(c) = corr {
+            let _ = correlation_snapshots::store_snapshot_backend(
+                backend,
+                &p.symbol_a,
+                &p.symbol_b,
+                c,
+                period,
+            )?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+#[allow(dead_code)]
 pub fn compute_and_store_default_snapshots(conn: &Connection) -> Result<usize> {
     let held = collect_held_symbols(conn);
     if held.is_empty() {
@@ -304,6 +333,57 @@ pub fn compute_and_store_default_snapshots(conn: &Connection) -> Result<usize> {
                 if let Some(corr) = latest_corr(aligned_a, aligned_b, w) {
                     let _ = correlation_snapshots::store_snapshot(
                         conn,
+                        &held_symbol,
+                        macro_symbol,
+                        corr,
+                        period,
+                    )?;
+                    stored += 1;
+                }
+            }
+        }
+    }
+
+    Ok(stored)
+}
+
+pub fn compute_and_store_default_snapshots_backend(
+    backend: &BackendConnection,
+) -> Result<usize> {
+    let held = collect_held_symbols_backend(backend);
+    if held.is_empty() {
+        return Ok(0);
+    }
+
+    let macro_symbols = ["SPY", "DX-Y.NYB", "GC=F", "CL=F", "^VIX"];
+    let mut stored = 0usize;
+
+    for held_symbol in held {
+        for macro_symbol in macro_symbols {
+            if held_symbol == macro_symbol {
+                continue;
+            }
+            let a = load_closes_with_fallback_backend(backend, &held_symbol, 120).map(|(_, v)| v);
+            let b = load_closes_with_fallback_backend(backend, macro_symbol, 120).map(|(_, v)| v);
+            let (series_a, series_b) = match (a, b) {
+                (Some(a), Some(b)) => (a, b),
+                _ => continue,
+            };
+
+            let min_len = series_a.len().min(series_b.len());
+            if min_len < 8 {
+                continue;
+            }
+            let aligned_a = &series_a[series_a.len() - min_len..];
+            let aligned_b = &series_b[series_b.len() - min_len..];
+
+            for (period, w) in [("7d", 7usize), ("30d", 30usize), ("90d", 90usize)] {
+                if min_len < w + 1 {
+                    continue;
+                }
+                if let Some(corr) = latest_corr(aligned_a, aligned_b, w) {
+                    let _ = correlation_snapshots::store_snapshot_backend(
+                        backend,
                         &held_symbol,
                         macro_symbol,
                         corr,

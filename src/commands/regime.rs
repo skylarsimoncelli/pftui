@@ -1,10 +1,10 @@
 use anyhow::Result;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::db::price_cache::get_cached_price;
-use crate::db::price_history::get_history;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_cached_price_backend;
+use crate::db::price_history::get_history_backend;
 use crate::db::regime_snapshots;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,15 +20,15 @@ pub struct RegimeAssessment {
     pub btc: Option<f64>,
 }
 
-fn latest_price(conn: &Connection, symbol: &str) -> Option<f64> {
-    get_cached_price(conn, symbol, "USD")
+fn latest_price(backend: &BackendConnection, symbol: &str) -> Option<f64> {
+    get_cached_price_backend(backend, symbol, "USD")
         .ok()
         .flatten()
         .and_then(|q| q.price.to_string().parse::<f64>().ok())
 }
 
-fn trend_up(conn: &Connection, symbol: &str, days: u32) -> Option<bool> {
-    let rows = get_history(conn, symbol, days + 2).ok()?;
+fn trend_up(backend: &BackendConnection, symbol: &str, days: u32) -> Option<bool> {
+    let rows = get_history_backend(backend, symbol, days + 2).ok()?;
     if rows.len() < (days as usize + 1) {
         return None;
     }
@@ -41,17 +41,17 @@ fn trend_up(conn: &Connection, symbol: &str, days: u32) -> Option<bool> {
     Some(latest > prev)
 }
 
-pub fn classify_regime(conn: &Connection) -> RegimeAssessment {
-    let vix = latest_price(conn, "^VIX");
-    let dxy = latest_price(conn, "DX-Y.NYB");
-    let yield_10y = latest_price(conn, "^TNX");
-    let oil = latest_price(conn, "CL=F");
-    let gold = latest_price(conn, "GC=F");
-    let btc = latest_price(conn, "BTC").or_else(|| latest_price(conn, "BTC-USD"));
+pub fn classify_regime(backend: &BackendConnection) -> RegimeAssessment {
+    let vix = latest_price(backend, "^VIX");
+    let dxy = latest_price(backend, "DX-Y.NYB");
+    let yield_10y = latest_price(backend, "^TNX");
+    let oil = latest_price(backend, "CL=F");
+    let gold = latest_price(backend, "GC=F");
+    let btc = latest_price(backend, "BTC").or_else(|| latest_price(backend, "BTC-USD"));
 
-    let eq_up = trend_up(conn, "SPY", 7).or_else(|| trend_up(conn, "^GSPC", 7));
-    let dxy_up = trend_up(conn, "DX-Y.NYB", 7);
-    let gold_up = trend_up(conn, "GC=F", 7);
+    let eq_up = trend_up(backend, "SPY", 7).or_else(|| trend_up(backend, "^GSPC", 7));
+    let dxy_up = trend_up(backend, "DX-Y.NYB", 7);
+    let gold_up = trend_up(backend, "GC=F", 7);
 
     let mut drivers = Vec::new();
 
@@ -124,9 +124,9 @@ pub fn classify_regime(conn: &Connection) -> RegimeAssessment {
     }
 }
 
-pub fn classify_and_store_if_needed(conn: &Connection) -> Result<bool> {
-    let assessment = classify_regime(conn);
-    let current = regime_snapshots::get_current(conn)?;
+pub fn classify_and_store_if_needed(backend: &BackendConnection) -> Result<bool> {
+    let assessment = classify_regime(backend);
+    let current = regime_snapshots::get_current_backend(backend)?;
 
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let should_store = match current {
@@ -139,8 +139,8 @@ pub fn classify_and_store_if_needed(conn: &Connection) -> Result<bool> {
 
     if should_store {
         let drivers_json = serde_json::to_string(&assessment.drivers)?;
-        regime_snapshots::store_regime(
-            conn,
+        regime_snapshots::store_regime_backend(
+            backend,
             &assessment.regime,
             Some(assessment.confidence),
             Some(&drivers_json),
@@ -157,10 +157,15 @@ pub fn classify_and_store_if_needed(conn: &Connection) -> Result<bool> {
     Ok(false)
 }
 
-pub fn run(conn: &Connection, action: &str, limit: Option<usize>, json_output: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    action: &str,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
     match action {
         "current" => {
-            let current = regime_snapshots::get_current(conn)?;
+            let current = regime_snapshots::get_current_backend(backend)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "current": current }))?);
             } else if let Some(c) = current {
@@ -182,7 +187,7 @@ pub fn run(conn: &Connection, action: &str, limit: Option<usize>, json_output: b
             }
         }
         "history" => {
-            let rows = regime_snapshots::get_history(conn, limit)?;
+            let rows = regime_snapshots::get_history_backend(backend, limit)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "history": rows }))?);
             } else if rows.is_empty() {
@@ -195,7 +200,7 @@ pub fn run(conn: &Connection, action: &str, limit: Option<usize>, json_output: b
             }
         }
         "transitions" => {
-            let rows = regime_snapshots::get_transitions(conn, limit)?;
+            let rows = regime_snapshots::get_transitions_backend(backend, limit)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&json!({ "transitions": rows }))?);
             } else if rows.is_empty() {

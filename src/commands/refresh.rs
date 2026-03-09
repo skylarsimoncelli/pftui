@@ -500,19 +500,17 @@ pub fn run(
     }
 
     // 3. Predictions (Polymarket)
-    // 3a. Correlation snapshots + regime classification (sqlite-only for now)
-    if let Some(conn) = sqlite_conn {
-        match crate::commands::correlations::compute_and_store_default_snapshots(conn) {
-            Ok(n) if n > 0 => println!("✓ Correlation snapshots ({} rows)", n),
-            Ok(_) => println!("⊘ Correlation snapshots (insufficient history)"),
-            Err(e) => println!("✗ Correlation snapshots (failed: {})", e),
-        }
+    // 3a. Correlation snapshots + regime classification
+    match crate::commands::correlations::compute_and_store_default_snapshots_backend(backend) {
+        Ok(n) if n > 0 => println!("✓ Correlation snapshots ({} rows)", n),
+        Ok(_) => println!("⊘ Correlation snapshots (insufficient history)"),
+        Err(e) => println!("✗ Correlation snapshots (failed: {})", e),
+    }
 
-        match crate::commands::regime::classify_and_store_if_needed(conn) {
-            Ok(true) => println!("✓ Regime classification (stored)"),
-            Ok(false) => println!("⊘ Regime classification (unchanged today)"),
-            Err(e) => println!("✗ Regime classification (failed: {})", e),
-        }
+    match crate::commands::regime::classify_and_store_if_needed(backend) {
+        Ok(true) => println!("✓ Regime classification (stored)"),
+        Ok(false) => println!("⊘ Regime classification (unchanged today)"),
+        Err(e) => println!("✗ Regime classification (failed: {})", e),
     }
 
     // 3. Predictions (Polymarket)

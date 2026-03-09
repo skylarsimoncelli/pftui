@@ -270,10 +270,7 @@ fn main() -> Result<()> {
         Some(Command::Oil { json }) => commands::oil::run(&backend, json),
         Some(Command::Crisis { json }) => commands::crisis::run(&backend, json),
         Some(Command::Regime { action, limit, json }) => {
-            let Some(conn) = backend.sqlite_native() else {
-                bail!("regime is currently available only with database_backend=sqlite");
-            };
-            commands::regime::run(conn, &action, limit, json)
+            commands::regime::run(&backend, &action, limit, json)
         }
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
         Some(Command::Sovereign { json }) => commands::sovereign::run(json),

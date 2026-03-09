@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorrelationSnapshot {
@@ -112,4 +116,186 @@ pub fn get_history(
         out.push(row?);
     }
     Ok(out)
+}
+
+pub fn store_snapshot_backend(
+    backend: &BackendConnection,
+    symbol_a: &str,
+    symbol_b: &str,
+    correlation: f64,
+    period: &str,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| store_snapshot(conn, symbol_a, symbol_b, correlation, period),
+        |pool| store_snapshot_postgres(pool, symbol_a, symbol_b, correlation, period),
+    )
+}
+
+#[allow(dead_code)]
+pub fn list_current_backend(
+    backend: &BackendConnection,
+    period: Option<&str>,
+) -> Result<Vec<CorrelationSnapshot>> {
+    query::dispatch(
+        backend,
+        |conn| list_current(conn, period),
+        |pool| list_current_postgres(pool, period),
+    )
+}
+
+pub fn get_history_backend(
+    backend: &BackendConnection,
+    symbol_a: &str,
+    symbol_b: &str,
+    period: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<CorrelationSnapshot>> {
+    query::dispatch(
+        backend,
+        |conn| get_history(conn, symbol_a, symbol_b, period, limit),
+        |pool| get_history_postgres(pool, symbol_a, symbol_b, period, limit),
+    )
+}
+
+type CorrelationRow = (i64, String, String, f64, String, String);
+
+fn from_pg_row(row: CorrelationRow) -> CorrelationSnapshot {
+    CorrelationSnapshot {
+        id: row.0,
+        symbol_a: row.1,
+        symbol_b: row.2,
+        correlation: row.3,
+        period: row.4,
+        recorded_at: row.5,
+    }
+}
+
+fn store_snapshot_postgres(
+    pool: &PgPool,
+    symbol_a: &str,
+    symbol_b: &str,
+    correlation: f64,
+    period: &str,
+) -> Result<i64> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id",
+        )
+        .bind(symbol_a)
+        .bind(symbol_b)
+        .bind(correlation)
+        .bind(period)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+#[allow(dead_code)]
+fn list_current_postgres(pool: &PgPool, period: Option<&str>) -> Result<Vec<CorrelationSnapshot>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<CorrelationRow> = if let Some(p) = period {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT DISTINCT ON (symbol_a, symbol_b, period)
+                    id, symbol_a, symbol_b, correlation, period, recorded_at::text
+                 FROM correlation_snapshots
+                 WHERE period = $1
+                 ORDER BY symbol_a, symbol_b, period, recorded_at DESC",
+            )
+            .bind(p)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT DISTINCT ON (symbol_a, symbol_b, period)
+                    id, symbol_a, symbol_b, correlation, period, recorded_at::text
+                 FROM correlation_snapshots
+                 ORDER BY symbol_a, symbol_b, period, recorded_at DESC",
+            )
+            .fetch_all(pool)
+            .await
+        })?
+    };
+    let mut out: Vec<CorrelationSnapshot> = rows.into_iter().map(from_pg_row).collect();
+    out.sort_by(|a, b| {
+        b.correlation
+            .abs()
+            .partial_cmp(&a.correlation.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(out)
+}
+
+fn get_history_postgres(
+    pool: &PgPool,
+    symbol_a: &str,
+    symbol_b: &str,
+    period: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<CorrelationSnapshot>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<CorrelationRow> = match (period, limit) {
+        (Some(p), Some(n)) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
+                 FROM correlation_snapshots
+                 WHERE symbol_a = $1 AND symbol_b = $2 AND period = $3
+                 ORDER BY recorded_at DESC
+                 LIMIT $4",
+            )
+            .bind(symbol_a)
+            .bind(symbol_b)
+            .bind(p)
+            .bind(n as i64)
+            .fetch_all(pool)
+            .await
+        })?,
+        (Some(p), None) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
+                 FROM correlation_snapshots
+                 WHERE symbol_a = $1 AND symbol_b = $2 AND period = $3
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(symbol_a)
+            .bind(symbol_b)
+            .bind(p)
+            .fetch_all(pool)
+            .await
+        })?,
+        (None, Some(n)) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
+                 FROM correlation_snapshots
+                 WHERE symbol_a = $1 AND symbol_b = $2
+                 ORDER BY recorded_at DESC
+                 LIMIT $3",
+            )
+            .bind(symbol_a)
+            .bind(symbol_b)
+            .bind(n as i64)
+            .fetch_all(pool)
+            .await
+        })?,
+        (None, None) => runtime.block_on(async {
+            sqlx::query_as(
+                "SELECT id, symbol_a, symbol_b, correlation, period, recorded_at::text
+                 FROM correlation_snapshots
+                 WHERE symbol_a = $1 AND symbol_b = $2
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(symbol_a)
+            .bind(symbol_b)
+            .fetch_all(pool)
+            .await
+        })?,
+    };
+    Ok(rows.into_iter().map(from_pg_row).collect())
 }
