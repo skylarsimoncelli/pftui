@@ -675,26 +675,30 @@ pub async fn get_positions(
 pub async fn get_watchlist(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<WatchlistResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
 
-    let watchlist = db::watchlist::list_watchlist(&conn).map_err(|e| {
+    let watchlist = db::watchlist::list_watchlist_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load watchlist: {}", e),
         )
     })?;
 
-    let prices = get_price_map(&conn).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load prices: {}", e),
-        )
-    })?;
+    let prices = crate::db::price_cache::get_all_cached_prices_backend(&backend)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load prices: {}", e),
+            )
+        })?
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect::<HashMap<_, _>>();
 
     let items: Vec<WatchlistItem> = watchlist
         .into_iter()
@@ -705,7 +709,9 @@ pub async fn get_watchlist(
                 .get(&w.symbol)
                 .copied()
                 .or_else(|| prices.get(&quote_symbol).copied());
-            let day_change_pct = view_model::day_change_pct(&conn, &quote_symbol);
+            let day_change_pct = backend
+                .sqlite_native()
+                .and_then(|conn| view_model::day_change_pct(conn, &quote_symbol));
             let target_price = w.target_price.and_then(|t| t.parse::<Decimal>().ok());
             let (distance_pct, target_hit) = view_model::compute_watchlist_proximity(
                 current_price,
@@ -736,7 +742,7 @@ pub async fn post_watchlist(
     State(state): State<Arc<AppState>>,
     Json(body): Json<WatchlistMutationRequest>,
 ) -> Result<Json<WatchlistMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
@@ -751,7 +757,7 @@ pub async fn post_watchlist(
         .as_deref()
         .and_then(|raw| raw.parse::<AssetCategory>().ok())
         .unwrap_or_else(|| crate::models::asset_names::infer_category(&symbol));
-    db::watchlist::add_to_watchlist(&conn, &symbol, category).map_err(|e| {
+    db::watchlist::add_to_watchlist_backend(&backend, &symbol, category).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to update watchlist: {}", e),
@@ -768,7 +774,7 @@ pub async fn delete_watchlist(
     State(state): State<Arc<AppState>>,
     Path(symbol): Path<String>,
 ) -> Result<Json<WatchlistMutationResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
@@ -778,7 +784,7 @@ pub async fn delete_watchlist(
     if symbol.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "symbol is required".to_string()));
     }
-    let removed = db::watchlist::remove_from_watchlist(&conn, &symbol).map_err(|e| {
+    let removed = db::watchlist::remove_from_watchlist_backend(&backend, &symbol).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to update watchlist: {}", e),

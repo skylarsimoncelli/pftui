@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:42 UTC — F32 Phase 66: backend-aware web watchlist endpoints
+
+- What: migrated web API `GET/POST/DELETE /watchlist` handlers to backend-dispatched watchlist/price queries; preserved day-change enrichment only when sqlite-native history access is available.
+- Why: removes additional web sqlite-only paths while keeping response shape stable for clients across sqlite/postgres backends.
+- Files: `src/web/api.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo test -q` (1185 passed)
+- TODO: F32 parity hardening (remaining major boundary: many web API handlers + TUI runtime are still sqlite-native)
+
 ### 2026-03-09 03:41 UTC — F32 Phase 65: backend-aware web portfolio/positions endpoints
 
 - What: added `AppState::get_backend()` and migrated web API `/portfolio` and `/positions` handlers from direct SQLite reads to backend-dispatched allocation/transaction/price/FX queries.
