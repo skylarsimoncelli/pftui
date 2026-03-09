@@ -789,9 +789,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 - [ ] **P1: `pftui regime current` — confidence 0.25 is suspiciously low** — Risk-off regime detected but confidence only 0.25 with VIX 27.85, DXY 99.12, oil $94.31. In a war with oil at $100 and VIX near 30, confidence should be much higher. The classification logic may need tuning or the weighting formula may not account for all inputs. Regime is a foundation for the LOW layer — inaccurate confidence undermines downstream analytics.
 
-- [ ] **P1: `pftui movers` — shows "No movers" despite BTC +4.8%, Oil +6%** — price_history only has 2 entries for today (CL=F, BZ=F). The 84 symbols in price_cache aren't getting written to price_history during refresh. The `movers` command (and `eod` "TOP MOVERS" section) are non-functional until price_history is populated per-refresh cycle. Brief `1D` column also shows `—` for all positions.
-
-- [ ] **P1: `pftui correlations compute` — "insufficient history"** — Even after refresh with 84 cached prices, correlations can't compute. Likely needs multiple days of price_history (which barely exists). Once price_history populates properly, this should self-resolve — but verify the minimum data requirement is documented.
 
 
 

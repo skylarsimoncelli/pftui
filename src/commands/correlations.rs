@@ -424,7 +424,9 @@ fn print_pairs(
     }
 
     if pairs.is_empty() {
-        println!("No correlation pairs available yet. Run `pftui refresh` to build more history.");
+        println!(
+            "No correlation pairs available yet. Need ~91 daily closes per symbol for 90d windows; run `pftui refresh` to build/backfill history."
+        );
         return Ok(());
     }
 

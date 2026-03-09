@@ -13,6 +13,14 @@
 - Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
 - TODO: removed P1-BUG "Postgres structural storage not yet implemented"
 
+### 2026-03-09 — Refresh history stamping + correlations history clarity
+
+- What: refresh now writes a daily `price_history` close row for each non-static fetched quote, and correlations empty-state output now states the concrete minimum history needed for 90d windows (~91 daily closes).
+- Why: stabilizes 1D-dependent features (`movers`, brief 1D deltas, correlation snapshots) and makes history prerequisites explicit when data is still building.
+- Files: `src/commands/refresh.rs`, `src/commands/correlations.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 movers + correlations insufficient-history items
+
 ### 2026-03-09 — Analytics summary/alignment parity pass
 
 - What: upgraded `analytics summary` to include prices tracked, alert totals/triggered count, total signal count, combined alignment score with bar visualization, and divergence notes. Reworked `analytics alignment` to default to a multi-asset matrix (held + watchlist) while still supporting single-symbol filtering.

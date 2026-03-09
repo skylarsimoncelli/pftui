@@ -26,7 +26,7 @@ use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, new
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
-use crate::models::price::PriceQuote;
+use crate::models::price::{HistoryRecord, PriceQuote};
 use crate::notify;
 use crate::price::{coingecko, yahoo};
 use crate::tui::views::economy;
@@ -514,6 +514,23 @@ pub fn run(
                 if let Err(e) = upsert_price_backend(backend, quote) {
                     eprintln!("Failed to cache {}: {}", quote.symbol, e);
                 }
+            }
+            // Always stamp today's close into price_history so 1D consumers
+            // (movers/brief/correlations) have a daily anchor on refresh runs.
+            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            for quote in &quotes {
+                if quote.source == "static" {
+                    continue;
+                }
+                let record = HistoryRecord {
+                    date: today.clone(),
+                    close: quote.price,
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                };
+                let _ = upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]);
             }
 
             let fetched: Vec<_> = quotes.iter().filter(|q| q.source != "static").collect();
