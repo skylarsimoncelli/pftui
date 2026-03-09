@@ -99,8 +99,7 @@ pub fn get_all_cached_prices_backend(backend: &BackendConnection) -> Result<Vec<
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS price_cache (
                 symbol TEXT NOT NULL,
@@ -135,8 +134,7 @@ fn price_quote_from_row(row: PriceCacheRow) -> PriceQuote {
 
 fn get_cached_price_postgres(pool: &PgPool, symbol: &str, currency: &str) -> Result<Option<PriceQuote>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<PriceCacheRow> = runtime.block_on(async {
+    let row: Option<PriceCacheRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, price, currency, fetched_at, source
              FROM price_cache
@@ -152,8 +150,7 @@ fn get_cached_price_postgres(pool: &PgPool, symbol: &str, currency: &str) -> Res
 
 fn upsert_price_postgres(pool: &PgPool, quote: &PriceQuote) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO price_cache (symbol, price, currency, fetched_at, source)
              VALUES ($1, $2, $3, $4, $5)
@@ -177,8 +174,7 @@ fn upsert_price_postgres(pool: &PgPool, quote: &PriceQuote) -> Result<()> {
 
 fn get_all_cached_prices_postgres(pool: &PgPool) -> Result<Vec<PriceQuote>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<PriceCacheRow> = runtime.block_on(async {
+    let rows: Vec<PriceCacheRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as("SELECT symbol, price, currency, fetched_at, source FROM price_cache")
             .fetch_all(pool)
             .await
