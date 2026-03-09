@@ -16,22 +16,11 @@ mod web;
 
 use anyhow::{bail, Result};
 use clap::Parser;
-use rusqlite::Connection;
 
 use crate::cli::{Cli, Command};
 use crate::config::load_config_with_first_run_prompt;
 use crate::db::backend::open_from_config;
 use crate::db::default_db_path;
-
-fn sqlite_conn_for_command<'a>(backend: &'a crate::db::backend::BackendConnection, command: &str) -> Result<&'a Connection> {
-    backend.sqlite_native().ok_or_else(|| {
-        anyhow::anyhow!(
-            "`{}` is not yet available with database_backend=postgres. \
-This command still depends on SQLite-only paths.",
-            command
-        )
-    })
-}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -52,10 +41,14 @@ fn main() -> Result<()> {
 
     let result = match cli.command {
         None => {
-            let conn = sqlite_conn_for_command(&backend, "tui")?;
+            let Some(_conn) = backend.sqlite_native() else {
+                bail!(
+                    "`tui` is not yet available with database_backend=postgres.\nUse CLI/Web commands with postgres backend for now."
+                );
+            };
             // Auto-detect: run setup if no portfolio data
-            if !commands::setup::has_portfolio_data(conn) {
-                commands::setup::run(conn, &config, false)?;
+            if !commands::setup::has_portfolio_data(&backend) {
+                commands::setup::run(&backend, &config, false)?;
                 // Reload config (setup may have changed portfolio_mode)
                 let config = load_config_with_first_run_prompt()?;
                 let mut app = app::App::new(&config, db_path);
@@ -74,8 +67,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Setup) => {
-            let conn = sqlite_conn_for_command(&backend, "setup")?;
-            commands::setup::run(conn, &config, true)
+            commands::setup::run(&backend, &config, true)
         }
 
         Some(Command::Summary { group_by, period, what_if, json }) => {

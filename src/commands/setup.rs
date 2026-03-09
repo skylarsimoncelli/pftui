@@ -6,9 +6,9 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::config::{save_config, Config, DatabaseBackend, PortfolioMode, SUPPORTED_CURRENCIES};
+use crate::db::backend::BackendConnection;
 use crate::db::{allocations, transactions};
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names;
@@ -36,11 +36,11 @@ fn confirm(msg: &str) -> Result<bool> {
     Ok(answer.to_lowercase() == "y")
 }
 
-pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, config: &Config, is_explicit: bool) -> Result<()> {
     // If explicit setup with existing data, warn
     if is_explicit {
-        let tx_count = transactions::count_transactions(conn)?;
-        let alloc_count = allocations::count_allocations(conn)?;
+        let tx_count = transactions::count_transactions_backend(backend)?;
+        let alloc_count = allocations::count_allocations_backend(backend)?;
         if tx_count > 0 || alloc_count > 0 {
             println!();
             println!("  \x1b[33m! Warning: You have existing portfolio data.\x1b[0m");
@@ -57,11 +57,30 @@ pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> 
                 return Ok(());
             }
             // Reset all data
-            conn.execute_batch(
-                "DELETE FROM transactions;
-                 DELETE FROM portfolio_allocations;
-                 DELETE FROM price_cache;
-                 DELETE FROM price_history;",
+            crate::db::query::dispatch(
+                backend,
+                |conn| {
+                    conn.execute_batch(
+                        "DELETE FROM transactions;
+                         DELETE FROM portfolio_allocations;
+                         DELETE FROM price_cache;
+                         DELETE FROM price_history;",
+                    )?;
+                    Ok(())
+                },
+                |pool| {
+                    let runtime = tokio::runtime::Runtime::new()?;
+                    runtime.block_on(async {
+                        sqlx::query("DELETE FROM transactions").execute(pool).await?;
+                        sqlx::query("DELETE FROM portfolio_allocations")
+                            .execute(pool)
+                            .await?;
+                        sqlx::query("DELETE FROM price_cache").execute(pool).await?;
+                        sqlx::query("DELETE FROM price_history").execute(pool).await?;
+                        Ok::<(), sqlx::Error>(())
+                    })?;
+                    Ok(())
+                },
             )?;
             println!("  Data cleared.\n");
         }
@@ -140,8 +159,8 @@ pub fn run(conn: &Connection, config: &Config, is_explicit: bool) -> Result<()> 
     new_config.database_url = database_url;
 
     match mode {
-        PortfolioMode::Full => full_mode_setup(conn, &new_config)?,
-        PortfolioMode::Percentage => percentage_mode_setup(conn)?,
+        PortfolioMode::Full => full_mode_setup(backend, &new_config)?,
+        PortfolioMode::Percentage => percentage_mode_setup(backend)?,
     }
 
     // Optional Brave API key for richer research/news/economic data.
@@ -207,7 +226,7 @@ fn prompt_database_backend(config: &Config) -> Result<(DatabaseBackend, Option<S
     Ok((backend, url))
 }
 
-fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {
+fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
     let total_str = prompt(&format!(
         "  Total portfolio value ({}): ",
         config.base_currency
@@ -368,14 +387,14 @@ fn full_mode_setup(conn: &Connection, config: &Config) -> Result<()> {
             date: today.clone(),
             notes: Some("setup".to_string()),
         };
-        transactions::insert_transaction(conn, &tx)?;
+        transactions::insert_transaction_backend(backend, &tx)?;
     }
 
     println!();
     Ok(())
 }
 
-fn percentage_mode_setup(conn: &Connection) -> Result<()> {
+fn percentage_mode_setup(backend: &BackendConnection) -> Result<()> {
     println!("  \x1b[90mAdd positions (type 'done' when finished)\x1b[0m");
     println!();
 
@@ -465,7 +484,7 @@ fn percentage_mode_setup(conn: &Connection) -> Result<()> {
 
     // Insert allocations
     for entry in &entries {
-        allocations::insert_allocation(conn, &entry.symbol, entry.category, entry.pct)?;
+        allocations::insert_allocation_backend(backend, &entry.symbol, entry.category, entry.pct)?;
     }
 
     println!();
@@ -731,12 +750,8 @@ fn name_or_symbol(name: &str, symbol: &str) -> String {
 }
 
 /// Check if the database has any portfolio data.
-pub fn has_portfolio_data(conn: &Connection) -> bool {
-    let tx_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
-        .unwrap_or(0);
-    let alloc_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM portfolio_allocations", [], |r| r.get(0))
-        .unwrap_or(0);
+pub fn has_portfolio_data(backend: &BackendConnection) -> bool {
+    let tx_count = transactions::count_transactions_backend(backend).unwrap_or(0);
+    let alloc_count = allocations::count_allocations_backend(backend).unwrap_or(0);
     tx_count > 0 || alloc_count > 0
 }

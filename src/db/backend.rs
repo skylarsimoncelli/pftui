@@ -18,6 +18,7 @@ pub enum BackendConnection {
 }
 
 impl BackendConnection {
+    #[allow(dead_code)]
     pub fn sqlite(&self) -> &Connection {
         match self {
             BackendConnection::Sqlite { conn } => conn,

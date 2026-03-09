@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 08:36 UTC — F32 Phase 49: backend-dispatch setup path + remove remaining main sqlite gates
+
+- What: migrated `setup` command to `BackendConnection` (counts, reset, inserts, and portfolio-data detection are now backend-dispatched), removed all remaining `sqlite_conn_for_command` routing in `main`, and replaced default postgres TUI launch with explicit unsupported-backend error while preserving sqlite TUI behavior.
+- Why: eliminates residual hybrid command gating and central sqlite-only behavior is now an explicit product boundary (`tui`) rather than implicit command router coupling.
+- Files: `src/commands/setup.rs`, `src/main.rs`, `src/db/backend.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (remaining boundary: TUI runtime is still sqlite-native)
+
 ### 2026-03-09 08:23 UTC — F32 Phase 48: remove refresh sqlite gate with backend-safe execution path
 
 - What: removed SQLite connection requirement from `refresh` command signature and routing; switched to backend-native execution for core refresh paths (prices, predictions, alerts) and conditional sqlite-only execution for remaining cache modules when sqlite backend is active; updated app/web refresh callsites for new signature.
