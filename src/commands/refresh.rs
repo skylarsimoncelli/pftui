@@ -192,10 +192,10 @@ fn predictions_need_refresh(backend: &BackendConnection) -> Result<bool> {
 }
 
 /// Check if sentiment needs refreshing
-fn sentiment_needs_refresh(conn: &Connection) -> Result<bool> {
+fn sentiment_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check both crypto and traditional FNG
-    let crypto = sentiment_cache::get_latest(conn, "crypto_fng")?;
-    let trad = sentiment_cache::get_latest(conn, "traditional_fng")?;
+    let crypto = sentiment_cache::get_latest_backend(backend, "crypto_fng")?;
+    let trad = sentiment_cache::get_latest_backend(backend, "traditional_fng")?;
 
     if crypto.is_none() || trad.is_none() {
         return Ok(true);
@@ -637,8 +637,7 @@ pub fn run(
     }
 
     // 6. Sentiment (Fear & Greed)
-    if let Some(conn) = sqlite_conn {
-    if sentiment_needs_refresh(conn)? {
+    if sentiment_needs_refresh(backend)? {
         let mut count = 0;
 
         if let Ok(crypto) = sentiment::fetch_crypto_fng() {
@@ -649,7 +648,7 @@ pub fn run(
                 timestamp: crypto.timestamp,
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
-            sentiment_cache::upsert_reading(conn, &reading)?;
+            sentiment_cache::upsert_reading_backend(backend, &reading)?;
             count += 1;
         }
 
@@ -661,16 +660,13 @@ pub fn run(
                 timestamp: trad.timestamp,
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
-            sentiment_cache::upsert_reading(conn, &reading)?;
+            sentiment_cache::upsert_reading_backend(backend, &reading)?;
             count += 1;
         }
 
         println!("✓ Sentiment ({} indices)", count);
     } else {
         println!("⊘ Sentiment (fresh, skipping)");
-    }
-    } else {
-        println!("⊘ Sentiment (sqlite-only cache path, skipping on postgres)");
     }
 
     // 7. Calendar (TradingEconomics)

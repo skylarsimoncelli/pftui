@@ -5,6 +5,10 @@
 
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// A cached sentiment index reading.
 #[derive(Debug, Clone)]
@@ -54,6 +58,14 @@ pub fn upsert_reading(conn: &Connection, reading: &SentimentReading) -> Result<(
     Ok(())
 }
 
+pub fn upsert_reading_backend(backend: &BackendConnection, reading: &SentimentReading) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_reading(conn, reading),
+        |pool| upsert_reading_postgres(pool, reading),
+    )
+}
+
 /// Get the latest sentiment reading for a given index type.
 ///
 /// Returns None if not cached or if stale (>1 hour old).
@@ -83,6 +95,17 @@ pub fn get_latest(conn: &Connection, index_type: &str) -> Result<Option<Sentimen
     }
 }
 
+pub fn get_latest_backend(
+    backend: &BackendConnection,
+    index_type: &str,
+) -> Result<Option<SentimentReading>> {
+    query::dispatch(
+        backend,
+        |conn| get_latest(conn, index_type),
+        |pool| get_latest_postgres(pool, index_type),
+    )
+}
+
 /// Get historical sentiment readings for a given index type.
 ///
 /// Returns up to `days` of daily readings (one per day).
@@ -101,6 +124,19 @@ pub fn get_history(conn: &Connection, index_type: &str, days: u32) -> Result<Vec
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
+#[allow(dead_code)]
+pub fn get_history_backend(
+    backend: &BackendConnection,
+    index_type: &str,
+    days: u32,
+) -> Result<Vec<(String, u8)>> {
+    query::dispatch(
+        backend,
+        |conn| get_history(conn, index_type, days),
+        |pool| get_history_postgres(pool, index_type, days),
+    )
+}
+
 /// Delete sentiment readings older than `days`.
 ///
 /// Prunes both current cache and history to prevent unbounded growth.
@@ -114,6 +150,105 @@ pub fn prune_old(conn: &Connection, days: u32) -> Result<usize> {
     )?;
 
     Ok(pruned)
+}
+
+#[allow(dead_code)]
+pub fn prune_old_backend(backend: &BackendConnection, days: u32) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| prune_old(conn, days),
+        |pool| prune_old_postgres(pool, days),
+    )
+}
+
+fn upsert_reading_postgres(pool: &PgPool, reading: &SentimentReading) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO sentiment_cache (index_type, value, classification, timestamp, fetched_at)
+             VALUES ($1, $2, $3, $4, $5::timestamptz)
+             ON CONFLICT (index_type) DO UPDATE SET
+               value = EXCLUDED.value,
+               classification = EXCLUDED.classification,
+               timestamp = EXCLUDED.timestamp,
+               fetched_at = EXCLUDED.fetched_at",
+        )
+        .bind(&reading.index_type)
+        .bind(reading.value as i64)
+        .bind(&reading.classification)
+        .bind(reading.timestamp)
+        .bind(&reading.fetched_at)
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO sentiment_history (index_type, date, value, classification)
+             VALUES ($1, TO_CHAR(TO_TIMESTAMP($2), 'YYYY-MM-DD'), $3, $4)
+             ON CONFLICT (index_type, date) DO NOTHING",
+        )
+        .bind(&reading.index_type)
+        .bind(reading.timestamp as f64)
+        .bind(reading.value as i64)
+        .bind(&reading.classification)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_latest_postgres(pool: &PgPool, index_type: &str) -> Result<Option<SentimentReading>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<(String, i64, String, i64, String)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT index_type, value, classification, timestamp, fetched_at::text
+             FROM sentiment_cache
+             WHERE index_type = $1
+               AND fetched_at > NOW() - INTERVAL '1 hour'",
+        )
+        .bind(index_type)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(|r| SentimentReading {
+        index_type: r.0,
+        value: r.1 as u8,
+        classification: r.2,
+        timestamp: r.3,
+        fetched_at: r.4,
+    }))
+}
+
+fn get_history_postgres(pool: &PgPool, index_type: &str, days: u32) -> Result<Vec<(String, u8)>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, i64)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT date, value
+             FROM sentiment_history
+             WHERE index_type = $1
+             ORDER BY date DESC
+             LIMIT $2",
+        )
+        .bind(index_type)
+        .bind(days as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(|(d, v)| (d, v as u8)).collect())
+}
+
+fn prune_old_postgres(pool: &PgPool, days: u32) -> Result<usize> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let pruned = runtime.block_on(async {
+        sqlx::query(
+            "DELETE FROM sentiment_history
+             WHERE date < TO_CHAR(NOW() - ($1 * INTERVAL '1 day'), 'YYYY-MM-DD')",
+        )
+        .bind(days as i64)
+        .execute(pool)
+        .await
+    })?;
+    Ok(pruned.rows_affected() as usize)
 }
 
 #[cfg(test)]
