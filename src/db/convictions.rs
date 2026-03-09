@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConvictionEntry {
@@ -51,6 +55,19 @@ pub fn set_conviction(
     Ok(conn.last_insert_rowid())
 }
 
+pub fn set_conviction_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    score: i32,
+    notes: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| set_conviction(conn, symbol, score, notes),
+        |pool| set_conviction_postgres(pool, symbol, score, notes),
+    )
+}
+
 pub fn list_current(conn: &Connection) -> Result<Vec<ConvictionEntry>> {
     let mut stmt = conn.prepare(
         "WITH latest AS (
@@ -70,6 +87,10 @@ pub fn list_current(conn: &Connection) -> Result<Vec<ConvictionEntry>> {
         entries.push(entry?);
     }
     Ok(entries)
+}
+
+pub fn list_current_backend(backend: &BackendConnection) -> Result<Vec<ConvictionEntry>> {
+    query::dispatch(backend, list_current, list_current_postgres)
 }
 
 pub fn get_history(
@@ -101,6 +122,18 @@ pub fn get_history(
         entries.push(entry?);
     }
     Ok(entries)
+}
+
+pub fn get_history_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    limit: Option<usize>,
+) -> Result<Vec<ConvictionEntry>> {
+    query::dispatch(
+        backend,
+        |conn| get_history(conn, symbol, limit),
+        |pool| get_history_postgres(pool, symbol, limit),
+    )
 }
 
 pub fn get_changes(conn: &Connection, days: usize) -> Result<Vec<ConvictionChange>> {
@@ -158,6 +191,190 @@ pub fn get_changes(conn: &Connection, days: usize) -> Result<Vec<ConvictionChang
         changes.push(change?);
     }
     Ok(changes)
+}
+
+pub fn get_changes_backend(backend: &BackendConnection, days: usize) -> Result<Vec<ConvictionChange>> {
+    query::dispatch(
+        backend,
+        |conn| get_changes(conn, days),
+        |pool| get_changes_postgres(pool, days),
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS convictions (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                notes TEXT,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+type ConvictionRow = (i64, String, i32, Option<String>, String);
+
+fn to_conviction_entry(row: ConvictionRow) -> ConvictionEntry {
+    ConvictionEntry {
+        id: row.0,
+        symbol: row.1,
+        score: row.2,
+        notes: row.3,
+        recorded_at: row.4,
+    }
+}
+
+fn set_conviction_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    score: i32,
+    notes: Option<&str>,
+) -> Result<i64> {
+    if !(-5..=5).contains(&score) {
+        anyhow::bail!("Score must be between -5 and +5, got {}", score);
+    }
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO convictions (symbol, score, notes)
+             VALUES ($1, $2, $3)
+             RETURNING id",
+        )
+        .bind(symbol)
+        .bind(score)
+        .bind(notes)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_current_postgres(pool: &PgPool) -> Result<Vec<ConvictionEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<ConvictionRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "WITH latest AS (
+                 SELECT symbol, MAX(id) AS max_id
+                 FROM convictions
+                 GROUP BY symbol
+             )
+             SELECT c.id, c.symbol, c.score, c.notes, c.recorded_at::text
+             FROM convictions c
+             INNER JOIN latest l ON c.symbol = l.symbol AND c.id = l.max_id
+             ORDER BY ABS(c.score) DESC, c.symbol ASC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(to_conviction_entry).collect())
+}
+
+fn get_history_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    limit: Option<usize>,
+) -> Result<Vec<ConvictionEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<ConvictionRow> = runtime.block_on(async {
+        if let Some(limit) = limit {
+            sqlx::query_as(
+                "SELECT id, symbol, score, notes, recorded_at::text
+                 FROM convictions
+                 WHERE symbol = $1
+                 ORDER BY id DESC
+                 LIMIT $2",
+            )
+            .bind(symbol)
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await
+        } else {
+            sqlx::query_as(
+                "SELECT id, symbol, score, notes, recorded_at::text
+                 FROM convictions
+                 WHERE symbol = $1
+                 ORDER BY id DESC",
+            )
+            .bind(symbol)
+            .fetch_all(pool)
+            .await
+        }
+    })?;
+    Ok(rows.into_iter().map(to_conviction_entry).collect())
+}
+
+type ConvictionChangeRow = (String, i32, i32, String, String, i32);
+
+fn get_changes_postgres(pool: &PgPool, days: usize) -> Result<Vec<ConvictionChange>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<ConvictionChangeRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "WITH recent AS (
+                 SELECT id, symbol, score, recorded_at
+                 FROM convictions
+                 WHERE recorded_at >= NOW() - ($1::int * INTERVAL '1 day')
+             ),
+             latest_per_symbol AS (
+                 SELECT symbol, MAX(id) AS max_id
+                 FROM recent
+                 GROUP BY symbol
+             ),
+             current_scores AS (
+                 SELECT r.symbol, r.score AS new_score, r.recorded_at AS new_date, r.id AS current_id
+                 FROM recent r
+                 INNER JOIN latest_per_symbol l ON r.symbol = l.symbol AND r.id = l.max_id
+             ),
+             prior_scores AS (
+                 SELECT c.symbol, c.score AS old_score, c.recorded_at AS old_date
+                 FROM convictions c
+                 INNER JOIN current_scores cs ON c.symbol = cs.symbol
+                 WHERE c.id < cs.current_id
+                 AND c.id = (
+                     SELECT MAX(id)
+                     FROM convictions
+                     WHERE symbol = c.symbol AND id < cs.current_id
+                 )
+             )
+             SELECT
+                 cs.symbol,
+                 COALESCE(ps.old_score, 0) AS old_score,
+                 cs.new_score,
+                 COALESCE(ps.old_date::text, '') AS old_date,
+                 cs.new_date::text AS new_date,
+                 cs.new_score - COALESCE(ps.old_score, 0) AS delta
+             FROM current_scores cs
+             LEFT JOIN prior_scores ps ON cs.symbol = ps.symbol
+             WHERE cs.new_score != COALESCE(ps.old_score, 0)
+             ORDER BY ABS(cs.new_score - COALESCE(ps.old_score, 0)) DESC",
+        )
+        .bind(days as i32)
+        .fetch_all(pool)
+        .await
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| ConvictionChange {
+            symbol: r.0,
+            old_score: r.1,
+            new_score: r.2,
+            old_date: r.3,
+            new_date: r.4,
+            change_delta: r.5,
+        })
+        .collect())
 }
 
 #[cfg(test)]

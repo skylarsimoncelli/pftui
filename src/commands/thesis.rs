@@ -1,19 +1,19 @@
-use crate::db::{self, thesis};
+use crate::db::backend::BackendConnection;
+use crate::db::thesis;
 use anyhow::Result;
 use serde_json::json;
 
 pub fn run_update(
+    backend: &BackendConnection,
     section: &str,
     content: &str,
     conviction: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    thesis::upsert_thesis(&conn, section, content, conviction)?;
+    thesis::upsert_thesis_backend(backend, section, content, conviction)?;
 
     if json_output {
-        let updated = thesis::get_thesis_section(&conn, section)?.unwrap();
+        let updated = thesis::get_thesis_section_backend(backend, section)?.unwrap();
         println!("{}", serde_json::to_string_pretty(&updated)?);
     } else {
         println!("Updated thesis section: {}", section);
@@ -22,10 +22,8 @@ pub fn run_update(
     Ok(())
 }
 
-pub fn run_list(json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    let entries = thesis::list_thesis(&conn)?;
+pub fn run_list(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let entries = thesis::list_thesis_backend(backend)?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&json!({ "sections": entries }))?);
@@ -61,10 +59,13 @@ pub fn run_list(json_output: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run_history(section: &str, limit: Option<usize>, json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    let entries = thesis::get_thesis_history(&conn, section, limit)?;
+pub fn run_history(
+    backend: &BackendConnection,
+    section: &str,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let entries = thesis::get_thesis_history_backend(backend, section, limit)?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&json!({ "history": entries }))?);
@@ -88,10 +89,8 @@ pub fn run_history(section: &str, limit: Option<usize>, json_output: bool) -> Re
     Ok(())
 }
 
-pub fn run_remove(section: &str, json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    thesis::remove_thesis(&conn, section)?;
+pub fn run_remove(backend: &BackendConnection, section: &str, json_output: bool) -> Result<()> {
+    thesis::remove_thesis_backend(backend, section)?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&json!({ "removed": section }))?);

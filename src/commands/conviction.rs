@@ -1,26 +1,26 @@
-use crate::db::{self, convictions};
+use crate::db::backend::BackendConnection;
+use crate::db::convictions;
 use anyhow::Result;
 use chrono::Local;
 use serde_json::json;
 
 pub fn run_set(
+    backend: &BackendConnection,
     symbol: &str,
     score: i32,
     notes: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-
-    let id = convictions::set_conviction(&conn, symbol, score, notes)?;
+    let id = convictions::set_conviction_backend(backend, symbol, score, notes)?;
 
     if json_output {
-        let all_current = convictions::list_current(&conn)?;
+        let all_current = convictions::list_current_backend(backend)?;
         let entry = all_current.iter().find(|e| e.id == id);
         if let Some(e) = entry {
             println!("{}", serde_json::to_string_pretty(e)?);
         } else {
             // Fallback if not in current list (shouldn't happen)
-            let history = convictions::get_history(&conn, symbol, Some(1))?;
+            let history = convictions::get_history_backend(backend, symbol, Some(1))?;
             if let Some(e) = history.first() {
                 println!("{}", serde_json::to_string_pretty(e)?);
             }
@@ -37,9 +37,8 @@ pub fn run_set(
     Ok(())
 }
 
-pub fn run_list(json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-    let entries = convictions::list_current(&conn)?;
+pub fn run_list(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let entries = convictions::list_current_backend(backend)?;
 
     if json_output {
         println!(
@@ -69,9 +68,13 @@ pub fn run_list(json_output: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run_history(symbol: &str, limit: Option<usize>, json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-    let entries = convictions::get_history(&conn, symbol, limit)?;
+pub fn run_history(
+    backend: &BackendConnection,
+    symbol: &str,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let entries = convictions::get_history_backend(backend, symbol, limit)?;
 
     if json_output {
         println!(
@@ -116,9 +119,8 @@ pub fn run_history(symbol: &str, limit: Option<usize>, json_output: bool) -> Res
     Ok(())
 }
 
-pub fn run_changes(days: usize, json_output: bool) -> Result<()> {
-    let conn = db::open_db(&db::default_db_path())?;
-    let changes = convictions::get_changes(&conn, days)?;
+pub fn run_changes(backend: &BackendConnection, days: usize, json_output: bool) -> Result<()> {
+    let changes = convictions::get_changes_backend(backend, days)?;
 
     if json_output {
         println!(

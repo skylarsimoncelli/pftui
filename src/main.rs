@@ -358,7 +358,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => match action.as_str() {
-            "list" => commands::thesis::run_list(json),
+            "list" => commands::thesis::run_list(&backend, json),
             "update" => {
                 let section = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing section name. Usage: pftui thesis update <section> --content \"...\"")
@@ -366,19 +366,19 @@ fn main() -> Result<()> {
                 let content_text = content.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing content. Usage: pftui thesis update <section> --content \"...\"")
                 })?;
-                commands::thesis::run_update(section, content_text, conviction.as_deref(), json)
+                commands::thesis::run_update(&backend, section, content_text, conviction.as_deref(), json)
             }
             "history" => {
                 let section = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing section name. Usage: pftui thesis history <section>")
                 })?;
-                commands::thesis::run_history(section, limit, json)
+                commands::thesis::run_history(&backend, section, limit, json)
             }
             "remove" => {
                 let section = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing section name. Usage: pftui thesis remove <section>")
                 })?;
-                commands::thesis::run_remove(section, json)
+                commands::thesis::run_remove(&backend, section, json)
             }
             _ => Err(anyhow::anyhow!(
                 "Unknown action '{}'. Available: list, update, history, remove",
@@ -454,14 +454,14 @@ fn main() -> Result<()> {
                 let score_val = score.ok_or_else(|| {
                     anyhow::anyhow!("Missing score. Usage: pftui conviction set SYMBOL --score N")
                 })?;
-                commands::conviction::run_set(symbol, score_val, notes.as_deref(), json)
+                commands::conviction::run_set(&backend, symbol, score_val, notes.as_deref(), json)
             }
-            "list" => commands::conviction::run_list(json),
+            "list" => commands::conviction::run_list(&backend, json),
             "history" => {
                 let symbol = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing symbol. Usage: pftui conviction history SYMBOL")
                 })?;
-                commands::conviction::run_history(symbol, limit, json)
+                commands::conviction::run_history(&backend, symbol, limit, json)
             }
             "changes" => {
                 let days = if let Some(val) = value.as_deref() {
@@ -469,7 +469,7 @@ fn main() -> Result<()> {
                 } else {
                     7
                 };
-                commands::conviction::run_changes(days, json)
+                commands::conviction::run_changes(&backend, days, json)
             }
             _ => Err(anyhow::anyhow!(
                 "Invalid action. Use: set, list, history, changes"

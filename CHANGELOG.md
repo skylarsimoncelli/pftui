@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:03 UTC — F32 Phase 25: backend-dispatch thesis + conviction command/data paths
+
+- What: migrated `thesis` and `conviction` flows from SQLite-only open-by-path behavior to shared `BackendConnection` dispatch; added native Postgres query implementations for `db/thesis.rs` and `db/convictions.rs` and updated CLI routing in `main`.
+- Why: removes a major hybrid bug where intelligence commands could bypass active backend selection and hit SQLite directly.
+- Files: `src/db/thesis.rs`, `src/db/convictions.rs`, `src/commands/thesis.rs`, `src/commands/conviction.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5/F32.6 analytics + intelligence migration (partial: thesis/conviction)
+
 ### 2026-03-09 02:35 UTC — F32 Phase 24: backend-dispatch macro/oil/crisis/sector/heatmap/news + cache adapters
 
 - What: added backend-dispatched `news_cache` and `economic_cache` APIs with native Postgres query paths, then migrated `macro`, `oil`, `crisis`, `sector`, `heatmap`, and `news` commands to use `BackendConnection` instead of SQLite-only `Connection` paths; updated `main`/`eod` callsites accordingly.
