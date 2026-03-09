@@ -98,6 +98,397 @@
 - Files: `README.md`, `AGENTS.md`, `PRODUCT-VISION.md`, `website/index.html`, `CHANGELOG.md`
 - Tests: docs-only changes (no runtime tests required)
 - TODO: F31.15, F31.16
+### 2026-03-09 11:33 UTC — F32 Phase 63: backend-native snapshot persistence in refresh
+
+- What: added backend-dispatched snapshot upsert APIs (`portfolio_snapshots`, `position_snapshots`) and migrated refresh snapshot storage to backend-native reads/writes (transactions/allocations/fx + snapshot inserts).
+- Why: removes sqlite-only snapshot persistence so postgres refresh now stores daily portfolio/position snapshots natively; only timeframe-signal detection remains sqlite-gated.
+- Files: `src/db/snapshots.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh timeframe-signal detection still sqlite-gated)
+
+### 2026-03-09 11:19 UTC — F32 Phase 62: backend-native BLS refresh path
+
+- What: added backend-dispatched BLS cache APIs for upsert/freshness checks and migrated refresh BLS freshness check + writes to backend methods.
+- Why: removes sqlite-only BLS ingestion and enables native postgres updates for key macro series cache.
+- Files: `src/db/bls_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh end-of-run snapshot/signals write still sqlite-gated)
+
+### 2026-03-09 11:04 UTC — F32 Phase 61: backend-native calendar refresh path
+
+- What: added postgres/backend-dispatched calendar cache APIs (`upsert`, `upcoming`, `impact`, `delete_old`) and migrated refresh calendar freshness check + writes to backend methods.
+- Why: removes sqlite-only calendar ingestion and enables native postgres updates for economic calendar data.
+- Files: `src/db/calendar_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh writes for BLS remain sqlite-only)
+
+### 2026-03-09 10:49 UTC — F32 Phase 60: backend-native COT refresh path
+
+- What: added postgres/backend-dispatched COT cache APIs (`upsert`, `latest`, `history`, `all_latest`, `delete_old`) and migrated refresh COT freshness check + writes to backend methods.
+- Why: removes sqlite-only COT ingestion and enables native postgres storage/update flow for CFTC positioning data.
+- Files: `src/db/cot_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh writes for calendar/BLS remain sqlite-only)
+
+### 2026-03-09 10:34 UTC — F32 Phase 59: backend-native sentiment refresh path
+
+- What: added postgres/backend-dispatched sentiment cache APIs (`upsert`, `latest`, `history`, `prune`) and migrated refresh sentiment freshness check + writes to backend methods.
+- Why: removes sqlite-only behavior for sentiment ingestion and enables native postgres storage for fear/greed updates.
+- Files: `src/db/sentiment_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh writes for COT/calendar/BLS remain sqlite-only)
+
+### 2026-03-09 10:20 UTC — F32 Phase 58: postgres schema parity for refresh caches
+
+- What: added missing Postgres schema tables/indexes for `calendar_events`, `cot_cache`, `sentiment_cache`, `sentiment_history`, and `bls_cache`, plus parity indexes for COMEX and existing cache tables.
+- Why: closes major schema gaps that caused postgres refresh/status paths to hit missing-table failures for several data sources.
+- Files: `src/db/postgres_schema.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh writes for COT/sentiment/calendar/BLS remain sqlite-only)
+
+### 2026-03-09 10:06 UTC — F32 Phase 57: backend economic data write path
+
+- What: added postgres/backend-dispatched upsert API for `economic_data` and switched refresh economy ingestion to write via backend dispatch instead of sqlite-only guard.
+- Why: keeps macro economy enrichment writes backend-native in postgres mode and removes another hidden sqlite dependency from refresh.
+- Files: `src/db/economic_data.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
+### 2026-03-09 09:56 UTC — F32 Phase 56: backend-native refresh news path
+
+- What: switched refresh news freshness check and article writes to backend-dispatched `news_cache` APIs and removed sqlite-only news skip behavior.
+- Why: ensures postgres refresh mode ingests Brave/RSS news into native backend tables instead of silently skipping the source.
+- Files: `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
+### 2026-03-09 09:44 UTC — F32 Phase 55: backend-native World Bank refresh writes
+
+- What: added backend-dispatched World Bank cache APIs for upsert/refresh-check and migrated refresh World Bank section to call backend methods instead of sqlite-only paths.
+- Why: removes the postgres skip for World Bank cache refresh so global macro dataset updates are persisted natively on either backend.
+- Files: `src/db/worldbank_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
+### 2026-03-09 09:31 UTC — F32 Phase 54: backend-native on-chain cache writes
+
+- What: added postgres/backend-dispatched on-chain cache APIs (`upsert/get/list/prune`), added `onchain_cache` table + indexes to postgres schema migration, and switched refresh on-chain metric writes to backend dispatch.
+- Why: removes another sqlite-only storage path so postgres refresh now persists on-chain metrics natively.
+- Files: `src/db/onchain_cache.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
+### 2026-03-09 09:18 UTC — F32 Phase 53: backend-native COMEX cache + supply command
+
+- What: added postgres/backend-dispatched COMEX cache CRUD/freshness APIs, added `comex_cache` table to postgres schema migration, migrated refresh COMEX writes/freshness checks to backend dispatch, and converted `pftui supply` to operate via `BackendConnection` instead of opening SQLite directly.
+- Why: removes sqlite-only COMEX storage paths and enables native COMEX data workflows for postgres users in both refresh and supply command flows.
+- Files: `src/db/comex_cache.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `src/commands/supply.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
+### 2026-03-09 09:05 UTC — F32 Phase 52: backend-aware web RSS ingest loop
+
+- What: updated web background RSS ingest loop to open the configured backend and call backend-dispatched news cache APIs (`insert_news_backend`, `cleanup_old_news_backend`) instead of opening a raw SQLite connection.
+- Why: removes another hidden sqlite-only path in web mode so postgres deployments ingest and retain RSS news natively.
+- Files: `src/web/server.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API request handlers and TUI runtime still sqlite-native)
+
+### 2026-03-09 08:55 UTC — F32 Phase 51: backend-native FX cache path
+
+- What: added postgres-native `fx_cache` support with backend-dispatched upsert/read APIs, wired `refresh` FX ingestion to write through backend dispatch (no postgres skip), and migrated command FX loaders (`summary`, `history`, `export`, `value`, `drift`, `rebalance`, `scan`, `group`, `stress-test`) off sqlite-only reads.
+- Why: removes a remaining hybrid path where postgres mode silently lost FX conversions and commands defaulted to sqlite-only FX cache access.
+- Files: `src/db/fx_cache.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `src/commands/summary.rs`, `src/commands/history.rs`, `src/commands/export.rs`, `src/commands/value.rs`, `src/commands/drift.rs`, `src/commands/rebalance.rs`, `src/commands/scan.rs`, `src/commands/group.rs`, `src/commands/stress_test.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API and TUI runtime still open sqlite connections directly)
+
+### 2026-03-09 08:42 UTC — F32 Phase 50: make web refresh loop backend-aware
+
+- What: updated web background price-refresh loop to open the active configured backend via `open_from_config` instead of forcing SQLite, then execute backend-aware `refresh`.
+- Why: prevents a hidden SQLite fallback in web mode and keeps postgres deployments on native backend path.
+- Files: `src/web/server.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining boundary: TUI runtime storage is sqlite-native)
+
+### 2026-03-09 08:36 UTC — F32 Phase 49: backend-dispatch setup path + remove remaining main sqlite gates
+
+- What: migrated `setup` command to `BackendConnection` (counts, reset, inserts, and portfolio-data detection are now backend-dispatched), removed all remaining `sqlite_conn_for_command` routing in `main`, and replaced default postgres TUI launch with explicit unsupported-backend error while preserving sqlite TUI behavior.
+- Why: eliminates residual hybrid command gating and central sqlite-only behavior is now an explicit product boundary (`tui`) rather than implicit command router coupling.
+- Files: `src/commands/setup.rs`, `src/main.rs`, `src/db/backend.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (remaining boundary: TUI runtime is still sqlite-native)
+
+### 2026-03-09 08:23 UTC — F32 Phase 48: remove refresh sqlite gate with backend-safe execution path
+
+- What: removed SQLite connection requirement from `refresh` command signature and routing; switched to backend-native execution for core refresh paths (prices, predictions, alerts) and conditional sqlite-only execution for remaining cache modules when sqlite backend is active; updated app/web refresh callsites for new signature.
+- Why: unlocks `pftui refresh` in postgres mode and removes another top-level sqlite command gate while preserving existing sqlite behavior.
+- Files: `src/commands/refresh.rs`, `src/main.rs`, `src/app.rs`, `src/web/server.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include setup/tui)
+
+### 2026-03-09 08:11 UTC — F32 Phase 47: remove brief sqlite gate with postgres-safe fallback
+
+- What: removed sqlite gating for `pftui brief` in `main`; SQLite backend keeps existing rich brief path, while postgres backend now runs backend-native `summary` as a safe fallback output path.
+- Why: ensures postgres users can run `brief` without SQLite dependency while full native brief refactor remains in progress.
+- Files: `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/setup/tui)
+
+### 2026-03-09 08:05 UTC — F32 Phase 46: un-gate eod command path
+
+- What: removed SQLite connection dependency from `eod` by switching its portfolio section from `brief` to backend-native `summary`, updated JSON path accordingly, and removed sqlite gating for `pftui eod` in `main`.
+- Why: eliminates another sqlite-only command gate while preserving end-of-day aggregate reporting behavior in postgres mode.
+- Files: `src/commands/eod.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/setup/tui)
+
+### 2026-03-09 07:55 UTC — F32 Phase 45: backend-dispatch import command path
+
+- What: migrated `import` command to `BackendConnection`, added backend insert API for `portfolio_allocations`, replaced SQLite-only replace/merge flows with backend-dispatched write/read operations (including Postgres delete path), and removed sqlite gating for `pftui import` in `main`.
+- Why: removes a major data-migration sqlite-only path and enables native import workflows in postgres mode.
+- Files: `src/commands/import.rs`, `src/db/allocations.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/eod/setup/tui)
+
+### 2026-03-09 07:41 UTC — F32 Phase 44: backend-native alerts check path + un-gating
+
+- What: added backend-native alert evaluation path (`check_alerts_backend_only`) including backend-dispatched review-date and scan-change alert synchronization, added Postgres `scan_alert_state` schema, migrated `alerts check` command path to backend-only execution, and removed sqlite gating for `alerts check` in `main`.
+- Why: closes a key hybrid gap in alert evaluation and removes the last alerts-specific sqlite command block.
+- Files: `src/alerts/engine.rs`, `src/commands/alerts.rs`, `src/commands/scan.rs`, `src/db/postgres_schema.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/import/eod/setup/tui)
+
+### 2026-03-09 07:25 UTC — F32 Phase 43: backend-dispatch migrate-journal command path
+
+- What: migrated `migrate-journal` to `BackendConnection`, switched journal insert/dedupe checks to backend-dispatched logic with native Postgres query path, and removed sqlite gating for `pftui migrate-journal` in `main`.
+- Why: removes another sqlite-only utility workflow and keeps journal migration tooling available in postgres backend mode.
+- Files: `src/commands/migrate_journal.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/import/eod/setup/tui and `alerts check`)
+
+### 2026-03-09 07:15 UTC — F32 Phase 42: add postgres-native status path and remove sqlite gate
+
+- What: added `status::run_backend` with a native Postgres status implementation (table-count + recency checks) while preserving existing SQLite behavior, and removed sqlite gating for `pftui status` in `main`.
+- Why: unlocks status diagnostics under postgres backend and removes another sqlite-only command block.
+- Files: `src/commands/status.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/import/eod/migrate-journal/setup/tui and `alerts check`)
+
+### 2026-03-09 07:04 UTC — F32 Phase 41: backend-dispatch scan query storage + command un-gating
+
+- What: added backend-dispatched `scan_queries` CRUD with native Postgres SQL, migrated `scan` command saved-query paths (`--save/--load/--list`) to backend APIs, switched runtime FX lookup to optional SQLite-native fallback, removed sqlite gating for `pftui scan` in `main`, and added Postgres `scan_queries` schema.
+- Why: removes another sqlite-only analytics workflow and enables scanner usage in postgres mode without hybrid table dependencies.
+- Files: `src/db/scan_queries.rs`, `src/commands/scan.rs`, `src/db/postgres_schema.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/import/eod/migrate-journal/setup/tui and `alerts check`)
+
+### 2026-03-09 06:36 UTC — F32 Phase 40: backend-dispatch economy/global/performance reads
+
+- What: added backend-dispatched read APIs for `economic_data`, `worldbank_cache` (latest indicators), and `portfolio_snapshots`, updated `economy`, `global`, and `performance` commands to consume `BackendConnection`, and removed sqlite gating for those commands in `main`; also added missing Postgres schema tables/indexes for these datasets.
+- Why: removes another set of sqlite-only command blocks and improves postgres parity for macro and performance reporting paths.
+- Files: `src/db/economic_data.rs`, `src/db/worldbank_cache.rs`, `src/db/snapshots.rs`, `src/db/postgres_schema.rs`, `src/commands/economy.rs`, `src/commands/global.rs`, `src/commands/performance.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/import/eod/scan/migrate-journal/setup/tui and `alerts check`)
+
+### 2026-03-09 06:15 UTC — F32 Phase 39: un-gate watchlist command from sqlite-only reads
+
+- What: migrated `watchlist_cli` to backend-dispatched price cache/history reads (`get_all_cached_prices_backend`, `get_history_backend`), removed SQLite connection argument from command signature, and dropped sqlite gating for `pftui watchlist` in `main`.
+- Why: eliminates another operator-facing sqlite-only command gate and improves postgres command parity for daily monitoring workflows.
+- Files: `src/commands/watchlist_cli.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/import/economy/eod/global/performance/scan/migrate-journal/setup/tui)
+
+### 2026-03-09 06:03 UTC — F32 Phase 38: un-gate summary/value/export/history from sqlite-only FX reads
+
+- What: removed hard SQLite connection requirements from `summary`, `value`, `export`, and `history` command paths by switching FX-cache lookup to optional SQLite-native access when available; all four commands now run under postgres backend without `sqlite_conn_for_command` gating.
+- Why: closes a major postgres parity gap where core portfolio reporting commands were blocked by hybrid FX-cache coupling.
+- Files: `src/commands/summary.rs`, `src/commands/value.rs`, `src/commands/export.rs`, `src/commands/history.rs`, `src/commands/import.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/status/brief/watchlist/import/economy/eod/global/performance/scan/migrate-journal/setup/tui)
+
+### 2026-03-09 05:24 UTC — F32 Phase 37: backend-dispatch `set-cash` command path
+
+- What: migrated `set-cash` to accept `BackendConnection`, added backend-dispatched symbol transaction deletion with native Postgres SQL, and switched insertion to `insert_transaction_backend`; removed SQLite-only gating for `set-cash` in `main`.
+- Why: removes another hybrid command path and ensures cash position management works in full postgres mode.
+- Files: `src/commands/set_cash.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated command paths in `main`)
+
+### 2026-03-09 05:12 UTC — F32 Phase 36: remove sqlite gating for non-check alert actions
+
+- What: updated alerts command dispatch so only `alerts check` requires a SQLite connection; `add/list/remove/ack/rearm` now run backend-native without sqlite gating in `main`.
+- Why: improves postgres UX and removes an unnecessary hard block for most alert management operations.
+- Files: `src/commands/alerts.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: alerts check still sqlite-gated)
+
+### 2026-03-09 05:01 UTC — F32 Phase 35: backend-dispatch timeframe signals + analytics command
+
+- What: migrated `db/timeframe_signals.rs` to backend-dispatched APIs with native Postgres implementation, switched `analytics signals` command to backend routing, and updated refresh signal insertion to use backend-dispatched writes.
+- Why: removes another SQLite-only intelligence path and clears `analytics` command gating in postgres mode.
+- Files: `src/db/timeframe_signals.rs`, `src/commands/analytics.rs`, `src/commands/refresh.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5/F32.6 command parity (partial: analytics un-gated)
+
+### 2026-03-09 04:48 UTC — F32 Phase 34: remove sqlite-conn dependency for drift + rebalance
+
+- What: removed SQLite connection parameter requirements from `drift` and `rebalance`; both now use backend-dispatched data paths and optional SQLite FX lookup when available.
+- Why: further reduces postgres command gating in `main` and improves native backend behavior for allocation management workflows.
+- Files: `src/commands/drift.rs`, `src/commands/rebalance.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 command-path parity (partial: drift/rebalance gating removed)
+
+### 2026-03-09 04:38 UTC — F32 Phase 33: remove sqlite-conn dependency for stress-test + research
+
+- What: removed SQLite connection parameter requirements from `stress-test` and `research` command paths; `stress-test` now sources FX rates opportunistically from sqlite backend when present, otherwise defaults cleanly.
+- Why: reduces postgres command gating in `main` and keeps command execution backend-native where possible.
+- Files: `src/commands/stress_test.rs`, `src/commands/research.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 command-path parity (partial: stress-test/research)
+
+### 2026-03-09 04:29 UTC — F32 Phase 32: reduce postgres gating for group/movers/correlations
+
+- What: completed backend-native `group` metadata path (db+command), removed SQLite-connection requirement from `movers` and `correlations` command signatures, and updated routing/callsites (`main`, `eod`, tests) accordingly.
+- Why: shrinks remaining `sqlite_conn_for_command` gating and increases command availability in postgres mode.
+- Files: `src/db/groups.rs`, `src/commands/group.rs`, `src/commands/movers.rs`, `src/commands/correlations.rs`, `src/commands/eod.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 command-path parity (partial: group/movers/correlations)
+
+### 2026-03-09 04:17 UTC — F32 Phase 31: backend-dispatch groups/group-members + command path
+
+- What: migrated `db/groups.rs` to backend-dispatched CRUD/member operations with native Postgres SQL and rewired `pftui group` command to run without SQLite-only metadata queries.
+- Why: removes another operator-facing command from SQLite lock-in and reduces `sqlite_conn_for_command` gating in postgres mode.
+- Files: `src/db/groups.rs`, `src/commands/group.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics migration (partial: groups)
+
+### 2026-03-09 04:08 UTC — F32 Phase 30: backend-dispatch annotations/annotate path
+
+- What: added backend-dispatched + native Postgres implementations for `db/annotations.rs`, migrated `pftui annotate` command to use `BackendConnection`, and removed SQLite-only dependency from annotate routing in `main`.
+- Why: eliminates another SQLite-only analytics/intelligence path and improves feature parity for thesis/invalidation notes under Postgres.
+- Files: `src/db/annotations.rs`, `src/commands/annotate.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics migration (partial: annotations)
+
+### 2026-03-09 04:00 UTC — F32 Phase 29: backend-dispatch dividends command/data path
+
+- What: migrated `dividends` storage module to backend-dispatched CRUD with native Postgres SQL, rewired `pftui dividends` command to `BackendConnection`, and removed its SQLite-only dependency in `main`.
+- Why: closes another sqlite-only analytics workflow and improves backend feature parity for income tracking.
+- Files: `src/db/dividends.rs`, `src/commands/dividends.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics migration (partial: dividends)
+
+### 2026-03-09 03:49 UTC — F32 Phase 28: remove SQLite blob bridge backend path
+
+- What: removed `PostgresSqliteBridge` and `pftui_sqlite_state` sync behavior from `db/backend.rs`, switched Postgres backend open to native pool+migrations only, added migration drop for legacy `pftui_sqlite_state`, and updated main dispatch to fail gracefully (non-panicking) for SQLite-only commands when postgres backend is active.
+- Why: closes the core hybrid-bridge architecture gap and ensures Postgres mode no longer materializes or syncs a hidden SQLite database blob.
+- Files: `src/db/backend.rs`, `src/db/postgres_schema.rs`, `src/main.rs`, `docs/MIGRATING.md`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.7 bridge removal complete; remaining F32 parity work is command/module migration to eliminate sqlite-only callsites.
+
+### 2026-03-09 03:33 UTC — F32 Phase 27: backend-dispatch predictions cache + CLI path
+
+- What: added backend-dispatched APIs and native Postgres implementations for `predictions_cache`, migrated `pftui predictions` command to `BackendConnection`, and switched refresh staleness check to backend-aware `get_last_update_backend`.
+- Why: removes another SQLite-only cache/query path from prediction-market workflows under Postgres backend mode.
+- Files: `src/db/predictions_cache.rs`, `src/commands/predictions.rs`, `src/commands/refresh.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.4 cache migration (partial: predictions cache/read path)
+
+### 2026-03-09 03:20 UTC — F32 Phase 26: backend-dispatch journal command/data paths
+
+- What: migrated `journal` command flow to backend-dispatched data access and added native Postgres implementations for `db/journal.rs` CRUD/search/stats/tag aggregation methods.
+- Why: removes another major SQLite-only intelligence workflow and eliminates direct SQLite-open behavior in journaling operations.
+- Files: `src/db/journal.rs`, `src/commands/journal.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5/F32.6 analytics + intelligence migration (partial: journal)
+
+### 2026-03-09 03:03 UTC — F32 Phase 25: backend-dispatch thesis + conviction command/data paths
+
+- What: migrated `thesis` and `conviction` flows from SQLite-only open-by-path behavior to shared `BackendConnection` dispatch; added native Postgres query implementations for `db/thesis.rs` and `db/convictions.rs` and updated CLI routing in `main`.
+- Why: removes a major hybrid bug where intelligence commands could bypass active backend selection and hit SQLite directly.
+- Files: `src/db/thesis.rs`, `src/db/convictions.rs`, `src/commands/thesis.rs`, `src/commands/conviction.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5/F32.6 analytics + intelligence migration (partial: thesis/conviction)
+
+### 2026-03-09 02:35 UTC — F32 Phase 24: backend-dispatch macro/oil/crisis/sector/heatmap/news + cache adapters
+
+- What: added backend-dispatched `news_cache` and `economic_cache` APIs with native Postgres query paths, then migrated `macro`, `oil`, `crisis`, `sector`, `heatmap`, and `news` commands to use `BackendConnection` instead of SQLite-only `Connection` paths; updated `main`/`eod` callsites accordingly.
+- Why: removes another large hybrid analytics slice that still depended on SQLite reads/writes in Postgres mode, especially market dashboards using price history + news caches.
+- Files: `src/db/news_cache.rs`, `src/db/economic_cache.rs`, `src/commands/macro_cmd.rs`, `src/commands/oil.rs`, `src/commands/crisis.rs`, `src/commands/sector.rs`, `src/commands/heatmap.rs`, `src/commands/news.rs`, `src/commands/eod.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.4/F32.5 cache + analytics command-path migration (partial)
+
+### 2026-03-09 01:52 UTC — F32 Phase 23: backend-dispatch group command portfolio reads
+
+- What: migrated `group show` data path to backend-dispatched reads for transactions, allocations, cached prices, and historical prices while preserving group metadata CRUD on existing table paths; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only portfolio valuation reads from grouped-position analysis in Postgres mode.
+- Files: `src/commands/group.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics/utility path migration (partial: group show path)
+
+### 2026-03-09 01:47 UTC — F32 Phase 22: backend-dispatch correlations command reads
+
+- What: migrated `correlations` command runtime data reads to backend-dispatched symbol discovery and history retrieval; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only data reads from rolling-correlation analytics in Postgres mode.
+- Files: `src/commands/correlations.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics command-path migration (partial: correlations path)
+
+### 2026-03-09 01:43 UTC — F32 Phase 21: backend-dispatch stress-test reads
+
+- What: migrated `stress-test` scenario command to backend-dispatched reads for prices, transactions, and allocations; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only reads from scenario shock-analysis command execution in Postgres mode.
+- Files: `src/commands/stress_test.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3/F32.5 command-path migration (partial: stress-test path)
+
+### 2026-03-09 01:38 UTC — F32 Phase 20: backend-dispatch scan command reads
+
+- What: migrated `scan` command runtime reads to backend-dispatched transactions/allocations/price-cache data, while preserving sqlite-signature `count_matches` for existing callsites; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only reads from scanner execution and alert-related scan workflows in Postgres mode.
+- Files: `src/commands/scan.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3/F32.5 command-path migration (partial: scan runtime path)
+
+### 2026-03-09 01:30 UTC — F32 Phase 19: backend-dispatch export command reads
+
+- What: migrated `export` to backend-dispatched reads for prices, transactions, allocations, and watchlist snapshot data; updated main routing and import round-trip test callsite for the new backend-aware export signature.
+- Why: removes sqlite-only reads from core export/migration workflows in Postgres mode.
+- Files: `src/commands/export.rs`, `src/commands/import.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3/F32.7 migration workflow parity (partial)
+
+### 2026-03-09 01:22 UTC — F32 Phase 18: backend-dispatch drift/rebalance reads
+
+- What: removed sqlite-only DB reopen flow from `drift` and `rebalance`; both commands now consume backend-dispatched transactions/prices with the existing live connection, and main routing passes `conn` directly.
+- Why: eliminates hybrid sqlite reads in target-rebalancing workflows under Postgres backend mode.
+- Files: `src/commands/drift.rs`, `src/commands/rebalance.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: drift/rebalance paths)
+
+### 2026-03-09 01:16 UTC — F32 Phase 17: backend-dispatch history command reads
+
+- What: migrated `history` command to backend-dispatched reads for transactions, allocations, and historical price lookups; updated main routing to pass `BackendConnection`.
+- Why: removes historical-valuation command execution from SQLite-only reads in Postgres mode.
+- Files: `src/commands/history.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: history command path)
+
+### 2026-03-09 01:10 UTC — F32 Phase 16: backend-dispatch summary command reads
+
+- What: migrated `summary` command to backend-dispatched reads for cached prices, transactions, allocations, and historical prices (including technical indicators/history lookups), and updated main routing to pass `BackendConnection`.
+- Why: removes a major portfolio reporting command from SQLite-only query execution in Postgres mode.
+- Files: `src/commands/summary.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: summary command path)
+
+### 2026-03-09 01:02 UTC — F32 Phase 15: backend-dispatch value command reads
+
+- What: rewired `value` command to backend-dispatched reads for cached prices, transactions, and percentage-mode allocations; updated main routing to pass `BackendConnection`.
+- Why: removes another common operator command from SQLite-only reads in Postgres mode.
+- Files: `src/commands/value.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3 core modules migration (partial: value command path)
 
 ### 2026-03-09 00:45 UTC — F31.14 milestone 1: cross-timeframe signals pipeline + analytics CLI
 

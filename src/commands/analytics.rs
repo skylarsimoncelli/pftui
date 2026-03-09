@@ -2,13 +2,14 @@ use anyhow::{bail, Result};
 use rusqlite::Connection;
 use serde_json::json;
 
+use crate::db::backend::BackendConnection;
 use crate::db::{
     convictions, correlation_snapshots, regime_snapshots, research_questions, scenarios, structural,
     thesis, timeframe_signals, trends, user_predictions,
 };
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     action: &str,
     symbol: Option<&str>,
     signal_type: Option<&str>,
@@ -16,8 +17,16 @@ pub fn run(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
+    if action == "signals" {
+        return run_signals(backend, symbol, signal_type, severity, limit, json_output);
+    }
+    let Some(conn) = backend.sqlite_native() else {
+        bail!(
+            "analytics '{}' currently requires database_backend=sqlite",
+            action
+        );
+    };
     match action {
-        "signals" => run_signals(conn, symbol, signal_type, severity, limit, json_output),
         "summary" => run_summary(conn, json_output),
         "low" => run_low(conn, json_output),
         "medium" => run_medium(conn, json_output),
@@ -32,14 +41,15 @@ pub fn run(
 }
 
 fn run_signals(
-    conn: &Connection,
+    backend: &BackendConnection,
     symbol: Option<&str>,
     signal_type: Option<&str>,
     severity: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let mut rows = timeframe_signals::list_signals(conn, signal_type, severity, limit.or(Some(25)))?;
+    let mut rows =
+        timeframe_signals::list_signals_backend(backend, signal_type, severity, limit.or(Some(25)))?;
     if let Some(sym) = symbol {
         let needle = format!("\"{}\"", sym.to_uppercase());
         rows.retain(|r| r.assets.to_uppercase().contains(&needle));

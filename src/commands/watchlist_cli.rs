@@ -3,12 +3,11 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::db::backend::BackendConnection;
-use crate::db::price_cache::get_all_cached_prices;
-use crate::db::price_history::get_history;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::price_history::get_history_backend;
 use crate::db::watchlist::list_watchlist_backend;
 use crate::indicators;
 use crate::models::asset::AssetCategory;
@@ -62,11 +61,15 @@ fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
 }
 
 /// Compute daily change % from price history for a symbol.
-fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<Decimal>) -> Option<Decimal> {
+fn compute_change_pct(
+    backend: &BackendConnection,
+    yahoo_sym: &str,
+    current_price: Option<Decimal>,
+) -> Option<Decimal> {
     let current = current_price?;
     
     // Get yesterday's close from history
-    let history = get_history(conn, yahoo_sym, 1).ok()?;
+    let history = get_history_backend(backend, yahoo_sym, 1).ok()?;
     if history.is_empty() {
         return None;
     }
@@ -81,7 +84,6 @@ fn compute_change_pct(conn: &Connection, yahoo_sym: &str, current_price: Option<
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &crate::config::Config,
     approaching: Option<&str>,
     json: bool,
@@ -103,7 +105,7 @@ pub fn run(
         Decimal::from_str_exact(&cleaned).ok()
     });
 
-    let cached = get_all_cached_prices(conn)?;
+    let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, (Decimal, String)> = cached
         .into_iter()
         .map(|q| (q.symbol, (q.price, q.fetched_at)))
@@ -154,7 +156,7 @@ pub fn run(
 
         // Compute daily change %
         let yahoo_sym = yahoo_symbol_for(&entry.symbol, cat);
-        let change_str = match compute_change_pct(conn, &yahoo_sym, current_price) {
+        let change_str = match compute_change_pct(backend, &yahoo_sym, current_price) {
             Some(pct) => {
                 let f: f64 = pct.to_string().parse().unwrap_or(0.0);
                 format!("{:+.2}%", f)
@@ -204,7 +206,7 @@ pub fn run(
 
         // Compute technical indicators from price history
         let (rsi_str, sma50_str, macd_str) = {
-            let history = get_history(conn, &yahoo_sym, 90).ok();
+            let history = get_history_backend(backend, &yahoo_sym, 90).ok();
             match history {
                 Some(records) if !records.is_empty() => {
                     let closes: Vec<f64> = records
@@ -424,6 +426,10 @@ fn format_fetched_at(fetched_at: &str) -> String {
 mod tests {
     use super::*;
 
+    fn to_backend(conn: rusqlite::Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
+
     #[test]
     fn format_price_large() {
         assert_eq!(format_price(dec!(1234.56)), "1,234.56");
@@ -490,8 +496,8 @@ mod tests {
     fn watchlist_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
-        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -505,8 +511,8 @@ mod tests {
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
 
-        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -538,8 +544,8 @@ mod tests {
         )
         .unwrap();
 
-        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -578,7 +584,8 @@ mod tests {
     #[test]
     fn change_pct_no_history() {
         let conn = crate::db::open_in_memory();
-        assert!(compute_change_pct(&conn, "AAPL", Some(dec!(210))).is_none());
+        let backend = to_backend(conn);
+        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(210))).is_none());
     }
 
     #[test]
@@ -602,7 +609,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(compute_change_pct(&conn, "AAPL", None).is_none());
+        let backend = to_backend(conn);
+        assert!(compute_change_pct(&backend, "AAPL", None).is_none());
     }
 
     #[test]
@@ -629,7 +637,8 @@ mod tests {
         .unwrap();
 
         // Current price $210, yesterday close $200 → +5%
-        let pct = compute_change_pct(&conn, "AAPL", Some(dec!(210))).unwrap();
+        let backend = to_backend(conn);
+        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210))).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -657,7 +666,8 @@ mod tests {
         .unwrap();
 
         // Current price $190, yesterday close $200 → -5%
-        let pct = compute_change_pct(&conn, "AAPL", Some(dec!(190))).unwrap();
+        let backend = to_backend(conn);
+        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(190))).unwrap();
         assert_eq!(pct, dec!(-5));
     }
 
@@ -685,7 +695,8 @@ mod tests {
         .unwrap();
 
         // Yesterday close was 0 → should return None (can't compute % change)
-        assert!(compute_change_pct(&conn, "AAPL", Some(dec!(100))).is_none());
+        let backend = to_backend(conn);
+        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(100))).is_none());
     }
 
     #[test]
@@ -741,8 +752,8 @@ mod tests {
         )
         .unwrap();
 
-        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 }

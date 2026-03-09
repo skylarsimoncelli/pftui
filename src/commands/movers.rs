@@ -3,14 +3,14 @@ use std::collections::HashSet;
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::config::Config;
-use crate::db::allocations::get_unique_allocation_symbols;
-use crate::db::price_cache::get_all_cached_prices;
-use crate::db::price_history::get_price_at_date;
-use crate::db::transactions::get_unique_symbols;
-use crate::db::watchlist::list_watchlist;
+use crate::db::allocations::get_unique_allocation_symbols_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::price_history::get_price_at_date_backend;
+use crate::db::transactions::get_unique_symbols_backend;
+use crate::db::watchlist::list_watchlist_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 
@@ -28,7 +28,11 @@ struct Mover {
 /// Compute daily change % from current price vs yesterday's close.
 /// Returns None if no yesterday price exists or current price is not available.
 /// Uses same logic as brief.rs to ensure consistency.
-fn compute_change_pct(conn: &Connection, symbol: &str, current_price: Option<Decimal>) -> Option<Decimal> {
+fn compute_change_pct(
+    backend: &BackendConnection,
+    symbol: &str,
+    current_price: Option<Decimal>,
+) -> Option<Decimal> {
     use chrono::Utc;
     
     let current = current_price?;
@@ -38,7 +42,7 @@ fn compute_change_pct(conn: &Connection, symbol: &str, current_price: Option<Dec
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     
-    let prev_close = get_price_at_date(conn, symbol, &yesterday_str).ok()??;
+    let prev_close = get_price_at_date_backend(backend, symbol, &yesterday_str).ok()??;
     if prev_close == dec!(0) {
         return None;
     }
@@ -79,7 +83,12 @@ fn format_price(value: Decimal) -> String {
     }
 }
 
-pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    config: &Config,
+    threshold: Option<&str>,
+    json: bool,
+) -> Result<()> {
     // Parse threshold (default 3%)
     let threshold_pct: Decimal = match threshold {
         Some(s) => {
@@ -94,7 +103,7 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
     let mut seen: HashSet<String> = HashSet::new();
 
     // Held positions (full mode)
-    if let Ok(held) = get_unique_symbols(conn) {
+    if let Ok(held) = get_unique_symbols_backend(backend) {
         for (sym, cat) in held {
             if cat == AssetCategory::Cash {
                 continue; // Skip cash — always 1.0
@@ -106,7 +115,7 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
     }
 
     // Held positions (percentage mode)
-    if let Ok(alloc) = get_unique_allocation_symbols(conn) {
+    if let Ok(alloc) = get_unique_allocation_symbols_backend(backend) {
         for (sym, cat) in alloc {
             if cat == AssetCategory::Cash {
                 continue;
@@ -118,7 +127,7 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
     }
 
     // Watchlist
-    if let Ok(entries) = list_watchlist(conn) {
+    if let Ok(entries) = list_watchlist_backend(backend) {
         for entry in entries {
             let cat: AssetCategory = entry
                 .category
@@ -136,7 +145,7 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
     }
 
     // Build price map for display
-    let cached = get_all_cached_prices(conn)?;
+    let cached = get_all_cached_prices_backend(backend)?;
     let price_map: std::collections::HashMap<String, Decimal> = cached
         .into_iter()
         .map(|q| (q.symbol, q.price))
@@ -149,7 +158,7 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
     for (sym, cat, source) in &symbols {
         let current_price = price_map.get(sym).copied();
         
-        if let Some(pct) = compute_change_pct(conn, sym, current_price) {
+        if let Some(pct) = compute_change_pct(backend, sym, current_price) {
             let abs_pct = if pct < dec!(0) { -pct } else { pct };
             if abs_pct >= threshold_pct {
                 let name = resolve_name(sym);
@@ -265,12 +274,18 @@ pub fn run(conn: &Connection, config: &Config, threshold: Option<&str>, json: bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
+
+    fn to_backend(conn: Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
 
     #[test]
     fn movers_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
-        let result = run(&conn, &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -281,7 +296,8 @@ mod tests {
         use crate::db::watchlist::add_to_watchlist;
 
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
-        let result = run(&conn, &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -319,7 +335,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -373,7 +390,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -412,11 +430,12 @@ mod tests {
         .unwrap();
 
         // 1% threshold — should appear
-        let result = run(&conn, &config, Some("1"), false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, Some("1"), false);
         assert!(result.is_ok());
 
         // 5% threshold — should not appear
-        let result = run(&conn, &config, Some("5"), false);
+        let result = run(&backend, &config, Some("5"), false);
         assert!(result.is_ok());
     }
 
@@ -454,7 +473,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None, true);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, true);
         assert!(result.is_ok());
     }
 
@@ -480,7 +500,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -518,7 +539,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -575,7 +597,8 @@ mod tests {
         .unwrap();
 
         // Should only show AAPL once (as "held")
-        let result = run(&conn, &config, None, false);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -603,7 +626,8 @@ mod tests {
         .unwrap();
 
         // Current price is 210, previous close was 200 → 5% gain
-        let pct = compute_change_pct(&conn, "AAPL", Some(dec!(210))).unwrap();
+        let backend = to_backend(conn);
+        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210))).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -631,7 +655,8 @@ mod tests {
         .unwrap();
 
         // Previous close was 0 → should return None (can't compute % change)
-        assert!(compute_change_pct(&conn, "AAPL", Some(dec!(100))).is_none());
+        let backend = to_backend(conn);
+        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(100))).is_none());
     }
     
     #[test]
@@ -658,6 +683,7 @@ mod tests {
         .unwrap();
 
         // No current price provided → should return None
-        assert!(compute_change_pct(&conn, "AAPL", None).is_none());
+        let backend = to_backend(conn);
+        assert!(compute_change_pct(&backend, "AAPL", None).is_none());
     }
 }

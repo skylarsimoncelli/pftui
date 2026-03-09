@@ -6,6 +6,10 @@
 
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 #[derive(Debug, Clone)]
 pub struct NewsEntry {
@@ -47,6 +51,21 @@ pub fn insert_news(
     )
 }
 
+pub fn insert_news_backend(
+    backend: &BackendConnection,
+    title: &str,
+    url: &str,
+    source: &str,
+    category: &str,
+    published_at: i64,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| insert_news(conn, title, url, source, category, published_at),
+        |pool| insert_news_postgres(pool, title, url, source, category, published_at),
+    )
+}
+
 /// Insert a news item with an explicit source type ("rss" or "brave").
 #[allow(clippy::too_many_arguments)]
 pub fn insert_news_with_source_type(
@@ -79,6 +98,52 @@ pub fn insert_news_with_source_type(
         ],
     )?;
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn insert_news_with_source_type_backend(
+    backend: &BackendConnection,
+    title: &str,
+    url: &str,
+    source: &str,
+    source_type: &str,
+    symbol_tag: Option<&str>,
+    category: &str,
+    published_at: i64,
+    description: Option<&str>,
+    extra_snippets: &[String],
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| {
+            insert_news_with_source_type(
+                conn,
+                title,
+                url,
+                source,
+                source_type,
+                symbol_tag,
+                category,
+                published_at,
+                description,
+                extra_snippets,
+            )
+        },
+        |pool| {
+            insert_news_with_source_type_postgres(
+                pool,
+                title,
+                url,
+                source,
+                source_type,
+                symbol_tag,
+                category,
+                published_at,
+                description,
+                extra_snippets,
+            )
+        },
+    )
 }
 
 /// Get latest N news items, optionally filtered.
@@ -150,6 +215,30 @@ pub fn get_latest_news(
     Ok(entries)
 }
 
+pub fn get_latest_news_backend(
+    backend: &BackendConnection,
+    limit: usize,
+    source_filter: Option<&str>,
+    category_filter: Option<&str>,
+    search_term: Option<&str>,
+    hours_back: Option<i64>,
+) -> Result<Vec<NewsEntry>> {
+    query::dispatch(
+        backend,
+        |conn| get_latest_news(conn, limit, source_filter, category_filter, search_term, hours_back),
+        |pool| {
+            get_latest_news_postgres(
+                pool,
+                limit,
+                source_filter,
+                category_filter,
+                search_term,
+                hours_back,
+            )
+        },
+    )
+}
+
 /// Delete news older than 48 hours.
 pub fn cleanup_old_news(conn: &Connection) -> Result<usize> {
     let cutoff = chrono::Utc::now().timestamp() - (48 * 3600);
@@ -158,6 +247,10 @@ pub fn cleanup_old_news(conn: &Connection) -> Result<usize> {
         params![cutoff],
     )?;
     Ok(deleted)
+}
+
+pub fn cleanup_old_news_backend(backend: &BackendConnection) -> Result<usize> {
+    query::dispatch(backend, cleanup_old_news, cleanup_old_news_postgres)
 }
 
 /// Get unique sources currently in cache.
@@ -171,6 +264,179 @@ pub fn get_sources(conn: &Connection) -> Result<Vec<String>> {
     }
 
     Ok(sources)
+}
+
+pub fn get_sources_backend(backend: &BackendConnection) -> Result<Vec<String>> {
+    query::dispatch(backend, get_sources, get_sources_postgres)
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS news_cache (
+                id BIGSERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL UNIQUE,
+                source TEXT NOT NULL,
+                source_type TEXT NOT NULL DEFAULT 'rss',
+                symbol_tag TEXT,
+                description TEXT NOT NULL DEFAULT '',
+                extra_snippets TEXT NOT NULL DEFAULT '[]',
+                category TEXT NOT NULL DEFAULT 'general',
+                published_at BIGINT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn insert_news_postgres(
+    pool: &PgPool,
+    title: &str,
+    url: &str,
+    source: &str,
+    category: &str,
+    published_at: i64,
+) -> Result<()> {
+    insert_news_with_source_type_postgres(
+        pool,
+        title,
+        url,
+        source,
+        "rss",
+        None,
+        category,
+        published_at,
+        None,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn insert_news_with_source_type_postgres(
+    pool: &PgPool,
+    title: &str,
+    url: &str,
+    source: &str,
+    source_type: &str,
+    symbol_tag: Option<&str>,
+    category: &str,
+    published_at: i64,
+    description: Option<&str>,
+    extra_snippets: &[String],
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let snippets_json = serde_json::to_string(extra_snippets).unwrap_or_else(|_| "[]".to_string());
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO news_cache
+             (title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+             ON CONFLICT (url) DO NOTHING",
+        )
+        .bind(title)
+        .bind(url)
+        .bind(source)
+        .bind(source_type)
+        .bind(symbol_tag)
+        .bind(description.unwrap_or(""))
+        .bind(snippets_json)
+        .bind(category)
+        .bind(published_at)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_latest_news_postgres(
+    pool: &PgPool,
+    limit: usize,
+    source_filter: Option<&str>,
+    category_filter: Option<&str>,
+    search_term: Option<&str>,
+    hours_back: Option<i64>,
+) -> Result<Vec<NewsEntry>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+            "SELECT id, title, url, source, source_type, symbol_tag, description, extra_snippets, category, published_at, fetched_at::text
+             FROM news_cache
+             WHERE TRUE",
+        );
+
+        if let Some(source) = source_filter {
+            qb.push(" AND source = ").push_bind(source);
+        }
+        if let Some(category) = category_filter {
+            qb.push(" AND category = ").push_bind(category);
+        }
+        if let Some(term) = search_term {
+            qb.push(" AND title ILIKE ").push_bind(format!("%{}%", term));
+        }
+        if let Some(hours) = hours_back {
+            let cutoff = chrono::Utc::now().timestamp() - (hours * 3600);
+            qb.push(" AND published_at > ").push_bind(cutoff);
+        }
+
+        qb.push(" ORDER BY published_at DESC LIMIT ").push_bind(limit as i64);
+        qb.build().fetch_all(pool).await
+    })?;
+
+    rows.into_iter()
+        .map(|row| {
+            let snippets_json: String = row.try_get(7)?;
+            Ok(NewsEntry {
+                id: row.try_get(0)?,
+                title: row.try_get(1)?,
+                url: row.try_get(2)?,
+                source: row.try_get(3)?,
+                source_type: row.try_get(4)?,
+                symbol_tag: row.try_get(5)?,
+                description: row.try_get(6)?,
+                extra_snippets: serde_json::from_str::<Vec<String>>(&snippets_json).unwrap_or_default(),
+                category: row.try_get(8)?,
+                published_at: row.try_get(9)?,
+                fetched_at: row.try_get(10)?,
+            })
+        })
+        .collect()
+}
+
+fn cleanup_old_news_postgres(pool: &PgPool) -> Result<usize> {
+    ensure_tables_postgres(pool)?;
+    let cutoff = chrono::Utc::now().timestamp() - (48 * 3600);
+    let runtime = tokio::runtime::Runtime::new()?;
+    let result = runtime.block_on(async {
+        sqlx::query("DELETE FROM news_cache WHERE published_at < $1")
+            .bind(cutoff)
+            .execute(pool)
+            .await
+    })?;
+    Ok(result.rows_affected() as usize)
+}
+
+fn get_sources_postgres(pool: &PgPool) -> Result<Vec<String>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let values = runtime.block_on(async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT source
+             FROM news_cache
+             ORDER BY source",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(values)
 }
 
 #[cfg(test)]

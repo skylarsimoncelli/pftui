@@ -5,6 +5,10 @@
 
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// A cached on-chain metric.
 #[derive(Debug, Clone)]
@@ -38,6 +42,14 @@ pub fn upsert_metric(conn: &Connection, metric: &OnchainMetric) -> Result<()> {
     Ok(())
 }
 
+pub fn upsert_metric_backend(backend: &BackendConnection, metric: &OnchainMetric) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_metric(conn, metric),
+        |pool| upsert_metric_postgres(pool, metric),
+    )
+}
+
 /// Get a specific metric for a given date.
 ///
 /// Returns None if not cached or if stale (>24 hours old for historical, >1 hour for current).
@@ -66,6 +78,18 @@ pub fn get_metric(
         .optional()?;
 
     Ok(result)
+}
+
+pub fn get_metric_backend(
+    backend: &BackendConnection,
+    metric: &str,
+    date: &str,
+) -> Result<Option<OnchainMetric>> {
+    query::dispatch(
+        backend,
+        |conn| get_metric(conn, metric, date),
+        |pool| get_metric_postgres(pool, metric, date),
+    )
 }
 
 /// Get all metrics of a specific type, ordered by date descending.
@@ -102,6 +126,18 @@ pub fn get_metrics_by_type(
     Ok(metrics)
 }
 
+pub fn get_metrics_by_type_backend(
+    backend: &BackendConnection,
+    metric: &str,
+    limit: usize,
+) -> Result<Vec<OnchainMetric>> {
+    query::dispatch(
+        backend,
+        |conn| get_metrics_by_type(conn, metric, limit),
+        |pool| get_metrics_by_type_postgres(pool, metric, limit),
+    )
+}
+
 /// Delete metrics older than 90 days.
 ///
 /// Keeps the cache size manageable for historical data.
@@ -112,6 +148,129 @@ pub fn prune_old_metrics(conn: &Connection) -> Result<usize> {
         [],
     )?;
     Ok(deleted)
+}
+
+pub fn prune_old_metrics_backend(backend: &BackendConnection) -> Result<usize> {
+    query::dispatch(backend, prune_old_metrics, prune_old_metrics_postgres)
+}
+
+fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS onchain_cache (
+                metric TEXT NOT NULL,
+                date TEXT NOT NULL,
+                value TEXT NOT NULL,
+                metadata TEXT,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (metric, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_date ON onchain_cache(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_metric ON onchain_cache(metric)")
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_metric_postgres(pool: &PgPool, metric: &OnchainMetric) -> Result<()> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO onchain_cache (metric, date, value, metadata, fetched_at)
+             VALUES ($1, $2, $3, $4, $5::timestamptz)
+             ON CONFLICT (metric, date) DO UPDATE SET
+               value = EXCLUDED.value,
+               metadata = EXCLUDED.metadata,
+               fetched_at = EXCLUDED.fetched_at",
+        )
+        .bind(&metric.metric)
+        .bind(&metric.date)
+        .bind(&metric.value)
+        .bind(&metric.metadata)
+        .bind(&metric.fetched_at)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_metric_postgres(pool: &PgPool, metric: &str, date: &str) -> Result<Option<OnchainMetric>> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<(String, String, String, Option<String>, String)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT metric, date, value, metadata, fetched_at::text
+             FROM onchain_cache
+             WHERE metric = $1
+               AND date = $2
+               AND fetched_at > NOW() - INTERVAL '24 hours'",
+        )
+        .bind(metric)
+        .bind(date)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(|r| OnchainMetric {
+        metric: r.0,
+        date: r.1,
+        value: r.2,
+        metadata: r.3,
+        fetched_at: r.4,
+    }))
+}
+
+fn get_metrics_by_type_postgres(
+    pool: &PgPool,
+    metric: &str,
+    limit: usize,
+) -> Result<Vec<OnchainMetric>> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, String, String, Option<String>, String)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT metric, date, value, metadata, fetched_at::text
+             FROM onchain_cache
+             WHERE metric = $1
+             ORDER BY date DESC
+             LIMIT $2",
+        )
+        .bind(metric)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| OnchainMetric {
+            metric: r.0,
+            date: r.1,
+            value: r.2,
+            metadata: r.3,
+            fetched_at: r.4,
+        })
+        .collect())
+}
+
+fn prune_old_metrics_postgres(pool: &PgPool) -> Result<usize> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let deleted = runtime.block_on(async {
+        sqlx::query("DELETE FROM onchain_cache WHERE date < TO_CHAR(NOW() - INTERVAL '90 days', 'YYYY-MM-DD')")
+            .execute(pool)
+            .await
+    })?;
+    Ok(deleted.rows_affected() as usize)
 }
 
 #[cfg(test)]

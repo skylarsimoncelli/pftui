@@ -2,18 +2,18 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Result};
 use rust_decimal::Decimal;
-use rusqlite::Connection;
 
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::list_allocations;
+use crate::db::allocations::list_allocations_backend;
+use crate::db::backend::BackendConnection;
 use crate::db::groups;
-use crate::db::price_cache::get_all_cached_prices;
-use crate::db::price_history::get_prices_at_date;
-use crate::db::transactions::list_transactions;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::price_history::get_prices_at_date_backend;
+use crate::db::transactions::list_transactions_backend;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     config: &Config,
     action: &str,
     name: Option<&str>,
@@ -21,25 +21,25 @@ pub fn run(
     json: bool,
 ) -> Result<()> {
     match action {
-        "create" => run_create(conn, name, symbols),
-        "list" => run_list(conn, json),
-        "show" => run_show(conn, config, name, json),
-        "remove" => run_remove(conn, name),
+        "create" => run_create(backend, name, symbols),
+        "list" => run_list(backend, json),
+        "show" => run_show(backend, config, name, json),
+        "remove" => run_remove(backend, name),
         _ => bail!("Unknown action '{}'. Use: create, list, show, remove", action),
     }
 }
 
-fn run_create(conn: &Connection, name: Option<&str>, symbols: Option<&str>) -> Result<()> {
+fn run_create(backend: &BackendConnection, name: Option<&str>, symbols: Option<&str>) -> Result<()> {
     let group_name = normalize_name(name)?;
     let members = parse_symbols(symbols)?;
-    groups::create_group(conn, &group_name)?;
-    groups::set_group_members(conn, &group_name, &members)?;
+    groups::create_group_backend(backend, &group_name)?;
+    groups::set_group_members_backend(backend, &group_name, &members)?;
     println!("Saved group '{}' with {} symbols.", group_name, members.len());
     Ok(())
 }
 
-fn run_list(conn: &Connection, json: bool) -> Result<()> {
-    let rows = groups::list_groups(conn)?;
+fn run_list(backend: &BackendConnection, json: bool) -> Result<()> {
+    let rows = groups::list_groups_backend(backend)?;
     if rows.is_empty() {
         println!("No groups defined. Create one with: pftui group create <name> --symbols A,B,C");
         return Ok(());
@@ -49,7 +49,7 @@ fn run_list(conn: &Connection, json: bool) -> Result<()> {
         let out: Vec<_> = rows
             .iter()
             .map(|g| {
-                let members = groups::get_group_members(conn, &g.name).unwrap_or_default();
+                let members = groups::get_group_members_backend(backend, &g.name).unwrap_or_default();
                 serde_json::json!({
                     "name": g.name,
                     "created_at": g.created_at,
@@ -62,20 +62,25 @@ fn run_list(conn: &Connection, json: bool) -> Result<()> {
     }
 
     for g in rows {
-        let members = groups::get_group_members(conn, &g.name)?;
+        let members = groups::get_group_members_backend(backend, &g.name)?;
         println!("{}: {}", g.name, members.join(", "));
     }
     Ok(())
 }
 
-fn run_show(conn: &Connection, config: &Config, name: Option<&str>, json: bool) -> Result<()> {
+fn run_show(
+    backend: &BackendConnection,
+    config: &Config,
+    name: Option<&str>,
+    json: bool,
+) -> Result<()> {
     let group_name = normalize_name(name)?;
-    let members = groups::get_group_members(conn, &group_name)?;
+    let members = groups::get_group_members_backend(backend, &group_name)?;
     if members.is_empty() {
         bail!("Group '{}' has no symbols or does not exist.", group_name);
     }
 
-    let positions = load_positions(conn, config)?;
+    let positions = load_positions(backend, config)?;
     let group_positions: Vec<&Position> = positions
         .iter()
         .filter(|p| members.iter().any(|m| m == &p.symbol))
@@ -101,7 +106,7 @@ fn run_show(conn: &Connection, config: &Config, name: Option<&str>, json: bool) 
     let yesterday = (chrono::Utc::now().date_naive() - chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
-    let hist = get_prices_at_date(conn, &members, &yesterday).unwrap_or_default();
+    let hist = get_prices_at_date_backend(backend, &members, &yesterday).unwrap_or_default();
     let mut daily_pnl = Decimal::ZERO;
     for p in &group_positions {
         if let (Some(curr), Some(prev)) = (p.current_price, hist.get(&p.symbol)) {
@@ -164,9 +169,9 @@ fn run_show(conn: &Connection, config: &Config, name: Option<&str>, json: bool) 
     Ok(())
 }
 
-fn run_remove(conn: &Connection, name: Option<&str>) -> Result<()> {
+fn run_remove(backend: &BackendConnection, name: Option<&str>) -> Result<()> {
     let group_name = normalize_name(name)?;
-    if groups::remove_group(conn, &group_name)? {
+    if groups::remove_group_backend(backend, &group_name)? {
         println!("Removed group '{}'.", group_name);
     } else {
         println!("Group '{}' not found.", group_name);
@@ -195,20 +200,23 @@ fn normalize_name(name: Option<&str>) -> Result<String> {
     Ok(name.to_lowercase())
 }
 
-fn load_positions(conn: &Connection, config: &Config) -> Result<Vec<Position>> {
-    let prices: HashMap<String, Decimal> = get_all_cached_prices(conn)?
+fn load_positions(
+    backend: &BackendConnection,
+    config: &Config,
+) -> Result<Vec<Position>> {
+    let prices: HashMap<String, Decimal> = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
 
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
-            let txs = list_transactions(conn)?;
+            let txs = list_transactions_backend(backend)?;
             compute_positions(&txs, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
-            let allocs = list_allocations(conn)?;
+            let allocs = list_allocations_backend(backend)?;
             compute_positions_from_allocations(&allocs, &prices, &fx_rates)
         }
     };

@@ -1,20 +1,23 @@
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::alerts::engine::{check_alerts_backend, AlertCheckResult};
+use crate::alerts::engine::{check_alerts_backend_only, AlertCheckResult};
 use crate::alerts::rules::parse_rule;
 use crate::alerts::AlertStatus;
 use crate::db::backend::BackendConnection;
 use crate::db::alerts as alerts_db;
 
 /// Run the alerts CLI subcommand.
-pub fn run(backend: &BackendConnection, conn: &Connection, action: &str, args: &AlertsArgs) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    action: &str,
+    args: &AlertsArgs,
+) -> Result<()> {
     match action {
         "add" => run_add(backend, args),
         "list" => run_list(backend, args),
         "remove" => run_remove(backend, args),
-        "check" => run_check(backend, conn, args),
+        "check" => run_check(backend, args),
         "ack" => run_ack(backend, args),
         "rearm" => run_rearm(backend, args),
         _ => bail!("Unknown alerts action: '{}'. Expected: add, list, remove, check, ack, rearm", action),
@@ -103,8 +106,8 @@ fn run_remove(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_check(backend: &BackendConnection, conn: &Connection, args: &AlertsArgs) -> Result<()> {
-    let results = check_alerts_backend(backend, conn)?;
+fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
+    let results = check_alerts_backend_only(backend)?;
 
     if results.is_empty() {
         if args.json {
@@ -382,10 +385,9 @@ mod tests {
     #[test]
     fn test_check_triggers_armed_alert() {
         let backend = setup_backend();
-        let conn = backend.sqlite();
         // GC=F at 5600, alert for above 5500 → should trigger
         alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
-        let results = check_alerts_backend(&backend, conn).unwrap();
+        let results = check_alerts_backend_only(&backend).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].newly_triggered);
     }
@@ -393,9 +395,8 @@ mod tests {
     #[test]
     fn test_check_json_output() {
         let backend = setup_backend();
-        let conn = backend.sqlite();
         alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
-        let results = check_alerts_backend(&backend, conn).unwrap();
+        let results = check_alerts_backend_only(&backend).unwrap();
         let json_results: Vec<AlertCheckJson> = results.iter().map(AlertCheckJson::from).collect();
         let json = serde_json::to_string(&json_results).unwrap();
         assert!(json.contains("GC=F"));
@@ -405,10 +406,9 @@ mod tests {
     #[test]
     fn test_ack_triggered_alert() {
         let backend = setup_backend();
-        let conn = backend.sqlite();
         let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
         // Trigger it
-        check_alerts_backend(&backend, conn).unwrap();
+        check_alerts_backend_only(&backend).unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
@@ -436,9 +436,8 @@ mod tests {
     #[test]
     fn test_rearm_triggered_alert() {
         let backend = setup_backend();
-        let conn = backend.sqlite();
         let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
-        check_alerts_backend(&backend, conn).unwrap(); // triggers it
+        check_alerts_backend_only(&backend).unwrap(); // triggers it
         let args = AlertsArgs {
             rule: None,
             id: Some(id),

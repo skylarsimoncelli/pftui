@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, NaiveDate, Utc};
-use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::db::backend::BackendConnection;
 use crate::db::journal::{self, NewJournalEntry};
 
 #[derive(Debug, Default, Serialize, Clone, PartialEq, Eq)]
@@ -22,7 +22,7 @@ struct InlineMeta {
 }
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     path: &str,
     dry_run: bool,
     default_tag: Option<&str>,
@@ -30,7 +30,7 @@ pub fn run(
     json_output: bool,
 ) -> Result<()> {
     let markdown = std::fs::read_to_string(path)?;
-    let report = migrate_from_markdown(conn, &markdown, dry_run, default_tag, default_status)?;
+    let report = migrate_from_markdown(backend, &markdown, dry_run, default_tag, default_status)?;
     if json_output {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else if dry_run {
@@ -48,7 +48,7 @@ pub fn run(
 }
 
 fn migrate_from_markdown(
-    conn: &Connection,
+    backend: &BackendConnection,
     markdown: &str,
     dry_run: bool,
     default_tag: Option<&str>,
@@ -61,12 +61,12 @@ fn migrate_from_markdown(
     };
 
     for entry in parsed {
-        if entry_exists(conn, &entry.timestamp, &entry.content)? {
+        if entry_exists(backend, &entry.timestamp, &entry.content)? {
             report.skipped += 1;
             continue;
         }
         if !dry_run {
-            let _ = journal::add_entry(conn, &entry)?;
+            let _ = journal::add_entry_backend(backend, &entry)?;
         }
         report.inserted += 1;
     }
@@ -74,11 +74,30 @@ fn migrate_from_markdown(
     Ok(report)
 }
 
-fn entry_exists(conn: &Connection, timestamp: &str, content: &str) -> Result<bool> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM journal WHERE timestamp = ?1 AND content = ?2",
-        rusqlite::params![timestamp, content],
-        |row| row.get(0),
+fn entry_exists(backend: &BackendConnection, timestamp: &str, content: &str) -> Result<bool> {
+    let count = crate::db::query::dispatch(
+        backend,
+        |conn| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM journal WHERE timestamp = ?1 AND content = ?2",
+                rusqlite::params![timestamp, content],
+                |row| row.get(0),
+            )?;
+            Ok(count)
+        },
+        |pool| {
+            let runtime = tokio::runtime::Runtime::new()?;
+            let count = runtime.block_on(async {
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM journal WHERE timestamp = $1 AND content = $2",
+                )
+                .bind(timestamp)
+                .bind(content)
+                .fetch_one(pool)
+                .await
+            })?;
+            Ok(count)
+        },
     )?;
     Ok(count > 0)
 }
@@ -307,6 +326,10 @@ mod tests {
     use super::*;
     use crate::db::open_in_memory;
 
+    fn to_backend(conn: rusqlite::Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
+
     #[test]
     fn parses_heading_dates_and_bullets() {
         let md = r#"
@@ -339,16 +362,17 @@ mod tests {
     #[test]
     fn migration_is_idempotent_via_dedupe() {
         let conn = open_in_memory();
+        let backend = to_backend(conn);
         let md = r#"
 ## 2026-03-05
 - Added BTC starter [tag:trade] [symbol:BTC]
 "#;
-        let first = migrate_from_markdown(&conn, md, false, None, "open").unwrap();
+        let first = migrate_from_markdown(&backend, md, false, None, "open").unwrap();
         assert_eq!(first.parsed, 1);
         assert_eq!(first.inserted, 1);
         assert_eq!(first.skipped, 0);
 
-        let second = migrate_from_markdown(&conn, md, false, None, "open").unwrap();
+        let second = migrate_from_markdown(&backend, md, false, None, "open").unwrap();
         assert_eq!(second.parsed, 1);
         assert_eq!(second.inserted, 0);
         assert_eq!(second.skipped, 1);

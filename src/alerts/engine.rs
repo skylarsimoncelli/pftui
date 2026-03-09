@@ -50,9 +50,9 @@ pub fn check_alerts(conn: &Connection) -> Result<Vec<AlertCheckResult>> {
     Ok(results)
 }
 
-pub fn check_alerts_backend(backend: &BackendConnection, conn: &Connection) -> Result<Vec<AlertCheckResult>> {
-    ensure_review_date_alerts(conn)?;
-    ensure_scan_query_change_alerts(conn)?;
+pub fn check_alerts_backend(backend: &BackendConnection, _conn: &Connection) -> Result<Vec<AlertCheckResult>> {
+    ensure_review_date_alerts_backend(backend)?;
+    ensure_scan_query_change_alerts_backend(backend)?;
     let all_alerts = alerts::list_alerts_backend(backend)?;
     if all_alerts.is_empty() {
         return Ok(Vec::new());
@@ -72,6 +72,32 @@ pub fn check_alerts_backend(backend: &BackendConnection, conn: &Connection) -> R
         results.push(result);
     }
 
+    Ok(results)
+}
+
+pub fn check_alerts_backend_only(backend: &BackendConnection) -> Result<Vec<AlertCheckResult>> {
+    if let Some(conn) = backend.sqlite_native() {
+        return check_alerts_backend(backend, conn);
+    }
+
+    ensure_review_date_alerts_backend(backend)?;
+    ensure_scan_query_change_alerts_backend(backend)?;
+    let all_alerts = alerts::list_alerts_backend(backend)?;
+    if all_alerts.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let cached_prices = get_all_cached_prices_backend(backend)?;
+    let price_map: HashMap<String, Decimal> = cached_prices
+        .into_iter()
+        .map(|q| (q.symbol.clone(), q.price))
+        .collect();
+
+    let mut results = Vec::new();
+    for alert in all_alerts {
+        let result = check_single_alert_backend(backend, &alert, &price_map)?;
+        results.push(result);
+    }
     Ok(results)
 }
 
@@ -291,6 +317,161 @@ fn ensure_scan_query_change_alerts(conn: &Connection) -> Result<()> {
              SET last_count = excluded.last_count,
                  updated_at = datetime('now')",
             rusqlite::params![q.name, current],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn ensure_review_date_alerts_backend(backend: &BackendConnection) -> Result<()> {
+    let annotations = crate::db::annotations::list_annotations_backend(backend)?;
+    if annotations.is_empty() {
+        return Ok(());
+    }
+
+    let existing = alerts::list_alerts_backend(backend)?;
+    for ann in annotations {
+        let Some(review_date) = ann.review_date.clone() else {
+            continue;
+        };
+        if chrono::NaiveDate::parse_from_str(&review_date, "%Y-%m-%d").is_err() {
+            continue;
+        }
+        let symbol_key = format!("REVIEW:{}", ann.symbol.to_uppercase());
+        let rule_text = format!("Review {} thesis by {}", ann.symbol.to_uppercase(), review_date);
+
+        if let Some(existing_alert) = existing
+            .iter()
+            .find(|a| a.kind == AlertKind::Indicator && a.symbol == symbol_key)
+        {
+            if existing_alert.threshold != review_date || existing_alert.rule_text != rule_text {
+                crate::db::query::dispatch(
+                    backend,
+                    |conn| {
+                        conn.execute(
+                            "UPDATE alerts
+                             SET threshold = ?1, rule_text = ?2, status = 'armed', triggered_at = NULL
+                             WHERE id = ?3",
+                            rusqlite::params![review_date, rule_text, existing_alert.id],
+                        )?;
+                        Ok(())
+                    },
+                    |pool| {
+                        let runtime = tokio::runtime::Runtime::new()?;
+                        runtime.block_on(async {
+                            sqlx::query(
+                                "UPDATE alerts
+                                 SET threshold = $1, rule_text = $2, status = 'armed', triggered_at = NULL
+                                 WHERE id = $3",
+                            )
+                            .bind(&review_date)
+                            .bind(&rule_text)
+                            .bind(existing_alert.id)
+                            .execute(pool)
+                            .await
+                        })?;
+                        Ok(())
+                    },
+                )?;
+            }
+        } else {
+            let _ = alerts::add_alert_backend(
+                backend,
+                "indicator",
+                &symbol_key,
+                "below",
+                &review_date,
+                &rule_text,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_scan_query_change_alerts_backend(backend: &BackendConnection) -> Result<()> {
+    let queries = scan_queries::list_scan_queries_backend(backend)?;
+    if queries.is_empty() {
+        return Ok(());
+    }
+
+    for q in queries {
+        let current = crate::commands::scan::count_matches_backend(backend, &q.filter_expr)? as i64;
+        let previous = crate::db::query::dispatch(
+            backend,
+            |conn| {
+                let prev: Option<i64> = conn
+                    .query_row(
+                        "SELECT last_count FROM scan_alert_state WHERE name = ?1",
+                        rusqlite::params![q.name],
+                        |r| r.get(0),
+                    )
+                    .ok();
+                Ok(prev)
+            },
+            |pool| {
+                let runtime = tokio::runtime::Runtime::new()?;
+                let prev = runtime.block_on(async {
+                    sqlx::query_scalar::<_, Option<i64>>(
+                        "SELECT last_count FROM scan_alert_state WHERE name = $1",
+                    )
+                    .bind(&q.name)
+                    .fetch_optional(pool)
+                    .await
+                })?;
+                Ok(prev.flatten())
+            },
+        )?;
+
+        if let Some(prev) = previous {
+            if prev != current {
+                let rule_text = format!(
+                    "Scan '{}' result count changed: {} -> {}",
+                    q.name, prev, current
+                );
+                let symbol = format!("SCAN:{}", q.name.to_uppercase());
+                let id = alerts::add_alert_backend(
+                    backend,
+                    "indicator",
+                    &symbol,
+                    "above",
+                    &current.to_string(),
+                    &rule_text,
+                )?;
+                let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                alerts::update_alert_status_backend(backend, id, AlertStatus::Triggered, Some(&now))?;
+            }
+        }
+
+        crate::db::query::dispatch(
+            backend,
+            |conn| {
+                conn.execute(
+                    "INSERT INTO scan_alert_state (name, last_count, updated_at)
+                     VALUES (?1, ?2, datetime('now'))
+                     ON CONFLICT(name) DO UPDATE
+                     SET last_count = excluded.last_count,
+                         updated_at = datetime('now')",
+                    rusqlite::params![q.name, current],
+                )?;
+                Ok(())
+            },
+            |pool| {
+                let runtime = tokio::runtime::Runtime::new()?;
+                runtime.block_on(async {
+                    sqlx::query(
+                        "INSERT INTO scan_alert_state (name, last_count, updated_at)
+                         VALUES ($1, $2, NOW())
+                         ON CONFLICT(name) DO UPDATE
+                         SET last_count = EXCLUDED.last_count,
+                             updated_at = NOW()",
+                    )
+                    .bind(&q.name)
+                    .bind(current)
+                    .execute(pool)
+                    .await
+                })?;
+                Ok(())
+            },
         )?;
     }
 

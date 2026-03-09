@@ -3,15 +3,17 @@ use std::io::Write;
 
 use anyhow::Result;
 use rust_decimal::Decimal;
+#[cfg(test)]
 use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::cli::ExportFormat;
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::list_allocations;
-use crate::db::price_cache::get_all_cached_prices;
-use crate::db::transactions::list_transactions;
-use crate::db::watchlist::list_watchlist;
+use crate::db::allocations::list_allocations_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::transactions::list_transactions_backend;
+use crate::db::watchlist::list_watchlist_backend;
 use crate::models::allocation::Allocation;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::models::transaction::Transaction;
@@ -74,42 +76,47 @@ fn get_writer(output: Option<&str>) -> Result<Box<dyn Write>> {
     }
 }
 
-pub fn run(conn: &Connection, format: &ExportFormat, config: &Config, output: Option<&str>) -> Result<()> {
-    let cached = get_all_cached_prices(conn)?;
+pub fn run(
+    backend: &BackendConnection,
+    format: &ExportFormat,
+    config: &Config,
+    output: Option<&str>,
+) -> Result<()> {
+    let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
 
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
-            let txs = list_transactions(conn)?;
+            let txs = list_transactions_backend(backend)?;
             compute_positions(&txs, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
-            let allocs = list_allocations(conn)?;
+            let allocs = list_allocations_backend(backend)?;
             compute_positions_from_allocations(&allocs, &prices, &fx_rates)
         }
     };
 
     match format {
-        ExportFormat::Json => export_json_snapshot(conn, config, &positions, output),
+        ExportFormat::Json => export_json_snapshot(backend, config, &positions, output),
         ExportFormat::Csv => export_csv_positions(config, &positions, output),
     }
 }
 
 /// JSON export: full database snapshot with config, transactions, allocations, watchlist, and positions.
 fn export_json_snapshot(
-    conn: &Connection,
+    backend: &BackendConnection,
     config: &Config,
     positions: &[Position],
     output: Option<&str>,
 ) -> Result<()> {
-    let transactions = list_transactions(conn).unwrap_or_default();
-    let allocations = list_allocations(conn).unwrap_or_default();
-    let watchlist_entries = list_watchlist(conn).unwrap_or_default();
+    let transactions = list_transactions_backend(backend).unwrap_or_default();
+    let allocations = list_allocations_backend(backend).unwrap_or_default();
+    let watchlist_entries = list_watchlist_backend(backend).unwrap_or_default();
 
     let watchlist: Vec<WatchlistExport> = watchlist_entries
         .into_iter()
@@ -199,6 +206,10 @@ fn export_csv_positions(
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    fn to_backend(conn: Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
 
     #[test]
     fn round2_basic() {
@@ -389,7 +400,8 @@ mod tests {
         let path = dir.join("pftui_test_export.json");
         let path_str = path.to_str().unwrap();
 
-        run(&conn, &ExportFormat::Json, &config, Some(path_str)).unwrap();
+        let backend = to_backend(conn);
+        run(&backend, &ExportFormat::Json, &config, Some(path_str)).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("\"transactions\""));
@@ -433,7 +445,8 @@ mod tests {
         let path = dir.join("pftui_test_export.csv");
         let path_str = path.to_str().unwrap();
 
-        run(&conn, &ExportFormat::Csv, &config, Some(path_str)).unwrap();
+        let backend = to_backend(conn);
+        run(&backend, &ExportFormat::Csv, &config, Some(path_str)).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("symbol,name,category,quantity"));

@@ -5,11 +5,10 @@ use std::collections::HashMap;
 
 use crate::db;
 use crate::db::backend::BackendConnection;
-use crate::db::price_cache::get_all_cached_prices;
+use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::models::position::compute_positions;
 
-pub fn run(backend: &BackendConnection, db_path: &std::path::Path, json: bool) -> Result<()> {
-    let conn = db::open_db(db_path)?;
+pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     let targets = db::allocation_targets::list_targets_backend(backend)?;
     
     if targets.is_empty() {
@@ -21,9 +20,9 @@ pub fn run(backend: &BackendConnection, db_path: &std::path::Path, json: bool) -
         return Ok(());
     }
 
-    let txs = db::transactions::list_transactions(&conn)?;
+    let txs = db::transactions::list_transactions_backend(backend)?;
     
-    let cached = get_all_cached_prices(&conn)?;
+    let cached = get_all_cached_prices_backend(backend)?;
     let mut prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|quote| (quote.symbol, quote.price))
@@ -36,7 +35,7 @@ pub fn run(backend: &BackendConnection, db_path: &std::path::Path, json: bool) -
         }
     }
     
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(&conn).unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let positions = compute_positions(&txs, &prices, &fx_rates);
 
     let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();

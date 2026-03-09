@@ -1,6 +1,10 @@
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// A snapshot of the total portfolio value at a point in time.
 #[derive(Debug, Clone)]
@@ -50,6 +54,22 @@ pub fn upsert_portfolio_snapshot(
     Ok(())
 }
 
+pub fn upsert_portfolio_snapshot_backend(
+    backend: &BackendConnection,
+    date: &str,
+    total_value: Decimal,
+    cash_value: Decimal,
+    invested_value: Decimal,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_portfolio_snapshot(conn, date, total_value, cash_value, invested_value),
+        |pool| {
+            upsert_portfolio_snapshot_postgres(pool, date, total_value, cash_value, invested_value)
+        },
+    )
+}
+
 /// Store (or update) a daily position snapshot. One row per (date, symbol).
 pub fn upsert_position_snapshot(
     conn: &Connection,
@@ -75,6 +95,21 @@ pub fn upsert_position_snapshot(
         ],
     )?;
     Ok(())
+}
+
+pub fn upsert_position_snapshot_backend(
+    backend: &BackendConnection,
+    date: &str,
+    symbol: &str,
+    quantity: Decimal,
+    price: Decimal,
+    value: Decimal,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_position_snapshot(conn, date, symbol, quantity, price, value),
+        |pool| upsert_position_snapshot_postgres(pool, date, symbol, quantity, price, value),
+    )
 }
 
 /// Get portfolio snapshots for the last N days, ordered by date ascending.
@@ -217,6 +252,99 @@ pub fn get_all_portfolio_snapshots(conn: &Connection) -> Result<Vec<PortfolioSna
         })
     })?;
     Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+pub fn get_all_portfolio_snapshots_backend(backend: &BackendConnection) -> Result<Vec<PortfolioSnapshot>> {
+    query::dispatch(
+        backend,
+        get_all_portfolio_snapshots,
+        get_all_portfolio_snapshots_postgres,
+    )
+}
+
+fn get_all_portfolio_snapshots_postgres(pool: &PgPool) -> Result<Vec<PortfolioSnapshot>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query_as::<_, (String, String, String, String, String)>(
+            "SELECT date, total_value, cash_value, invested_value, snapshot_at
+             FROM portfolio_snapshots
+             ORDER BY date ASC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(date, total_value, cash_value, invested_value, snapshot_at)| PortfolioSnapshot {
+                date,
+                total_value: total_value.parse().unwrap_or(Decimal::ZERO),
+                cash_value: cash_value.parse().unwrap_or(Decimal::ZERO),
+                invested_value: invested_value.parse().unwrap_or(Decimal::ZERO),
+                snapshot_at,
+            },
+        )
+        .collect())
+}
+
+fn upsert_portfolio_snapshot_postgres(
+    pool: &PgPool,
+    date: &str,
+    total_value: Decimal,
+    cash_value: Decimal,
+    invested_value: Decimal,
+) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO portfolio_snapshots (date, total_value, cash_value, invested_value)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (date) DO UPDATE SET
+               total_value = EXCLUDED.total_value,
+               cash_value = EXCLUDED.cash_value,
+               invested_value = EXCLUDED.invested_value,
+               snapshot_at = NOW()",
+        )
+        .bind(date)
+        .bind(total_value.to_string())
+        .bind(cash_value.to_string())
+        .bind(invested_value.to_string())
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_position_snapshot_postgres(
+    pool: &PgPool,
+    date: &str,
+    symbol: &str,
+    quantity: Decimal,
+    price: Decimal,
+    value: Decimal,
+) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO position_snapshots (date, symbol, quantity, price, value)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (date, symbol) DO UPDATE SET
+               quantity = EXCLUDED.quantity,
+               price = EXCLUDED.price,
+               value = EXCLUDED.value",
+        )
+        .bind(date)
+        .bind(symbol)
+        .bind(quantity.to_string())
+        .bind(price.to_string())
+        .bind(value.to_string())
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
 }
 
 /// Count total portfolio snapshots.

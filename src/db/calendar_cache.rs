@@ -1,5 +1,9 @@
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// A calendar event (economic data release or earnings).
 #[derive(Debug, Clone)]
@@ -26,7 +30,7 @@ pub fn upsert_event(
     forecast: Option<&str>,
     event_type: &str,
     symbol: Option<&str>,
-) -> Result<i64> {
+    ) -> Result<i64> {
     conn.execute(
         "INSERT INTO calendar_events (date, name, impact, previous, forecast, event_type, symbol)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -38,6 +42,24 @@ pub fn upsert_event(
         params![date, name, impact, previous, forecast, event_type, symbol],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn upsert_event_backend(
+    backend: &BackendConnection,
+    date: &str,
+    name: &str,
+    impact: &str,
+    previous: Option<&str>,
+    forecast: Option<&str>,
+    event_type: &str,
+    symbol: Option<&str>,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| upsert_event(conn, date, name, impact, previous, forecast, event_type, symbol),
+        |pool| upsert_event_postgres(pool, date, name, impact, previous, forecast, event_type, symbol),
+    )
 }
 
 /// Get upcoming events starting from a date, limited by count.
@@ -73,6 +95,18 @@ pub fn get_upcoming_events(
         events.push(row?);
     }
     Ok(events)
+}
+
+pub fn get_upcoming_events_backend(
+    backend: &BackendConnection,
+    from_date: &str,
+    limit: usize,
+) -> Result<Vec<CalendarEvent>> {
+    query::dispatch(
+        backend,
+        |conn| get_upcoming_events(conn, from_date, limit),
+        |pool| get_upcoming_events_postgres(pool, from_date, limit),
+    )
 }
 
 /// Get events by impact level.
@@ -111,6 +145,20 @@ pub fn get_events_by_impact(
     Ok(events)
 }
 
+#[allow(dead_code)]
+pub fn get_events_by_impact_backend(
+    backend: &BackendConnection,
+    from_date: &str,
+    impact: &str,
+    limit: usize,
+) -> Result<Vec<CalendarEvent>> {
+    query::dispatch(
+        backend,
+        |conn| get_events_by_impact(conn, from_date, impact, limit),
+        |pool| get_events_by_impact_postgres(pool, from_date, impact, limit),
+    )
+}
+
 /// Delete events older than a given date (for cache cleanup).
 pub fn delete_old_events(conn: &Connection, before_date: &str) -> Result<usize> {
     let rows = conn.execute(
@@ -118,6 +166,131 @@ pub fn delete_old_events(conn: &Connection, before_date: &str) -> Result<usize> 
         params![before_date],
     )?;
     Ok(rows)
+}
+
+pub fn delete_old_events_backend(backend: &BackendConnection, before_date: &str) -> Result<usize> {
+    query::dispatch(
+        backend,
+        |conn| delete_old_events(conn, before_date),
+        |pool| delete_old_events_postgres(pool, before_date),
+    )
+}
+
+type CalendarRow = (i64, String, String, String, Option<String>, Option<String>, String, Option<String>, String);
+
+#[allow(clippy::too_many_arguments)]
+fn upsert_event_postgres(
+    pool: &PgPool,
+    date: &str,
+    name: &str,
+    impact: &str,
+    previous: Option<&str>,
+    forecast: Option<&str>,
+    event_type: &str,
+    symbol: Option<&str>,
+) -> Result<i64> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO calendar_events (date, name, impact, previous, forecast, event_type, symbol)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (date, name) DO UPDATE SET
+               impact = EXCLUDED.impact,
+               previous = EXCLUDED.previous,
+               forecast = EXCLUDED.forecast,
+               fetched_at = NOW()
+             RETURNING id",
+        )
+        .bind(date)
+        .bind(name)
+        .bind(impact)
+        .bind(previous)
+        .bind(forecast)
+        .bind(event_type)
+        .bind(symbol)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn get_upcoming_events_postgres(pool: &PgPool, from_date: &str, limit: usize) -> Result<Vec<CalendarEvent>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<CalendarRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, date, name, impact, previous, forecast, event_type, symbol, fetched_at::text
+             FROM calendar_events
+             WHERE date >= $1
+             ORDER BY date ASC, impact DESC
+             LIMIT $2",
+        )
+        .bind(from_date)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| CalendarEvent {
+            id: r.0,
+            date: r.1,
+            name: r.2,
+            impact: r.3,
+            previous: r.4,
+            forecast: r.5,
+            event_type: r.6,
+            symbol: r.7,
+            fetched_at: r.8,
+        })
+        .collect())
+}
+
+fn get_events_by_impact_postgres(
+    pool: &PgPool,
+    from_date: &str,
+    impact: &str,
+    limit: usize,
+) -> Result<Vec<CalendarEvent>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<CalendarRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, date, name, impact, previous, forecast, event_type, symbol, fetched_at::text
+             FROM calendar_events
+             WHERE date >= $1 AND impact = $2
+             ORDER BY date ASC
+             LIMIT $3",
+        )
+        .bind(from_date)
+        .bind(impact)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| CalendarEvent {
+            id: r.0,
+            date: r.1,
+            name: r.2,
+            impact: r.3,
+            previous: r.4,
+            forecast: r.5,
+            event_type: r.6,
+            symbol: r.7,
+            fetched_at: r.8,
+        })
+        .collect())
+}
+
+fn delete_old_events_postgres(pool: &PgPool, before_date: &str) -> Result<usize> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let deleted = runtime.block_on(async {
+        sqlx::query("DELETE FROM calendar_events WHERE date < $1")
+            .bind(before_date)
+            .execute(pool)
+            .await
+    })?;
+    Ok(deleted.rows_affected() as usize)
 }
 
 #[cfg(test)]

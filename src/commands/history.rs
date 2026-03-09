@@ -3,13 +3,15 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+#[cfg(test)]
 use rusqlite::Connection;
 
 use crate::cli::SummaryGroupBy;
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::list_allocations;
-use crate::db::price_history::get_prices_at_date;
-use crate::db::transactions::list_transactions;
+use crate::db::allocations::list_allocations_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_history::get_prices_at_date_backend;
+use crate::db::transactions::list_transactions_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
@@ -22,7 +24,7 @@ fn validate_date(date: &str) -> Result<()> {
 }
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     config: &Config,
     date: &str,
     group_by: Option<&SummaryGroupBy>,
@@ -37,18 +39,22 @@ pub fn run(
     }
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full(conn, config, date, group_by),
-        PortfolioMode::Percentage => run_percentage(conn, config, date, group_by),
+        PortfolioMode::Full => run_full(backend, config, date, group_by),
+        PortfolioMode::Percentage => run_percentage(backend, config, date, group_by),
     }
 }
 
+fn load_fx_rates(backend: &BackendConnection) -> HashMap<String, Decimal> {
+    crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default()
+}
+
 fn run_full(
-    conn: &Connection,
+    backend: &BackendConnection,
     config: &Config,
     date: &str,
     group_by: Option<&SummaryGroupBy>,
 ) -> Result<()> {
-    let txs = list_transactions(conn)?;
+    let txs = list_transactions_backend(backend)?;
     if txs.is_empty() {
         println!("No transactions found. Add one with: pftui add-tx");
         return Ok(());
@@ -76,7 +82,7 @@ fn run_full(
         .into_iter()
         .collect();
 
-    let mut prices = get_prices_at_date(conn, &symbols, date)?;
+    let mut prices = get_prices_at_date_backend(backend, &symbols, date)?;
 
     // Cash always prices at 1.0
     for tx in &txs_at_date {
@@ -85,7 +91,7 @@ fn run_full(
         }
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions(&txs_at_date, &prices, &fx_rates);
     if positions.is_empty() {
         println!("No open positions as of {}.", date);
@@ -102,19 +108,19 @@ fn run_full(
 }
 
 fn run_percentage(
-    conn: &Connection,
+    backend: &BackendConnection,
     config: &Config,
     date: &str,
     group_by: Option<&SummaryGroupBy>,
 ) -> Result<()> {
-    let allocs = list_allocations(conn)?;
+    let allocs = list_allocations_backend(backend)?;
     if allocs.is_empty() {
         println!("No allocations found. Run: pftui setup");
         return Ok(());
     }
 
     let symbols: Vec<String> = allocs.iter().map(|a| a.symbol.clone()).collect();
-    let mut prices = get_prices_at_date(conn, &symbols, date)?;
+    let mut prices = get_prices_at_date_backend(backend, &symbols, date)?;
 
     // Cash always prices at 1.0
     for alloc in &allocs {
@@ -123,7 +129,7 @@ fn run_percentage(
         }
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = load_fx_rates(backend);
     let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
 
     print_date_banner(date);
@@ -362,6 +368,10 @@ fn format_category(cat: &AssetCategory) -> &'static str {
 mod tests {
     use super::*;
 
+    fn to_backend(conn: Connection) -> crate::db::backend::BackendConnection {
+        crate::db::backend::BackendConnection::Sqlite { conn }
+    }
+
     #[test]
     fn validate_date_valid() {
         assert!(validate_date("2026-02-28").is_ok());
@@ -387,7 +397,8 @@ mod tests {
     fn history_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
-        let result = run(&conn, &config, "2026-01-15", None);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, "2026-01-15", None);
         assert!(result.is_ok());
     }
 
@@ -415,7 +426,8 @@ mod tests {
         .unwrap();
 
         // Looking at a date before the only transaction
-        let result = run(&conn, &config, "2026-01-01", None);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, "2026-01-01", None);
         assert!(result.is_ok());
     }
 
@@ -469,7 +481,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, "2025-06-10", None);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, "2025-06-10", None);
         assert!(result.is_ok());
     }
 
@@ -543,7 +556,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, "2025-06-01", Some(&SummaryGroupBy::Category));
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, "2025-06-01", Some(&SummaryGroupBy::Category));
         assert!(result.is_ok());
     }
 
@@ -571,7 +585,8 @@ mod tests {
         .unwrap();
 
         // Cash should always show value even without price history
-        let result = run(&conn, &config, "2025-06-01", None);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, "2025-06-01", None);
         assert!(result.is_ok());
     }
 
@@ -636,11 +651,12 @@ mod tests {
         .unwrap();
 
         // Query at a date BEFORE the cash transaction — cash must still appear
-        let result = run(&conn, &config, "2025-06-01", None);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, "2025-06-01", None);
         assert!(result.is_ok());
 
         // Verify positions include both equity and cash
-        let txs = crate::db::transactions::list_transactions(&conn).unwrap();
+        let txs = crate::db::transactions::list_transactions(backend.sqlite()).unwrap();
         let txs_at_date: Vec<_> = txs
             .into_iter()
             .filter(|tx| tx.category == AssetCategory::Cash || tx.date.as_str() <= "2025-06-01")
@@ -695,7 +711,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, "2025-06-01", None);
+        let backend = to_backend(conn);
+        let result = run(&backend, &config, "2025-06-01", None);
         assert!(result.is_ok());
     }
 }

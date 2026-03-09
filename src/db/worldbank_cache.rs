@@ -2,7 +2,11 @@ use crate::data::worldbank::WorldBankDataPoint;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use rust_decimal::Decimal;
+use sqlx::PgPool;
 use std::str::FromStr;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 fn parse_worldbank_value(raw: &str) -> Option<Decimal> {
     Decimal::from_str(raw).ok().or_else(|| {
@@ -61,6 +65,17 @@ pub fn upsert_worldbank_data(conn: &Connection, data: &[WorldBankDataPoint]) -> 
     }
 
     Ok(())
+}
+
+pub fn upsert_worldbank_data_backend(
+    backend: &BackendConnection,
+    data: &[WorldBankDataPoint],
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_worldbank_data(conn, data),
+        |pool| upsert_worldbank_data_postgres(pool, data),
+    )
 }
 
 /// Get cached World Bank data for specific countries and indicator.
@@ -155,6 +170,10 @@ pub fn needs_refresh(conn: &Connection) -> Result<bool> {
     Ok(count == 0)
 }
 
+pub fn needs_refresh_backend(backend: &BackendConnection) -> Result<bool> {
+    query::dispatch(backend, needs_refresh, needs_refresh_postgres)
+}
+
 /// Get latest indicators for all tracked countries (most recent year per country/indicator with actual data).
 pub fn get_latest_indicators(conn: &Connection) -> Result<Vec<WorldBankDataPoint>> {
     let mut stmt = conn.prepare(
@@ -192,6 +211,90 @@ pub fn get_latest_indicators(conn: &Connection) -> Result<Vec<WorldBankDataPoint
     }
 
     Ok(result)
+}
+
+pub fn get_latest_indicators_backend(backend: &BackendConnection) -> Result<Vec<WorldBankDataPoint>> {
+    query::dispatch(backend, get_latest_indicators, get_latest_indicators_postgres)
+}
+
+fn get_latest_indicators_postgres(pool: &PgPool) -> Result<Vec<WorldBankDataPoint>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows = runtime.block_on(async {
+        sqlx::query_as::<_, (String, String, String, String, i32, Option<String>)>(
+            "SELECT wb.country_code, wb.country_name, wb.indicator_code, wb.indicator_name, wb.year, wb.value
+             FROM worldbank_cache wb
+             INNER JOIN (
+                 SELECT country_code, indicator_code, MAX(year) as max_year
+                 FROM worldbank_cache
+                 WHERE value IS NOT NULL AND value != ''
+                 GROUP BY country_code, indicator_code
+             ) latest
+             ON wb.country_code = latest.country_code
+             AND wb.indicator_code = latest.indicator_code
+             AND wb.year = latest.max_year
+             ORDER BY wb.country_code, wb.indicator_code",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(country_code, country_name, indicator_code, indicator_name, year, value_str)| {
+                WorldBankDataPoint {
+                    country_code,
+                    country_name,
+                    indicator_code,
+                    indicator_name,
+                    year,
+                    value: value_str.and_then(|s| parse_worldbank_value(&s)),
+                }
+            },
+        )
+        .collect())
+}
+
+fn upsert_worldbank_data_postgres(pool: &PgPool, data: &[WorldBankDataPoint]) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        for point in data {
+            let value_str = point.value.map(|v| v.to_string());
+            sqlx::query(
+                "INSERT INTO worldbank_cache
+                 (country_code, country_name, indicator_code, indicator_name, year, value, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                 ON CONFLICT (country_code, indicator_code, year) DO UPDATE SET
+                   country_name = EXCLUDED.country_name,
+                   indicator_name = EXCLUDED.indicator_name,
+                   value = EXCLUDED.value,
+                   updated_at = NOW()",
+            )
+            .bind(&point.country_code)
+            .bind(&point.country_name)
+            .bind(&point.indicator_code)
+            .bind(&point.indicator_name)
+            .bind(point.year)
+            .bind(value_str)
+            .execute(pool)
+            .await?;
+        }
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn needs_refresh_postgres(pool: &PgPool) -> Result<bool> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let count: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM worldbank_cache
+             WHERE updated_at > NOW() - INTERVAL '30 days'",
+        )
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(count == 0)
 }
 
 #[cfg(test)]

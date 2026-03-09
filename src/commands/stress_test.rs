@@ -3,21 +3,26 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::analytics::scenarios::{apply_preset, parse_preset};
 use crate::config::{Config, PortfolioMode};
-use crate::db::allocations::list_allocations;
-use crate::db::price_cache::get_all_cached_prices;
-use crate::db::transactions::list_transactions;
+use crate::db::allocations::list_allocations_backend;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_all_cached_prices_backend;
+use crate::db::transactions::list_transactions_backend;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 
-pub fn run(conn: &Connection, config: &Config, scenario: &str, json: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    config: &Config,
+    scenario: &str,
+    json: bool,
+) -> Result<()> {
     let preset = parse_preset(scenario).ok_or_else(|| {
         anyhow!("Unknown scenario '{}'. Try: Oil $100, BTC 40k, Gold $6000, 2008 GFC, 1973 Oil Crisis", scenario)
     })?;
 
-    let prices: HashMap<String, Decimal> = get_all_cached_prices(conn)?
+    let prices: HashMap<String, Decimal> = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
@@ -25,14 +30,14 @@ pub fn run(conn: &Connection, config: &Config, scenario: &str, json: bool) -> Re
         anyhow::bail!("No cached prices. Run `pftui refresh` first.");
     }
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let base_positions = match config.portfolio_mode {
         PortfolioMode::Full => {
-            let txs = list_transactions(conn)?;
+            let txs = list_transactions_backend(backend)?;
             compute_positions(&txs, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
-            let allocs = list_allocations(conn)?;
+            let allocs = list_allocations_backend(backend)?;
             compute_positions_from_allocations(&allocs, &prices, &fx_rates)
         }
     };
@@ -45,11 +50,11 @@ pub fn run(conn: &Connection, config: &Config, scenario: &str, json: bool) -> Re
 
     let stressed_positions = match config.portfolio_mode {
         PortfolioMode::Full => {
-            let txs = list_transactions(conn)?;
+            let txs = list_transactions_backend(backend)?;
             compute_positions(&txs, &stressed_prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
-            let allocs = list_allocations(conn)?;
+            let allocs = list_allocations_backend(backend)?;
             compute_positions_from_allocations(&allocs, &stressed_prices, &fx_rates)
         }
     };
@@ -87,4 +92,3 @@ pub fn run(conn: &Connection, config: &Config, scenario: &str, json: bool) -> Re
     }
     Ok(())
 }
-

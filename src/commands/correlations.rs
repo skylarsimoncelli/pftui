@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use rusqlite::Connection;
 
+use crate::db::backend::BackendConnection;
 use crate::db::allocations::get_unique_allocation_symbols;
 use crate::db::correlation_snapshots;
 use crate::db::price_history::get_history;
@@ -25,7 +26,7 @@ pub struct PairCorrelation {
 }
 
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     action: Option<&str>,
     value: Option<&str>,
     value2: Option<&str>,
@@ -35,6 +36,9 @@ pub fn run(
     limit: usize,
     json: bool,
 ) -> Result<()> {
+    let Some(conn) = backend.sqlite_native() else {
+        anyhow::bail!("correlations currently requires database_backend=sqlite");
+    };
     if !WINDOWS.contains(&window) {
         anyhow::bail!("Invalid --window '{}'. Use 7, 30, or 90.", window);
     }

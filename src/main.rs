@@ -38,13 +38,17 @@ fn main() -> Result<()> {
     }
 
     let backend = open_from_config(&config, &db_path)?;
-    let conn = backend.sqlite();
 
     let result = match cli.command {
         None => {
+            let Some(_conn) = backend.sqlite_native() else {
+                bail!(
+                    "`tui` is not yet available with database_backend=postgres.\nUse CLI/Web commands with postgres backend for now."
+                );
+            };
             // Auto-detect: run setup if no portfolio data
-            if !commands::setup::has_portfolio_data(conn) {
-                commands::setup::run(conn, &config, false)?;
+            if !commands::setup::has_portfolio_data(&backend) {
+                commands::setup::run(&backend, &config, false)?;
                 // Reload config (setup may have changed portfolio_mode)
                 let config = load_config_with_first_run_prompt()?;
                 let mut app = app::App::new(&config, db_path);
@@ -63,11 +67,23 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Setup) => {
-            commands::setup::run(conn, &config, true)
+            commands::setup::run(&backend, &config, true)
         }
 
-        Some(Command::Summary { group_by, period, what_if, json }) => commands::summary::run(conn, &config, group_by.as_ref(), period.as_ref(), what_if.as_deref(), true, json),
-        Some(Command::Export { format, output }) => commands::export::run(conn, &format, &config, output.as_deref()),
+        Some(Command::Summary { group_by, period, what_if, json }) => {
+            commands::summary::run(
+                &backend,
+                &config,
+                group_by.as_ref(),
+                period.as_ref(),
+                what_if.as_deref(),
+                true,
+                json,
+            )
+        }
+        Some(Command::Export { format, output }) => {
+            commands::export::run(&backend, &format, &config, output.as_deref())
+        }
 
         Some(Command::ListTx { notes, json }) => {
             if config.is_percentage_mode() {
@@ -202,20 +218,32 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        Some(Command::Refresh { notify }) => commands::refresh::run(&backend, conn, &config, notify),
-        Some(Command::Status { json, .. }) => commands::status::run(conn, json),
+        Some(Command::Refresh { notify }) => {
+            commands::refresh::run(&backend, &config, notify)
+        }
+        Some(Command::Status { json, .. }) => {
+            commands::status::run_backend(&backend, json)
+        }
         Some(Command::Config { .. }) => unreachable!(),
-        Some(Command::Value { json }) => commands::value::run(conn, &config, json),
-        Some(Command::Brief { json }) => commands::brief::run(conn, &config, true, json),
+        Some(Command::Value { json }) => {
+            commands::value::run(&backend, &config, json)
+        }
+        Some(Command::Brief { json }) => {
+            if let Some(conn) = backend.sqlite_native() {
+                commands::brief::run(conn, &config, true, json)
+            } else {
+                commands::summary::run(&backend, &config, None, None, None, true, json)
+            }
+        }
         Some(Command::Watchlist { approaching, json }) => {
-            commands::watchlist_cli::run(&backend, conn, &config, approaching.as_deref(), json)
+            commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json)
         }
 
         Some(Command::SetCash { symbol, amount }) => {
             if config.is_percentage_mode() {
                 bail!("set-cash is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
-            commands::set_cash::run(conn, &symbol, &amount)
+            commands::set_cash::run(&backend, &symbol, &amount)
         }
 
         Some(Command::Demo) => {
@@ -231,33 +259,38 @@ fn main() -> Result<()> {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,
                 cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
             };
-            commands::import::run(conn, &config, &path, import_mode)
+            commands::import::run(&backend, &config, &path, import_mode)
         }
 
         Some(Command::History { date, group_by }) => {
-            commands::history::run(conn, &config, &date, group_by.as_ref())
+            commands::history::run(&backend, &config, &date, group_by.as_ref())
         }
 
-        Some(Command::Macro { json }) => commands::macro_cmd::run(conn, &config, json),
-        Some(Command::Oil { json }) => commands::oil::run(conn, json),
-        Some(Command::Crisis { json }) => commands::crisis::run(conn, json),
+        Some(Command::Macro { json }) => commands::macro_cmd::run(&backend, &config, json),
+        Some(Command::Oil { json }) => commands::oil::run(&backend, json),
+        Some(Command::Crisis { json }) => commands::crisis::run(&backend, json),
         Some(Command::Regime { action, limit, json }) => {
+            let Some(conn) = backend.sqlite_native() else {
+                bail!("regime is currently available only with database_backend=sqlite");
+            };
             commands::regime::run(conn, &action, limit, json)
         }
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
         Some(Command::Sovereign { json }) => commands::sovereign::run(json),
         Some(Command::Economy { indicator, json }) => {
-            commands::economy::run(conn, indicator.as_deref(), json)
+            commands::economy::run(&backend, indicator.as_deref(), json)
         }
 
-        Some(Command::Eod { json }) => commands::eod::run(conn, &config, json),
+        Some(Command::Eod { json }) => {
+            commands::eod::run(&backend, &config, json)
+        }
 
         Some(Command::Global { country, indicator, json }) => {
-            commands::global::run(conn, country.as_deref(), indicator.as_deref(), json)
+            commands::global::run(&backend, country.as_deref(), indicator.as_deref(), json)
         }
 
         Some(Command::Performance { since, period, vs, json }) => {
-            commands::performance::run(conn, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
+            commands::performance::run(&backend, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
         }
 
         Some(Command::EtfFlows { days, fund, json }) => {
@@ -265,7 +298,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Movers { threshold, json }) => {
-            commands::movers::run(conn, &config, Some(&threshold), json)
+            commands::movers::run(&backend, &config, Some(&threshold), json)
         }
         Some(Command::Scan {
             filter,
@@ -275,7 +308,7 @@ fn main() -> Result<()> {
             json,
         }) => {
             commands::scan::run(
-                conn,
+                &backend,
                 &config,
                 filter.as_deref(),
                 save.as_deref(),
@@ -381,7 +414,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::analytics::run(
-            conn,
+            &backend,
             &action,
             symbol.as_deref(),
             signal_type.as_deref(),
@@ -397,7 +430,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => match action.as_str() {
-            "list" => commands::thesis::run_list(json),
+            "list" => commands::thesis::run_list(&backend, json),
             "update" => {
                 let section = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing section name. Usage: pftui thesis update <section> --content \"...\"")
@@ -405,19 +438,19 @@ fn main() -> Result<()> {
                 let content_text = content.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing content. Usage: pftui thesis update <section> --content \"...\"")
                 })?;
-                commands::thesis::run_update(section, content_text, conviction.as_deref(), json)
+                commands::thesis::run_update(&backend, section, content_text, conviction.as_deref(), json)
             }
             "history" => {
                 let section = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing section name. Usage: pftui thesis history <section>")
                 })?;
-                commands::thesis::run_history(section, limit, json)
+                commands::thesis::run_history(&backend, section, limit, json)
             }
             "remove" => {
                 let section = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing section name. Usage: pftui thesis remove <section>")
                 })?;
-                commands::thesis::run_remove(section, json)
+                commands::thesis::run_remove(&backend, section, json)
             }
             _ => Err(anyhow::anyhow!(
                 "Unknown action '{}'. Available: list, update, history, remove",
@@ -426,7 +459,7 @@ fn main() -> Result<()> {
         },
 
         Some(Command::Predictions { category, search, limit, json }) => {
-            commands::predictions::run(conn, category.as_deref(), search.as_deref(), limit, json)
+            commands::predictions::run(&backend, category.as_deref(), search.as_deref(), limit, json)
         }
         Some(Command::Predict {
             action,
@@ -463,7 +496,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::correlations::run(
-            conn,
+            &backend,
             action.as_deref(),
             value.as_deref(),
             value2.as_deref(),
@@ -475,7 +508,7 @@ fn main() -> Result<()> {
         ),
 
         Some(Command::News { source, search, hours, limit, json }) => {
-            commands::news::run(conn, source.as_deref(), search.as_deref(), hours, limit, json)
+            commands::news::run(&backend, source.as_deref(), search.as_deref(), hours, limit, json)
         }
 
         Some(Command::Sentiment { symbol, history, json }) => {
@@ -483,7 +516,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Supply { symbol, json }) => {
-            commands::supply::run(symbol, json)
+            commands::supply::run(&backend, symbol, json)
         }
 
         Some(Command::Calendar { days, impact, json }) => {
@@ -500,7 +533,7 @@ fn main() -> Result<()> {
                 json,
                 status_filter: status,
             };
-            commands::alerts::run(&backend, conn, &action, &args)
+            commands::alerts::run(&backend, &action, &args)
         }
 
         Some(Command::Target { action, symbol, target, band, json }) => {
@@ -518,8 +551,8 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
             }
         }
-        Some(Command::Drift { json }) => commands::drift::run(&backend, &db_path, json),
-        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, &db_path, json),
+        Some(Command::Drift { json }) => commands::drift::run(&backend, json),
+        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, json),
         Some(Command::Conviction {
             action,
             value,
@@ -535,14 +568,14 @@ fn main() -> Result<()> {
                 let score_val = score.ok_or_else(|| {
                     anyhow::anyhow!("Missing score. Usage: pftui conviction set SYMBOL --score N")
                 })?;
-                commands::conviction::run_set(symbol, score_val, notes.as_deref(), json)
+                commands::conviction::run_set(&backend, symbol, score_val, notes.as_deref(), json)
             }
-            "list" => commands::conviction::run_list(json),
+            "list" => commands::conviction::run_list(&backend, json),
             "history" => {
                 let symbol = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing symbol. Usage: pftui conviction history SYMBOL")
                 })?;
-                commands::conviction::run_history(symbol, limit, json)
+                commands::conviction::run_history(&backend, symbol, limit, json)
             }
             "changes" => {
                 let days = if let Some(val) = value.as_deref() {
@@ -550,7 +583,7 @@ fn main() -> Result<()> {
                 } else {
                     7
                 };
-                commands::conviction::run_changes(days, json)
+                commands::conviction::run_changes(&backend, days, json)
             }
             _ => Err(anyhow::anyhow!(
                 "Invalid action. Use: set, list, history, changes"
@@ -576,6 +609,7 @@ fn main() -> Result<()> {
                     anyhow::anyhow!("Missing content text. Usage: pftui journal add \"your entry text\"")
                 })?;
                 commands::journal::run_add(
+                    &backend,
                     content_text,
                     date.as_deref(),
                     tag.as_deref(),
@@ -585,6 +619,7 @@ fn main() -> Result<()> {
                 )
             }
             "list" => commands::journal::run_list(
+                &backend,
                 limit,
                 since.as_deref(),
                 tag.as_deref(),
@@ -596,13 +631,14 @@ fn main() -> Result<()> {
                 let query = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing search query. Usage: pftui journal search \"query\"")
                 })?;
-                commands::journal::run_search(query, since.as_deref(), limit, json)
+                commands::journal::run_search(&backend, query, since.as_deref(), limit, json)
             }
             "update" => {
                 let entry_id = id.ok_or_else(|| {
                     anyhow::anyhow!("Missing entry ID. Usage: pftui journal update --id N [--content \"...\"] [--status ...]")
                 })?;
                 commands::journal::run_update(
+                    &backend,
                     entry_id,
                     content.as_deref(),
                     status.as_deref(),
@@ -613,10 +649,10 @@ fn main() -> Result<()> {
                 let entry_id = id.ok_or_else(|| {
                     anyhow::anyhow!("Missing entry ID. Usage: pftui journal remove --id N")
                 })?;
-                commands::journal::run_remove(entry_id, json)
+                commands::journal::run_remove(&backend, entry_id, json)
             }
-            "tags" => commands::journal::run_tags(json),
-            "stats" => commands::journal::run_stats(json),
+            "tags" => commands::journal::run_tags(&backend, json),
+            "stats" => commands::journal::run_stats(&backend, json),
             _ => Err(anyhow::anyhow!(
                 "Unknown journal action '{}'. Valid actions: add, list, search, update, remove, tags, stats",
                 action
@@ -689,7 +725,7 @@ fn main() -> Result<()> {
                 notes,
                 json,
             };
-            commands::dividends::run(conn, &action, args)
+            commands::dividends::run(&backend, &action, args)
         }
         Some(Command::Annotate {
             symbol,
@@ -713,35 +749,39 @@ fn main() -> Result<()> {
                 remove,
                 json,
             };
-            commands::annotate::run(conn, args)
+            commands::annotate::run(&backend, args)
         }
         Some(Command::Group {
             action,
             name,
             symbols,
             json,
-        }) => commands::group::run(
-            conn,
-            &config,
-            &action,
-            name.as_deref(),
-            symbols.as_deref(),
-            json,
-        ),
+        }) => {
+            commands::group::run(
+                &backend,
+                &config,
+                &action,
+                name.as_deref(),
+                symbols.as_deref(),
+                json,
+            )
+        }
         Some(Command::MigrateJournal {
             path,
             dry_run,
             default_tag,
             default_status,
             json,
-        }) => commands::migrate_journal::run(
-            conn,
-            &path,
-            dry_run,
-            default_tag.as_deref(),
-            &default_status,
-            json,
-        ),
+        }) => {
+            commands::migrate_journal::run(
+                &backend,
+                &path,
+                dry_run,
+                default_tag.as_deref(),
+                &default_status,
+                json,
+            )
+        }
 
         Some(Command::Web { port, bind, no_auth }) => {
             // Web server runs in async context
@@ -751,8 +791,8 @@ fn main() -> Result<()> {
             })
         }
 
-        Some(Command::Sector { json }) => commands::sector::run(conn, &config, json),
-        Some(Command::Heatmap { json }) => commands::heatmap::run(conn, json),
+        Some(Command::Sector { json }) => commands::sector::run(&backend, &config, json),
+        Some(Command::Heatmap { json }) => commands::heatmap::run(&backend, json),
         Some(Command::Options {
             symbol,
             expiry,
@@ -763,7 +803,7 @@ fn main() -> Result<()> {
             commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {
-            commands::stress_test::run(conn, &config, &scenario, json)
+            commands::stress_test::run(&backend, &config, &scenario, json)
         }
         Some(Command::Research {
             query,
@@ -791,7 +831,6 @@ fn main() -> Result<()> {
                 opec,
             };
             commands::research::run(
-                conn,
                 query.as_deref(),
                 news,
                 freshness_checked.as_deref(),
@@ -829,37 +868,42 @@ fn main() -> Result<()> {
             since,
             limit,
             json,
-        }) => commands::structural::run(
-            conn,
-            &action,
-            value.as_deref(),
-            country.as_deref(),
-            metric.as_deref(),
-            score,
-            rank,
-            trend.as_deref(),
-            stage.as_deref(),
-            entered.as_deref(),
-            probability,
-            horizon.as_deref(),
-            description.as_deref(),
-            parallel.as_deref(),
-            impact.as_deref(),
-            driver.as_deref(),
-            period.as_deref(),
-            event.as_deref(),
-            parallel_to.as_deref(),
-            similarity,
-            outcome.as_deref(),
-            evidence.as_deref(),
-            signals.as_deref(),
-            notes.as_deref(),
-            source.as_deref(),
-            date.as_deref(),
-            since.as_deref(),
-            limit,
-            json,
-        ),
+        }) => {
+            let Some(conn) = backend.sqlite_native() else {
+                bail!("structural is currently available only with database_backend=sqlite");
+            };
+            commands::structural::run(
+                conn,
+                &action,
+                value.as_deref(),
+                country.as_deref(),
+                metric.as_deref(),
+                score,
+                rank,
+                trend.as_deref(),
+                stage.as_deref(),
+                entered.as_deref(),
+                probability,
+                horizon.as_deref(),
+                description.as_deref(),
+                parallel.as_deref(),
+                impact.as_deref(),
+                driver.as_deref(),
+                period.as_deref(),
+                event.as_deref(),
+                parallel_to.as_deref(),
+                similarity,
+                outcome.as_deref(),
+                evidence.as_deref(),
+                signals.as_deref(),
+                notes.as_deref(),
+                source.as_deref(),
+                date.as_deref(),
+                since.as_deref(),
+                limit,
+                json,
+            )
+        }
         Some(Command::Trends {
             action,
             value,
@@ -878,26 +922,31 @@ fn main() -> Result<()> {
             timeframe,
             limit,
             json,
-        }) => commands::trends::run(
-            conn,
-            &action,
-            value.as_deref(),
-            trend.as_deref(),
-            category.as_deref(),
-            direction.as_deref(),
-            conviction.as_deref(),
-            description.as_deref(),
-            signal.as_deref(),
-            status.as_deref(),
-            date.as_deref(),
-            impact.as_deref(),
-            source.as_deref(),
-            symbol.as_deref(),
-            mechanism.as_deref(),
-            timeframe.as_deref(),
-            limit,
-            json,
-        ),
+        }) => {
+            let Some(conn) = backend.sqlite_native() else {
+                bail!("trends is currently available only with database_backend=sqlite");
+            };
+            commands::trends::run(
+                conn,
+                &action,
+                value.as_deref(),
+                trend.as_deref(),
+                category.as_deref(),
+                direction.as_deref(),
+                conviction.as_deref(),
+                description.as_deref(),
+                signal.as_deref(),
+                status.as_deref(),
+                date.as_deref(),
+                impact.as_deref(),
+                source.as_deref(),
+                symbol.as_deref(),
+                mechanism.as_deref(),
+                timeframe.as_deref(),
+                limit,
+                json,
+            )
+        }
     };
 
     match (result, backend.flush()) {

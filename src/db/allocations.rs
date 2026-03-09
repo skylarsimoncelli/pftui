@@ -1,7 +1,10 @@
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
 
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 use crate::models::allocation::Allocation;
 use crate::models::asset::AssetCategory;
 
@@ -20,6 +23,19 @@ pub fn insert_allocation(
         params![symbol, category.to_string(), pct.to_string()],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+pub fn insert_allocation_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    category: AssetCategory,
+    pct: Decimal,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| insert_allocation(conn, symbol, category, pct),
+        |pool| insert_allocation_postgres(pool, symbol, category, pct),
+    )
 }
 
 pub fn list_allocations(conn: &Connection) -> Result<Vec<Allocation>> {
@@ -80,6 +96,132 @@ pub fn get_unique_allocation_symbols(
         result.push(row?);
     }
     Ok(result)
+}
+
+#[allow(dead_code)]
+pub fn list_allocations_backend(backend: &BackendConnection) -> Result<Vec<Allocation>> {
+    query::dispatch(backend, list_allocations, list_allocations_postgres)
+}
+
+#[allow(dead_code)]
+pub fn count_allocations_backend(backend: &BackendConnection) -> Result<i64> {
+    query::dispatch(backend, count_allocations, count_allocations_postgres)
+}
+
+pub fn get_unique_allocation_symbols_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<(String, AssetCategory)>> {
+    query::dispatch(
+        backend,
+        get_unique_allocation_symbols,
+        get_unique_allocation_symbols_postgres,
+    )
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS portfolio_allocations (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL,
+                allocation_pct TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+type AllocationRow = (i64, String, String, String, String);
+
+#[allow(dead_code)]
+fn allocation_from_row(row: AllocationRow) -> Allocation {
+    Allocation {
+        id: row.0,
+        symbol: row.1,
+        category: row.2.parse().unwrap_or(AssetCategory::Equity),
+        allocation_pct: row.3.parse().unwrap_or(Decimal::ZERO),
+        created_at: row.4,
+    }
+}
+
+#[allow(dead_code)]
+fn list_allocations_postgres(pool: &PgPool) -> Result<Vec<Allocation>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<AllocationRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, symbol, category, allocation_pct, created_at::text
+             FROM portfolio_allocations
+             ORDER BY allocation_pct::numeric DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(allocation_from_row).collect())
+}
+
+fn insert_allocation_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    category: AssetCategory,
+    pct: Decimal,
+) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let id: i64 = runtime.block_on(async {
+        sqlx::query_scalar(
+            "INSERT INTO portfolio_allocations (symbol, category, allocation_pct)
+             VALUES ($1, $2, $3)
+             ON CONFLICT(symbol) DO UPDATE SET
+               category = EXCLUDED.category,
+               allocation_pct = EXCLUDED.allocation_pct
+             RETURNING id",
+        )
+        .bind(symbol)
+        .bind(category.to_string())
+        .bind(pct.to_string())
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn count_allocations_postgres(pool: &PgPool) -> Result<i64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let count: i64 = runtime.block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM portfolio_allocations")
+            .fetch_one(pool)
+            .await
+    })?;
+    Ok(count)
+}
+
+fn get_unique_allocation_symbols_postgres(
+    pool: &PgPool,
+) -> Result<Vec<(String, AssetCategory)>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, String)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT symbol, category
+             FROM portfolio_allocations
+             ORDER BY symbol",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(symbol, category)| (symbol, category.parse().unwrap_or(AssetCategory::Equity)))
+        .collect())
 }
 
 #[cfg(test)]

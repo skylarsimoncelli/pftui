@@ -12,16 +12,16 @@ use crate::config::{Config, PortfolioMode};
 use crate::data::{
     bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank,
 };
-use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
+use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
 use crate::db::backend::BackendConnection;
 use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{
     get_all_cached_prices_backend, get_cached_price, upsert_price_backend,
 };
 use crate::db::price_history::get_price_at_date_backend;
-use crate::db::snapshots::{upsert_portfolio_snapshot, upsert_position_snapshot};
+use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
 use crate::db::timeframe_signals;
-use crate::db::transactions::{get_unique_symbols_backend, list_transactions};
+use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
 use crate::db::watchlist::get_watchlist_symbols_backend;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
 use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
@@ -48,7 +48,6 @@ const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
 ) -> Result<Vec<(String, AssetCategory)>> {
     let mut seen = HashMap::new();
@@ -56,7 +55,7 @@ fn collect_symbols(
     // Portfolio symbols (transactions or allocations depending on mode)
     let portfolio_symbols = match config.portfolio_mode {
         PortfolioMode::Full => get_unique_symbols_backend(backend)?,
-        PortfolioMode::Percentage => get_unique_allocation_symbols(conn)?,
+        PortfolioMode::Percentage => get_unique_allocation_symbols_backend(backend)?,
     };
     for (sym, cat) in portfolio_symbols {
         seen.entry(sym).or_insert(cat);
@@ -98,9 +97,9 @@ fn prices_need_refresh(backend: &BackendConnection) -> Result<bool> {
 }
 
 /// Check if news needs refreshing
-fn news_needs_refresh(conn: &Connection) -> Result<bool> {
+fn news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check most recent news entry
-    let news = news_cache::get_latest_news(conn, 1, None, None, None, None)?;
+    let news = news_cache::get_latest_news_backend(backend, 1, None, None, None, None)?;
     if news.is_empty() {
         return Ok(true);
     }
@@ -130,7 +129,6 @@ fn compute_daily_change_pct(
 
 fn build_brave_news_queries(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
 ) -> Result<Vec<String>> {
     let mut queries = if config.brave_news_queries.is_empty() {
@@ -151,7 +149,7 @@ fn build_brave_news_queries(
 
     for (sym, cat) in match config.portfolio_mode {
         PortfolioMode::Full => get_unique_symbols_backend(backend)?,
-        PortfolioMode::Percentage => get_unique_allocation_symbols(conn)?,
+        PortfolioMode::Percentage => get_unique_allocation_symbols_backend(backend)?,
     } {
         if cat != AssetCategory::Cash && seen.insert(sym.clone()) {
             symbols.push(sym);
@@ -183,8 +181,8 @@ fn build_brave_news_queries(
 }
 
 /// Check if predictions need refreshing
-fn predictions_need_refresh(conn: &Connection) -> Result<bool> {
-    match predictions_cache::get_last_update(conn)? {
+fn predictions_need_refresh(backend: &BackendConnection) -> Result<bool> {
+    match predictions_cache::get_last_update_backend(backend)? {
         None => Ok(true),
         Some(ts) => {
             let now = chrono::Utc::now().timestamp();
@@ -194,10 +192,10 @@ fn predictions_need_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if sentiment needs refreshing
-fn sentiment_needs_refresh(conn: &Connection) -> Result<bool> {
+fn sentiment_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check both crypto and traditional FNG
-    let crypto = sentiment_cache::get_latest(conn, "crypto_fng")?;
-    let trad = sentiment_cache::get_latest(conn, "traditional_fng")?;
+    let crypto = sentiment_cache::get_latest_backend(backend, "crypto_fng")?;
+    let trad = sentiment_cache::get_latest_backend(backend, "traditional_fng")?;
 
     if crypto.is_none() || trad.is_none() {
         return Ok(true);
@@ -218,9 +216,9 @@ fn sentiment_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if calendar needs refreshing
-fn calendar_needs_refresh(conn: &Connection) -> Result<bool> {
+fn calendar_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let events = calendar_cache::get_upcoming_events(conn, &today, 10)?;
+    let events = calendar_cache::get_upcoming_events_backend(backend, &today, 10)?;
     if events.is_empty() {
         return Ok(true);
     }
@@ -235,8 +233,8 @@ fn calendar_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if COT needs refreshing
-fn cot_needs_refresh(conn: &Connection) -> Result<bool> {
-    let reports = cot_cache::get_all_latest(conn)?;
+fn cot_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let reports = cot_cache::get_all_latest_backend(backend)?;
     if reports.is_empty() {
         return Ok(true);
     }
@@ -254,10 +252,10 @@ fn cot_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if COMEX needs refreshing
-fn comex_needs_refresh(conn: &Connection) -> Result<bool> {
+fn comex_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check common metals
     for symbol in &["GC", "SI", "HG", "PL"] {
-        if !comex_cache::has_fresh_data(conn, symbol)? {
+        if !comex_cache::has_fresh_data_backend(backend, symbol)? {
             return Ok(true);
         }
     }
@@ -265,10 +263,10 @@ fn comex_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if BLS needs refreshing
-fn bls_needs_refresh(conn: &Connection) -> Result<bool> {
+fn bls_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     // Check a few key series
     for series in &["CUUR0000SA0", "CUSR0000SA0", "LNS14000000"] {
-        if !bls_cache::is_cache_fresh(conn, series, BLS_FRESHNESS_DAYS)? {
+        if !bls_cache::is_cache_fresh_backend(backend, series, BLS_FRESHNESS_DAYS)? {
             return Ok(true);
         }
     }
@@ -276,8 +274,8 @@ fn bls_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if World Bank needs refreshing
-fn worldbank_needs_refresh(conn: &Connection) -> Result<bool> {
-    worldbank_cache::needs_refresh(conn)
+fn worldbank_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    worldbank_cache::needs_refresh_backend(backend)
 }
 
 /// Format a price for display: compact representation.
@@ -447,7 +445,6 @@ impl Drop for RefreshLock {
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     notify: bool,
 ) -> Result<()> {
@@ -458,12 +455,13 @@ pub fn run(
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
+    let sqlite_conn = backend.sqlite_native();
 
     // 1. FX Rates
     match rt.block_on(fx::fetch_all_fx_rates()) {
         Ok(rates) => {
             for (currency, rate) in &rates {
-                if let Err(e) = fx_cache::upsert_fx_rate(conn, currency, *rate) {
+                if let Err(e) = fx_cache::upsert_fx_rate_backend(backend, currency, *rate) {
                     eprintln!("Failed to cache FX rate for {}: {}", currency, e);
                 }
             }
@@ -476,7 +474,7 @@ pub fn run(
 
     // 2. Prices
     if prices_need_refresh(backend)? {
-        let symbols = collect_symbols(backend, conn, config)?;
+        let symbols = collect_symbols(backend, config)?;
         if !symbols.is_empty() {
             let _non_cash: Vec<_> = symbols
                 .iter()
@@ -502,23 +500,26 @@ pub fn run(
     }
 
     // 3. Predictions (Polymarket)
-    match crate::commands::correlations::compute_and_store_default_snapshots(conn) {
-        Ok(n) if n > 0 => println!("✓ Correlation snapshots ({} rows)", n),
-        Ok(_) => println!("⊘ Correlation snapshots (insufficient history)"),
-        Err(e) => println!("✗ Correlation snapshots (failed: {})", e),
+    // 3a. Correlation snapshots + regime classification (sqlite-only for now)
+    if let Some(conn) = sqlite_conn {
+        match crate::commands::correlations::compute_and_store_default_snapshots(conn) {
+            Ok(n) if n > 0 => println!("✓ Correlation snapshots ({} rows)", n),
+            Ok(_) => println!("⊘ Correlation snapshots (insufficient history)"),
+            Err(e) => println!("✗ Correlation snapshots (failed: {})", e),
+        }
+
+        match crate::commands::regime::classify_and_store_if_needed(conn) {
+            Ok(true) => println!("✓ Regime classification (stored)"),
+            Ok(false) => println!("⊘ Regime classification (unchanged today)"),
+            Err(e) => println!("✗ Regime classification (failed: {})", e),
+        }
     }
 
-    match crate::commands::regime::classify_and_store_if_needed(conn) {
-        Ok(true) => println!("✓ Regime classification (stored)"),
-        Ok(false) => println!("⊘ Regime classification (unchanged today)"),
-        Err(e) => println!("✗ Regime classification (failed: {})", e),
-    }
-
-    // 4. Predictions (Polymarket)
-    if predictions_need_refresh(conn)? {
+    // 3. Predictions (Polymarket)
+    if predictions_need_refresh(backend)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => {
-                predictions_cache::upsert_predictions(conn, &markets)?;
+                predictions_cache::upsert_predictions_backend(backend, &markets)?;
                 println!("✓ Predictions ({} markets)", markets.len());
             }
             Err(e) => {
@@ -529,8 +530,8 @@ pub fn run(
         println!("⊘ Predictions (fresh, skipping)");
     }
 
-    // 5. News (Brave primary when configured, RSS supplements)
-    if news_needs_refresh(conn)? {
+    // 4. News (Brave primary when configured, RSS supplements)
+    if news_needs_refresh(backend)? {
         let mut inserted = 0usize;
         let mut brave_inserted = 0usize;
         let brave_key = config
@@ -541,14 +542,14 @@ pub fn run(
             .to_string();
 
         if !brave_key.is_empty() {
-            let queries = build_brave_news_queries(backend, conn, config)?;
+            let queries = build_brave_news_queries(backend, config)?;
             for query in &queries {
                 match rt.block_on(brave::brave_news_search(&brave_key, query, Some("pd"), 5)) {
                     Ok(results) => {
                         for item in &results {
                             let source = item.source.as_deref().unwrap_or("Brave");
-                            if news_cache::insert_news_with_source_type(
-                                conn,
+                            if news_cache::insert_news_with_source_type_backend(
+                                backend,
                                 &item.title,
                                 &item.url,
                                 source,
@@ -584,8 +585,8 @@ pub fn run(
                 rss::NewsCategory::Markets => "markets",
             };
 
-            if news_cache::insert_news_with_source_type(
-                conn,
+            if news_cache::insert_news_with_source_type_backend(
+                backend,
                 &item.title,
                 &item.url,
                 &item.source,
@@ -610,8 +611,8 @@ pub fn run(
         println!("⊘ News (fresh, skipping)");
     }
 
-    // 6. COT (CFTC)
-    if cot_needs_refresh(conn)? {
+    // 5. COT (CFTC)
+    if cot_needs_refresh(backend)? {
         let mut total = 0;
 
         for contract in cot::COT_CONTRACTS {
@@ -629,7 +630,7 @@ pub fn run(
                         commercial_net: report.commercial_net,
                         fetched_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    cot_cache::upsert_report(conn, &entry)?;
+                    cot_cache::upsert_report_backend(backend, &entry)?;
                     total += 1;
                 }
                 Err(_) => {
@@ -647,8 +648,8 @@ pub fn run(
         println!("⊘ COT (fresh, skipping)");
     }
 
-    // 7. Sentiment (Fear & Greed)
-    if sentiment_needs_refresh(conn)? {
+    // 6. Sentiment (Fear & Greed)
+    if sentiment_needs_refresh(backend)? {
         let mut count = 0;
 
         if let Ok(crypto) = sentiment::fetch_crypto_fng() {
@@ -659,7 +660,7 @@ pub fn run(
                 timestamp: crypto.timestamp,
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
-            sentiment_cache::upsert_reading(conn, &reading)?;
+            sentiment_cache::upsert_reading_backend(backend, &reading)?;
             count += 1;
         }
 
@@ -671,7 +672,7 @@ pub fn run(
                 timestamp: trad.timestamp,
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
-            sentiment_cache::upsert_reading(conn, &reading)?;
+            sentiment_cache::upsert_reading_backend(backend, &reading)?;
             count += 1;
         }
 
@@ -680,8 +681,8 @@ pub fn run(
         println!("⊘ Sentiment (fresh, skipping)");
     }
 
-    // 8. Calendar (TradingEconomics)
-    if calendar_needs_refresh(conn)? {
+    // 7. Calendar (TradingEconomics)
+    if calendar_needs_refresh(backend)? {
         match calendar::fetch_events(7) {
             Ok(mut events) => {
                 let brave_key = config
@@ -694,8 +695,8 @@ pub fn run(
                     let _ = rt.block_on(calendar::enrich_with_brave(&mut events, &brave_key));
                 }
                 for event in &events {
-                    let _ = calendar_cache::upsert_event(
-                        conn,
+                    let _ = calendar_cache::upsert_event_backend(
+                        backend,
                         &event.date,
                         &event.name,
                         &event.impact,
@@ -749,7 +750,7 @@ pub fn run(
                         source_url: item.source_url.clone(),
                         fetched_at: now.clone(),
                     };
-                    let _ = economic_data_db::upsert_entry(conn, &entry);
+                    let _ = economic_data_db::upsert_entry_backend(backend, &entry);
                 }
                 if used_brave {
                     println!("✓ Economy ({} indicators via Brave)", items.len());
@@ -761,11 +762,11 @@ pub fn run(
         }
     }
 
-    // 10. BLS
-    if bls_needs_refresh(conn)? {
+    // 9. BLS
+    if bls_needs_refresh(backend)? {
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
-                bls_cache::upsert_bls_data(conn, &data)?;
+                bls_cache::upsert_bls_data_backend(backend, &data)?;
                 println!("✓ BLS ({} series)", data.len());
             }
             Err(e) => {
@@ -776,11 +777,11 @@ pub fn run(
         println!("⊘ BLS (fresh, skipping)");
     }
 
-    // 11. World Bank
-    if worldbank_needs_refresh(conn)? {
+    // 10. World Bank
+    if worldbank_needs_refresh(backend)? {
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
-                worldbank_cache::upsert_worldbank_data(conn, &data)?;
+                worldbank_cache::upsert_worldbank_data_backend(backend, &data)?;
                 println!("✓ World Bank ({} indicators)", data.len());
             }
             Err(e) => {
@@ -791,8 +792,8 @@ pub fn run(
         println!("⊘ World Bank (fresh, skipping)");
     }
 
-    // 12. COMEX
-    if comex_needs_refresh(conn)? {
+    // 11. COMEX
+    if comex_needs_refresh(backend)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
 
@@ -807,7 +808,7 @@ pub fn run(
                     reg_ratio: inv.reg_ratio,
                     fetched_at: chrono::Utc::now().to_rfc3339(),
                 };
-                if comex_cache::upsert_inventory(conn, &entry).is_ok() {
+                if comex_cache::upsert_inventory_backend(backend, &entry).is_ok() {
                     count += 1;
                 }
             }
@@ -844,7 +845,7 @@ pub fn run(
                 ),
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
-            let _ = onchain_cache::upsert_metric(conn, &metric);
+            let _ = onchain_cache::upsert_metric_backend(backend, &metric);
             onchain_ok_parts.push("network");
         }
         Err(e) => onchain_errors.push(format!("network: {}", e)),
@@ -862,12 +863,12 @@ pub fn run(
                         serde_json::json!({
                             "fund": flow.fund,
                             "net_flow_usd": flow.net_flow_usd,
-                        })
-                        .to_string(),
-                    ),
-                    fetched_at: fetched_at.clone(),
-                };
-                let _ = onchain_cache::upsert_metric(conn, &metric);
+                    })
+                    .to_string(),
+                ),
+                fetched_at: fetched_at.clone(),
+            };
+                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
             }
             onchain_ok_parts.push("etf flows");
         }
@@ -881,18 +882,20 @@ pub fn run(
     }
 
     // Store daily portfolio snapshot
-    if let Err(e) = store_portfolio_snapshot(backend, conn, config) {
+    if let Err(e) = store_portfolio_snapshot(backend, config) {
         eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
     }
-    if let Err(e) = detect_timeframe_signals(conn) {
-        eprintln!(
-            "\nWarning: failed to compute cross-timeframe signals: {}",
-            e
-        );
+    if let Some(conn) = sqlite_conn {
+        if let Err(e) = detect_timeframe_signals(backend, conn) {
+            eprintln!(
+                "\nWarning: failed to compute cross-timeframe signals: {}",
+                e
+            );
+        }
     }
 
     // Check for newly triggered alerts
-    match engine::check_alerts_backend(backend, conn) {
+    match engine::check_alerts_backend_only(backend) {
         Ok(results) => {
             let newly_triggered = engine::get_newly_triggered(&results);
             if !newly_triggered.is_empty() {
@@ -1118,6 +1121,7 @@ fn structural_layer_bias(conn: &Connection) -> Option<String> {
 }
 
 fn maybe_insert_signal(
+    backend: &BackendConnection,
     conn: &Connection,
     signal_type: &str,
     layers: &[String],
@@ -1141,8 +1145,8 @@ fn maybe_insert_signal(
         return Ok(());
     }
 
-    let _ = timeframe_signals::add_signal(
-        conn,
+    let _ = timeframe_signals::add_signal_backend(
+        backend,
         signal_type,
         &layers_json,
         &assets_json,
@@ -1152,7 +1156,7 @@ fn maybe_insert_signal(
     Ok(())
 }
 
-fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
+fn detect_timeframe_signals(backend: &BackendConnection, conn: &Connection) -> Result<()> {
     if !table_exists(conn, "timeframe_signals") {
         return Ok(());
     }
@@ -1196,6 +1200,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             bull_count.max(bear_count)
         );
         maybe_insert_signal(
+            backend,
             conn,
             "alignment",
             &layers,
@@ -1209,6 +1214,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             bull_count, bear_count, neutral_count
         );
         maybe_insert_signal(
+            backend,
             conn,
             "divergence",
             &layers,
@@ -1226,6 +1232,7 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
             if curr != prev {
                 let description = format!("regime transition detected: {} -> {}", prev, curr);
                 maybe_insert_signal(
+                    backend,
                     conn,
                     "transition",
                     &vec!["low".to_string()],
@@ -1243,25 +1250,24 @@ fn detect_timeframe_signals(conn: &Connection) -> Result<()> {
 /// Compute current positions and store a daily portfolio snapshot.
 fn store_portfolio_snapshot(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
 ) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> =
         cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
-    let fx_rates = fx_cache::get_all_fx_rates(conn).unwrap_or_default();
+    let fx_rates = fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
 
     let positions = match config.portfolio_mode {
         PortfolioMode::Full => {
-            let transactions = list_transactions(conn)?;
+            let transactions = list_transactions_backend(backend)?;
             if transactions.is_empty() {
                 return Ok(());
             }
             compute_positions(&transactions, &prices, &fx_rates)
         }
         PortfolioMode::Percentage => {
-            let allocations = list_allocations(conn)?;
+            let allocations = list_allocations_backend(backend)?;
             if allocations.is_empty() {
                 return Ok(());
             }
@@ -1289,13 +1295,13 @@ fn store_portfolio_snapshot(
     }
 
     // Store portfolio-level snapshot
-    upsert_portfolio_snapshot(conn, &today, total_value, cash_value, invested_value)?;
+    upsert_portfolio_snapshot_backend(backend, &today, total_value, cash_value, invested_value)?;
 
     // Store per-position snapshots
     for pos in &positions {
         let price = pos.current_price.unwrap_or(dec!(0));
         let value = pos.current_value.unwrap_or(dec!(0));
-        upsert_position_snapshot(conn, &today, &pos.symbol, pos.quantity, price, value)?;
+        upsert_position_snapshot_backend(backend, &today, &pos.symbol, pos.quantity, price, value)?;
     }
 
     let snap_count = positions.len();

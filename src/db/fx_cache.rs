@@ -2,7 +2,11 @@ use anyhow::Result;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use rusqlite::Connection;
+use sqlx::PgPool;
 use std::str::FromStr;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// Insert or update an FX rate in the cache.
 pub fn upsert_fx_rate(conn: &Connection, currency: &str, rate: Decimal) -> Result<()> {
@@ -18,6 +22,18 @@ pub fn upsert_fx_rate(conn: &Connection, currency: &str, rate: Decimal) -> Resul
         [currency, &rate_str, &fetched_at],
     )?;
     Ok(())
+}
+
+pub fn upsert_fx_rate_backend(
+    backend: &BackendConnection,
+    currency: &str,
+    rate: Decimal,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_fx_rate(conn, currency, rate),
+        |pool| upsert_fx_rate_postgres(pool, currency, rate),
+    )
 }
 
 /// Retrieve a cached FX rate if it's fresh (less than 15 minutes old).
@@ -79,6 +95,73 @@ pub fn get_all_fx_rates(conn: &Connection) -> Result<std::collections::HashMap<S
         }
     }
 
+    Ok(rates)
+}
+
+pub fn get_all_fx_rates_backend(
+    backend: &BackendConnection,
+) -> Result<std::collections::HashMap<String, Decimal>> {
+    query::dispatch(backend, get_all_fx_rates, get_all_fx_rates_postgres)
+}
+
+fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS fx_cache (
+                currency TEXT PRIMARY KEY,
+                rate TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_fx_rate_postgres(pool: &PgPool, currency: &str, rate: Decimal) -> Result<()> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO fx_cache (currency, rate, fetched_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (currency) DO UPDATE SET
+               rate = EXCLUDED.rate,
+               fetched_at = EXCLUDED.fetched_at",
+        )
+        .bind(currency)
+        .bind(rate.to_string())
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_all_fx_rates_postgres(pool: &PgPool) -> Result<std::collections::HashMap<String, Decimal>> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, String, i64)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT currency, rate, EXTRACT(EPOCH FROM fetched_at)::BIGINT
+             FROM fx_cache",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+
+    let mut rates = std::collections::HashMap::new();
+    let now = Utc::now().timestamp();
+    for (currency, rate_str, fetched_epoch) in rows {
+        if now - fetched_epoch < 900 {
+            if let Ok(rate) = Decimal::from_str(&rate_str) {
+                rates.insert(currency, rate);
+            }
+        }
+    }
     Ok(rates)
 }
 

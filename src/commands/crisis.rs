@@ -1,10 +1,10 @@
 use anyhow::Result;
-use rusqlite::Connection;
 use rust_decimal::Decimal;
 
+use crate::db::backend::BackendConnection;
 use crate::db::news_cache;
-use crate::db::price_cache::{get_all_cached_prices, upsert_price};
-use crate::db::price_history::get_history;
+use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
+use crate::db::price_history::get_history_backend;
 use crate::price::yahoo;
 
 const REQUIRED: &[&str] = &[
@@ -20,12 +20,12 @@ const REQUIRED: &[&str] = &[
     "PLTR",
 ];
 
-pub fn run(conn: &Connection, json: bool) -> Result<()> {
-    let mut prices = get_all_cached_prices(conn)?
+pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
+    let mut prices = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|p| (p.symbol, p.price))
         .collect::<std::collections::HashMap<_, _>>();
-    backfill_missing(conn, &mut prices)?;
+    backfill_missing(backend, &mut prices)?;
 
     let spread = match (prices.get("CL=F"), prices.get("BZ=F")) {
         (Some(wti), Some(brent)) => Some(*wti - *brent),
@@ -41,18 +41,18 @@ pub fn run(conn: &Connection, json: bool) -> Result<()> {
     };
 
     let defense = vec![
-        metric(conn, &prices, "ITA"),
-        metric(conn, &prices, "LMT"),
-        metric(conn, &prices, "RTX"),
-        metric(conn, &prices, "PLTR"),
+        metric(backend, &prices, "ITA"),
+        metric(backend, &prices, "LMT"),
+        metric(backend, &prices, "RTX"),
+        metric(backend, &prices, "PLTR"),
     ];
     let safe_havens = vec![
-        metric(conn, &prices, "GC=F"),
-        metric(conn, &prices, "DX-Y.NYB"),
-        metric(conn, &prices, "JPY=X"),
+        metric(backend, &prices, "GC=F"),
+        metric(backend, &prices, "DX-Y.NYB"),
+        metric(backend, &prices, "JPY=X"),
     ];
 
-    let headlines = crisis_headlines(conn)?;
+    let headlines = crisis_headlines(backend)?;
 
     if json {
         let out = serde_json::json!({
@@ -101,12 +101,12 @@ struct Metric {
 }
 
 fn metric(
-    conn: &Connection,
+    backend: &BackendConnection,
     prices: &std::collections::HashMap<String, Decimal>,
     symbol: &str,
 ) -> Metric {
     let price = prices.get(symbol).copied().and_then(to_f64);
-    let day_change_pct = day_change_pct(conn, symbol);
+    let day_change_pct = day_change_pct(backend, symbol);
     Metric {
         symbol: symbol.to_string(),
         price,
@@ -114,8 +114,8 @@ fn metric(
     }
 }
 
-fn day_change_pct(conn: &Connection, symbol: &str) -> Option<f64> {
-    let history = get_history(conn, symbol, 2).ok()?;
+fn day_change_pct(backend: &BackendConnection, symbol: &str) -> Option<f64> {
+    let history = get_history_backend(backend, symbol, 2).ok()?;
     if history.len() < 2 {
         return None;
     }
@@ -128,7 +128,7 @@ fn day_change_pct(conn: &Connection, symbol: &str) -> Option<f64> {
 }
 
 fn backfill_missing(
-    conn: &Connection,
+    backend: &BackendConnection,
     prices: &mut std::collections::HashMap<String, Decimal>,
 ) -> Result<()> {
     let missing: Vec<&str> = REQUIRED
@@ -142,7 +142,7 @@ fn backfill_missing(
     let rt = tokio::runtime::Runtime::new()?;
     for symbol in missing {
         if let Ok(q) = rt.block_on(yahoo::fetch_price(symbol)) {
-            upsert_price(conn, &q)?;
+            upsert_price_backend(backend, &q)?;
             prices.insert(symbol.to_string(), q.price);
         }
     }
@@ -156,8 +156,8 @@ struct CrisisHeadlines {
     defense: Vec<String>,
 }
 
-fn crisis_headlines(conn: &Connection) -> Result<CrisisHeadlines> {
-    let items = news_cache::get_latest_news(conn, 40, None, None, None, Some(72))?;
+fn crisis_headlines(backend: &BackendConnection) -> Result<CrisisHeadlines> {
+    let items = news_cache::get_latest_news_backend(backend, 40, None, None, None, Some(72))?;
     let mut oil_shipping = Vec::new();
     let mut geopolitics = Vec::new();
     let mut defense = Vec::new();

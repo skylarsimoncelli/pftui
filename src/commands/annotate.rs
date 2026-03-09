@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 
+use crate::db::backend::BackendConnection;
 use crate::db::annotations::{self, Annotation};
 
 pub struct AnnotateArgs<'a> {
@@ -15,9 +15,9 @@ pub struct AnnotateArgs<'a> {
     pub json: bool,
 }
 
-pub fn run(conn: &Connection, args: AnnotateArgs<'_>) -> Result<()> {
+pub fn run(backend: &BackendConnection, args: AnnotateArgs<'_>) -> Result<()> {
     if args.list {
-        return run_list(conn, args.json);
+        return run_list(backend, args.json);
     }
 
     let symbol = args
@@ -27,7 +27,7 @@ pub fn run(conn: &Connection, args: AnnotateArgs<'_>) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Missing symbol. Usage: pftui annotate SYMBOL --thesis \"...\""))?;
 
     if args.remove {
-        let removed = annotations::remove_annotation(conn, &symbol)?;
+        let removed = annotations::remove_annotation_backend(backend, &symbol)?;
         if removed {
             println!("Removed annotation for {}", symbol);
         } else {
@@ -56,7 +56,7 @@ pub fn run(conn: &Connection, args: AnnotateArgs<'_>) -> Result<()> {
         || args.target.is_some();
 
     if has_update_fields {
-        let existing = annotations::get_annotation(conn, &symbol)?;
+        let existing = annotations::get_annotation_backend(backend, &symbol)?;
         let ann = Annotation {
             symbol: symbol.clone(),
             thesis: args
@@ -78,16 +78,16 @@ pub fn run(conn: &Connection, args: AnnotateArgs<'_>) -> Result<()> {
                 .or_else(|| existing.as_ref().and_then(|e| e.target_price.clone())),
             updated_at: String::new(),
         };
-        annotations::upsert_annotation(conn, &ann)?;
+        annotations::upsert_annotation_backend(backend, &ann)?;
     } else if !args.show {
         bail!("No update fields provided. Use --thesis/--invalidation/--review-date/--target, or --show/--list/--remove.");
     }
 
-    run_show(conn, &symbol, args.json)
+    run_show(backend, &symbol, args.json)
 }
 
-fn run_show(conn: &Connection, symbol: &str, json: bool) -> Result<()> {
-    let Some(ann) = annotations::get_annotation(conn, symbol)? else {
+fn run_show(backend: &BackendConnection, symbol: &str, json: bool) -> Result<()> {
+    let Some(ann) = annotations::get_annotation_backend(backend, symbol)? else {
         println!("No annotation for {}", symbol);
         return Ok(());
     };
@@ -123,8 +123,8 @@ fn run_show(conn: &Connection, symbol: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_list(conn: &Connection, json: bool) -> Result<()> {
-    let rows = annotations::list_annotations(conn)?;
+fn run_list(backend: &BackendConnection, json: bool) -> Result<()> {
+    let rows = annotations::list_annotations_backend(backend)?;
     if rows.is_empty() {
         println!("No annotations saved.");
         return Ok(());

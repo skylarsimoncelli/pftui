@@ -8,11 +8,11 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use rust_decimal::Decimal;
-use rusqlite::Connection;
 
 use crate::config::Config;
-use crate::db::price_cache::{get_all_cached_prices, upsert_price};
-use crate::db::price_history::get_history;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
+use crate::db::price_history::get_history_backend;
 use crate::indicators::{compute_macd, compute_rsi};
 use crate::price::yahoo;
 
@@ -60,8 +60,8 @@ impl Technicals {
 }
 
 /// Compute RSI and MACD histogram for a symbol.
-fn compute_technicals(conn: &Connection, symbol: &str) -> Technicals {
-    let history = match get_history(conn, symbol, 60) {
+fn compute_technicals(backend: &BackendConnection, symbol: &str) -> Technicals {
+    let history = match get_history_backend(backend, symbol, 60) {
         Ok(h) if h.len() >= 30 => h,
         _ => return Technicals::none(),
     };
@@ -92,7 +92,7 @@ fn missing_sector_symbols(price_map: &HashMap<String, Decimal>) -> Vec<&'static 
 }
 
 fn backfill_sector_prices(
-    conn: &Connection,
+    backend: &BackendConnection,
     price_map: &mut HashMap<String, Decimal>,
     symbols: &[&str],
 ) -> Result<()> {
@@ -104,7 +104,7 @@ fn backfill_sector_prices(
 
     for symbol in symbols {
         if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
-            upsert_price(conn, &quote)?;
+            upsert_price_backend(backend, &quote)?;
             price_map.insert(symbol.to_string(), quote.price);
         }
     }
@@ -113,8 +113,8 @@ fn backfill_sector_prices(
 }
 
 /// Run the sector command.
-pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
-    let all_prices = get_all_cached_prices(conn)?;
+pub fn run(backend: &BackendConnection, _config: &Config, json: bool) -> Result<()> {
+    let all_prices = get_all_cached_prices_backend(backend)?;
     let mut price_map: HashMap<String, Decimal> = all_prices
         .iter()
         .map(|p| (p.symbol.clone(), p.price))
@@ -123,7 +123,7 @@ pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
     // Ensure sector command has complete coverage even if prices weren't preloaded
     // by other flows (portfolio/watchlist/refresh subsets).
     let missing = missing_sector_symbols(&price_map);
-    backfill_sector_prices(conn, &mut price_map, &missing)?;
+    backfill_sector_prices(backend, &mut price_map, &missing)?;
 
     // Get history for day change calculation
     let mut sector_data: Vec<(String, String, Decimal, Option<Decimal>, Technicals)> = Vec::new();
@@ -135,7 +135,7 @@ pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
         };
 
         // Get yesterday's close for daily change
-        let history = get_history(conn, symbol, 2)?;
+        let history = get_history_backend(backend, symbol, 2)?;
         let day_change_pct = if history.len() >= 2 {
             let yesterday = history[history.len() - 2].close;
             if yesterday > Decimal::ZERO {
@@ -147,7 +147,7 @@ pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
             None
         };
 
-        let tech = compute_technicals(conn, symbol);
+        let tech = compute_technicals(backend, symbol);
         sector_data.push((symbol.to_string(), name.to_string(), price, day_change_pct, tech));
     }
 

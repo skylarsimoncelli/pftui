@@ -1,11 +1,9 @@
 use anyhow::{bail, Result};
-use rusqlite::Connection;
 
 use crate::config::load_config;
 use crate::data::brave;
 
 pub fn run(
-    _conn: &Connection,
     query: Option<&str>,
     news: bool,
     freshness: Option<&str>,

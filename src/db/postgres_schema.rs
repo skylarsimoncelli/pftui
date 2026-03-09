@@ -27,6 +27,15 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS fx_cache (
+                currency TEXT PRIMARY KEY,
+                rate TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS transactions (
                 id BIGSERIAL PRIMARY KEY,
                 symbol TEXT NOT NULL,
@@ -71,11 +80,77 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS calendar_events (
+                id BIGSERIAL PRIMARY KEY,
+                date TEXT NOT NULL,
+                name TEXT NOT NULL,
+                impact TEXT NOT NULL,
+                previous TEXT,
+                forecast TEXT,
+                event_type TEXT NOT NULL DEFAULT 'economic',
+                symbol TEXT,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (date, name)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS cot_cache (
+                cftc_code TEXT NOT NULL,
+                report_date TEXT NOT NULL,
+                open_interest BIGINT NOT NULL,
+                managed_money_long BIGINT NOT NULL,
+                managed_money_short BIGINT NOT NULL,
+                managed_money_net BIGINT NOT NULL,
+                commercial_long BIGINT NOT NULL,
+                commercial_short BIGINT NOT NULL,
+                commercial_net BIGINT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (cftc_code, report_date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS sentiment_cache (
+                index_type TEXT PRIMARY KEY,
+                value BIGINT NOT NULL,
+                classification TEXT NOT NULL,
+                timestamp BIGINT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS sentiment_history (
+                index_type TEXT NOT NULL,
+                date TEXT NOT NULL,
+                value BIGINT NOT NULL,
+                classification TEXT NOT NULL,
+                PRIMARY KEY (index_type, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS allocation_targets (
                 symbol TEXT PRIMARY KEY,
                 target_pct TEXT NOT NULL,
                 drift_band_pct TEXT NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS portfolio_allocations (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL,
+                allocation_pct TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
         .execute(pool)
@@ -142,6 +217,112 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                date TEXT PRIMARY KEY,
+                total_value TEXT NOT NULL,
+                cash_value TEXT NOT NULL,
+                invested_value TEXT NOT NULL,
+                snapshot_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS position_snapshots (
+                date TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                quantity TEXT NOT NULL,
+                price TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (date, symbol)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS worldbank_cache (
+                country_code TEXT NOT NULL,
+                country_name TEXT NOT NULL,
+                indicator_code TEXT NOT NULL,
+                indicator_name TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                value TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (country_code, indicator_code, year)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS comex_cache (
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                registered DOUBLE PRECISION NOT NULL,
+                eligible DOUBLE PRECISION NOT NULL,
+                total DOUBLE PRECISION NOT NULL,
+                reg_ratio DOUBLE PRECISION NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (symbol, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS onchain_cache (
+                metric TEXT NOT NULL,
+                date TEXT NOT NULL,
+                value TEXT NOT NULL,
+                metadata TEXT,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (metric, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS economic_data (
+                indicator TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                previous TEXT,
+                change TEXT,
+                source_url TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS bls_cache (
+                series_id TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                period TEXT NOT NULL,
+                value TEXT NOT NULL,
+                date TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (series_id, year, period)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scan_queries (
+                name TEXT PRIMARY KEY,
+                filter_expr TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scan_alert_state (
+                name TEXT PRIMARY KEY,
+                last_count BIGINT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_signals_scenario ON scenario_signals(scenario_id)")
             .execute(pool)
@@ -152,8 +333,39 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section)")
             .execute(pool)
             .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_worldbank_country_indicator ON worldbank_cache(country_code, indicator_code, year)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_cot_report_date ON cot_cache(report_date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sentiment_history_date ON sentiment_history(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_bls_series_date ON bls_cache(series_id, date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_comex_date ON comex_cache(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_comex_symbol ON comex_cache(symbol)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_date ON onchain_cache(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_metric ON onchain_cache(metric)")
+            .execute(pool)
+            .await?;
 
         sqlx::query("INSERT INTO pftui_migrations (version) VALUES (1) ON CONFLICT DO NOTHING")
+            .execute(pool)
+            .await?;
+        // v2: remove legacy bridge table from hybrid implementation.
+        sqlx::query("DROP TABLE IF EXISTS pftui_sqlite_state")
+            .execute(pool)
+            .await?;
+        sqlx::query("INSERT INTO pftui_migrations (version) VALUES (2) ON CONFLICT DO NOTHING")
             .execute(pool)
             .await?;
         Ok::<(), sqlx::Error>(())
