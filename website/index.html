@@ -105,105 +105,144 @@
         </div>
     </section>
 
-    <!-- Data Aggregation Engine -->
+    <!-- Architecture -->
     <section class="highlights">
         <div class="container">
-            <h2 class="section-title">Data Aggregation Engine — All Intelligence, One Pipeline</h2>
-            <p class="section-subtitle">Prices, news, macro, sentiment, prediction markets, COT positioning, COMEX supply data, and global economic releases flow through one aggregation engine backed by 10+ sources. One refresh run, one owned dataset, one place for human + agent analysis.</p>
-            <div class="highlights-marquee" id="highlights-marquee">
-                <div class="highlights-scroller" id="highlights-scroller">
-                    <div class="highlights-track">
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">📊</div>
-                            <h3>Live Price Engine</h3>
-                            <p>Stocks, crypto, commodities, forex, and funds with no API keys.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">📈</div>
-                            <h3>Braille Charting</h3>
-                            <p>High-resolution Unicode charts with SMA overlays and volume bars.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">🔍</div>
-                            <h3>Technical Stack</h3>
-                            <p>RSI, MACD, Bollinger Bands, momentum, and 52-week range context.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">🌍</div>
-                            <h3>Macro Intelligence</h3>
-                            <p>VIX, DXY, yields, metals, energy, and key FRED indicators.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">🎯</div>
-                            <h3>Watchlists &amp; Targets</h3>
-                            <p>Track target prices, daily movers, and fast scenario checks.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">🧠</div>
-                            <h3>Prediction Markets</h3>
-                            <p>Integrate sentiment from market probabilities into portfolio context.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">📰</div>
-                            <h3>Headline Awareness</h3>
-                            <p>Monitor market-moving news and event risk alongside your positions.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">⌨️</div>
-                            <h3>Power Interface</h3>
-                            <p>Vim-native keybindings, mouse support, search, and 11 themes.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">🛠️</div>
-                            <h3>CLI Automation</h3>
-                            <p>Headless refresh, JSON export, markdown brief, and history snapshots.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">🔒</div>
-                            <h3>Privacy by Design</h3>
-                            <p>Local-first storage with SQLite or PostgreSQL, plus percentage-only view for safer screen sharing.</p>
-                        </article>
-                        <article class="highlight-card fade-in">
-                            <div class="highlight-icon">📡</div>
-                            <h3>Multi-Timeframe View</h3>
-                            <p>Scan 1W to 5Y across assets to spot structural trend shifts quickly.</p>
-                        </article>
+            <h2 class="section-title">Architecture</h2>
+            <p class="section-subtitle">pftui is built as a four-layer intelligence stack. The aggregation engine collects and computes. The database stores and shares. The analytics engine interprets across timeframes. The AI layer acts on the interpretation.</p>
+            <div class="database-schema" style="margin-bottom: 2rem;">
+                <div class="terminal-window">
+                    <div class="terminal-header">
+                        <div class="terminal-buttons">
+                            <span class="btn-close"></span>
+                            <span class="btn-minimize"></span>
+                            <span class="btn-maximize"></span>
+                        </div>
+                        <div class="terminal-title">Product Stack</div>
+                    </div>
+                    <div class="terminal-body schema-body">
+<pre class="schema-pre">
+             <span class="schema-table">┌──────────────────────────────────┐</span>
+             <span class="schema-table">│</span>          <span class="green">AI Layer</span>                 <span class="schema-table">│</span>  <span class="schema-desc">Agents, routines, investor panel</span>
+             <span class="schema-table">├──────────────────────────────────┤</span>
+             <span class="schema-table">│</span>  <span class="green">Multi-timeframe Analytics Engine</span> <span class="schema-table">│</span>  <span class="schema-desc">LOW / MEDIUM / HIGH / MACRO</span>
+             <span class="schema-table">├──────────────────────────────────┤</span>
+             <span class="schema-table">│</span>     <span class="green">Data Aggregation Engine</span>       <span class="schema-table">│</span>  <span class="schema-desc">10+ sources, technicals, compute</span>
+             <span class="schema-table">└───────────────┬──────────────────┘</span>
+                             <span class="schema-table">│</span> <span class="schema-desc">read / write</span>
+             <span class="schema-table">┌───────────────▼──────────────────┐</span>
+             <span class="schema-table">│</span>           <span class="green">Database</span>                <span class="schema-table">│</span>  <span class="schema-desc">SQLite or PostgreSQL</span>
+             <span class="schema-table">│</span>     <span class="schema-desc">shared state for all layers</span>   <span class="schema-table">│</span>
+             <span class="schema-table">└──────────────────────────────────┘</span>
+</pre>
                     </div>
                 </div>
             </div>
-            <p style="text-align: center; margin-top: 1.5rem;">See the architecture: <a href="https://github.com/skylarsimoncelli/pftui/blob/master/docs/DATA-AGGREGATION.md" target="_blank" rel="noopener">docs/DATA-AGGREGATION.md</a></p>
         </div>
     </section>
 
-    <!-- Analytics Engine Section -->
+    <!-- Data Aggregation Engine -->
     <section class="agent-workflows">
         <div class="container">
-            <h2 class="section-title">Analytics Engine — Four Timeframes, One Intelligence Picture</h2>
-            <p class="section-subtitle">The only retail tool with a multi-timeframe analytics engine. pftui tracks market forces from intraday noise to decade-long empire cycles, giving you the same multi-dimensional analysis that institutional traders use.</p>
+            <h2 class="section-title">Data Aggregation Engine</h2>
+            <p class="section-subtitle">One <code>pftui refresh</code> pulls from 10+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.</p>
             <div class="agent-grid">
                 <div class="agent-card">
-                    <div class="highlight-icon">🎯</div>
-                    <h3>LOW — Hours to Days</h3>
-                    <div class="cli-command">"What's happening right now?"</div>
-                    <p>Real-time prices (84 symbols), VIX, Fear & Greed, technical indicators, prediction markets, correlations, regime classification. Tactical signals for entry/exit timing.</p>
+                    <h3>What it collects</h3>
+                    <p>Equity, crypto, commodity, and forex prices across 84 symbols. CFTC Commitments of Traders positioning. COMEX warehouse inventory. BLS economic data across 101 series. World Bank indicators for 8 economies. Polymarket odds. Fear and Greed indices. Economic calendar. Financial news from RSS feeds and Brave Search. BTC on-chain data and ETF flows.</p>
                 </div>
                 <div class="agent-card">
-                    <div class="highlight-icon">📈</div>
-                    <h3>MEDIUM — Weeks to Months</h3>
-                    <div class="cli-command">"What scenarios are playing out?"</div>
-                    <p>Macro scenarios with probabilities, thesis evolution, conviction scores (-5 to +5), research questions, economic data. Directional signals for portfolio allocation.</p>
+                    <h3>What it computes</h3>
+                    <p>RSI, MACD, SMA, and Bollinger Bands across all symbols. Rolling cross-asset correlation matrices. Market regime classification with confidence scoring. Daily change detection and threshold alerts. FX normalization for multi-currency portfolios. Prediction market probability shifts.</p>
                 </div>
                 <div class="agent-card">
-                    <div class="highlight-icon">🌍</div>
-                    <h3>HIGH — Months to Years</h3>
-                    <div class="cli-command">"What structural trends are reshaping markets?"</div>
-                    <p>AI disruption, nuclear renaissance, BRICS de-dollarisation, commodity supercycles. Evidence logs and per-asset impact mappings. Thematic signals for sector rotation.</p>
+                    <h3>Why it matters</h3>
+                    <p>The Analytics Engine does not re-derive technicals from raw price data. It reads pre-computed indicators from the database and asks the higher-order question: what does RSI 89 on oil mean given the current war scenario? The aggregation layer handles compute. The analytics layer handles interpretation.</p>
+                </div>
+            </div>
+            <div class="database-schema">
+                <div class="terminal-window">
+                    <div class="terminal-header">
+                        <div class="terminal-buttons">
+                            <span class="btn-close"></span>
+                            <span class="btn-minimize"></span>
+                            <span class="btn-maximize"></span>
+                        </div>
+                        <div class="terminal-title">$ pftui refresh</div>
+                    </div>
+                    <div class="terminal-body schema-body">
+<pre class="schema-pre">
+<span class="green">✓</span> <span class="schema-table">FX rates</span>        <span class="schema-desc">(7 currencies)</span>
+<span class="green">✓</span> <span class="schema-table">Prices</span>          <span class="schema-desc">(84 symbols, RSI/MACD/SMA computed)</span>
+<span class="green">✓</span> <span class="schema-table">Correlations</span>    <span class="schema-desc">(33 cross-asset pairs)</span>
+<span class="green">✓</span> <span class="schema-table">Regime</span>          <span class="schema-desc">(risk-off, confidence 0.85)</span>
+<span class="green">✓</span> <span class="schema-table">Predictions</span>     <span class="schema-desc">(4 markets from Polymarket)</span>
+<span class="green">✓</span> <span class="schema-table">News</span>            <span class="schema-desc">(116 articles via Brave + RSS)</span>
+<span class="green">✓</span> <span class="schema-table">COT</span>             <span class="schema-desc">(4 reports from CFTC)</span>
+<span class="green">✓</span> <span class="schema-table">Sentiment</span>       <span class="schema-desc">(2 indices)</span>
+<span class="green">✓</span> <span class="schema-table">Calendar</span>        <span class="schema-desc">(3 upcoming events)</span>
+<span class="green">✓</span> <span class="schema-table">Economy</span>         <span class="schema-desc">(101 BLS series)</span>
+<span class="green">✓</span> <span class="schema-table">World Bank</span>      <span class="schema-desc">(160 global indicators)</span>
+<span class="green">✓</span> <span class="schema-table">On-chain</span>        <span class="schema-desc">(ETF flows, BTC metrics)</span>
+</pre>
+                    </div>
+                </div>
+            </div>
+            <p style="text-align: center; margin-top: 1.5rem;">No API keys required for core sources. Full pipeline docs: <a href="https://github.com/skylarsimoncelli/pftui/blob/master/docs/DATA-AGGREGATION.md" target="_blank" rel="noopener">docs/DATA-AGGREGATION.md</a></p>
+        </div>
+    </section>
+
+    <!-- Database -->
+    <section class="your-database">
+        <div class="container">
+            <h2 class="section-title">Database</h2>
+            <p class="section-subtitle">The shared state layer for everything. The aggregation engine writes price caches and economic data. The analytics engine writes scenarios and convictions. The AI layer writes agent messages and predictions. Every layer's output becomes queryable input for every other layer.</p>
+            <div class="database-grid">
+                <div class="database-feature">
+                    <div class="database-icon">🏦</div>
+                    <h3>46 tables, one source of truth</h3>
+                    <p>Transactions, price history, COT positioning, COMEX inventory, BLS economic data, World Bank indicators, sentiment indices, prediction markets, scenarios, convictions, trend tracking, agent messages. All normalised, all queryable.</p>
+                </div>
+                <div class="database-feature">
+                    <div class="database-icon">🔐</div>
+                    <h3>Full data sovereignty</h3>
+                    <p>SQLite by default, PostgreSQL for production. No cloud sync. No third-party accounts. Back it up, version it, query it directly. Your data stays yours.</p>
+                </div>
+                <div class="database-feature">
+                    <div class="database-icon">📐</div>
+                    <h3>Shared state, not a pipe</h3>
+                    <p>An agent reads regime classification (written by aggregation), combines it with scenario probabilities (written by the evening planner), and writes a conviction score (consumed by the alignment view). The database is where all layers meet.</p>
+                </div>
+                <div class="database-feature">
+                    <div class="database-icon">⚡</div>
+                    <h3>Compounds over time</h3>
+                    <p>Day one is a snapshot. Day thirty is a month of cross-asset history. Day three hundred is a proprietary dataset most retail investors never build. The longer you run it, the more powerful it becomes.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Multi-timeframe Analytics Engine -->
+    <section class="agent-workflows">
+        <div class="container">
+            <h2 class="section-title">Multi-timeframe Analytics Engine</h2>
+            <p class="section-subtitle">Four intelligence layers operating simultaneously across different time horizons. Each uses different data, updates at different frequencies, and produces different signals. When all layers align on an asset, that is the highest conviction signal in the system.</p>
+            <div class="agent-grid">
+                <div class="agent-card">
+                    <h3>LOW: hours to days</h3>
+                    <p>Prices, volatility, sentiment, regime classification, correlations, calendar events, and triggered alerts. Updated every refresh cycle. Tactical signals: what is happening right now.</p>
                 </div>
                 <div class="agent-card">
-                    <div class="highlight-icon">🏛️</div>
-                    <h3>MACRO — Years to Decades</h3>
-                    <div class="cli-command">"Where are we in the big cycle?"</div>
-                    <p>Empire lifecycle analysis, 8-dimension power metrics, structural cycles, historical parallels. Structural allocation bias for generational positioning.</p>
+                    <h3>MEDIUM: weeks to months</h3>
+                    <p>Macro scenarios with probabilities, versioned thesis, conviction scores per asset, research questions, economic data, and user predictions with accuracy scoring. Updated daily. Directional signals: which narratives are winning.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>HIGH: months to years</h3>
+                    <p>Structural trends like AI disruption, nuclear renaissance, and commodity supercycles. Each trend has a direction, evidence log, and per-asset impact mapping. Updated weekly. Thematic signals: what forces are reshaping markets.</p>
+                </div>
+                <div class="agent-card">
+                    <h3>MACRO: years to decades</h3>
+                    <p>Empire lifecycle analysis with power metrics across 8 dimensions, structural cycles with stage tracking, long-term outcome probabilities, and historical parallels. Updated weekly. Structural signals: where are we in the big cycle.</p>
                 </div>
             </div>
             <div class="database-schema">
@@ -218,126 +257,37 @@
                     </div>
                     <div class="terminal-body schema-body">
 <pre class="schema-pre">
-<span class="schema-table">LOW</span>       <span class="schema-desc">risk-off regime │ VIX 29.5 ⚠️ │ correlation breaks detected</span>
-<span class="schema-table">MEDIUM</span>    <span class="schema-desc">war scenario 45% ↑ │ gold conviction +4 │ Fed 75bp pricing</span>
-<span class="schema-table">HIGH</span>      <span class="schema-desc">commodity supercycle accelerating │ AI displacement evidence</span>
-<span class="schema-table">MACRO</span>     <span class="schema-desc">US Stage 5→6 transition │ 1973 parallel similarity 8/10</span>
+<span class="schema-table">LOW</span>       <span class="schema-desc">risk-off regime | VIX 29.5 | 3 alerts triggered | 7 movers</span>
+<span class="schema-table">MEDIUM</span>    <span class="schema-desc">war scenario 45% | gold conviction +4 | Fed 75bp pricing</span>
+<span class="schema-table">HIGH</span>      <span class="schema-desc">commodity supercycle accelerating | AI displacement evidence</span>
+<span class="schema-table">MACRO</span>     <span class="schema-desc">US Stage 5 to 6 transition | 1973 parallel similarity 8/10</span>
 
-<span class="green">████ STRONG signal: Gold alignment across all timeframes</span>
+<span class="green">ALIGNMENT: gold bullish across all four timeframes</span>
 </pre>
                     </div>
                 </div>
             </div>
-            <p style="text-align: center; margin-top: 2rem; font-style: italic;">Signals flow up ⬆️ Context flows down ⬇️ When all layers align = maximum conviction</p>
+            <p style="text-align: center; margin-top: 1.5rem;">Signals flow upward through layers. Context flows downward. Full docs: <a href="https://github.com/skylarsimoncelli/pftui/blob/master/docs/ANALYTICS-ENGINE.md" target="_blank" rel="noopener">docs/ANALYTICS-ENGINE.md</a></p>
         </div>
     </section>
 
-    <!-- Agent Workflows -->
+    <!-- AI Layer -->
     <section class="agent-workflows">
         <div class="container">
-            <h2 class="section-title">Fully agent-native, fully agent-driven</h2>
-            <p class="section-subtitle">pftui is designed to be operated by your AI agent. Every feature has a CLI counterpart with <code>--json</code> output. The agent guide (AGENTS.md) covers setup, daily operation, and long-term system design, so any agent can run pftui as thoroughly as a human analyst.</p>
+            <h2 class="section-title">AI Layer</h2>
+            <p class="section-subtitle">Every feature has a CLI command with <code>--json</code> output. Agents use the same database, same commands, and same analysis frameworks that humans do. The result is genuine bidirectional intelligence where both operators contribute to a shared understanding over time.</p>
             <div class="agent-grid">
                 <div class="agent-card">
-                    <h3>One-Command Intelligence</h3>
-                    <div class="cli-command">$ pftui refresh && pftui brief --agent --json</div>
-                    <p>Your agent fetches 10+ data sources and gets a complete portfolio snapshot, positions, macro, news, sentiment, predictions, movers, in one JSON blob. No web searching required.</p>
+                    <h3>Bidirectional communication</h3>
+                    <p>Your agent does not just read your data. It contributes to it. Agents update scenario probabilities, log evidence, set conviction scores, and write daily notes using the same pftui commands. You review what the agent wrote, adjust where you disagree, and the system incorporates both perspectives.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Agent-Guided Setup</h3>
-                    <div class="cli-command">"Read AGENTS.md and set up pftui for me"</div>
-                    <p>Tell Claude Code, Codex, or OpenClaw to read the agent guide. It will ask about your holdings, risk tolerance, and market views, then populate everything automatically.</p>
+                    <h3>Scheduled routines</h3>
+                    <p>Morning briefs, market close summaries, weekly reviews, scenario analysis. All cron-driven, all reading from and writing to the same database. Multiple agents coordinate through a structured message bus with priority levels and analytics layer tags.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Automated Daily Briefs</h3>
-                    <div class="cli-command">$ pftui eod && pftui movers --json</div>
-                    <p>Set up cron jobs for morning briefs and market close summaries. Your agent monitors, analyses, and delivers, you read on your phone or terminal.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Your Database Section -->
-    <section class="your-database">
-        <div class="container">
-            <h2 class="section-title">Your personal database. Your proprietary edge.</h2>
-            <p class="section-subtitle">Every refresh seeds your personal market database with data from 10+ sources (SQLite or PostgreSQL). Over time, you build a proprietary data collection the kind trading desks pay six figures for, and you fully own it.</p>
-            <div class="database-grid">
-                <div class="database-feature">
-                    <div class="database-icon">🏦</div>
-                    <h3>Hedge fund analytics, zero cost</h3>
-                    <p>Daily OHLCV history, COT positioning, COMEX inventory, sentiment indices, economic releases, prediction odds, all accumulating locally. Query it however you want. Build your own backtests, correlations, and regime models.</p>
-                </div>
-                <div class="database-feature">
-                    <div class="database-icon">🔐</div>
-                    <h3>Full data sovereignty</h3>
-                    <p>No cloud sync. No third-party accounts. No data harvesting. Use a local SQLite file at <code>~/.local/share/pftui/pftui.db</code> or your own PostgreSQL instance. Back it up, version it, or migrate it, your data stays yours.</p>
-                </div>
-                <div class="database-feature">
-                    <div class="database-icon">📐</div>
-                    <h3>18 tables, one source of truth</h3>
-                    <p>Transactions, price history, COT data, COMEX warehouse reports, BLS economic data, World Bank global macro, sentiment indices, prediction markets, news, alerts, journal entries, all normalised, all queryable.</p>
-                </div>
-                <div class="database-feature">
-                    <div class="database-icon">⚡</div>
-                    <h3>Compounds over time</h3>
-                    <p>Day one you get a snapshot. Day thirty you have a month of cross-asset history. Day three hundred you have a dataset most retail investors never build. The longer you run it, the more powerful it becomes.</p>
-                </div>
-            </div>
-            <div class="database-schema">
-                <div class="terminal-window">
-                    <div class="terminal-header">
-                        <div class="terminal-buttons">
-                            <span class="btn-close"></span>
-                            <span class="btn-minimize"></span>
-                            <span class="btn-maximize"></span>
-                        </div>
-                        <div class="terminal-title">~/.local/share/pftui/pftui.db</div>
-                    </div>
-                    <div class="terminal-body schema-body">
-<pre class="schema-pre">
-<span class="schema-table">transactions</span>      <span class="schema-desc">Buy/sell records with cost basis tracking</span>
-<span class="schema-table">price_cache</span>       <span class="schema-desc">Latest spot prices across all asset classes</span>
-<span class="schema-table">price_history</span>     <span class="schema-desc">Daily OHLCV candles, your proprietary dataset</span>
-<span class="schema-table">cot_cache</span>         <span class="schema-desc">CFTC Commitments of Traders positioning</span>
-<span class="schema-table">comex_cache</span>       <span class="schema-desc">COMEX gold &amp; silver warehouse inventory</span>
-<span class="schema-table">bls_cache</span>         <span class="schema-desc">CPI, unemployment, NFP, wages from BLS</span>
-<span class="schema-table">worldbank_cache</span>   <span class="schema-desc">GDP, reserves, debt/GDP for 8 economies</span>
-<span class="schema-table">sentiment_cache</span>   <span class="schema-desc">Fear &amp; Greed indices (crypto + traditional)</span>
-<span class="schema-table">prediction_cache</span>  <span class="schema-desc">Polymarket / Manifold odds on macro events</span>
-<span class="schema-table">news_cache</span>        <span class="schema-desc">RSS headlines from Reuters, Bloomberg, Kitco</span>
-<span class="schema-table">journal_entries</span>   <span class="schema-desc">Trade journal, decision log, and notes</span>
-<span class="schema-table">calendar_events</span>   <span class="schema-desc">Upcoming economic releases with impact ratings</span>
-</pre>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- AI Layer Section -->
-    <section class="agent-workflows">
-        <div class="container">
-            <h2 class="section-title">AI Layer — Your Agent's Operating System</h2>
-            <p class="section-subtitle">pftui is designed as an AI agent's financial intelligence platform. Your agent doesn't just read your data — it contributes to the same database, uses the same commands, and builds shared intelligence with you over time.</p>
-            <div class="agent-grid">
-                <div class="agent-card">
-                    <div class="highlight-icon">🤝</div>
-                    <h3>Bidirectional Communication</h3>
-                    <div class="cli-command">Same data, same tools, same DB</div>
-                    <p>Your agent updates scenarios, sets conviction scores, logs evidence, and writes daily briefs using the same pftui commands you do. True collaboration, not just data fetching.</p>
-                </div>
-                <div class="agent-card">
-                    <div class="highlight-icon">⏰</div>
-                    <h3>Scheduled Routines</h3>
-                    <div class="cli-command">Cron-driven intelligence</div>
-                    <p>Set up automated morning briefs, market close summaries, and scenario updates. Multi-agent feedback loops where different agents handle different market sectors and timeframes.</p>
-                </div>
-                <div class="agent-card">
-                    <div class="highlight-icon">🧠</div>
                     <h3>Investor Perspectives Panel</h3>
-                    <div class="cli-command">Sub-agents as famous investors</div>
-                    <p>Configure Warren Buffett agent for value analysis, Ray Dalio agent for macro cycles, Stan Druckenmiller agent for regime changes. Each perspective runs on your live data.</p>
+                    <p>Feed your analytics engine data to sub-agents prompted as famous investors. Warren Buffett, Ray Dalio, Stanley Druckenmiller, Michael Burry, and 21 others. The consensus tells you where conviction is strongest. The divergence tells you where the interesting questions are.</p>
                 </div>
             </div>
             <div class="database-schema">
@@ -348,26 +298,26 @@
                             <span class="btn-minimize"></span>
                             <span class="btn-maximize"></span>
                         </div>
-                        <div class="terminal-title">Agent Morning Routine</div>
+                        <div class="terminal-title">Agent morning routine</div>
                     </div>
                     <div class="terminal-body schema-body">
 <pre class="schema-pre">
-<span class="schema-table">$ pftui refresh && pftui brief --json</span>
-<span class="schema-desc">{"portfolio_value": 287345, "pnl": 3892, "regime": "risk-off"...}</span>
+<span class="schema-table">$ pftui refresh</span>
+<span class="schema-desc">12 sources updated, 84 symbols, regime classified</span>
 
-<span class="schema-table">$ pftui conviction set BTC --score 3</span>  
-<span class="schema-desc">Updated BTC conviction: +3 (moderate bullish)</span>
+<span class="schema-table">$ pftui brief --json</span>
+<span class="schema-desc">{"value": 287345, "regime": "risk-off", "movers": [...]}</span>
 
-<span class="schema-table">$ pftui scenario update "Stagflation" --probability 35</span>
-<span class="schema-desc">Stagflation scenario: 30% → 35% (+5pp oil breakout evidence)</span>
+<span class="schema-table">$ pftui conviction set GC=F --score 4 --notes "War + BRICS"</span>
+<span class="schema-desc">Gold conviction: +4 (strong bullish)</span>
 
-<span class="schema-table">$ pftui agent-msg "Commodity supercycle thesis strengthening"</span>
-<span class="schema-desc">Message logged to MEDIUM→HIGH escalation feed</span>
+<span class="schema-table">$ pftui agent-msg send "All 4 layers agree: gold bullish"</span>
+<span class="schema-desc">Message logged to cross-layer feed</span>
 </pre>
                     </div>
                 </div>
             </div>
-            <p style="text-align: center; margin-top: 2rem; font-style: italic;">Your agent becomes a sophisticated macro analyst, not just a data fetcher</p>
+            <p style="text-align: center; margin-top: 1.5rem;">Full agent guide: <a href="https://github.com/skylarsimoncelli/pftui/blob/master/AGENTS.md" target="_blank" rel="noopener">AGENTS.md</a> | AI layer docs: <a href="https://github.com/skylarsimoncelli/pftui/blob/master/docs/AI-LAYER.md" target="_blank" rel="noopener">docs/AI-LAYER.md</a></p>
         </div>
     </section>
 
