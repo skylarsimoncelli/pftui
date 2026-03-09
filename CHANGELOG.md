@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Auth session storage moved to async-aware lock primitive
+
+- What: migrated auth session store from `std::sync::Mutex` to `tokio::sync::RwLock` and updated session mutation/access paths to use non-poisoning lock behavior.
+- Why: aligns session state with async runtime expectations and avoids standard-mutex poisoning semantics in request-path auth logic.
+- Files: `src/web/auth.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit P1 (`async auth session lock`)
+
 ### 2026-03-09 — Web portfolio API daily P&L parity
 
 - What: implemented portfolio-level `daily_change` and `daily_change_pct` in the web API using 1-day `price_history` lookbacks per position.

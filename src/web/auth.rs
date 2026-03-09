@@ -8,7 +8,8 @@ use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
+use tokio::sync::{RwLock, RwLockWriteGuard};
 
 const SESSION_COOKIE_NAME: &str = "pftui_session";
 const SESSION_TTL_SECONDS: i64 = 60 * 60 * 8;
@@ -17,7 +18,7 @@ const SESSION_TTL_SECONDS: i64 = 60 * 60 * 8;
 pub struct AuthState {
     pub enabled: bool,
     login_token: Option<String>,
-    sessions: Arc<Mutex<HashMap<String, Session>>>,
+    sessions: Arc<RwLock<HashMap<String, Session>>>,
     secure_cookies: bool,
 }
 
@@ -89,7 +90,7 @@ impl AuthState {
             Self {
                 enabled: true,
                 login_token: Some(token),
-                sessions: Arc::new(Mutex::new(HashMap::new())),
+                sessions: Arc::new(RwLock::new(HashMap::new())),
                 secure_cookies: !is_localhost_bind(bind_addr),
             }
         } else {
@@ -97,7 +98,7 @@ impl AuthState {
             Self {
                 enabled: false,
                 login_token: None,
-                sessions: Arc::new(Mutex::new(HashMap::new())),
+                sessions: Arc::new(RwLock::new(HashMap::new())),
                 secure_cookies: false,
             }
         }
@@ -114,14 +115,17 @@ impl AuthState {
         }
     }
 
-    fn validate_session_cookie(&self, req: &Request) -> Result<Session, AuthFailure> {
+    fn session_id_from_request(req: &Request) -> Result<String, AuthFailure> {
         let cookie_header = req
             .headers()
             .get(header::COOKIE)
             .and_then(|v| v.to_str().ok())
             .ok_or(AuthFailure::MissingSession)?;
-        let session_id = extract_cookie(cookie_header, SESSION_COOKIE_NAME)
-            .ok_or(AuthFailure::MissingSession)?;
+        extract_cookie(cookie_header, SESSION_COOKIE_NAME).ok_or(AuthFailure::MissingSession)
+    }
+
+    fn validate_session_id(&self, session_id: &str) -> Result<Session, AuthFailure> {
+        let session_id = session_id.to_string();
 
         let mut sessions = self.lock_sessions()?;
         if let Some(session) = sessions.get(&session_id).cloned() {
@@ -136,10 +140,13 @@ impl AuthState {
         Err(AuthFailure::InvalidSession)
     }
 
-    fn lock_sessions(&self) -> Result<MutexGuard<'_, HashMap<String, Session>>, AuthFailure> {
-        self.sessions
-            .lock()
-            .map_err(|_| AuthFailure::InvalidSession)
+    fn validate_session_cookie(&self, req: &Request) -> Result<Session, AuthFailure> {
+        let session_id = Self::session_id_from_request(req)?;
+        self.validate_session_id(&session_id)
+    }
+
+    fn lock_sessions(&self) -> Result<RwLockWriteGuard<'_, HashMap<String, Session>>, AuthFailure> {
+        self.sessions.try_write().map_err(|_| AuthFailure::InvalidSession)
     }
 
     fn prune_expired_sessions(&self, sessions: &mut HashMap<String, Session>) {
@@ -148,13 +155,21 @@ impl AuthState {
     }
 
     fn validate_api_request(&self, req: &Request) -> Result<Session, AuthFailure> {
-        let session = self.validate_session_cookie(req)?;
+        let session_id = Self::session_id_from_request(req)?;
+        let csrf_header = if is_mutating(req.method()) {
+            Some(
+                req.headers()
+                    .get("X-CSRF-Token")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or(AuthFailure::MissingCsrf)?
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        let session = self.validate_session_id(&session_id)?;
         if is_mutating(req.method()) {
-            let csrf = req
-                .headers()
-                .get("X-CSRF-Token")
-                .and_then(|v| v.to_str().ok())
-                .ok_or(AuthFailure::MissingCsrf)?;
+            let csrf = csrf_header.as_deref().ok_or(AuthFailure::MissingCsrf)?;
             if csrf != session.csrf_token {
                 return Err(AuthFailure::CsrfMismatch);
             }
@@ -625,8 +640,8 @@ mod tests {
         };
         state
             .sessions
-            .lock()
-            .expect("session mutex")
+            .write()
+            .await
             .insert(expired.session_id.clone(), expired);
 
         let app = test_app(state.clone());
