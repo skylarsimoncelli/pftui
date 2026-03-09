@@ -328,6 +328,358 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     Ok(())
 }
 
+fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Result<()> {
+    let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
+    let prices: HashMap<String, Decimal> = cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+
+    let today = Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+    let symbols: Vec<String> = prices.keys().cloned().collect();
+    let hist_1d =
+        crate::db::price_history::get_prices_at_date_backend(backend, &symbols, &yesterday_str)
+            .unwrap_or_default();
+    let technicals_data = compute_technicals_for_symbols_backend(backend, &symbols);
+
+    let base = &config.base_currency;
+    let timestamp = Utc::now().to_rfc3339();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+
+    let positions = match config.portfolio_mode {
+        PortfolioMode::Full => {
+            let txs = crate::db::transactions::list_transactions_backend(backend)?;
+            compute_positions(&txs, &prices, &fx_rates)
+        }
+        PortfolioMode::Percentage => {
+            let allocs = crate::db::allocations::list_allocations_backend(backend)?;
+            compute_positions_from_allocations(&allocs, &prices, &fx_rates)
+        }
+    };
+
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
+    let total_cost: Decimal = positions.iter().map(|p| p.total_cost).sum();
+    let total_gain = total_value - total_cost;
+    let total_gain_pct = pct_change(total_value, total_cost).unwrap_or(dec!(0));
+
+    let mut daily_pnl = dec!(0);
+    let mut has_daily = false;
+    for pos in &positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+            if prev > dec!(0) {
+                daily_pnl += (current - prev) * pos.quantity;
+                has_daily = true;
+            }
+        }
+    }
+
+    let daily_pnl_pct = if has_daily && total_value > dec!(0) {
+        Some((daily_pnl / (total_value - daily_pnl)) * dec!(100))
+    } else {
+        None
+    };
+
+    let portfolio_summary = PortfolioSummaryJson {
+        total_value: total_value.to_string(),
+        total_cost: total_cost.to_string(),
+        total_gain: total_gain.to_string(),
+        total_gain_pct: total_gain_pct.round_dp(2).to_string(),
+        daily_pnl: if has_daily { Some(daily_pnl.to_string()) } else { None },
+        daily_pnl_pct: daily_pnl_pct.map(|p| p.round_dp(2).to_string()),
+        base_currency: base.to_string(),
+    };
+
+    let positions_json: Vec<PositionJson> = positions
+        .iter()
+        .map(|pos| {
+            let daily_change = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+                if prev > dec!(0) { Some((current - prev) * pos.quantity) } else { None }
+            } else {
+                None
+            };
+            let daily_change_pct = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+                pct_change(current, prev)
+            } else {
+                None
+            };
+            let allocation_pct = if total_value > dec!(0) {
+                pos.current_value.map(|v| ((v / total_value) * dec!(100)).round_dp(2))
+            } else {
+                None
+            };
+            let technicals_json = technicals_data.get(&pos.symbol).map(|t| TechnicalSnapshotJson {
+                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                rsi_signal: t.rsi_14.map(|v| {
+                    if v > 70.0 { "overbought".to_string() }
+                    else if v < 30.0 { "oversold".to_string() }
+                    else { "neutral".to_string() }
+                }),
+                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
+                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
+                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                sma_20: None,
+                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+            });
+
+            PositionJson {
+                symbol: pos.symbol.clone(),
+                name: resolve_name(&pos.symbol),
+                category: format!("{:?}", pos.category),
+                quantity: pos.quantity.to_string(),
+                current_price: pos.current_price.map(|p| p.to_string()),
+                total_cost: pos.total_cost.to_string(),
+                current_value: pos.current_value.map(|v| v.to_string()),
+                unrealized_gain: pos.gain.map(|g| g.to_string()),
+                unrealized_gain_pct: pos.gain_pct.map(|p| p.round_dp(2).to_string()),
+                daily_change: daily_change.map(|c| c.to_string()),
+                daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
+                allocation_pct: allocation_pct.map(|a| a.to_string()),
+                technicals: technicals_json,
+            }
+        })
+        .collect();
+
+    let watchlist_json = get_watchlist_json_backend(backend, &prices, &hist_1d, &technicals_data)?;
+    let movers_json = get_movers_json(&positions, &hist_1d);
+    let macro_data = get_macro_json_backend(backend).ok();
+    let alerts_json = get_alerts_json_backend(backend);
+    let drift_json = get_drift_json_backend(backend).ok();
+    let regime_json = get_regime_json_backend(backend).ok();
+    let corr_summary = compute_correlation_summary_backend(backend, &positions);
+    let news_summary = get_news_summary_json_backend(backend).unwrap_or_default();
+    let economic_data = get_economic_data_json_backend(backend).unwrap_or_default();
+    let predictions = get_predictions_json_backend(backend).unwrap_or_default();
+    let sentiment = get_sentiment_json_backend(backend).ok();
+    let correlations = correlation_summary_to_json(&corr_summary);
+    let timeframe_signal = get_top_timeframe_signal_json_backend(backend).ok();
+
+    let brief = AgentBrief {
+        timestamp,
+        portfolio: portfolio_summary,
+        positions: positions_json,
+        watchlist: watchlist_json,
+        movers: movers_json,
+        macro_data,
+        news_summary,
+        economic_data,
+        predictions,
+        sentiment,
+        alerts: alerts_json,
+        drift: drift_json,
+        regime: regime_json,
+        correlations,
+        timeframe_signal,
+    };
+    println!("{}", serde_json::to_string_pretty(&brief)?);
+    Ok(())
+}
+
+fn get_watchlist_json_backend(
+    backend: &BackendConnection,
+    prices: &HashMap<String, Decimal>,
+    hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
+) -> Result<Vec<WatchlistItemJson>> {
+    let watchlist = crate::db::watchlist::list_watchlist_backend(backend)?;
+    Ok(watchlist
+        .iter()
+        .map(|w| {
+            let current_price = prices.get(&w.symbol).copied();
+            let daily_change_pct = if let (Some(current), Some(&prev)) = (current_price, hist_1d.get(&w.symbol)) {
+                pct_change(current, prev)
+            } else {
+                None
+            };
+            let technicals_json = technicals_data.get(&w.symbol).map(|t| TechnicalSnapshotJson {
+                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                rsi_signal: t.rsi_14.map(|v| {
+                    if v > 70.0 { "overbought".to_string() }
+                    else if v < 30.0 { "oversold".to_string() }
+                    else { "neutral".to_string() }
+                }),
+                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
+                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
+                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                sma_20: None,
+                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+            });
+            WatchlistItemJson {
+                symbol: w.symbol.clone(),
+                name: resolve_name(&w.symbol),
+                category: w.category.clone(),
+                current_price: current_price.map(|p| p.to_string()),
+                daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
+                technicals: technicals_json,
+            }
+        })
+        .collect())
+}
+
+fn get_macro_json_backend(backend: &BackendConnection) -> Result<serde_json::Value> {
+    let mut macro_map = serde_json::Map::new();
+    let macro_symbols = vec![
+        ("DX-Y.NYB", "Dollar Index"),
+        ("^VIX", "VIX"),
+        ("^TNX", "10Y Treasury"),
+        ("CL=F", "Crude Oil"),
+        ("GC=F", "Gold"),
+        ("SI=F", "Silver"),
+        ("HG=F", "Copper"),
+    ];
+    for (symbol, name) in macro_symbols {
+        if let Ok(Some(quote)) = crate::db::price_cache::get_cached_price_backend(backend, symbol, "USD") {
+            let mut item = serde_json::Map::new();
+            item.insert("name".to_string(), serde_json::Value::String(name.to_string()));
+            item.insert("price".to_string(), serde_json::Value::String(quote.price.to_string()));
+            item.insert("fetched_at".to_string(), serde_json::Value::String(quote.fetched_at));
+            macro_map.insert(symbol.to_string(), serde_json::Value::Object(item));
+        }
+    }
+    if macro_map.is_empty() {
+        anyhow::bail!("No macro data available");
+    }
+    Ok(serde_json::Value::Object(macro_map))
+}
+
+fn get_alerts_json_backend(backend: &BackendConnection) -> Vec<serde_json::Value> {
+    match crate::alerts::engine::check_alerts_backend_only(backend) {
+        Ok(results) => results
+            .iter()
+            .filter(|r| r.newly_triggered)
+            .map(|r| {
+                serde_json::json!({
+                    "kind": format!("{:?}", r.rule.kind),
+                    "symbol": r.rule.symbol,
+                    "direction": format!("{:?}", r.rule.direction),
+                    "threshold": r.rule.threshold,
+                    "current_value": r.current_value.map(|v| v.to_string()),
+                    "rule_text": r.rule.rule_text,
+                    "newly_triggered": r.newly_triggered,
+                    "distance_pct": r.distance_pct.map(|d| d.round_dp(2).to_string()),
+                })
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn get_drift_json_backend(backend: &BackendConnection) -> Result<serde_json::Value> {
+    let allocs = crate::db::allocations::list_allocations_backend(backend)?;
+    if allocs.is_empty() {
+        anyhow::bail!("No allocations (not in percentage mode)");
+    }
+    let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
+    let prices: HashMap<String, Decimal> = cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
+    if total_value <= dec!(0) {
+        anyhow::bail!("No priced positions");
+    }
+
+    let mut drift_items = Vec::new();
+    for pos in positions {
+        if let Some(current_value) = pos.current_value {
+            let current_pct = (current_value / total_value) * dec!(100);
+            if let Some(alloc) = allocs.iter().find(|a| a.symbol == pos.symbol) {
+                let target_pct = alloc.allocation_pct;
+                let drift = current_pct - target_pct;
+                if drift.abs() > dec!(1.0) {
+                    drift_items.push(serde_json::json!({
+                        "symbol": pos.symbol,
+                        "target_pct": target_pct.to_string(),
+                        "current_pct": current_pct.round_dp(2).to_string(),
+                        "drift": drift.round_dp(2).to_string(),
+                    }));
+                }
+            }
+        }
+    }
+    Ok(serde_json::json!({ "items": drift_items, "has_drift": !drift_items.is_empty() }))
+}
+
+fn get_regime_json_backend(backend: &BackendConnection) -> Result<serde_json::Value> {
+    if let Some(snapshot) = crate::db::regime_snapshots::get_current_backend(backend)? {
+        Ok(serde_json::json!({
+            "regime": snapshot.regime,
+            "confidence": snapshot.confidence,
+            "drivers": snapshot.drivers,
+            "recorded_at": snapshot.recorded_at,
+            "vix": snapshot.vix,
+            "dxy": snapshot.dxy,
+            "yield_10y": snapshot.yield_10y,
+            "oil": snapshot.oil,
+            "gold": snapshot.gold,
+            "btc": snapshot.btc,
+        }))
+    } else {
+        anyhow::bail!("No regime data available")
+    }
+}
+
+fn get_news_summary_json_backend(backend: &BackendConnection) -> Result<Vec<serde_json::Value>> {
+    let items = crate::db::news_cache::get_latest_news_backend(backend, 10, None, None, None, None)?;
+    Ok(items
+        .into_iter()
+        .map(|n| serde_json::json!({
+            "title": n.title, "url": n.url, "source": n.source, "source_type": n.source_type,
+            "description": n.description, "extra_snippets": n.extra_snippets, "published_at": n.published_at,
+        }))
+        .collect())
+}
+
+fn get_economic_data_json_backend(backend: &BackendConnection) -> Result<Vec<serde_json::Value>> {
+    let rows = crate::db::economic_data::get_all_backend(backend)?;
+    Ok(rows
+        .into_iter()
+        .map(|r| serde_json::json!({
+            "indicator": r.indicator,
+            "value": r.value.to_string(),
+            "previous": r.previous.map(|v| v.to_string()),
+            "change": r.change.map(|v| v.to_string()),
+            "source_url": r.source_url,
+            "fetched_at": r.fetched_at,
+        }))
+        .collect())
+}
+
+fn get_predictions_json_backend(backend: &BackendConnection) -> Result<Vec<serde_json::Value>> {
+    let rows = crate::db::predictions_cache::get_cached_predictions_backend(backend, 5)?;
+    Ok(rows
+        .into_iter()
+        .map(|p| serde_json::json!({
+            "id": p.id, "question": p.question, "probability": p.probability, "volume_24h": p.volume_24h, "category": p.category,
+        }))
+        .collect())
+}
+
+fn get_sentiment_json_backend(backend: &BackendConnection) -> Result<serde_json::Value> {
+    let crypto = crate::db::sentiment_cache::get_latest_backend(backend, "crypto_fng")?;
+    let traditional = crate::db::sentiment_cache::get_latest_backend(backend, "traditional_fng")?;
+    Ok(serde_json::json!({
+        "crypto_fng": crypto.map(|r| serde_json::json!({"value": r.value, "classification": r.classification, "timestamp": r.timestamp})),
+        "traditional_fng": traditional.map(|r| serde_json::json!({"value": r.value, "classification": r.classification, "timestamp": r.timestamp})),
+    }))
+}
+
+fn get_top_timeframe_signal_json_backend(backend: &BackendConnection) -> Result<serde_json::Value> {
+    if let Some(sig) = crate::db::timeframe_signals::latest_signal_backend(backend)? {
+        Ok(serde_json::json!({
+            "id": sig.id,
+            "signal_type": sig.signal_type,
+            "layers": sig.layers,
+            "assets": sig.assets,
+            "description": sig.description,
+            "severity": sig.severity,
+            "detected_at": sig.detected_at,
+        }))
+    } else {
+        anyhow::bail!("No timeframe signals available")
+    }
+}
+
 fn get_watchlist_json(
     conn: &Connection,
     prices: &HashMap<String, Decimal>,
@@ -720,6 +1072,24 @@ fn compute_symbol_day_pct(conn: &Connection, symbol: &str) -> Option<Decimal> {
     pct_change(current, prev)
 }
 
+fn compute_symbol_day_pct_backend(backend: &BackendConnection, symbol: &str) -> Option<Decimal> {
+    let current = crate::db::price_cache::get_cached_price_backend(backend, symbol, "USD")
+        .ok()??
+        .price;
+    let yesterday = (Utc::now().date_naive() - chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let prev = crate::db::price_history::get_prices_at_date_backend(
+        backend,
+        &[symbol.to_string()],
+        &yesterday,
+    )
+    .ok()?
+    .get(symbol)
+    .copied()?;
+    pct_change(current, prev)
+}
+
 fn print_benchmark_comparison(
     conn: &Connection,
     positions: &[Position],
@@ -727,6 +1097,28 @@ fn print_benchmark_comparison(
 ) {
     let portfolio_1d = compute_portfolio_day_pct(positions, hist_1d);
     let benchmark_1d = compute_symbol_day_pct(conn, "SPY");
+
+    println!("## Benchmark (SPY)\n");
+    match (portfolio_1d, benchmark_1d) {
+        (Some(p), Some(b)) => {
+            let spread = p - b;
+            println!("- Portfolio 1D: {:+.2}%", p);
+            println!("- SPY 1D: {:+.2}%", b);
+            println!("- Relative: {:+.2}%\n", spread);
+        }
+        _ => {
+            println!("- Benchmark comparison unavailable (run `pftui refresh` and ensure SPY price history exists).\n");
+        }
+    }
+}
+
+fn print_benchmark_comparison_backend(
+    backend: &BackendConnection,
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+) {
+    let portfolio_1d = compute_portfolio_day_pct(positions, hist_1d);
+    let benchmark_1d = compute_symbol_day_pct_backend(backend, "SPY");
 
     println!("## Benchmark (SPY)\n");
     match (portfolio_1d, benchmark_1d) {
@@ -780,8 +1172,40 @@ pub fn run_backend(
 ) -> Result<()> {
     match backend {
         BackendConnection::Sqlite { conn } => run(conn, config, technicals, agent),
-        BackendConnection::Postgres { .. } => {
-            crate::commands::summary::run(backend, config, None, None, None, technicals, agent)
+        BackendConnection::Postgres { .. } => run_backend_native(backend, config, technicals, agent),
+    }
+}
+
+fn run_backend_native(
+    backend: &BackendConnection,
+    config: &Config,
+    technicals: bool,
+    agent: bool,
+) -> Result<()> {
+    if agent {
+        return run_agent_mode_backend(backend, config);
+    }
+
+    let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
+    let prices: HashMap<String, Decimal> = cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let today = Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+    let symbols: Vec<String> = prices.keys().cloned().collect();
+    let hist_1d =
+        crate::db::price_history::get_prices_at_date_backend(backend, &symbols, &yesterday_str)
+            .unwrap_or_default();
+
+    let technicals_data = if technicals {
+        compute_technicals_for_symbols_backend(backend, &symbols)
+    } else {
+        HashMap::new()
+    };
+
+    match config.portfolio_mode {
+        PortfolioMode::Full => run_full_backend(backend, config, &prices, &hist_1d, &technicals_data),
+        PortfolioMode::Percentage => {
+            run_percentage_backend(backend, config, &prices, &hist_1d, &technicals_data)
         }
     }
 }
@@ -1001,6 +1425,166 @@ fn run_percentage(
     Ok(())
 }
 
+fn run_full_backend(
+    backend: &BackendConnection,
+    config: &Config,
+    prices: &HashMap<String, Decimal>,
+    hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
+) -> Result<()> {
+    let txs = crate::db::transactions::list_transactions_backend(backend)?;
+    if txs.is_empty() {
+        println!("# Portfolio Brief\n\nNo positions. Add one with: `pftui add-tx`");
+        return Ok(());
+    }
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+    let positions = compute_positions(&txs, prices, &fx_rates);
+    if positions.is_empty() {
+        println!("# Portfolio Brief\n\nNo open positions.");
+        return Ok(());
+    }
+
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
+    let total_cost: Decimal = positions.iter().map(|p| p.total_cost).sum();
+    let total_gain = total_value - total_cost;
+    let total_gain_pct = pct_change(total_value, total_cost).unwrap_or(dec!(0));
+    let base = &config.base_currency;
+    let priced_count = positions.iter().filter(|p| p.current_price.is_some()).count();
+    let total_count = positions.len();
+
+    let mut daily_pnl = dec!(0);
+    let mut has_daily = false;
+    for pos in &positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        let current = match pos.current_price {
+            Some(p) => p,
+            None => continue,
+        };
+        let prev = match hist_1d.get(&pos.symbol) {
+            Some(p) => *p,
+            None => continue,
+        };
+        if prev <= dec!(0) {
+            continue;
+        }
+        daily_pnl += (current - prev) * pos.quantity;
+        has_daily = true;
+    }
+
+    let date_str = Utc::now().format("%Y-%m-%d").to_string();
+    println!("# Portfolio Brief — {}\n", date_str);
+    let sign = if total_gain >= dec!(0) { "+" } else { "" };
+    println!(
+        "**{}** ({}{} / {}{}%)",
+        fmt_currency(total_value, 2, base),
+        sign,
+        fmt_commas(total_gain, 2),
+        sign,
+        total_gain_pct.round_dp(1),
+    );
+    if has_daily {
+        let day_sign = if daily_pnl >= dec!(0) { "+" } else { "" };
+        let day_pct = if total_value > dec!(0) {
+            (daily_pnl / (total_value - daily_pnl)) * dec!(100)
+        } else {
+            dec!(0)
+        };
+        println!(
+            "**1D:** {}{} ({}{}%)",
+            day_sign,
+            fmt_currency(daily_pnl.abs(), 2, base),
+            day_sign,
+            day_pct.round_dp(2),
+        );
+    }
+    print_risk_summary_backend(backend, &positions);
+    print_benchmark_comparison_backend(backend, &positions, hist_1d);
+    print_correlation_summary_backend(backend, &positions);
+    println!();
+
+    print_category_allocation(&positions, total_value);
+    print_what_changed_today_backend(backend, &positions, hist_1d, base);
+    print_pnl_attribution(&positions, hist_1d, base);
+    print_position_table_full(&positions, base, hist_1d);
+
+    if !technicals_data.is_empty() {
+        print_technicals_section(&positions, technicals_data);
+    }
+    if priced_count < total_count {
+        let missing = total_count - priced_count;
+        println!("\n> ⚠️ {}/{} positions missing prices. Run `pftui refresh`.", missing, total_count);
+    }
+    Ok(())
+}
+
+fn run_percentage_backend(
+    backend: &BackendConnection,
+    config: &Config,
+    prices: &HashMap<String, Decimal>,
+    hist_1d: &HashMap<String, Decimal>,
+    technicals_data: &HashMap<String, TechnicalSnapshot>,
+) -> Result<()> {
+    let allocs = crate::db::allocations::list_allocations_backend(backend)?;
+    if allocs.is_empty() {
+        println!("# Portfolio Brief\n\nNo allocations. Run: `pftui setup`");
+        return Ok(());
+    }
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+    let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
+    let base = &config.base_currency;
+
+    let priced: Vec<_> = positions.iter().filter(|p| p.current_price.is_some()).collect();
+    if priced.is_empty() {
+        println!("# Portfolio Brief\n\nNo prices cached. Run `pftui refresh` first.");
+        return Ok(());
+    }
+
+    let date_str = Utc::now().format("%Y-%m-%d").to_string();
+    println!("# Portfolio Brief — {}\n", date_str);
+    println!("*Percentage mode (allocation-based)*\n");
+    print_risk_summary_backend(backend, &positions);
+    print_benchmark_comparison_backend(backend, &positions, hist_1d);
+    print_correlation_summary_backend(backend, &positions);
+    println!();
+
+    print_category_allocation_pct(&positions);
+    print_what_changed_today_backend(backend, &positions, hist_1d, base);
+    print_pnl_attribution(&positions, hist_1d, base);
+
+    println!("## Positions\n");
+    println!("| Symbol | Category | Price | 1D | Alloc |");
+    println!("|--------|----------|------:|---:|------:|");
+    for pos in &positions {
+        let price_str = pos.current_price.map(|p| fmt_currency(p, 2, base)).unwrap_or_else(|| "N/A".to_string());
+        let alloc_str = pos.allocation_pct.map(|a| format!("{:.1}%", a)).unwrap_or_else(|| "—".to_string());
+        let name = resolve_name(&pos.symbol);
+        let symbol_display = if name.is_empty() { pos.symbol.clone() } else { format!("{} ({})", pos.symbol, name) };
+        let day_str = if pos.category == AssetCategory::Cash {
+            "—".to_string()
+        } else {
+            match (pos.current_price, hist_1d.get(&pos.symbol)) {
+                (Some(current), Some(prev)) if *prev > dec!(0) => {
+                    let pct = ((current - prev) / prev) * dec!(100);
+                    format!("{:+.1}%", pct)
+                }
+                _ => "—".to_string(),
+            }
+        };
+        println!("| {} | {} | {} | {} | {} |", symbol_display, pos.category, price_str, day_str, alloc_str);
+    }
+
+    if !technicals_data.is_empty() {
+        print_technicals_section(&positions, technicals_data);
+    }
+    let missing = positions.len() - priced.len();
+    if missing > 0 {
+        println!("\n> ⚠️ {}/{} positions missing prices. Run `pftui refresh`.", missing, positions.len());
+    }
+    Ok(())
+}
+
 fn print_risk_summary(conn: &Connection, positions: &[Position]) {
     let snapshots = get_all_portfolio_snapshots(conn).unwrap_or_default();
     let portfolio_values: Vec<Decimal> = snapshots.iter().map(|s| s.total_value).collect();
@@ -1013,6 +1597,44 @@ fn print_risk_summary(conn: &Connection, positions: &[Position]) {
     };
 
     let ffr_pct = economic_cache::get_latest(conn, "FEDFUNDS")
+        .ok()
+        .flatten()
+        .map(|o| o.value);
+
+    let metrics = risk::compute_risk_metrics(&portfolio_values, &concentration_values, ffr_pct);
+    let vol = metrics
+        .annualized_volatility_pct
+        .map(|v| format!("{:.1}%", v))
+        .unwrap_or_else(|| "N/A".to_string());
+    let var95 = metrics
+        .historical_var_95_pct
+        .map(|v| format!("{:.1}%", v))
+        .unwrap_or_else(|| "N/A".to_string());
+    let concentration = match metrics.herfindahl_index {
+        Some(h) if h >= dec!(0.25) => format!("HIGH ({:.3})", h),
+        Some(h) if h >= dec!(0.15) => format!("MODERATE ({:.3})", h),
+        Some(h) => format!("LOW ({:.3})", h),
+        None => "N/A".to_string(),
+    };
+
+    println!(
+        "**Risk:** vol {} · VaR95 {} · concentration {}",
+        vol, var95, concentration
+    );
+}
+
+fn print_risk_summary_backend(backend: &BackendConnection, positions: &[Position]) {
+    let snapshots = crate::db::snapshots::get_all_portfolio_snapshots_backend(backend).unwrap_or_default();
+    let portfolio_values: Vec<Decimal> = snapshots.iter().map(|s| s.total_value).collect();
+
+    let live_values: Vec<Decimal> = positions.iter().filter_map(|p| p.current_value).collect();
+    let concentration_values: Vec<Decimal> = if live_values.is_empty() {
+        positions.iter().filter_map(|p| p.allocation_pct).collect()
+    } else {
+        live_values
+    };
+
+    let ffr_pct = crate::db::economic_cache::get_latest_backend(backend, "FEDFUNDS")
         .ok()
         .flatten()
         .map(|o| o.value);
@@ -1084,6 +1706,49 @@ fn compute_technicals_for_symbols(
     for symbol in symbols {
         // Need at least 200 days for SMA-200; fetch 250 to be safe
         let history = match get_history(conn, symbol, 250) {
+            Ok(h) if h.len() >= 14 => h,
+            _ => continue,
+        };
+
+        let closes: Vec<f64> = history
+            .iter()
+            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+            .collect();
+
+        let rsi_values = compute_rsi(&closes, 14);
+        let rsi_14 = rsi_values.iter().rev().find_map(|v| *v);
+
+        let macd_values = compute_macd(&closes, 12, 26, 9);
+        let macd = macd_values.iter().rev().find_map(|v| *v);
+
+        let sma_50_values = compute_sma(&closes, 50);
+        let sma_50 = sma_50_values.iter().rev().find_map(|v| *v);
+
+        let sma_200_values = compute_sma(&closes, 200);
+        let sma_200 = sma_200_values.iter().rev().find_map(|v| *v);
+
+        result.insert(
+            symbol.clone(),
+            TechnicalSnapshot {
+                rsi_14,
+                macd,
+                sma_50,
+                sma_200,
+            },
+        );
+    }
+
+    result
+}
+
+fn compute_technicals_for_symbols_backend(
+    backend: &BackendConnection,
+    symbols: &[String],
+) -> HashMap<String, TechnicalSnapshot> {
+    let mut result = HashMap::new();
+
+    for symbol in symbols {
+        let history = match crate::db::price_history::get_history_backend(backend, symbol, 250) {
             Ok(h) if h.len() >= 14 => h,
             _ => continue,
         };
@@ -1310,6 +1975,17 @@ fn print_what_changed_today(
     print_alerts(conn);
 }
 
+fn print_what_changed_today_backend(
+    backend: &BackendConnection,
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+    base: &str,
+) {
+    println!("## What Changed Today\n");
+    print_top_movers(positions, hist_1d, base);
+    print_alerts_backend(backend);
+}
+
 fn print_correlation_summary(conn: &Connection, positions: &[Position]) {
     let summary = compute_correlation_summary(conn, positions);
     if summary.top_pairs.is_empty() && summary.active_breaks.is_empty() {
@@ -1341,6 +2017,35 @@ fn print_correlation_summary(conn: &Connection, positions: &[Position]) {
         }
     }
 
+    println!();
+}
+
+fn print_correlation_summary_backend(backend: &BackendConnection, positions: &[Position]) {
+    let summary = compute_correlation_summary_backend(backend, positions);
+    if summary.top_pairs.is_empty() && summary.active_breaks.is_empty() {
+        return;
+    }
+
+    println!("## Correlations\n");
+    if !summary.top_pairs.is_empty() {
+        println!("**Top Pairs (30d):**");
+        for pair in summary.top_pairs.iter().take(5) {
+            println!("- {}-{}: {:+.2}", pair.symbol_a, pair.symbol_b, pair.corr_30d);
+        }
+    }
+
+    if !summary.active_breaks.is_empty() {
+        if !summary.top_pairs.is_empty() {
+            println!();
+        }
+        println!("**Active Breaks (7d vs 90d):**");
+        for brk in summary.active_breaks.iter().take(5) {
+            println!(
+                "- {}-{}: Δ{:+.2} (7d {:+.2} vs 90d {:+.2})",
+                brk.symbol_a, brk.symbol_b, brk.delta, brk.corr_7d, brk.corr_90d
+            );
+        }
+    }
     println!();
 }
 
@@ -1389,6 +2094,115 @@ fn compute_correlation_summary(conn: &Connection, positions: &[Position]) -> Cor
     let mut price_map: HashMap<String, Vec<f64>> = HashMap::new();
     for symbol in &symbols {
         if let Ok(history) = get_history(conn, symbol, WINDOW_LONG as u32 + 40) {
+            let closes: Vec<f64> = history
+                .into_iter()
+                .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
+                .filter(|v| *v > 0.0)
+                .collect();
+            if closes.len() > WINDOW_MAIN {
+                price_map.insert(symbol.clone(), closes);
+            }
+        }
+    }
+
+    let mut top_pairs = Vec::new();
+    let mut active_breaks = Vec::new();
+    let mut symbols_sorted: Vec<String> = price_map.keys().cloned().collect();
+    symbols_sorted.sort();
+
+    for i in 0..symbols_sorted.len() {
+        for j in (i + 1)..symbols_sorted.len() {
+            let a = &symbols_sorted[i];
+            let b = &symbols_sorted[j];
+            let prices_a = match price_map.get(a) {
+                Some(v) => v,
+                None => continue,
+            };
+            let prices_b = match price_map.get(b) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let min_len = prices_a.len().min(prices_b.len());
+            if min_len < WINDOW_LONG + 1 {
+                continue;
+            }
+            let aligned_a = &prices_a[prices_a.len() - min_len..];
+            let aligned_b = &prices_b[prices_b.len() - min_len..];
+
+            let c30 = latest_corr(aligned_a, aligned_b, WINDOW_MAIN);
+            let c7 = latest_corr(aligned_a, aligned_b, WINDOW_SHORT);
+            let c90 = latest_corr(aligned_a, aligned_b, WINDOW_LONG);
+
+            if let Some(corr_30d) = c30 {
+                top_pairs.push(CorrelationPair {
+                    symbol_a: a.clone(),
+                    symbol_b: b.clone(),
+                    corr_30d,
+                });
+            }
+
+            if let (Some(corr_7d), Some(corr_90d)) = (c7, c90) {
+                let delta = corr_7d - corr_90d;
+                if delta.abs() >= BREAK_THRESHOLD {
+                    active_breaks.push(CorrelationBreak {
+                        symbol_a: a.clone(),
+                        symbol_b: b.clone(),
+                        corr_7d,
+                        corr_90d,
+                        delta,
+                    });
+                }
+            }
+        }
+    }
+
+    top_pairs.sort_by(|a, b| {
+        b.corr_30d
+            .abs()
+            .partial_cmp(&a.corr_30d.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    top_pairs.truncate(5);
+
+    active_breaks.sort_by(|a, b| {
+        b.delta
+            .abs()
+            .partial_cmp(&a.delta.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    active_breaks.truncate(5);
+
+    CorrelationSummary {
+        top_pairs,
+        active_breaks,
+    }
+}
+
+fn compute_correlation_summary_backend(
+    backend: &BackendConnection,
+    positions: &[Position],
+) -> CorrelationSummary {
+    const WINDOW_SHORT: usize = 7;
+    const WINDOW_MAIN: usize = 30;
+    const WINDOW_LONG: usize = 90;
+    const BREAK_THRESHOLD: f64 = 0.30;
+
+    let symbols: Vec<String> = positions
+        .iter()
+        .filter(|p| p.category != AssetCategory::Cash)
+        .map(|p| p.symbol.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    if symbols.len() < 2 {
+        return CorrelationSummary::default();
+    }
+
+    let mut price_map: HashMap<String, Vec<f64>> = HashMap::new();
+    for symbol in &symbols {
+        if let Ok(history) = crate::db::price_history::get_history_backend(backend, symbol, WINDOW_LONG as u32 + 40) {
             let closes: Vec<f64> = history
                 .into_iter()
                 .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
@@ -1543,6 +2357,55 @@ fn print_alerts(conn: &Connection) {
         }
     }
 
+    println!();
+}
+
+fn print_alerts_backend(backend: &BackendConnection) {
+    let results = match crate::alerts::engine::check_alerts_backend_only(backend) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+
+    let triggered: Vec<_> = results
+        .iter()
+        .filter(|r| r.rule.status == AlertStatus::Triggered)
+        .collect();
+    let armed_near: Vec<_> = results
+        .iter()
+        .filter(|r| {
+            r.rule.status == AlertStatus::Armed
+                && r.distance_pct.is_some()
+                && r.distance_pct.unwrap().abs() <= dec!(5)
+        })
+        .collect();
+
+    if triggered.is_empty() && armed_near.is_empty() {
+        return;
+    }
+
+    println!("## Alerts\n");
+    if !triggered.is_empty() {
+        for result in triggered {
+            let current = result
+                .current_value
+                .map(|v| v.round_dp(2).to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            println!("🔴 **TRIGGERED** — {} (current: {})", result.rule.rule_text, current);
+        }
+    }
+    if !armed_near.is_empty() {
+        for result in armed_near {
+            let distance = result.distance_pct.unwrap().abs().round_dp(1);
+            let current = result
+                .current_value
+                .map(|v| v.round_dp(2).to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            println!(
+                "🟡 **NEAR** — {} (current: {}, {}% away)",
+                result.rule.rule_text, current, distance
+            );
+        }
+    }
     println!();
 }
 

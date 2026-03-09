@@ -7,7 +7,8 @@ This guide covers moving portfolio data between pftui storage backends.
 - `sqlite` is the default and fully supported backend.
 - `postgres` runs natively through `database_backend = "postgres"` + `database_url`.
 - The legacy SQLite blob bridge (`pftui_sqlite_state`) has been removed.
-- Commands still being migrated to backend-dispatched paths may return a clear "not yet available with postgres" message until their module is converted.
+- Runtime interfaces (CLI/TUI/Web) execute against the active backend; SQLite is not used as a hidden bridge when Postgres is selected.
+- `pftui db-info` reports active backend, connection target, and per-table row counts.
 
 ## SQLite to PostgreSQL Migration Path
 

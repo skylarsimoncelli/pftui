@@ -3,6 +3,7 @@
 use anyhow::{anyhow, bail, Result};
 
 use crate::db;
+use crate::db::backend::BackendConnection;
 
 fn print_list(json: bool) -> Result<()> {
     let active = db::read_active_portfolio();
@@ -136,7 +137,11 @@ fn remove_portfolio(name: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run(action: &str, name: Option<&str>, json: bool) -> Result<()> {
+pub fn run(action: &str, name: Option<&str>, json: bool, backend: &BackendConnection) -> Result<()> {
+    if matches!(backend, BackendConnection::Postgres { .. }) {
+        return run_postgres(action, name, json);
+    }
+
     match action {
         "list" => print_list(json),
         "current" => print_current(json),
@@ -159,13 +164,44 @@ pub fn run(action: &str, name: Option<&str>, json: bool) -> Result<()> {
     }
 }
 
+fn run_postgres(action: &str, _name: Option<&str>, json: bool) -> Result<()> {
+    match action {
+        "list" | "current" => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "backend": "postgres",
+                        "active": "postgres",
+                        "portfolios": [{"name": "postgres", "active": true}]
+                    }))?
+                );
+            } else {
+                println!("postgres");
+                println!("backend: postgres");
+            }
+            Ok(())
+        }
+        "create" | "switch" | "remove" => {
+            bail!("portfolio {} is not supported with database_backend=postgres", action)
+        }
+        _ => bail!(
+            "Unknown action '{}'. Valid actions: list, current, create, switch, remove",
+            action
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn run_rejects_unknown_action() {
-        let err = run("bad", None, false).unwrap_err().to_string();
+        let backend = BackendConnection::Sqlite {
+            conn: crate::db::open_in_memory(),
+        };
+        let err = run("bad", None, false, &backend).unwrap_err().to_string();
         assert!(err.contains("Unknown action"));
     }
 }
