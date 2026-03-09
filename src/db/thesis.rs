@@ -198,8 +198,7 @@ pub fn remove_thesis_backend(backend: &BackendConnection, section: &str) -> Resu
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS thesis (
                 id BIGSERIAL PRIMARY KEY,
@@ -257,8 +256,7 @@ fn upsert_thesis_postgres(
     conviction: Option<&str>,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         let existing: Option<(String, String)> = sqlx::query_as(
             "SELECT content, conviction
              FROM thesis
@@ -306,8 +304,7 @@ fn upsert_thesis_postgres(
 
 fn list_thesis_postgres(pool: &PgPool) -> Result<Vec<ThesisEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<ThesisRow> = runtime.block_on(async {
+        let rows: Vec<ThesisRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, section, content, conviction, updated_at::text
              FROM thesis
@@ -321,8 +318,7 @@ fn list_thesis_postgres(pool: &PgPool) -> Result<Vec<ThesisEntry>> {
 
 fn get_thesis_section_postgres(pool: &PgPool, section: &str) -> Result<Option<ThesisEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<ThesisRow> = runtime.block_on(async {
+        let row: Option<ThesisRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, section, content, conviction, updated_at::text
              FROM thesis
@@ -341,8 +337,7 @@ fn get_thesis_history_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<ThesisHistoryEntry>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<ThesisHistRow> = runtime.block_on(async {
+        let rows: Vec<ThesisHistRow> = crate::db::pg_runtime::block_on(async {
         if let Some(limit) = limit {
             sqlx::query_as(
                 "SELECT id, section, content, conviction, recorded_at::text
@@ -372,8 +367,7 @@ fn get_thesis_history_postgres(
 
 fn remove_thesis_postgres(pool: &PgPool, section: &str) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM thesis WHERE section = $1")
             .bind(section)
             .execute(pool)

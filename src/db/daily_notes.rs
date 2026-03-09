@@ -171,8 +171,7 @@ fn from_pg_row(r: DailyNoteRow) -> DailyNote {
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS daily_notes (
                 id BIGSERIAL PRIMARY KEY,
@@ -197,8 +196,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
 
 fn add_note_postgres(pool: &PgPool, date: &str, section: &str, content: &str) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+        let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO daily_notes (date, section, content)
              VALUES ($1, $2, $3)
@@ -220,8 +218,7 @@ fn list_notes_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<DailyNote>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let mut rows: Vec<DailyNoteRow> = runtime.block_on(async {
+        let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, section, content, created_at::text
              FROM daily_notes
@@ -249,8 +246,7 @@ fn search_notes_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<DailyNote>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let mut rows: Vec<DailyNoteRow> = runtime.block_on(async {
+        let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, section, content, created_at::text
              FROM daily_notes
@@ -272,8 +268,7 @@ fn search_notes_postgres(
 
 fn remove_note_postgres(pool: &PgPool, id: i64) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM daily_notes WHERE id = $1")
             .bind(id)
             .execute(pool)
