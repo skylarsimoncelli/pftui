@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Make oil technicals reliable in macro dashboard
+
+- What: added on-demand oil history backfill in `pftui macro` for `CL=F` and `BZ=F` before technical calculations, using cached-history sufficiency checks and honoring `--cached-only`.
+- Why: macro technicals (RSI/MACD/SMA) read from `price_history`; many runs only had spot prices cached, so oil technicals could be absent despite valid current quotes.
+- Files: `src/commands/macro_cmd.rs`, `TODO.md`
+- Tests: `cargo test -q` (full suite)
+- TODO: Oil technicals in macro dashboard (P1)
+
 ### 2026-03-09 — Extend predictions category filters with finance/macro pipe support
 
 - What: upgraded `pftui predictions --category` to accept alias groups (`finance`, `macro`) and pipe-separated filters (e.g. `geopolitics|finance|macro`) in addition to exact categories.

@@ -782,7 +782,7 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 ### CLI Enhancements
 
 - [x] [Feedback] **Filter prediction markets by category** — `pftui predictions --category` now supports `finance`/`macro` aliases and pipe-separated filters (e.g. `geopolitics|finance|macro`) to focus out sports/entertainment noise. (Completed 2026-03-09)
-- [ ] [Feedback] **Oil technicals in macro dashboard** — Add RSI/MACD/SMA for WTI and Brent in `pftui macro`. Oil is the most important macro indicator during wartime and technicals are missing. (Morning Research, Evening Planner × 3+ reviews)
+- [x] [Feedback] **Oil technicals in macro dashboard** — `pftui macro` now backfills WTI/Brent history on-demand (unless `--cached-only`) so RSI/MACD/SMA render reliably for oil rows. (Completed 2026-03-09)
 
 ### Analytics
 

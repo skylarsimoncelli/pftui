@@ -14,7 +14,7 @@ use crate::data::fred;
 use crate::db::economic_cache;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
-use crate::db::price_history::get_history_backend;
+use crate::db::price_history::{get_history_backend, upsert_history_backend};
 use crate::indicators::{compute_macd, compute_rsi, compute_sma};
 use crate::price::yahoo;
 
@@ -125,6 +125,29 @@ fn backfill_market_prices(
     Ok(())
 }
 
+fn backfill_symbol_history(
+    backend: &BackendConnection,
+    symbol: &str,
+    min_points: usize,
+    days: u32,
+    cached_only: bool,
+) -> Result<()> {
+    if cached_only {
+        return Ok(());
+    }
+    if get_history_backend(backend, symbol, min_points as u32)?.len() >= min_points {
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Runtime::new()?;
+    if let Ok(history) = rt.block_on(yahoo::fetch_history(symbol, days)) {
+        if !history.is_empty() {
+            upsert_history_backend(backend, symbol, "yahoo", &history)?;
+        }
+    }
+    Ok(())
+}
+
 /// Run the macro dashboard command.
 pub fn run(backend: &BackendConnection, _config: &Config, json: bool, cached_only: bool) -> Result<()> {
     // Build price map from cached data (yahoo symbol -> price)
@@ -138,6 +161,11 @@ pub fn run(backend: &BackendConnection, _config: &Config, json: bool, cached_onl
     // some symbols were not previously fetched during refresh.
     let missing = missing_market_symbols(&price_map);
     backfill_market_prices(backend, &mut price_map, &missing, cached_only)?;
+    // Oil technicals (RSI/MACD/SMA) require price history, not just spot quotes.
+    // Backfill WTI/Brent history on-demand so macro output is useful even when only
+    // `refresh` spot prices were run previously.
+    backfill_symbol_history(backend, "CL=F", 50, 180, cached_only)?;
+    backfill_symbol_history(backend, "BZ=F", 50, 180, cached_only)?;
 
     // Build FRED data map (series_id -> latest observation)
     let fred_data: HashMap<String, (Decimal, String)> = economic_cache::get_all_latest_backend(backend)?
@@ -798,6 +826,13 @@ mod tests {
         let backend = to_backend(conn);
         let config = Config::default();
         assert!(run(&backend, &config, true, true).is_ok());
+    }
+
+    #[test]
+    fn test_backfill_symbol_history_cached_only_noop() {
+        let conn = open_in_memory();
+        let backend = to_backend(conn);
+        assert!(backfill_symbol_history(&backend, "CL=F", 50, 180, true).is_ok());
     }
 
     #[test]
