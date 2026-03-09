@@ -778,10 +778,12 @@ pub fn run_backend(
     technicals: bool,
     agent: bool,
 ) -> Result<()> {
-    if let Some(conn) = backend.sqlite_native() {
-        return run(conn, config, technicals, agent);
+    match backend {
+        BackendConnection::Sqlite { conn } => run(conn, config, technicals, agent),
+        BackendConnection::Postgres { .. } => {
+            crate::commands::summary::run(backend, config, None, None, None, technicals, agent)
+        }
     }
-    crate::commands::summary::run(backend, config, None, None, None, technicals, agent)
 }
 
 fn run_full(

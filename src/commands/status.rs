@@ -486,13 +486,10 @@ pub fn run(conn: &Connection, json: bool) -> Result<()> {
 }
 
 pub fn run_backend(backend: &BackendConnection, json: bool) -> Result<()> {
-    if let Some(conn) = backend.sqlite_native() {
-        return run(conn, json);
+    match backend {
+        BackendConnection::Sqlite { conn } => run(conn, json),
+        BackendConnection::Postgres { pool } => run_postgres(pool, json),
     }
-    if let Some(pool) = backend.postgres_pool() {
-        return run_postgres(pool, json);
-    }
-    Err(anyhow::anyhow!("Unsupported database backend state"))
 }
 
 fn run_postgres(pool: &PgPool, json: bool) -> Result<()> {
