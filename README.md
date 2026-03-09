@@ -193,7 +193,7 @@ You own this data completely. No cloud sync. No third-party accounts. One SQLite
 
 The longer you run pftui, the more powerful it becomes. This is the core design principle, **your data compounds.**
 
-PostgreSQL backend is now supported via runtime state sync (`database_backend = "postgres"` + `database_url`).
+PostgreSQL backend is supported natively (`database_backend = "postgres"` + `database_url`), with SQLite and Postgres as first-class backends.
 
 ### Data Sources, Zero Configuration
 

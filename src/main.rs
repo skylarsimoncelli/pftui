@@ -43,7 +43,7 @@ fn main() -> Result<()> {
         None => {
             // Auto-detect: run setup if no portfolio data
             if !commands::setup::has_portfolio_data(&backend) {
-                commands::setup::run(&backend, &config, false)?;
+                commands::setup::run(&config, false)?;
                 // Reload config (setup may have changed portfolio_mode)
                 let config = load_config_with_first_run_prompt()?;
                 let mut app = app::App::new(&config, db_path);
@@ -62,7 +62,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Setup) => {
-            commands::setup::run(&backend, &config, true)
+            commands::setup::run(&config, true)
         }
 
         Some(Command::Summary { group_by, period, what_if, json }) => {
@@ -796,7 +796,7 @@ fn main() -> Result<()> {
             json,
         }) => commands::options::run(&symbol, expiry.as_deref(), limit, json),
         Some(Command::Portfolio { action, name, json }) => {
-            commands::portfolio::run(&action, name.as_deref(), json, &backend)
+            commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {
             commands::stress_test::run(&backend, &config, &scenario, json)

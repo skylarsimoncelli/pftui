@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::config::{save_config, Config, DatabaseBackend, PortfolioMode, SUPPORTED_CURRENCIES};
-use crate::db::backend::BackendConnection;
+use crate::db::backend::{open_from_config, BackendConnection};
 use crate::db::{allocations, transactions};
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names;
@@ -36,56 +36,7 @@ fn confirm(msg: &str) -> Result<bool> {
     Ok(answer.to_lowercase() == "y")
 }
 
-pub fn run(backend: &BackendConnection, config: &Config, is_explicit: bool) -> Result<()> {
-    // If explicit setup with existing data, warn
-    if is_explicit {
-        let tx_count = transactions::count_transactions_backend(backend)?;
-        let alloc_count = allocations::count_allocations_backend(backend)?;
-        if tx_count > 0 || alloc_count > 0 {
-            println!();
-            println!("  \x1b[33m! Warning: You have existing portfolio data.\x1b[0m");
-            if tx_count > 0 {
-                println!("    {} transactions", tx_count);
-            }
-            if alloc_count > 0 {
-                println!("    {} allocations", alloc_count);
-            }
-            println!("    Setup will \x1b[1mdelete all existing data\x1b[0m.");
-            println!();
-            if !confirm("  Continue?")? {
-                println!("  Cancelled.");
-                return Ok(());
-            }
-            // Reset all data
-            crate::db::query::dispatch(
-                backend,
-                |conn| {
-                    conn.execute_batch(
-                        "DELETE FROM transactions;
-                         DELETE FROM portfolio_allocations;
-                         DELETE FROM price_cache;
-                         DELETE FROM price_history;",
-                    )?;
-                    Ok(())
-                },
-                |pool| {
-                    let runtime = tokio::runtime::Runtime::new()?;
-                    runtime.block_on(async {
-                        sqlx::query("DELETE FROM transactions").execute(pool).await?;
-                        sqlx::query("DELETE FROM portfolio_allocations")
-                            .execute(pool)
-                            .await?;
-                        sqlx::query("DELETE FROM price_cache").execute(pool).await?;
-                        sqlx::query("DELETE FROM price_history").execute(pool).await?;
-                        Ok::<(), sqlx::Error>(())
-                    })?;
-                    Ok(())
-                },
-            )?;
-            println!("  Data cleared.\n");
-        }
-    }
-
+pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
     // Welcome
     println!();
     println!("  \x1b[1mWelcome to pftui setup!\x1b[0m");
@@ -158,9 +109,36 @@ pub fn run(backend: &BackendConnection, config: &Config, is_explicit: bool) -> R
     new_config.database_backend = database_backend;
     new_config.database_url = database_url;
 
+    let db_path = crate::db::default_db_path();
+    let selected_backend = open_from_config(&new_config, &db_path)?;
+
+    // If explicit setup with existing data, warn on the selected backend.
+    if is_explicit {
+        let tx_count = transactions::count_transactions_backend(&selected_backend)?;
+        let alloc_count = allocations::count_allocations_backend(&selected_backend)?;
+        if tx_count > 0 || alloc_count > 0 {
+            println!();
+            println!("  \x1b[33m! Warning: You have existing portfolio data.\x1b[0m");
+            if tx_count > 0 {
+                println!("    {} transactions", tx_count);
+            }
+            if alloc_count > 0 {
+                println!("    {} allocations", alloc_count);
+            }
+            println!("    Setup will \x1b[1mdelete all existing data\x1b[0m.");
+            println!();
+            if !confirm("  Continue?")? {
+                println!("  Cancelled.");
+                return Ok(());
+            }
+            reset_setup_tables(&selected_backend)?;
+            println!("  Data cleared.\n");
+        }
+    }
+
     match mode {
-        PortfolioMode::Full => full_mode_setup(backend, &new_config)?,
-        PortfolioMode::Percentage => percentage_mode_setup(backend)?,
+        PortfolioMode::Full => full_mode_setup(&selected_backend, &new_config)?,
+        PortfolioMode::Percentage => percentage_mode_setup(&selected_backend)?,
     }
 
     // Optional Brave API key for richer research/news/economic data.
@@ -182,6 +160,34 @@ pub fn run(backend: &BackendConnection, config: &Config, is_explicit: bool) -> R
     println!();
 
     Ok(())
+}
+
+fn reset_setup_tables(backend: &BackendConnection) -> Result<()> {
+    crate::db::query::dispatch(
+        backend,
+        |conn| {
+            conn.execute_batch(
+                "DELETE FROM transactions;
+                 DELETE FROM portfolio_allocations;
+                 DELETE FROM price_cache;
+                 DELETE FROM price_history;",
+            )?;
+            Ok(())
+        },
+        |pool| {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(async {
+                sqlx::query("DELETE FROM transactions").execute(pool).await?;
+                sqlx::query("DELETE FROM portfolio_allocations")
+                    .execute(pool)
+                    .await?;
+                sqlx::query("DELETE FROM price_cache").execute(pool).await?;
+                sqlx::query("DELETE FROM price_history").execute(pool).await?;
+                Ok::<(), sqlx::Error>(())
+            })?;
+            Ok(())
+        },
+    )
 }
 
 fn prompt_database_backend(config: &Config) -> Result<(DatabaseBackend, Option<String>)> {
