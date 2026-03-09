@@ -461,7 +461,7 @@ body {
 /* ===== DEMO SECTION ===== */
 .demo {
     padding: var(--spacing-xl) 0;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
@@ -899,7 +899,8 @@ body {
 /* ===== COMPARISON TABLE ===== */
 .comparison {
     padding: var(--spacing-xl) 0;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
+    border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
 .comparison-table-wrapper {
@@ -940,7 +941,7 @@ body {
 /* ===== OPEN SOURCE SECTION ===== */
 .open-source {
     padding: var(--spacing-xl) 0;
-    background: var(--bg-primary);
+    background: var(--bg-secondary);
     border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
