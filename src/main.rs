@@ -592,6 +592,7 @@ fn main() -> Result<()> {
             symbols,
             json,
         }) => commands::group::run(
+            &backend,
             conn,
             &config,
             &action,

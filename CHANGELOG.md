@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:52 UTC — F32 Phase 23: backend-dispatch group command portfolio reads
+
+- What: migrated `group show` data path to backend-dispatched reads for transactions, allocations, cached prices, and historical prices while preserving group metadata CRUD on existing table paths; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only portfolio valuation reads from grouped-position analysis in Postgres mode.
+- Files: `src/commands/group.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics/utility path migration (partial: group show path)
+
 ### 2026-03-09 01:47 UTC — F32 Phase 22: backend-dispatch correlations command reads
 
 - What: migrated `correlations` command runtime data reads to backend-dispatched symbol discovery and history retrieval; updated main routing to pass `BackendConnection`.
