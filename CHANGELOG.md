@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Structural module PostgreSQL dispatch implementation
+
+- What: implemented native Postgres execution paths for structural storage/read APIs (`power_metrics`, `structural_cycles`, `structural_outcomes`, `structural_outcome_history`, `historical_parallels`, `structural_log`) and removed “not yet implemented” backend bails.
+- Why: enables `pftui structural` functionality on Postgres backends with parity to SQLite command paths.
+- Files: `src/db/structural.rs`, `src/db/postgres_schema.rs`
+- Tests: `cargo test -q`
+- TODO: structural Postgres dispatch
+
 ### 2026-03-09 — Auth session storage moved to async-aware lock primitive
 
 - What: migrated auth session store from `std::sync::Mutex` to `tokio::sync::RwLock` and updated session mutation/access paths to use non-poisoning lock behavior.

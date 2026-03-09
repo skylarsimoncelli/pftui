@@ -217,6 +217,101 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS power_metrics (
+                id BIGSERIAL PRIMARY KEY,
+                country TEXT NOT NULL,
+                metric TEXT NOT NULL,
+                score DOUBLE PRECISION,
+                rank INTEGER,
+                trend TEXT NOT NULL DEFAULT 'stable',
+                notes TEXT,
+                source TEXT,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_power_metrics_country ON power_metrics(country)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_power_metrics_metric ON power_metrics(metric)")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS structural_cycles (
+                id BIGSERIAL PRIMARY KEY,
+                cycle_name TEXT NOT NULL UNIQUE,
+                current_stage TEXT NOT NULL,
+                stage_entered TEXT,
+                description TEXT,
+                evidence TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS structural_outcomes (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                probability DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                time_horizon TEXT,
+                description TEXT,
+                historical_parallel TEXT,
+                asset_implications TEXT,
+                key_signals TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS structural_outcome_history (
+                id BIGSERIAL PRIMARY KEY,
+                outcome_id BIGINT NOT NULL REFERENCES structural_outcomes(id) ON DELETE CASCADE,
+                probability DOUBLE PRECISION NOT NULL,
+                driver TEXT,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_structural_outcome_history ON structural_outcome_history(outcome_id)")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS historical_parallels (
+                id BIGSERIAL PRIMARY KEY,
+                period TEXT NOT NULL,
+                event TEXT NOT NULL,
+                parallel_to TEXT NOT NULL,
+                similarity_score INTEGER CHECK(similarity_score BETWEEN 1 AND 10),
+                asset_outcome TEXT,
+                notes TEXT,
+                source TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS structural_log (
+                id BIGSERIAL PRIMARY KEY,
+                date TEXT NOT NULL,
+                development TEXT NOT NULL,
+                cycle_impact TEXT,
+                outcome_shift TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_structural_log_date ON structural_log(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS portfolio_snapshots (
                 date TEXT PRIMARY KEY,
                 total_value TEXT NOT NULL,

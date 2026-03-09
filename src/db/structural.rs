@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, Row as SqliteRow};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
 
@@ -467,6 +468,446 @@ pub fn list_log(conn: &Connection, since: Option<&str>, limit: Option<usize>) ->
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[allow(clippy::too_many_arguments)]
+fn set_metric_postgres(
+    pool: &PgPool,
+    country: &str,
+    metric: &str,
+    score: Option<f64>,
+    rank: Option<i32>,
+    trend: &str,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    let id = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO power_metrics (country, metric, score, rank, trend, notes, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+        )
+        .bind(country)
+        .bind(metric)
+        .bind(score)
+        .bind(rank)
+        .bind(trend)
+        .bind(notes)
+        .bind(source)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_metrics_postgres(pool: &PgPool, country: Option<&str>, metric: Option<&str>) -> Result<Vec<PowerMetric>> {
+    let rows: Vec<(i64, String, String, Option<f64>, Option<i32>, String, Option<String>, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::TEXT
+                 FROM power_metrics
+                 WHERE ($1::TEXT IS NULL OR country = $1)
+                   AND ($2::TEXT IS NULL OR metric = $2)
+                 ORDER BY recorded_at DESC",
+            )
+            .bind(country)
+            .bind(metric)
+            .fetch_all(pool)
+            .await
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| PowerMetric {
+            id: r.0,
+            country: r.1,
+            metric: r.2,
+            score: r.3,
+            rank: r.4,
+            trend: r.5,
+            notes: r.6,
+            source: r.7,
+            recorded_at: r.8,
+        })
+        .collect())
+}
+
+fn get_metric_history_postgres(
+    pool: &PgPool,
+    country: &str,
+    metric: &str,
+    limit: Option<usize>,
+) -> Result<Vec<PowerMetric>> {
+    let limit_val = limit.unwrap_or(50) as i64;
+    let rows: Vec<(i64, String, String, Option<f64>, Option<i32>, String, Option<String>, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::TEXT
+                 FROM power_metrics
+                 WHERE country = $1 AND metric = $2
+                 ORDER BY recorded_at DESC
+                 LIMIT $3",
+            )
+            .bind(country)
+            .bind(metric)
+            .bind(limit_val)
+            .fetch_all(pool)
+            .await
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| PowerMetric {
+            id: r.0,
+            country: r.1,
+            metric: r.2,
+            score: r.3,
+            rank: r.4,
+            trend: r.5,
+            notes: r.6,
+            source: r.7,
+            recorded_at: r.8,
+        })
+        .collect())
+}
+
+fn set_cycle_postgres(
+    pool: &PgPool,
+    name: &str,
+    stage: &str,
+    entered: Option<&str>,
+    description: Option<&str>,
+    evidence: Option<&str>,
+) -> Result<()> {
+    crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "INSERT INTO structural_cycles (cycle_name, current_stage, stage_entered, description, evidence)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT(cycle_name) DO UPDATE SET
+               current_stage = EXCLUDED.current_stage,
+               stage_entered = EXCLUDED.stage_entered,
+               description = EXCLUDED.description,
+               evidence = EXCLUDED.evidence,
+               updated_at = NOW()",
+        )
+        .bind(name)
+        .bind(stage)
+        .bind(entered)
+        .bind(description)
+        .bind(evidence)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn list_cycles_postgres(pool: &PgPool) -> Result<Vec<StructuralCycle>> {
+    let rows: Vec<(i64, String, String, Option<String>, Option<String>, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, cycle_name, current_stage, stage_entered, description, evidence, updated_at::TEXT
+                 FROM structural_cycles
+                 ORDER BY cycle_name",
+            )
+            .fetch_all(pool)
+            .await
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StructuralCycle {
+            id: r.0,
+            cycle_name: r.1,
+            current_stage: r.2,
+            stage_entered: r.3,
+            description: r.4,
+            evidence: r.5,
+            updated_at: r.6,
+        })
+        .collect())
+}
+
+fn get_cycle_postgres(pool: &PgPool, name: &str) -> Result<Option<StructuralCycle>> {
+    let row: Option<(i64, String, String, Option<String>, Option<String>, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, cycle_name, current_stage, stage_entered, description, evidence, updated_at::TEXT
+                 FROM structural_cycles
+                 WHERE cycle_name = $1",
+            )
+            .bind(name)
+            .fetch_optional(pool)
+            .await
+        })?;
+    Ok(row.map(|r| StructuralCycle {
+        id: r.0,
+        cycle_name: r.1,
+        current_stage: r.2,
+        stage_entered: r.3,
+        description: r.4,
+        evidence: r.5,
+        updated_at: r.6,
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_outcome_postgres(
+    pool: &PgPool,
+    name: &str,
+    probability: f64,
+    time_horizon: Option<&str>,
+    description: Option<&str>,
+    historical_parallel: Option<&str>,
+    asset_implications: Option<&str>,
+    key_signals: Option<&str>,
+) -> Result<i64> {
+    let id = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO structural_outcomes (name, probability, time_horizon, description, historical_parallel, asset_implications, key_signals)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+        )
+        .bind(name)
+        .bind(probability)
+        .bind(time_horizon)
+        .bind(description)
+        .bind(historical_parallel)
+        .bind(asset_implications)
+        .bind(key_signals)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_outcomes_postgres(pool: &PgPool) -> Result<Vec<StructuralOutcome>> {
+    let rows: Vec<(i64, String, f64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, String, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, name, probability, time_horizon, description, historical_parallel, asset_implications, key_signals, status, created_at::TEXT, updated_at::TEXT
+                 FROM structural_outcomes
+                 WHERE status = 'active'
+                 ORDER BY probability DESC",
+            )
+            .fetch_all(pool)
+            .await
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StructuralOutcome {
+            id: r.0,
+            name: r.1,
+            probability: r.2,
+            time_horizon: r.3,
+            description: r.4,
+            historical_parallel: r.5,
+            asset_implications: r.6,
+            key_signals: r.7,
+            status: r.8,
+            created_at: r.9,
+            updated_at: r.10,
+        })
+        .collect())
+}
+
+fn update_outcome_probability_postgres(
+    pool: &PgPool,
+    name: &str,
+    probability: f64,
+    driver: Option<&str>,
+) -> Result<()> {
+    crate::db::pg_runtime::block_on(async {
+        let mut tx = pool.begin().await?;
+        let id: i64 = sqlx::query_scalar("SELECT id FROM structural_outcomes WHERE name = $1")
+            .bind(name)
+            .fetch_one(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE structural_outcomes
+             SET probability = $1, updated_at = NOW()
+             WHERE id = $2",
+        )
+        .bind(probability)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO structural_outcome_history (outcome_id, probability, driver)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(id)
+        .bind(probability)
+        .bind(driver)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_outcome_history_postgres(
+    pool: &PgPool,
+    name: &str,
+    limit: Option<usize>,
+) -> Result<Vec<(f64, Option<String>, String)>> {
+    let limit_val = limit.unwrap_or(50) as i64;
+    let rows: Vec<(f64, Option<String>, String)> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT h.probability, h.driver, h.recorded_at::TEXT
+             FROM structural_outcome_history h
+             JOIN structural_outcomes o ON h.outcome_id = o.id
+             WHERE o.name = $1
+             ORDER BY h.recorded_at DESC
+             LIMIT $2",
+        )
+        .bind(name)
+        .bind(limit_val)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_parallel_postgres(
+    pool: &PgPool,
+    period: &str,
+    event: &str,
+    parallel_to: &str,
+    score: Option<i32>,
+    outcome: Option<&str>,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    let id = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO historical_parallels (period, event, parallel_to, similarity_score, asset_outcome, notes, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+        )
+        .bind(period)
+        .bind(event)
+        .bind(parallel_to)
+        .bind(score)
+        .bind(outcome)
+        .bind(notes)
+        .bind(source)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_parallels_postgres(pool: &PgPool, period: Option<&str>) -> Result<Vec<HistoricalParallel>> {
+    let rows: Vec<(i64, String, String, String, Option<i32>, Option<String>, Option<String>, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, period, event, parallel_to, similarity_score, asset_outcome, notes, source, created_at::TEXT
+                 FROM historical_parallels
+                 WHERE ($1::TEXT IS NULL OR period = $1)
+                 ORDER BY created_at DESC",
+            )
+            .bind(period)
+            .fetch_all(pool)
+            .await
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| HistoricalParallel {
+            id: r.0,
+            period: r.1,
+            event: r.2,
+            parallel_to: r.3,
+            similarity_score: r.4,
+            asset_outcome: r.5,
+            notes: r.6,
+            source: r.7,
+            created_at: r.8,
+        })
+        .collect())
+}
+
+fn search_parallels_postgres(pool: &PgPool, query: &str) -> Result<Vec<HistoricalParallel>> {
+    let like = format!("%{}%", query);
+    let rows: Vec<(i64, String, String, String, Option<i32>, Option<String>, Option<String>, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, period, event, parallel_to, similarity_score, asset_outcome, notes, source, created_at::TEXT
+                 FROM historical_parallels
+                 WHERE event ILIKE $1
+                    OR parallel_to ILIKE $1
+                    OR notes ILIKE $1
+                 ORDER BY created_at DESC",
+            )
+            .bind(&like)
+            .fetch_all(pool)
+            .await
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| HistoricalParallel {
+            id: r.0,
+            period: r.1,
+            event: r.2,
+            parallel_to: r.3,
+            similarity_score: r.4,
+            asset_outcome: r.5,
+            notes: r.6,
+            source: r.7,
+            created_at: r.8,
+        })
+        .collect())
+}
+
+fn add_log_postgres(
+    pool: &PgPool,
+    date: &str,
+    development: &str,
+    cycle_impact: Option<&str>,
+    outcome_shift: Option<&str>,
+) -> Result<i64> {
+    let id = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO structural_log (date, development, cycle_impact, outcome_shift)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id",
+        )
+        .bind(date)
+        .bind(development)
+        .bind(cycle_impact)
+        .bind(outcome_shift)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_log_postgres(pool: &PgPool, since: Option<&str>, limit: Option<usize>) -> Result<Vec<StructuralLog>> {
+    let limit_val = limit.unwrap_or(50) as i64;
+    let rows: Vec<(i64, String, String, Option<String>, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, date, development, cycle_impact, outcome_shift, created_at::TEXT
+                 FROM structural_log
+                 WHERE ($1::TEXT IS NULL OR date >= $1)
+                 ORDER BY date DESC
+                 LIMIT $2",
+            )
+            .bind(since)
+            .bind(limit_val)
+            .fetch_all(pool)
+            .await
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| StructuralLog {
+            id: r.0,
+            date: r.1,
+            development: r.2,
+            cycle_impact: r.3,
+            outcome_shift: r.4,
+            created_at: r.5,
+        })
+        .collect())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn set_metric_backend(
     backend: &BackendConnection,
     country: &str,
@@ -479,9 +920,7 @@ pub fn set_metric_backend(
 ) -> Result<i64> {
     match backend {
         BackendConnection::Sqlite { conn } => set_metric(conn, country, metric, score, rank, trend, notes, source),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => set_metric_postgres(pool, country, metric, score, rank, trend, notes, source),
     }
 }
 
@@ -492,9 +931,7 @@ pub fn list_metrics_backend(
 ) -> Result<Vec<PowerMetric>> {
     match backend {
         BackendConnection::Sqlite { conn } => list_metrics(conn, country, metric),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => list_metrics_postgres(pool, country, metric),
     }
 }
 
@@ -506,9 +943,7 @@ pub fn get_metric_history_backend(
 ) -> Result<Vec<PowerMetric>> {
     match backend {
         BackendConnection::Sqlite { conn } => get_metric_history(conn, country, metric, limit),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => get_metric_history_postgres(pool, country, metric, limit),
     }
 }
 
@@ -522,18 +957,14 @@ pub fn set_cycle_backend(
 ) -> Result<()> {
     match backend {
         BackendConnection::Sqlite { conn } => set_cycle(conn, name, stage, entered, description, evidence),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => set_cycle_postgres(pool, name, stage, entered, description, evidence),
     }
 }
 
 pub fn list_cycles_backend(backend: &BackendConnection) -> Result<Vec<StructuralCycle>> {
     match backend {
         BackendConnection::Sqlite { conn } => list_cycles(conn),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => list_cycles_postgres(pool),
     }
 }
 
@@ -541,9 +972,7 @@ pub fn list_cycles_backend(backend: &BackendConnection) -> Result<Vec<Structural
 pub fn get_cycle_backend(backend: &BackendConnection, name: &str) -> Result<Option<StructuralCycle>> {
     match backend {
         BackendConnection::Sqlite { conn } => get_cycle(conn, name),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => get_cycle_postgres(pool, name),
     }
 }
 
@@ -569,18 +998,23 @@ pub fn add_outcome_backend(
             asset_implications,
             key_signals,
         ),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => add_outcome_postgres(
+            pool,
+            name,
+            probability,
+            time_horizon,
+            description,
+            historical_parallel,
+            asset_implications,
+            key_signals,
+        ),
     }
 }
 
 pub fn list_outcomes_backend(backend: &BackendConnection) -> Result<Vec<StructuralOutcome>> {
     match backend {
         BackendConnection::Sqlite { conn } => list_outcomes(conn),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => list_outcomes_postgres(pool),
     }
 }
 
@@ -592,9 +1026,7 @@ pub fn update_outcome_probability_backend(
 ) -> Result<()> {
     match backend {
         BackendConnection::Sqlite { conn } => update_outcome_probability(conn, name, probability, driver),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => update_outcome_probability_postgres(pool, name, probability, driver),
     }
 }
 
@@ -605,9 +1037,7 @@ pub fn get_outcome_history_backend(
 ) -> Result<Vec<(f64, Option<String>, String)>> {
     match backend {
         BackendConnection::Sqlite { conn } => get_outcome_history(conn, name, limit),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => get_outcome_history_postgres(pool, name, limit),
     }
 }
 
@@ -624,27 +1054,21 @@ pub fn add_parallel_backend(
 ) -> Result<i64> {
     match backend {
         BackendConnection::Sqlite { conn } => add_parallel(conn, period, event, parallel_to, score, outcome, notes, source),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => add_parallel_postgres(pool, period, event, parallel_to, score, outcome, notes, source),
     }
 }
 
 pub fn list_parallels_backend(backend: &BackendConnection, period: Option<&str>) -> Result<Vec<HistoricalParallel>> {
     match backend {
         BackendConnection::Sqlite { conn } => list_parallels(conn, period),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => list_parallels_postgres(pool, period),
     }
 }
 
 pub fn search_parallels_backend(backend: &BackendConnection, query: &str) -> Result<Vec<HistoricalParallel>> {
     match backend {
         BackendConnection::Sqlite { conn } => search_parallels(conn, query),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => search_parallels_postgres(pool, query),
     }
 }
 
@@ -657,9 +1081,7 @@ pub fn add_log_backend(
 ) -> Result<i64> {
     match backend {
         BackendConnection::Sqlite { conn } => add_log(conn, date, development, cycle_impact, outcome_shift),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => add_log_postgres(pool, date, development, cycle_impact, outcome_shift),
     }
 }
 
@@ -670,8 +1092,6 @@ pub fn list_log_backend(
 ) -> Result<Vec<StructuralLog>> {
     match backend {
         BackendConnection::Sqlite { conn } => list_log(conn, since, limit),
-        BackendConnection::Postgres { pool: _ } => {
-            anyhow::bail!("Postgres structural storage not yet implemented")
-        }
+        BackendConnection::Postgres { pool } => list_log_postgres(pool, since, limit),
     }
 }
