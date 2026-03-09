@@ -285,6 +285,7 @@ fn main() -> Result<()> {
             json,
         }) => {
             commands::scan::run(
+                &backend,
                 conn,
                 &config,
                 filter.as_deref(),

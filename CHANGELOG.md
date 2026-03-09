@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:38 UTC — F32 Phase 20: backend-dispatch scan command reads
+
+- What: migrated `scan` command runtime reads to backend-dispatched transactions/allocations/price-cache data, while preserving sqlite-signature `count_matches` for existing callsites; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only reads from scanner execution and alert-related scan workflows in Postgres mode.
+- Files: `src/commands/scan.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3/F32.5 command-path migration (partial: scan runtime path)
+
 ### 2026-03-09 01:30 UTC — F32 Phase 19: backend-dispatch export command reads
 
 - What: migrated `export` to backend-dispatched reads for prices, transactions, allocations, and watchlist snapshot data; updated main routing and import round-trip test callsite for the new backend-aware export signature.
