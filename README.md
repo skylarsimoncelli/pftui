@@ -20,77 +20,94 @@ pftui centralises all your market data, news, economic indicators, sentiment, pr
 
 **The tool is fully agent-native and agent-driven.** Every feature ships with a CLI command and `--json` output. The database schema is documented. The [agent operator guide](AGENTS.md) is as thorough as the user manual. pftui is designed to be set up, operated, and maintained by your AI agent, with you in the decision seat.
 
-## Analytics Engine
+## Architecture
 
-pftui's core differentiator is a **multi-timeframe analytics engine** that tracks market forces from intraday noise to decade-long empire cycles. Unlike traditional tools that focus on a single timeframe, pftui operates four intelligence layers simultaneously:
+pftui is built as a four-layer intelligence stack. Each layer builds on the one below it, and the database sits at the centre as shared state for everything.
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                    ANALYTICS ENGINE                         │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
-│  │     MACRO     │  │     HIGH      │  │    MEDIUM     │   │
-│  │ years→decades │──│ months→years  │──│ weeks→months  │   │
-│  │ empire cycles │  │ AI disruption │  │ Fed scenarios │   │
-│  └───────────────┘  └───────────────┘  └───────────────┘   │
-│                              │                             │
-│          Context flows DOWN  │  Signals flow UP            │
-│                              ▼                             │
-│                    ┌───────────────┐                       │
-│                    │      LOW      │                       │
-│                    │  hours→days   │                       │
-│                    │ prices, VIX   │                       │
-│                    └───────────────┘                       │
-└─────────────────────────────────────────────────────────────┘
+             ┌──────────────────────────────────┐
+             │          AI Layer                 │  Agents, routines, investor panel
+             ├──────────────────────────────────┤
+             │  Multi-timeframe Analytics Engine │  LOW / MEDIUM / HIGH / MACRO
+             ├──────────────────────────────────┤
+             │     Data Aggregation Engine       │  10+ sources, technicals, compute
+             └───────────────┬──────────────────┘
+                             │ read / write
+             ┌───────────────▼──────────────────┐
+             │           Database                │  SQLite or PostgreSQL
+             │     shared state for all layers   │
+             └──────────────────────────────────┘
 ```
 
-**Four Intelligence Layers:**
+### Data Aggregation Engine
 
-- **LOW (hours→days):** Prices (84 symbols), VIX, Fear & Greed, technical indicators, prediction markets, correlations, regime classification, calendar events, alerts
-- **MEDIUM (weeks→months):** Macro scenarios with probabilities, versioned thesis, conviction scores (-5 to +5), research questions, economic data, user predictions with accuracy tracking
-- **HIGH (months→years):** Structural trends (AI disruption, nuclear renaissance, BRICS de-dollarisation) with evidence logs and per-asset impact mappings  
-- **MACRO (years→decades):** Empire lifecycle analysis, 8-dimension power metrics, structural cycles, long-term outcome probabilities, historical parallels
+One `pftui refresh` pulls from 10+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.
 
-**Cross-Timeframe Intelligence:** Signals flow upward (correlation break in LOW → scenario shift in MEDIUM → trend evidence in HIGH), while context flows downward (MACRO constraint → scenario weighting → signal interpretation). When all layers align, you get maximum conviction deployment signals.
+**What it collects:** Equity/crypto/commodity/forex prices across 84 symbols. CFTC Commitments of Traders positioning. COMEX gold and silver warehouse inventory. BLS economic data (CPI, NFP, unemployment, wages across 101 series). World Bank structural indicators for 8 economies. Polymarket prediction market odds. Crypto and traditional Fear and Greed indices. Economic calendar events. Financial news from 10+ RSS feeds and Brave Search. BTC on-chain data and ETF flows.
 
-**Quick Commands:**
+**What it computes:** RSI, MACD, SMA, and Bollinger Bands across all symbols. Rolling cross-asset correlation matrices. Market regime classification (risk-on, risk-off, transition) with confidence scoring. Daily change detection and threshold alerts. FX normalization for multi-currency portfolios. Prediction market probability shifts.
+
+This pre-processing is important. The Analytics Engine does not re-derive technicals from raw price data. It reads pre-computed RSI from the database and asks the higher-order question: what does RSI 89 on oil mean given the current war scenario? The aggregation layer handles compute. The analytics layer handles interpretation.
+
+**No API keys required** for core sources. Optional Brave Search API unlocks additional news, economic data, and research queries. See [docs/DATA-AGGREGATION.md](docs/DATA-AGGREGATION.md) for full source catalog and pipeline details.
+
 ```bash
-pftui refresh                    # Populate LOW layer
-pftui analytics summary          # All four layers at once  
-pftui analytics alignment --symbol GC=F  # Per-asset consensus
-pftui scenario add "Recession" --probability 30  # MEDIUM layer
-pftui trends add "AI Disruption" --direction accelerating  # HIGH layer
-pftui structural cycle-set "Big Debt Cycle" --stage 6  # MACRO layer
+pftui refresh     # Run the full pipeline
+pftui status      # Check freshness per source
+pftui doctor      # Connectivity diagnostics
 ```
 
-**Example:** Oil breaks $100 → LOW detects price alert + regime shift → MEDIUM raises war scenario probability → HIGH logs commodity supercycle evidence → MACRO notes Stage 6 conflict pattern. Result: all four layers agree gold is bullish = ████ **STRONG** signal.
+### Database
+
+The database is not a passive store. It is the shared state layer that every other layer reads from and writes to. The aggregation engine writes price caches, sentiment data, and economic indicators. The analytics engine writes scenarios, convictions, and regime classifications. The AI layer writes agent messages, daily notes, and predictions. Every layer's output becomes queryable input for every other layer.
+
+SQLite by default, PostgreSQL for production. Your choice. Both are first-class backends with full feature parity.
+
+**Day 1:** A snapshot of prices, sentiment, positioning, and economic data.
+**Day 30:** A month of cross-asset price history, weekly COT shifts, and sentiment trends.
+**Day 300:** A proprietary dataset covering daily OHLCV across every asset class, CFTC positioning history, COMEX inventory trends, sentiment cycles, and prediction market accuracy. The kind of data trading desks pay six figures for.
+
+You own this data completely. No cloud sync. No third-party accounts. The longer you run pftui, the more valuable it becomes.
+
+### Multi-timeframe Analytics Engine
+
+The core differentiator. Four intelligence layers operating simultaneously across different time horizons. Each uses different data, updates at different frequencies, and produces different signals.
+
+- **LOW (hours to days)** tracks what is happening right now. Prices, volatility, sentiment, regime classification, correlations, calendar events, and triggered alerts. Updated every refresh cycle. Signal type: tactical.
+- **MEDIUM (weeks to months)** tracks which narratives are winning. Macro scenarios with probabilities, versioned thesis sections, conviction scores per asset, research questions with evidence, economic data, and user predictions with accuracy scoring. Updated daily. Signal type: directional.
+- **HIGH (months to years)** tracks the structural forces reshaping markets. Multi-quarter trends like AI disruption, nuclear renaissance, and commodity supercycles. Each trend has a direction, evidence log, and per-asset impact mapping. Updated weekly or on significant evidence. Signal type: thematic.
+- **MACRO (years to decades)** tracks where we are in the big cycle. Empire lifecycle analysis with power metrics across 8 dimensions, structural cycles with stage tracking, long-term outcome probabilities, and historical parallels with similarity scoring. Updated weekly. Signal type: structural.
+
+Signals flow upward through the layers. A correlation break in LOW gets escalated to MEDIUM, which investigates whether it represents a scenario shift. A scenario shift in MEDIUM feeds evidence to a HIGH trend. Context flows downward. MACRO's assessment of the current empire cycle stage constrains how MEDIUM weights its scenarios, which constrains how LOW interprets short-term moves.
+
+When all four layers agree on an asset, that is the highest conviction signal in the system. When they diverge, that divergence is the investigation worth doing.
+
+```bash
+pftui analytics summary                    # All four layers in one view
+pftui analytics alignment --symbol GC=F    # Per-asset cross-timeframe consensus
+pftui scenario add "Recession" --probability 30
+pftui trends add "AI Disruption" --direction accelerating
+pftui structural cycle-set "Big Debt Cycle" --stage 6
+```
 
 See the full documentation: [docs/ANALYTICS-ENGINE.md](docs/ANALYTICS-ENGINE.md)
 
-**The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles.**
+### AI Layer
 
-## AI Layer
+Every feature in pftui has a CLI command with `--json` output. Agents use the same database, same commands, and same analysis frameworks that humans do. The result is genuine bidirectional intelligence where both operators contribute to a shared understanding.
 
-pftui is designed to be your **AI agent's financial intelligence operating system**. Every feature has a CLI counterpart with `--json` output, and agents use the same database, same commands, and same analysis frameworks you do.
+**Bidirectional communication.** Your agent does not just read your data. It contributes to it. Agents update scenario probabilities, log evidence against research questions, set conviction scores, and write daily notes. You review what the agent wrote, adjust where you disagree, and the system incorporates both perspectives. The ongoing dialogue between human conviction and agent analysis is the most valuable output.
 
-**Bidirectional Human-Agent Communication:**
-Your agent doesn't just read your data — it contributes to it. Agents update scenarios, log evidence, set conviction scores, and write daily briefs using the same `pftui` commands. You and your agent build shared intelligence over time using one tool and one database.
+**Scheduled routines.** Morning briefs, market close summaries, weekly reviews, scenario analysis, feedback loop optimization. All cron-driven, all reading from and writing to the same database. Multiple agents can coordinate through `pftui agent-msg`, a structured message bus with priority levels, analytics layer tags, and acknowledgment tracking.
 
-**Scheduled Routines and Reports:**
-Set up cron jobs for automated market monitoring. Your agent runs `pftui refresh` twice daily, generates morning briefs with `pftui brief --json`, tracks scenario updates, and handles the research grunt work while you focus on decision-making. Multi-agent feedback loops where different agents handle different market sectors.
+**Investor Perspectives Panel.** Feed your analytics engine data to sub-agents prompted as famous investors. Warren Buffett, Ray Dalio, Stanley Druckenmiller, Michael Burry, and 21 others. Each interprets the same data through a fundamentally different investment philosophy. The consensus tells you where conviction is strongest. The divergence tells you where the interesting questions are.
 
-**Investor Perspectives Panel:**
-Configure sub-agents as famous investors analyzing your data through their frameworks. Warren Buffett agent focuses on intrinsic value and long-term scenarios. Ray Dalio agent tracks empire cycles and structural transitions. Stan Druckenmiller agent watches macro regime changes and position sizing. Each perspective runs on your live data.
-
-**Agent Integration Example:**
 ```bash
-# Agent morning routine
-pftui refresh && pftui brief --json  # Get full portfolio state
-pftui scenario update "Stagflation" --probability 35  # Update thesis
-pftui conviction set BTC --score 3   # Express conviction 
-pftui agent-msg "Oil breakout confirms commodity supercycle thesis"
+pftui refresh && pftui brief --json        # Agent gets full portfolio state
+pftui scenario update "Stagflation" --probability 35
+pftui conviction set GC=F --score 4 --notes "War + BRICS + CB buying"
+pftui agent-msg send "Gold alignment: all 4 layers bullish" --from morning-agent --layer cross
 ```
-
-Your agent becomes a sophisticated macro analyst, not just a data fetcher. It develops views, tracks accuracy, and helps you build conviction through continuous market intelligence.
 
 See the full AI layer guide: [docs/AI-LAYER.md](docs/AI-LAYER.md) and agent operator guide: [AGENTS.md](AGENTS.md)
 
@@ -214,57 +231,32 @@ pftui config list --json           # List all config fields
 pftui config set brave_api_key <key>  # Set Brave Search API key
 ```
 
-### Data Aggregation Engine
+### Database Schema
 
-pftui includes a dedicated **Data Aggregation Engine** that unifies market and macro ingestion into one repeatable local pipeline.
-
-```bash
-pftui refresh
-```
-
-That single command updates prices, price history, sentiment, COT, COMEX, predictions, news, and economic datasets into your configured backend (SQLite or PostgreSQL), so both humans and agents operate on one coherent, owned dataset.
-
-Read the full model and pipeline details: [docs/DATA-AGGREGATION.md](docs/DATA-AGGREGATION.md)
-
-### Your Personal Database, Your Proprietary Edge
-
-Every `pftui refresh` pulls data from 10+ sources and writes it into your configured persistent database backend (**SQLite by default or PostgreSQL**). This is your personal market database and proprietary data collection, compounding every day you run it.
-
-**Day 1:** You get a snapshot of prices, sentiment, COT positioning, and economic data.
-**Day 30:** You have a month of cross-asset price history, weekly COT shifts, and sentiment trends.
-**Day 300:** You have a proprietary dataset, daily OHLCV across every asset class, CFTC positioning history, COMEX inventory trends, sentiment cycles, prediction market accuracy, the kind of data trading desks pay six figures for.
-
-You own this data completely. No cloud sync. No third-party accounts. Query, back up, version, or export your SQLite file (or PostgreSQL database) however you want. Build your own backtests, correlation models, and regime analysis on top of a proprietary dataset that stays fully under your control.
+The database holds portfolio data, market caches, analytics state, and agent communications in one unified schema. See the [Architecture](#architecture) section for how these tables are used across the four layers.
 
 ```
-~/.local/share/pftui/pftui.db     # SQLite, single source of truth
+~/.local/share/pftui/pftui.db     # SQLite (default) or PostgreSQL
 ├── transactions                   # Buy/sell records with cost basis
-├── price_cache                    # Latest spot prices
-├── price_history                  # Daily OHLCV history (compounds over time)
-├── watchlist                      # Tracked symbols
-├── alerts                         # Price/allocation alerts
-├── targets                        # Target allocation percentages
-├── journal_entries                # Trade journal + notes
-├── calendar_events                # Economic calendar
-├── news_cache                     # RSS feed articles
-├── sentiment_cache                # F&G indices (historical trend)
-├── prediction_cache               # Polymarket odds (track accuracy over time)
-├── cot_cache                      # CFTC COT positioning (weekly history)
-├── comex_cache                    # COMEX inventory (supply trend)
-├── bls_cache                      # BLS economic data
+├── price_cache                    # Latest spot prices (84 symbols)
+├── price_history                  # Daily OHLCV (compounds over time)
+├── watchlist                      # Tracked symbols with targets
+├── alerts                         # Price/allocation threshold alerts
+├── journal                        # Trade journal, lessons, predictions
+├── scenarios                      # Macro scenarios with probabilities
+├── thesis                         # Versioned thesis by section
+├── convictions                    # Per-asset conviction scores over time
+├── trend_tracker                  # Multi-quarter structural trends
+├── agent_messages                 # Inter-agent communication bus
+├── regime_snapshots               # Risk-on/off classification history
+├── correlation_snapshots          # Rolling cross-asset correlations
+├── sentiment_cache                # Fear and Greed indices
+├── cot_cache                      # CFTC COT positioning
+├── bls_cache                      # BLS economic data (101 series)
 ├── worldbank_cache                # Global macro indicators
-└── onchain_cache                  # BTC on-chain + ETF flows
+├── predictions_cache              # Polymarket odds
+└── ... (46 tables total)
 ```
-
-If using PostgreSQL backend:
-
-```bash
-psql "$DATABASE_URL" -c "SELECT symbol, quantity, price_per FROM transactions LIMIT 20;"
-```
-
-The longer you run pftui, the more powerful it becomes. This is the core design principle, **your data compounds.**
-
-PostgreSQL backend is supported natively (`database_backend = "postgres"` + `database_url`), with SQLite and Postgres as first-class backends.
 
 ### Data Sources, Zero Configuration
 
