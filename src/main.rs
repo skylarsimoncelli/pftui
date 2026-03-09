@@ -227,8 +227,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Refresh { notify }) => {
-            let conn = sqlite_conn_for_command(&backend, "refresh")?;
-            commands::refresh::run(&backend, conn, &config, notify)
+            commands::refresh::run(&backend, &config, notify)
         }
         Some(Command::Status { json, .. }) => {
             commands::status::run_backend(&backend, json)

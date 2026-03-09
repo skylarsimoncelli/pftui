@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 08:23 UTC — F32 Phase 48: remove refresh sqlite gate with backend-safe execution path
+
+- What: removed SQLite connection requirement from `refresh` command signature and routing; switched to backend-native execution for core refresh paths (prices, predictions, alerts) and conditional sqlite-only execution for remaining cache modules when sqlite backend is active; updated app/web refresh callsites for new signature.
+- Why: unlocks `pftui refresh` in postgres mode and removes another top-level sqlite command gate while preserving existing sqlite behavior.
+- Files: `src/commands/refresh.rs`, `src/main.rs`, `src/app.rs`, `src/web/server.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include setup/tui)
+
 ### 2026-03-09 08:11 UTC — F32 Phase 47: remove brief sqlite gate with postgres-safe fallback
 
 - What: removed sqlite gating for `pftui brief` in `main`; SQLite backend keeps existing rich brief path, while postgres backend now runs backend-native `summary` as a safe fallback output path.

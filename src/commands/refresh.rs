@@ -12,7 +12,7 @@ use crate::config::{Config, PortfolioMode};
 use crate::data::{
     bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank,
 };
-use crate::db::allocations::{get_unique_allocation_symbols, list_allocations};
+use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations};
 use crate::db::backend::BackendConnection;
 use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{
@@ -48,7 +48,6 @@ const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
 ) -> Result<Vec<(String, AssetCategory)>> {
     let mut seen = HashMap::new();
@@ -56,7 +55,7 @@ fn collect_symbols(
     // Portfolio symbols (transactions or allocations depending on mode)
     let portfolio_symbols = match config.portfolio_mode {
         PortfolioMode::Full => get_unique_symbols_backend(backend)?,
-        PortfolioMode::Percentage => get_unique_allocation_symbols(conn)?,
+        PortfolioMode::Percentage => get_unique_allocation_symbols_backend(backend)?,
     };
     for (sym, cat) in portfolio_symbols {
         seen.entry(sym).or_insert(cat);
@@ -130,7 +129,6 @@ fn compute_daily_change_pct(
 
 fn build_brave_news_queries(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
 ) -> Result<Vec<String>> {
     let mut queries = if config.brave_news_queries.is_empty() {
@@ -151,7 +149,7 @@ fn build_brave_news_queries(
 
     for (sym, cat) in match config.portfolio_mode {
         PortfolioMode::Full => get_unique_symbols_backend(backend)?,
-        PortfolioMode::Percentage => get_unique_allocation_symbols(conn)?,
+        PortfolioMode::Percentage => get_unique_allocation_symbols_backend(backend)?,
     } {
         if cat != AssetCategory::Cash && seen.insert(sym.clone()) {
             symbols.push(sym);
@@ -447,7 +445,6 @@ impl Drop for RefreshLock {
 
 pub fn run(
     backend: &BackendConnection,
-    conn: &Connection,
     config: &Config,
     notify: bool,
 ) -> Result<()> {
@@ -458,25 +455,30 @@ pub fn run(
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
+    let sqlite_conn = backend.sqlite_native();
 
     // 1. FX Rates
-    match rt.block_on(fx::fetch_all_fx_rates()) {
-        Ok(rates) => {
-            for (currency, rate) in &rates {
-                if let Err(e) = fx_cache::upsert_fx_rate(conn, currency, *rate) {
-                    eprintln!("Failed to cache FX rate for {}: {}", currency, e);
+    if let Some(conn) = sqlite_conn {
+        match rt.block_on(fx::fetch_all_fx_rates()) {
+            Ok(rates) => {
+                for (currency, rate) in &rates {
+                    if let Err(e) = fx_cache::upsert_fx_rate(conn, currency, *rate) {
+                        eprintln!("Failed to cache FX rate for {}: {}", currency, e);
+                    }
                 }
+                println!("✓ FX rates ({} currencies)", rates.len());
             }
-            println!("✓ FX rates ({} currencies)", rates.len());
+            Err(e) => {
+                println!("✗ FX rates (failed: {})", e);
+            }
         }
-        Err(e) => {
-            println!("✗ FX rates (failed: {})", e);
-        }
+    } else {
+        println!("⊘ FX rates (sqlite-only cache path, skipping on postgres)");
     }
 
     // 2. Prices
     if prices_need_refresh(backend)? {
-        let symbols = collect_symbols(backend, conn, config)?;
+        let symbols = collect_symbols(backend, config)?;
         if !symbols.is_empty() {
             let _non_cash: Vec<_> = symbols
                 .iter()
@@ -505,7 +507,7 @@ pub fn run(
     if predictions_need_refresh(backend)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => {
-                predictions_cache::upsert_predictions(conn, &markets)?;
+                predictions_cache::upsert_predictions_backend(backend, &markets)?;
                 println!("✓ Predictions ({} markets)", markets.len());
             }
             Err(e) => {
@@ -517,7 +519,8 @@ pub fn run(
     }
 
     // 4. News (Brave primary when configured, RSS supplements)
-    if news_needs_refresh(conn)? {
+    if let Some(conn) = sqlite_conn {
+        if news_needs_refresh(conn)? {
         let mut inserted = 0usize;
         let mut brave_inserted = 0usize;
         let brave_key = config
@@ -528,7 +531,7 @@ pub fn run(
             .to_string();
 
         if !brave_key.is_empty() {
-            let queries = build_brave_news_queries(backend, conn, config)?;
+            let queries = build_brave_news_queries(backend, config)?;
             for query in &queries {
                 match rt.block_on(brave::brave_news_search(&brave_key, query, Some("pd"), 5)) {
                     Ok(results) => {
@@ -593,11 +596,15 @@ pub fn run(
         } else {
             println!("✓ News ({} articles via RSS)", inserted);
         }
+        } else {
+            println!("⊘ News (fresh, skipping)");
+        }
     } else {
-        println!("⊘ News (fresh, skipping)");
+        println!("⊘ News (sqlite-only cache path, skipping on postgres)");
     }
 
     // 5. COT (CFTC)
+    if let Some(conn) = sqlite_conn {
     if cot_needs_refresh(conn)? {
         let mut total = 0;
 
@@ -633,8 +640,12 @@ pub fn run(
     } else {
         println!("⊘ COT (fresh, skipping)");
     }
+    } else {
+        println!("⊘ COT (sqlite-only cache path, skipping on postgres)");
+    }
 
     // 6. Sentiment (Fear & Greed)
+    if let Some(conn) = sqlite_conn {
     if sentiment_needs_refresh(conn)? {
         let mut count = 0;
 
@@ -666,8 +677,12 @@ pub fn run(
     } else {
         println!("⊘ Sentiment (fresh, skipping)");
     }
+    } else {
+        println!("⊘ Sentiment (sqlite-only cache path, skipping on postgres)");
+    }
 
     // 7. Calendar (TradingEconomics)
+    if let Some(conn) = sqlite_conn {
     if calendar_needs_refresh(conn)? {
         match calendar::fetch_events(7) {
             Ok(mut events) => {
@@ -700,6 +715,9 @@ pub fn run(
         }
     } else {
         println!("⊘ Calendar (fresh, skipping)");
+    }
+    } else {
+        println!("⊘ Calendar (sqlite-only cache path, skipping on postgres)");
     }
 
     // 8. Economy indicators (Brave primary, BLS fallback)
@@ -736,7 +754,9 @@ pub fn run(
                         source_url: item.source_url.clone(),
                         fetched_at: now.clone(),
                     };
-                    let _ = economic_data_db::upsert_entry(conn, &entry);
+                    if let Some(conn) = sqlite_conn {
+                        let _ = economic_data_db::upsert_entry(conn, &entry);
+                    }
                 }
                 if used_brave {
                     println!("✓ Economy ({} indicators via Brave)", items.len());
@@ -749,6 +769,7 @@ pub fn run(
     }
 
     // 9. BLS
+    if let Some(conn) = sqlite_conn {
     if bls_needs_refresh(conn)? {
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
@@ -762,8 +783,12 @@ pub fn run(
     } else {
         println!("⊘ BLS (fresh, skipping)");
     }
+    } else {
+        println!("⊘ BLS (sqlite-only cache path, skipping on postgres)");
+    }
 
     // 10. World Bank
+    if let Some(conn) = sqlite_conn {
     if worldbank_needs_refresh(conn)? {
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
@@ -777,8 +802,12 @@ pub fn run(
     } else {
         println!("⊘ World Bank (fresh, skipping)");
     }
+    } else {
+        println!("⊘ World Bank (sqlite-only cache path, skipping on postgres)");
+    }
 
     // 11. COMEX
+    if let Some(conn) = sqlite_conn {
     if comex_needs_refresh(conn)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
@@ -808,6 +837,9 @@ pub fn run(
     } else {
         println!("⊘ COMEX (fresh, skipping)");
     }
+    } else {
+        println!("⊘ COMEX (sqlite-only cache path, skipping on postgres)");
+    }
 
     // 12. On-chain (network + ETF flows)
     let mut onchain_ok_parts = Vec::new();
@@ -831,7 +863,9 @@ pub fn run(
                 ),
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
-            let _ = onchain_cache::upsert_metric(conn, &metric);
+            if let Some(conn) = sqlite_conn {
+                let _ = onchain_cache::upsert_metric(conn, &metric);
+            }
             onchain_ok_parts.push("network");
         }
         Err(e) => onchain_errors.push(format!("network: {}", e)),
@@ -854,7 +888,9 @@ pub fn run(
                     ),
                     fetched_at: fetched_at.clone(),
                 };
-                let _ = onchain_cache::upsert_metric(conn, &metric);
+                if let Some(conn) = sqlite_conn {
+                    let _ = onchain_cache::upsert_metric(conn, &metric);
+                }
             }
             onchain_ok_parts.push("etf flows");
         }
@@ -868,18 +904,20 @@ pub fn run(
     }
 
     // Store daily portfolio snapshot
-    if let Err(e) = store_portfolio_snapshot(backend, conn, config) {
-        eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
-    }
-    if let Err(e) = detect_timeframe_signals(backend, conn) {
-        eprintln!(
-            "\nWarning: failed to compute cross-timeframe signals: {}",
-            e
-        );
+    if let Some(conn) = sqlite_conn {
+        if let Err(e) = store_portfolio_snapshot(backend, conn, config) {
+            eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
+        }
+        if let Err(e) = detect_timeframe_signals(backend, conn) {
+            eprintln!(
+                "\nWarning: failed to compute cross-timeframe signals: {}",
+                e
+            );
+        }
     }
 
     // Check for newly triggered alerts
-    match engine::check_alerts_backend(backend, conn) {
+    match engine::check_alerts_backend_only(backend) {
         Ok(results) => {
             let newly_triggered = engine::get_newly_triggered(&results);
             if !newly_triggered.is_empty() {
