@@ -804,7 +804,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Code Quality Quick Wins (audit-driven)
 
-- [ ] [Audit][P1] **FX fallback invariant hardening** — remove implicit `strip_suffix(...).unwrap()` and return explicit error if suffix invariant fails. (`src/price/yahoo.rs`)
 
 ### F32: Native PostgreSQL Backend (epic)
 

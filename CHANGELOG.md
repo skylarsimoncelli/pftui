@@ -11,6 +11,14 @@
 - Tests: `cargo test -q`
 - TODO: audit P1 (`runtime strategy consistency`)
 
+### 2026-03-09 — FX fallback invariant hardening
+
+- What: replaced implicit `strip_suffix(\"=X\").unwrap()` in the Frankfurter FX fallback branch with explicit invariant validation and a clear error path.
+- Why: avoids panic risk if fallback symbol assumptions change and makes failure mode explicit.
+- Files: `src/price/yahoo.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit P1 (`FX fallback invariant hardening`)
+
 ### 2026-03-09 — Scraper selector resilience/perf hardening
 
 - What: added cached CSS selector initialization (`OnceLock`) and replaced panic-style selector parse assumptions in calendar and FedWatch scrapers with fallible error-returning helper paths.

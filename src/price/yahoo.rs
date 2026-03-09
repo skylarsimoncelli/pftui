@@ -106,7 +106,13 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
     
     // Special handling for FX pairs that Yahoo often gets wrong
     if uses_frankfurter_fallback(symbol) {
-        let currency = symbol.strip_suffix("=X").unwrap();
+        let currency = match symbol.strip_suffix("=X") {
+            Some(currency) => currency,
+            None => anyhow::bail!(
+                "FX fallback symbol invariant violated: expected '=X' suffix for '{}'",
+                symbol
+            ),
+        };
         match fetch_fx_rate_frankfurter(currency).await {
             Ok(rate) => {
                 // Frankfurter gives us FROM→USD, but JPY=X quote should be USD→JPY
