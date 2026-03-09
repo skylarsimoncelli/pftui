@@ -634,7 +634,7 @@ fn main() -> Result<()> {
             commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {
-            commands::stress_test::run(conn, &config, &scenario, json)
+            commands::stress_test::run(&backend, conn, &config, &scenario, json)
         }
         Some(Command::Research {
             query,

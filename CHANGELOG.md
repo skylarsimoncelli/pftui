@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:43 UTC — F32 Phase 21: backend-dispatch stress-test reads
+
+- What: migrated `stress-test` scenario command to backend-dispatched reads for prices, transactions, and allocations; updated main routing to pass `BackendConnection`.
+- Why: removes sqlite-only reads from scenario shock-analysis command execution in Postgres mode.
+- Files: `src/commands/stress_test.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes), `cargo test -q` (1187 passed)
+- TODO: F32.3/F32.5 command-path migration (partial: stress-test path)
+
 ### 2026-03-09 01:38 UTC — F32 Phase 20: backend-dispatch scan command reads
 
 - What: migrated `scan` command runtime reads to backend-dispatched transactions/allocations/price-cache data, while preserving sqlite-signature `count_matches` for existing callsites; updated main routing to pass `BackendConnection`.
