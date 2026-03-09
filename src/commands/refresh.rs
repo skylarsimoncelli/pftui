@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Result;
-use rusqlite::Connection;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -16,7 +15,7 @@ use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocat
 use crate::db::backend::BackendConnection;
 use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{
-    get_all_cached_prices_backend, get_cached_price, upsert_price_backend,
+    get_all_cached_prices_backend, get_cached_price_backend, upsert_price_backend,
 };
 use crate::db::price_history::get_price_at_date_backend;
 use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
@@ -455,7 +454,6 @@ pub fn run(
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let sqlite_conn = backend.sqlite_native();
 
     // 1. FX Rates
     match rt.block_on(fx::fetch_all_fx_rates()) {
@@ -883,13 +881,11 @@ pub fn run(
     if let Err(e) = store_portfolio_snapshot(backend, config) {
         eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
     }
-    if let Some(conn) = sqlite_conn {
-        if let Err(e) = detect_timeframe_signals(backend, conn) {
-            eprintln!(
-                "\nWarning: failed to compute cross-timeframe signals: {}",
-                e
-            );
-        }
+    if let Err(e) = detect_timeframe_signals(backend) {
+        eprintln!(
+            "\nWarning: failed to compute cross-timeframe signals: {}",
+            e
+        );
     }
 
     // Check for newly triggered alerts
@@ -939,30 +935,20 @@ pub fn run(
     Ok(())
 }
 
-fn table_exists(conn: &Connection, table_name: &str) -> bool {
-    conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
-        [table_name],
-        |row| row.get::<_, i64>(0),
-    )
-    .unwrap_or(0)
-        > 0
-}
-
-fn classify_regime_bias(conn: &Connection) -> Option<String> {
-    let vix = get_cached_price(conn, "^VIX", "USD")
+fn classify_regime_bias(backend: &BackendConnection) -> Option<String> {
+    let vix = get_cached_price_backend(backend, "^VIX", "USD")
         .ok()
         .flatten()
         .map(|q| q.price);
-    let dxy = get_cached_price(conn, "DX-Y.NYB", "USD")
+    let dxy = get_cached_price_backend(backend, "DX-Y.NYB", "USD")
         .ok()
         .flatten()
         .map(|q| q.price);
-    let spy = get_cached_price(conn, "SPY", "USD")
+    let spy = get_cached_price_backend(backend, "SPY", "USD")
         .ok()
         .flatten()
         .map(|q| q.price);
-    let gold = get_cached_price(conn, "GC=F", "USD")
+    let gold = get_cached_price_backend(backend, "GC=F", "USD")
         .ok()
         .flatten()
         .map(|q| q.price);
@@ -1004,28 +990,18 @@ fn classify_regime_bias(conn: &Connection) -> Option<String> {
     }
 }
 
-fn top_scenario_bias(conn: &Connection) -> Option<String> {
-    if !table_exists(conn, "scenarios") {
-        return None;
-    }
-    let row = conn
-        .query_row(
-            "SELECT name, COALESCE(description, ''), COALESCE(asset_impact, '')
-             FROM scenarios
-             WHERE status = 'active'
-             ORDER BY probability DESC
-             LIMIT 1",
-            [],
-            |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            },
-        )
-        .ok()?;
-    let text = format!("{} {} {}", row.0, row.1, row.2).to_lowercase();
+fn top_scenario_bias(backend: &BackendConnection) -> Option<String> {
+    let top = crate::db::scenarios::list_scenarios_backend(backend, Some("active"))
+        .ok()?
+        .into_iter()
+        .next()?;
+    let text = format!(
+        "{} {} {}",
+        top.name,
+        top.description.unwrap_or_default(),
+        top.asset_impact.unwrap_or_default()
+    )
+    .to_lowercase();
     if text.contains("war")
         || text.contains("stagflation")
         || text.contains("recession")
@@ -1040,29 +1016,14 @@ fn top_scenario_bias(conn: &Connection) -> Option<String> {
     }
 }
 
-fn trend_layer_bias(conn: &Connection) -> Option<String> {
-    if !table_exists(conn, "trend_tracker") {
-        return None;
-    }
+fn trend_layer_bias(backend: &BackendConnection) -> Option<String> {
     let mut bull = 0usize;
     let mut bear = 0usize;
 
-    let mut stmt = conn
-        .prepare(
-            "SELECT COALESCE(direction, ''), COALESCE(asset_impact, '')
-             FROM trend_tracker
-             WHERE status = 'active'
-             ORDER BY updated_at DESC
-             LIMIT 25",
-        )
-        .ok()?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-        .ok()?;
-
-    for row in rows.flatten() {
-        let direction = row.0.to_lowercase();
-        let impact = row.1.to_lowercase();
+    let rows = crate::db::trends::list_trends_backend(backend, Some("active"), None).ok()?;
+    for row in rows.into_iter().take(25) {
+        let direction = row.direction.to_lowercase();
+        let impact = row.asset_impact.unwrap_or_default().to_lowercase();
         if direction.contains("accelerating") || impact.contains("bullish") {
             bull += 1;
         }
@@ -1083,28 +1044,18 @@ fn trend_layer_bias(conn: &Connection) -> Option<String> {
     }
 }
 
-fn structural_layer_bias(conn: &Connection) -> Option<String> {
-    if !table_exists(conn, "structural_outcomes") {
-        return None;
-    }
-    let row = conn
-        .query_row(
-            "SELECT name, COALESCE(description, ''), COALESCE(asset_implications, '')
-             FROM structural_outcomes
-             WHERE status = 'active'
-             ORDER BY probability DESC, updated_at DESC
-             LIMIT 1",
-            [],
-            |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            },
-        )
-        .ok()?;
-    let text = format!("{} {} {}", row.0, row.1, row.2).to_lowercase();
+fn structural_layer_bias(backend: &BackendConnection) -> Option<String> {
+    let top = crate::db::structural::list_outcomes_backend(backend)
+        .ok()?
+        .into_iter()
+        .find(|o| o.status == "active")?;
+    let text = format!(
+        "{} {} {}",
+        top.name,
+        top.description.unwrap_or_default(),
+        top.asset_implications.unwrap_or_default()
+    )
+    .to_lowercase();
     if text.contains("decline")
         || text.contains("fragmentation")
         || text.contains("crisis")
@@ -1120,7 +1071,6 @@ fn structural_layer_bias(conn: &Connection) -> Option<String> {
 
 fn maybe_insert_signal(
     backend: &BackendConnection,
-    conn: &Connection,
     signal_type: &str,
     layers: &[String],
     assets: &[String],
@@ -1130,16 +1080,18 @@ fn maybe_insert_signal(
     let layers_json = serde_json::to_string(layers)?;
     let assets_json = serde_json::to_string(assets)?;
 
-    let recent_count: i64 = conn.query_row(
-        "SELECT COUNT(*)
-         FROM timeframe_signals
-         WHERE signal_type = ?1
-           AND description = ?2
-           AND detected_at >= datetime('now', '-6 hours')",
-        rusqlite::params![signal_type, description],
-        |r| r.get(0),
-    )?;
-    if recent_count > 0 {
+    let recent = timeframe_signals::list_signals_backend(backend, Some(signal_type), None, Some(100))?;
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(6);
+    let exists_recent = recent.into_iter().any(|s| {
+        if s.description != description {
+            return false;
+        }
+        let parsed = chrono::DateTime::parse_from_rfc3339(&s.detected_at)
+            .map(|d| d.with_timezone(&chrono::Utc))
+            .ok();
+        parsed.is_some_and(|dt| dt >= cutoff)
+    });
+    if exists_recent {
         return Ok(());
     }
 
@@ -1154,15 +1106,11 @@ fn maybe_insert_signal(
     Ok(())
 }
 
-fn detect_timeframe_signals(backend: &BackendConnection, conn: &Connection) -> Result<()> {
-    if !table_exists(conn, "timeframe_signals") {
-        return Ok(());
-    }
-
-    let low = classify_regime_bias(conn).unwrap_or_else(|| "neutral".to_string());
-    let medium = top_scenario_bias(conn).unwrap_or_else(|| "neutral".to_string());
-    let high = trend_layer_bias(conn).unwrap_or_else(|| "neutral".to_string());
-    let macro_bias = structural_layer_bias(conn).unwrap_or_else(|| "neutral".to_string());
+fn detect_timeframe_signals(backend: &BackendConnection) -> Result<()> {
+    let low = classify_regime_bias(backend).unwrap_or_else(|| "neutral".to_string());
+    let medium = top_scenario_bias(backend).unwrap_or_else(|| "neutral".to_string());
+    let high = trend_layer_bias(backend).unwrap_or_else(|| "neutral".to_string());
+    let macro_bias = structural_layer_bias(backend).unwrap_or_else(|| "neutral".to_string());
 
     let layers = vec![
         format!("low:{}", low),
@@ -1199,7 +1147,6 @@ fn detect_timeframe_signals(backend: &BackendConnection, conn: &Connection) -> R
         );
         maybe_insert_signal(
             backend,
-            conn,
             "alignment",
             &layers,
             &["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
@@ -1213,7 +1160,6 @@ fn detect_timeframe_signals(backend: &BackendConnection, conn: &Connection) -> R
         );
         maybe_insert_signal(
             backend,
-            conn,
             "divergence",
             &layers,
             &["SPY".to_string(), "BTC".to_string(), "GC=F".to_string()],
@@ -1221,24 +1167,20 @@ fn detect_timeframe_signals(backend: &BackendConnection, conn: &Connection) -> R
             "notable",
         )?;
     }
-
-    if table_exists(conn, "regime_snapshots") {
-        let mut stmt =
-            conn.prepare("SELECT regime FROM regime_snapshots ORDER BY recorded_at DESC LIMIT 2")?;
-        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        if let (Some(Ok(curr)), Some(Ok(prev))) = (rows.next(), rows.next()) {
-            if curr != prev {
-                let description = format!("regime transition detected: {} -> {}", prev, curr);
-                maybe_insert_signal(
-                    backend,
-                    conn,
-                    "transition",
-                    &["low".to_string()],
-                    &["SPY".to_string(), "^VIX".to_string()],
-                    &description,
-                    "critical",
-                )?;
-            }
+    let regimes = crate::db::regime_snapshots::get_history_backend(backend, Some(2)).unwrap_or_default();
+    if regimes.len() == 2 {
+        let curr = &regimes[0].regime;
+        let prev = &regimes[1].regime;
+        if curr != prev {
+            let description = format!("regime transition detected: {} -> {}", prev, curr);
+            maybe_insert_signal(
+                backend,
+                "transition",
+                &["low".to_string()],
+                &["SPY".to_string(), "^VIX".to_string()],
+                &description,
+                "critical",
+            )?;
         }
     }
 
