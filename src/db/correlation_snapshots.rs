@@ -178,6 +178,7 @@ fn store_snapshot_postgres(
     correlation: f64,
     period: &str,
 ) -> Result<i64> {
+    ensure_table_postgres(pool)?;
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO correlation_snapshots (symbol_a, symbol_b, correlation, period)
@@ -196,6 +197,7 @@ fn store_snapshot_postgres(
 
 #[allow(dead_code)]
 fn list_current_postgres(pool: &PgPool, period: Option<&str>) -> Result<Vec<CorrelationSnapshot>> {
+    ensure_table_postgres(pool)?;
     let rows: Vec<CorrelationRow> = if let Some(p) = period {
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
@@ -238,6 +240,7 @@ fn get_history_postgres(
     period: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<CorrelationSnapshot>> {
+    ensure_table_postgres(pool)?;
     let rows: Vec<CorrelationRow> = match (period, limit) {
         (Some(p), Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
@@ -295,4 +298,35 @@ fn get_history_postgres(
         })?,
     };
     Ok(rows.into_iter().map(from_pg_row).collect())
+}
+
+fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
+    crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS correlation_snapshots (
+                id BIGSERIAL PRIMARY KEY,
+                symbol_a TEXT NOT NULL,
+                symbol_b TEXT NOT NULL,
+                correlation DOUBLE PRECISION NOT NULL,
+                period TEXT NOT NULL DEFAULT '30d',
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_corr_snap_pair
+             ON correlation_snapshots(symbol_a, symbol_b)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_corr_snap_date
+             ON correlation_snapshots(recorded_at)",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
 }

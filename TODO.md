@@ -798,7 +798,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 
 
-- [ ] **P1-BUG: `correlation_snapshots` schema mismatch — was manually fixed, verify code** — Rust schema expects `symbol_a TEXT, symbol_b TEXT, recorded_at TEXT` but initial Postgres migration created `pair TEXT, computed_at TIMESTAMPTZ`. Manually recreated with correct schema. Correlations now computing (33 rows). Verify the Postgres migration code matches `schema.rs` to prevent this on fresh installs.
 
 ### Infrastructure
 

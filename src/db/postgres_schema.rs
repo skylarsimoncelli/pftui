@@ -417,6 +417,18 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS correlation_snapshots (
+                id BIGSERIAL PRIMARY KEY,
+                symbol_a TEXT NOT NULL,
+                symbol_b TEXT NOT NULL,
+                correlation DOUBLE PRECISION NOT NULL,
+                period TEXT NOT NULL DEFAULT '30d',
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_signals_scenario ON scenario_signals(scenario_id)")
             .execute(pool)
@@ -449,6 +461,12 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_metric ON onchain_cache(metric)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_corr_snap_pair ON correlation_snapshots(symbol_a, symbol_b)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_corr_snap_date ON correlation_snapshots(recorded_at)")
             .execute(pool)
             .await?;
 

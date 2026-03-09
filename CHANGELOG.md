@@ -13,6 +13,14 @@
 - Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
 - TODO: removed P1-BUG "Postgres structural storage not yet implemented"
 
+### 2026-03-09 — Align Postgres correlation snapshot schema and dispatch guardrails
+
+- What: added `correlation_snapshots` table/index creation to Postgres schema migrations and added runtime `ensure_table_postgres` guard in correlation snapshot Postgres read/write paths.
+- Why: ensures fresh Postgres installs match expected schema (`symbol_a/symbol_b/recorded_at`) and avoids command failures from missing table/index setup.
+- Files: `src/db/postgres_schema.rs`, `src/db/correlation_snapshots.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 correlation snapshot schema mismatch verification item
+
 ### 2026-03-09 — Fix BLS Postgres freshness timestamp parse failure
 
 - What: replaced `updated_at::text` parsing in Postgres BLS freshness checks with epoch-based SQL (`EXTRACT(EPOCH FROM updated_at)::BIGINT`) and direct age comparison.
