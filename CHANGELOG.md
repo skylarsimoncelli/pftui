@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 08:55 UTC — F32 Phase 51: backend-native FX cache path
+
+- What: added postgres-native `fx_cache` support with backend-dispatched upsert/read APIs, wired `refresh` FX ingestion to write through backend dispatch (no postgres skip), and migrated command FX loaders (`summary`, `history`, `export`, `value`, `drift`, `rebalance`, `scan`, `group`, `stress-test`) off sqlite-only reads.
+- Why: removes a remaining hybrid path where postgres mode silently lost FX conversions and commands defaulted to sqlite-only FX cache access.
+- Files: `src/db/fx_cache.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `src/commands/summary.rs`, `src/commands/history.rs`, `src/commands/export.rs`, `src/commands/value.rs`, `src/commands/drift.rs`, `src/commands/rebalance.rs`, `src/commands/scan.rs`, `src/commands/group.rs`, `src/commands/stress_test.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API and TUI runtime still open sqlite connections directly)
+
 ### 2026-03-09 08:42 UTC — F32 Phase 50: make web refresh loop backend-aware
 
 - What: updated web background price-refresh loop to open the active configured backend via `open_from_config` instead of forcing SQLite, then execute backend-aware `refresh`.

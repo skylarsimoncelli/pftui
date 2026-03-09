@@ -30,10 +30,7 @@ pub fn run(
         anyhow::bail!("No cached prices. Run `pftui refresh` first.");
     }
 
-    let fx_rates = backend
-        .sqlite_native()
-        .map(|conn| crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default())
-        .unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let base_positions = match config.portfolio_mode {
         PortfolioMode::Full => {
             let txs = list_transactions_backend(backend)?;

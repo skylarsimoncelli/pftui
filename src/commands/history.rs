@@ -45,10 +45,7 @@ pub fn run(
 }
 
 fn load_fx_rates(backend: &BackendConnection) -> HashMap<String, Decimal> {
-    backend
-        .sqlite_native()
-        .and_then(|conn| crate::db::fx_cache::get_all_fx_rates(conn).ok())
-        .unwrap_or_default()
+    crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default()
 }
 
 fn run_full(

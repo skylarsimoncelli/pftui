@@ -34,10 +34,7 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         }
     }
     
-    let fx_rates = backend
-        .sqlite_native()
-        .map(|conn| crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default())
-        .unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let positions = compute_positions(&txs, &prices, &fx_rates);
 
     let target_map: HashMap<String, (Decimal, Decimal)> = targets

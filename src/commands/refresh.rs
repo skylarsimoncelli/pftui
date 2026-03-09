@@ -458,22 +458,18 @@ pub fn run(
     let sqlite_conn = backend.sqlite_native();
 
     // 1. FX Rates
-    if let Some(conn) = sqlite_conn {
-        match rt.block_on(fx::fetch_all_fx_rates()) {
-            Ok(rates) => {
-                for (currency, rate) in &rates {
-                    if let Err(e) = fx_cache::upsert_fx_rate(conn, currency, *rate) {
-                        eprintln!("Failed to cache FX rate for {}: {}", currency, e);
-                    }
+    match rt.block_on(fx::fetch_all_fx_rates()) {
+        Ok(rates) => {
+            for (currency, rate) in &rates {
+                if let Err(e) = fx_cache::upsert_fx_rate_backend(backend, currency, *rate) {
+                    eprintln!("Failed to cache FX rate for {}: {}", currency, e);
                 }
-                println!("✓ FX rates ({} currencies)", rates.len());
             }
-            Err(e) => {
-                println!("✗ FX rates (failed: {})", e);
-            }
+            println!("✓ FX rates ({} currencies)", rates.len());
         }
-    } else {
-        println!("⊘ FX rates (sqlite-only cache path, skipping on postgres)");
+        Err(e) => {
+            println!("✗ FX rates (failed: {})", e);
+        }
     }
 
     // 2. Prices

@@ -228,10 +228,7 @@ fn load_rows_backend(
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
-    let fx_rates = backend
-        .sqlite_native()
-        .and_then(|conn| crate::db::fx_cache::get_all_fx_rates(conn).ok())
-        .unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let txs = list_transactions_backend(backend)?;
     let use_mode = match mode_hint {
         Some(m) => m,
