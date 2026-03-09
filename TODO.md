@@ -786,6 +786,20 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Analytics
 
+- [ ] **P1-BUG: `pftui structural` — "Postgres structural storage not yet implemented"** — All structural commands (metric-set, metric-list, cycle-set, cycle-list, outcome-add, outcome-list, parallel-add, parallel-list, log-add, log-list, dashboard) return this error. Postgres tables exist (`power_metrics`, `structural_cycles`, `structural_outcomes`, `structural_outcome_history`, `historical_parallels`, `structural_log`) but the Rust code has no Postgres dispatch for this module. The MACRO layer of the analytics engine is completely blocked. This is the only F31 module without Postgres support.
+
+- [ ] **P1-BUG: `pftui analytics summary` — minimal output, no alignment score** — Currently shows only 4 one-line summaries (LOW/MEDIUM/HIGH/MACRO). Missing: prices row, alert count, triggered alert count, combined alignment score (████████░░ 80%), divergence notes, signal count. Compare current output to the spec in TODO F31.13 — it's about 20% of what was designed. The `analytics low/medium/high` subcommands are similarly sparse (just counts, no actual data).
+
+- [ ] **P1-BUG: `pftui analytics alignment` — only shows one asset at a time** — Should show a matrix of all held + watchlist assets with per-layer signals. Currently requires `--symbol` flag and only returns one asset. The multi-asset alignment table from the F31.13 spec isn't implemented.
+
+- [ ] **P1: `pftui regime current` — confidence 0.25 is suspiciously low** — Risk-off regime detected but confidence only 0.25 with VIX 27.85, DXY 99.12, oil $94.31. In a war with oil at $100 and VIX near 30, confidence should be much higher. The classification logic may need tuning or the weighting formula may not account for all inputs. Regime is a foundation for the LOW layer — inaccurate confidence undermines downstream analytics.
+
+- [ ] **P1: `pftui movers` — shows "No movers" despite BTC +4.8%, Oil +6%** — price_history only has 2 entries for today (CL=F, BZ=F). The 84 symbols in price_cache aren't getting written to price_history during refresh. The `movers` command (and `eod` "TOP MOVERS" section) are non-functional until price_history is populated per-refresh cycle. Brief `1D` column also shows `—` for all positions.
+
+- [ ] **P1: `pftui correlations compute` — "insufficient history"** — Even after refresh with 84 cached prices, correlations can't compute. Likely needs multiple days of price_history (which barely exists). Once price_history populates properly, this should self-resolve — but verify the minimum data requirement is documented.
+
+- [ ] **P1: Prediction decode NULL crash blocks refresh completion** — `pftui refresh` exits with code 1 after "Error: unexpected null; try decoding as an `Option`" from `predictions_cache::get_last_update_postgres`. Root cause: `SELECT MAX(updated_at)` returns SQL NULL on empty table, but sqlx `query_scalar` doesn't handle `Option<Option<i64>>`. Workaround: seeded a dummy row. Proper fix: use `.flatten()` or `COALESCE(MAX(updated_at), 0)` in the query.
+
 ### Infrastructure
 
 ### Code Quality Quick Wins (audit-driven)
