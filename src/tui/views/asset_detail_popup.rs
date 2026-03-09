@@ -119,6 +119,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     let category = infer_category(symbol);
     let cat_color = t.category_color(category);
     let name = lookup_name(symbol);
+    let backend = app.open_backend();
 
     let mut lines: Vec<Line> = Vec::with_capacity(40);
     lines.push(Line::from(""));
@@ -823,9 +824,9 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     // ── COT (Commitments of Traders) ──
     if let Some(cftc_code) = crate::data::cot::symbol_to_cftc_code(symbol) {
         // Check if COT data is available in the cache
-        if let Ok(conn) = rusqlite::Connection::open(&app.db_path) {
-            if let Ok(Some(latest)) = crate::db::cot_cache::get_latest(&conn, cftc_code) {
-                if let Ok(history) = crate::db::cot_cache::get_history(&conn, cftc_code, 2) {
+        if let Some(ref backend) = backend {
+            if let Ok(Some(latest)) = crate::db::cot_cache::get_latest_backend(backend, cftc_code) {
+                if let Ok(history) = crate::db::cot_cache::get_history_backend(backend, cftc_code, 2) {
                     lines.push(section_header("  COT Positioning", t.text_accent));
                     lines.push(sep_line(t.border_subtle, 80));
 
@@ -917,8 +918,8 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
 
     // ── COMEX Supply Data (metals only) ──
     if symbol == "GC=F" || symbol == "SI=F" {
-        if let Ok(conn) = rusqlite::Connection::open(&app.db_path) {
-            if let Ok(Some(latest)) = crate::db::comex_cache::get_latest_inventory(&conn, symbol) {
+        if let Some(ref backend) = backend {
+            if let Ok(Some(latest)) = crate::db::comex_cache::get_latest_inventory_backend(backend, symbol) {
                 lines.push(section_header("  COMEX Supply", t.text_accent));
                 lines.push(sep_line(t.border_subtle, 80));
 
@@ -964,7 +965,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 ]));
 
                 // Trend vs previous day
-                if let Ok(Some(prev)) = crate::db::comex_cache::get_previous_inventory(&conn, symbol, &latest.date) {
+                if let Ok(Some(prev)) = crate::db::comex_cache::get_previous_inventory_backend(backend, symbol, &latest.date) {
                     let trend = if (latest.registered - prev.registered) / prev.registered < -0.02 {
                         ("drawing down", t.loss_red)
                     } else if (latest.registered - prev.registered) / prev.registered > 0.02 {
@@ -1064,8 +1065,10 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
 }
 
 fn load_annotation(symbol: &str, app: &App) -> Option<crate::db::annotations::Annotation> {
-    let conn = rusqlite::Connection::open(&app.db_path).ok()?;
-    crate::db::annotations::get_annotation(&conn, symbol).ok().flatten()
+    let backend = app.open_backend()?;
+    crate::db::annotations::get_annotation_backend(&backend, symbol)
+        .ok()
+        .flatten()
 }
 
 /// Build search terms for news filtering based on symbol and asset name.

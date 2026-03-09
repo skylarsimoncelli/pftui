@@ -433,9 +433,8 @@ fn format_price(p: Decimal) -> String {
 
 /// Render the prediction markets panel showing key tracked predictions with 30-day sparklines.
 fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
-    use rusqlite::Connection;
-    
     let t = &app.theme;
+    let backend = app.open_backend();
     
     // Use prediction markets already loaded in app state
     let predictions = &app.prediction_markets;
@@ -464,8 +463,8 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
                 let prob_str = format!("{:.0}%", prob_pct);
                 
                 // Get 30-day history for sparkline
-                let history = if let Ok(conn) = Connection::open(&app.db_path) {
-                    crate::db::predictions_history::get_history(&conn, &pred.id, 30)
+                let history = if let Some(ref backend) = backend {
+                    crate::db::predictions_history::get_history_backend(backend, &pred.id, 30)
                         .unwrap_or_default()
                 } else {
                     vec![]

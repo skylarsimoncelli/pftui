@@ -1,5 +1,9 @@
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// Record of a prediction market probability at a specific date.
 #[derive(Debug, Clone)]
@@ -69,6 +73,115 @@ pub fn batch_insert_history(
         stmt.execute(params![id, date, probability])?;
     }
 
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn insert_history_backend(
+    backend: &BackendConnection,
+    id: &str,
+    date: &str,
+    probability: f64,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| insert_history(conn, id, date, probability),
+        |pool| insert_history_postgres(pool, id, date, probability),
+    )
+}
+
+pub fn get_history_backend(
+    backend: &BackendConnection,
+    id: &str,
+    days: usize,
+) -> Result<Vec<PredictionHistoryRecord>> {
+    query::dispatch(
+        backend,
+        |conn| get_history(conn, id, days),
+        |pool| get_history_postgres(pool, id, days),
+    )
+}
+
+#[allow(dead_code)]
+pub fn batch_insert_history_backend(
+    backend: &BackendConnection,
+    records: &[(String, String, f64)],
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| batch_insert_history(conn, records),
+        |pool| batch_insert_history_postgres(pool, records),
+    )
+}
+
+fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS predictions_history (
+                id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                probability DOUBLE PRECISION NOT NULL,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (id, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn insert_history_postgres(pool: &PgPool, id: &str, date: &str, probability: f64) -> Result<()> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO predictions_history (id, date, probability)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (id, date) DO UPDATE SET probability = EXCLUDED.probability",
+        )
+        .bind(id)
+        .bind(date)
+        .bind(probability)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn get_history_postgres(pool: &PgPool, id: &str, days: usize) -> Result<Vec<PredictionHistoryRecord>> {
+    ensure_table_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<(String, String, f64)> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT id, date, probability
+             FROM predictions_history
+             WHERE id = $1
+             ORDER BY date DESC
+             LIMIT $2",
+        )
+        .bind(id)
+        .bind(days as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, date, probability)| PredictionHistoryRecord {
+            id,
+            date,
+            probability,
+        })
+        .collect())
+}
+
+fn batch_insert_history_postgres(pool: &PgPool, records: &[(String, String, f64)]) -> Result<()> {
+    for (id, date, probability) in records {
+        insert_history_postgres(pool, id, date, *probability)?;
+    }
     Ok(())
 }
 

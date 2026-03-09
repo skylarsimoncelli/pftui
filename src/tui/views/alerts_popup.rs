@@ -2,18 +2,17 @@ use ratatui::{
     prelude::*,
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use rusqlite::Connection;
 
 use crate::app::App;
-use crate::alerts::engine::check_alerts;
+use crate::alerts::engine::check_alerts_backend_only;
 use crate::alerts::AlertStatus;
 
 pub fn render(frame: &mut Frame, app: &App) {
     let t = &app.theme;
     
     // Load alert check results
-    let results = if let Ok(conn) = Connection::open(&app.db_path) {
-        check_alerts(&conn).unwrap_or_default()
+    let results = if let Some(backend) = app.open_backend() {
+        check_alerts_backend_only(&backend).unwrap_or_default()
     } else {
         Vec::new()
     };

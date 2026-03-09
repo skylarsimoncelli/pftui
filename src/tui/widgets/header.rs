@@ -364,13 +364,11 @@ fn build_news_ticker_line<'a>(app: &App, width: usize) -> Option<Line<'a>> {
 /// Get next high-impact calendar event and format countdown.
 /// Returns Some((event_name, countdown_text)) or None if no upcoming events.
 fn get_next_event_countdown(app: &App) -> Option<(String, String)> {
-    use rusqlite::Connection;
-    
-    let conn = Connection::open(&app.db_path).ok()?;
+    let backend = app.open_backend()?;
     let today = Utc::now().format("%Y-%m-%d").to_string();
     
     // Get next 10 events to find the first high-impact one
-    let events = calendar_cache::get_upcoming_events(&conn, &today, 10).ok()?;
+    let events = calendar_cache::get_upcoming_events_backend(&backend, &today, 10).ok()?;
     
     // Find first high-impact event
     let next_event = events.iter().find(|e| e.impact == "high")?;

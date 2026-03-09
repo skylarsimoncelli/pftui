@@ -5,13 +5,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::prelude::Rect;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::config::{self, Config, PortfolioMode, WatchlistColumn, WorkspaceLayout};
 use crate::data::brave;
 use crate::db::{allocations, price_cache, price_history};
 use crate::db::scan_queries;
-use crate::db::transactions::{self, insert_transaction};
+use crate::db::transactions::{self};
 use crate::models::allocation::Allocation;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
@@ -1365,14 +1364,23 @@ impl App {
     fn request_sentiment_data(&mut self) {
         use std::thread;
         use std::time::Duration;
-        
+
+        let database_backend = self.database_backend;
+        let database_url = self.database_url.clone();
         let db_path = self.db_path.clone();
         
         // Spawn thread to fetch sentiment without blocking
         thread::spawn(move || {
+            let cfg = Config {
+                database_backend,
+                database_url,
+                ..Config::default()
+            };
+            let backend = crate::db::backend::open_from_config(&cfg, &db_path).ok();
+
             // Fetch crypto F&G
             if let Ok(index) = crate::data::sentiment::fetch_crypto_fng() {
-                if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                if let Some(backend) = &backend {
                     let reading = crate::db::sentiment_cache::SentimentReading {
                         index_type: index.index_type,
                         value: index.value,
@@ -1380,14 +1388,14 @@ impl App {
                         timestamp: index.timestamp,
                         fetched_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     };
-                    let _ = crate::db::sentiment_cache::upsert_reading(&conn, &reading);
+                    let _ = crate::db::sentiment_cache::upsert_reading_backend(backend, &reading);
                 }
             }
             
             // Fetch traditional F&G
             thread::sleep(Duration::from_millis(500)); // rate limiting
             if let Ok(index) = crate::data::sentiment::fetch_traditional_fng() {
-                if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                if let Some(backend) = &backend {
                     let reading = crate::db::sentiment_cache::SentimentReading {
                         index_type: index.index_type,
                         value: index.value,
@@ -1395,7 +1403,7 @@ impl App {
                         timestamp: index.timestamp,
                         fetched_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     };
-                    let _ = crate::db::sentiment_cache::upsert_reading(&conn, &reading);
+                    let _ = crate::db::sentiment_cache::upsert_reading_backend(backend, &reading);
                 }
             }
         });
@@ -1464,8 +1472,10 @@ impl App {
     /// Load saved chart timeframe for currently selected symbol
     fn load_chart_timeframe(&mut self) {
         if let Some(pos) = self.selected_position() {
-            if let Ok(conn) = Connection::open(&self.db_path) {
-                if let Ok(Some(saved_tf)) = crate::db::chart_state::load_timeframe(&conn, &pos.symbol) {
+            if let Some(backend) = self.open_backend() {
+                if let Ok(Some(saved_tf)) =
+                    crate::db::chart_state::load_timeframe_backend(&backend, &pos.symbol)
+                {
                     if let Some(tf) = ChartTimeframe::from_label(&saved_tf) {
                         self.chart_timeframe = tf;
                     }
@@ -1477,8 +1487,12 @@ impl App {
     /// Save current chart timeframe for currently selected symbol
     fn save_chart_timeframe(&mut self) {
         if let Some(pos) = self.selected_position() {
-            if let Ok(conn) = Connection::open(&self.db_path) {
-                let _ = crate::db::chart_state::save_timeframe(&conn, &pos.symbol, self.chart_timeframe.label());
+            if let Some(backend) = self.open_backend() {
+                let _ = crate::db::chart_state::save_timeframe_backend(
+                    &backend,
+                    &pos.symbol,
+                    self.chart_timeframe.label(),
+                );
             }
         }
     }
@@ -1822,8 +1836,8 @@ impl App {
         let Some(entry) = self.selected_watchlist_entry().cloned() else {
             return;
         };
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            let _ = db_watchlist::remove_from_watchlist(&conn, &entry.symbol);
+        if let Some(backend) = self.open_backend() {
+            let _ = db_watchlist::remove_from_watchlist_backend(&backend, &entry.symbol);
         }
         self.load_watchlist();
         if self.watchlist_selected_index >= self.watchlist_entries.len() && self.watchlist_selected_index > 0 {
@@ -1849,9 +1863,9 @@ impl App {
         };
         let rule_text = format!("{} {} {}", alert_symbol, direction, threshold);
 
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            let _ = crate::db::alerts::add_alert(
-                &conn,
+        if let Some(backend) = self.open_backend() {
+            let _ = crate::db::alerts::add_alert_backend(
+                &backend,
                 "price",
                 &alert_symbol,
                 &direction,
@@ -2192,13 +2206,13 @@ impl App {
     }
 
     fn cache_price(&self, quote: &PriceQuote) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            let _ = price_cache::upsert_price(&conn, quote);
+        if let Some(backend) = self.open_backend() {
+            let _ = price_cache::upsert_price_backend(&backend, quote);
         }
     }
 
     fn cache_history(&self, symbol: &str, records: &[HistoryRecord]) {
-        if let Ok(conn) = Connection::open(&self.db_path) {
+        if let Some(backend) = self.open_backend() {
             let source = self
                 .positions
                 .iter()
@@ -2208,7 +2222,7 @@ impl App {
                     _ => "yahoo",
                 })
                 .unwrap_or("yahoo");
-            let _ = price_history::upsert_history(&conn, symbol, source, records);
+            let _ = price_history::upsert_history_backend(&backend, symbol, source, records);
         }
     }
 
@@ -4017,11 +4031,11 @@ impl App {
     }
 
     fn load_scan_builder_query(&mut self, name: &str) {
-        match Connection::open(&self.db_path)
-            .ok()
-            .and_then(|conn| scan_queries::get_scan_query(&conn, name).ok())
-            .flatten()
-        {
+        let row = self
+            .open_backend()
+            .and_then(|backend| scan_queries::get_scan_query_backend(&backend, name).ok())
+            .flatten();
+        match row {
             Some(row) => {
                 self.scan_builder_clauses = row
                     .filter_expr
@@ -4044,9 +4058,9 @@ impl App {
             return;
         }
         let expr = self.current_scan_filter_expr();
-        let res = Connection::open(&self.db_path)
-            .ok()
-            .and_then(|conn| scan_queries::upsert_scan_query(&conn, name, &expr).ok());
+        let res = self
+            .open_backend()
+            .and_then(|backend| scan_queries::upsert_scan_query_backend(&backend, name, &expr).ok());
         if res.is_some() {
             self.scan_builder_message = Some(format!("Saved '{}' ({})", name, expr));
         } else {
@@ -4261,9 +4275,9 @@ impl App {
                 if let Some(state) = &self.search_chart_popup {
                     let symbol = state.symbol.clone();
                     let category = crate::models::asset_names::infer_category(&symbol);
-                    if let Ok(conn) = Connection::open(&self.db_path) {
-                        let _ = db_watchlist::add_to_watchlist_in_group(
-                            &conn,
+                    if let Some(backend) = self.open_backend() {
+                        let _ = db_watchlist::add_to_watchlist_in_group_backend(
+                            &backend,
                             &symbol,
                             category,
                             self.watchlist_active_group,
@@ -4501,8 +4515,8 @@ impl App {
         };
 
         // Insert into DB
-        if let Ok(conn) = Connection::open(&self.db_path) {
-            match insert_transaction(&conn, &new_tx) {
+        if let Some(backend) = self.open_backend() {
+            match crate::db::transactions::insert_transaction_backend(&backend, &new_tx) {
                 Ok(_) => {
                     self.tx_form = None;
                     self.load_data();
@@ -4526,9 +4540,9 @@ impl App {
             None => return,
         };
 
-        if let Ok(conn) = Connection::open(&self.db_path) {
+        if let Some(backend) = self.open_backend() {
             for id in &state.tx_ids {
-                let _ = transactions::delete_transaction(&conn, *id);
+                let _ = transactions::delete_transaction_backend(&backend, *id);
             }
             self.load_data();
             self.recompute();

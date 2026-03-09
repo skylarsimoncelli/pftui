@@ -41,14 +41,6 @@ fn main() -> Result<()> {
 
     let result = match cli.command {
         None => {
-            if backend.sqlite_native().is_none() {
-                if !commands::setup::has_portfolio_data(&backend) {
-                    commands::setup::run(&backend, &config, false)?;
-                }
-                println!("database_backend=postgres: TUI is skipped; showing summary view.");
-                println!("Tip: run `pftui web` for the dashboard interface.\n");
-                return commands::summary::run(&backend, &config, None, None, None, true, false);
-            }
             // Auto-detect: run setup if no portfolio data
             if !commands::setup::has_portfolio_data(&backend) {
                 commands::setup::run(&backend, &config, false)?;

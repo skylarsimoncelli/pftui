@@ -162,6 +162,19 @@ pub fn add_to_watchlist_backend(
     )
 }
 
+pub fn add_to_watchlist_in_group_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    category: AssetCategory,
+    group_id: i64,
+) -> Result<i64> {
+    query::dispatch(
+        backend,
+        |conn| add_to_watchlist_in_group(conn, symbol, category, group_id),
+        |pool| add_to_watchlist_postgres(pool, symbol, category, group_id),
+    )
+}
+
 pub fn set_watchlist_target_backend(
     backend: &BackendConnection,
     symbol: &str,
