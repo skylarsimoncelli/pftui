@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:27 UTC — Fix PostgreSQL connection timeout + clippy warnings
+
+- What: added 5-second timeout to PostgreSQL connection attempts (previously hung indefinitely if unreachable). Fixed 7 clippy warnings: large enum variant, too many arguments, field reassign with default, useless vec allocations.
+- Why: DB connection hangs were the #1 reliability issue in feedback, dropping Evening Planner from 82→35 usefulness score. Commands now fail fast with clear error message instead of hanging forever. Clippy fixes maintain code quality.
+- Files: `src/db/backend.rs` (timeout), `src/cli.rs` (allow large enum), `src/commands/correlations.rs` (allow many args), `src/db/user_predictions.rs` (field init), `src/commands/refresh.rs` (vec slices)
+- Tests: `cargo clippy --all-targets -- -D warnings` passes, `cargo test` passes (1185 tests)
+- TODO: DB connection timeout (P1)
+
 ### 2026-03-09 01:50 UTC — Distribution readiness prep (non-F32 remaining TODO support)
 
 - What: added distribution readiness tooling and docs: `scripts/check_distribution_versions.sh`, `scripts/update_distribution_manifests.sh`, `docs/DISTRIBUTION-READINESS.md`; added CI gate for manifest-version parity; updated Scoop/Snap/Homebrew manifest versions to `0.6.0`.
