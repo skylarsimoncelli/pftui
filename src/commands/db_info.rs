@@ -9,6 +9,8 @@ use crate::db::backend::BackendConnection;
 struct TableInfo {
     name: String,
     rows: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,7 +64,11 @@ pub fn run(
     println!("{:<40} {:>12}", "Table", "Rows");
     println!("{:-<40} {:-<12}", "", "");
     for t in &info.tables {
-        println!("{:<40} {:>12}", t.name, t.rows);
+        if t.error.is_some() {
+            println!("{:<40} {:>12}", t.name, "ERR");
+        } else {
+            println!("{:<40} {:>12}", t.name, t.rows);
+        }
     }
 
     Ok(())
@@ -84,16 +90,26 @@ fn sqlite_tables_with_counts(conn: &rusqlite::Connection) -> Result<Vec<TableInf
     for name in names {
         let quoted = quote_ident(&name);
         let sql = format!("SELECT COUNT(*) FROM {quoted}");
-        let rows: i64 = conn.query_row(&sql, [], |r| r.get(0)).unwrap_or(0);
-        tables.push(TableInfo { name, rows });
+        match conn.query_row(&sql, [], |r| r.get(0)) {
+            Ok(rows) => tables.push(TableInfo {
+                name,
+                rows,
+                error: None,
+            }),
+            Err(e) => tables.push(TableInfo {
+                name,
+                rows: 0,
+                error: Some(e.to_string()),
+            }),
+        }
     }
     Ok(tables)
 }
 
 fn postgres_tables_with_counts(pool: &sqlx::PgPool) -> Result<Vec<TableInfo>> {
     let runtime = tokio::runtime::Runtime::new()?;
-    let names: Vec<String> = runtime.block_on(async {
-        sqlx::query_scalar(
+    let mut tables = runtime.block_on(async {
+        let names: Vec<String> = sqlx::query_scalar(
             "SELECT table_name
              FROM information_schema.tables
              WHERE table_schema = 'public'
@@ -101,18 +117,43 @@ fn postgres_tables_with_counts(pool: &sqlx::PgPool) -> Result<Vec<TableInfo>> {
              ORDER BY table_name ASC",
         )
         .fetch_all(pool)
-        .await
-    })?;
+        .await?;
 
-    let mut tables = Vec::with_capacity(names.len());
-    for name in names {
-        let quoted = quote_ident(&name);
-        let sql = format!("SELECT COUNT(*)::BIGINT FROM {quoted}");
-        let rows: i64 = runtime.block_on(async {
-            sqlx::query_scalar(&sql).fetch_one(pool).await
-        })?;
-        tables.push(TableInfo { name, rows });
-    }
+        let mut join_set = tokio::task::JoinSet::new();
+        for name in names {
+            let pool = pool.clone();
+            join_set.spawn(async move {
+                let quoted = quote_ident(&name);
+                let sql = format!("SELECT COUNT(*)::BIGINT FROM {quoted}");
+                match sqlx::query_scalar::<_, i64>(&sql).fetch_one(&pool).await {
+                    Ok(rows) => TableInfo {
+                        name,
+                        rows,
+                        error: None,
+                    },
+                    Err(e) => TableInfo {
+                        name,
+                        rows: 0,
+                        error: Some(e.to_string()),
+                    },
+                }
+            });
+        }
+
+        let mut tables = Vec::new();
+        while let Some(result) = join_set.join_next().await {
+            match result {
+                Ok(info) => tables.push(info),
+                Err(e) => tables.push(TableInfo {
+                    name: "<join_error>".to_string(),
+                    rows: 0,
+                    error: Some(e.to_string()),
+                }),
+            }
+        }
+        Ok::<Vec<TableInfo>, sqlx::Error>(tables)
+    })?;
+    tables.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(tables)
 }
 

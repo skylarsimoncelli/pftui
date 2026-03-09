@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — `db-info` reliability/performance hardening
+
+- What: added per-table error reporting in `db-info` table counts (instead of silently returning zero) and parallelized PostgreSQL row-count queries.
+- Why: improves operator visibility for counting failures and reduces `db-info` latency on larger Postgres schemas.
+- Files: `src/commands/db_info.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit quick-win (`db-info` hardening)
+
 ### 2026-03-09 — Web auth session lock hardening + stale-session pruning
 
 - What: replaced panic-on-lock behavior in auth session paths with graceful auth failures and added proactive expired-session pruning during session validation/login/logout flows.
