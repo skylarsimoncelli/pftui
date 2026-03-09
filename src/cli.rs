@@ -120,6 +120,14 @@ pub enum Command {
         json: bool,
     },
 
+    /// Show active database backend details and table row counts
+    #[command(name = "db-info")]
+    DbInfo {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// View and update pftui configuration fields
     Config {
         /// Action: list, get, set

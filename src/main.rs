@@ -219,6 +219,9 @@ fn main() -> Result<()> {
         Some(Command::Status { json, .. }) => {
             commands::status::run_backend(&backend, json)
         }
+        Some(Command::DbInfo { json }) => {
+            commands::db_info::run(&backend, &db_path, config.database_url.as_deref(), json)
+        }
         Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => {
             commands::value::run(&backend, &config, json)
