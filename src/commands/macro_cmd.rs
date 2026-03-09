@@ -8,13 +8,13 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::config::Config;
 use crate::data::fred;
 use crate::db::economic_cache;
-use crate::db::price_cache::{get_all_cached_prices, upsert_price};
-use crate::db::price_history::get_history;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
+use crate::db::price_history::get_history_backend;
 use crate::indicators::{compute_macd, compute_rsi, compute_sma};
 use crate::price::yahoo;
 
@@ -65,8 +65,8 @@ impl Technicals {
 
 /// Compute technicals (RSI, MACD, SMA50) for a symbol.
 /// Requires ~90 days of history for SMA50, ~50 for MACD/RSI.
-fn compute_technicals(conn: &Connection, symbol: &str) -> Technicals {
-    let history = match get_history(conn, symbol, 100) {
+fn compute_technicals(backend: &BackendConnection, symbol: &str) -> Technicals {
+    let history = match get_history_backend(backend, symbol, 100) {
         Ok(h) if h.len() >= 30 => h,
         _ => return Technicals::none(),
     };
@@ -102,7 +102,7 @@ fn missing_market_symbols(price_map: &HashMap<String, Decimal>) -> Vec<&'static 
 }
 
 fn backfill_market_prices(
-    conn: &Connection,
+    backend: &BackendConnection,
     price_map: &mut HashMap<String, Decimal>,
     symbols: &[&str],
 ) -> Result<()> {
@@ -113,7 +113,7 @@ fn backfill_market_prices(
     let rt = tokio::runtime::Runtime::new()?;
     for symbol in symbols {
         if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
-            upsert_price(conn, &quote)?;
+            upsert_price_backend(backend, &quote)?;
             price_map.insert(symbol.to_string(), quote.price);
         }
     }
@@ -122,9 +122,9 @@ fn backfill_market_prices(
 }
 
 /// Run the macro dashboard command.
-pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, _config: &Config, json: bool) -> Result<()> {
     // Build price map from cached data (yahoo symbol -> price)
-    let all_prices = get_all_cached_prices(conn)?;
+    let all_prices = get_all_cached_prices_backend(backend)?;
     let mut price_map: HashMap<String, Decimal> = all_prices
         .iter()
         .map(|p| (p.symbol.clone(), p.price))
@@ -133,18 +133,18 @@ pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
     // Ensure macro dashboard can display the full market basket even when
     // some symbols were not previously fetched during refresh.
     let missing = missing_market_symbols(&price_map);
-    backfill_market_prices(conn, &mut price_map, &missing)?;
+    backfill_market_prices(backend, &mut price_map, &missing)?;
 
     // Build FRED data map (series_id -> latest observation)
-    let fred_data: HashMap<String, (Decimal, String)> = economic_cache::get_all_latest(conn)?
+    let fred_data: HashMap<String, (Decimal, String)> = economic_cache::get_all_latest_backend(backend)?
         .into_iter()
         .map(|obs| (obs.series_id.clone(), (obs.value, obs.date)))
         .collect();
 
     if json {
-        print_json(&price_map, &fred_data, conn)?;
+        print_json(&price_map, &fred_data, backend)?;
     } else {
-        print_terminal(&price_map, &fred_data, conn)?;
+        print_terminal(&price_map, &fred_data, backend)?;
     }
 
     Ok(())
@@ -155,7 +155,7 @@ pub fn run(conn: &Connection, _config: &Config, json: bool) -> Result<()> {
 fn print_json(
     prices: &HashMap<String, Decimal>,
     fred: &HashMap<String, (Decimal, String)>,
-    conn: &Connection,
+    backend: &BackendConnection,
 ) -> Result<()> {
     use serde_json::{json, Map, Value};
 
@@ -168,7 +168,7 @@ fn print_json(
             entry.insert("unit".into(), json!(unit));
 
             // Add technical indicators
-            let tech = compute_technicals(conn, symbol);
+            let tech = compute_technicals(backend, symbol);
             if tech.rsi.is_some() || tech.macd.is_some() || tech.sma50.is_some() {
                 let mut tech_obj = Map::new();
                 if let Some(rsi) = tech.rsi {
@@ -305,7 +305,7 @@ fn print_json(
 fn print_terminal(
     prices: &HashMap<String, Decimal>,
     fred: &HashMap<String, (Decimal, String)>,
-    conn: &Connection,
+    backend: &BackendConnection,
 ) -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║                    MACRO DASHBOARD                         ║");
@@ -325,7 +325,7 @@ fn print_terminal(
         ("30Y Treasury", "^TYX", "%"),
     ];
     for (name, symbol, unit) in yields {
-        print_indicator_row(name, symbol, unit, prices, conn);
+        print_indicator_row(name, symbol, unit, prices, backend);
     }
 
     // FRED yields data
@@ -358,7 +358,7 @@ fn print_terminal(
         ("USD/CNY", "CNY=X", ""),
     ];
     for (name, symbol, unit) in currencies {
-        print_indicator_row(name, symbol, unit, prices, conn);
+        print_indicator_row(name, symbol, unit, prices, backend);
     }
     println!();
 
@@ -377,7 +377,7 @@ fn print_terminal(
         ("Coffee", "KC=F", "$"),
     ];
     for (name, symbol, unit) in commodities {
-        print_indicator_row(name, symbol, unit, prices, conn);
+        print_indicator_row(name, symbol, unit, prices, backend);
     }
 
     // WTI-Brent spread
@@ -401,7 +401,7 @@ fn print_terminal(
 
     // ── Volatility ──
     println!("── Volatility ─────────────────────────────────────────────────");
-    print_indicator_row("VIX", "^VIX", "", prices, conn);
+    print_indicator_row("VIX", "^VIX", "", prices, backend);
     if let Some(vix) = prices.get("^VIX") {
         let v = vix.to_string().parse::<f64>().unwrap_or(0.0);
         let regime = if v > 30.0 {
@@ -486,7 +486,7 @@ fn print_indicator_row(
     yahoo_symbol: &str,
     unit_prefix: &str,
     prices: &HashMap<String, Decimal>,
-    conn: &Connection,
+    backend: &BackendConnection,
 ) {
     let Some(price) = prices.get(yahoo_symbol) else {
         println!("  {:<22} {:>10}", name, "---");
@@ -494,7 +494,7 @@ fn print_indicator_row(
     };
 
     // Get 1-day change from price history
-    let change_str = match get_history(conn, yahoo_symbol, 2) {
+    let change_str = match get_history_backend(backend, yahoo_symbol, 2) {
         Ok(hist) if hist.len() >= 2 => {
             let prev = hist[hist.len() - 2].close;
             if prev != Decimal::ZERO {
@@ -524,7 +524,7 @@ fn print_indicator_row(
     };
 
     // Compute technicals
-    let tech = compute_technicals(conn, yahoo_symbol);
+    let tech = compute_technicals(backend, yahoo_symbol);
 
     // Build technical indicators string
     let mut tech_parts = Vec::new();
@@ -681,7 +681,12 @@ fn fmt_commas(value: Decimal, dp: u32) -> String {
 mod tests {
     use super::*;
     use crate::db::open_in_memory;
+    use rusqlite::Connection;
     use rust_decimal_macros::dec;
+
+    fn to_backend(conn: Connection) -> BackendConnection {
+        BackendConnection::Sqlite { conn }
+    }
 
     fn seed_prices(conn: &Connection) {
         use crate::db::price_cache::upsert_price;
@@ -751,16 +756,18 @@ mod tests {
     #[test]
     fn test_run_terminal_output_no_panic() {
         let conn = open_in_memory();
+        let backend = to_backend(conn);
         let config = Config::default();
         // Empty DB — should print gracefully with "---" placeholders
-        assert!(run(&conn, &config, false).is_ok());
+        assert!(run(&backend, &config, false).is_ok());
     }
 
     #[test]
     fn test_run_json_output_no_panic() {
         let conn = open_in_memory();
+        let backend = to_backend(conn);
         let config = Config::default();
-        assert!(run(&conn, &config, true).is_ok());
+        assert!(run(&backend, &config, true).is_ok());
     }
 
     #[test]
@@ -768,8 +775,9 @@ mod tests {
         let conn = open_in_memory();
         seed_prices(&conn);
         seed_fred(&conn);
+        let backend = to_backend(conn);
         let config = Config::default();
-        assert!(run(&conn, &config, false).is_ok());
+        assert!(run(&backend, &config, false).is_ok());
     }
 
     #[test]
@@ -777,8 +785,9 @@ mod tests {
         let conn = open_in_memory();
         seed_prices(&conn);
         seed_fred(&conn);
+        let backend = to_backend(conn);
         let config = Config::default();
-        assert!(run(&conn, &config, true).is_ok());
+        assert!(run(&backend, &config, true).is_ok());
     }
 
     #[test]

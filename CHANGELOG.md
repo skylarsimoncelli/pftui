@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 02:35 UTC — F32 Phase 24: backend-dispatch macro/oil/crisis/sector/heatmap/news + cache adapters
+
+- What: added backend-dispatched `news_cache` and `economic_cache` APIs with native Postgres query paths, then migrated `macro`, `oil`, `crisis`, `sector`, `heatmap`, and `news` commands to use `BackendConnection` instead of SQLite-only `Connection` paths; updated `main`/`eod` callsites accordingly.
+- Why: removes another large hybrid analytics slice that still depended on SQLite reads/writes in Postgres mode, especially market dashboards using price history + news caches.
+- Files: `src/db/news_cache.rs`, `src/db/economic_cache.rs`, `src/commands/macro_cmd.rs`, `src/commands/oil.rs`, `src/commands/crisis.rs`, `src/commands/sector.rs`, `src/commands/heatmap.rs`, `src/commands/news.rs`, `src/commands/eod.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.4/F32.5 cache + analytics command-path migration (partial)
+
 ### 2026-03-09 01:52 UTC — F32 Phase 23: backend-dispatch group command portfolio reads
 
 - What: migrated `group show` data path to backend-dispatched reads for transactions, allocations, cached prices, and historical prices while preserving group metadata CRUD on existing table paths; updated main routing to pass `BackendConnection`.

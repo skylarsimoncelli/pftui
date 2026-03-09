@@ -6,6 +6,10 @@
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use sqlx::PgPool;
+
+use crate::db::backend::BackendConnection;
+use crate::db::query;
 
 /// A cached economic indicator observation.
 #[derive(Debug, Clone)]
@@ -36,6 +40,14 @@ pub fn upsert_observation(conn: &Connection, obs: &EconomicObservation) -> Resul
     Ok(())
 }
 
+pub fn upsert_observation_backend(backend: &BackendConnection, obs: &EconomicObservation) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_observation(conn, obs),
+        |pool| upsert_observation_postgres(pool, obs),
+    )
+}
+
 /// Batch upsert multiple observations.
 pub fn upsert_observations(conn: &Connection, observations: &[EconomicObservation]) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
@@ -44,6 +56,17 @@ pub fn upsert_observations(conn: &Connection, observations: &[EconomicObservatio
     }
     tx.commit()?;
     Ok(())
+}
+
+pub fn upsert_observations_backend(
+    backend: &BackendConnection,
+    observations: &[EconomicObservation],
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| upsert_observations(conn, observations),
+        |pool| upsert_observations_postgres(pool, observations),
+    )
 }
 
 /// Get the most recent observation for a series.
@@ -68,6 +91,17 @@ pub fn get_latest(conn: &Connection, series_id: &str) -> Result<Option<EconomicO
         Some(row) => Ok(Some(row?)),
         None => Ok(None),
     }
+}
+
+pub fn get_latest_backend(
+    backend: &BackendConnection,
+    series_id: &str,
+) -> Result<Option<EconomicObservation>> {
+    query::dispatch(
+        backend,
+        |conn| get_latest(conn, series_id),
+        |pool| get_latest_postgres(pool, series_id),
+    )
 }
 
 /// Get recent observations for a series, ordered by date ascending.
@@ -104,6 +138,18 @@ pub fn get_history(
     Ok(result)
 }
 
+pub fn get_history_backend(
+    backend: &BackendConnection,
+    series_id: &str,
+    limit: u32,
+) -> Result<Vec<EconomicObservation>> {
+    query::dispatch(
+        backend,
+        |conn| get_history(conn, series_id, limit),
+        |pool| get_history_postgres(pool, series_id, limit),
+    )
+}
+
 /// Get latest observations for all cached series.
 ///
 /// Returns one row per series (the most recent date).
@@ -135,6 +181,10 @@ pub fn get_all_latest(conn: &Connection) -> Result<Vec<EconomicObservation>> {
     Ok(result)
 }
 
+pub fn get_all_latest_backend(backend: &BackendConnection) -> Result<Vec<EconomicObservation>> {
+    query::dispatch(backend, get_all_latest, get_all_latest_postgres)
+}
+
 /// Delete all observations for a series (useful for cache invalidation).
 pub fn delete_series(conn: &Connection, series_id: &str) -> Result<u64> {
     let count = conn.execute(
@@ -144,6 +194,14 @@ pub fn delete_series(conn: &Connection, series_id: &str) -> Result<u64> {
     Ok(count as u64)
 }
 
+pub fn delete_series_backend(backend: &BackendConnection, series_id: &str) -> Result<u64> {
+    query::dispatch(
+        backend,
+        |conn| delete_series(conn, series_id),
+        |pool| delete_series_postgres(pool, series_id),
+    )
+}
+
 /// Count total cached observations.
 pub fn count_observations(conn: &Connection) -> Result<u64> {
     let count: i64 = conn.query_row(
@@ -151,6 +209,173 @@ pub fn count_observations(conn: &Connection) -> Result<u64> {
         [],
         |row| row.get(0),
     )?;
+    Ok(count as u64)
+}
+
+pub fn count_observations_backend(backend: &BackendConnection) -> Result<u64> {
+    query::dispatch(backend, count_observations, count_observations_postgres)
+}
+
+fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS economic_cache (
+                series_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                value TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (series_id, date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_observation_postgres(pool: &PgPool, obs: &EconomicObservation) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        sqlx::query(
+            "INSERT INTO economic_cache (series_id, date, value, fetched_at)
+             VALUES ($1, $2, $3, $4::timestamptz)
+             ON CONFLICT(series_id, date) DO UPDATE SET
+               value = EXCLUDED.value,
+               fetched_at = EXCLUDED.fetched_at",
+        )
+        .bind(&obs.series_id)
+        .bind(&obs.date)
+        .bind(obs.value.to_string())
+        .bind(&obs.fetched_at)
+        .execute(pool)
+        .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+fn upsert_observations_postgres(pool: &PgPool, observations: &[EconomicObservation]) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    if observations.is_empty() {
+        return Ok(());
+    }
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        let mut tx = pool.begin().await?;
+        for obs in observations {
+            sqlx::query(
+                "INSERT INTO economic_cache (series_id, date, value, fetched_at)
+                 VALUES ($1, $2, $3, $4::timestamptz)
+                 ON CONFLICT(series_id, date) DO UPDATE SET
+                   value = EXCLUDED.value,
+                   fetched_at = EXCLUDED.fetched_at",
+            )
+            .bind(&obs.series_id)
+            .bind(&obs.date)
+            .bind(obs.value.to_string())
+            .bind(&obs.fetched_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
+}
+
+type EconRow = (String, String, String, String);
+
+fn to_observation(row: EconRow) -> EconomicObservation {
+    EconomicObservation {
+        series_id: row.0,
+        date: row.1,
+        value: row.2.parse().unwrap_or(Decimal::ZERO),
+        fetched_at: row.3,
+    }
+}
+
+fn get_latest_postgres(pool: &PgPool, series_id: &str) -> Result<Option<EconomicObservation>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let row: Option<EconRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT series_id, date, value, fetched_at::text
+             FROM economic_cache
+             WHERE series_id = $1
+             ORDER BY date DESC
+             LIMIT 1",
+        )
+        .bind(series_id)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(to_observation))
+}
+
+fn get_history_postgres(pool: &PgPool, series_id: &str, limit: u32) -> Result<Vec<EconomicObservation>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let mut rows: Vec<EconRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT series_id, date, value, fetched_at::text
+             FROM economic_cache
+             WHERE series_id = $1
+             ORDER BY date DESC
+             LIMIT $2",
+        )
+        .bind(series_id)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+    })?;
+    rows.reverse();
+    Ok(rows.into_iter().map(to_observation).collect())
+}
+
+fn get_all_latest_postgres(pool: &PgPool) -> Result<Vec<EconomicObservation>> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let rows: Vec<EconRow> = runtime.block_on(async {
+        sqlx::query_as(
+            "SELECT e.series_id, e.date, e.value, e.fetched_at::text
+             FROM economic_cache e
+             JOIN (
+                 SELECT series_id, MAX(date) AS max_date
+                 FROM economic_cache
+                 GROUP BY series_id
+             ) latest
+             ON e.series_id = latest.series_id AND e.date = latest.max_date
+             ORDER BY e.series_id",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows.into_iter().map(to_observation).collect())
+}
+
+fn delete_series_postgres(pool: &PgPool, series_id: &str) -> Result<u64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let result = runtime.block_on(async {
+        sqlx::query("DELETE FROM economic_cache WHERE series_id = $1")
+            .bind(series_id)
+            .execute(pool)
+            .await
+    })?;
+    Ok(result.rows_affected())
+}
+
+fn count_observations_postgres(pool: &PgPool) -> Result<u64> {
+    ensure_tables_postgres(pool)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let count: i64 = runtime.block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM economic_cache")
+            .fetch_one(pool)
+            .await
+    })?;
     Ok(count as u64)
 }
 

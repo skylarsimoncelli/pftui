@@ -251,9 +251,9 @@ fn main() -> Result<()> {
             commands::history::run(&backend, conn, &config, &date, group_by.as_ref())
         }
 
-        Some(Command::Macro { json }) => commands::macro_cmd::run(conn, &config, json),
-        Some(Command::Oil { json }) => commands::oil::run(conn, json),
-        Some(Command::Crisis { json }) => commands::crisis::run(conn, json),
+        Some(Command::Macro { json }) => commands::macro_cmd::run(&backend, &config, json),
+        Some(Command::Oil { json }) => commands::oil::run(&backend, json),
+        Some(Command::Crisis { json }) => commands::crisis::run(&backend, json),
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
         Some(Command::Sovereign { json }) => commands::sovereign::run(json),
         Some(Command::Economy { indicator, json }) => {
@@ -394,7 +394,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::News { source, search, hours, limit, json }) => {
-            commands::news::run(conn, source.as_deref(), search.as_deref(), hours, limit, json)
+            commands::news::run(&backend, source.as_deref(), search.as_deref(), hours, limit, json)
         }
 
         Some(Command::Sentiment { symbol, history, json }) => {
@@ -623,8 +623,8 @@ fn main() -> Result<()> {
             })
         }
 
-        Some(Command::Sector { json }) => commands::sector::run(conn, &config, json),
-        Some(Command::Heatmap { json }) => commands::heatmap::run(conn, json),
+        Some(Command::Sector { json }) => commands::sector::run(&backend, &config, json),
+        Some(Command::Heatmap { json }) => commands::heatmap::run(&backend, json),
         Some(Command::Options {
             symbol,
             expiry,

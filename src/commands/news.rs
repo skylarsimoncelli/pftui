@@ -1,19 +1,19 @@
 use anyhow::Result;
-use rusqlite::Connection;
 use serde_json::json;
 
-use crate::db::news_cache::{get_latest_news, NewsEntry};
+use crate::db::backend::BackendConnection;
+use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 
 /// Run the `pftui news` command.
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     source: Option<&str>,
     search: Option<&str>,
     hours: Option<i64>,
     limit: usize,
     json: bool,
 ) -> Result<()> {
-    let entries = get_latest_news(conn, limit, source, None, search, hours)?;
+    let entries = get_latest_news_backend(backend, limit, source, None, search, hours)?;
 
     if entries.is_empty() {
         if json {

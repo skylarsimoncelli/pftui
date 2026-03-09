@@ -5,11 +5,11 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use rust_decimal::Decimal;
-use rusqlite::Connection;
 
 use crate::commands::sector::SECTOR_ETFS;
-use crate::db::price_cache::{get_all_cached_prices, upsert_price};
-use crate::db::price_history::get_history;
+use crate::db::backend::BackendConnection;
+use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
+use crate::db::price_history::get_history_backend;
 use crate::price::yahoo;
 
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ fn missing_symbols(price_map: &HashMap<String, Decimal>) -> Vec<&'static str> {
 }
 
 fn backfill_prices(
-    conn: &Connection,
+    backend: &BackendConnection,
     price_map: &mut HashMap<String, Decimal>,
     symbols: &[&str],
 ) -> Result<()> {
@@ -45,7 +45,7 @@ fn backfill_prices(
     let rt = tokio::runtime::Runtime::new()?;
     for symbol in symbols {
         if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
-            upsert_price(conn, &quote)?;
+            upsert_price_backend(backend, &quote)?;
             price_map.insert(symbol.to_string(), quote.price);
         }
     }
@@ -53,22 +53,22 @@ fn backfill_prices(
     Ok(())
 }
 
-fn collect_cells(conn: &Connection) -> Result<Vec<HeatCell>> {
-    let all_prices = get_all_cached_prices(conn)?;
+fn collect_cells(backend: &BackendConnection) -> Result<Vec<HeatCell>> {
+    let all_prices = get_all_cached_prices_backend(backend)?;
     let mut price_map: HashMap<String, Decimal> = all_prices
         .iter()
         .map(|p| (p.symbol.clone(), p.price))
         .collect();
 
     let missing = missing_symbols(&price_map);
-    backfill_prices(conn, &mut price_map, &missing)?;
+    backfill_prices(backend, &mut price_map, &missing)?;
 
     let mut cells = Vec::new();
     for (symbol, name) in SECTOR_ETFS {
         let Some(price) = price_map.get(*symbol) else {
             continue;
         };
-        let history = get_history(conn, symbol, 2)?;
+        let history = get_history_backend(backend, symbol, 2)?;
         let chg = if history.len() >= 2 {
             let yesterday = history[history.len() - 2].close;
             if yesterday > Decimal::ZERO {
@@ -252,8 +252,8 @@ fn print_json(cells: &[HeatCell]) -> Result<()> {
     Ok(())
 }
 
-pub fn run(conn: &Connection, json: bool) -> Result<()> {
-    let mut cells = collect_cells(conn)?;
+pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
+    let mut cells = collect_cells(backend)?;
     cells.sort_by(|a, b| {
         b.day_change_pct
             .partial_cmp(&a.day_change_pct)

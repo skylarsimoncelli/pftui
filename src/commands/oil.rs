@@ -1,21 +1,21 @@
 use anyhow::Result;
-use rusqlite::Connection;
 use rust_decimal::Decimal;
 
+use crate::db::backend::BackendConnection;
 use crate::db::news_cache;
-use crate::db::price_cache::{get_all_cached_prices, upsert_price};
-use crate::db::price_history::get_history;
+use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
+use crate::db::price_history::get_history_backend;
 use crate::indicators::compute_rsi;
 use crate::price::yahoo;
 
-pub fn run(conn: &Connection, json: bool) -> Result<()> {
-    let mut prices = get_all_cached_prices(conn)?
+pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
+    let mut prices = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|p| (p.symbol, p.price))
         .collect::<std::collections::HashMap<_, _>>();
 
-    ensure_symbol(conn, &mut prices, "CL=F")?;
-    ensure_symbol(conn, &mut prices, "BZ=F")?;
+    ensure_symbol(backend, &mut prices, "CL=F")?;
+    ensure_symbol(backend, &mut prices, "BZ=F")?;
 
     let wti = prices.get("CL=F").copied();
     let brent = prices.get("BZ=F").copied();
@@ -24,9 +24,9 @@ pub fn run(conn: &Connection, json: bool) -> Result<()> {
         _ => None,
     };
 
-    let rsi_wti = compute_symbol_rsi(conn, "CL=F");
-    let rsi_brent = compute_symbol_rsi(conn, "BZ=F");
-    let headlines = oil_headlines(conn)?;
+    let rsi_wti = compute_symbol_rsi(backend, "CL=F");
+    let rsi_brent = compute_symbol_rsi(backend, "BZ=F");
+    let headlines = oil_headlines(backend)?;
 
     if json {
         let out = serde_json::json!({
@@ -64,7 +64,7 @@ pub fn run(conn: &Connection, json: bool) -> Result<()> {
 }
 
 fn ensure_symbol(
-    conn: &Connection,
+    backend: &BackendConnection,
     prices: &mut std::collections::HashMap<String, Decimal>,
     symbol: &str,
 ) -> Result<()> {
@@ -73,14 +73,14 @@ fn ensure_symbol(
     }
     let rt = tokio::runtime::Runtime::new()?;
     if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
-        upsert_price(conn, &quote)?;
+        upsert_price_backend(backend, &quote)?;
         prices.insert(symbol.to_string(), quote.price);
     }
     Ok(())
 }
 
-fn compute_symbol_rsi(conn: &Connection, symbol: &str) -> Option<f64> {
-    let history = get_history(conn, symbol, 40).ok()?;
+fn compute_symbol_rsi(backend: &BackendConnection, symbol: &str) -> Option<f64> {
+    let history = get_history_backend(backend, symbol, 40).ok()?;
     if history.len() < 15 {
         return None;
     }
@@ -98,8 +98,8 @@ struct OilHeadlines {
     geopolitics: Vec<String>,
 }
 
-fn oil_headlines(conn: &Connection) -> Result<OilHeadlines> {
-    let items = news_cache::get_latest_news(conn, 30, None, None, None, Some(72))?;
+fn oil_headlines(backend: &BackendConnection) -> Result<OilHeadlines> {
+    let items = news_cache::get_latest_news_backend(backend, 30, None, None, None, Some(72))?;
     let mut opec = Vec::new();
     let mut hormuz = Vec::new();
     let mut geopolitics = Vec::new();

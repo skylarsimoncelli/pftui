@@ -38,7 +38,7 @@ fn run_human(backend: &BackendConnection, conn: &Connection, config: &Config) ->
 
     // 3. Macro Dashboard
     println!("┌─ MACRO INDICATORS ─────────────────────────────────────────┐");
-    super::macro_cmd::run(conn, config, false)?;
+    super::macro_cmd::run(backend, config, false)?;
     println!("└────────────────────────────────────────────────────────────┘\n");
 
     // 4. Sentiment Overview (F&G + COT summary)
@@ -56,7 +56,7 @@ fn run_json(backend: &BackendConnection, conn: &Connection, config: &Config) -> 
     // Fetch all components
     let brief_output = capture_json_output(|| super::brief::run(conn, config, false, true))?;
     let movers_output = capture_json_output(|| super::movers::run(backend, conn, config, Some("3"), true))?;
-    let macro_output = capture_json_output(|| super::macro_cmd::run(conn, config, true))?;
+    let macro_output = capture_json_output(|| super::macro_cmd::run(backend, config, true))?;
     let sentiment_output = capture_json_output(|| super::sentiment::run(None, None, true))?;
 
     let eod = json!({
