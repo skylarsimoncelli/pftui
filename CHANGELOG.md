@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Web portfolio API daily P&L parity
+
+- What: implemented portfolio-level `daily_change` and `daily_change_pct` in the web API using 1-day `price_history` lookbacks per position.
+- Why: endpoint previously returned `None` for daily P&L fields, preventing consistent frontend daily-change display.
+- Files: `src/web/api.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit P1 (`web API daily P&L parity`)
+
 ### 2026-03-09 — Price service startup hardening (no panic path)
 
 - What: changed `PriceService::start` to return `Result` and moved Tokio runtime construction to a fallible pre-spawn path; app init now handles startup failure gracefully.

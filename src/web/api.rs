@@ -503,6 +503,47 @@ fn day_change_pct_backend(
     history_change_pct(&history, 1)
 }
 
+fn portfolio_day_change(
+    backend: &crate::db::backend::BackendConnection,
+    positions: &[Position],
+    total_value: Option<Decimal>,
+) -> (Option<Decimal>, Option<Decimal>) {
+    let mut prev_total = dec!(0);
+    let mut has_non_cash = false;
+
+    for pos in positions {
+        if pos.category == AssetCategory::Cash {
+            if let Some(v) = pos.current_value {
+                prev_total += v;
+            }
+            continue;
+        }
+
+        has_non_cash = true;
+        let history = match db::price_history::get_history_backend(backend, &pos.symbol, 2) {
+            Ok(h) if h.len() >= 2 => h,
+            _ => return (None, None),
+        };
+        let prev_price = history[history.len() - 2].close;
+        prev_total += prev_price * pos.quantity;
+    }
+
+    if !has_non_cash {
+        return (Some(dec!(0)), Some(dec!(0)));
+    }
+
+    let Some(curr_total) = total_value else {
+        return (None, None);
+    };
+    if prev_total <= dec!(0) {
+        return (None, None);
+    }
+
+    let daily_change = curr_total - prev_total;
+    let daily_change_pct = (daily_change / prev_total) * dec!(100);
+    (Some(daily_change), Some(daily_change_pct))
+}
+
 fn range_from_history(
     history: &[crate::models::price::HistoryRecord],
     points: usize,
@@ -614,9 +655,7 @@ pub async fn get_portfolio(
         None
     };
 
-    // TODO: Compute daily change from price history
-    let daily_change = None;
-    let daily_change_pct = None;
+    let (daily_change, daily_change_pct) = portfolio_day_change(&backend, &positions, total_value);
 
     Ok(Json(PortfolioResponse {
         total_value,
