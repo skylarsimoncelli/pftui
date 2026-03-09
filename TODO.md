@@ -777,7 +777,7 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [ ] [Feedback] **Fix Brent crude data** — Shows `---` in macro dashboard. WTI-Brent spread is critical for war premium analysis. (Morning Research, Evening Planner × multiple reviews)
+- [x] [Feedback] **Fix Brent crude data** — Added Brent (`BZ=F`) to shared economy symbol set so `refresh` always fetches/caches it, preventing macro dashboard `---` gaps and stabilizing WTI-Brent spread availability. (Completed 2026-03-09)
 
 ### CLI Enhancements
 

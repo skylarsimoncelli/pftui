@@ -64,6 +64,7 @@ pub fn economy_symbols() -> Vec<EconomyItem> {
         EconomyItem { symbol: "Gold".into(), name: "Gold Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "GC=F".into() },
         EconomyItem { symbol: "Silver".into(), name: "Silver Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "SI=F".into() },
         EconomyItem { symbol: "Oil".into(), name: "Crude Oil WTI".into(), group: EconomyGroup::Commodities, yahoo_symbol: "CL=F".into() },
+        EconomyItem { symbol: "Brent".into(), name: "Crude Oil Brent".into(), group: EconomyGroup::Commodities, yahoo_symbol: "BZ=F".into() },
         EconomyItem { symbol: "Copper".into(), name: "Copper Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "HG=F".into() },
         EconomyItem { symbol: "NatGas".into(), name: "Natural Gas".into(), group: EconomyGroup::Commodities, yahoo_symbol: "NG=F".into() },
         // Volatility
@@ -1408,7 +1409,7 @@ mod tests {
     #[test]
     fn economy_symbols_has_expected_count() {
         let items = economy_symbols();
-        assert_eq!(items.len(), 15);
+        assert_eq!(items.len(), 16);
     }
 
     #[test]
@@ -1656,6 +1657,16 @@ mod tests {
         let silver = silver.unwrap();
         assert_eq!(silver.yahoo_symbol, "SI=F");
         assert_eq!(silver.group, EconomyGroup::Commodities);
+    }
+
+    #[test]
+    fn economy_symbols_includes_brent() {
+        let items = economy_symbols();
+        let brent = items.iter().find(|i| i.symbol == "Brent");
+        assert!(brent.is_some(), "brent should be in economy symbols");
+        let brent = brent.unwrap();
+        assert_eq!(brent.yahoo_symbol, "BZ=F");
+        assert_eq!(brent.group, EconomyGroup::Commodities);
     }
 
     // --- Yield curve label tests ---

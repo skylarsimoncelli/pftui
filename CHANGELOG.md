@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Fix Brent availability in macro/economy refresh set
+
+- What: added Brent crude (`BZ=F`) to the shared `economy_symbols()` list and added an explicit economy-symbol test for Brent presence.
+- Why: `refresh` derives macro symbol fetches from `economy_symbols()`. Brent was missing there, so it could remain uncached and show as `---` in macro flows unless ad-hoc backfill happened first.
+- Files: `src/tui/views/economy.rs`, `TODO.md`
+- Tests: `cargo test -q` (full suite)
+- TODO: Fix Brent crude data (P1)
+
 ### 2026-03-09 — Fix absurd percentage changes in macro dashboard
 
 - What: added sanity check to reject percentage changes >100% in macro dashboard terminal output. When price history has corrupt/stale data, calculation yields nonsense like USD/JPY +15697% daily change. Now suppresses change display when abs(change_pct) > 100.
