@@ -5,6 +5,13 @@ use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
 
+// Type aliases for complex Postgres query rows
+type PowerMetricRow = (i64, String, String, Option<f64>, Option<i32>, String, Option<String>, Option<String>, String);
+type StructuralCycleRow = (i64, String, String, Option<String>, Option<String>, Option<String>, String);
+type StructuralOutcomeRow = (i64, String, f64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, String, String);
+type HistoricalParallelRow = (i64, String, String, String, Option<i32>, Option<String>, Option<String>, Option<String>, String);
+type StructuralLogRow = (i64, String, String, Option<String>, Option<String>, String);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Power Metrics
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -498,7 +505,7 @@ fn set_metric_postgres(
 }
 
 fn list_metrics_postgres(pool: &PgPool, country: Option<&str>, metric: Option<&str>) -> Result<Vec<PowerMetric>> {
-    let rows: Vec<(i64, String, String, Option<f64>, Option<i32>, String, Option<String>, Option<String>, String)> =
+    let rows: Vec<PowerMetricRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::TEXT
@@ -535,7 +542,7 @@ fn get_metric_history_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<PowerMetric>> {
     let limit_val = limit.unwrap_or(50) as i64;
-    let rows: Vec<(i64, String, String, Option<f64>, Option<i32>, String, Option<String>, Option<String>, String)> =
+    let rows: Vec<PowerMetricRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, country, metric, score, rank, trend, notes, source, recorded_at::TEXT
@@ -598,7 +605,7 @@ fn set_cycle_postgres(
 }
 
 fn list_cycles_postgres(pool: &PgPool) -> Result<Vec<StructuralCycle>> {
-    let rows: Vec<(i64, String, String, Option<String>, Option<String>, Option<String>, String)> =
+    let rows: Vec<StructuralCycleRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, cycle_name, current_stage, stage_entered, description, evidence, updated_at::TEXT
@@ -623,7 +630,7 @@ fn list_cycles_postgres(pool: &PgPool) -> Result<Vec<StructuralCycle>> {
 }
 
 fn get_cycle_postgres(pool: &PgPool, name: &str) -> Result<Option<StructuralCycle>> {
-    let row: Option<(i64, String, String, Option<String>, Option<String>, Option<String>, String)> =
+    let row: Option<StructuralCycleRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, cycle_name, current_stage, stage_entered, description, evidence, updated_at::TEXT
@@ -676,7 +683,7 @@ fn add_outcome_postgres(
 }
 
 fn list_outcomes_postgres(pool: &PgPool) -> Result<Vec<StructuralOutcome>> {
-    let rows: Vec<(i64, String, f64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, String, String)> =
+    let rows: Vec<StructuralOutcomeRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, name, probability, time_horizon, description, historical_parallel, asset_implications, key_signals, status, created_at::TEXT, updated_at::TEXT
@@ -795,7 +802,7 @@ fn add_parallel_postgres(
 }
 
 fn list_parallels_postgres(pool: &PgPool, period: Option<&str>) -> Result<Vec<HistoricalParallel>> {
-    let rows: Vec<(i64, String, String, String, Option<i32>, Option<String>, Option<String>, Option<String>, String)> =
+    let rows: Vec<HistoricalParallelRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, period, event, parallel_to, similarity_score, asset_outcome, notes, source, created_at::TEXT
@@ -825,7 +832,7 @@ fn list_parallels_postgres(pool: &PgPool, period: Option<&str>) -> Result<Vec<Hi
 
 fn search_parallels_postgres(pool: &PgPool, query: &str) -> Result<Vec<HistoricalParallel>> {
     let like = format!("%{}%", query);
-    let rows: Vec<(i64, String, String, String, Option<i32>, Option<String>, Option<String>, Option<String>, String)> =
+    let rows: Vec<HistoricalParallelRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, period, event, parallel_to, similarity_score, asset_outcome, notes, source, created_at::TEXT
@@ -880,7 +887,7 @@ fn add_log_postgres(
 
 fn list_log_postgres(pool: &PgPool, since: Option<&str>, limit: Option<usize>) -> Result<Vec<StructuralLog>> {
     let limit_val = limit.unwrap_or(50) as i64;
-    let rows: Vec<(i64, String, String, Option<String>, Option<String>, String)> =
+    let rows: Vec<StructuralLogRow> =
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, date, development, cycle_impact, outcome_shift, created_at::TEXT
