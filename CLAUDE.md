@@ -115,6 +115,7 @@ src/
 
 ## Never
 
+- Modify `README.md` or anything in `website/` — Skylar owns these; changes only on his explicit request
 - Break existing keybindings
 - Use floats (f32/f64) for financial data
 - Skip theme support on new widgets (use `app.theme.*`)
