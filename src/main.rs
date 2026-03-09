@@ -443,12 +443,7 @@ fn main() -> Result<()> {
                 json,
                 status_filter: status,
             };
-            let conn = if action == "check" {
-                Some(sqlite_conn_for_command(&backend, "alerts check")?)
-            } else {
-                None
-            };
-            commands::alerts::run(&backend, conn, &action, &args)
+            commands::alerts::run(&backend, &action, &args)
         }
 
         Some(Command::Target { action, symbol, target, band, json }) => {

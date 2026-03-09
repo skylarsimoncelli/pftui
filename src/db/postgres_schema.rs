@@ -211,6 +211,15 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scan_alert_state (
+                name TEXT PRIMARY KEY,
+                last_count BIGINT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_signals_scenario ON scenario_signals(scenario_id)")
             .execute(pool)

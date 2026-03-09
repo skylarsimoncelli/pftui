@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 07:41 UTC — F32 Phase 44: backend-native alerts check path + un-gating
+
+- What: added backend-native alert evaluation path (`check_alerts_backend_only`) including backend-dispatched review-date and scan-change alert synchronization, added Postgres `scan_alert_state` schema, migrated `alerts check` command path to backend-only execution, and removed sqlite gating for `alerts check` in `main`.
+- Why: closes a key hybrid gap in alert evaluation and removes the last alerts-specific sqlite command block.
+- Files: `src/alerts/engine.rs`, `src/commands/alerts.rs`, `src/commands/scan.rs`, `src/db/postgres_schema.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/import/eod/setup/tui)
+
 ### 2026-03-09 07:25 UTC — F32 Phase 43: backend-dispatch migrate-journal command path
 
 - What: migrated `migrate-journal` to `BackendConnection`, switched journal insert/dedupe checks to backend-dispatched logic with native Postgres query path, and removed sqlite gating for `pftui migrate-journal` in `main`.

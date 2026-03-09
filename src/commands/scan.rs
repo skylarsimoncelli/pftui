@@ -121,6 +121,19 @@ pub fn count_matches(conn: &Connection, filter: &str) -> Result<usize> {
     Ok(count)
 }
 
+pub fn count_matches_backend(backend: &BackendConnection, filter: &str) -> Result<usize> {
+    let clauses = parse_filter(filter)?;
+    validate_clauses(&clauses)?;
+    let rows = load_rows_backend(backend, None)?;
+    let mut count = 0usize;
+    for row in &rows {
+        if matches_all_clauses(row, &clauses)? {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 fn print_saved_queries(backend: &BackendConnection, json: bool) -> Result<()> {
     let rows = list_scan_queries_backend(backend)?;
     if json {
