@@ -12,19 +12,19 @@
 
 ---
 
-**pftui** is a local-first portfolio terminal for investors and their AI agents.
-Track positions, markets, macro, sentiment, news, and analytics in one system.
-Built for self-directed investors and technical operators, it gives you a fast terminal UI, a browser dashboard, and a structured CLI your AI agent can work with directly.
+**pftui** is a local-first portfolio terminal for self-directed investors and technical operators.
+
+It brings together **positions, markets, macro, sentiment, news, and analytics** in one system, with a fast terminal UI, a browser dashboard, and a structured CLI your AI agent can work with directly.
 
 ---
 
 ## Why pftui
 
-- **One place for everything** — portfolio tracking, watchlists, markets, macro, news, and research state
+- **One system, not five** — portfolio tracking, watchlists, markets, macro, news, and research state in one place
 - **Local-first by default** — your data stays with you, not inside a hosted black box
-- **Fast and practical** — built for daily use in the terminal, not just occasional reporting
-- **Agent-ready** — every major feature has CLI access and JSON output
-- **Compounds over time** — the longer you run it, the more useful your local dataset becomes
+- **Built for daily use** — fast, keyboard-driven, and practical enough to live in every day
+- **Agent-ready** — every major feature is accessible through the CLI with structured JSON output
+- **More valuable over time** — the longer you run it, the richer and more useful your local dataset becomes
 
 ---
 
@@ -199,6 +199,30 @@ cd pftui && cargo build --release
 
 ---
 
+## In Practice
+
+A quick look at pftui across the terminal UI, web dashboard, analytics views, and CLI.
+
+<table>
+  <tr>
+    <td align="center"><img width="400" alt="pftui portfolio overview" src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" /><br><sub>portfolio overview</sub></td>
+    <td align="center"><img width="400" alt="pftui tx overview" src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" /><br><sub>transactions</sub></td>
+    <td align="center"><img width="400" alt="pftui economy overview" src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" /><br><sub>economy</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img width="400" alt="pftui analytics" src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" /><br><sub>analytics</sub></td>
+    <td align="center"><img width="400" alt="pftui web" src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" /><br><sub>web dashboard</sub></td>
+    <td align="center"><img width="400" alt="pftui web search" src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" /><br><sub>web search</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img width="400" alt="pftui web economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" /><br><sub>web economy</sub></td>
+    <td align="center"><img width="400" alt="pftui web asset detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" /><br><sub>web asset detail</sub></td>
+    <td align="center"><img width="400" alt="pftui cli" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" /><br><sub>cli</sub></td>
+  </tr>
+</table>
+
+---
+
 ## Architecture
 
 pftui is built as a four-layer intelligence stack. Each layer builds on the one below it, and the database sits at the centre as shared state for everything.
@@ -307,24 +331,6 @@ pftui agent-msg send "Gold alignment: all 4 layers bullish" --from morning-agent
 ```
 
 See the full AI layer guide: [docs/AI-LAYER.md](docs/AI-LAYER.md) and agent operator guide: [AGENTS.md](AGENTS.md)
-
-<table>
-  <tr>
-    <td align="center"><img width="400" alt="pftui portfolio overview" src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" /><br><sub>portfolio overview</sub></td>
-    <td align="center"><img width="400" alt="pftui tx overview" src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" /><br><sub>transactions</sub></td>
-    <td align="center"><img width="400" alt="pftui economy overview" src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" /><br><sub>economy</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img width="400" alt="pftui analytics" src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" /><br><sub>analytics</sub></td>
-    <td align="center"><img width="400" alt="pftui web" src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" /><br><sub>web dashboard</sub></td>
-    <td align="center"><img width="400" alt="pftui web search" src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" /><br><sub>web search</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img width="400" alt="pftui web economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" /><br><sub>web economy</sub></td>
-    <td align="center"><img width="400" alt="pftui web asset detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" /><br><sub>web asset detail</sub></td>
-    <td align="center"><img width="400" alt="pftui cli" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" /><br><sub>cli</sub></td>
-  </tr>
-</table>
 
 ---
 
