@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 00:47 UTC — F31.15/F31.16 milestone 2: analytics-engine docs + website positioning
+
+- What: added Analytics Engine positioning across docs and website, including a README analytics section with a four-layer diagram, new AGENTS analytics chapter + CLI entry, product vision updates centered on the multi-timeframe engine, website Analytics Engine section with `pftui analytics summary` terminal demo, and a new comparison-table row for "Multi-Timeframe Analytics".
+- Why: completes F31 documentation/product messaging tasks and aligns operator guidance with the analytics-engine architecture.
+- Files: `README.md`, `AGENTS.md`, `PRODUCT-VISION.md`, `website/index.html`, `CHANGELOG.md`
+- Tests: docs-only changes (no runtime tests required)
+- TODO: F31.15, F31.16
+
 ### 2026-03-09 00:45 UTC — F31.14 milestone 1: cross-timeframe signals pipeline + analytics CLI
 
 - What: implemented cross-timeframe signal infrastructure with `timeframe_signals` table, refresh-time alignment/divergence/transition detection, `pftui analytics signals` CLI view, and top signal inclusion in `brief --json` payload.

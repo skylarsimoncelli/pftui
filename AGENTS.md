@@ -19,11 +19,12 @@
 7. [Step 5: Set Up the Web Dashboard](#step-5-set-up-the-web-dashboard)
 8. [Step 6: Establish Your Operating Rhythm](#step-6-establish-your-operating-rhythm)
 9. [Step 7: Build Your Knowledge Base](#step-7-build-your-knowledge-base)
-10. [Day 1–7 Guide](#day-17-guide)
-11. [CLI Reference](#cli-reference)
-12. [Data Model](#data-model)
-13. [Integration Patterns](#integration-patterns)
-14. [Best Practices](#best-practices)
+10. [Analytics Engine](#analytics-engine)
+11. [Day 1–7 Guide](#day-17-guide)
+12. [CLI Reference](#cli-reference)
+13. [Data Model](#data-model)
+14. [Integration Patterns](#integration-patterns)
+15. [Best Practices](#best-practices)
 
 ---
 
@@ -529,6 +530,31 @@ Without persistent files, every session starts from zero. With them:
 
 ---
 
+## Analytics Engine
+
+pftui's core is a multi-timeframe analytics engine operating across four layers:
+LOW (hours→days), MEDIUM (weeks→months), HIGH (months→years), MACRO (years→decades).
+Each layer uses different data, updates at different frequencies, and produces different signals.
+Layers constrain downward and signal upward. Use `pftui analytics signals` for active cross-timeframe signals.
+
+### Scenarios (`pftui scenario`)
+Track macro scenarios with probability estimates. Each probability update is logged
+to history for calibration. Signals track evidence for/against each scenario.
+
+### Thesis (`pftui thesis`)
+Versioned macro outlook by section. Every update snapshots the previous version.
+Query history to see how your views evolved.
+
+### Convictions (`pftui conviction`)
+Asset-level conviction scores (-5 to +5) over time. Append-only log — every
+`set` creates a new row. Current conviction = latest row per symbol.
+
+### Agent Signals (`pftui analytics signals`)
+Cross-timeframe signal detection (alignment/divergence/transition) computed during
+`pftui refresh` and stored in `timeframe_signals`.
+
+---
+
 ## Day 1–7 Guide
 
 ### Day 1 — Setup
@@ -650,6 +676,7 @@ Without persistent files, every session starts from zero. With them:
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |
+| `pftui analytics signals --json` | Show cross-timeframe alignment/divergence/transition signals |
 
 ### Utility
 

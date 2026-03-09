@@ -2,7 +2,7 @@
 
 ## One Sentence
 
-pftui is the financial intelligence platform where humans and AI agents collaborate on portfolio management — centralising all market data, news, and economic intelligence into one local-first tool that either can operate.
+pftui is the only retail financial platform with a multi-timeframe analytics engine, where humans and AI agents collaborate on portfolio management from intraday volatility to decade-long empire cycles.
 
 ## The Problem
 
@@ -19,6 +19,8 @@ pftui centralises everything into one tool with three interfaces:
 **For the agent:** A CLI with structured JSON output for every feature, backed by a local SQLite database. The agent can refresh all data sources in one command, get a complete portfolio snapshot in one JSON blob, and research any financial question without leaving the tool.
 
 **For both:** A shared database that serves as the single source of truth. The agent writes analysis, the human reads it. The human makes decisions, the agent tracks them. Both operate on the same data, in the same tool, building institutional knowledge that compounds over time.
+
+At the center is the analytics engine with four layers: LOW (hours->days), MEDIUM (weeks->months), HIGH (months->years), and MACRO (years->decades). Each layer uses different data and cadence, constrains interpretation downward, and sends signal updates upward.
 
 ## Who This Is For
 
@@ -56,13 +58,15 @@ Over weeks and months, the system builds institutional knowledge. The agent's th
 
 1. **Agent-first, not agent-compatible.** The CLI and data model aren't afterthoughts — they're the primary interface for the agent. Every feature ships with `--json`. The database schema is documented. The agent operator guide (AGENTS.md) is as thorough as the user manual.
 
-2. **Data centralisation.** One `pftui refresh` fetches prices, news, macro, sentiment, predictions, COT positioning, COMEX inventory, economic releases, and more. The agent doesn't need 10 web searches — it needs one command.
+2. **Multi-timeframe analytics engine.** pftui maps signals across LOW, MEDIUM, HIGH, and MACRO layers. This turns raw data into structured, cross-timeframe intelligence instead of one-off snapshots.
 
-3. **Local-first, zero-config.** SQLite database on your machine. No cloud account. No API keys required for core functionality. Optional Brave Search API key for enhanced intelligence. Install and go.
+3. **Data centralisation.** One `pftui refresh` fetches prices, news, macro, sentiment, predictions, COT positioning, COMEX inventory, economic releases, and more. The agent doesn't need 10 web searches — it needs one command.
 
-4. **Dual interface for dual operators.** The TUI and web dashboard are designed for human cognition — visual, scannable, information-dense. The CLI is designed for agent consumption — structured, parseable, composable. Same data, different presentation.
+4. **Local-first, zero-config.** SQLite database on your machine. No cloud account. No API keys required for core functionality. Optional Brave Search API key for enhanced intelligence. Install and go.
 
-5. **Institutional memory.** The database persists. The journal persists. The agent's analysis files persist. Every day builds on the last. This is what separates a tool from a system.
+5. **Dual interface for dual operators.** The TUI and web dashboard are designed for human cognition — visual, scannable, information-dense. The CLI is designed for agent consumption — structured, parseable, composable. Same data, different presentation.
+
+6. **Institutional memory.** The database persists. The journal persists. The agent's analysis files persist. Every day builds on the last. This is what separates a tool from a system.
 
 ## The Roadmap
 

@@ -20,6 +20,27 @@ pftui centralises all your market data, news, economic indicators, sentiment, pr
 
 **The tool is fully agent-native and agent-driven.** Every feature ships with a CLI command and `--json` output. The database schema is documented. The [agent operator guide](AGENTS.md) is as thorough as the user manual. pftui is designed to be set up, operated, and maintained by your AI agent, with you in the decision seat.
 
+## Analytics Engine
+
+The core differentiator is a multi-timeframe analytics engine:
+
+```text
+LOW (hours->days)      : prices, sentiment, alerts, correlations, regime
+MEDIUM (weeks->months) : scenarios, thesis, convictions, questions, predictions
+HIGH (months->years)   : trend tracker + evidence + per-asset impacts
+MACRO (years->decades) : structural cycles, power metrics, outcome probabilities
+```
+
+Each layer has its own cadence and signal type. Signals flow up (low -> macro), context flows down (macro -> low). Use:
+
+```bash
+pftui refresh
+pftui analytics signals --json
+pftui brief --json
+```
+
+Marketing line: **The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles.**
+
 <table>
   <tr>
     <td align="center"><img width="400" alt="pftui portfolio overview" src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" /><br><sub>portfolio overview</sub></td>
