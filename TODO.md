@@ -790,7 +790,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Code Quality Quick Wins (audit-driven)
 
-- [ ] [Audit] Web auth lock hardening — remove panic-on-poison lock behavior and prune expired sessions proactively.
 - [ ] [Audit] `db-info` reliability/perf hardening — expose per-table count errors and parallelize Postgres row counting.
 - [ ] [Audit] Price service startup hardening — avoid panic on runtime build failure; return `Result` and handle in app init.
 

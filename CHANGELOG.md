@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Web auth session lock hardening + stale-session pruning
+
+- What: replaced panic-on-lock behavior in auth session paths with graceful auth failures and added proactive expired-session pruning during session validation/login/logout flows.
+- Why: avoids request-path panics from poisoned mutexes and prevents stale sessions from accumulating indefinitely.
+- Files: `src/web/auth.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit quick-win (`web auth` lock hardening)
+
 ### 2026-03-09 — Alerts Postgres runtime cleanup in hot paths
 
 - What: replaced per-branch `tokio::runtime::Runtime::new()` usage in alert-engine Postgres branches with shared `pg_runtime::block_on`.

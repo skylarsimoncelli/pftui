@@ -8,7 +8,7 @@ use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 const SESSION_COOKIE_NAME: &str = "pftui_session";
 const SESSION_TTL_SECONDS: i64 = 60 * 60 * 8;
@@ -123,15 +123,28 @@ impl AuthState {
         let session_id = extract_cookie(cookie_header, SESSION_COOKIE_NAME)
             .ok_or(AuthFailure::MissingSession)?;
 
-        let mut sessions = self.sessions.lock().expect("session mutex poisoned");
+        let mut sessions = self.lock_sessions()?;
         if let Some(session) = sessions.get(&session_id).cloned() {
             if session.expires_at < Utc::now() {
                 sessions.remove(&session_id);
                 return Err(AuthFailure::ExpiredSession);
             }
+            self.prune_expired_sessions(&mut sessions);
             return Ok(session);
         }
+        self.prune_expired_sessions(&mut sessions);
         Err(AuthFailure::InvalidSession)
+    }
+
+    fn lock_sessions(&self) -> Result<MutexGuard<'_, HashMap<String, Session>>, AuthFailure> {
+        self.sessions
+            .lock()
+            .map_err(|_| AuthFailure::InvalidSession)
+    }
+
+    fn prune_expired_sessions(&self, sessions: &mut HashMap<String, Session>) {
+        let now = Utc::now();
+        sessions.retain(|_, session| session.expires_at >= now);
     }
 
     fn validate_api_request(&self, req: &Request) -> Result<Session, AuthFailure> {
@@ -227,7 +240,10 @@ pub async fn login(
     }
 
     let session = state.create_session();
-    let mut sessions = state.sessions.lock().expect("session mutex poisoned");
+    let mut sessions = state
+        .lock_sessions()
+        .map_err(auth_failure_response)?;
+    state.prune_expired_sessions(&mut sessions);
     sessions.insert(session.session_id.clone(), session.clone());
     drop(sessions);
 
@@ -259,7 +275,21 @@ pub async fn logout(
     if state.enabled {
         if let Some(cookie_header) = req.headers().get(header::COOKIE).and_then(|v| v.to_str().ok()) {
             if let Some(session_id) = extract_cookie(cookie_header, SESSION_COOKIE_NAME) {
-                let mut sessions = state.sessions.lock().expect("session mutex poisoned");
+                let mut sessions = match state.lock_sessions() {
+                    Ok(guard) => guard,
+                    Err(_) => {
+                        let mut headers = HeaderMap::new();
+                        headers.insert(
+                            header::SET_COOKIE,
+                            state
+                                .clear_cookie_header()
+                                .parse()
+                                .expect("valid clear-cookie header"),
+                        );
+                        return (headers, Json(LogoutResponse { ok: true }));
+                    }
+                };
+                state.prune_expired_sessions(&mut sessions);
                 sessions.remove(&session_id);
             }
         }
