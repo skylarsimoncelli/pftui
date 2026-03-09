@@ -110,8 +110,7 @@ pub fn remove_annotation_backend(backend: &BackendConnection, symbol: &str) -> R
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS annotations (
                 symbol TEXT PRIMARY KEY,
@@ -144,8 +143,7 @@ fn to_annotation(r: AnnRow) -> Annotation {
 
 fn get_annotation_postgres(pool: &PgPool, symbol: &str) -> Result<Option<Annotation>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<AnnRow> = runtime.block_on(async {
+        let row: Option<AnnRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, thesis, invalidation, review_date, target_price, updated_at::text
              FROM annotations
@@ -160,8 +158,7 @@ fn get_annotation_postgres(pool: &PgPool, symbol: &str) -> Result<Option<Annotat
 
 fn list_annotations_postgres(pool: &PgPool) -> Result<Vec<Annotation>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<AnnRow> = runtime.block_on(async {
+        let rows: Vec<AnnRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, thesis, invalidation, review_date, target_price, updated_at::text
              FROM annotations
@@ -175,8 +172,7 @@ fn list_annotations_postgres(pool: &PgPool) -> Result<Vec<Annotation>> {
 
 fn upsert_annotation_postgres(pool: &PgPool, ann: &Annotation) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO annotations (symbol, thesis, invalidation, review_date, target_price, updated_at)
              VALUES ($1, $2, $3, $4, $5, NOW())
@@ -201,8 +197,7 @@ fn upsert_annotation_postgres(pool: &PgPool, ann: &Annotation) -> Result<()> {
 
 fn remove_annotation_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let result = runtime.block_on(async {
+        let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM annotations WHERE symbol = $1")
             .bind(symbol)
             .execute(pool)

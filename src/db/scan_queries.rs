@@ -82,8 +82,7 @@ pub fn list_scan_queries_backend(backend: &BackendConnection) -> Result<Vec<Scan
 }
 
 fn upsert_scan_query_postgres(pool: &PgPool, name: &str, filter_expr: &str) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO scan_queries (name, filter_expr, updated_at)
              VALUES ($1, $2, NOW())
@@ -100,8 +99,7 @@ fn upsert_scan_query_postgres(pool: &PgPool, name: &str, filter_expr: &str) -> R
 }
 
 fn get_scan_query_postgres(pool: &PgPool, name: &str) -> Result<Option<ScanQueryRow>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row = runtime.block_on(async {
+        let row = crate::db::pg_runtime::block_on(async {
         sqlx::query_as::<_, (String, String, String)>(
             "SELECT name, filter_expr, TO_CHAR(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
              FROM scan_queries
@@ -119,8 +117,7 @@ fn get_scan_query_postgres(pool: &PgPool, name: &str) -> Result<Option<ScanQuery
 }
 
 fn list_scan_queries_postgres(pool: &PgPool) -> Result<Vec<ScanQueryRow>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+        let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query_as::<_, (String, String, String)>(
             "SELECT name, filter_expr, TO_CHAR(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
              FROM scan_queries
