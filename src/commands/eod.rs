@@ -33,7 +33,7 @@ fn run_human(backend: &BackendConnection, conn: &Connection, config: &Config) ->
 
     // 2. Movers (threshold: 3%)
     println!("┌─ TOP MOVERS ───────────────────────────────────────────────┐");
-    super::movers::run(backend, conn, config, Some("3"), false)?;
+    super::movers::run(backend, config, Some("3"), false)?;
     println!("└────────────────────────────────────────────────────────────┘\n");
 
     // 3. Macro Dashboard
@@ -55,7 +55,7 @@ fn run_json(backend: &BackendConnection, conn: &Connection, config: &Config) -> 
 
     // Fetch all components
     let brief_output = capture_json_output(|| super::brief::run(conn, config, false, true))?;
-    let movers_output = capture_json_output(|| super::movers::run(backend, conn, config, Some("3"), true))?;
+    let movers_output = capture_json_output(|| super::movers::run(backend, config, Some("3"), true))?;
     let macro_output = capture_json_output(|| super::macro_cmd::run(backend, config, true))?;
     let sentiment_output = capture_json_output(|| super::sentiment::run(None, None, true))?;
 

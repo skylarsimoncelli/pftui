@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use anyhow::Result;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rusqlite::Connection;
 
 use crate::config::Config;
 use crate::db::allocations::get_unique_allocation_symbols_backend;
@@ -86,7 +85,6 @@ fn format_price(value: Decimal) -> String {
 
 pub fn run(
     backend: &BackendConnection,
-    _conn: &Connection,
     config: &Config,
     threshold: Option<&str>,
     json: bool,
@@ -276,6 +274,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
 
     fn to_backend(conn: Connection) -> crate::db::backend::BackendConnection {
         crate::db::backend::BackendConnection::Sqlite { conn }
@@ -286,7 +285,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -298,7 +297,7 @@ mod tests {
 
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -337,7 +336,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -392,7 +391,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -432,11 +431,11 @@ mod tests {
 
         // 1% threshold — should appear
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, Some("1"), false);
+        let result = run(&backend, &config, Some("1"), false);
         assert!(result.is_ok());
 
         // 5% threshold — should not appear
-        let result = run(&backend, backend.sqlite(), &config, Some("5"), false);
+        let result = run(&backend, &config, Some("5"), false);
         assert!(result.is_ok());
     }
 
@@ -475,7 +474,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, true);
+        let result = run(&backend, &config, None, true);
         assert!(result.is_ok());
     }
 
@@ -502,7 +501,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -541,7 +540,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 
@@ -599,7 +598,7 @@ mod tests {
 
         // Should only show AAPL once (as "held")
         let backend = to_backend(conn);
-        let result = run(&backend, backend.sqlite(), &config, None, false);
+        let result = run(&backend, &config, None, false);
         assert!(result.is_ok());
     }
 

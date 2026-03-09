@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
-use rusqlite::Connection;
 
 use crate::db::allocations::get_unique_allocation_symbols_backend;
 use crate::db::backend::BackendConnection;
@@ -26,7 +25,6 @@ struct PairCorrelation {
 
 pub fn run(
     backend: &BackendConnection,
-    _conn: &Connection,
     window: usize,
     limit: usize,
     json: bool,

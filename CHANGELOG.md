@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 04:29 UTC — F32 Phase 32: reduce postgres gating for group/movers/correlations
+
+- What: completed backend-native `group` metadata path (db+command), removed SQLite-connection requirement from `movers` and `correlations` command signatures, and updated routing/callsites (`main`, `eod`, tests) accordingly.
+- Why: shrinks remaining `sqlite_conn_for_command` gating and increases command availability in postgres mode.
+- Files: `src/db/groups.rs`, `src/commands/group.rs`, `src/commands/movers.rs`, `src/commands/correlations.rs`, `src/commands/eod.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 command-path parity (partial: group/movers/correlations)
+
 ### 2026-03-09 04:17 UTC — F32 Phase 31: backend-dispatch groups/group-members + command path
 
 - What: migrated `db/groups.rs` to backend-dispatched CRUD/member operations with native Postgres SQL and rewired `pftui group` command to run without SQLite-only metadata queries.

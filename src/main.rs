@@ -311,8 +311,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Movers { threshold, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "movers")?;
-            commands::movers::run(&backend, conn, &config, Some(&threshold), json)
+            commands::movers::run(&backend, &config, Some(&threshold), json)
         }
         Some(Command::Scan {
             filter,
@@ -431,8 +430,7 @@ fn main() -> Result<()> {
             commands::predictions::run(&backend, category.as_deref(), search.as_deref(), limit, json)
         }
         Some(Command::Correlations { window, limit, json }) => {
-            let conn = sqlite_conn_for_command(&backend, "correlations")?;
-            commands::correlations::run(&backend, conn, window, limit, json)
+            commands::correlations::run(&backend, window, limit, json)
         }
 
         Some(Command::News { source, search, hours, limit, json }) => {
