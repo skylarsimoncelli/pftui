@@ -78,7 +78,9 @@ fn main() -> Result<()> {
                 json,
             )
         }
-        Some(Command::Export { format, output }) => commands::export::run(conn, &format, &config, output.as_deref()),
+        Some(Command::Export { format, output }) => {
+            commands::export::run(&backend, conn, &format, &config, output.as_deref())
+        }
 
         Some(Command::ListTx { notes, json }) => {
             if config.is_percentage_mode() {

@@ -690,8 +690,10 @@ mod tests {
         // Export
         let dir = std::env::temp_dir();
         let export_path = dir.join("pftui_roundtrip.json");
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
         crate::commands::export::run(
-            &conn,
+            &backend,
+            backend.sqlite(),
             &crate::cli::ExportFormat::Json,
             &config,
             Some(export_path.to_str().unwrap()),
