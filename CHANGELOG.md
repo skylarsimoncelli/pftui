@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Fix absurd percentage changes in macro dashboard
+
+- What: added sanity check to reject percentage changes >100% in macro dashboard terminal output. When price history has corrupt/stale data, calculation yields nonsense like USD/JPY +15697% daily change. Now suppresses change display when abs(change_pct) > 100.
+- Why: USD/JPY and other FX pairs were showing +15697% daily changes due to corrupt/stale price history data (previous close likely stored as 0.01 instead of 149). Data corruption should fail gracefully rather than displaying obvious errors. Reported by Morning Research, Evening Planner × multiple reviews.
+- Files: `src/commands/macro_cmd.rs` (added validation in print_indicator_row at line 504)
+- Tests: all 1185 tests pass, no new tests needed (validation is defensive, no new behavior to test)
+- TODO: Fix USD/JPY percentage (P1)
+
 ### 2026-03-09 — Implement structural cycles CLI (F31.11)
 
 - What: `pftui structural` command with 5 subsystems: power metrics (8 Dalio measures tracking empire power), structural cycles (Big Cycle, Debt Supercycle, Reserve Currency), structural outcomes (10-30yr scenarios with probability tracking + history), historical parallels (past episodes matching current conditions), structural log (weekly append-only developments). 15 actions: metric-set/list/history, cycle-set/list, outcome-add/list/update/history, parallel-add/list/search, log-add/list, dashboard. Unified dashboard view shows all 4 layers. Analytics engine MACRO layer complete.

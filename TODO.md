@@ -779,7 +779,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 ### Data & Display
 - [ ] [Feedback] **`--offline`/`--cached-only` flag** — Show last cached data without attempting refresh or API calls. For evenings when APIs are down or DB is unreachable.
 - [ ] [Feedback] **Fix Brent crude data** — Shows `---` in macro dashboard. WTI-Brent spread is critical for war premium analysis. (Morning Research, Evening Planner × multiple reviews)
-- [ ] [Feedback] **Fix USD/JPY percentage calculation** — Showing +15697% change which is obviously a data bug. (Morning Research Mar 7)
 
 ### CLI Enhancements
 
