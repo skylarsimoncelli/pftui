@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 08:05 UTC — F32 Phase 46: un-gate eod command path
+
+- What: removed SQLite connection dependency from `eod` by switching its portfolio section from `brief` to backend-native `summary`, updated JSON path accordingly, and removed sqlite gating for `pftui eod` in `main`.
+- Why: eliminates another sqlite-only command gate while preserving end-of-day aggregate reporting behavior in postgres mode.
+- Files: `src/commands/eod.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/brief/setup/tui)
+
 ### 2026-03-09 07:55 UTC — F32 Phase 45: backend-dispatch import command path
 
 - What: migrated `import` command to `BackendConnection`, added backend insert API for `portfolio_allocations`, replaced SQLite-only replace/merge flows with backend-dispatched write/read operations (including Postgres delete path), and removed sqlite gating for `pftui import` in `main`.

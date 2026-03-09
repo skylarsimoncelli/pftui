@@ -282,8 +282,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Eod { json }) => {
-            let conn = sqlite_conn_for_command(&backend, "eod")?;
-            commands::eod::run(&backend, conn, &config, json)
+            commands::eod::run(&backend, &config, json)
         }
 
         Some(Command::Global { country, indicator, json }) => {

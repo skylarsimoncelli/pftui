@@ -4,7 +4,6 @@
 //! Designed for daily market close review.
 
 use anyhow::Result;
-use rusqlite::Connection;
 
 use crate::config::Config;
 use crate::data::cot::{fetch_latest_report, COT_CONTRACTS};
@@ -12,23 +11,23 @@ use crate::data::sentiment::{fetch_crypto_fng, fetch_traditional_fng};
 use crate::db::backend::BackendConnection;
 
 /// Run the `pftui eod` command.
-pub fn run(backend: &BackendConnection, conn: &Connection, config: &Config, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, config: &Config, json: bool) -> Result<()> {
     if json {
-        run_json(backend, conn, config)
+        run_json(backend, config)
     } else {
-        run_human(backend, conn, config)
+        run_human(backend, config)
     }
 }
 
 /// Human-readable output.
-fn run_human(backend: &BackendConnection, conn: &Connection, config: &Config) -> Result<()> {
+fn run_human(backend: &BackendConnection, config: &Config) -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║                   END OF DAY SUMMARY                         ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
     // 1. Portfolio Brief
     println!("┌─ PORTFOLIO ────────────────────────────────────────────────┐");
-    super::brief::run(conn, config, false, false)?;
+    super::summary::run(backend, config, None, None, None, false, false)?;
     println!("└────────────────────────────────────────────────────────────┘\n");
 
     // 2. Movers (threshold: 3%)
@@ -50,11 +49,12 @@ fn run_human(backend: &BackendConnection, conn: &Connection, config: &Config) ->
 }
 
 /// JSON output.
-fn run_json(backend: &BackendConnection, conn: &Connection, config: &Config) -> Result<()> {
+fn run_json(backend: &BackendConnection, config: &Config) -> Result<()> {
     use serde_json::json;
 
     // Fetch all components
-    let brief_output = capture_json_output(|| super::brief::run(conn, config, false, true))?;
+    let brief_output =
+        capture_json_output(|| super::summary::run(backend, config, None, None, None, false, true))?;
     let movers_output = capture_json_output(|| super::movers::run(backend, config, Some("3"), true))?;
     let macro_output = capture_json_output(|| super::macro_cmd::run(backend, config, true))?;
     let sentiment_output = capture_json_output(|| super::sentiment::run(None, None, true))?;
