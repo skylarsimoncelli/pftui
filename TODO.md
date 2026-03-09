@@ -42,6 +42,8 @@ _Already implemented by dev cron (scenarios table exists). Verify CLI completene
 
 ### F31.4: Research Questions — Open questions with evidence tracking [MEDIUM]
 
+- [x] Implemented (`pftui question add/list/update/resolve` + `research_questions` table)
+
 **Files:** `src/db/research_questions.rs`, `src/commands/research_question.rs`, schema/cli/main/mod updates.
 
 Note: `src/commands/research.rs` already exists (Brave search research command). Name the new command `question` to avoid collision: `pftui question add/list/update/resolve`.
@@ -900,10 +902,10 @@ Alignment logic: query each layer's latest signal per asset. 4/4 = STRONG. 3/4 =
 
 Automated detection of alignment and divergence across timeframes. Future — after F31.13 is working.
 
-- [ ] **`timeframe_signals` table** — `id, signal_type (alignment|divergence|transition), layers TEXT (JSON), assets TEXT, description TEXT, severity TEXT (info|notable|critical), detected_at TEXT`
-- [ ] Compute during `pftui refresh`: compare regime, scenario probabilities, trend directions, structural outcomes. Log when layers agree or diverge on a specific asset.
-- [ ] **`pftui analytics signals`** — show active cross-timeframe signals. `--json`.
-- [ ] Integrate with `pftui brief --agent` — include top cross-timeframe signal in agent blob.
+- [x] **`timeframe_signals` table** — `id, signal_type (alignment|divergence|transition), layers TEXT (JSON), assets TEXT, description TEXT, severity TEXT (info|notable|critical), detected_at TEXT`
+- [x] Compute during `pftui refresh`: compare regime, scenario probabilities, trend directions, structural outcomes. Log when layers agree or diverge on a specific asset.
+- [x] **`pftui analytics signals`** — show active cross-timeframe signals. `--json`.
+- [x] Integrate with `pftui brief --agent` — include top cross-timeframe signal in agent blob.
 
 ---
 
@@ -911,17 +913,19 @@ Automated detection of alignment and divergence across timeframes. Future — af
 
 After F31.1-F31.14 are implemented:
 
-- [ ] **README.md** — new "Analytics Engine" section. Multi-timeframe diagram. Position pftui as an analytics platform.
-- [ ] **Website `index.html`** — Analytics Engine section with 4-layer diagram. Terminal demo scene: `pftui analytics summary`. Comparison table row: "Multi-Timeframe Analytics."
-- [ ] **AGENTS.md** — "Analytics Engine" chapter: which commands per timeframe, what signals to look for, how to update each layer.
-- [ ] **PRODUCT-VISION.md** — center vision on the analytics engine as core differentiator.
-- [ ] **Marketing line:** "The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles."
+- [x] **README.md** — new "Analytics Engine" section. Multi-timeframe diagram. Position pftui as an analytics platform.
+- [x] **Website `index.html`** — Analytics Engine section with 4-layer diagram. Terminal demo scene: `pftui analytics summary`. Comparison table row: "Multi-Timeframe Analytics."
+- [x] **AGENTS.md** — "Analytics Engine" chapter: which commands per timeframe, what signals to look for, how to update each layer.
+- [x] **PRODUCT-VISION.md** — center vision on the analytics engine as core differentiator.
+- [x] **Marketing line:** "The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles."
 
 ---
 
 ### F31.16: AGENTS.md Documentation Update [CROSS]
 
 After ALL F31 tables are implemented, update `AGENTS.md` with a new section:
+
+- [x] Implemented (Analytics Engine chapter added to AGENTS.md)
 
 ```markdown
 ## Analytics Engine

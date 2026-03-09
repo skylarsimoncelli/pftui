@@ -407,6 +407,20 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_convictions_symbol ON convictions(symbol);
         CREATE INDEX IF NOT EXISTS idx_convictions_recorded ON convictions(recorded_at);
 
+        CREATE TABLE IF NOT EXISTS research_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question TEXT NOT NULL,
+            evidence_tilt TEXT NOT NULL DEFAULT 'neutral',
+            key_signal TEXT,
+            evidence TEXT,
+            first_raised TEXT NOT NULL DEFAULT (datetime('now')),
+            last_updated TEXT NOT NULL DEFAULT (datetime('now')),
+            status TEXT NOT NULL DEFAULT 'open',
+            resolution TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_research_questions_status ON research_questions(status);
+        CREATE INDEX IF NOT EXISTS idx_research_questions_updated ON research_questions(last_updated);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,

@@ -673,6 +673,10 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui scenario update "NAME" --probability N --driver "WHY"` | Update scenario probability and auto-log history |
 | `pftui scenario signal-add --scenario "NAME" "SIGNAL"` | Attach a tracked signal to a scenario |
 | `pftui scenario history "NAME" --limit N --json` | Show scenario probability history |
+| `pftui question add "TEXT" [--signal "..."]` | Add an open research question |
+| `pftui question list [--status open] --json` | List tracked research questions |
+| `pftui question update --id N [--tilt ...] [--evidence "..."]` | Update evidence tilt/notes for a question |
+| `pftui question resolve --id N --resolution "..."` | Resolve/supersede a question with outcome notes |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |

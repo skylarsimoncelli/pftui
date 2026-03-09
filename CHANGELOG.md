@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:04 UTC — F31.4: Research Questions command and storage
+
+- What: implemented `pftui question` with `add/list/update/resolve` actions and backing `research_questions` table. Added evidence tilt/status validation, evidence appending on updates, status filtering, and JSON/human-readable output.
+- Why: completes the MEDIUM-layer open-question tracking workflow so agents can track unresolved thesis questions and evolving evidence.
+- Files: `src/db/research_questions.rs`, `src/commands/question.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.4
+
 ### 2026-03-09 00:47 UTC — F31.15/F31.16 milestone 2: analytics-engine docs + website positioning
 
 - What: added Analytics Engine positioning across docs and website, including a README analytics section with a four-layer diagram, new AGENTS analytics chapter + CLI entry, product vision updates centered on the multi-timeframe engine, website Analytics Engine section with `pftui analytics summary` terminal demo, and a new comparison-table row for "Multi-Timeframe Analytics".

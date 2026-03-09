@@ -404,6 +404,42 @@ pub enum Command {
         json: bool,
     },
 
+    /// Track research questions and evidence
+    #[command(name = "question")]
+    Question {
+        /// Action: add, list, update, resolve
+        action: String,
+
+        /// Question text (for add), or search query (for list)
+        value: Option<String>,
+
+        #[arg(long)]
+        id: Option<i64>,
+
+        /// Evidence tilt: neutral, leaning_bullish, leaning_bearish, strongly_bullish, strongly_bearish
+        #[arg(long)]
+        tilt: Option<String>,
+
+        /// New evidence to append
+        #[arg(long)]
+        evidence: Option<String>,
+
+        /// Key signal to watch
+        #[arg(long)]
+        signal: Option<String>,
+
+        /// Resolution text (for resolve)
+        #[arg(long)]
+        resolution: Option<String>,
+
+        /// Status filter for list, or resolved status for resolve
+        #[arg(long)]
+        status: Option<String>,
+
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
