@@ -112,6 +112,8 @@ pftui question list --status open --json
 
 ### F31.5: User Predictions — Your calls, scored for accuracy [MEDIUM]
 
+- [x] Implemented (`pftui predict add/list/score/stats` + `user_predictions` table)
+
 **Files:** `src/db/user_predictions.rs`, `src/commands/predict.rs`, schema/cli/main/mod updates.
 
 Note: distinct from `prediction_cache`/`predictions_cache` (Polymarket data). These are YOUR predictions.

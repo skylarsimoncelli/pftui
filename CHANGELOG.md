@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:06 UTC — F31.5: User Predictions tracking and scoring
+
+- What: implemented `pftui predict` with `add/list/score/stats` actions and backing `user_predictions` table. Added scoring outcomes (`correct|partial|wrong`) and aggregate stats including weighted hit-rate plus breakdowns by conviction and symbol.
+- Why: completes the MEDIUM-layer prediction calibration loop so agent calls can be scored and measured over time.
+- Files: `src/db/user_predictions.rs`, `src/commands/predict.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.5
+
 ### 2026-03-09 01:04 UTC — F31.4: Research Questions command and storage
 
 - What: implemented `pftui question` with `add/list/update/resolve` actions and backing `research_questions` table. Added evidence tilt/status validation, evidence appending on updates, status filtering, and JSON/human-readable output.

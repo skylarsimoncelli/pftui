@@ -396,6 +396,31 @@ fn main() -> Result<()> {
         Some(Command::Predictions { category, search, limit, json }) => {
             commands::predictions::run(conn, category.as_deref(), search.as_deref(), limit, json)
         }
+        Some(Command::Predict {
+            action,
+            value,
+            id,
+            symbol,
+            conviction,
+            target_date,
+            outcome,
+            notes,
+            filter,
+            limit,
+            json,
+        }) => commands::predict::run(
+            &action,
+            value.as_deref(),
+            id,
+            symbol.as_deref(),
+            conviction.as_deref(),
+            target_date.as_deref(),
+            outcome.as_deref(),
+            notes.as_deref(),
+            filter.as_deref(),
+            limit,
+            json,
+        ),
         Some(Command::Correlations { window, limit, json }) => {
             commands::correlations::run(conn, window, limit, json)
         }

@@ -33,6 +33,7 @@ pub mod options;
 pub mod performance;
 pub mod portfolio;
 pub mod predictions;
+pub mod predict;
 pub mod question;
 pub mod rebalance;
 pub mod refresh;

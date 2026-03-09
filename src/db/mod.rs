@@ -45,6 +45,7 @@ pub mod snapshots;
 pub mod thesis;
 pub mod timeframe_signals;
 pub mod transactions;
+pub mod user_predictions;
 pub mod watchlist;
 pub mod watchlist_groups;
 #[allow(dead_code)] // Infrastructure for F25.1+ consumers (Global macro panel, CLI)

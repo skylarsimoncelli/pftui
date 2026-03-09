@@ -677,6 +677,9 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui question list [--status open] --json` | List tracked research questions |
 | `pftui question update --id N [--tilt ...] [--evidence "..."]` | Update evidence tilt/notes for a question |
 | `pftui question resolve --id N --resolution "..."` | Resolve/supersede a question with outcome notes |
+| `pftui predict add "CLAIM" [--symbol BTC] [--conviction high]` | Add a prediction call for later scoring |
+| `pftui predict score --id N --outcome correct|partial|wrong` | Score a previous prediction outcome |
+| `pftui predict stats --json` | Compute hit-rate stats by conviction and symbol |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |

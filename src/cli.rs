@@ -512,6 +512,47 @@ pub enum Command {
         json: bool,
     },
 
+    /// Track your market predictions and score accuracy
+    #[command(name = "predict")]
+    Predict {
+        /// Action: add, list, score, stats
+        action: String,
+
+        /// Prediction claim text (for add)
+        value: Option<String>,
+
+        #[arg(long)]
+        id: Option<i64>,
+
+        #[arg(long)]
+        symbol: Option<String>,
+
+        #[arg(long)]
+        conviction: Option<String>,
+
+        /// Expected resolution date
+        #[arg(long)]
+        target_date: Option<String>,
+
+        /// Outcome: correct, partial, wrong
+        #[arg(long)]
+        outcome: Option<String>,
+
+        /// Scoring notes
+        #[arg(long)]
+        notes: Option<String>,
+
+        /// Filter: pending, correct, partial, wrong
+        #[arg(long)]
+        filter: Option<String>,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show rolling correlation matrix for held assets and key macro anchors
     Correlations {
         /// Primary window for sorting/display emphasis: 7, 30, or 90
