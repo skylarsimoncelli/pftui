@@ -691,6 +691,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui correlations history BTC SPY --period 30d --limit 30 --json` | Show stored correlation history for a pair |
 | `pftui regime current --json` | Show latest automated market regime classification |
 | `pftui regime transitions --limit 20 --json` | Show regime change points over time |
+| `pftui structural dashboard --json` | Show long-cycle macro dashboard (cycles, outcomes, recent structural log) |
+| `pftui structural outcome-update \"NAME\" --probability N --driver \"...\"` | Update structural outcome probability with history logging |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |

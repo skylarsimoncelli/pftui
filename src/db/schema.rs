@@ -502,6 +502,75 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_regime_snapshots_recorded ON regime_snapshots(recorded_at);
 
+        CREATE TABLE IF NOT EXISTS power_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            country TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            score REAL,
+            rank INTEGER,
+            trend TEXT NOT NULL DEFAULT 'stable',
+            notes TEXT,
+            source TEXT,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_power_metrics_country ON power_metrics(country);
+        CREATE INDEX IF NOT EXISTS idx_power_metrics_metric ON power_metrics(metric);
+
+        CREATE TABLE IF NOT EXISTS structural_cycles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle_name TEXT NOT NULL UNIQUE,
+            current_stage TEXT NOT NULL,
+            stage_entered TEXT,
+            description TEXT,
+            evidence TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS structural_outcomes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            probability REAL NOT NULL DEFAULT 0.0,
+            time_horizon TEXT,
+            description TEXT,
+            historical_parallel TEXT,
+            asset_implications TEXT,
+            key_signals TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS structural_outcome_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            outcome_id INTEGER NOT NULL REFERENCES structural_outcomes(id) ON DELETE CASCADE,
+            probability REAL NOT NULL,
+            driver TEXT,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_structural_outcome_history ON structural_outcome_history(outcome_id);
+
+        CREATE TABLE IF NOT EXISTS historical_parallels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            period TEXT NOT NULL,
+            event TEXT NOT NULL,
+            parallel_to TEXT NOT NULL,
+            similarity_score INTEGER CHECK(similarity_score BETWEEN 1 AND 10),
+            asset_outcome TEXT,
+            notes TEXT,
+            source TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS structural_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            development TEXT NOT NULL,
+            cycle_impact TEXT,
+            outcome_shift TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_structural_log_date ON structural_log(date);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,

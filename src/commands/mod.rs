@@ -53,6 +53,7 @@ pub mod snapshot;
 pub mod sovereign;
 pub mod status;
 pub mod stress_test;
+pub mod structural;
 pub mod summary;
 pub mod supply;
 pub mod target;

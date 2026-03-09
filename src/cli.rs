@@ -1139,6 +1139,72 @@ pub enum Command {
         #[arg(long)]
         opec: bool,
     },
+
+    /// Track structural macro cycles, power metrics, and historical parallels
+    #[command(name = "structural")]
+    Structural {
+        /// Action: metric-set, metric-list, metric-history, cycle-set, cycle-list,
+        ///         outcome-add, outcome-list, outcome-update, outcome-history,
+        ///         parallel-add, parallel-list, parallel-search,
+        ///         log-add, log-list, dashboard
+        action: String,
+
+        /// Value (country for metrics, cycle/outcome name, query, etc.)
+        value: Option<String>,
+
+        #[arg(long)]
+        country: Option<String>,
+        #[arg(long)]
+        metric: Option<String>,
+        #[arg(long)]
+        score: Option<f64>,
+        #[arg(long)]
+        rank: Option<i32>,
+        #[arg(long)]
+        trend: Option<String>,
+        #[arg(long)]
+        stage: Option<String>,
+        #[arg(long)]
+        entered: Option<String>,
+        #[arg(long)]
+        probability: Option<f64>,
+        #[arg(long)]
+        horizon: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        parallel: Option<String>,
+        #[arg(long)]
+        impact: Option<String>,
+        #[arg(long)]
+        driver: Option<String>,
+        #[arg(long)]
+        period: Option<String>,
+        #[arg(long)]
+        event: Option<String>,
+        #[arg(long)]
+        parallel_to: Option<String>,
+        #[arg(long)]
+        similarity: Option<i32>,
+        #[arg(long)]
+        outcome: Option<String>,
+        #[arg(long)]
+        evidence: Option<String>,
+        #[arg(long)]
+        signals: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

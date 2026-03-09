@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:41 UTC — F31.11: Structural cycles module and CLI
+
+- What: implemented structural MACRO layer with tables/functions for `power_metrics`, `structural_cycles`, `structural_outcomes` (+ history), `historical_parallels`, and `structural_log`; added unified `pftui structural` command covering metric/cycle/outcome/parallel/log actions and `dashboard`.
+- Why: completes the long-horizon structural intelligence layer needed for decade-scale context and probability tracking.
+- Files: `src/db/structural.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/structural.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.11
+
 ### 2026-03-09 01:37 UTC — F31.10: Regime classification snapshots and CLI
 
 - What: added `regime_snapshots` table, implemented automated regime classification rules with confidence/drivers, integrated storage in `pftui refresh` (store on regime change or once/day), added `pftui regime current/history/transitions`, and wired real regime data into `brief --json`.

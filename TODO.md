@@ -544,6 +544,8 @@ Current Regime: RISK-OFF (confidence: 0.85)
 
 ### F31.11: Structural Cycles — Long-cycle macro intelligence [MACRO]
 
+- [x] Implemented (`pftui structural` dashboard + metric/cycle/outcome/parallel/log workflows, structural tables)
+
 **Files:** `src/db/structural.rs`, `src/commands/structural.rs`, schema/cli/main/mod updates.
 
 This is the highest-timeframe layer — tracking multi-decade empire cycles, reserve currency transitions, and power metrics. Based on Ray Dalio's "Changing World Order" framework (8 measures of power, 6-stage Big Cycle, 250-year empire cycles). Updated weekly, not daily. Provides CONTEXT for all shorter-timeframe analysis.
