@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:33 UTC — F32 Phase 27: backend-dispatch predictions cache + CLI path
+
+- What: added backend-dispatched APIs and native Postgres implementations for `predictions_cache`, migrated `pftui predictions` command to `BackendConnection`, and switched refresh staleness check to backend-aware `get_last_update_backend`.
+- Why: removes another SQLite-only cache/query path from prediction-market workflows under Postgres backend mode.
+- Files: `src/db/predictions_cache.rs`, `src/commands/predictions.rs`, `src/commands/refresh.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.4 cache migration (partial: predictions cache/read path)
+
 ### 2026-03-09 03:20 UTC — F32 Phase 26: backend-dispatch journal command/data paths
 
 - What: migrated `journal` command flow to backend-dispatched data access and added native Postgres implementations for `db/journal.rs` CRUD/search/stats/tag aggregation methods.

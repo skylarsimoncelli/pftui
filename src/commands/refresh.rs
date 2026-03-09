@@ -183,8 +183,8 @@ fn build_brave_news_queries(
 }
 
 /// Check if predictions need refreshing
-fn predictions_need_refresh(conn: &Connection) -> Result<bool> {
-    match predictions_cache::get_last_update(conn)? {
+fn predictions_need_refresh(backend: &BackendConnection) -> Result<bool> {
+    match predictions_cache::get_last_update_backend(backend)? {
         None => Ok(true),
         Some(ts) => {
             let now = chrono::Utc::now().timestamp();
@@ -502,7 +502,7 @@ pub fn run(
     }
 
     // 3. Predictions (Polymarket)
-    if predictions_need_refresh(conn)? {
+    if predictions_need_refresh(backend)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => {
                 predictions_cache::upsert_predictions(conn, &markets)?;

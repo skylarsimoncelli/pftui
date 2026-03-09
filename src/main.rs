@@ -387,7 +387,7 @@ fn main() -> Result<()> {
         },
 
         Some(Command::Predictions { category, search, limit, json }) => {
-            commands::predictions::run(conn, category.as_deref(), search.as_deref(), limit, json)
+            commands::predictions::run(&backend, category.as_deref(), search.as_deref(), limit, json)
         }
         Some(Command::Correlations { window, limit, json }) => {
             commands::correlations::run(&backend, conn, window, limit, json)

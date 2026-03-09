@@ -1,20 +1,20 @@
 use anyhow::Result;
-use rusqlite::Connection;
 use serde_json::json;
 
 use crate::data::predictions::{MarketCategory, PredictionMarket};
-use crate::db::predictions_cache::get_cached_predictions;
+use crate::db::backend::BackendConnection;
+use crate::db::predictions_cache::get_cached_predictions_backend;
 
 /// Run the `pftui predictions` command.
 pub fn run(
-    conn: &Connection,
+    backend: &BackendConnection,
     category: Option<&str>,
     search: Option<&str>,
     limit: usize,
     json: bool,
 ) -> Result<()> {
     // Fetch all cached predictions up to limit
-    let mut markets = get_cached_predictions(conn, limit)?;
+    let mut markets = get_cached_predictions_backend(backend, limit)?;
 
     if markets.is_empty() {
         if json {
@@ -153,13 +153,17 @@ mod tests {
     use super::*;
     use crate::db::predictions_cache::{ensure_table, upsert_predictions};
     use rusqlite::Connection;
+    fn to_backend(conn: Connection) -> BackendConnection {
+        BackendConnection::Sqlite { conn }
+    }
 
     #[test]
     fn test_predictions_empty_cache() {
         let conn = Connection::open_in_memory().unwrap();
         ensure_table(&conn).unwrap();
+        let backend = to_backend(conn);
 
-        let result = run(&conn, None, None, 10, false);
+        let result = run(&backend, None, None, 10, false);
         assert!(result.is_ok());
     }
 
@@ -188,8 +192,9 @@ mod tests {
         ];
 
         upsert_predictions(&conn, &markets).unwrap();
+        let backend = to_backend(conn);
 
-        let result = run(&conn, None, None, 10, false);
+        let result = run(&backend, None, None, 10, false);
         assert!(result.is_ok());
     }
 
@@ -218,8 +223,9 @@ mod tests {
         ];
 
         upsert_predictions(&conn, &markets).unwrap();
+        let backend = to_backend(conn);
 
-        let result = run(&conn, Some("crypto"), None, 10, false);
+        let result = run(&backend, Some("crypto"), None, 10, false);
         assert!(result.is_ok());
     }
 
@@ -238,8 +244,9 @@ mod tests {
         }];
 
         upsert_predictions(&conn, &markets).unwrap();
+        let backend = to_backend(conn);
 
-        let result = run(&conn, None, Some("recession"), 10, false);
+        let result = run(&backend, None, Some("recession"), 10, false);
         assert!(result.is_ok());
     }
 
@@ -284,8 +291,9 @@ mod tests {
         }];
 
         upsert_predictions(&conn, &markets).unwrap();
+        let backend = to_backend(conn);
 
-        let result = run(&conn, None, None, 10, true);
+        let result = run(&backend, None, None, 10, true);
         assert!(result.is_ok());
     }
 }
