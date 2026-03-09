@@ -6,7 +6,6 @@ use axum::{
     response::Json,
 };
 use chrono::{Duration, NaiveDate, Utc};
-use rusqlite::Connection;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -26,21 +25,11 @@ use ratatui::style::Color;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-// Helper function to convert cached prices to HashMap
-fn get_price_map(conn: &Connection) -> anyhow::Result<HashMap<String, Decimal>> {
-    let cached = db::price_cache::get_all_cached_prices(conn)?;
-    Ok(cached.into_iter().map(|q| (q.symbol, q.price)).collect())
-}
-
 fn get_price_map_backend(
     backend: &crate::db::backend::BackendConnection,
 ) -> anyhow::Result<HashMap<String, Decimal>> {
     let cached = db::price_cache::get_all_cached_prices_backend(backend)?;
     Ok(cached.into_iter().map(|q| (q.symbol, q.price)).collect())
-}
-
-fn get_fx_rates(conn: &Connection) -> HashMap<String, Decimal> {
-    crate::db::fx_cache::get_all_fx_rates(conn).unwrap_or_default()
 }
 
 fn get_fx_rates_backend(
@@ -55,13 +44,6 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn get_conn(&self) -> Result<Connection, rusqlite::Error> {
-        use std::path::Path;
-        db::open_db(Path::new(&self.db_path)).map_err(|e| {
-            rusqlite::Error::InvalidParameterName(format!("{}", e))
-        })
-    }
-
     fn get_backend(&self) -> anyhow::Result<crate::db::backend::BackendConnection> {
         use std::path::Path;
         crate::db::backend::open_from_config(&self.config, Path::new(&self.db_path))
@@ -818,7 +800,7 @@ pub async fn get_search(
     State(state): State<Arc<AppState>>,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<SearchResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
@@ -833,7 +815,7 @@ pub async fn get_search(
     }
 
     let limit = bounded_limit(query.limit, 30, 100);
-    let watchlist_set: HashSet<String> = db::watchlist::list_watchlist(&conn)
+    let watchlist_set: HashSet<String> = db::watchlist::list_watchlist_backend(&backend)
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -843,7 +825,7 @@ pub async fn get_search(
         .into_iter()
         .map(|w| w.symbol)
         .collect();
-    let prices = get_price_map(&conn).map_err(|e| {
+    let prices = get_price_map_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load prices: {}", e),
@@ -862,8 +844,14 @@ pub async fn get_search(
             .get(&symbol)
             .copied()
             .or_else(|| prices.get(&qsym).copied());
-        let day_change_pct = view_model::day_change_pct(&conn, &qsym)
-            .or_else(|| view_model::day_change_pct(&conn, &symbol));
+        let day_change_pct = backend
+            .sqlite_native()
+            .and_then(|conn| view_model::day_change_pct(conn, &qsym))
+            .or_else(|| {
+                backend
+                    .sqlite_native()
+                    .and_then(|conn| view_model::day_change_pct(conn, &symbol))
+            });
         let is_watchlisted = watchlist_set.contains(&symbol);
         results.push(SearchItem {
             symbol,
@@ -885,7 +873,7 @@ pub async fn get_asset_detail(
     State(state): State<Arc<AppState>>,
     Path(symbol): Path<String>,
 ) -> Result<Json<AssetDetailResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
@@ -897,16 +885,18 @@ pub async fn get_asset_detail(
     }
     let category = crate::models::asset_names::infer_category(&symbol);
     let qsym = quote_symbol(&symbol, category);
-    let mut history = db::price_history::get_history(&conn, &symbol, 365).unwrap_or_default();
+    let mut history = db::price_history::get_history_backend(&backend, &symbol, 365)
+        .unwrap_or_default();
     let mut history_symbol = symbol.clone();
     if history.is_empty() && qsym != symbol {
-        let fallback = db::price_history::get_history(&conn, &qsym, 365).unwrap_or_default();
+        let fallback = db::price_history::get_history_backend(&backend, &qsym, 365)
+            .unwrap_or_default();
         if !fallback.is_empty() {
             history = fallback;
             history_symbol = qsym.clone();
         }
     }
-    let prices = get_price_map(&conn).map_err(|e| {
+    let prices = get_price_map_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load prices: {}", e),
@@ -918,13 +908,17 @@ pub async fn get_asset_detail(
         .or_else(|| prices.get(&qsym).copied())
         .or_else(|| history.last().map(|h| h.close));
     let day_change_pct = history_change_pct(&history, 1)
-        .or_else(|| view_model::day_change_pct(&conn, &history_symbol));
+        .or_else(|| {
+            backend
+                .sqlite_native()
+                .and_then(|conn| view_model::day_change_pct(conn, &history_symbol))
+        });
     let week_change_pct = history_change_pct(&history, 5);
     let month_change_pct = history_change_pct(&history, 21);
     let year_change_pct = history_change_pct(&history, 252);
     let (range_52w_low, range_52w_high) = range_from_history(&history, 252);
     let (latest_volume, avg_volume_30d) = volume_stats(&history);
-    let alerts = db::alerts::list_alerts(&conn).map_err(|e| {
+    let alerts = db::alerts::list_alerts_backend(&backend).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to load alerts: {}", e),
@@ -934,12 +928,12 @@ pub async fn get_asset_detail(
         .into_iter()
         .filter(|a| a.symbol.eq_ignore_ascii_case(&symbol))
         .count();
-    let is_watchlisted = db::watchlist::is_watched(&conn, &symbol).unwrap_or(false);
+    let is_watchlisted = db::watchlist::is_watched_backend(&backend, &symbol).unwrap_or(false);
 
-    let fx_rates = get_fx_rates(&conn);
+    let fx_rates = get_fx_rates_backend(&backend);
 
     let positions = if state.config.is_percentage_mode() {
-        let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
+        let allocations = db::allocations::list_allocations_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load allocations: {}", e),
@@ -947,7 +941,7 @@ pub async fn get_asset_detail(
         })?;
         compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
-        let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
+        let transactions = db::transactions::list_transactions_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load transactions: {}", e),
@@ -2298,15 +2292,14 @@ mod tests {
             assert_eq!(created.0.action, "created");
             let id = created.0.id.unwrap();
 
-            let conn = ctx.state.get_conn().unwrap();
-            crate::db::alerts::update_alert_status(
-                &conn,
+            let backend = ctx.state.get_backend().unwrap();
+            crate::db::alerts::update_alert_status_backend(
+                &backend,
                 id,
                 crate::alerts::AlertStatus::Triggered,
                 Some("2026-03-05T12:00:00Z"),
             )
             .unwrap();
-            drop(conn);
 
             let acked = post_alert_ack(State(ctx.state.clone()), Path(id)).await.unwrap();
             assert!(acked.0.ok);
