@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use std::time::Duration;
 
 use crate::config::{Config, DatabaseBackend};
 
@@ -66,8 +67,16 @@ pub fn open_from_config(config: &Config, sqlite_path: &Path) -> Result<BackendCo
                 })?;
             let runtime = tokio::runtime::Runtime::new()
                 .context("Failed to create Tokio runtime for PostgreSQL backend")?;
+            let max_connections = config.postgres_max_connections.max(1);
+            let connect_timeout = Duration::from_secs(config.postgres_connect_timeout_secs.max(1));
             let pool = runtime
-                .block_on(async { PgPoolOptions::new().max_connections(5).connect(url).await })
+                .block_on(async {
+                    PgPoolOptions::new()
+                        .max_connections(max_connections)
+                        .acquire_timeout(connect_timeout)
+                        .connect(url)
+                        .await
+                })
                 .context("Failed to connect to PostgreSQL using database_url")?;
             crate::db::postgres_schema::run_migrations(&pool)
                 .context("Failed to run PostgreSQL schema migrations")?;

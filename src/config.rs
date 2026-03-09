@@ -96,6 +96,12 @@ pub struct Config {
     /// Database connection URL used when `database_backend = "postgres"`.
     #[serde(default)]
     pub database_url: Option<String>,
+    /// PostgreSQL max pool connections.
+    #[serde(default = "default_postgres_max_connections")]
+    pub postgres_max_connections: u32,
+    /// PostgreSQL connect timeout in seconds.
+    #[serde(default = "default_postgres_connect_timeout_secs")]
+    pub postgres_connect_timeout_secs: u64,
     #[serde(default = "default_base_currency")]
     pub base_currency: String,
     /// Legacy refresh interval (seconds) used by older config versions.
@@ -234,6 +240,14 @@ fn default_key_privacy_toggle() -> String {
     "p".to_string()
 }
 
+fn default_postgres_max_connections() -> u32 {
+    5
+}
+
+fn default_postgres_connect_timeout_secs() -> u64 {
+    10
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomNewsFeed {
     pub name: String,
@@ -246,6 +260,8 @@ impl Default for Config {
         Config {
             database_backend: DatabaseBackend::default(),
             database_url: None,
+            postgres_max_connections: default_postgres_max_connections(),
+            postgres_connect_timeout_secs: default_postgres_connect_timeout_secs(),
             base_currency: default_base_currency(),
             refresh_interval: default_refresh_interval(),
             auto_refresh: default_auto_refresh(),
@@ -434,6 +450,8 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
         assert_eq!(config.database_url, None);
+        assert_eq!(config.postgres_max_connections, 5);
+        assert_eq!(config.postgres_connect_timeout_secs, 10);
         assert_eq!(config.base_currency, "USD");
         assert_eq!(config.refresh_interval, 60);
         assert!(config.auto_refresh);
@@ -461,6 +479,8 @@ mod tests {
         let config = Config {
             database_backend: DatabaseBackend::Postgres,
             database_url: Some("postgres://localhost:5432/pftui".to_string()),
+            postgres_max_connections: 12,
+            postgres_connect_timeout_secs: 20,
             base_currency: "EUR".to_string(),
             refresh_interval: 30,
             auto_refresh: false,
@@ -485,6 +505,8 @@ mod tests {
             loaded.database_url,
             Some("postgres://localhost:5432/pftui".to_string())
         );
+        assert_eq!(loaded.postgres_max_connections, 12);
+        assert_eq!(loaded.postgres_connect_timeout_secs, 20);
         assert_eq!(loaded.base_currency, "EUR");
         assert_eq!(loaded.refresh_interval, 30);
         assert!(!loaded.auto_refresh);
@@ -501,6 +523,8 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
         assert_eq!(config.database_url, None);
+        assert_eq!(config.postgres_max_connections, 5);
+        assert_eq!(config.postgres_connect_timeout_secs, 10);
         assert_eq!(config.base_currency, "GBP");
         assert_eq!(config.refresh_interval, 60);
         assert!(config.auto_refresh);
@@ -518,6 +542,8 @@ mod tests {
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
         assert_eq!(config.database_url, None);
+        assert_eq!(config.postgres_max_connections, 5);
+        assert_eq!(config.postgres_connect_timeout_secs, 10);
         assert_eq!(config.base_currency, "USD");
         assert_eq!(config.refresh_interval, 60);
         assert!(config.auto_refresh);

@@ -621,6 +621,8 @@ pub struct App {
     pub db_path: std::path::PathBuf,
     pub database_backend: crate::config::DatabaseBackend,
     pub database_url: Option<String>,
+    pub postgres_max_connections: u32,
+    pub postgres_connect_timeout_secs: u64,
     last_saved_home_tab: ViewMode,
 
     // Background refresh state
@@ -716,6 +718,8 @@ impl App {
         let cfg = Config {
             database_backend: self.database_backend,
             database_url: self.database_url.clone(),
+            postgres_max_connections: self.postgres_max_connections,
+            postgres_connect_timeout_secs: self.postgres_connect_timeout_secs,
             ..Config::default()
         };
         crate::db::backend::open_from_config(&cfg, &self.db_path).ok()
@@ -860,6 +864,8 @@ impl App {
             db_path,
             database_backend: config.database_backend,
             database_url: config.database_url.clone(),
+            postgres_max_connections: config.postgres_max_connections,
+            postgres_connect_timeout_secs: config.postgres_connect_timeout_secs,
             last_saved_home_tab: initial_view,
             is_background_refreshing: false,
             background_refresh_complete_rx: None,
@@ -909,6 +915,8 @@ impl App {
         let config = Config {
             database_backend: self.database_backend,
             database_url: self.database_url.clone(),
+            postgres_max_connections: self.postgres_max_connections,
+            postgres_connect_timeout_secs: self.postgres_connect_timeout_secs,
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
             auto_refresh: self.auto_refresh_enabled,
@@ -949,6 +957,8 @@ impl App {
         let config = Config {
             database_backend: self.database_backend,
             database_url: self.database_url.clone(),
+            postgres_max_connections: self.postgres_max_connections,
+            postgres_connect_timeout_secs: self.postgres_connect_timeout_secs,
             base_currency: self.base_currency.clone(),
             refresh_interval: self.refresh_interval_secs,
             auto_refresh: self.auto_refresh_enabled,
@@ -5001,6 +5011,8 @@ mod vim_motion_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5249,6 +5261,8 @@ mod search_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5583,6 +5597,8 @@ mod timeframe_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5608,6 +5624,8 @@ mod timeframe_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5701,6 +5719,8 @@ mod crosshair_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5865,6 +5885,8 @@ mod responsive_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -5931,6 +5953,8 @@ mod on_demand_history_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -6005,6 +6029,8 @@ mod daily_change_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -6148,6 +6174,8 @@ mod portfolio_value_history_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -7015,6 +7043,8 @@ mod sort_flash_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -7117,6 +7147,8 @@ mod prev_day_alloc_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -7291,6 +7323,8 @@ mod mouse_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,
@@ -8159,6 +8193,8 @@ mod mouse_tests {
         let config = Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
             refresh_interval: 60,
             auto_refresh: true,

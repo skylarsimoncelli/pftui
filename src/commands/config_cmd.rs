@@ -20,6 +20,8 @@ fn list_config(json: bool) -> Result<()> {
         let output = json!({
             "database_backend": format_database_backend(config.database_backend),
             "database_url": format_secret(config.database_url.as_deref()),
+            "postgres_max_connections": config.postgres_max_connections,
+            "postgres_connect_timeout_secs": config.postgres_connect_timeout_secs,
             "base_currency": config.base_currency,
             "refresh_interval": config.refresh_interval,
             "auto_refresh": config.auto_refresh,
@@ -42,6 +44,11 @@ fn list_config(json: bool) -> Result<()> {
     } else {
         println!("database_backend = {}", format_database_backend(config.database_backend));
         println!("database_url = {}", format_secret(config.database_url.as_deref()));
+        println!("postgres_max_connections = {}", config.postgres_max_connections);
+        println!(
+            "postgres_connect_timeout_secs = {}",
+            config.postgres_connect_timeout_secs
+        );
         println!("base_currency = {}", config.base_currency);
         println!("refresh_interval = {}", config.refresh_interval);
         println!("auto_refresh = {}", config.auto_refresh);
@@ -74,6 +81,8 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
         let value = match field {
             "database_backend" => json!(format_database_backend(config.database_backend)),
             "database_url" => json!(format_secret(config.database_url.as_deref())),
+            "postgres_max_connections" => json!(config.postgres_max_connections),
+            "postgres_connect_timeout_secs" => json!(config.postgres_connect_timeout_secs),
             "base_currency" => json!(config.base_currency),
             "refresh_interval" => json!(config.refresh_interval),
             "auto_refresh" => json!(config.auto_refresh),
@@ -105,6 +114,8 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
         match field {
             "database_backend" => println!("{}", format_database_backend(config.database_backend)),
             "database_url" => println!("{}", format_secret(config.database_url.as_deref())),
+            "postgres_max_connections" => println!("{}", config.postgres_max_connections),
+            "postgres_connect_timeout_secs" => println!("{}", config.postgres_connect_timeout_secs),
             "base_currency" => println!("{}", config.base_currency),
             "refresh_interval" => println!("{}", config.refresh_interval),
             "auto_refresh" => println!("{}", config.auto_refresh),
@@ -152,6 +163,36 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             };
             save_config(&config)?;
             println!("Updated database_url");
+        }
+        "postgres_max_connections" => {
+            let parsed = value
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| anyhow!("Invalid postgres_max_connections '{}'", value))?;
+            if parsed == 0 {
+                bail!("postgres_max_connections must be > 0");
+            }
+            config.postgres_max_connections = parsed;
+            save_config(&config)?;
+            println!(
+                "Updated postgres_max_connections = {}",
+                config.postgres_max_connections
+            );
+        }
+        "postgres_connect_timeout_secs" => {
+            let parsed = value
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| anyhow!("Invalid postgres_connect_timeout_secs '{}'", value))?;
+            if parsed == 0 {
+                bail!("postgres_connect_timeout_secs must be > 0");
+            }
+            config.postgres_connect_timeout_secs = parsed;
+            save_config(&config)?;
+            println!(
+                "Updated postgres_connect_timeout_secs = {}",
+                config.postgres_connect_timeout_secs
+            );
         }
         "brave_api_key" => {
             let trimmed = value.trim();
@@ -212,7 +253,7 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             );
         }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: database_backend, database_url, brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
+            "Unsupported set field '{}'. Currently supported: database_backend, database_url, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
             field
         ),
     }
