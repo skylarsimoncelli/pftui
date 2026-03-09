@@ -1110,6 +1110,131 @@ TOP INSIGHT (Druckenmiller):
 
 ---
 
+### F38: "Data Aggregation Engine" — Product definition + README + Docs + Website
+
+> The missing product layer. The Analytics Engine interprets data, but something has to
+> COLLECT it first. The Data Aggregation Engine is the foundation: 10+ data sources,
+> local caching, pre-processing (RSI, MACD, SMA, Bollinger, correlations, regime
+> classification), and normalization into a unified schema. One `pftui refresh` and
+> your database has everything. This needs to be named, documented, and positioned
+> as the first pillar of the product stack.
+>
+> **The full product stack:**
+> ```
+> ┌─────────────────────────────────────────────┐
+> │            AI Layer                          │  Agents, routines, investor panel
+> ├─────────────────────────────────────────────┤
+> │         Analytics Engine                     │  4-timeframe intelligence
+> ├─────────────────────────────────────────────┤
+> │          Your Database                       │  SQLite / Postgres, compounds over time
+> ├─────────────────────────────────────────────┤
+> │      Data Aggregation Engine                 │  10+ sources, caching, pre-processing
+> └─────────────────────────────────────────────┘
+> ```
+> Each layer builds on the one below. Aggregation → Database → Analytics → AI.
+
+**What the Data Aggregation Engine does:**
+
+1. **Source Collection** — pulls from 10+ APIs and feeds in one `pftui refresh`:
+
+| Source | Data Type | Update Cadence | Key Required |
+|--------|-----------|----------------|-------------|
+| Yahoo Finance | Equities, ETFs, forex, crypto, commodities (OHLCV) | Real-time | No |
+| CoinGecko | Crypto prices, market cap, 24h volume | Real-time | No |
+| Polymarket | Prediction market probabilities | 15-min | No |
+| CFTC Socrata | Commitments of Traders positioning | Weekly | No |
+| Alternative.me | Crypto Fear & Greed Index | Daily | No |
+| BLS API v1 | CPI, unemployment, NFP, wages (101 series) | Monthly | No |
+| World Bank | GDP, debt/GDP, reserves (8 economies, 160 indicators) | Quarterly | No |
+| CME Group | COMEX gold/silver warehouse inventory | Daily | No |
+| Blockchair | BTC on-chain data, ETF flows | Real-time | No |
+| RSS Feeds | Reuters, CoinDesk, Bloomberg, Kitco, CNBC | 10-min | No |
+| Brave Search | News, economic data, research queries | On-demand | Optional (free tier) |
+| CME FedWatch | Fed funds futures implied rate probabilities | Daily | No |
+
+2. **Pre-Processing & Technical Analysis** — computed on cached data, not fetched:
+
+| Computation | What it produces | Used by |
+|-------------|-----------------|---------|
+| RSI (14-period) | Overbought/oversold per symbol | LOW layer, movers, alerts |
+| SMA (20, 50) | Trend direction, support/resistance | LOW layer, watchlist |
+| MACD (12/26/9) | Momentum, crossover signals | LOW layer, macro dashboard |
+| Bollinger Bands | Volatility envelope | LOW layer |
+| Price history (daily OHLCV) | Historical price series | Correlations, charts, backtesting |
+| Correlation matrix | Rolling cross-asset correlations | LOW layer, regime detection |
+| Regime classification | Risk-on/risk-off/transition with confidence | LOW layer, analytics |
+| FX normalization | Multi-currency cost basis → base currency | Portfolio value, P&L |
+| Change detection | 1D, 1W, 1M change % per symbol | Movers, alerts, brief |
+| Alert evaluation | Price/allocation threshold scanning | Alert triggers |
+
+3. **Normalization** — all data lands in a unified schema:
+- Prices → `price_cache` (symbol, price, currency, fetched_at, source)
+- History → `price_history` (symbol, date, close, source, volume)
+- Sentiment → `sentiment_cache` (index, value, label, fetched_at)
+- Economic → `bls_cache`, `economic_data`, `worldbank_cache`
+- Positioning → `cot_cache`, `comex_cache`, `onchain_cache`
+- Events → `calendar_events`, `news_cache`
+- Predictions → `predictions_cache`
+
+4. **Staleness Tracking** — `pftui status` shows freshness per source:
+```bash
+$ pftui status
+Source           Last Fetch         Records  Status
+────────────────────────────────────────────────────
+Prices           2m ago             84       ✓ Fresh
+Predictions      15m ago            4        ✓ Fresh
+News             10m ago            116      ✓ Fresh
+COT              3d ago             4        ✓ Current
+Sentiment        2m ago             2        ✓ Fresh
+Calendar         2m ago             3        ✓ Fresh
+BLS              2m ago             101      ✓ Fresh
+World Bank       2m ago             160      ✓ Fresh
+COMEX            failed             0        ✗ Error
+On-chain         2m ago             1        ✓ Fresh
+```
+
+**Commands that ARE the Data Aggregation Engine:**
+- `pftui refresh` — the single command that triggers the entire pipeline
+- `pftui status` — data freshness dashboard
+- `pftui doctor` — connectivity diagnostics for all sources
+- `pftui config set brave_api_key <key>` — unlock additional sources
+
+**Key product differentiator:** Most tools show you data from ONE source. TradingView shows
+charts (one source). Yahoo shows prices (one source). Bloomberg aggregates but costs $25k/yr.
+pftui aggregates 10+ free sources into one local database with one command. The aggregation
+layer is invisible when it works — but it's the foundation everything else depends on.
+
+**Documentation structure (same pattern as Analytics Engine and AI Layer):**
+
+`docs/DATA-AGGREGATION.md` — Full dedicated documentation page. Covers:
+- Overview: what the aggregation engine does and why local caching matters
+- Source catalog: every API, what it provides, update cadence, key requirements
+- Pre-processing pipeline: every computation performed on raw data
+- Schema reference: every cache table with column descriptions
+- Staleness management: how freshness is tracked, max-age thresholds
+- Extension: how to add new data sources (for contributors)
+- Brave Search integration: what it unlocks beyond free sources
+- Troubleshooting: common failures (rate limits, API changes)
+
+README section — high-level product overview (~30-40 lines). "Data Aggregation Engine"
+positioned BEFORE "Your Database" in the flow. One `pftui refresh` pulls 10+ sources.
+Show the source table. Link to `docs/DATA-AGGREGATION.md`.
+
+Website section — "Data Aggregation Engine — 10+ Sources, One Command"
+- Visual showing the data flow: APIs → pftui refresh → local database
+- Source logos or icons
+- Terminal demo showing `pftui refresh` output with ✓ checks
+- Emphasize: no API keys for core sources, free forever
+
+**Files to update:**
+- [ ] `/root/pftui/docs/DATA-AGGREGATION.md` — full dedicated documentation page (NEW)
+- [ ] `/root/pftui/README.md` — new "Data Aggregation Engine" section (before "Your Database")
+- [ ] `/root/pftui/website/index.html` — new section + update existing "Integrated Market Intelligence" to use "Data Aggregation Engine" naming
+- [ ] `/root/pftui/PRODUCT-VISION.md` — update to four-pillar stack (Aggregation → Database → Analytics → AI)
+- [ ] `/root/pftui/docs/` entry in README documentation table for DATA-AGGREGATION.md
+
+---
+
 ### F37: "AI Layer" — README + Website section for agent capabilities
 
 > pftui's agent integration is a major differentiator that isn't documented anywhere
