@@ -442,6 +442,8 @@ Opportunity {
 
 ### F31.9: Correlation Snapshots — Rolling asset correlations [LOW]
 
+- [x] Implemented (`correlation_snapshots` table, refresh snapshot pipeline, `pftui correlations history`, `--store`)
+
 **Files:** `src/db/correlation_snapshots.rs`, `src/commands/correlations.rs` (EXISTS — extend it), schema update.
 
 Note: `src/commands/correlations.rs` already exists and computes correlations from `price_history`. Extend it to STORE snapshots and show history.

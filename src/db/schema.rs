@@ -476,6 +476,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_opportunity_cost_date ON opportunity_cost(date);
         CREATE INDEX IF NOT EXISTS idx_opportunity_cost_asset ON opportunity_cost(asset);
 
+        CREATE TABLE IF NOT EXISTS correlation_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol_a TEXT NOT NULL,
+            symbol_b TEXT NOT NULL,
+            correlation REAL NOT NULL,
+            period TEXT NOT NULL DEFAULT '30d',
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_corr_snap_pair ON correlation_snapshots(symbol_a, symbol_b);
+        CREATE INDEX IF NOT EXISTS idx_corr_snap_date ON correlation_snapshots(recorded_at);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,

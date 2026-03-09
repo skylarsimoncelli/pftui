@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:34 UTC — F31.9: Correlation snapshots persistence + history
+
+- What: added `correlation_snapshots` table, extended `pftui correlations` with `compute/history` actions, `--store`, and period support (`7d/30d/90d`), and integrated automatic correlation snapshot generation into `pftui refresh`.
+- Why: completes LOW-layer rolling-correlation persistence so users can inspect correlation regime changes over time.
+- Files: `src/db/correlation_snapshots.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/correlations.rs`, `src/commands/refresh.rs`, `src/cli.rs`, `src/main.rs`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.9
+
 ### 2026-03-09 01:30 UTC — F31.8: Opportunity cost tracker command and storage
 
 - What: implemented `pftui opportunity` with `add/list/stats` actions and backing `opportunity_cost` table. Added rational-vs-mistake tagging and aggregate net scorecard (`avoided - missed`).

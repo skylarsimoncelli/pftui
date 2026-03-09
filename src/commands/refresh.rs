@@ -502,6 +502,13 @@ pub fn run(
     }
 
     // 3. Predictions (Polymarket)
+    match crate::commands::correlations::compute_and_store_default_snapshots(conn) {
+        Ok(n) if n > 0 => println!("✓ Correlation snapshots ({} rows)", n),
+        Ok(_) => println!("⊘ Correlation snapshots (insufficient history)"),
+        Err(e) => println!("✗ Correlation snapshots (failed: {})", e),
+    }
+
+    // 4. Predictions (Polymarket)
     if predictions_need_refresh(conn)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => {
@@ -516,7 +523,7 @@ pub fn run(
         println!("⊘ Predictions (fresh, skipping)");
     }
 
-    // 4. News (Brave primary when configured, RSS supplements)
+    // 5. News (Brave primary when configured, RSS supplements)
     if news_needs_refresh(conn)? {
         let mut inserted = 0usize;
         let mut brave_inserted = 0usize;
@@ -597,7 +604,7 @@ pub fn run(
         println!("⊘ News (fresh, skipping)");
     }
 
-    // 5. COT (CFTC)
+    // 6. COT (CFTC)
     if cot_needs_refresh(conn)? {
         let mut total = 0;
 
@@ -634,7 +641,7 @@ pub fn run(
         println!("⊘ COT (fresh, skipping)");
     }
 
-    // 6. Sentiment (Fear & Greed)
+    // 7. Sentiment (Fear & Greed)
     if sentiment_needs_refresh(conn)? {
         let mut count = 0;
 
@@ -667,7 +674,7 @@ pub fn run(
         println!("⊘ Sentiment (fresh, skipping)");
     }
 
-    // 7. Calendar (TradingEconomics)
+    // 8. Calendar (TradingEconomics)
     if calendar_needs_refresh(conn)? {
         match calendar::fetch_events(7) {
             Ok(mut events) => {
@@ -702,7 +709,7 @@ pub fn run(
         println!("⊘ Calendar (fresh, skipping)");
     }
 
-    // 8. Economy indicators (Brave primary, BLS fallback)
+    // 9. Economy indicators (Brave primary, BLS fallback)
     {
         let brave_key = config
             .brave_api_key
@@ -748,7 +755,7 @@ pub fn run(
         }
     }
 
-    // 9. BLS
+    // 10. BLS
     if bls_needs_refresh(conn)? {
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
@@ -763,7 +770,7 @@ pub fn run(
         println!("⊘ BLS (fresh, skipping)");
     }
 
-    // 10. World Bank
+    // 11. World Bank
     if worldbank_needs_refresh(conn)? {
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
@@ -778,7 +785,7 @@ pub fn run(
         println!("⊘ World Bank (fresh, skipping)");
     }
 
-    // 11. COMEX
+    // 12. COMEX
     if comex_needs_refresh(conn)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
@@ -809,7 +816,7 @@ pub fn run(
         println!("⊘ COMEX (fresh, skipping)");
     }
 
-    // 12. On-chain (network + ETF flows)
+    // 13. On-chain (network + ETF flows)
     let mut onchain_ok_parts = Vec::new();
     let mut onchain_errors = Vec::new();
 

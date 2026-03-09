@@ -450,9 +450,26 @@ fn main() -> Result<()> {
             limit,
             json,
         ),
-        Some(Command::Correlations { window, limit, json }) => {
-            commands::correlations::run(conn, window, limit, json)
-        }
+        Some(Command::Correlations {
+            action,
+            value,
+            value2,
+            window,
+            period,
+            store,
+            limit,
+            json,
+        }) => commands::correlations::run(
+            conn,
+            action.as_deref(),
+            value.as_deref(),
+            value2.as_deref(),
+            window,
+            period.as_deref(),
+            store,
+            limit,
+            json,
+        ),
 
         Some(Command::News { source, search, hours, limit, json }) => {
             commands::news::run(conn, source.as_deref(), search.as_deref(), hours, limit, json)

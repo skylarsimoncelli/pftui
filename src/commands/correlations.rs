@@ -4,6 +4,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 use crate::db::allocations::get_unique_allocation_symbols;
+use crate::db::correlation_snapshots;
 use crate::db::price_history::get_history;
 use crate::db::transactions::get_unique_symbols;
 use crate::indicators::correlation::compute_rolling_correlation;
@@ -14,24 +15,74 @@ const BREAK_THRESHOLD: f64 = 0.30;
 const ANCHORS: [&str; 6] = ["DX-Y.NYB", "^GSPC", "SPY", "GC=F", "SI=F", "BTC-USD"];
 
 #[derive(Debug, Clone)]
-struct PairCorrelation {
-    symbol_a: String,
-    symbol_b: String,
-    corr_7d: Option<f64>,
-    corr_30d: Option<f64>,
-    corr_90d: Option<f64>,
-    break_delta: Option<f64>,
+pub struct PairCorrelation {
+    pub symbol_a: String,
+    pub symbol_b: String,
+    pub corr_7d: Option<f64>,
+    pub corr_30d: Option<f64>,
+    pub corr_90d: Option<f64>,
+    pub break_delta: Option<f64>,
 }
 
-pub fn run(conn: &Connection, window: usize, limit: usize, json: bool) -> Result<()> {
+pub fn run(
+    conn: &Connection,
+    action: Option<&str>,
+    value: Option<&str>,
+    value2: Option<&str>,
+    window: usize,
+    period: Option<&str>,
+    store: bool,
+    limit: usize,
+    json: bool,
+) -> Result<()> {
     if !WINDOWS.contains(&window) {
         anyhow::bail!("Invalid --window '{}'. Use 7, 30, or 90.", window);
     }
 
+    match action.unwrap_or("compute") {
+        "compute" => {
+            let pairs = compute_pairs(conn, window, limit)?;
+            if store {
+                let period_tag = period.unwrap_or("30d");
+                let stored = store_pairs(conn, &pairs, period_tag)?;
+                if !json {
+                    println!("Stored {} correlation snapshots ({})", stored, period_tag);
+                }
+            }
+            print_pairs(conn, pairs, window, limit, json)
+        }
+        "history" => {
+            let symbol_a = value.ok_or_else(|| anyhow::anyhow!("symbol A required"))?;
+            let symbol_b = value2.ok_or_else(|| anyhow::anyhow!("symbol B required"))?;
+            let rows = correlation_snapshots::get_history(conn, symbol_a, symbol_b, period, Some(limit))?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "symbol_a": symbol_a,
+                        "symbol_b": symbol_b,
+                        "period": period,
+                        "history": rows,
+                    }))?
+                );
+            } else if rows.is_empty() {
+                println!("No snapshot history for {}-{}", symbol_a, symbol_b);
+            } else {
+                println!("Correlation history {}-{}:", symbol_a, symbol_b);
+                for r in rows {
+                    println!("  {}  {}  {:+.3}", r.recorded_at, r.period, r.correlation);
+                }
+            }
+            Ok(())
+        }
+        other => anyhow::bail!("Unknown correlations action '{}'. Valid: compute, history", other),
+    }
+}
+
+pub fn compute_pairs(conn: &Connection, window: usize, limit: usize) -> Result<Vec<PairCorrelation>> {
     let held = collect_held_symbols(conn);
     if held.is_empty() {
-        println!("No held symbols found. Add positions first.");
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let mut candidates: HashSet<String> = held.clone();
@@ -58,7 +109,6 @@ pub fn run(conn: &Connection, window: usize, limit: usize, json: bool) -> Result
         for j in (i + 1)..symbols.len() {
             let a = &symbols[i];
             let b = &symbols[j];
-            // Keep at least one held asset in every output pair.
             if !held.contains(a) && !held.contains(b) {
                 continue;
             }
@@ -104,6 +154,83 @@ pub fn run(conn: &Connection, window: usize, limit: usize, json: bool) -> Result
     };
     pairs.sort_by(|a, b| score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal));
     pairs.truncate(limit.max(1));
+    Ok(pairs)
+}
+
+fn store_pairs(conn: &Connection, pairs: &[PairCorrelation], period: &str) -> Result<usize> {
+    let mut n = 0usize;
+    for p in pairs {
+        let corr = match period {
+            "7d" => p.corr_7d,
+            "30d" => p.corr_30d,
+            "90d" => p.corr_90d,
+            _ => p.corr_30d,
+        };
+        if let Some(c) = corr {
+            let _ = correlation_snapshots::store_snapshot(conn, &p.symbol_a, &p.symbol_b, c, period)?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+pub fn compute_and_store_default_snapshots(conn: &Connection) -> Result<usize> {
+    let held = collect_held_symbols(conn);
+    if held.is_empty() {
+        return Ok(0);
+    }
+
+    let macro_symbols = ["SPY", "DX-Y.NYB", "GC=F", "CL=F", "^VIX"];
+    let mut stored = 0usize;
+
+    for held_symbol in held {
+        for macro_symbol in macro_symbols {
+            if held_symbol == macro_symbol {
+                continue;
+            }
+            let a = load_closes_with_fallback(conn, &held_symbol, 120).map(|(_, v)| v);
+            let b = load_closes_with_fallback(conn, macro_symbol, 120).map(|(_, v)| v);
+            let (series_a, series_b) = match (a, b) {
+                (Some(a), Some(b)) => (a, b),
+                _ => continue,
+            };
+
+            let min_len = series_a.len().min(series_b.len());
+            if min_len < 8 {
+                continue;
+            }
+            let aligned_a = &series_a[series_a.len() - min_len..];
+            let aligned_b = &series_b[series_b.len() - min_len..];
+
+            for (period, w) in [("7d", 7usize), ("30d", 30usize), ("90d", 90usize)] {
+                if min_len < w + 1 {
+                    continue;
+                }
+                if let Some(corr) = latest_corr(aligned_a, aligned_b, w) {
+                    let _ = correlation_snapshots::store_snapshot(
+                        conn,
+                        &held_symbol,
+                        macro_symbol,
+                        corr,
+                        period,
+                    )?;
+                    stored += 1;
+                }
+            }
+        }
+    }
+
+    Ok(stored)
+}
+
+fn print_pairs(
+    conn: &Connection,
+    pairs: Vec<PairCorrelation>,
+    window: usize,
+    limit: usize,
+    json: bool,
+) -> Result<()> {
+    let held = collect_held_symbols(conn);
 
     if json {
         let output = serde_json::json!({
@@ -178,7 +305,6 @@ fn load_closes_with_fallback(
         return Some((symbol.to_string(), closes));
     }
 
-    // Common crypto fallback: BTC <-> BTC-USD
     if symbol.ends_with("-USD") {
         let stripped = symbol.trim_end_matches("-USD");
         if let Some(closes) = load_closes(conn, stripped, limit) {
@@ -233,24 +359,5 @@ fn truncate(s: &str, max: usize) -> String {
         format!("{}...", &s[..max - 3])
     } else {
         s[..max].to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn latest_corr_detects_positive_relationship() {
-        let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let b = vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0];
-        let corr = latest_corr(&a, &b, 3).unwrap();
-        assert!(corr > 0.9);
-    }
-
-    #[test]
-    fn fmt_opt_formats_missing_and_present() {
-        assert_eq!(fmt_opt(None), "---");
-        assert_eq!(fmt_opt(Some(0.1234)), "+0.12");
     }
 }

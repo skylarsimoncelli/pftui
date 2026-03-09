@@ -604,9 +604,26 @@ pub enum Command {
 
     /// Show rolling correlation matrix for held assets and key macro anchors
     Correlations {
+        /// Action: compute (default) or history
+        action: Option<String>,
+
+        /// Symbol A (for history)
+        value: Option<String>,
+
+        /// Symbol B (for history)
+        value2: Option<String>,
+
         /// Primary window for sorting/display emphasis: 7, 30, or 90
         #[arg(long, default_value = "30")]
         window: usize,
+
+        /// Period for snapshots/history: 7d, 30d, 90d
+        #[arg(long)]
+        period: Option<String>,
+
+        /// Store computed correlations as snapshots
+        #[arg(long)]
+        store: bool,
 
         /// Maximum number of pairs to show
         #[arg(long, default_value = "15")]
