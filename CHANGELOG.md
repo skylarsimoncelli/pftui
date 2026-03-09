@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 08:11 UTC — F32 Phase 47: remove brief sqlite gate with postgres-safe fallback
+
+- What: removed sqlite gating for `pftui brief` in `main`; SQLite backend keeps existing rich brief path, while postgres backend now runs backend-native `summary` as a safe fallback output path.
+- Why: ensures postgres users can run `brief` without SQLite dependency while full native brief refactor remains in progress.
+- Files: `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: remaining sqlite-gated commands include refresh/setup/tui)
+
 ### 2026-03-09 08:05 UTC — F32 Phase 46: un-gate eod command path
 
 - What: removed SQLite connection dependency from `eod` by switching its portfolio section from `brief` to backend-native `summary`, updated JSON path accordingly, and removed sqlite gating for `pftui eod` in `main`.

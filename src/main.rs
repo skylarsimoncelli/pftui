@@ -238,8 +238,11 @@ fn main() -> Result<()> {
             commands::value::run(&backend, &config, json)
         }
         Some(Command::Brief { json }) => {
-            let conn = sqlite_conn_for_command(&backend, "brief")?;
-            commands::brief::run(conn, &config, true, json)
+            if let Some(conn) = backend.sqlite_native() {
+                commands::brief::run(conn, &config, true, json)
+            } else {
+                commands::summary::run(&backend, &config, None, None, None, true, json)
+            }
         }
         Some(Command::Watchlist { approaching, json }) => {
             commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json)
