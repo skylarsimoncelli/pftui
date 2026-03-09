@@ -902,18 +902,50 @@ pftui conviction list --json    ─┘
 └──────────────────────────────┘
 ```
 
-**Investor Roster (curated for MACRO relevance):**
+**Investor Roster:**
 
-| Investor | Philosophy | Why relevant |
-|----------|-----------|--------------|
-| Ray Dalio | All-weather, risk parity, big cycle transitions | Our structural/MACRO layer is literally his framework |
-| Stanley Druckenmiller | Macro legend, asymmetric bets, liquidity focus | Best match for Skylar's style — patient, conviction-driven, big when right |
-| George Soros | Reflexivity, regime change, currency crises | BRICS de-dollarization, DXY dynamics, war premium |
-| Michael Burry | Deep contrarian, short bias, systemic risk | G2 scenario, housing/credit parallels, "everyone is wrong" thesis |
-| Jim Rogers | Commodities supercycle, emerging markets | Commodity supercycle trend, agricultural inflation, gold |
-| Warren Buffett | Wonderful companies at fair prices, cash as weapon | Cash optionality (Berkshire $300B+ cash), waiting for fat pitch |
-| Cathie Wood | Innovation disruption, 5-year horizon | Counter-view on AI/tech, TSLA/RKLB thesis |
-| Peter Lynch | Practical value in everyday businesses | Ground-truth check on consumer economy, earnings quality |
+Two categories: **Named Legends** (educational, study their philosophy) and
+**Generic Archetypes** (practical, dial in a style without a specific name).
+Users can enable/disable any persona. Ship with all, default to a curated subset.
+
+**Named Legends (prominent investors):**
+
+| Investor | Philosophy | Lens on data |
+|----------|-----------|-------------|
+| Ray Dalio | All-weather, risk parity, big cycles | Our MACRO layer IS his framework. Empire transitions, reserve currency. |
+| Stanley Druckenmiller | Macro, asymmetric bets, liquidity | Closest to Skylar's style. Patient, conviction-driven, huge when right. |
+| George Soros | Reflexivity, regime change, currencies | BRICS, DXY, war premium. "Markets influence the fundamentals they price." |
+| Michael Burry | Deep contrarian, short bias, systemic risk | G2 scenario, "everyone is wrong" thesis. Always looking for what breaks. |
+| Jim Rogers | Commodities supercycle, emerging markets | Commodity trends, agricultural inflation, gold/silver, BRICS. |
+| Warren Buffett | Quality companies, margin of safety, cash | Cash as weapon (Berkshire $300B+). "Be fearful when others are greedy." |
+| Cathie Wood | Innovation disruption, 5-year horizon | Counter-view on AI/tech. TSLA/RKLB/genomics. "Bad news is good news." |
+| Peter Lynch | Ten-baggers in everyday businesses | Ground-truth consumer economy. What's selling, what's dying. |
+| Jesse Livermore | Tape reading, market psychology, momentum | Pure price action. "The market is never wrong, opinions often are." |
+| John Templeton | Global contrarian, buy maximum pessimism | "Bull markets are born on pessimism." Emerging market opportunities. |
+| Howard Marks | Risk assessment, market cycles, second-level thinking | Cycle positioning. "You can't predict, you can prepare." |
+| Paul Tudor Jones | Macro trading, inflation hedging, technical | Gold thesis, inflation protection, 200-day MA as regime signal. |
+| Carl Icahn | Activist, corporate governance, unlocking value | Undervalued assets held back by bad management. Restructuring plays. |
+| Mark Mobius | Emerging markets, frontier, geopolitical risk | BRICS investment thesis, non-US opportunities, political risk pricing. |
+| Kyle Bass | Sovereign debt, currency crises, geopolitical | USD/debt sustainability, Japan/China macro risks, war economics. |
+
+**Generic Archetypes (style-based, no specific person):**
+
+| Archetype | Description | Use case |
+|-----------|------------|----------|
+| The Momentum Trader | Trend following, relative strength, breakout entry | "What's working and how long does it keep working?" |
+| The Value Hunter | Deep discount, mean reversion, patience | "What's cheap relative to intrinsic value right now?" |
+| The Risk Paritist | Equal risk across asset classes, volatility targeting | "How should I weight assets so no single risk dominates?" |
+| The Yield Seeker | Income focus, dividends, real yields, carry trades | "Where's the best risk-adjusted income stream?" |
+| The Macro Tourist | Central bank watching, liquidity flows, positioning data | "Where is the liquidity going and who's positioned wrong?" |
+| The Doomsday Prepper | Tail risk, black swans, insurance, hard assets | "What's the worst case and am I protected?" |
+| The Techno-Optimist | Innovation, disruption, exponential growth curves | "What's the world going to look like in 10 years?" |
+| The Commodity Bull | Supply/demand, cycle theory, hard asset conviction | "What's physically scarce and getting scarcer?" |
+| The Bond Vigilante | Yield curve, credit spreads, sovereign risk, duration | "What is the bond market telling us that equities are ignoring?" |
+| The Quant | Correlations, mean reversion, factor exposure, statistics | "What does the data say with no narrative overlay?" |
+
+Users can also create custom personas — just drop a markdown file in `personas/`.
+The persona file format is standardized: philosophy, decision framework,
+known biases, what they look for in data, what they ignore, famous quotes.
 
 **Structured Output Schema (per investor):**
 ```json
@@ -959,18 +991,69 @@ echo "$DATA"
 **Skill Files:**
 ```
 skills/investor-panel/
-├── SKILL.md                    # Orchestrator instructions
+├── SKILL.md                        # Orchestrator instructions
+├── collect-data.sh                 # Gathers pftui --json output
+├── schema.json                     # Structured output format
 ├── personas/
-│   ├── ray_dalio.md            # System prompt: All-Weather, big cycles
-│   ├── stanley_druckenmiller.md # System prompt: Macro, asymmetric bets
-│   ├── george_soros.md          # System prompt: Reflexivity, currencies
-│   ├── michael_burry.md         # System prompt: Contrarian, systemic risk
-│   ├── jim_rogers.md            # System prompt: Commodities, EM
-│   ├── warren_buffett.md        # System prompt: Quality, cash, patience
-│   ├── cathie_wood.md           # System prompt: Innovation disruption
-│   └── peter_lynch.md           # System prompt: Practical value
-├── collect-data.sh             # Gathers pftui --json output
-└── schema.json                 # Structured output format
+│   ├── legends/
+│   │   ├── ray_dalio.md
+│   │   ├── stanley_druckenmiller.md
+│   │   ├── george_soros.md
+│   │   ├── michael_burry.md
+│   │   ├── jim_rogers.md
+│   │   ├── warren_buffett.md
+│   │   ├── cathie_wood.md
+│   │   ├── peter_lynch.md
+│   │   ├── jesse_livermore.md
+│   │   ├── john_templeton.md
+│   │   ├── howard_marks.md
+│   │   ├── paul_tudor_jones.md
+│   │   ├── carl_icahn.md
+│   │   ├── mark_mobius.md
+│   │   └── kyle_bass.md
+│   ├── archetypes/
+│   │   ├── momentum_trader.md
+│   │   ├── value_hunter.md
+│   │   ├── risk_paritist.md
+│   │   ├── yield_seeker.md
+│   │   ├── macro_tourist.md
+│   │   ├── doomsday_prepper.md
+│   │   ├── techno_optimist.md
+│   │   ├── commodity_bull.md
+│   │   ├── bond_vigilante.md
+│   │   └── quant.md
+│   └── custom/                     # User-created personas (gitignored)
+│       └── .gitkeep
+└── config.toml                     # Which personas to run (default subset)
+```
+
+**Persona File Format (standardized):**
+```markdown
+# [Name or Archetype]
+
+## Philosophy
+[2-3 paragraphs on core investment beliefs]
+
+## Decision Framework
+[How they evaluate opportunities — what metrics, what signals, what sequence]
+
+## Known Biases
+[What they tend to overweight, underweight, or ignore entirely]
+
+## What They Look For In Data
+[Specific fields from the analytics engine they'd focus on]
+
+## What They Ignore
+[Noise they'd filter out]
+
+## Historical Precedent
+[How they've acted in similar macro environments — wars, stagflation, rate cuts]
+
+## Famous Quotes
+[3-5 quotes that capture their philosophy, used as grounding anchors]
+
+## Output Emphasis
+[What their response should focus on — positioning, timing, risk, opportunity]
 ```
 
 **Execution Model:**
