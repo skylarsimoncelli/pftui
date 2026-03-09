@@ -713,7 +713,7 @@ pub fn is_privacy_view(app: &App) -> bool {
 }
 
 impl App {
-    fn open_backend(&self) -> Option<crate::db::backend::BackendConnection> {
+    pub(crate) fn open_backend(&self) -> Option<crate::db::backend::BackendConnection> {
         let cfg = Config {
             database_backend: self.database_backend,
             database_url: self.database_url.clone(),

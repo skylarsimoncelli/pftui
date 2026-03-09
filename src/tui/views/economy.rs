@@ -749,11 +749,9 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Fetch cached sentiment data
-    let conn = match rusqlite::Connection::open(&app.db_path) {
-        Ok(c) => c,
-        Err(_) => {
-            // If we can't open DB, show placeholder
+    let backend = match app.open_backend() {
+        Some(b) => b,
+        None => {
             let msg = Paragraph::new(vec![
                 Line::from(""),
                 Line::from(Span::styled(
@@ -767,12 +765,18 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
         }
     };
 
-    let crypto_sentiment = crate::db::sentiment_cache::get_latest(&conn, "crypto").ok().flatten();
-    let trad_sentiment = crate::db::sentiment_cache::get_latest(&conn, "traditional").ok().flatten();
+    let crypto_sentiment = crate::db::sentiment_cache::get_latest_backend(&backend, "crypto")
+        .ok()
+        .flatten();
+    let trad_sentiment = crate::db::sentiment_cache::get_latest_backend(&backend, "traditional")
+        .ok()
+        .flatten();
 
     // Fetch 30-day history for sparklines
-    let crypto_history = crate::db::sentiment_cache::get_history(&conn, "crypto", 30).unwrap_or_default();
-    let trad_history = crate::db::sentiment_cache::get_history(&conn, "traditional", 30).unwrap_or_default();
+    let crypto_history = crate::db::sentiment_cache::get_history_backend(&backend, "crypto", 30)
+        .unwrap_or_default();
+    let trad_history = crate::db::sentiment_cache::get_history_backend(&backend, "traditional", 30)
+        .unwrap_or_default();
 
     let mut lines: Vec<Line> = Vec::new();
 

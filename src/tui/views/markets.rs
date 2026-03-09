@@ -320,20 +320,19 @@ fn compute_cot_signal(app: &App, yahoo_symbol: &str) -> String {
         None => return String::new(),
     };
 
-    // Open DB connection
-    let conn = match rusqlite::Connection::open(&app.db_path) {
-        Ok(c) => c,
-        Err(_) => return String::new(),
+    let backend = match app.open_backend() {
+        Some(b) => b,
+        None => return String::new(),
     };
 
     // Fetch latest COT report
-    let latest = match crate::db::cot_cache::get_latest(&conn, cftc_code) {
+    let latest = match crate::db::cot_cache::get_latest_backend(&backend, cftc_code) {
         Ok(Some(report)) => report,
         _ => return String::new(),
     };
 
     // Fetch last 52 weeks of history for extremity check
-    let history = match crate::db::cot_cache::get_history(&conn, cftc_code, 52) {
+    let history = match crate::db::cot_cache::get_history_backend(&backend, cftc_code, 52) {
         Ok(h) if h.len() >= 10 => h, // Need at least 10 weeks for meaningful stats
         _ => return String::new(),
     };

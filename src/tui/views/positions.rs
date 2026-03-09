@@ -381,11 +381,11 @@ fn capitalize_category(s: &str) -> String {
 
 fn overdue_review_symbols(app: &App) -> HashSet<String> {
     let mut overdue = HashSet::new();
-    let conn = match rusqlite::Connection::open(&app.db_path) {
-        Ok(c) => c,
-        Err(_) => return overdue,
+    let backend = match app.open_backend() {
+        Some(b) => b,
+        None => return overdue,
     };
-    let annotations = match crate::db::annotations::list_annotations(&conn) {
+    let annotations = match crate::db::annotations::list_annotations_backend(&backend) {
         Ok(v) => v,
         Err(_) => return overdue,
     };
