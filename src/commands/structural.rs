@@ -1,9 +1,7 @@
-use anyhow::{bail, Result};
-use chrono::Utc;
-use serde_json::json;
-
 use crate::db::backend::BackendConnection;
 use crate::db::structural;
+use anyhow::Result;
+use serde_json::json;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
@@ -38,204 +36,319 @@ pub fn run(
     json_output: bool,
 ) -> Result<()> {
     match action {
+        // Power metrics
         "metric-set" => {
-            let c = country.or(value).ok_or_else(|| anyhow::anyhow!("--country required"))?;
+            let c = country.ok_or_else(|| anyhow::anyhow!("--country required"))?;
             let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
-            let id = structural::set_metric_backend(backend, c, m, score, rank, trend, notes, source)?;
+            let t = trend.unwrap_or("stable");
+            let id = structural::set_metric_backend(backend, c, m, score, rank, t, notes, source)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
+                println!("{}", json!({"id": id, "country": c, "metric": m}));
             } else {
-                println!("Set power metric #{} {}:{}", id, c, m);
+                println!("Set metric: {} {} = {:?}", c, m, score);
             }
         }
         "metric-list" => {
-            let rows = structural::list_metrics_backend(backend, country, metric)?;
+            let metrics = structural::list_metrics_backend(backend, country, metric)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "metrics": rows }))?);
+                println!("{}", serde_json::to_string_pretty(&metrics)?);
             } else {
-                println!("Power metrics ({}):", rows.len());
-                for r in rows {
+                for m in &metrics {
                     println!(
-                        "  {} {} score={:?} rank={:?} trend={} ({})",
-                        r.country, r.metric, r.score, r.rank, r.trend, r.recorded_at
+                        "{} {} = {:?} (rank {}) {} — {}",
+                        m.country,
+                        m.metric,
+                        m.score,
+                        m.rank.map_or("?".to_string(), |r| r.to_string()),
+                        m.trend,
+                        m.source.as_ref().unwrap_or(&"—".to_string())
+                    );
+                }
+                println!("\nTotal: {} metrics", metrics.len());
+            }
+        }
+        "metric-history" => {
+            let c = country.ok_or_else(|| anyhow::anyhow!("--country required"))?;
+            let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
+            let history = structural::get_metric_history_backend(backend, c, m, limit)?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&history)?);
+            } else {
+                println!("History: {} {}", c, m);
+                for h in &history {
+                    println!(
+                        "  {} | {:?} (rank {}) {} — {}",
+                        h.recorded_at,
+                        h.score,
+                        h.rank.map_or("?".to_string(), |r| r.to_string()),
+                        h.trend,
+                        h.source.as_ref().unwrap_or(&"—".to_string())
                     );
                 }
             }
         }
-        "metric-history" => {
-            let c = country.or(value).ok_or_else(|| anyhow::anyhow!("country required"))?;
-            let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
-            let rows = structural::get_metric_history_backend(backend, c, m, limit)?;
-            if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "history": rows }))?);
-            } else {
-                println!("Metric history {}:{} ({})", c, m, rows.len());
-                for r in rows {
-                    println!("  {} score={:?} rank={:?}", r.recorded_at, r.score, r.rank);
-                }
-            }
-        }
 
+        // Cycles
         "cycle-set" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("cycle name required"))?;
-            let stg = stage.ok_or_else(|| anyhow::anyhow!("--stage required"))?;
-            structural::set_cycle_backend(backend, name, stg, entered, description, evidence)?;
+            let name = value.ok_or_else(|| anyhow::anyhow!("cycle name required as first argument"))?;
+            let s = stage.ok_or_else(|| anyhow::anyhow!("--stage required"))?;
+            structural::set_cycle_backend(backend, name, s, entered, description, evidence)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "updated": name }))?);
+                println!("{}", json!({"name": name, "stage": s}));
             } else {
-                println!("Set structural cycle {}", name);
+                println!("Set cycle: {} → {}", name, s);
             }
         }
         "cycle-list" => {
-            let rows = structural::list_cycles_backend(backend)?;
+            let cycles = structural::list_cycles_backend(backend)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "cycles": rows }))?);
+                println!("{}", serde_json::to_string_pretty(&cycles)?);
             } else {
-                println!("Structural cycles ({}):", rows.len());
-                for r in rows {
-                    println!("  {}: {} (since {:?})", r.cycle_name, r.current_stage, r.stage_entered);
+                for c in &cycles {
+                    println!(
+                        "{}: {} (since {})",
+                        c.cycle_name,
+                        c.current_stage,
+                        c.stage_entered.as_ref().unwrap_or(&"?".to_string())
+                    );
+                    if let Some(desc) = &c.description {
+                        println!("  {}", desc);
+                    }
                 }
             }
         }
 
+        // Outcomes
         "outcome-add" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required"))?;
-            let p = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
-            let id = structural::add_outcome_backend(backend, name, p, horizon, description, parallel, impact, signals)?;
+            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
+            let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
+            let id = structural::add_outcome_backend(backend, name, prob, horizon, description, parallel, outcome, signals)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
+                println!("{}", json!({"id": id, "name": name, "probability": prob}));
             } else {
-                println!("Added structural outcome #{} {}", id, name);
+                println!("Added outcome: {} ({}%)", name, prob);
             }
         }
         "outcome-list" => {
-            let rows = structural::list_outcomes_backend(backend)?;
+            let outcomes = structural::list_outcomes_backend(backend)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "outcomes": rows }))?);
+                println!("{}", serde_json::to_string_pretty(&outcomes)?);
             } else {
-                println!("Structural outcomes ({}):", rows.len());
-                for r in rows {
-                    println!("  {}: {:.1}% ({})", r.name, r.probability, r.status);
+                for o in &outcomes {
+                    println!("{}: {:.0}%", o.name, o.probability);
+                    if let Some(h) = &o.time_horizon {
+                        println!("  Horizon: {}", h);
+                    }
+                    if let Some(p) = &o.historical_parallel {
+                        println!("  Parallel: {}", p);
+                    }
                 }
             }
         }
         "outcome-update" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required"))?;
-            let p = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
-            structural::update_outcome_probability_backend(backend, name, p, driver)?;
+            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
+            let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
+            structural::update_outcome_probability_backend(backend, name, prob, driver)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "updated": name, "probability": p }))?);
+                println!("{}", json!({"name": name, "probability": prob, "driver": driver}));
             } else {
-                println!("Updated structural outcome {} to {:.1}%", name, p);
+                println!("Updated {} to {:.0}%", name, prob);
             }
         }
         "outcome-history" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required"))?;
-            let rows = structural::get_outcome_history_backend(backend, name, limit)?;
+            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
+            let history = structural::get_outcome_history_backend(backend, name, limit)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "history": rows }))?);
+                println!("{}", serde_json::to_string_pretty(&history)?);
             } else {
-                println!("Outcome history {}:", name);
-                for (prob, drv, ts) in rows {
-                    println!("  {}  {:.1}%  {:?}", ts, prob, drv);
+                println!("History: {}", name);
+                for (prob, drv, recorded) in &history {
+                    println!(
+                        "  {} | {:.0}% — {}",
+                        recorded,
+                        prob,
+                        drv.as_ref().unwrap_or(&"—".to_string())
+                    );
                 }
             }
         }
 
+        // Parallels
         "parallel-add" => {
             let p = period.ok_or_else(|| anyhow::anyhow!("--period required"))?;
-            let ev = event.ok_or_else(|| anyhow::anyhow!("--event required"))?;
+            let e = event.ok_or_else(|| anyhow::anyhow!("--event required"))?;
             let pt = parallel_to.ok_or_else(|| anyhow::anyhow!("--parallel-to required"))?;
-            let id = structural::add_parallel_backend(backend, p, ev, pt, similarity, outcome, notes, source)?;
+            let id = structural::add_parallel_backend(backend, p, e, pt, similarity, outcome, notes, source)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
+                println!("{}", json!({"id": id, "period": p, "event": e}));
             } else {
-                println!("Added historical parallel #{}", id);
+                println!("Added parallel: {} → {}", e, pt);
             }
         }
         "parallel-list" => {
-            let rows = structural::list_parallels_backend(backend, period)?;
+            let parallels = structural::list_parallels_backend(backend, period)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "parallels": rows }))?);
+                println!("{}", serde_json::to_string_pretty(&parallels)?);
             } else {
-                println!("Historical parallels ({}):", rows.len());
-                for r in rows {
-                    println!("  {} | {} -> {}", r.period, r.event, r.parallel_to);
+                for p in &parallels {
+                    println!(
+                        "{} | {} → {}",
+                        p.period, p.event, p.parallel_to
+                    );
+                    if let Some(score) = p.similarity_score {
+                        println!("  Similarity: {}/10", score);
+                    }
+                    if let Some(out) = &p.asset_outcome {
+                        println!("  Outcome: {}", out);
+                    }
                 }
             }
         }
         "parallel-search" => {
-            let q = value.ok_or_else(|| anyhow::anyhow!("search query required"))?;
-            let rows = structural::search_parallels_backend(backend, q)?;
+            let query = value.ok_or_else(|| anyhow::anyhow!("search query required as first argument"))?;
+            let results = structural::search_parallels_backend(backend, query)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "parallels": rows }))?);
+                println!("{}", serde_json::to_string_pretty(&results)?);
             } else {
-                println!("Parallel search '{}' ({}):", q, rows.len());
-                for r in rows {
-                    println!("  {} | {}", r.period, r.event);
+                for r in &results {
+                    println!("{} | {} → {}", r.period, r.event, r.parallel_to);
                 }
+                println!("\nFound {} parallels", results.len());
             }
         }
 
+        // Log
         "log-add" => {
-            let d = date
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-            let dev = value.ok_or_else(|| anyhow::anyhow!("development text required"))?;
-            let id = structural::add_log_backend(backend, &d, dev, impact, outcome)?;
+            let dev = value.ok_or_else(|| anyhow::anyhow!("development text required as first argument"))?;
+            let d = date.ok_or_else(|| anyhow::anyhow!("--date required"))?;
+            // CLI: --impact → cycle_impact, --outcome → outcome_shift
+            let id = structural::add_log_backend(backend, d, dev, impact, outcome)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "id": id }))?);
+                println!("{}", json!({"id": id, "date": d}));
             } else {
-                println!("Added structural log #{}", id);
+                println!("Added log entry for {}", d);
             }
         }
         "log-list" => {
-            let rows = structural::list_log_backend(backend, since, limit)?;
+            let logs = structural::list_log_backend(backend, since, limit)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "log": rows }))?);
+                println!("{}", serde_json::to_string_pretty(&logs)?);
             } else {
-                println!("Structural log ({}):", rows.len());
-                for r in rows {
-                    println!("  {} | {}", r.date, r.development);
+                for l in &logs {
+                    println!("\n{} | {}", l.date, l.development);
+                    if let Some(impact) = &l.cycle_impact {
+                        println!("  Cycle: {}", impact);
+                    }
+                    if let Some(shift) = &l.outcome_shift {
+                        println!("  Shift: {}", shift);
+                    }
                 }
             }
         }
 
+        // Dashboard
         "dashboard" => {
-            let cycles = structural::list_cycles_backend(backend)?;
-            let outcomes = structural::list_outcomes_backend(backend)?;
-            let metrics = structural::list_metrics_backend(backend, None, None)?;
-            let log_rows = structural::list_log_backend(backend, None, Some(5))?;
-
-            if json_output {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json!({
-                        "cycles": cycles,
-                        "outcomes": outcomes,
-                        "metrics": metrics,
-                        "recent_log": log_rows,
-                    }))?
-                );
-            } else {
-                println!("Structural Dashboard");
-                println!("════════════════════════════════════════════════════");
-                println!("\nCycles:");
-                for c in cycles {
-                    println!("  {:<24} {:<28} since {:?}", c.cycle_name, c.current_stage, c.stage_entered);
-                }
-                println!("\nStructural Outcomes:");
-                for o in outcomes.into_iter().take(8) {
-                    println!("  {:<28} {:>5.1}%", o.name, o.probability);
-                }
-                println!("\nRecent Log:");
-                for r in log_rows {
-                    println!("  {}  {}", r.date, r.development);
-                }
-            }
+            run_dashboard(backend, json_output)?;
         }
 
-        _ => bail!("unknown structural action '{}'. See --help", action),
+        _ => anyhow::bail!("Unknown action: {}", action),
+    }
+
+    Ok(())
+}
+
+fn run_dashboard(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let cycles = structural::list_cycles_backend(backend)?;
+    let metrics = structural::list_metrics_backend(backend, None, None)?;
+    let outcomes = structural::list_outcomes_backend(backend)?;
+    let logs = structural::list_log_backend(backend, None, Some(4))?;
+
+    if json_output {
+        let dashboard = json!({
+            "cycles": cycles,
+            "power_metrics": metrics,
+            "structural_outcomes": outcomes,
+            "recent_log": logs,
+        });
+        println!("{}", serde_json::to_string_pretty(&dashboard)?);
+    } else {
+        println!("Structural Dashboard");
+        println!("════════════════════════════════════════════════════════════════\n");
+
+        // Cycles
+        if !cycles.is_empty() {
+            println!("Cycles:");
+            for c in &cycles {
+                println!(
+                    "  {:28} {:30} since {}",
+                    c.cycle_name,
+                    c.current_stage,
+                    c.stage_entered.as_ref().unwrap_or(&"?".to_string())
+                );
+            }
+            println!();
+        }
+
+        // Power Metrics (group by country)
+        if !metrics.is_empty() {
+            println!("Power Metrics:");
+            let mut by_country: std::collections::HashMap<String, Vec<_>> = std::collections::HashMap::new();
+            for m in &metrics {
+                by_country.entry(m.country.clone()).or_default().push(m);
+            }
+
+            let mut countries: Vec<_> = by_country.keys().collect();
+            countries.sort();
+
+            for country in countries {
+                println!("  {}:", country);
+                let mut country_metrics = by_country[country].clone();
+                country_metrics.sort_by(|a, b| a.metric.cmp(&b.metric));
+
+                for m in country_metrics {
+                    let trend_arrow = match m.trend.as_str() {
+                        "rising" => "↗",
+                        "declining" => "↘",
+                        _ => "→",
+                    };
+                    println!(
+                        "    {:20} {:?} (rank {}) {}",
+                        m.metric,
+                        m.score,
+                        m.rank.map_or("?".to_string(), |r| r.to_string()),
+                        trend_arrow
+                    );
+                }
+            }
+            println!();
+        }
+
+        // Structural Outcomes
+        if !outcomes.is_empty() {
+            println!("Structural Outcomes (10-30yr):");
+            for o in &outcomes {
+                let parallel_text = o
+                    .historical_parallel
+                    .as_ref()
+                    .map(|p| format!("  parallel: {}", p))
+                    .unwrap_or_default();
+                println!(
+                    "  {:35} {:4.0}%{}",
+                    o.name,
+                    o.probability,
+                    parallel_text
+                );
+            }
+            println!();
+        }
+
+        // Recent log
+        if !logs.is_empty() {
+            println!("Recent (last {} weeks):", logs.len());
+            for l in &logs {
+                println!("  {}  {}", l.date, l.development);
+            }
+        }
     }
 
     Ok(())
