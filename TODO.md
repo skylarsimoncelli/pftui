@@ -365,6 +365,8 @@ pftui notes search "DXY" --since 2026-03-01
 
 ### F31.8: Opportunity Cost Tracker — What positioning saved and cost [MEDIUM]
 
+- [x] Implemented (`pftui opportunity add/list/stats` + `opportunity_cost` table)
+
 **Files:** `src/db/opportunity_cost.rs`, `src/commands/opportunity.rs`, schema/cli/main/mod updates.
 
 **Schema:**

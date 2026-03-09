@@ -685,6 +685,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui agent-msg ack --id N` | Acknowledge a single message |
 | `pftui notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
 | `pftui notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
+| `pftui opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
+| `pftui opportunity stats --json` | Show net missed-vs-avoided positioning stats |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |

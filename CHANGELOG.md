@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:30 UTC — F31.8: Opportunity cost tracker command and storage
+
+- What: implemented `pftui opportunity` with `add/list/stats` actions and backing `opportunity_cost` table. Added rational-vs-mistake tagging and aggregate net scorecard (`avoided - missed`).
+- Why: completes MEDIUM-layer opportunity-cost tracking so positioning trade-offs are measurable over time.
+- Files: `src/db/opportunity_cost.rs`, `src/commands/opportunity.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.8
+
 ### 2026-03-09 01:10 UTC — F31.7: Daily notes command and storage
 
 - What: implemented `pftui notes` with `add/list/search/remove` actions and backing `daily_notes` table. Added section validation, date defaulting to today for add, optional list filters, and full-text search (`LIKE`) with optional since-date.

@@ -839,6 +839,50 @@ pub enum Command {
         json: bool,
     },
 
+    /// Track what your positioning saved and cost you
+    #[command(name = "opportunity")]
+    Opportunity {
+        /// Action: add, list, stats
+        action: String,
+
+        /// Event description (for add)
+        value: Option<String>,
+
+        #[arg(long)]
+        date: Option<String>,
+
+        #[arg(long)]
+        asset: Option<String>,
+
+        #[arg(long)]
+        missed_gain_pct: Option<f64>,
+
+        #[arg(long)]
+        missed_gain_usd: Option<f64>,
+
+        #[arg(long)]
+        avoided_loss_pct: Option<f64>,
+
+        #[arg(long)]
+        avoided_loss_usd: Option<f64>,
+
+        /// Was this a rational decision? (true/false, default true)
+        #[arg(long)]
+        rational: Option<bool>,
+
+        #[arg(long)]
+        notes: Option<String>,
+
+        #[arg(long)]
+        since: Option<String>,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Track dividend payments, ex-dates, and trailing yield
     Dividends {
         /// Action: add, list, remove

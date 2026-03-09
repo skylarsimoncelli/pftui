@@ -460,6 +460,22 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_daily_notes_date ON daily_notes(date);
         CREATE INDEX IF NOT EXISTS idx_daily_notes_section ON daily_notes(section);
 
+        CREATE TABLE IF NOT EXISTS opportunity_cost (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            event TEXT NOT NULL,
+            asset TEXT,
+            missed_gain_pct REAL,
+            missed_gain_usd REAL,
+            avoided_loss_pct REAL,
+            avoided_loss_usd REAL,
+            was_rational INTEGER NOT NULL DEFAULT 1,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_opportunity_cost_date ON opportunity_cost(date);
+        CREATE INDEX IF NOT EXISTS idx_opportunity_cost_asset ON opportunity_cost(asset);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,
