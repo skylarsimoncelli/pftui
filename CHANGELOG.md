@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 00:33 UTC — F31.2: Thesis CLI — versioned macro outlook by section
+
+- What: implemented thesis command (F31.2) — versioned macro outlook management by user-defined section. `pftui thesis update <section> --content "..." [--conviction high|medium|low]` auto-snapshots previous value to `thesis_history` table before upserting. `list` shows all sections with content preview. `history <section>` shows full version history. `remove <section>` deletes a section. Section is unique key (one active thesis per section). Conviction defaults to previous or "medium" if new.
+- Why: core MEDIUM-layer analytics table enabling versioned macro view tracking with full history. Every thesis update creates an audit trail for calibration and evolution analysis.
+- Files: `src/db/thesis.rs` (new), `src/commands/thesis.rs` (new), `src/db/schema.rs` (added thesis + thesis_history tables), `src/main.rs` (action routing)
+- Tests: all 1187 tests pass. Tested all 4 actions (update, list, history, remove) with --json output. Clippy clean.
+- TODO: F31.2 Thesis (P0 MEDIUM)
+
 ### 2026-03-08 21:27 UTC — F31.3: Conviction tracking system (MEDIUM-layer analytics)
 
 - What: implemented conviction tracking (F31.3) — symbol-level conviction scores (-5 to +5) over time. Append-only log with `set/list/history/changes` CLI actions. Every `set` creates a new row; `list` shows current (latest per symbol by id). `changes` computes conviction shifts in last N days.
