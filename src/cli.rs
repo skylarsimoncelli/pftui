@@ -223,6 +223,19 @@ pub enum Command {
         json: bool,
     },
 
+    /// Market regime classification and history
+    #[command(name = "regime")]
+    Regime {
+        /// Action: current, history, transitions
+        action: String,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+
     /// CME FedWatch probabilities from Fed funds futures implied pricing
     Fedwatch {
         /// Output as JSON for agent/script consumption

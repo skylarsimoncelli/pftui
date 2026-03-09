@@ -508,6 +508,12 @@ pub fn run(
         Err(e) => println!("✗ Correlation snapshots (failed: {})", e),
     }
 
+    match crate::commands::regime::classify_and_store_if_needed(conn) {
+        Ok(true) => println!("✓ Regime classification (stored)"),
+        Ok(false) => println!("⊘ Regime classification (unchanged today)"),
+        Err(e) => println!("✗ Regime classification (failed: {})", e),
+    }
+
     // 4. Predictions (Polymarket)
     if predictions_need_refresh(conn)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {

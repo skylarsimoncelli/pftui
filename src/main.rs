@@ -241,6 +241,9 @@ fn main() -> Result<()> {
         Some(Command::Macro { json }) => commands::macro_cmd::run(conn, &config, json),
         Some(Command::Oil { json }) => commands::oil::run(conn, json),
         Some(Command::Crisis { json }) => commands::crisis::run(conn, json),
+        Some(Command::Regime { action, limit, json }) => {
+            commands::regime::run(conn, &action, limit, json)
+        }
         Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
         Some(Command::Sovereign { json }) => commands::sovereign::run(json),
         Some(Command::Economy { indicator, json }) => {

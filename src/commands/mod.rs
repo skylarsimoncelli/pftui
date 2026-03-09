@@ -39,6 +39,7 @@ pub mod predictions;
 pub mod predict;
 pub mod question;
 pub mod rebalance;
+pub mod regime;
 pub mod refresh;
 pub mod remove_tx;
 pub mod research;

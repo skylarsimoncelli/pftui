@@ -522,10 +522,23 @@ fn get_drift_json(conn: &Connection) -> Result<serde_json::Value> {
     }))
 }
 
-fn get_regime_json(_conn: &Connection) -> Result<serde_json::Value> {
-    // Placeholder - regime module doesn't exist yet
-    // Return empty object for now
-    Ok(serde_json::json!({}))
+fn get_regime_json(conn: &Connection) -> Result<serde_json::Value> {
+    if let Some(snapshot) = crate::db::regime_snapshots::get_current(conn)? {
+        Ok(serde_json::json!({
+            "regime": snapshot.regime,
+            "confidence": snapshot.confidence,
+            "drivers": snapshot.drivers,
+            "recorded_at": snapshot.recorded_at,
+            "vix": snapshot.vix,
+            "dxy": snapshot.dxy,
+            "yield_10y": snapshot.yield_10y,
+            "oil": snapshot.oil,
+            "gold": snapshot.gold,
+            "btc": snapshot.btc,
+        }))
+    } else {
+        anyhow::bail!("No regime data available")
+    }
 }
 
 fn get_news_summary_json(conn: &Connection) -> Result<Vec<serde_json::Value>> {

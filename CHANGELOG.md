@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:37 UTC — F31.10: Regime classification snapshots and CLI
+
+- What: added `regime_snapshots` table, implemented automated regime classification rules with confidence/drivers, integrated storage in `pftui refresh` (store on regime change or once/day), added `pftui regime current/history/transitions`, and wired real regime data into `brief --json`.
+- Why: completes LOW-layer regime tracking with persistent history and transition visibility.
+- Files: `src/db/regime_snapshots.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/regime.rs`, `src/commands/mod.rs`, `src/commands/refresh.rs`, `src/commands/brief.rs`, `src/cli.rs`, `src/main.rs`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.10
+
 ### 2026-03-09 01:34 UTC — F31.9: Correlation snapshots persistence + history
 
 - What: added `correlation_snapshots` table, extended `pftui correlations` with `compute/history` actions, `--store`, and period support (`7d/30d/90d`), and integrated automatic correlation snapshot generation into `pftui refresh`.

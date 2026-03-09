@@ -487,6 +487,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_corr_snap_pair ON correlation_snapshots(symbol_a, symbol_b);
         CREATE INDEX IF NOT EXISTS idx_corr_snap_date ON correlation_snapshots(recorded_at);
 
+        CREATE TABLE IF NOT EXISTS regime_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            regime TEXT NOT NULL,
+            confidence REAL,
+            drivers TEXT,
+            vix REAL,
+            dxy REAL,
+            yield_10y REAL,
+            oil REAL,
+            gold REAL,
+            btc REAL,
+            recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_regime_snapshots_recorded ON regime_snapshots(recorded_at);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,

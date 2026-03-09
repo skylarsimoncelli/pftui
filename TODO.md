@@ -479,6 +479,8 @@ In `src/commands/refresh.rs`, after prices are fetched and `price_history` is up
 
 ### F31.10: Regime Classification — Automated market regime detection [LOW]
 
+- [x] Implemented (`regime_snapshots` table, refresh-time classification, `pftui regime current/history/transitions`)
+
 **Files:** `src/db/regime_snapshots.rs`, `src/commands/regime.rs`, schema/cli/main/mod updates.
 
 **Schema:**

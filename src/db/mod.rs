@@ -40,6 +40,7 @@ pub mod price_cache;
 pub mod price_history;
 pub mod query;
 pub mod research_questions;
+pub mod regime_snapshots;
 pub mod scan_queries;
 pub mod scenarios;
 pub mod schema;
