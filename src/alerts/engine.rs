@@ -357,8 +357,7 @@ fn ensure_review_date_alerts_backend(backend: &BackendConnection) -> Result<()> 
                         Ok(())
                     },
                     |pool| {
-                        let runtime = tokio::runtime::Runtime::new()?;
-                        runtime.block_on(async {
+                        crate::db::pg_runtime::block_on(async {
                             sqlx::query(
                                 "UPDATE alerts
                                  SET threshold = $1, rule_text = $2, status = 'armed', triggered_at = NULL
@@ -409,8 +408,7 @@ fn ensure_scan_query_change_alerts_backend(backend: &BackendConnection) -> Resul
                 Ok(prev)
             },
             |pool| {
-                let runtime = tokio::runtime::Runtime::new()?;
-                let prev = runtime.block_on(async {
+                let prev = crate::db::pg_runtime::block_on(async {
                     sqlx::query_scalar::<_, Option<i64>>(
                         "SELECT last_count FROM scan_alert_state WHERE name = $1",
                     )
@@ -456,8 +454,7 @@ fn ensure_scan_query_change_alerts_backend(backend: &BackendConnection) -> Resul
                 Ok(())
             },
             |pool| {
-                let runtime = tokio::runtime::Runtime::new()?;
-                runtime.block_on(async {
+                crate::db::pg_runtime::block_on(async {
                     sqlx::query(
                         "INSERT INTO scan_alert_state (name, last_count, updated_at)
                          VALUES ($1, $2, NOW())

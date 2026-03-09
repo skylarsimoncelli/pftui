@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Alerts Postgres runtime cleanup in hot paths
+
+- What: replaced per-branch `tokio::runtime::Runtime::new()` usage in alert-engine Postgres branches with shared `pg_runtime::block_on`.
+- Why: eliminates avoidable runtime spin-up overhead in alert maintenance flows and aligns with the broader shared-runtime strategy.
+- Files: `src/alerts/engine.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit quick-win (`alerts` runtime cleanup)
+
 ### 2026-03-09 — Setup manual price validation hardening
 
 - What: replaced setup manual-price fallback behavior with a strict validation loop that re-prompts until a positive decimal is entered.
