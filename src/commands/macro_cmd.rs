@@ -499,14 +499,20 @@ fn print_indicator_row(
             let prev = hist[hist.len() - 2].close;
             if prev != Decimal::ZERO {
                 let change_pct = ((*price - prev) / prev * dec!(100)).round_dp(2);
-                let arrow = if change_pct > Decimal::ZERO {
-                    "↑"
-                } else if change_pct < Decimal::ZERO {
-                    "↓"
+                
+                // Sanity check: reject obviously corrupt data (>100% daily moves)
+                if change_pct.abs() > dec!(100) {
+                    String::new()
                 } else {
-                    "→"
-                };
-                format!("{} {:.2}%", arrow, change_pct)
+                    let arrow = if change_pct > Decimal::ZERO {
+                        "↑"
+                    } else if change_pct < Decimal::ZERO {
+                        "↓"
+                    } else {
+                        "→"
+                    };
+                    format!("{} {:.2}%", arrow, change_pct)
+                }
             } else {
                 String::new()
             }
