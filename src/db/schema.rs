@@ -435,6 +435,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_user_predictions_outcome ON user_predictions(outcome);
         CREATE INDEX IF NOT EXISTS idx_user_predictions_symbol ON user_predictions(symbol);
 
+        CREATE TABLE IF NOT EXISTS agent_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_agent TEXT NOT NULL,
+            to_agent TEXT,
+            priority TEXT NOT NULL DEFAULT 'normal',
+            content TEXT NOT NULL,
+            category TEXT,
+            layer TEXT,
+            acknowledged INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            acknowledged_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_messages_to ON agent_messages(to_agent);
+        CREATE INDEX IF NOT EXISTS idx_agent_messages_ack ON agent_messages(acknowledged);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,

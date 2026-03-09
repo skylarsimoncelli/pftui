@@ -1,5 +1,6 @@
 #[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
 pub mod alerts;
+pub mod agent_messages;
 pub mod allocation_targets;
 pub mod allocations;
 pub mod annotations;

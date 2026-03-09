@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:08 UTC — F31.6: Agent message bus command and storage
+
+- What: implemented `pftui agent-msg` with `send/list/ack/ack-all/purge` actions and backing `agent_messages` table. Added validation for priority/category/layer, recipient filtering, unacked filtering, and JSON output.
+- Why: completes cross-layer structured agent communication so escalation/feedback signals can be tracked and acknowledged instead of free-text notes.
+- Files: `src/db/agent_messages.rs`, `src/commands/agent_msg.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.6
+
 ### 2026-03-09 01:06 UTC — F31.5: User Predictions tracking and scoring
 
 - What: implemented `pftui predict` with `add/list/score/stats` actions and backing `user_predictions` table. Added scoring outcomes (`correct|partial|wrong`) and aggregate stats including weighted hit-rate plus breakdowns by conviction and symbol.

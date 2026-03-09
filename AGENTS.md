@@ -680,6 +680,9 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui predict add "CLAIM" [--symbol BTC] [--conviction high]` | Add a prediction call for later scoring |
 | `pftui predict score --id N --outcome correct|partial|wrong` | Score a previous prediction outcome |
 | `pftui predict stats --json` | Compute hit-rate stats by conviction and symbol |
+| `pftui agent-msg send "TEXT" --from agent-a [--to agent-b]` | Send a structured message between agent roles |
+| `pftui agent-msg list [--unacked] --json` | Query queued agent messages |
+| `pftui agent-msg ack --id N` | Acknowledge a single message |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |

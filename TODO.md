@@ -202,6 +202,8 @@ pftui predict list --filter pending
 
 ### F31.6: Agent Messages — Structured inter-agent communication [CROSS]
 
+- [x] Implemented (`pftui agent-msg send/list/ack/ack-all/purge` + `agent_messages` table)
+
 **Files:** `src/db/agent_messages.rs`, `src/commands/agent_msg.rs`, schema/cli/main/mod updates.
 
 **Schema:**

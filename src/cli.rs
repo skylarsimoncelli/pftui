@@ -440,6 +440,55 @@ pub enum Command {
         json: bool,
     },
 
+    /// Inter-agent structured message passing
+    #[command(name = "agent-msg")]
+    AgentMsg {
+        /// Action: send, list, ack, ack-all, purge
+        action: String,
+
+        /// Message content (for send)
+        value: Option<String>,
+
+        #[arg(long)]
+        id: Option<i64>,
+
+        #[arg(long)]
+        from: Option<String>,
+
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Priority: low, normal, high, critical
+        #[arg(long)]
+        priority: Option<String>,
+
+        /// Category: signal, feedback, alert, handoff, escalation
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Analytics engine layer: low, medium, high, macro, cross
+        #[arg(long)]
+        layer: Option<String>,
+
+        /// Show only unacknowledged
+        #[arg(long)]
+        unacked: bool,
+
+        /// Time filter
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Days for purge
+        #[arg(long)]
+        days: Option<usize>,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
