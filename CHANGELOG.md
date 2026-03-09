@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 10:49 UTC — F32 Phase 60: backend-native COT refresh path
+
+- What: added postgres/backend-dispatched COT cache APIs (`upsert`, `latest`, `history`, `all_latest`, `delete_old`) and migrated refresh COT freshness check + writes to backend methods.
+- Why: removes sqlite-only COT ingestion and enables native postgres storage/update flow for CFTC positioning data.
+- Files: `src/db/cot_cache.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; refresh writes for calendar/BLS remain sqlite-only)
+
 ### 2026-03-09 10:34 UTC — F32 Phase 59: backend-native sentiment refresh path
 
 - What: added postgres/backend-dispatched sentiment cache APIs (`upsert`, `latest`, `history`, `prune`) and migrated refresh sentiment freshness check + writes to backend methods.

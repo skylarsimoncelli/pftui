@@ -233,8 +233,8 @@ fn calendar_needs_refresh(conn: &Connection) -> Result<bool> {
 }
 
 /// Check if COT needs refreshing
-fn cot_needs_refresh(conn: &Connection) -> Result<bool> {
-    let reports = cot_cache::get_all_latest(conn)?;
+fn cot_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let reports = cot_cache::get_all_latest_backend(backend)?;
     if reports.is_empty() {
         return Ok(true);
     }
@@ -596,8 +596,7 @@ pub fn run(
     }
 
     // 5. COT (CFTC)
-    if let Some(conn) = sqlite_conn {
-    if cot_needs_refresh(conn)? {
+    if cot_needs_refresh(backend)? {
         let mut total = 0;
 
         for contract in cot::COT_CONTRACTS {
@@ -615,7 +614,7 @@ pub fn run(
                         commercial_net: report.commercial_net,
                         fetched_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    cot_cache::upsert_report(conn, &entry)?;
+                    cot_cache::upsert_report_backend(backend, &entry)?;
                     total += 1;
                 }
                 Err(_) => {
@@ -631,9 +630,6 @@ pub fn run(
         }
     } else {
         println!("⊘ COT (fresh, skipping)");
-    }
-    } else {
-        println!("⊘ COT (sqlite-only cache path, skipping on postgres)");
     }
 
     // 6. Sentiment (Fear & Greed)
