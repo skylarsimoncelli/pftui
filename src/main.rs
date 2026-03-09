@@ -625,7 +625,6 @@ fn main() -> Result<()> {
             remove,
             json,
         }) => {
-            let conn = sqlite_conn_for_command(&backend, "annotate")?;
             let args = commands::annotate::AnnotateArgs {
                 symbol: symbol.as_deref(),
                 thesis: thesis.as_deref(),
@@ -637,7 +636,7 @@ fn main() -> Result<()> {
                 remove,
                 json,
             };
-            commands::annotate::run(conn, args)
+            commands::annotate::run(&backend, args)
         }
         Some(Command::Group {
             action,

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 04:08 UTC — F32 Phase 30: backend-dispatch annotations/annotate path
+
+- What: added backend-dispatched + native Postgres implementations for `db/annotations.rs`, migrated `pftui annotate` command to use `BackendConnection`, and removed SQLite-only dependency from annotate routing in `main`.
+- Why: eliminates another SQLite-only analytics/intelligence path and improves feature parity for thesis/invalidation notes under Postgres.
+- Files: `src/db/annotations.rs`, `src/commands/annotate.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32.5 analytics migration (partial: annotations)
+
 ### 2026-03-09 04:00 UTC — F32 Phase 29: backend-dispatch dividends command/data path
 
 - What: migrated `dividends` storage module to backend-dispatched CRUD with native Postgres SQL, rewired `pftui dividends` command to `BackendConnection`, and removed its SQLite-only dependency in `main`.
