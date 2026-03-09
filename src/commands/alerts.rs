@@ -9,12 +9,22 @@ use crate::db::backend::BackendConnection;
 use crate::db::alerts as alerts_db;
 
 /// Run the alerts CLI subcommand.
-pub fn run(backend: &BackendConnection, conn: &Connection, action: &str, args: &AlertsArgs) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    conn: Option<&rusqlite::Connection>,
+    action: &str,
+    args: &AlertsArgs,
+) -> Result<()> {
     match action {
         "add" => run_add(backend, args),
         "list" => run_list(backend, args),
         "remove" => run_remove(backend, args),
-        "check" => run_check(backend, conn, args),
+        "check" => {
+            let conn = conn.ok_or_else(|| anyhow::anyhow!(
+                "alerts check is not yet available with database_backend=postgres"
+            ))?;
+            run_check(backend, conn, args)
+        }
         "ack" => run_ack(backend, args),
         "rearm" => run_rearm(backend, args),
         _ => bail!("Unknown alerts action: '{}'. Expected: add, list, remove, check, ack, rearm", action),

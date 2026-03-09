@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 05:12 UTC — F32 Phase 36: remove sqlite gating for non-check alert actions
+
+- What: updated alerts command dispatch so only `alerts check` requires a SQLite connection; `add/list/remove/ack/rearm` now run backend-native without sqlite gating in `main`.
+- Why: improves postgres UX and removes an unnecessary hard block for most alert management operations.
+- Files: `src/commands/alerts.rs`, `src/main.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 command parity (partial: alerts check still sqlite-gated)
+
 ### 2026-03-09 05:01 UTC — F32 Phase 35: backend-dispatch timeframe signals + analytics command
 
 - What: migrated `db/timeframe_signals.rs` to backend-dispatched APIs with native Postgres implementation, switched `analytics signals` command to backend routing, and updated refresh signal insertion to use backend-dispatched writes.

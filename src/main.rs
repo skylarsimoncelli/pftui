@@ -447,7 +447,6 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Alerts { action, value, json, status }) => {
-            let conn = sqlite_conn_for_command(&backend, "alerts")?;
             // Parse value as either a rule string (for add) or an ID (for remove/ack/rearm)
             let id = value.as_deref().and_then(|v| v.parse::<i64>().ok());
             let rule = if id.is_none() { value.clone() } else { None };
@@ -456,6 +455,11 @@ fn main() -> Result<()> {
                 id,
                 json,
                 status_filter: status,
+            };
+            let conn = if action == "check" {
+                Some(sqlite_conn_for_command(&backend, "alerts check")?)
+            } else {
+                None
             };
             commands::alerts::run(&backend, conn, &action, &args)
         }
