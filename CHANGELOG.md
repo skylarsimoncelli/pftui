@@ -11,6 +11,14 @@
 - Tests: `cargo test -q`
 - TODO: audit P1 (`runtime strategy consistency`)
 
+### 2026-03-09 — Status freshness helper cleanup
+
+- What: refactored repeated freshness scans into shared timestamp helpers (`parse_rfc3339_utc`, `update_most_recent`, `most_recent_and_stale_from_fetched`) and removed repeated `Option` update/`unwrap` patterns across status data-source checks.
+- Why: reduces duplicated logic, hardens timestamp handling, and keeps freshness computation consistent across source checks.
+- Files: `src/commands/status.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: audit P1 (`status command helper cleanup`)
+
 ### 2026-03-09 — Refresh-time price history backfill for sparse symbols
 
 - What: added refresh-time backfill that fetches and upserts history for symbols with insufficient local history (`<30` points), with source-aware fetch logic (CoinGecko primary for crypto, Yahoo fallback/primary otherwise).

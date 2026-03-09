@@ -50,6 +50,8 @@ impl SourceStatus {
     }
 }
 
+type UtcDateTime = chrono::DateTime<chrono::Utc>;
+
 fn format_time_ago(rfc3339_str: &str) -> String {
     let now = chrono::Utc::now();
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(rfc3339_str) {
@@ -69,6 +71,44 @@ fn format_time_ago(rfc3339_str: &str) -> String {
     "unknown".to_string()
 }
 
+fn parse_rfc3339_utc(raw: &str) -> Option<UtcDateTime> {
+    chrono::DateTime::parse_from_rfc3339(raw)
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+}
+
+fn update_most_recent(most_recent: &mut Option<UtcDateTime>, candidate: UtcDateTime) {
+    match most_recent {
+        Some(current) => {
+            if candidate > *current {
+                *current = candidate;
+            }
+        }
+        None => *most_recent = Some(candidate),
+    }
+}
+
+fn most_recent_and_stale_from_fetched<I>(
+    fetched_values: I,
+    now: UtcDateTime,
+    freshness_secs: i64,
+) -> (Option<UtcDateTime>, bool)
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut most_recent: Option<UtcDateTime> = None;
+    let mut is_stale = false;
+    for fetched_at in fetched_values {
+        if let Some(dt_utc) = parse_rfc3339_utc(&fetched_at) {
+            update_most_recent(&mut most_recent, dt_utc);
+            if now.signed_duration_since(dt_utc).num_seconds() > freshness_secs {
+                is_stale = true;
+            }
+        }
+    }
+    (most_recent, is_stale)
+}
+
 fn check_prices(conn: &Connection) -> Result<DataSourceStatus> {
     let prices = price_cache::get_all_cached_prices(conn)?;
     let count = prices.len();
@@ -83,22 +123,11 @@ fn check_prices(conn: &Connection) -> Result<DataSourceStatus> {
     }
     
     let now = chrono::Utc::now();
-    let mut most_recent: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut is_stale = false;
-    
-    for price in &prices {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&price.fetched_at) {
-            let dt_utc = dt.with_timezone(&chrono::Utc);
-            if most_recent.is_none() || most_recent.unwrap() < dt_utc {
-                most_recent = Some(dt_utc);
-            }
-            
-            let age = now.signed_duration_since(dt_utc);
-            if age.num_seconds() > PRICE_FRESHNESS_SECS {
-                is_stale = true;
-            }
-        }
-    }
+    let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
+        prices.iter().map(|price| price.fetched_at.clone()),
+        now,
+        PRICE_FRESHNESS_SECS,
+    );
     
     Ok(DataSourceStatus {
         name: "Prices",
@@ -191,22 +220,11 @@ fn check_cot(conn: &Connection) -> Result<DataSourceStatus> {
     }
     
     let now = chrono::Utc::now();
-    let mut most_recent: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut is_stale = false;
-    
-    for report in &reports {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&report.fetched_at) {
-            let dt_utc = dt.with_timezone(&chrono::Utc);
-            if most_recent.is_none() || most_recent.unwrap() < dt_utc {
-                most_recent = Some(dt_utc);
-            }
-            
-            let age = now.signed_duration_since(dt_utc);
-            if age.num_seconds() > COT_FRESHNESS_SECS {
-                is_stale = true;
-            }
-        }
-    }
+    let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
+        reports.iter().map(|report| report.fetched_at.clone()),
+        now,
+        COT_FRESHNESS_SECS,
+    );
     
     Ok(DataSourceStatus {
         name: "COT",
@@ -232,22 +250,14 @@ fn check_sentiment(conn: &Connection) -> Result<DataSourceStatus> {
     }
     
     let now = chrono::Utc::now();
-    let mut most_recent: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut is_stale = false;
-    
-    for reading in [crypto, trad].iter().filter_map(|r| r.as_ref()) {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&reading.fetched_at) {
-            let dt_utc = dt.with_timezone(&chrono::Utc);
-            if most_recent.is_none() || most_recent.unwrap() < dt_utc {
-                most_recent = Some(dt_utc);
-            }
-            
-            let age = now.signed_duration_since(dt_utc);
-            if age.num_seconds() > SENTIMENT_FRESHNESS_SECS {
-                is_stale = true;
-            }
-        }
-    }
+    let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
+        [crypto, trad]
+            .iter()
+            .filter_map(|r| r.as_ref())
+            .map(|reading| reading.fetched_at.clone()),
+        now,
+        SENTIMENT_FRESHNESS_SECS,
+    );
     
     Ok(DataSourceStatus {
         name: "Sentiment",
@@ -272,22 +282,11 @@ fn check_calendar(conn: &Connection) -> Result<DataSourceStatus> {
     }
     
     let now = chrono::Utc::now();
-    let mut most_recent: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut is_stale = false;
-    
-    for event in &events {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&event.fetched_at) {
-            let dt_utc = dt.with_timezone(&chrono::Utc);
-            if most_recent.is_none() || most_recent.unwrap() < dt_utc {
-                most_recent = Some(dt_utc);
-            }
-            
-            let age = now.signed_duration_since(dt_utc);
-            if age.num_seconds() > CALENDAR_FRESHNESS_SECS {
-                is_stale = true;
-            }
-        }
-    }
+    let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
+        events.iter().map(|event| event.fetched_at.clone()),
+        now,
+        CALENDAR_FRESHNESS_SECS,
+    );
     
     Ok(DataSourceStatus {
         name: "Calendar",
@@ -382,21 +381,16 @@ fn check_worldbank(conn: &Connection) -> Result<DataSourceStatus> {
 
 fn check_comex(conn: &Connection) -> Result<DataSourceStatus> {
     let mut count = 0;
-    let mut most_recent: Option<chrono::DateTime<chrono::Utc>> = None;
+    let mut most_recent: Option<UtcDateTime> = None;
     let mut is_stale = false;
     let now = chrono::Utc::now();
     
     for symbol in &["GC=F", "SI=F"] {
         if let Ok(Some(inv)) = comex_cache::get_latest_inventory(conn, symbol) {
             count += 1;
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&inv.fetched_at) {
-                let dt_utc = dt.with_timezone(&chrono::Utc);
-                if most_recent.is_none() || most_recent.unwrap() < dt_utc {
-                    most_recent = Some(dt_utc);
-                }
-                
-                let age = now.signed_duration_since(dt_utc);
-                if age.num_seconds() > COMEX_FRESHNESS_SECS {
+            if let Some(dt_utc) = parse_rfc3339_utc(&inv.fetched_at) {
+                update_most_recent(&mut most_recent, dt_utc);
+                if now.signed_duration_since(dt_utc).num_seconds() > COMEX_FRESHNESS_SECS {
                     is_stale = true;
                 }
             }
@@ -431,16 +425,11 @@ fn check_onchain(conn: &Connection) -> Result<DataSourceStatus> {
     }
     
     let now = chrono::Utc::now();
-    let mut most_recent: Option<chrono::DateTime<chrono::Utc>> = None;
-    
-    for metric in &metrics {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&metric.fetched_at) {
-            let dt_utc = dt.with_timezone(&chrono::Utc);
-            if most_recent.is_none() || most_recent.unwrap() < dt_utc {
-                most_recent = Some(dt_utc);
-            }
-        }
-    }
+    let (most_recent, _) = most_recent_and_stale_from_fetched(
+        metrics.iter().map(|metric| metric.fetched_at.clone()),
+        now,
+        i64::MAX,
+    );
     
     // On-chain data is "fresh" if fetched today
     let is_fresh = most_recent.map(|dt| {
