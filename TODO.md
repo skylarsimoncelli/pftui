@@ -788,6 +788,14 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Infrastructure
 
+### Code Quality Quick Wins (audit-driven)
+
+- [ ] [Audit] Setup manual price input validation loop — avoid silent fallback to `1` on invalid input in setup flow.
+- [ ] [Audit] Alerts engine Postgres runtime cleanup — remove per-branch `Runtime::new()` in hot alert paths; use shared runtime helper.
+- [ ] [Audit] Web auth lock hardening — remove panic-on-poison lock behavior and prune expired sessions proactively.
+- [ ] [Audit] `db-info` reliability/perf hardening — expose per-table count errors and parallelize Postgres row counting.
+- [ ] [Audit] Price service startup hardening — avoid panic on runtime build failure; return `Result` and handle in app init.
+
 ### F32: Native PostgreSQL Backend (epic)
 
 Native SQLite/Postgres parity is complete and shipped. The original migration checklist is archived in git history and changelog entries.
