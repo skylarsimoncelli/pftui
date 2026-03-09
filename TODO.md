@@ -851,6 +851,8 @@ pftui trends dashboard --json
 
 ### F31.13: Analytics Engine CLI — Multi-timeframe dashboards [CROSS]
 
+- [x] Implemented (`pftui analytics summary/low/medium/high/macro/alignment/signals`)
+
 The unified view across all four analytics layers. Reads from all F31 tables + existing data tables. No new storage — pure presentation and cross-referencing.
 
 **Files:** `src/commands/analytics.rs` (NEW), cli/main/mod updates.

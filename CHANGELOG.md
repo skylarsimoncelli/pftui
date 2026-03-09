@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:46 UTC — F31.13: Analytics engine CLI views
+
+- What: expanded `pftui analytics` from signals-only to full multi-timeframe views: `summary`, `low`, `medium`, `high`, `macro`, `alignment`, plus existing `signals`.
+- Why: completes the cross-layer presentation interface that unifies F31 LOW/MEDIUM/HIGH/MACRO outputs into one command family.
+- Files: `src/commands/analytics.rs`, `TODO.md`, `AGENTS.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.13
+
 ### 2026-03-09 01:44 UTC — F31.12: High-timeframe trends module and CLI
 
 - What: implemented HIGH-layer trend tracking with `trend_tracker`, `trend_evidence`, and `trend_asset_impact` tables plus `pftui trends` command (`add/list/update/evidence-add/evidence-list/impact-add/impact-list/dashboard`).

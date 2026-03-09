@@ -695,6 +695,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui structural outcome-update \"NAME\" --probability N --driver \"...\"` | Update structural outcome probability with history logging |
 | `pftui trends dashboard --json` | Show active high-timeframe trends with direction/conviction |
 | `pftui trends impact-add --trend \"NAME\" --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact |
+| `pftui analytics summary --json` | Unified 4-layer analytics snapshot (low/medium/high/macro + top signal) |
+| `pftui analytics alignment --symbol SYM --json` | Per-asset cross-timeframe alignment matrix |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |
