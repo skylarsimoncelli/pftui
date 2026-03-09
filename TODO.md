@@ -804,6 +804,12 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Code Quality Quick Wins (audit-driven)
 
+- [ ] [Audit][P1] **Web API daily P&L parity** — implement `daily_change` and `daily_change_pct` in portfolio API using `price_history` instead of returning `None`. (`src/web/api.rs`)
+- [ ] [Audit][P1] **Async auth session lock** — migrate auth session store from `std::sync::Mutex` to async-aware locking (`tokio::sync::RwLock` or `Mutex`) and await lock operations. (`src/web/auth.rs`)
+- [ ] [Audit][P1] **Runtime strategy consistency** — replace ad-hoc `Runtime::new()` calls in command hot paths with shared runtime helper strategy (`pg_runtime::block_on`/single-runtime reuse). (`src/commands/set_cash.rs`, `src/commands/heatmap.rs`, `src/commands/setup.rs`, `src/commands/db_info.rs`)
+- [ ] [Audit][P1] **Status command helper cleanup** — remove repeated `Option` + `unwrap` freshness patterns and centralize most-recent timestamp update logic. (`src/commands/status.rs`)
+- [ ] [Audit][P1] **Selector parsing resilience/perf** — cache HTML selectors and remove panic-style parse assumptions in calendar/fedwatch scrapers. (`src/data/calendar.rs`, `src/data/fedwatch.rs`)
+- [ ] [Audit][P1] **FX fallback invariant hardening** — remove implicit `strip_suffix(...).unwrap()` and return explicit error if suffix invariant fails. (`src/price/yahoo.rs`)
 
 ### F32: Native PostgreSQL Backend (epic)
 
