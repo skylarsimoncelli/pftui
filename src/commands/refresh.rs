@@ -855,9 +855,7 @@ pub fn run(
                 ),
                 fetched_at: chrono::Utc::now().to_rfc3339(),
             };
-            if let Some(conn) = sqlite_conn {
-                let _ = onchain_cache::upsert_metric(conn, &metric);
-            }
+            let _ = onchain_cache::upsert_metric_backend(backend, &metric);
             onchain_ok_parts.push("network");
         }
         Err(e) => onchain_errors.push(format!("network: {}", e)),
@@ -875,14 +873,12 @@ pub fn run(
                         serde_json::json!({
                             "fund": flow.fund,
                             "net_flow_usd": flow.net_flow_usd,
-                        })
-                        .to_string(),
-                    ),
-                    fetched_at: fetched_at.clone(),
-                };
-                if let Some(conn) = sqlite_conn {
-                    let _ = onchain_cache::upsert_metric(conn, &metric);
-                }
+                    })
+                    .to_string(),
+                ),
+                fetched_at: fetched_at.clone(),
+            };
+                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
             }
             onchain_ok_parts.push("etf flows");
         }

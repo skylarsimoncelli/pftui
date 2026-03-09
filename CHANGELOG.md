@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 09:31 UTC — F32 Phase 54: backend-native on-chain cache writes
+
+- What: added postgres/backend-dispatched on-chain cache APIs (`upsert/get/list/prune`), added `onchain_cache` table + indexes to postgres schema migration, and switched refresh on-chain metric writes to backend dispatch.
+- Why: removes another sqlite-only storage path so postgres refresh now persists on-chain metrics natively.
+- Files: `src/db/onchain_cache.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining major boundary: web API handlers + TUI runtime are sqlite-native; several refresh cache modules are still sqlite-only)
+
 ### 2026-03-09 09:18 UTC — F32 Phase 53: backend-native COMEX cache + supply command
 
 - What: added postgres/backend-dispatched COMEX cache CRUD/freshness APIs, added `comex_cache` table to postgres schema migration, migrated refresh COMEX writes/freshness checks to backend dispatch, and converted `pftui supply` to operate via `BackendConnection` instead of opening SQLite directly.
