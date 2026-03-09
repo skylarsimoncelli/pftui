@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 08:42 UTC — F32 Phase 50: make web refresh loop backend-aware
+
+- What: updated web background price-refresh loop to open the active configured backend via `open_from_config` instead of forcing SQLite, then execute backend-aware `refresh`.
+- Why: prevents a hidden SQLite fallback in web mode and keeps postgres deployments on native backend path.
+- Files: `src/web/server.rs`, `CHANGELOG.md`
+- Tests: `cargo clippy -q --all-targets --all-features` (passes with existing warnings), `cargo test -q` (1187 passed)
+- TODO: F32 parity hardening (remaining boundary: TUI runtime storage is sqlite-native)
+
 ### 2026-03-09 08:36 UTC — F32 Phase 49: backend-dispatch setup path + remove remaining main sqlite gates
 
 - What: migrated `setup` command to `BackendConnection` (counts, reset, inserts, and portfolio-data detection are now backend-dispatched), removed all remaining `sqlite_conn_for_command` routing in `main`, and replaced default postgres TUI launch with explicit unsupported-backend error while preserving sqlite TUI behavior.

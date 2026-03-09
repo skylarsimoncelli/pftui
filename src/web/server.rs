@@ -138,8 +138,7 @@ async fn run_price_refresh_loop(db_path: String, config: Config) {
         let db_path = db_path.clone();
         let config = config.clone();
         let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let conn = db::open_db(Path::new(&db_path))?;
-            let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+            let backend = crate::db::backend::open_from_config(&config, Path::new(&db_path))?;
             commands::refresh::run(&backend, &config, false)?;
             Ok(())
         })
