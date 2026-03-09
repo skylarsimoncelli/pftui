@@ -48,6 +48,11 @@ impl AppState {
             rusqlite::Error::InvalidParameterName(format!("{}", e))
         })
     }
+
+    fn get_backend(&self) -> anyhow::Result<crate::db::backend::BackendConnection> {
+        use std::path::Path;
+        crate::db::backend::open_from_config(&self.config, Path::new(&self.db_path))
+    }
 }
 
 #[derive(Serialize)]
@@ -561,40 +566,37 @@ fn series_label(series_id: &str) -> &'static str {
 pub async fn get_portfolio(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<PortfolioResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-
-    let fx_rates = get_fx_rates(&conn);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(&backend).unwrap_or_default();
+    let prices = crate::db::price_cache::get_all_cached_prices_backend(&backend)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load prices: {}", e),
+            )
+        })?
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect::<HashMap<_, _>>();
 
     let positions = if state.config.is_percentage_mode() {
-        let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
+        let allocations = db::allocations::list_allocations_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load allocations: {}", e),
             )
         })?;
-        let prices = get_price_map(&conn).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load prices: {}", e),
-            )
-        })?;
         compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
-        let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
+        let transactions = db::transactions::list_transactions_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load transactions: {}", e),
-            )
-        })?;
-        let prices = get_price_map(&conn).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load prices: {}", e),
             )
         })?;
         compute_positions(&transactions, &prices, &fx_rates)
@@ -628,40 +630,37 @@ pub async fn get_portfolio(
 pub async fn get_positions(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<PositionsResponse>, (StatusCode, String)> {
-    let conn = state.get_conn().map_err(|e| {
+    let backend = state.get_backend().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", e),
         )
     })?;
-
-    let fx_rates = get_fx_rates(&conn);
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(&backend).unwrap_or_default();
+    let prices = crate::db::price_cache::get_all_cached_prices_backend(&backend)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load prices: {}", e),
+            )
+        })?
+        .into_iter()
+        .map(|q| (q.symbol, q.price))
+        .collect::<HashMap<_, _>>();
 
     let positions = if state.config.is_percentage_mode() {
-        let allocations = db::allocations::list_allocations(&conn).map_err(|e| {
+        let allocations = db::allocations::list_allocations_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load allocations: {}", e),
             )
         })?;
-        let prices = get_price_map(&conn).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load prices: {}", e),
-            )
-        })?;
         compute_positions_from_allocations(&allocations, &prices, &fx_rates)
     } else {
-        let transactions = db::transactions::list_transactions(&conn).map_err(|e| {
+        let transactions = db::transactions::list_transactions_backend(&backend).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load transactions: {}", e),
-            )
-        })?;
-        let prices = get_price_map(&conn).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load prices: {}", e),
             )
         })?;
         compute_positions(&transactions, &prices, &fx_rates)

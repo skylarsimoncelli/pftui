@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 03:41 UTC — F32 Phase 65: backend-aware web portfolio/positions endpoints
+
+- What: added `AppState::get_backend()` and migrated web API `/portfolio` and `/positions` handlers from direct SQLite reads to backend-dispatched allocation/transaction/price/FX queries.
+- Why: removes two high-traffic web endpoints from sqlite-only behavior so postgres deployments return portfolio/position payloads natively.
+- Files: `src/web/api.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, `cargo test -q` (1185 passed)
+- TODO: F32 parity hardening (remaining major boundary: most web API handlers + TUI runtime are still sqlite-native)
+
 ### 2026-03-09 03:39 UTC — F32 Phase 64: backend-native correlations compute path
 
 - What: restored backend-dispatched `correlations compute` flow by loading held symbols and price history through backend APIs; kept `history` and `--store` snapshot actions sqlite-gated with explicit backend message.
