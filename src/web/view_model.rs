@@ -115,6 +115,7 @@ pub fn economy_sections() -> Vec<EconomySectionSpec> {
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn day_change_pct(conn: &Connection, symbol: &str) -> Option<Decimal> {
     let history = crate::db::price_history::get_history(conn, symbol, 2).ok()?;
     if history.len() < 2 {

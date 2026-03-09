@@ -495,6 +495,14 @@ fn history_change_pct(
     Some((latest - prev) / prev * dec!(100))
 }
 
+fn day_change_pct_backend(
+    backend: &crate::db::backend::BackendConnection,
+    symbol: &str,
+) -> Option<Decimal> {
+    let history = db::price_history::get_history_backend(backend, symbol, 2).ok()?;
+    history_change_pct(&history, 1)
+}
+
 fn range_from_history(
     history: &[crate::models::price::HistoryRecord],
     points: usize,
@@ -704,9 +712,8 @@ pub async fn get_watchlist(
                 .get(&w.symbol)
                 .copied()
                 .or_else(|| prices.get(&quote_symbol).copied());
-            let day_change_pct = backend
-                .sqlite_native()
-                .and_then(|conn| view_model::day_change_pct(conn, &quote_symbol));
+            let day_change_pct = day_change_pct_backend(&backend, &quote_symbol)
+                .or_else(|| day_change_pct_backend(&backend, &w.symbol));
             let target_price = w.target_price.and_then(|t| t.parse::<Decimal>().ok());
             let (distance_pct, target_hit) = view_model::compute_watchlist_proximity(
                 current_price,
@@ -844,14 +851,8 @@ pub async fn get_search(
             .get(&symbol)
             .copied()
             .or_else(|| prices.get(&qsym).copied());
-        let day_change_pct = backend
-            .sqlite_native()
-            .and_then(|conn| view_model::day_change_pct(conn, &qsym))
-            .or_else(|| {
-                backend
-                    .sqlite_native()
-                    .and_then(|conn| view_model::day_change_pct(conn, &symbol))
-            });
+        let day_change_pct = day_change_pct_backend(&backend, &qsym)
+            .or_else(|| day_change_pct_backend(&backend, &symbol));
         let is_watchlisted = watchlist_set.contains(&symbol);
         results.push(SearchItem {
             symbol,
@@ -908,11 +909,7 @@ pub async fn get_asset_detail(
         .or_else(|| prices.get(&qsym).copied())
         .or_else(|| history.last().map(|h| h.close));
     let day_change_pct = history_change_pct(&history, 1)
-        .or_else(|| {
-            backend
-                .sqlite_native()
-                .and_then(|conn| view_model::day_change_pct(conn, &history_symbol))
-        });
+        .or_else(|| day_change_pct_backend(&backend, &history_symbol));
     let week_change_pct = history_change_pct(&history, 5);
     let month_change_pct = history_change_pct(&history, 21);
     let year_change_pct = history_change_pct(&history, 252);
@@ -1195,9 +1192,7 @@ pub async fn get_macro(
             symbol: spec.symbol.clone(),
             name: spec.name,
             value: prices.get(&spec.symbol).copied(),
-            change_pct: backend
-                .sqlite_native()
-                .and_then(|conn| view_model::day_change_pct(conn, &spec.symbol)),
+            change_pct: day_change_pct_backend(&backend, &spec.symbol),
         })
         .collect();
 
@@ -1211,9 +1206,7 @@ pub async fn get_macro(
                     symbol: spec.symbol.clone(),
                     name: spec.name,
                     value: prices.get(&spec.symbol).copied(),
-                    change_pct: backend
-                        .sqlite_native()
-                        .and_then(|conn| view_model::day_change_pct(conn, &spec.symbol)),
+                    change_pct: day_change_pct_backend(&backend, &spec.symbol),
                 })
                 .collect();
             EconomySection {
