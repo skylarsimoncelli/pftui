@@ -1205,6 +1205,47 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Track high-timeframe structural trends and per-asset impacts
+    #[command(name = "trends")]
+    Trends {
+        /// Action: add, list, update, evidence-add, evidence-list, impact-add, impact-list, dashboard
+        action: String,
+
+        /// Value (trend name or free text depending on action)
+        value: Option<String>,
+
+        #[arg(long)]
+        trend: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        direction: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        signal: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        impact: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        mechanism: Option<String>,
+        #[arg(long)]
+        timeframe: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

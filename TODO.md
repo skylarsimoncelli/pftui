@@ -780,6 +780,8 @@ pftui structural dashboard --json
 
 ### F31.12: High-Timeframe Trends — Trend tracking [HIGH]
 
+- [x] Implemented (`pftui trends` add/list/update/evidence/impact/dashboard + trend tables)
+
 The only missing analytics layer. LOW, MEDIUM, and MACRO are covered by F31.1-F31.11.
 HIGH-timeframe tracks multi-quarter structural trends (AI, energy, demographics, politics).
 

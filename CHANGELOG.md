@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 01:44 UTC — F31.12: High-timeframe trends module and CLI
+
+- What: implemented HIGH-layer trend tracking with `trend_tracker`, `trend_evidence`, and `trend_asset_impact` tables plus `pftui trends` command (`add/list/update/evidence-add/evidence-list/impact-add/impact-list/dashboard`).
+- Why: completes the months-to-years trend layer so structural narratives and per-asset impact mappings can be tracked with evidence over time.
+- Files: `src/db/trends.rs`, `src/db/schema.rs`, `src/db/mod.rs`, `src/commands/trends.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo check`
+- TODO: F31.12
+
 ### 2026-03-09 01:41 UTC — F31.11: Structural cycles module and CLI
 
 - What: implemented structural MACRO layer with tables/functions for `power_metrics`, `structural_cycles`, `structural_outcomes` (+ history), `historical_parallels`, and `structural_log`; added unified `pftui structural` command covering metric/cycle/outcome/parallel/log actions and `dashboard`.

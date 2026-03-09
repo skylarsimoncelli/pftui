@@ -50,6 +50,7 @@ pub mod snapshots;
 pub mod structural;
 pub mod thesis;
 pub mod timeframe_signals;
+pub mod trends;
 pub mod transactions;
 pub mod user_predictions;
 pub mod watchlist;

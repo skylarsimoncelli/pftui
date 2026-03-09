@@ -571,6 +571,43 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_structural_log_date ON structural_log(date);
 
+        CREATE TABLE IF NOT EXISTS trend_tracker (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            timeframe TEXT NOT NULL DEFAULT 'high',
+            direction TEXT NOT NULL DEFAULT 'neutral',
+            conviction TEXT NOT NULL DEFAULT 'medium',
+            category TEXT,
+            description TEXT,
+            asset_impact TEXT,
+            key_signal TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS trend_evidence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trend_id INTEGER NOT NULL REFERENCES trend_tracker(id) ON DELETE CASCADE,
+            date TEXT NOT NULL,
+            evidence TEXT NOT NULL,
+            direction_impact TEXT,
+            source TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_trend_evidence_trend ON trend_evidence(trend_id);
+
+        CREATE TABLE IF NOT EXISTS trend_asset_impact (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trend_id INTEGER NOT NULL REFERENCES trend_tracker(id) ON DELETE CASCADE,
+            symbol TEXT NOT NULL,
+            impact TEXT NOT NULL,
+            mechanism TEXT,
+            timeframe TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_trend_asset_trend ON trend_asset_impact(trend_id);
+
         CREATE TABLE IF NOT EXISTS timeframe_signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_type TEXT NOT NULL,
