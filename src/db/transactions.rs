@@ -177,8 +177,7 @@ pub fn get_unique_symbols_backend(backend: &BackendConnection) -> Result<Vec<(St
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS transactions (
                 id BIGSERIAL PRIMARY KEY,
@@ -202,8 +201,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
 
 fn insert_transaction_postgres(pool: &PgPool, tx: &NewTransaction) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+        let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO transactions (symbol, category, tx_type, quantity, price_per, currency, date, notes)
              VALUES ($1, $2, $3, $4::NUMERIC, $5::NUMERIC, $6, $7, $8)
@@ -225,8 +223,7 @@ fn insert_transaction_postgres(pool: &PgPool, tx: &NewTransaction) -> Result<i64
 
 fn delete_transaction_postgres(pool: &PgPool, id: i64) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+        let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM transactions WHERE id = $1")
             .bind(id)
             .execute(pool)
@@ -237,8 +234,7 @@ fn delete_transaction_postgres(pool: &PgPool, id: i64) -> Result<bool> {
 
 fn update_transaction_postgres(pool: &PgPool, id: i64, tx: &NewTransaction) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows = runtime.block_on(async {
+        let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE transactions
              SET symbol = $1, category = $2, tx_type = $3, quantity = $4::NUMERIC, price_per = $5::NUMERIC, currency = $6, date = $7, notes = $8
@@ -289,8 +285,7 @@ fn tx_from_row(r: TxRow) -> Transaction {
 
 fn list_transactions_postgres(pool: &PgPool) -> Result<Vec<Transaction>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<TxRow> = runtime.block_on(async {
+        let rows: Vec<TxRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
              FROM transactions
@@ -304,8 +299,7 @@ fn list_transactions_postgres(pool: &PgPool) -> Result<Vec<Transaction>> {
 
 fn get_transaction_postgres(pool: &PgPool, id: i64) -> Result<Option<Transaction>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<TxRow> = runtime.block_on(async {
+        let row: Option<TxRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
              FROM transactions
@@ -320,8 +314,7 @@ fn get_transaction_postgres(pool: &PgPool, id: i64) -> Result<Option<Transaction
 
 fn count_transactions_postgres(pool: &PgPool) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let count: i64 = runtime.block_on(async {
+        let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM transactions")
             .fetch_one(pool)
             .await
@@ -331,8 +324,7 @@ fn count_transactions_postgres(pool: &PgPool) -> Result<i64> {
 
 fn get_unique_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCategory)>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String)> = runtime.block_on(async {
+        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT DISTINCT symbol, category
              FROM transactions

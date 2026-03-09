@@ -43,6 +43,14 @@
 - Tests: `cargo test -q commands::setup::tests::`, `cargo test -q commands::import::tests::`, `cargo test -q` (1193 passed)
 - TODO: P32.6 Setup/backend switch validation
 
+### 2026-03-09 15:01 UTC — P32.3 phase: shared Postgres runtime in core DB modules
+
+- What: replaced per-function Tokio runtime creation with the shared `pg_runtime::block_on` path in `postgres_schema`, `transactions`, `allocations`, and `allocation_targets`.
+- Why: reduces runtime spin-up overhead on high-traffic DB paths and moves runtime strategy toward a single, consistent async boundary.
+- Files: `src/db/postgres_schema.rs`, `src/db/transactions.rs`, `src/db/allocations.rs`, `src/db/allocation_targets.rs`, `CHANGELOG.md`
+- Tests: `cargo check -q`, targeted db tests (`transactions`, `allocations`, `allocation_targets`), `cargo test -q` (1193 passed)
+- TODO: P32.3 Runtime strategy cleanup
+
 ### 2026-03-09 15:01 UTC — P32.1: docs parity sweep for SQLite/Postgres
 
 - What: removed stale SQLite-only wording from agent-facing docs and updated backend language to reflect true dual-backend support; added explicit PostgreSQL direct-query example alongside SQLite examples.

@@ -114,8 +114,7 @@ pub fn remove_target_backend(backend: &BackendConnection, symbol: &str) -> Resul
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS allocation_targets (
                 symbol TEXT PRIMARY KEY,
@@ -138,8 +137,7 @@ fn set_target_postgres(
     drift_band_pct: Decimal,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO allocation_targets (symbol, target_pct, drift_band_pct, updated_at)
              VALUES ($1, $2::NUMERIC, $3::NUMERIC, NOW())
@@ -161,8 +159,7 @@ fn set_target_postgres(
 #[allow(dead_code)]
 fn get_target_postgres(pool: &PgPool, symbol: &str) -> Result<Option<AllocationTarget>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<(String, String, String, String)> = runtime.block_on(async {
+        let row: Option<(String, String, String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, target_pct::TEXT, drift_band_pct::TEXT, updated_at::text
              FROM allocation_targets
@@ -182,8 +179,7 @@ fn get_target_postgres(pool: &PgPool, symbol: &str) -> Result<Option<AllocationT
 
 fn list_targets_postgres(pool: &PgPool) -> Result<Vec<AllocationTarget>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String, String, String)> = runtime.block_on(async {
+        let rows: Vec<(String, String, String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, target_pct::TEXT, drift_band_pct::TEXT, updated_at::text
              FROM allocation_targets
@@ -205,8 +201,7 @@ fn list_targets_postgres(pool: &PgPool) -> Result<Vec<AllocationTarget>> {
 
 fn remove_target_postgres(pool: &PgPool, symbol: &str) -> Result<()> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM allocation_targets WHERE symbol = $1")
             .bind(symbol)
             .execute(pool)

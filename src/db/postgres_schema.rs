@@ -2,8 +2,7 @@ use anyhow::Result;
 use sqlx::PgPool;
 
 pub fn run_migrations(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS pftui_migrations (
                 version BIGINT PRIMARY KEY,

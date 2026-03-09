@@ -119,8 +119,7 @@ pub fn get_unique_allocation_symbols_backend(
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS portfolio_allocations (
                 id BIGSERIAL PRIMARY KEY,
@@ -154,8 +153,7 @@ fn allocation_from_row(row: AllocationRow) -> Allocation {
 #[allow(dead_code)]
 fn list_allocations_postgres(pool: &PgPool) -> Result<Vec<Allocation>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<AllocationRow> = runtime.block_on(async {
+        let rows: Vec<AllocationRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, allocation_pct::TEXT, created_at::text
              FROM portfolio_allocations
@@ -174,8 +172,7 @@ fn insert_allocation_postgres(
     pct: Decimal,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let id: i64 = runtime.block_on(async {
+        let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO portfolio_allocations (symbol, category, allocation_pct)
              VALUES ($1, $2, $3::NUMERIC)
@@ -195,8 +192,7 @@ fn insert_allocation_postgres(
 
 fn count_allocations_postgres(pool: &PgPool) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let count: i64 = runtime.block_on(async {
+        let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM portfolio_allocations")
             .fetch_one(pool)
             .await
@@ -208,8 +204,7 @@ fn get_unique_allocation_symbols_postgres(
     pool: &PgPool,
 ) -> Result<Vec<(String, AssetCategory)>> {
     ensure_tables_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String)> = runtime.block_on(async {
+        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, category
              FROM portfolio_allocations
