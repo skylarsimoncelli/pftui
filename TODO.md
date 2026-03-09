@@ -786,8 +786,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Analytics
 
-- [ ] **P1-BUG: `pftui structural` — "Postgres structural storage not yet implemented"** — All structural commands (metric-set, metric-list, cycle-set, cycle-list, outcome-add, outcome-list, parallel-add, parallel-list, log-add, log-list, dashboard) return this error. Postgres tables exist (`power_metrics`, `structural_cycles`, `structural_outcomes`, `structural_outcome_history`, `historical_parallels`, `structural_log`) but the Rust code has no Postgres dispatch for this module. The MACRO layer of the analytics engine is completely blocked. This is the only F31 module without Postgres support.
-
 - [ ] **P1-BUG: `pftui analytics summary` — minimal output, no alignment score** — Currently shows only 4 one-line summaries (LOW/MEDIUM/HIGH/MACRO). Missing: prices row, alert count, triggered alert count, combined alignment score (████████░░ 80%), divergence notes, signal count. Compare current output to the spec in TODO F31.13 — it's about 20% of what was designed. The `analytics low/medium/high` subcommands are similarly sparse (just counts, no actual data).
 
 - [ ] **P1-BUG: `pftui analytics alignment` — only shows one asset at a time** — Should show a matrix of all held + watchlist assets with per-layer signals. Currently requires `--symbol` flag and only returns one asset. The multi-asset alignment table from the F31.13 spec isn't implemented.

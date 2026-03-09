@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Fix Postgres structural module type mismatches
+
+- What: resolved database schema/code type mismatches in structural module. Fixed `power_metrics.score`, `structural_outcomes.probability`, and `structural_outcome_history.probability` columns (were NUMERIC, needed DOUBLE PRECISION to match Rust f64). Added type aliases (`PowerMetricRow`, `StructuralCycleRow`, `StructuralOutcomeRow`, `HistoricalParallelRow`, `StructuralLogRow`) to eliminate 8 clippy::type_complexity warnings in Postgres query row types.
+- Why: structural commands were failing with "mismatched types; Rust type `core::option::Option<f64>` (as SQL type `FLOAT8`) is not compatible with SQL type `NUMERIC`" errors. The schema file specified DOUBLE PRECISION but the actual database columns were created as NUMERIC (likely from an older migration). Manual ALTER TABLE fixes brought the database in sync with code expectations. Type aliases keep clippy clean and improve readability.
+- Files: `src/db/structural.rs` (type aliases + postgres query simplification)
+- Database migrations: `ALTER TABLE power_metrics ALTER COLUMN score TYPE DOUBLE PRECISION`, `ALTER TABLE structural_outcomes ALTER COLUMN probability TYPE DOUBLE PRECISION`, `ALTER TABLE structural_outcome_history ALTER COLUMN probability TYPE DOUBLE PRECISION`
+- Tests: all 1197 tests pass, clippy clean (`cargo clippy --all-targets -- -D warnings`)
+- Verification: tested all structural commands end-to-end: `metric-set/list/history`, `cycle-set/list`, `outcome-add/list`, `parallel-add/list/search`, `log-add/list`, `dashboard --json`
+- TODO: removed P1-BUG "Postgres structural storage not yet implemented"
+
 ### 2026-03-09 — Runtime strategy consistency pass (command hot paths)
 
 - What: removed remaining ad-hoc `Runtime::new()` usage in command paths and switched to shared runtime helpers (`pg_runtime::block_on`) for Postgres/async calls.
