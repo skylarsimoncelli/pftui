@@ -238,8 +238,7 @@ pub fn delete_old_reports_backend(backend: &BackendConnection, days: i64) -> Res
 }
 
 fn upsert_report_postgres(pool: &PgPool, report: &CotCacheEntry) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO cot_cache (
                 cftc_code, report_date, open_interest,
@@ -282,8 +281,7 @@ fn upsert_reports_postgres(pool: &PgPool, reports: &[CotCacheEntry]) -> Result<(
 }
 
 fn get_latest_postgres(pool: &PgPool, cftc_code: &str) -> Result<Option<CotCacheEntry>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<CotRow> = runtime.block_on(async {
+        let row: Option<CotRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT cftc_code, report_date, open_interest,
                     managed_money_long, managed_money_short, managed_money_net,
@@ -312,8 +310,7 @@ fn get_latest_postgres(pool: &PgPool, cftc_code: &str) -> Result<Option<CotCache
 }
 
 fn get_history_postgres(pool: &PgPool, cftc_code: &str, weeks: usize) -> Result<Vec<CotCacheEntry>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<CotRow> = runtime.block_on(async {
+        let rows: Vec<CotRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT cftc_code, report_date, open_interest,
                     managed_money_long, managed_money_short, managed_money_net,
@@ -346,8 +343,7 @@ fn get_history_postgres(pool: &PgPool, cftc_code: &str, weeks: usize) -> Result<
 }
 
 fn get_all_latest_postgres(pool: &PgPool) -> Result<Vec<CotCacheEntry>> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<CotRow> = runtime.block_on(async {
+        let rows: Vec<CotRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT cftc_code, report_date, open_interest,
                     managed_money_long, managed_money_short, managed_money_net,
@@ -379,8 +375,7 @@ fn get_all_latest_postgres(pool: &PgPool) -> Result<Vec<CotCacheEntry>> {
 }
 
 fn delete_old_reports_postgres(pool: &PgPool, days: i64) -> Result<usize> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let deleted = runtime.block_on(async {
+        let deleted = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "DELETE FROM cot_cache
              WHERE report_date < TO_CHAR(NOW() - ($1 * INTERVAL '1 day'), 'YYYY-MM-DD')",

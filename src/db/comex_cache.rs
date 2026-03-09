@@ -217,8 +217,7 @@ pub fn has_fresh_data_backend(backend: &BackendConnection, symbol: &str) -> Resu
 }
 
 fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS comex_cache (
                 symbol TEXT NOT NULL,
@@ -240,8 +239,7 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
 
 fn upsert_inventory_postgres(pool: &PgPool, entry: &ComexCacheEntry) -> Result<()> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO comex_cache (symbol, date, registered, eligible, total, reg_ratio, fetched_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz)
@@ -275,8 +273,7 @@ fn upsert_inventories_postgres(pool: &PgPool, entries: &[ComexCacheEntry]) -> Re
 
 fn get_latest_inventory_postgres(pool: &PgPool, symbol: &str) -> Result<Option<ComexCacheEntry>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<(String, String, f64, f64, f64, f64, String)> = runtime.block_on(async {
+        let row: Option<(String, String, f64, f64, f64, f64, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
              FROM comex_cache
@@ -305,8 +302,7 @@ fn get_inventory_history_postgres(
     days: usize,
 ) -> Result<Vec<ComexCacheEntry>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String, f64, f64, f64, f64, String)> = runtime.block_on(async {
+        let rows: Vec<(String, String, f64, f64, f64, f64, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
              FROM comex_cache
@@ -340,8 +336,7 @@ fn get_previous_inventory_postgres(
     current_date: &str,
 ) -> Result<Option<ComexCacheEntry>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<(String, String, f64, f64, f64, f64, String)> = runtime.block_on(async {
+        let row: Option<(String, String, f64, f64, f64, f64, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
              FROM comex_cache
@@ -369,8 +364,7 @@ fn get_previous_inventory_postgres(
 fn has_fresh_data_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_table_postgres(pool)?;
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let runtime = tokio::runtime::Runtime::new()?;
-    let exists: Option<i64> = runtime.block_on(async {
+        let exists: Option<i64> = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT 1 FROM comex_cache WHERE symbol = $1 AND date = $2 LIMIT 1")
             .bind(symbol)
             .bind(today)
