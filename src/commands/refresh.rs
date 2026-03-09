@@ -72,6 +72,11 @@ fn collect_symbols(
         seen.entry(item.yahoo_symbol).or_insert(cat);
     }
 
+    // Sector ETFs (XLE, XLK, etc.) — needed for `pftui sector` command
+    for (symbol, _name) in crate::commands::sector::SECTOR_ETFS {
+        seen.entry(symbol.to_string()).or_insert(AssetCategory::Equity);
+    }
+
     Ok(seen.into_iter().collect())
 }
 
