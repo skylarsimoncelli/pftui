@@ -155,8 +155,7 @@ pub fn prune_old_metrics_backend(backend: &BackendConnection) -> Result<usize> {
 }
 
 fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS onchain_cache (
                 metric TEXT NOT NULL,
@@ -182,8 +181,7 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
 
 fn upsert_metric_postgres(pool: &PgPool, metric: &OnchainMetric) -> Result<()> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "INSERT INTO onchain_cache (metric, date, value, metadata, fetched_at)
              VALUES ($1, $2, $3, $4, $5::timestamptz)
@@ -206,8 +204,7 @@ fn upsert_metric_postgres(pool: &PgPool, metric: &OnchainMetric) -> Result<()> {
 
 fn get_metric_postgres(pool: &PgPool, metric: &str, date: &str) -> Result<Option<OnchainMetric>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let row: Option<(String, String, String, Option<String>, String)> = runtime.block_on(async {
+        let row: Option<(String, String, String, Option<String>, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT metric, date, value, metadata, fetched_at::text
              FROM onchain_cache
@@ -235,8 +232,7 @@ fn get_metrics_by_type_postgres(
     limit: usize,
 ) -> Result<Vec<OnchainMetric>> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let rows: Vec<(String, String, String, Option<String>, String)> = runtime.block_on(async {
+        let rows: Vec<(String, String, String, Option<String>, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT metric, date, value, metadata, fetched_at::text
              FROM onchain_cache
@@ -264,8 +260,7 @@ fn get_metrics_by_type_postgres(
 
 fn prune_old_metrics_postgres(pool: &PgPool) -> Result<usize> {
     ensure_table_postgres(pool)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let deleted = runtime.block_on(async {
+        let deleted = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM onchain_cache WHERE date < TO_CHAR(NOW() - INTERVAL '90 days', 'YYYY-MM-DD')")
             .execute(pool)
             .await
