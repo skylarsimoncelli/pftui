@@ -201,7 +201,7 @@ fn list_trends_postgres(
 ) -> Result<Vec<Trend>> {
     crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at, updated_at
+            "SELECT id, name, timeframe, direction, conviction, category, description, asset_impact, key_signal, status, created_at::text, updated_at::text
              FROM trend_tracker WHERE 1=1",
         );
         if let Some(s) = status {
@@ -463,7 +463,7 @@ pub fn list_evidence(conn: &Connection, trend_id: i64, limit: Option<usize>) -> 
 fn list_evidence_postgres(pool: &PgPool, trend_id: i64, limit: Option<usize>) -> Result<Vec<TrendEvidence>> {
     crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT id, trend_id, date, evidence, direction_impact, source, created_at
+            "SELECT id, trend_id, date, evidence, direction_impact, source, created_at::text
              FROM trend_evidence WHERE trend_id = ",
         );
         qb.push_bind(trend_id);
@@ -571,7 +571,7 @@ pub fn list_asset_impacts(conn: &Connection, trend_id: i64) -> Result<Vec<TrendA
 fn list_asset_impacts_postgres(pool: &PgPool, trend_id: i64) -> Result<Vec<TrendAssetImpact>> {
     crate::db::pg_runtime::block_on(async {
         let rows = sqlx::query(
-            "SELECT id, trend_id, symbol, impact, mechanism, timeframe, updated_at
+            "SELECT id, trend_id, symbol, impact, mechanism, timeframe, updated_at::text
              FROM trend_asset_impact WHERE trend_id = $1 ORDER BY symbol",
         )
         .bind(trend_id)
@@ -646,8 +646,8 @@ pub fn get_impacts_for_symbol(conn: &Connection, symbol: &str) -> Result<Vec<(Tr
 fn get_impacts_for_symbol_postgres(pool: &PgPool, symbol: &str) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     crate::db::pg_runtime::block_on(async {
         let rows = sqlx::query(
-            "SELECT t.id, t.name, t.timeframe, t.direction, t.conviction, t.category, t.description, t.asset_impact, t.key_signal, t.status, t.created_at, t.updated_at,
-                    i.id, i.trend_id, i.symbol, i.impact, i.mechanism, i.timeframe, i.updated_at
+            "SELECT t.id, t.name, t.timeframe, t.direction, t.conviction, t.category, t.description, t.asset_impact, t.key_signal, t.status, t.created_at::text, t.updated_at::text,
+                    i.id, i.trend_id, i.symbol, i.impact, i.mechanism, i.timeframe, i.updated_at::text
              FROM trend_tracker t
              JOIN trend_asset_impact i ON t.id = i.trend_id
              WHERE i.symbol = $1
