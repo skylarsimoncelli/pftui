@@ -707,11 +707,17 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Data & Display
 - [x] [Feedback] **Fix Brent crude data** — Added Brent (`BZ=F`) to shared economy symbol set so `refresh` always fetches/caches it, preventing macro dashboard `---` gaps and stabilizing WTI-Brent spread availability. (Completed 2026-03-09)
+- [ ] [Feedback] **Fix movers daily-change calculation** — `pftui movers` returned "No movers exceeding 3%" when BTC was +4.5%, silver +4.2%, URA +4.7%. Watchlist also shows `---` for 1D change on many symbols. Root cause: daily change is not computed from `price_history` properly — likely missing previous-day close rows or the diff logic skips held assets. This is the #1 trust-breaking bug for Market Close routines (reported Mar 5, 6, 9). **Files:** `src/commands/movers.rs`, `src/commands/watchlist.rs`, `src/commands/refresh.rs` (verify `price_history` rows written for all fetched symbols).
+- [ ] [Feedback] **Graceful degradation on API failure** — When Yahoo returns 429 or CoinGecko returns 403, commands hang or return nothing instead of falling back to cached data with a staleness warning. Add `--cached-only` / `--offline` flag to all data commands that skips network calls and uses last cached values. When API fails during `refresh`, return cached data + clear warning rather than empty output. **Files:** `src/commands/refresh.rs` (per-source error handling), `src/commands/brief.rs`, `src/commands/watchlist.rs`, `src/commands/macro_cmd.rs`.
+- [ ] [Feedback] **Fix price staleness after refresh** — After `pftui refresh`, prices can be stale (e.g., gold showing $5,128 when Yahoo has $5,149). Ensure refresh overwrites `price_cache` with the latest fetch, not an earlier snapshot. Check if the refresh pipeline short-circuits on partial source failure. **Files:** `src/commands/refresh.rs`, `src/db/price_cache.rs`.
 
 ### CLI Enhancements
 
 - [x] [Feedback] **Filter prediction markets by category** — `pftui predictions --category` now supports `finance`/`macro` aliases and pipe-separated filters (e.g. `geopolitics|finance|macro`) to focus out sports/entertainment noise. (Completed 2026-03-09)
 - [x] [Feedback] **Oil technicals in macro dashboard** — `pftui macro` now backfills WTI/Brent history on-demand (unless `--cached-only`) so RSI/MACD/SMA render reliably for oil rows. (Completed 2026-03-09)
+- [ ] [Feedback] **`pftui status --json`** — The status command lacks `--json` output, breaking the pattern that all data commands support structured output. Agents checking data pipeline health can't parse status programmatically. **Files:** `src/commands/status.rs`.
+- [ ] [Feedback] **Config command discoverability** — `pftui config` doesn't appear in the TUI help popup (`?`), status bar hotkey hints, or anywhere a first-time user would look. Add it to the help overlay under a "Configuration" section. **Files:** `src/tui/views/help.rs`.
+- [ ] [Feedback] **Fix `pftui performance` empty output** — Command returns no data or N/A for all periods. Needs more daily snapshots to accumulate — consider auto-snapshot during `refresh` (one row per day per symbol in `price_history`). Also show a clear message when insufficient history exists instead of blank output. **Files:** `src/commands/performance.rs`, `src/commands/refresh.rs`.
 
 ### Analytics
 
@@ -1297,28 +1303,28 @@ Terminal demo scene. Comparison table row.
 
 ## Feedback Summary
 
-> Updated: 2026-03-09
+> Updated: 2026-03-10
 
 ### Current Scores (latest per tester)
 
 | Tester | Usefulness | Overall | Trend |
 |--------|-----------|---------|-------|
-| Morning Market Research | 88% | 82% | ↑ (25→65→82→78→82→88) |
-| Evening Eventuality Planner | 35% | 55% | ↓ (20→88→92→85→80→82→35) |
-| Sentinel (Portfolio Analyst) | 85% | 78% | → (75→85→85→78→85→85) |
-| Market Close | 92% | 88% | ↑ (72→82→78→92) |
+| Morning Market Research | 15% | 30% | ↓↓ (25→65→82→78→82→88→0→15) |
+| Evening Eventuality Planner | 35% | 55% | ↓↓ (20→88→92→85→80→82→35) |
+| Sentinel (Portfolio Analyst) | 85% | 78% | → (75→85→85→78→85→85→85) |
+| Market Close | 60% | 72% | ↓ (72→82→78→92→60) |
 | UX Analyst | — | 75% | → (78→68→72→73→75) |
 
 ### Score Trends
 
-- **Morning Market Research:** Steady at 88/82 — best scores since launch. Macro technicals (RSI/MACD/SMA) landed on Mar 7. Remaining gaps: oil technicals in macro, prediction markets showing sports instead of geopolitical, ag commodity tracking. Python script nearly eliminated.
-- **Evening Eventuality Planner:** ⚠️ CRASHED to 35/55 on Mar 9. ALL commands hung indefinitely with Postgres backend — zero functionality. Previous session (Mar 8) also hit SQLite migration blocker (0/15). Reliability is the #1 issue. When working (Mar 5-7), scores were 82-92. The tool's feature set is strong but backend stability is destroying trust.
-- **Sentinel (Portfolio Analyst):** Stable at 85/78. TUI visual quality consistently praised. Day P&L dollar column still the most requested missing feature. Correlation grid and ratio charts well received.
-- **Market Close:** Strongest absolute scores (92/88) — no new review since Mar 6. `brief + movers + macro` pipeline covers most of the routine. Python script dependency eliminated for closing data.
-- **UX Analyst:** Holding at 75. Focus on feature discoverability (`pftui config` invisible) and data pipeline reliability. `--json` consistency improving but `status --json` still missing.
+- **Morning Market Research:** ⚠️ CRASHED to 15/30 on Mar 9. Tool completely non-functional — Yahoo 429, CoinGecko 403, no graceful degradation. All commands hung. Previous high of 88/82 on Mar 7 shows the feature set is strong when APIs are available. The TIMESTAMPTZ crash (Mar 9 Market Close) was fixed same day, but API fallback/caching is the critical gap.
+- **Evening Eventuality Planner:** ⚠️ Still at 35/55 from Mar 9. ALL commands hung indefinitely with Postgres backend. Two consecutive sessions (Mar 8 SQLite migration blocker at 0/15, Mar 9 Postgres hang at 35/55) with zero functionality. When working (Mar 5-7), scores were 82-92. Reliability is the existential issue — the feature set is mature but unusable when backends fail.
+- **Sentinel (Portfolio Analyst):** Rock-solid at 85/78. Only tester unaffected by reliability issues (TUI review doesn't depend on live data fetching). Day P&L dollar column remains the most requested missing feature across ALL testers.
+- **Market Close:** Dropped to 60/72 on Mar 9. TIMESTAMPTZ crash during refresh (fixed), movers showing zero results despite 4%+ moves (NOT fixed), stale prices after refresh, performance command empty. The `brief + movers + macro` pipeline is excellent when working but movers data integrity is broken.
+- **UX Analyst:** Holding at 75. `--json` consistency improving. `status --json` and config discoverability still missing. Data pipeline reliability is the dominant concern — polished UI with empty data undermines trust.
 
 ### Top 3 Priorities (Feedback-Driven)
 
-1. ✅ **DB connection timeout + diagnostics** — timeout shipped; `pftui doctor` command added for proactive health checks.
-2. ✅ **Broken data-source fixes** — sector coverage, Brent availability, USD/JPY daily-change sanity checks, and prediction market category filtering shipped.
-3. ✅ **Oil technicals in macro** — RSI/MACD/SMA now reliably available for WTI/Brent via on-demand history backfill in `pftui macro`.
+1. **Fix movers/watchlist daily-change calculation** — The movers command returning "no movers" when BTC is +4.5% is the #1 trust-breaking data bug. Watchlist showing `---` for 1D change on many symbols compounds the problem. This single fix would restore Market Close scores (92→60 drop) and improve Morning Research. Reported by 4 of 5 testers.
+2. **Graceful degradation on API failure** — When Yahoo/CoinGecko return 429/403, commands must fall back to cached data with a staleness warning instead of hanging or returning empty. Add `--cached-only` flag. This is the root cause of Morning Research crashing to 0/15 and Evening Planner to 35/55. Connection timeout was shipped but fallback to stale cache was not.
+3. **Fix price staleness after refresh** — Prices showing stale values despite successful refresh erodes trust in the brief/summary output. Ensure `price_cache` is overwritten with the latest fetch. This impacts accuracy of P&L, movers, and allocation calculations.
