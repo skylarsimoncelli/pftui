@@ -714,8 +714,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 - [x] [Feedback] **Filter prediction markets by category** — `pftui predictions --category` now supports `finance`/`macro` aliases and pipe-separated filters (e.g. `geopolitics|finance|macro`) to focus out sports/entertainment noise. (Completed 2026-03-09)
 - [x] [Feedback] **Oil technicals in macro dashboard** — `pftui macro` now backfills WTI/Brent history on-demand (unless `--cached-only`) so RSI/MACD/SMA render reliably for oil rows. (Completed 2026-03-09)
-- [ ] [Feedback] **`pftui status --json`** — The status command lacks `--json` output, breaking the pattern that all data commands support structured output. Agents checking data pipeline health can't parse status programmatically. **Files:** `src/commands/status.rs`.
-- [ ] [Feedback] **Config command discoverability** — `pftui config` doesn't appear in the TUI help popup (`?`), status bar hotkey hints, or anywhere a first-time user would look. Add it to the help overlay under a "Configuration" section. **Files:** `src/tui/views/help.rs`.
 
 ### Analytics
 

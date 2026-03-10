@@ -19,6 +19,13 @@
 - Tests: `cargo test -q`
 - TODO: removed P1 performance empty-output feedback item
 
+### 2026-03-09 — Cleanup stale P1 TODOs already shipped (`status --json`, config discoverability)
+
+- What: removed stale TODO entries for `pftui status --json` and TUI config discoverability after verification in current code paths (`status` CLI flag/JSON output + help overlay Configuration section).
+- Why: keeps P1 backlog accurate and focused on unresolved items only.
+- Files: `TODO.md`
+- Tests: not applicable (verification-only cleanup)
+
 ### 2026-03-10 — Fix needless borrows in calendar/fedwatch HTML parsers
 
 - What: removed 17 needless `&` references in `.select()` calls across calendar.rs and fedwatch.rs. The scraper library's Selector type already implements Copy, making the borrows unnecessary.
