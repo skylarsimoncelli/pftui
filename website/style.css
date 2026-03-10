@@ -461,7 +461,7 @@ body {
 /* ===== DEMO SECTION ===== */
 .demo {
     padding: var(--spacing-xl) 0;
-    background: var(--bg-primary);
+    background: var(--bg-tertiary);
     border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
@@ -901,7 +901,7 @@ body {
 /* ===== COMPARISON TABLE ===== */
 .comparison {
     padding: var(--spacing-xl) 0;
-    background: var(--bg-primary);
+    background: var(--bg-tertiary);
     border-top: 1px solid rgba(137, 220, 235, 0.08);
 }
 
