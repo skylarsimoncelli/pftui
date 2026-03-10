@@ -11,6 +11,13 @@
 - Tests: `cargo test -q`
 - TODO: removed P1 movers daily-change bug
 
+### 2026-03-10 — TODO audit cleanup after latest pull
+
+- What: removed stale completed content from `TODO.md`, including the shipped F31 implementation spec blocks, shipped F37/F38 documentation/product-positioning blocks, and obsolete feedback-priority notes that referenced already-fixed P1 items.
+- Why: TODO should track pending work only; completed work belongs in changelog/history.
+- Files: `TODO.md`
+- Tests: not applicable (backlog/documentation cleanup)
+
 ### 2026-03-10 — TODO cleanup: removed completed checklist items
 
 - What: removed completed `- [x]` items and archived-complete P32 checklist block from `TODO.md`.
