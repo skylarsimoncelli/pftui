@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
-use crate::db::price_history::get_history_backend;
+use crate::db::price_history::{get_history_backend, get_price_at_date_backend};
 use crate::db::watchlist::list_watchlist_backend;
 use crate::indicators;
 use crate::models::asset::AssetCategory;
@@ -60,26 +60,52 @@ fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
     }
 }
 
-/// Compute daily change % from price history for a symbol.
-fn compute_change_pct(
+fn compute_change_pct_for_history_symbol(
     backend: &BackendConnection,
-    yahoo_sym: &str,
+    history_symbol: &str,
     current_price: Option<Decimal>,
 ) -> Option<Decimal> {
+    use chrono::Utc;
+
     let current = current_price?;
-    
-    // Get yesterday's close from history
-    let history = get_history_backend(backend, yahoo_sym, 1).ok()?;
-    if history.is_empty() {
-        return None;
-    }
-    
-    let prev_close = history[0].close;
+
+    let today = Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+
+    let prev_close = get_price_at_date_backend(backend, history_symbol, &yesterday_str)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            let history = get_history_backend(backend, history_symbol, 3).ok()?;
+            if history.len() >= 2 {
+                Some(history[history.len() - 2].close)
+            } else {
+                None
+            }
+        })?;
     if prev_close == dec!(0) {
         return None;
     }
-    
+
     Some((current - prev_close) / prev_close * dec!(100))
+}
+
+/// Compute daily change % using canonical symbol first, Yahoo-mapped fallback second.
+fn compute_change_pct(
+    backend: &BackendConnection,
+    symbol: &str,
+    category: AssetCategory,
+    current_price: Option<Decimal>,
+) -> Option<Decimal> {
+    compute_change_pct_for_history_symbol(backend, symbol, current_price).or_else(|| {
+        let yahoo_sym = yahoo_symbol_for(symbol, category);
+        if yahoo_sym == symbol {
+            None
+        } else {
+            compute_change_pct_for_history_symbol(backend, &yahoo_sym, current_price)
+        }
+    })
 }
 
 pub fn run(
@@ -156,7 +182,7 @@ pub fn run(
 
         // Compute daily change %
         let yahoo_sym = yahoo_symbol_for(&entry.symbol, cat);
-        let change_str = match compute_change_pct(backend, &yahoo_sym, current_price) {
+        let change_str = match compute_change_pct(backend, &entry.symbol, cat, current_price) {
             Some(pct) => {
                 let f: f64 = pct.to_string().parse().unwrap_or(0.0);
                 format!("{:+.2}%", f)
@@ -206,7 +232,10 @@ pub fn run(
 
         // Compute technical indicators from price history
         let (rsi_str, sma50_str, macd_str) = {
-            let history = get_history_backend(backend, &yahoo_sym, 90).ok();
+            let history = get_history_backend(backend, &entry.symbol, 90)
+                .ok()
+                .filter(|h| !h.is_empty())
+                .or_else(|| get_history_backend(backend, &yahoo_sym, 90).ok());
             match history {
                 Some(records) if !records.is_empty() => {
                     let closes: Vec<f64> = records
@@ -585,7 +614,7 @@ mod tests {
     fn change_pct_no_history() {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(210))).is_none());
+        assert!(compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(210))).is_none());
     }
 
     #[test]
@@ -610,7 +639,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", None).is_none());
+        assert!(compute_change_pct(&backend, "AAPL", AssetCategory::Equity, None).is_none());
     }
 
     #[test]
@@ -638,7 +667,7 @@ mod tests {
 
         // Current price $210, yesterday close $200 → +5%
         let backend = to_backend(conn);
-        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210))).unwrap();
+        let pct = compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(210))).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -667,7 +696,7 @@ mod tests {
 
         // Current price $190, yesterday close $200 → -5%
         let backend = to_backend(conn);
-        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(190))).unwrap();
+        let pct = compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(190))).unwrap();
         assert_eq!(pct, dec!(-5));
     }
 
@@ -696,7 +725,7 @@ mod tests {
 
         // Yesterday close was 0 → should return None (can't compute % change)
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(100))).is_none());
+        assert!(compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(100))).is_none());
     }
 
     #[test]

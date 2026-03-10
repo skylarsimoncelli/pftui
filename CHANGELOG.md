@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-09 — Movers/watchlist daily-change reliability fix
+
+- What: hardened daily-change computation to use yesterday lookup with fallback to previous available close, fixed watchlist symbol-resolution mismatch (`symbol` vs Yahoo-mapped symbol) for change/technicals history reads, and made refresh history backfill recency-aware (not just count-based) so stale-but-long histories are refreshed.
+- Why: resolves trust-breaking false negatives where movers missed obvious daily moves and watchlist showed `---` despite available pricing.
+- Files: `src/commands/movers.rs`, `src/commands/watchlist_cli.rs`, `src/commands/refresh.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 movers daily-change bug
+
 ### 2026-03-10 — Fix needless borrows in calendar/fedwatch HTML parsers
 
 - What: removed 17 needless `&` references in `.select()` calls across calendar.rs and fedwatch.rs. The scraper library's Selector type already implements Copy, making the borrows unnecessary.

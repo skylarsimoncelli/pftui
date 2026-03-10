@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::db::allocations::get_unique_allocation_symbols_backend;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
-use crate::db::price_history::get_price_at_date_backend;
+use crate::db::price_history::{get_history_backend, get_price_at_date_backend};
 use crate::db::transactions::get_unique_symbols_backend;
 use crate::db::watchlist::list_watchlist_backend;
 use crate::models::asset::AssetCategory;
@@ -42,7 +42,18 @@ fn compute_change_pct(
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     
-    let prev_close = get_price_at_date_backend(backend, symbol, &yesterday_str).ok()??;
+    let prev_close = get_price_at_date_backend(backend, symbol, &yesterday_str)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            // Fallback: if yesterday is missing, use previous available close.
+            let history = get_history_backend(backend, symbol, 3).ok()?;
+            if history.len() >= 2 {
+                Some(history[history.len() - 2].close)
+            } else {
+                None
+            }
+        })?;
     if prev_close == dec!(0) {
         return None;
     }

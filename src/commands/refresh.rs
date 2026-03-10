@@ -541,12 +541,18 @@ pub fn run(
             // technicals/day-change consumers have data after refresh-only runs.
             let mut history_updated = 0usize;
             let mut history_attempted = 0usize;
+            let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
             for (sym, cat) in &symbols {
                 if *cat == AssetCategory::Cash {
                     continue;
                 }
-                let history_len = get_history_backend(backend, sym, 40).map(|h| h.len()).unwrap_or(0);
-                if history_len >= 30 {
+                let history = get_history_backend(backend, sym, 40).unwrap_or_default();
+                let history_len = history.len();
+                let latest_history_date = history
+                    .last()
+                    .and_then(|r| chrono::NaiveDate::parse_from_str(&r.date, "%Y-%m-%d").ok());
+                let stale_or_missing_recent = latest_history_date.map(|d| d < yesterday).unwrap_or(true);
+                if history_len >= 30 && !stale_or_missing_recent {
                     continue;
                 }
                 history_attempted += 1;
