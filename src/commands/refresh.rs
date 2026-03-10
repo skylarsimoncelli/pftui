@@ -35,7 +35,6 @@ use crate::tui::views::economy;
 const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
 
 /// Freshness thresholds in seconds
-const PRICE_FRESHNESS_SECS: i64 = 15 * 60; // 15 minutes
 const NEWS_FRESHNESS_SECS: i64 = 10 * 60; // 10 minutes
 const PREDICTIONS_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const SENTIMENT_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
@@ -78,26 +77,6 @@ fn collect_symbols(
     }
 
     Ok(seen.into_iter().collect())
-}
-
-/// Check if prices need refreshing
-fn prices_need_refresh(backend: &BackendConnection) -> Result<bool> {
-    let prices = get_all_cached_prices_backend(backend)?;
-    if prices.is_empty() {
-        return Ok(true);
-    }
-
-    // Check if any price is older than threshold
-    let now = chrono::Utc::now();
-    for quote in prices {
-        if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&quote.fetched_at) {
-            let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
-            if age.num_seconds() > PRICE_FRESHNESS_SECS {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
 }
 
 /// Check if news needs refreshing
@@ -500,79 +479,75 @@ pub fn run(
     }
 
     // 2. Prices
-    if prices_need_refresh(backend)? {
-        let symbols = collect_symbols(backend, config)?;
-        if !symbols.is_empty() {
-            let _non_cash: Vec<_> = symbols
-                .iter()
-                .filter(|(_, cat)| *cat != AssetCategory::Cash)
-                .collect();
+    let symbols = collect_symbols(backend, config)?;
+    if !symbols.is_empty() {
+        let _non_cash: Vec<_> = symbols
+            .iter()
+            .filter(|(_, cat)| *cat != AssetCategory::Cash)
+            .collect();
 
-            let (quotes, _errors) = rt.block_on(fetch_all_prices(&symbols, config));
+        let (quotes, _errors) = rt.block_on(fetch_all_prices(&symbols, config));
 
-            for quote in &quotes {
-                if let Err(e) = upsert_price_backend(backend, quote) {
-                    eprintln!("Failed to cache {}: {}", quote.symbol, e);
-                }
+        for quote in &quotes {
+            if let Err(e) = upsert_price_backend(backend, quote) {
+                eprintln!("Failed to cache {}: {}", quote.symbol, e);
             }
-            // Always stamp today's close into price_history so 1D consumers
-            // (movers/brief/correlations) have a daily anchor on refresh runs.
-            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            for quote in &quotes {
-                if quote.source == "static" {
-                    continue;
-                }
-                let record = HistoryRecord {
-                    date: today.clone(),
-                    close: quote.price,
-                    volume: None,
-                    open: None,
-                    high: None,
-                    low: None,
-                };
-                let _ = upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]);
+        }
+        // Always stamp today's close into price_history so 1D consumers
+        // (movers/brief/correlations) have a daily anchor on refresh runs.
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        for quote in &quotes {
+            if quote.source == "static" {
+                continue;
             }
+            let record = HistoryRecord {
+                date: today.clone(),
+                close: quote.price,
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            };
+            let _ = upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]);
+        }
 
-            let fetched: Vec<_> = quotes.iter().filter(|q| q.source != "static").collect();
+        let fetched: Vec<_> = quotes.iter().filter(|q| q.source != "static").collect();
 
-            println!("✓ Prices ({} symbols)", fetched.len());
+        println!("✓ Prices ({} symbols)", fetched.len());
 
-            // Backfill history for symbols missing sufficient history so
-            // technicals/day-change consumers have data after refresh-only runs.
-            let mut history_updated = 0usize;
-            let mut history_attempted = 0usize;
-            let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
-            for (sym, cat) in &symbols {
-                if *cat == AssetCategory::Cash {
-                    continue;
-                }
-                let history = get_history_backend(backend, sym, 40).unwrap_or_default();
-                let history_len = history.len();
-                let latest_history_date = history
-                    .last()
-                    .and_then(|r| chrono::NaiveDate::parse_from_str(&r.date, "%Y-%m-%d").ok());
-                let stale_or_missing_recent = latest_history_date.map(|d| d < yesterday).unwrap_or(true);
-                if history_len >= 30 && !stale_or_missing_recent {
-                    continue;
-                }
-                history_attempted += 1;
-                match rt.block_on(fetch_history_for_symbol(sym, *cat, 180)) {
-                    Ok((records, source)) if !records.is_empty() => {
-                        if upsert_history_backend(backend, sym, source, &records).is_ok() {
-                            history_updated += 1;
-                        }
+        // Backfill history for symbols missing sufficient history so
+        // technicals/day-change consumers have data after refresh-only runs.
+        let mut history_updated = 0usize;
+        let mut history_attempted = 0usize;
+        let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
+        for (sym, cat) in &symbols {
+            if *cat == AssetCategory::Cash {
+                continue;
+            }
+            let history = get_history_backend(backend, sym, 40).unwrap_or_default();
+            let history_len = history.len();
+            let latest_history_date = history
+                .last()
+                .and_then(|r| chrono::NaiveDate::parse_from_str(&r.date, "%Y-%m-%d").ok());
+            let stale_or_missing_recent = latest_history_date.map(|d| d < yesterday).unwrap_or(true);
+            if history_len >= 30 && !stale_or_missing_recent {
+                continue;
+            }
+            history_attempted += 1;
+            match rt.block_on(fetch_history_for_symbol(sym, *cat, 180)) {
+                Ok((records, source)) if !records.is_empty() => {
+                    if upsert_history_backend(backend, sym, source, &records).is_ok() {
+                        history_updated += 1;
                     }
-                    _ => {}
                 }
+                _ => {}
             }
-            if history_attempted > 0 {
-                println!("✓ Price history ({} symbol backfills)", history_updated);
-            }
-        } else {
-            println!("⊘ Prices (no symbols)");
+        }
+        if history_attempted > 0 {
+            println!("✓ Price history ({} symbol backfills)", history_updated);
         }
     } else {
-        println!("⊘ Prices (fresh, skipping)");
+        println!("⊘ Prices (no symbols)");
     }
 
     // 3. Predictions (Polymarket)

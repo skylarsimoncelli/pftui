@@ -708,7 +708,7 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 ### Data & Display
 - [x] [Feedback] **Fix Brent crude data** — Added Brent (`BZ=F`) to shared economy symbol set so `refresh` always fetches/caches it, preventing macro dashboard `---` gaps and stabilizing WTI-Brent spread availability. (Completed 2026-03-09)
 - [ ] [Feedback] **Graceful degradation on API failure** — When Yahoo returns 429 or CoinGecko returns 403, commands hang or return nothing instead of falling back to cached data with a staleness warning. Add `--cached-only` / `--offline` flag to all data commands that skips network calls and uses last cached values. When API fails during `refresh`, return cached data + clear warning rather than empty output. **Files:** `src/commands/refresh.rs` (per-source error handling), `src/commands/brief.rs`, `src/commands/watchlist.rs`, `src/commands/macro_cmd.rs`.
-- [ ] [Feedback] **Fix price staleness after refresh** — After `pftui refresh`, prices can be stale (e.g., gold showing $5,128 when Yahoo has $5,149). Ensure refresh overwrites `price_cache` with the latest fetch, not an earlier snapshot. Check if the refresh pipeline short-circuits on partial source failure. **Files:** `src/commands/refresh.rs`, `src/db/price_cache.rs`.
+- [x] [Feedback] **Fix price staleness after refresh** — `pftui refresh` now always fetches and overwrites `price_cache` instead of skipping when cache age is below a freshness threshold, eliminating stale-price runs after manual refresh execution. (Completed 2026-03-09)
 
 ### CLI Enhancements
 

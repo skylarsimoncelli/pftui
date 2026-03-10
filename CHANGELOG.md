@@ -11,6 +11,14 @@
 - Tests: `cargo test -q`
 - TODO: removed P1 movers daily-change bug
 
+### 2026-03-09 — Refresh staleness fix (always refresh prices)
+
+- What: removed cache-age short-circuiting from `pftui refresh` price stage so manual refresh always fetches current quotes and overwrites `price_cache`.
+- Why: fixes stale-price outcomes after successful refresh runs where prices could be skipped as “fresh enough” despite operator expecting a live pull.
+- Files: `src/commands/refresh.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 price staleness item
+
 ### 2026-03-09 — Performance command insufficient-history messaging
 
 - What: added explicit notes in `pftui performance` when period anchors are unavailable, including which periods are under-covered and a clear guidance to build history via daily refresh.
