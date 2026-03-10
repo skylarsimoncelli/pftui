@@ -715,11 +715,21 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Analytics
 
+- [ ] **P1-BUG: TIMESTAMPTZ → String decode crash in 9 F31 modules** — All F31 analytics modules (trends, agent_messages, convictions, daily_notes, opportunity_cost, user_predictions, correlation_snapshots, regime_snapshots, timeframe_signals) define timestamp columns as `pub created_at: String` / `pub updated_at: String` in their Rust structs, but the Postgres schema creates these as `TIMESTAMPTZ`. When sqlx tries to decode TIMESTAMPTZ into String, it panics: `"mismatched types; Rust type alloc::string::String (as SQL type TEXT) is not compatible with SQL type TIMESTAMPTZ"`. **Currently worked around** by manually converting the Postgres columns to TEXT, but this is fragile and will break on fresh installs. **The proper fix:** add `::text` casts to all Postgres SELECT queries in these modules, matching the pattern used in the working modules (e.g. `thesis.rs` line 309: `updated_at::text`). The F31 modules share SQL between SQLite and Postgres paths but Postgres needs explicit casts. **Affected files and approximate timestamp references:**
 
+  | File | Timestamp references |
+  |------|---------------------|
+  | `src/db/trends.rs` | 35 (created_at, updated_at on 3 tables) |
+  | `src/db/user_predictions.rs` | 26 (created_at, scored_at) |
+  | `src/db/correlation_snapshots.rs` | 25 (recorded_at) |
+  | `src/db/agent_messages.rs` | 22 (created_at, acknowledged_at) |
+  | `src/db/convictions.rs` | 18 (recorded_at) |
+  | `src/db/regime_snapshots.rs` | 13 (recorded_at) |
+  | `src/db/daily_notes.rs` | 12 (created_at) |
+  | `src/db/timeframe_signals.rs` | 12 (detected_at) |
+  | `src/db/opportunity_cost.rs` | 8 (created_at) |
 
-
-
-
+  **Fix pattern:** For every Postgres SELECT query that returns a timestamp column, cast it: `created_at::text`, `updated_at::text`, `recorded_at::text`, etc. Do NOT change the struct types from String. Do NOT change the Postgres schema back to TEXT. The cast in the query is the correct approach, matching how `thesis.rs`, `scenarios.rs`, and other working modules handle it. Also check `src/db/structural.rs` (power_metrics, structural_cycles, structural_outcomes, structural_outcome_history, historical_parallels, structural_log) for the same pattern.
 
 ### Infrastructure
 
