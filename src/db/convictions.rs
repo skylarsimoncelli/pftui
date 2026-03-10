@@ -327,12 +327,12 @@ fn get_changes_postgres(pool: &PgPool, days: usize) -> Result<Vec<ConvictionChan
                  GROUP BY symbol
              ),
              current_scores AS (
-                 SELECT r.symbol, r.score AS new_score, r.recorded_at AS new_date, r.id AS current_id
+                 SELECT r.symbol, r.score AS new_score, r.recorded_at::text AS new_date, r.id AS current_id
                  FROM recent r
                  INNER JOIN latest_per_symbol l ON r.symbol = l.symbol AND r.id = l.max_id
              ),
              prior_scores AS (
-                 SELECT c.symbol, c.score AS old_score, c.recorded_at AS old_date
+                 SELECT c.symbol, c.score AS old_score, c.recorded_at::text AS old_date
                  FROM convictions c
                  INNER JOIN current_scores cs ON c.symbol = cs.symbol
                  WHERE c.id < cs.current_id
@@ -346,8 +346,8 @@ fn get_changes_postgres(pool: &PgPool, days: usize) -> Result<Vec<ConvictionChan
                  cs.symbol,
                  COALESCE(ps.old_score, 0) AS old_score,
                  cs.new_score,
-                 COALESCE(ps.old_date::text, '') AS old_date,
-                 cs.new_date::text AS new_date,
+                 COALESCE(ps.old_date, '') AS old_date,
+                 cs.new_date AS new_date,
                  cs.new_score - COALESCE(ps.old_score, 0) AS delta
              FROM current_scores cs
              LEFT JOIN prior_scores ps ON cs.symbol = ps.symbol
