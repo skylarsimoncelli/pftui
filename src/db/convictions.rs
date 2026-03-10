@@ -317,7 +317,7 @@ fn get_changes_postgres(pool: &PgPool, days: usize) -> Result<Vec<ConvictionChan
     let rows: Vec<ConvictionChangeRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "WITH recent AS (
-                 SELECT id, symbol, score, recorded_at
+                 SELECT id, symbol, score, recorded_at::text
                  FROM convictions
                  WHERE recorded_at >= NOW() - ($1::int * INTERVAL '1 day')
              ),
