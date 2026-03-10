@@ -11,6 +11,13 @@
 - Tests: `cargo test -q`
 - TODO: removed P1 movers daily-change bug
 
+### 2026-03-10 — TODO cleanup: removed obsolete packaging backlog items
+
+- What: removed stale TODO items for Snap/AUR/Scoop publishing and Homebrew Core inclusion.
+- Why: release automation already tracks packaging/distribution work; these TODO entries were no longer actionable.
+- Files: `TODO.md`
+- Tests: not applicable (documentation cleanup)
+
 ### 2026-03-09 — Graceful API failure degradation + offline alias
 
 - What: added per-request timeouts and explicit fallback warnings in refresh price/history fetches, surfaced cached fallback behavior when live sources fail, hardened macro backfill to warn-and-continue on fetch errors, wired cached-only awareness into brief/watchlist output, and added global `--offline` alias for `--cached-only`.

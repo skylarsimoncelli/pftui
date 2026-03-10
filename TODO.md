@@ -761,8 +761,6 @@ Current authoritative validation/signoff references:
 ### Scanner (batch: ~3hrs total)
 
 ### Distribution
-- [ ] **Snap/AUR/Scoop publishing** — Blocked on external publisher accounts + CI secrets for each store.
-- [ ] **Homebrew Core** — Blocked on Homebrew inclusion prerequisite (50+ GitHub stars; currently 1).
 
 ### Other
 
