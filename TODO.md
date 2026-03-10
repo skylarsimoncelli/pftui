@@ -716,7 +716,6 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 - [x] [Feedback] **Oil technicals in macro dashboard** — `pftui macro` now backfills WTI/Brent history on-demand (unless `--cached-only`) so RSI/MACD/SMA render reliably for oil rows. (Completed 2026-03-09)
 - [ ] [Feedback] **`pftui status --json`** — The status command lacks `--json` output, breaking the pattern that all data commands support structured output. Agents checking data pipeline health can't parse status programmatically. **Files:** `src/commands/status.rs`.
 - [ ] [Feedback] **Config command discoverability** — `pftui config` doesn't appear in the TUI help popup (`?`), status bar hotkey hints, or anywhere a first-time user would look. Add it to the help overlay under a "Configuration" section. **Files:** `src/tui/views/help.rs`.
-- [ ] [Feedback] **Fix `pftui performance` empty output** — Command returns no data or N/A for all periods. Needs more daily snapshots to accumulate — consider auto-snapshot during `refresh` (one row per day per symbol in `price_history`). Also show a clear message when insufficient history exists instead of blank output. **Files:** `src/commands/performance.rs`, `src/commands/refresh.rs`.
 
 ### Analytics
 

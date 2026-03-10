@@ -186,6 +186,18 @@ fn print_standard_returns(
     }
 
     println!();
+    let unavailable: Vec<&str> = periods
+        .iter()
+        .filter_map(|(label, start_val)| if start_val.is_none() { Some(*label) } else { None })
+        .collect();
+    if !unavailable.is_empty() {
+        println!(
+            "  Note: insufficient snapshot history for {}.",
+            unavailable.join(", ")
+        );
+        println!("  Run `pftui refresh` daily to build period coverage.");
+        println!();
+    }
 
     // Value composition
     println!("  Invested: {:.2}    Cash: {:.2}", latest.invested_value, latest.cash_value);

@@ -11,6 +11,14 @@
 - Tests: `cargo test -q`
 - TODO: removed P1 movers daily-change bug
 
+### 2026-03-09 — Performance command insufficient-history messaging
+
+- What: added explicit notes in `pftui performance` when period anchors are unavailable, including which periods are under-covered and a clear guidance to build history via daily refresh.
+- Why: avoids ambiguous N/A-only output and makes partial-history behavior understandable for operators and agents.
+- Files: `src/commands/performance.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 performance empty-output feedback item
+
 ### 2026-03-10 — Fix needless borrows in calendar/fedwatch HTML parsers
 
 - What: removed 17 needless `&` references in `.select()` calls across calendar.rs and fedwatch.rs. The scraper library's Selector type already implements Copy, making the borrows unnecessary.
