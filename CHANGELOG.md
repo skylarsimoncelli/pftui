@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-10 — Fix TIMESTAMPTZ → String decode crash in F31 analytics modules
+
+- What: added `::text` casts to all Postgres SELECT queries that return TIMESTAMPTZ columns as String in F31 analytics modules. Fixed `trends.rs` (created_at, updated_at on 3 tables), `convictions.rs` (recorded_at in CTEs), and verified all other affected modules already had casts applied.
+- Why: Postgres `TIMESTAMPTZ` columns cannot be decoded directly into Rust `String` types. The sqlx error was: `"mismatched types; Rust type alloc::string::String (as SQL type TEXT) is not compatible with SQL type TIMESTAMPTZ"`. Adding `::text` casts in queries matches the working pattern used in `thesis.rs`, `scenarios.rs`, and other modules.
+- Files: `src/db/trends.rs` (added ::text to created_at, updated_at in list_trends_postgres, list_evidence_postgres, list_asset_impacts_postgres, get_impacts_for_symbol_postgres), `src/db/convictions.rs` (added ::text to recorded_at in get_changes_postgres CTEs), `TODO.md` (removed P1-BUG item)
+- Verification: checked all 9+ affected modules (`user_predictions.rs`, `correlation_snapshots.rs`, `agent_messages.rs`, `regime_snapshots.rs`, `daily_notes.rs`, `timeframe_signals.rs`, `opportunity_cost.rs`, `structural.rs`) — all already had proper `::text` or `::TEXT` casts
+- Tests: `cargo test` — all 1197 tests pass
+- Clippy: pre-existing warnings in `fedwatch.rs` (needless_borrow), unrelated to this fix
+- TODO: removed P1-BUG "TIMESTAMPTZ → String decode crash in 9 F31 modules"
+
 ### 2026-03-09 — F31.12: High-Timeframe Trends — Trend tracking [HIGH]
 
 - What: implemented trend tracker CLI (`pftui trends add/list/update/evidence-add/evidence-list/impact-add/impact-list/dashboard`) with three tables: `trend_tracker` (multi-quarter structural trends), `trend_evidence` (dated evidence entries with direction impact), `trend_asset_impact` (per-asset impact: bullish/bearish/neutral with mechanism). Supports trend categorization (ai|energy|demographics|politics|trade|technology|regulation), direction (accelerating|stable|decelerating|reversing), conviction (high|medium|low), and status (active|paused|resolved). Evidence entries track what strengthens/weakens each trend with source attribution. Asset impacts show which symbols are bullish/bearish to a trend. Dashboard action aggregates trends with recent evidence and asset impacts for human-readable output.
