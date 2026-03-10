@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-10 — Fix needless borrows in calendar/fedwatch HTML parsers
+
+- What: removed 17 needless `&` references in `.select()` calls across calendar.rs and fedwatch.rs. The scraper library's Selector type already implements Copy, making the borrows unnecessary.
+- Why: clippy --all-targets -D warnings (the CI check) was failing with 17 needless_borrow errors. These were introduced in recent calendar/FedWatch scraper implementations and blocked the build.
+- Files: `src/data/calendar.rs` (6 fixes: lines 131, 133, 152, 163, 171, 179), `src/data/fedwatch.rs` (11 fixes: lines 101, 110, 134, 135, 141, 143, 160, 162, 192, 199, 201)
+- Tests: all 1197 tests pass
+- Clippy: now clean with `-D warnings`
+
 ### 2026-03-10 — Fix TIMESTAMPTZ → String decode crash in F31 analytics modules
 
 - What: added `::text` casts to all Postgres SELECT queries that return TIMESTAMPTZ columns as String in F31 analytics modules. Fixed `trends.rs` (created_at, updated_at on 3 tables), `convictions.rs` (recorded_at in CTEs), and verified all other affected modules already had casts applied.
