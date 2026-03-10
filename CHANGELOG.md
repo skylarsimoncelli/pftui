@@ -11,6 +11,13 @@
 - Tests: `cargo test -q`
 - TODO: removed P1 movers daily-change bug
 
+### 2026-03-10 — TODO cleanup: removed completed checklist items
+
+- What: removed completed `- [x]` items and archived-complete P32 checklist block from `TODO.md`.
+- Why: keeps TODO focused on pending work only; completed work remains in changelog/git history.
+- Files: `TODO.md`
+- Tests: not applicable (documentation cleanup)
+
 ### 2026-03-10 — TODO cleanup: removed obsolete packaging backlog items
 
 - What: removed stale TODO items for Snap/AUR/Scoop publishing and Homebrew Core inclusion.

@@ -42,7 +42,6 @@ _Already implemented by dev cron (scenarios table exists). Verify CLI completene
 
 ### F31.4: Research Questions — Open questions with evidence tracking [MEDIUM]
 
-- [x] Implemented (`pftui question add/list/update/resolve` + `research_questions` table)
 
 **Files:** `src/db/research_questions.rs`, `src/commands/research_question.rs`, schema/cli/main/mod updates.
 
@@ -112,7 +111,6 @@ pftui question list --status open --json
 
 ### F31.5: User Predictions — Your calls, scored for accuracy [MEDIUM]
 
-- [x] Implemented (`pftui predict add/list/score/stats` + `user_predictions` table)
 
 **Files:** `src/db/user_predictions.rs`, `src/commands/predict.rs`, schema/cli/main/mod updates.
 
@@ -202,7 +200,6 @@ pftui predict list --filter pending
 
 ### F31.6: Agent Messages — Structured inter-agent communication [CROSS]
 
-- [x] Implemented (`pftui agent-msg send/list/ack/ack-all/purge` + `agent_messages` table)
 
 **Files:** `src/db/agent_messages.rs`, `src/commands/agent_msg.rs`, schema/cli/main/mod updates.
 
@@ -305,7 +302,6 @@ analysis and structural context constrains intraday interpretation.
 
 ### F31.7: Daily Notes — Date-keyed narrative entries [CROSS]
 
-- [x] Implemented (`pftui notes add/list/search/remove` + `daily_notes` table)
 
 **Files:** `src/db/daily_notes.rs`, `src/commands/notes.rs`, schema/cli/main/mod updates.
 
@@ -365,7 +361,6 @@ pftui notes search "DXY" --since 2026-03-01
 
 ### F31.8: Opportunity Cost Tracker — What positioning saved and cost [MEDIUM]
 
-- [x] Implemented (`pftui opportunity add/list/stats` + `opportunity_cost` table)
 
 **Files:** `src/db/opportunity_cost.rs`, `src/commands/opportunity.rs`, schema/cli/main/mod updates.
 
@@ -442,7 +437,6 @@ Opportunity {
 
 ### F31.9: Correlation Snapshots — Rolling asset correlations [LOW]
 
-- [x] Implemented (`correlation_snapshots` table, refresh snapshot pipeline, `pftui correlations history`, `--store`)
 
 **Files:** `src/db/correlation_snapshots.rs`, `src/commands/correlations.rs` (EXISTS — extend it), schema update.
 
@@ -479,7 +473,6 @@ In `src/commands/refresh.rs`, after prices are fetched and `price_history` is up
 
 ### F31.10: Regime Classification — Automated market regime detection [LOW]
 
-- [x] Implemented (`regime_snapshots` table, refresh-time classification, `pftui regime current/history/transitions`)
 
 **Files:** `src/db/regime_snapshots.rs`, `src/commands/regime.rs`, schema/cli/main/mod updates.
 
@@ -546,7 +539,6 @@ Current Regime: RISK-OFF (confidence: 0.85)
 
 ### F31.13: Analytics Engine CLI — Multi-timeframe dashboards [CROSS]
 
-- [x] Implemented (`pftui analytics summary/low/medium/high/macro/alignment/signals`)
 
 The unified view across all four analytics layers. Reads from all F31 tables + existing data tables. No new storage — pure presentation and cross-referencing.
 
@@ -615,10 +607,6 @@ Alignment logic: query each layer's latest signal per asset. 4/4 = STRONG. 3/4 =
 
 Automated detection of alignment and divergence across timeframes. Future — after F31.13 is working.
 
-- [x] **`timeframe_signals` table** — `id, signal_type (alignment|divergence|transition), layers TEXT (JSON), assets TEXT, description TEXT, severity TEXT (info|notable|critical), detected_at TEXT`
-- [x] Compute during `pftui refresh`: compare regime, scenario probabilities, trend directions, structural outcomes. Log when layers agree or diverge on a specific asset.
-- [x] **`pftui analytics signals`** — show active cross-timeframe signals. `--json`.
-- [x] Integrate with `pftui brief --agent` — include top cross-timeframe signal in agent blob.
 
 ---
 
@@ -626,11 +614,6 @@ Automated detection of alignment and divergence across timeframes. Future — af
 
 After F31.1-F31.14 are implemented:
 
-- [x] **README.md** — new "Analytics Engine" section. Multi-timeframe diagram. Position pftui as an analytics platform.
-- [x] **Website `index.html`** — Analytics Engine section with 4-layer diagram. Terminal demo scene: `pftui analytics summary`. Comparison table row: "Multi-Timeframe Analytics."
-- [x] **AGENTS.md** — "Analytics Engine" chapter: which commands per timeframe, what signals to look for, how to update each layer.
-- [x] **PRODUCT-VISION.md** — center vision on the analytics engine as core differentiator.
-- [x] **Marketing line:** "The only retail tool with a multi-timeframe analytics engine. From intraday volatility to decade-long empire cycles."
 
 ---
 
@@ -638,7 +621,6 @@ After F31.1-F31.14 are implemented:
 
 After ALL F31 tables are implemented, update `AGENTS.md` with a new section:
 
-- [x] Implemented (Analytics Engine chapter added to AGENTS.md)
 
 ```markdown
 ## Analytics Engine
@@ -706,14 +688,9 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 > User-requested features and high-value improvements.
 
 ### Data & Display
-- [x] [Feedback] **Fix Brent crude data** — Added Brent (`BZ=F`) to shared economy symbol set so `refresh` always fetches/caches it, preventing macro dashboard `---` gaps and stabilizing WTI-Brent spread availability. (Completed 2026-03-09)
-- [x] [Feedback] **Graceful degradation on API failure** — Added explicit fallback behavior and warnings across data commands: `refresh` now uses per-request timeouts, reports per-symbol fetch failures, and continues on cached data when live APIs fail; `macro` backfills now warn and continue with cache; `brief`/`watchlist` now honor global cached-only mode messaging; and global `--cached-only` now has `--offline` alias. (Completed 2026-03-09)
-- [x] [Feedback] **Fix price staleness after refresh** — `pftui refresh` now always fetches and overwrites `price_cache` instead of skipping when cache age is below a freshness threshold, eliminating stale-price runs after manual refresh execution. (Completed 2026-03-09)
 
 ### CLI Enhancements
 
-- [x] [Feedback] **Filter prediction markets by category** — `pftui predictions --category` now supports `finance`/`macro` aliases and pipe-separated filters (e.g. `geopolitics|finance|macro`) to focus out sports/entertainment noise. (Completed 2026-03-09)
-- [x] [Feedback] **Oil technicals in macro dashboard** — `pftui macro` now backfills WTI/Brent history on-demand (unless `--cached-only`) so RSI/MACD/SMA render reliably for oil rows. (Completed 2026-03-09)
 
 ### Analytics
 
@@ -735,18 +712,6 @@ Current authoritative validation/signoff references:
 
 > F32 established native Postgres paths. P32 closes remaining production-grade parity gaps:
 > performance, CI validation, and docs consistency.
-
-**Completed (P32 complete)**
-- P32.1 Docs parity sweep
-- P32.2 Postgres CI job
-- P32.3 Runtime strategy cleanup (complete: all `src/db` Postgres paths now use shared `pg_runtime`)
-- P32.4 Postgres schema type upgrades (hot path columns)
-- P32.5 Pooling config
-- P32.6 Setup/backend switch validation
-- P32.7 Runtime cleanup completion (batches A-G complete)
-- P32.8 Postgres CI expansion (includes parity suite + acceptance script run)
-- P32.9 Parity acceptance suite (`scripts/parity_check.sh`)
-- P32.10 Final parity signoff docs (`docs/BACKEND-PARITY.md`)
 
 ---
 
