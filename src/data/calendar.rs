@@ -128,9 +128,9 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
     let mut events = Vec::new();
     let mut current_date = today;
 
-    for row in document.select(&row_selector) {
+    for row in document.select(row_selector) {
         // Extract date (may be empty if same as previous row)
-        if let Some(date_cell) = row.select(&date_selector).next() {
+        if let Some(date_cell) = row.select(date_selector).next() {
             let date_text = date_cell.text().collect::<String>().trim().to_string();
             if !date_text.is_empty() && date_text != "Time" {
                 if let Ok(parsed) = parse_te_date(&date_text, today.year()) {
@@ -149,7 +149,7 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
 
         // Extract event name
         let name = row
-            .select(&name_selector)
+            .select(name_selector)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
@@ -160,7 +160,7 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
 
         // Extract actual, previous, forecast
         let _actual = row
-            .select(&actual_selector)
+            .select(actual_selector)
             .next()
             .and_then(|e| {
                 let text = e.text().collect::<String>().trim().to_string();
@@ -168,7 +168,7 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
             });
 
         let previous = row
-            .select(&previous_selector)
+            .select(previous_selector)
             .next()
             .and_then(|e| {
                 let text = e.text().collect::<String>().trim().to_string();
@@ -176,7 +176,7 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
             });
 
         let forecast = row
-            .select(&forecast_selector)
+            .select(forecast_selector)
             .next()
             .and_then(|e| {
                 let text = e.text().collect::<String>().trim().to_string();

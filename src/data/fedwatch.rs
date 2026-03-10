@@ -98,7 +98,7 @@ fn parse_meetings(doc: &Html) -> Result<Vec<String>> {
     let a_sel = cached_selector(&A_SEL, "a")?;
     let mut meetings = Vec::new();
 
-    for li in doc.select(&li_sel) {
+    for li in doc.select(li_sel) {
         if !li
             .value()
             .attr("class")
@@ -107,7 +107,7 @@ fn parse_meetings(doc: &Html) -> Result<Vec<String>> {
         {
             continue;
         }
-        let Some(a) = li.select(&a_sel).next() else {
+        let Some(a) = li.select(a_sel).next() else {
             continue;
         };
         let label = text_of(&a);
@@ -131,16 +131,16 @@ fn parse_meeting_and_summary_tables(doc: &Html) -> Result<(MeetingInfo, SummaryP
     let mut meeting_info: Option<MeetingInfo> = None;
     let mut summary: Option<SummaryProbabilities> = None;
 
-    for table in doc.select(&table_sel) {
-        let Some(header_row) = table.select(&row_sel).next() else {
+    for table in doc.select(table_sel) {
+        let Some(header_row) = table.select(row_sel).next() else {
             continue;
         };
         let header_text = text_of(&header_row);
 
         if header_text.contains("Meeting Information") {
-            for row in table.select(&row_sel) {
+            for row in table.select(row_sel) {
                 let cells: Vec<String> = row
-                    .select(&cell_sel)
+                    .select(cell_sel)
                     .map(|c| text_of(&c))
                     .filter(|s| !s.is_empty())
                     .collect();
@@ -157,9 +157,9 @@ fn parse_meeting_and_summary_tables(doc: &Html) -> Result<(MeetingInfo, SummaryP
                 }
             }
         } else if header_text.contains("Probabilities") {
-            for row in table.select(&row_sel) {
+            for row in table.select(row_sel) {
                 let cells: Vec<String> = row
-                    .select(&cell_sel)
+                    .select(cell_sel)
                     .map(|c| text_of(&c))
                     .filter(|s| !s.is_empty())
                     .collect();
@@ -189,16 +189,16 @@ fn parse_target_probabilities(doc: &Html) -> Result<Vec<TargetProbability>> {
     let row_sel = cached_selector(&ROW_SEL, "tr")?;
     let cell_sel = cached_selector(&CELL_SEL, "td")?;
 
-    for table in doc.select(&table_sel) {
+    for table in doc.select(table_sel) {
         let header_text = text_of(&table);
         if !header_text.contains("Target Rate (bps)") {
             continue;
         }
 
         let mut rows = Vec::new();
-        for row in table.select(&row_sel) {
+        for row in table.select(row_sel) {
             let cells: Vec<String> = row
-                .select(&cell_sel)
+                .select(cell_sel)
                 .map(|c| text_of(&c))
                 .filter(|s| !s.is_empty())
                 .collect();
