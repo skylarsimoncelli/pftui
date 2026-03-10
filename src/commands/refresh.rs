@@ -33,6 +33,8 @@ use crate::tui::views::economy;
 
 /// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
 const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
+/// Per-request timeout for remote price/history calls.
+const PRICE_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Freshness thresholds in seconds
 const NEWS_FRESHNESS_SECS: i64 = 10 * 60; // 10 minutes
@@ -292,18 +294,25 @@ async fn fetch_history_for_symbol(
 ) -> Result<(Vec<crate::models::price::HistoryRecord>, &'static str)> {
     match category {
         AssetCategory::Crypto => {
-            match coingecko::fetch_history(symbol, days).await {
-                Ok(records) if !records.is_empty() => Ok((records, "coingecko")),
-                _ => {
+            match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, coingecko::fetch_history(symbol, days))
+                .await
+            {
+                Ok(Ok(records)) if !records.is_empty() => Ok((records, "coingecko")),
+                Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {
                     let yahoo_sym = yahoo_crypto_symbol(symbol);
-                    let records = yahoo::fetch_history(&yahoo_sym, days).await?;
+                    let records =
+                        tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_history(&yahoo_sym, days))
+                            .await
+                            .map_err(|_| anyhow::anyhow!("{} history request timed out", yahoo_sym))??;
                     Ok((records, "yahoo"))
                 }
             }
         }
         AssetCategory::Cash => Ok((Vec::new(), "static")),
         _ => {
-            let records = yahoo::fetch_history(symbol, days).await?;
+            let records = tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_history(symbol, days))
+                .await
+                .map_err(|_| anyhow::anyhow!("{} history request timed out", symbol))??;
             Ok((records, "yahoo"))
         }
     }
@@ -351,30 +360,36 @@ async fn fetch_all_prices(
         if i > 0 {
             tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
         }
-        match yahoo::fetch_price(sym).await {
-            Ok(quote) => quotes.push(quote),
-            Err(e) => errors.push(format!("{}: {}", sym, e)),
+        match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_price(sym)).await {
+            Ok(Ok(quote)) => quotes.push(quote),
+            Ok(Err(e)) => errors.push(format!("{}: {}", sym, e)),
+            Err(_) => errors.push(format!("{}: request timed out", sym)),
         }
     }
 
     // Fetch crypto: CoinGecko batch first, Yahoo fallback
     if !crypto_symbols.is_empty() {
         let mut cg_ok = false;
-        match coingecko::fetch_prices(&crypto_symbols).await {
-            Ok(cg_quotes) if !cg_quotes.is_empty() => {
+        match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, coingecko::fetch_prices(&crypto_symbols))
+            .await
+        {
+            Ok(Ok(cg_quotes)) if !cg_quotes.is_empty() => {
                 for q in cg_quotes {
                     quotes.push(q);
                 }
                 cg_ok = true;
             }
-            Ok(_) => {
+            Ok(Ok(_)) => {
                 errors.push("CoinGecko returned empty, falling back to Yahoo".to_string());
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 errors.push(format!(
                     "CoinGecko batch failed: {}, falling back to Yahoo",
                     e
                 ));
+            }
+            Err(_) => {
+                errors.push("CoinGecko batch timed out, falling back to Yahoo".to_string());
             }
         }
 
@@ -384,13 +399,21 @@ async fn fetch_all_prices(
                     tokio::time::sleep(YAHOO_RATE_LIMIT_DELAY).await;
                 }
                 let yahoo_sym = yahoo_crypto_symbol(sym);
-                match yahoo::fetch_price(&yahoo_sym).await {
-                    Ok(mut quote) => {
+                match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_price(&yahoo_sym))
+                    .await
+                {
+                    Ok(Ok(mut quote)) => {
                         quote.symbol = sym.clone();
                         quotes.push(quote);
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         errors.push(format!("{}: CoinGecko + Yahoo both failed: {}", sym, e));
+                    }
+                    Err(_) => {
+                        errors.push(format!(
+                            "{}: CoinGecko + Yahoo both failed: request timed out",
+                            sym
+                        ));
                     }
                 }
             }
@@ -486,7 +509,7 @@ pub fn run(
             .filter(|(_, cat)| *cat != AssetCategory::Cash)
             .collect();
 
-        let (quotes, _errors) = rt.block_on(fetch_all_prices(&symbols, config));
+        let (quotes, errors) = rt.block_on(fetch_all_prices(&symbols, config));
 
         for quote in &quotes {
             if let Err(e) = upsert_price_backend(backend, quote) {
@@ -511,9 +534,29 @@ pub fn run(
             let _ = upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]);
         }
 
-        let fetched: Vec<_> = quotes.iter().filter(|q| q.source != "static").collect();
-
-        println!("✓ Prices ({} symbols)", fetched.len());
+        let fetched_count = quotes.iter().filter(|q| q.source != "static").count();
+        if fetched_count > 0 {
+            println!("✓ Prices ({} symbols)", fetched_count);
+        } else {
+            println!("✗ Prices (no live quotes fetched)");
+        }
+        if !errors.is_empty() {
+            let sample = errors.iter().take(5).cloned().collect::<Vec<_>>().join(" | ");
+            println!(
+                "⚠ Prices fallback: {} symbol fetches failed; using cached values where available. {}",
+                errors.len(),
+                sample
+            );
+        }
+        if fetched_count == 0 {
+            let cached_count = get_all_cached_prices_backend(backend)?.len();
+            if cached_count > 0 {
+                println!(
+                    "⚠ Prices fallback: no live quotes fetched, continuing with {} cached prices.",
+                    cached_count
+                );
+            }
+        }
 
         // Backfill history for symbols missing sufficient history so
         // technicals/day-change consumers have data after refresh-only runs.
@@ -568,8 +611,14 @@ pub fn run(
     if predictions_need_refresh(backend)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => {
-                predictions_cache::upsert_predictions_backend(backend, &markets)?;
-                println!("✓ Predictions ({} markets)", markets.len());
+                match predictions_cache::upsert_predictions_backend(backend, &markets) {
+                    Ok(_) => println!("✓ Predictions ({} markets)", markets.len()),
+                    Err(e) => println!(
+                        "⚠ Predictions fetched ({} markets) but cache write failed: {}",
+                        markets.len(),
+                        e
+                    ),
+                }
             }
             Err(e) => {
                 println!("✗ Predictions (failed: {})", e);

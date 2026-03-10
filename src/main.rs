@@ -239,10 +239,10 @@ fn main() -> Result<()> {
             commands::value::run(&backend, &config, json)
         }
         Some(Command::Brief { json }) => {
-            commands::brief::run_backend(&backend, &config, true, json)
+            commands::brief::run_backend(&backend, &config, true, json, cached_only)
         }
         Some(Command::Watchlist { approaching, json }) => {
-            commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json)
+            commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json, cached_only)
         }
 
         Some(Command::SetCash { symbol, amount }) => {

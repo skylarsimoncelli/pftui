@@ -1134,9 +1134,18 @@ fn print_benchmark_comparison_backend(
     }
 }
 
-pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) -> Result<()> {
+fn run_internal(
+    conn: &Connection,
+    config: &Config,
+    technicals: bool,
+    agent: bool,
+    cached_only: bool,
+) -> Result<()> {
     if agent {
         return run_agent_mode(conn, config);
+    }
+    if cached_only {
+        eprintln!("Note: cached-only mode enabled; brief is rendered from local cache.");
     }
     let cached = get_all_cached_prices(conn)?;
     let prices: HashMap<String, Decimal> =
@@ -1164,15 +1173,22 @@ pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) ->
     }
 }
 
+pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) -> Result<()> {
+    run_internal(conn, config, technicals, agent, false)
+}
+
 pub fn run_backend(
     backend: &BackendConnection,
     config: &Config,
     technicals: bool,
     agent: bool,
+    cached_only: bool,
 ) -> Result<()> {
     match backend {
-        BackendConnection::Sqlite { conn } => run(conn, config, technicals, agent),
-        BackendConnection::Postgres { .. } => run_backend_native(backend, config, technicals, agent),
+        BackendConnection::Sqlite { conn } => run_internal(conn, config, technicals, agent, cached_only),
+        BackendConnection::Postgres { .. } => {
+            run_backend_native(backend, config, technicals, agent, cached_only)
+        }
     }
 }
 
@@ -1181,9 +1197,13 @@ fn run_backend_native(
     config: &Config,
     technicals: bool,
     agent: bool,
+    cached_only: bool,
 ) -> Result<()> {
     if agent {
         return run_agent_mode_backend(backend, config);
+    }
+    if cached_only {
+        eprintln!("Note: cached-only mode enabled; brief is rendered from local cache.");
     }
 
     let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;

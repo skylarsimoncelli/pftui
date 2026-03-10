@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
     /// Use cached/local data only; do not attempt network refresh/backfill calls
-    #[arg(long, global = true)]
+    #[arg(long, visible_alias = "offline", global = true)]
     pub cached_only: bool,
 
     #[command(subcommand)]

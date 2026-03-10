@@ -115,11 +115,21 @@ fn backfill_market_prices(
     }
 
     let rt = tokio::runtime::Runtime::new()?;
+    let mut failed = Vec::new();
     for symbol in symbols {
-        if let Ok(quote) = rt.block_on(yahoo::fetch_price(symbol)) {
-            upsert_price_backend(backend, &quote)?;
-            price_map.insert(symbol.to_string(), quote.price);
+        match rt.block_on(yahoo::fetch_price(symbol)) {
+            Ok(quote) => {
+                upsert_price_backend(backend, &quote)?;
+                price_map.insert(symbol.to_string(), quote.price);
+            }
+            Err(e) => failed.push(format!("{}: {}", symbol, e)),
         }
+    }
+    if !failed.is_empty() {
+        eprintln!(
+            "Warning: macro price backfill failed for {} symbols; showing cached values where available.",
+            failed.len()
+        );
     }
 
     Ok(())
@@ -140,9 +150,16 @@ fn backfill_symbol_history(
     }
 
     let rt = tokio::runtime::Runtime::new()?;
-    if let Ok(history) = rt.block_on(yahoo::fetch_history(symbol, days)) {
-        if !history.is_empty() {
+    match rt.block_on(yahoo::fetch_history(symbol, days)) {
+        Ok(history) if !history.is_empty() => {
             upsert_history_backend(backend, symbol, "yahoo", &history)?;
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!(
+                "Warning: macro history backfill failed for {} (using cached history): {}",
+                symbol, e
+            );
         }
     }
     Ok(())

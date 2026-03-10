@@ -707,7 +707,7 @@ per-asset consensus across timeframes. `low/medium/high/macro` expand each layer
 
 ### Data & Display
 - [x] [Feedback] **Fix Brent crude data** — Added Brent (`BZ=F`) to shared economy symbol set so `refresh` always fetches/caches it, preventing macro dashboard `---` gaps and stabilizing WTI-Brent spread availability. (Completed 2026-03-09)
-- [ ] [Feedback] **Graceful degradation on API failure** — When Yahoo returns 429 or CoinGecko returns 403, commands hang or return nothing instead of falling back to cached data with a staleness warning. Add `--cached-only` / `--offline` flag to all data commands that skips network calls and uses last cached values. When API fails during `refresh`, return cached data + clear warning rather than empty output. **Files:** `src/commands/refresh.rs` (per-source error handling), `src/commands/brief.rs`, `src/commands/watchlist.rs`, `src/commands/macro_cmd.rs`.
+- [x] [Feedback] **Graceful degradation on API failure** — Added explicit fallback behavior and warnings across data commands: `refresh` now uses per-request timeouts, reports per-symbol fetch failures, and continues on cached data when live APIs fail; `macro` backfills now warn and continue with cache; `brief`/`watchlist` now honor global cached-only mode messaging; and global `--cached-only` now has `--offline` alias. (Completed 2026-03-09)
 - [x] [Feedback] **Fix price staleness after refresh** — `pftui refresh` now always fetches and overwrites `price_cache` instead of skipping when cache age is below a freshness threshold, eliminating stale-price runs after manual refresh execution. (Completed 2026-03-09)
 
 ### CLI Enhancements

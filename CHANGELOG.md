@@ -11,6 +11,14 @@
 - Tests: `cargo test -q`
 - TODO: removed P1 movers daily-change bug
 
+### 2026-03-09 — Graceful API failure degradation + offline alias
+
+- What: added per-request timeouts and explicit fallback warnings in refresh price/history fetches, surfaced cached fallback behavior when live sources fail, hardened macro backfill to warn-and-continue on fetch errors, wired cached-only awareness into brief/watchlist output, and added global `--offline` alias for `--cached-only`.
+- Why: prevents Yahoo/CoinGecko failures from looking like successful refreshes and makes cached fallback behavior explicit for operator trust and resilience.
+- Files: `src/commands/refresh.rs`, `src/commands/macro_cmd.rs`, `src/commands/brief.rs`, `src/commands/watchlist_cli.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 graceful degradation item
+
 ### 2026-03-09 — Refresh staleness fix (always refresh prices)
 
 - What: removed cache-age short-circuiting from `pftui refresh` price stage so manual refresh always fetches current quotes and overwrites `price_cache`.

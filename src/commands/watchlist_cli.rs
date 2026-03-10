@@ -113,7 +113,12 @@ pub fn run(
     config: &crate::config::Config,
     approaching: Option<&str>,
     json: bool,
+    cached_only: bool,
 ) -> Result<()> {
+    if cached_only {
+        eprintln!("Note: cached-only mode enabled; watchlist uses local cache only.");
+    }
+
     let entries = list_watchlist_backend(backend)?;
 
     if entries.is_empty() {
@@ -526,7 +531,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -541,7 +546,7 @@ mod tests {
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -574,7 +579,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -782,7 +787,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 }
