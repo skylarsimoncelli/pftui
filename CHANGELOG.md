@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-11 — Remove unused brief::run() function (backend migration cleanup)
+
+- What: removed dead `brief::run()` function at L1176 that was left over from the SQLite→PostgreSQL backend migration. Main entry point is now `brief::run_backend()`. Updated 6 tests to call `run_internal()` directly instead of the removed wrapper.
+- Why: clippy `--all-targets -- -D warnings` detected unused code (-D dead_code). Clean up post-migration dead paths.
+- Files: `src/commands/brief.rs`
+- Tests: 1197 passing (no changes, all tests updated to use run_internal)
+
 ### 2026-03-09 — Movers/watchlist daily-change reliability fix
 
 - What: hardened daily-change computation to use yesterday lookup with fallback to previous available close, fixed watchlist symbol-resolution mismatch (`symbol` vs Yahoo-mapped symbol) for change/technicals history reads, and made refresh history backfill recency-aware (not just count-based) so stale-but-long histories are refreshed.
