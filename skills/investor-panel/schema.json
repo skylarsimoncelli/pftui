@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pftui.dev/schemas/investor-panel-response.json",
+  "title": "InvestorPanelResponse",
+  "type": "object",
+  "required": [
+    "investor",
+    "overall_signal",
+    "confidence",
+    "positioning",
+    "key_insight",
+    "what_would_change_my_mind"
+  ],
+  "properties": {
+    "investor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "overall_signal": {
+      "type": "string",
+      "enum": ["bullish", "bearish", "neutral"]
+    },
+    "confidence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "positioning": {
+      "type": "object",
+      "required": ["cash", "gold", "btc", "equities", "oil"],
+      "properties": {
+        "cash": { "$ref": "#/$defs/assetView" },
+        "gold": { "$ref": "#/$defs/assetView" },
+        "btc": { "$ref": "#/$defs/assetView" },
+        "equities": { "$ref": "#/$defs/assetView" },
+        "oil": { "$ref": "#/$defs/assetView" }
+      },
+      "additionalProperties": false
+    },
+    "key_insight": {
+      "type": "string",
+      "minLength": 10
+    },
+    "what_would_change_my_mind": {
+      "type": "string",
+      "minLength": 10
+    }
+  },
+  "$defs": {
+    "assetView": {
+      "type": "object",
+      "required": ["signal", "weight", "reasoning"],
+      "properties": {
+        "signal": {
+          "type": "string",
+          "enum": ["bullish", "bearish", "neutral"]
+        },
+        "weight": {
+          "type": "string",
+          "enum": [
+            "overweight",
+            "neutral",
+            "underweight",
+            "avoid",
+            "tactical"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "minLength": 8
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-11 — F36 shipped: Investor Perspectives Panel skill scaffold
+
+- What: implemented the full `skills/investor-panel` package for multi-persona macro analysis: orchestration guide (`SKILL.md`), data collection script (`collect-data.sh`), strict response schema (`schema.json`), configurable default roster (`config.toml`), and persona library (`15` legends + `10` archetypes + customizable `personas/custom/.gitkeep`).
+- Why: completes TODO `P3/F36` using the intended non-Rust path (agent orchestration on top of pftui JSON APIs) and turns the design spec into a runnable, customizable skill package.
+- Files: `skills/investor-panel/SKILL.md`, `skills/investor-panel/collect-data.sh`, `skills/investor-panel/schema.json`, `skills/investor-panel/config.toml`, `skills/investor-panel/personas/*`, `docs/AI-LAYER.md`, `AGENTS.md`, `.gitignore`, `TODO.md`
+- Tests: `bash -n skills/investor-panel/collect-data.sh`, `jq . skills/investor-panel/schema.json`, file/roster verification (`find`, `wc -l`)
+- TODO: removed P3 `F36: Investor Perspectives Panel`
+
 ### 2026-03-11 — Fix scenario_history logging old probability instead of new
 
 - What: fixed bug where `pftui scenario update --probability` logged the OLD probability to scenario_history instead of the NEW value. Root cause: the history INSERT used `SELECT ... FROM scenarios` before the UPDATE, capturing stale data. Fixed by reordering operations: UPDATE first, then INSERT with the new probability parameter directly.

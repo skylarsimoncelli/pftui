@@ -341,4 +341,3 @@ TOP INSIGHT (Druckenmiller):
 - [ ] [P2] New command: `pftui analytics gaps` that shows which tables have stale or missing data
 
 ---
-
