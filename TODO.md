@@ -21,8 +21,14 @@ Current references:
 
 ### Data & Display
 
+- [ ] [Feedback] Fix predictions command to filter for finance/geopolitics categories — currently returns mostly sports/entertainment markets instead of macro-relevant data (requested by Morning Research, Evening Planner, Market Close ×6 reviews)
+- [ ] [Feedback] Fix data source reliability: COT (all failed), on-chain (decode error), BLS (parse error), news (0 articles intermittently), predictions (parse error) — `pftui status` shows 8/10 sources stale (Integration Optimiser Mar 11)
+- [ ] [Feedback] Debug why `pftui refresh` stopped populating `price_history` table (0 writes observed — Integration Optimiser Mar 11)
+
 ### CLI Enhancements
 
+- [ ] [Feedback] `pftui scenario update` should support `--notes` flag for inline annotation (currently errors with unexpected argument) — low effort, high agent UX value
+- [ ] [Feedback] `pftui analytics gaps` command — show which tables have stale or missing data per timeframe layer (`src/commands/analytics.rs`)
 
 ### Analytics
 
@@ -317,6 +323,22 @@ TOP INSIGHT (Druckenmiller):
 - No trade execution or order generation
 - No backtesting (different problem)
 - No real-time data (uses pftui cached data from last refresh)
+
+---
+
+## Integration Optimiser Recommendations
+
+> From Integration Optimiser cron — integration gaps between AI agents and pftui
+
+- [ ] [P0] Market Close cron: Change `--section eod` to `--section market` (eod is invalid section)
+- [ ] [P1] Morning Research: Move pftui write-back commands BEFORE Telegram send to ensure execution under timeout pressure
+- [ ] [P1] Morning Research: Add explicit "WRITE TO PFTUI BEFORE SENDING BRIEF" instruction to prompt
+- [ ] [P1] Market Close: Ensure `pftui agent-msg send --from market-close --to evening-planner` executes for notable moves
+- [ ] [P1] Debug why `pftui refresh` stopped populating price_history table (0 writes today)
+- [ ] [P1] Investigate why 8/10 data sources show stale on `pftui status` 
+- [ ] [P1] Morning Research should use `pftui predict add` for every specific market call to build prediction track record
+- [ ] [P2] Add MODELS.md Edit guidance header following SCENARIOS.md pattern to prevent agent edit failures
+- [ ] [P2] New command: `pftui analytics gaps` that shows which tables have stale or missing data
 
 ---
 
