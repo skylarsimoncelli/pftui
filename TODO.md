@@ -348,3 +348,24 @@ TOP INSIGHT (Druckenmiller):
 - **P1: alignment scoring algorithm** — Current alignment score (5.6%) is too basic. Need per-asset alignment score (0-100) that weights: conviction score, trend direction, regime state, scenario probability impact. This is the deployment signal tracker — needs to be the best feature in pftui.
 - **P2: prediction resolution criteria** — Add `resolution_criteria` column to `user_predictions` so auto-scoring knows exactly what to check (e.g., "daily close above $5,000" vs "intraday touch of $5,000").
 - **P2: scan query keyword matching** — `pftui scan` currently only filters on portfolio metrics (gain_pct, allocation_pct). Add news keyword scanning: `pftui scan --news-keyword "FOMC" --save fomc-watch` that triggers when news_cache contains matching items.
+
+### Prediction Framework Enhancement (2026-03-11)
+
+**For dev cron (pftui code changes):**
+- **P1: `pftui predict add` needs `--timeframe`, `--confidence`, `--source-agent` flags** — Currently agents use raw SQL to set these columns (added to Postgres but not CLI). This is the #1 blocker for clean prediction workflow.
+- **P1: `pftui predict add` needs `--lesson` flag for scoring** — When scoring wrong predictions, agents should be able to set the lesson in one command: `pftui predict score <id> --outcome wrong --notes "..." --lesson "..."`
+- **P1: `pftui predict stats` should break down by timeframe** — Show hit rate per timeframe (low/medium/high/macro), per source_agent, and per conviction level. This is how the system tracks whether it's improving.
+- **P2: `pftui predict list` needs `--timeframe` filter** — `pftui predict list --timeframe low --filter pending` to let data processors only see their own predictions
+- **P2: `pftui predict` needs resolution_criteria field** — Add column and CLI flag so predictions have explicit criteria (e.g., "daily close above $5,000" vs "intraday touch")
+- **P1: Alignment scoring algorithm upgrade** — Current 5.6% alignment score is too basic. Need per-asset alignment score (0-100) weighting: conviction score, trend direction, regime state, scenario probability. This IS the deployment signal tracker. Must be pftui's best feature.
+- **P2: `pftui scan --news-keyword` flag** — Scan news_cache for keyword matches. `pftui scan --news-keyword "FOMC" --save fomc-watch` triggers when matching news appears. Enables data processors to catch breaking news without web_search.
+- **P2: `pftui agent-msg list` needs `--from` and `--unacked` filters** — Currently agents can't filter by sender or acknowledgement status via CLI
+
+### Sentinel Integration Tasks (2026-03-11)
+**For finance sentinel to complete:**
+- **Integration Optimiser should monitor prediction volume per tier** — Flag if Pre-Market makes 0 predictions (should be 2-5), if Evening makes 0 MEDIUM predictions (should be 3-5), etc. Pipeline health includes prediction discipline.
+- **Integration Optimiser should track prediction accuracy trends** — Weekly accuracy trend per timeframe. Is the system getting smarter? If LOW accuracy is declining, flag which agent's predictions are dragging it down.
+- **Morning Intelligence should surface accuracy trend in weekly handoff** — "Our LOW prediction accuracy this week was 62%, up from 55% last week. Main improvement: better oil cause-effect reasoning after Tuesday's wrong call."
+- **Evening Analyst should build a "cause-effect model library"** — When a cause-effect prediction is confirmed (e.g., "CB buying dominates DXY for gold"), log it as a validated model in notes. Future predictions can reference validated models for higher confidence.
+- **Data processors need scenario keyword list from Evening Analyst** — Evening should send a "WATCH TOMORROW" agent-msg listing specific keywords/events to flag, so data processors scan for the right things.
+- **Weekly Review should audit prediction lessons** — Are lessons being written? Are they specific or generic? Are agents actually changing behavior based on lessons? Flag if lessons are templated.
