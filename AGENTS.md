@@ -855,6 +855,26 @@ pftui movers --json > /tmp/movers.json
 # Load all files, cross-reference, write analysis to THESIS.md
 ```
 
+### Investor Panel (Multi-Persona)
+
+```bash
+# 1) Collect one shared data blob from pftui
+./skills/investor-panel/collect-data.sh > /tmp/pftui-investor-panel.json
+
+# 2) Run your orchestrator with:
+#    - /tmp/pftui-investor-panel.json
+#    - persona files in skills/investor-panel/personas/
+#    - response contract in skills/investor-panel/schema.json
+
+# 3) Store summary in pftui for auditability
+pftui agent-msg send "Investor panel complete: consensus + divergences ready" --from investor-panel
+```
+
+Skill package:
+- `skills/investor-panel/SKILL.md`
+- `skills/investor-panel/config.toml`
+- `skills/investor-panel/personas/`
+
 ---
 
 ## Best Practices

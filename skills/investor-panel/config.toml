@@ -1,0 +1,17 @@
+# Default roster size: 8 personas
+# Edit this list to enable/disable investor lenses.
+
+enabled_personas = [
+  "legends/stanley_druckenmiller",
+  "legends/ray_dalio",
+  "legends/howard_marks",
+  "legends/warren_buffett",
+  "legends/michael_burry",
+  "archetypes/momentum_trader",
+  "archetypes/macro_tourist",
+  "archetypes/commodity_bull"
+]
+
+tracked_assets = ["cash", "gold", "btc", "equities", "oil"]
+strong_consensus_threshold = 0.75
+high_divergence_vote_gap = 1
