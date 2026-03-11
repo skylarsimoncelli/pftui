@@ -160,16 +160,16 @@ pub fn update_scenario_probability(
     probability: f64,
     driver: Option<&str>,
 ) -> Result<()> {
-    // Snapshot to history before updating
-    conn.execute(
-        "INSERT INTO scenario_history (scenario_id, probability, driver)
-         SELECT id, probability, ? FROM scenarios WHERE id = ?",
-        params![driver, id],
-    )?;
-
+    // Update scenario first
     conn.execute(
         "UPDATE scenarios SET probability = ?, updated_at = datetime('now') WHERE id = ?",
         params![probability, id],
+    )?;
+
+    // Snapshot new probability to history after update
+    conn.execute(
+        "INSERT INTO scenario_history (scenario_id, probability, driver) VALUES (?, ?, ?)",
+        params![id, probability, driver],
     )?;
     Ok(())
 }
@@ -649,19 +649,19 @@ fn update_scenario_probability_postgres(
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
     crate::db::pg_runtime::block_on(async {
-        sqlx::query(
-            "INSERT INTO scenario_history (scenario_id, probability, driver)
-             SELECT id, probability, $1 FROM scenarios WHERE id = $2",
-        )
-        .bind(driver)
-        .bind(id)
-        .execute(pool)
-        .await?;
         sqlx::query("UPDATE scenarios SET probability = $1, updated_at = NOW() WHERE id = $2")
             .bind(probability)
             .bind(id)
             .execute(pool)
             .await?;
+        sqlx::query(
+            "INSERT INTO scenario_history (scenario_id, probability, driver) VALUES ($1, $2, $3)",
+        )
+        .bind(id)
+        .bind(probability)
+        .bind(driver)
+        .execute(pool)
+        .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

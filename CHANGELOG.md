@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-11 — Fix scenario_history logging old probability instead of new
+
+- What: fixed bug where `pftui scenario update --probability` logged the OLD probability to scenario_history instead of the NEW value. Root cause: the history INSERT used `SELECT ... FROM scenarios` before the UPDATE, capturing stale data. Fixed by reordering operations: UPDATE first, then INSERT with the new probability parameter directly.
+- Why: history integrity is critical for analytics and scenario tracking. The bug made history entries unreliable.
+- Files: `src/db/scenarios.rs` (both SQLite and PostgreSQL implementations)
+- Tests: 1197 passing (all tests pass, bug verified by code inspection)
+
 ### 2026-03-11 — Remove unused brief::run() function (backend migration cleanup)
 
 - What: removed dead `brief::run()` function at L1176 that was left over from the SQLite→PostgreSQL backend migration. Main entry point is now `brief::run_backend()`. Updated 6 tests to call `run_internal()` directly instead of the removed wrapper.
