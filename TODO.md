@@ -341,3 +341,10 @@ TOP INSIGHT (Druckenmiller):
 - [ ] [P2] New command: `pftui analytics gaps` that shows which tables have stale or missing data
 
 ---
+
+### Integration Optimiser Recommendations (2026-03-11)
+
+- **P1: prediction schema needs CLI support** — `timeframe`, `confidence`, `source_agent`, `lesson` columns added to Postgres but CLI `pftui predict add` doesn't support `--timeframe`, `--confidence`, or `--source` flags yet. Agents currently have to use raw SQL to set these. Add CLI flags.
+- **P1: alignment scoring algorithm** — Current alignment score (5.6%) is too basic. Need per-asset alignment score (0-100) that weights: conviction score, trend direction, regime state, scenario probability impact. This is the deployment signal tracker — needs to be the best feature in pftui.
+- **P2: prediction resolution criteria** — Add `resolution_criteria` column to `user_predictions` so auto-scoring knows exactly what to check (e.g., "daily close above $5,000" vs "intraday touch of $5,000").
+- **P2: scan query keyword matching** — `pftui scan` currently only filters on portfolio metrics (gain_pct, allocation_pct). Add news keyword scanning: `pftui scan --news-keyword "FOMC" --save fomc-watch` that triggers when news_cache contains matching items.
