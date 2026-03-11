@@ -1173,10 +1173,6 @@ fn run_internal(
     }
 }
 
-pub fn run(conn: &Connection, config: &Config, technicals: bool, agent: bool) -> Result<()> {
-    run_internal(conn, config, technicals, agent, false)
-}
-
 pub fn run_backend(
     backend: &BackendConnection,
     config: &Config,
@@ -2632,7 +2628,7 @@ mod tests {
     fn brief_empty_db() {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
-        let result = run(&conn, &config, false, false);
+        let result = run_internal(&conn, &config, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -2659,7 +2655,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false, false);
+        let result = run_internal(&conn, &config, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -2735,7 +2731,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false, false);
+        let result = run_internal(&conn, &config, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -2786,7 +2782,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = run(&conn, &config, false, false);
+        let result = run_internal(&conn, &config, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -2801,7 +2797,7 @@ mod tests {
         use crate::db::allocations::insert_allocation;
         insert_allocation(&conn, "BTC", AssetCategory::Crypto, dec!(50)).unwrap();
 
-        let result = run(&conn, &config, false, false);
+        let result = run_internal(&conn, &config, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -3044,7 +3040,7 @@ mod tests {
         .unwrap();
 
         // With technicals=true, should succeed (no history means no indicators displayed)
-        let result = run(&conn, &config, true, false);
+        let result = run_internal(&conn, &config, true, false, false);
         assert!(result.is_ok());
     }
 }
