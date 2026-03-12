@@ -14,9 +14,13 @@ pub struct UserPrediction {
     pub claim: String,
     pub symbol: Option<String>,
     pub conviction: String,
+    pub timeframe: Option<String>,
+    pub confidence: Option<f64>,
+    pub source_agent: Option<String>,
     pub target_date: Option<String>,
     pub outcome: String,
     pub score_notes: Option<String>,
+    pub lesson: Option<String>,
     pub created_at: String,
     pub scored_at: Option<String>,
 }
@@ -43,6 +47,8 @@ pub struct PredictionStats {
     pub hit_rate_pct: f64,
     pub by_conviction: HashMap<String, ConvictionStats>,
     pub by_symbol: HashMap<String, ConvictionStats>,
+    pub by_timeframe: HashMap<String, ConvictionStats>,
+    pub by_source_agent: HashMap<String, ConvictionStats>,
 }
 
 impl UserPrediction {
@@ -52,13 +58,81 @@ impl UserPrediction {
             claim: row.get(1)?,
             symbol: row.get(2)?,
             conviction: row.get(3)?,
-            target_date: row.get(4)?,
-            outcome: row.get(5)?,
-            score_notes: row.get(6)?,
-            created_at: row.get(7)?,
-            scored_at: row.get(8)?,
+            timeframe: row.get(4)?,
+            confidence: row.get(5)?,
+            source_agent: row.get(6)?,
+            target_date: row.get(7)?,
+            outcome: row.get(8)?,
+            score_notes: row.get(9)?,
+            lesson: row.get(10)?,
+            created_at: row.get(11)?,
+            scored_at: row.get(12)?,
         })
     }
+}
+
+fn ensure_prediction_columns(conn: &Connection) -> Result<()> {
+    let required = [
+        ("timeframe", "TEXT NOT NULL DEFAULT 'medium'"),
+        ("confidence", "REAL"),
+        ("source_agent", "TEXT"),
+        ("lesson", "TEXT"),
+    ];
+    for (col, ty) in required {
+        let exists: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('user_predictions') WHERE name = ?1")?
+            .query_row([col], |row| row.get::<_, i64>(0))
+            .unwrap_or(0)
+            > 0;
+        if !exists {
+            conn.execute(&format!("ALTER TABLE user_predictions ADD COLUMN {} {}", col, ty), [])?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
+    crate::db::pg_runtime::block_on(async {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS user_predictions (
+                id BIGSERIAL PRIMARY KEY,
+                claim TEXT NOT NULL,
+                symbol TEXT,
+                conviction TEXT NOT NULL DEFAULT 'medium',
+                timeframe TEXT NOT NULL DEFAULT 'medium',
+                confidence DOUBLE PRECISION,
+                source_agent TEXT,
+                target_date TEXT,
+                outcome TEXT NOT NULL DEFAULT 'pending',
+                score_notes TEXT,
+                lesson TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                scored_at TIMESTAMPTZ
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_user_predictions_outcome ON user_predictions(outcome)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_user_predictions_symbol ON user_predictions(symbol)")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS timeframe TEXT NOT NULL DEFAULT 'medium'")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS source_agent TEXT")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS lesson TEXT")
+            .execute(pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    })?;
+    Ok(())
 }
 
 pub fn add_prediction(
@@ -66,12 +140,23 @@ pub fn add_prediction(
     claim: &str,
     symbol: Option<&str>,
     conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
     target_date: Option<&str>,
 ) -> Result<i64> {
     conn.execute(
-        "INSERT INTO user_predictions (claim, symbol, conviction, target_date)
-         VALUES (?, ?, ?, ?)",
-        params![claim, symbol, conviction.unwrap_or("medium"), target_date],
+        "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        params![
+            claim,
+            symbol,
+            conviction.unwrap_or("medium"),
+            timeframe.unwrap_or("medium"),
+            confidence,
+            source_agent,
+            target_date
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -80,10 +165,11 @@ pub fn list_predictions(
     conn: &Connection,
     outcome_filter: Option<&str>,
     symbol: Option<&str>,
+    timeframe_filter: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<UserPrediction>> {
     let mut query = String::from(
-        "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at, scored_at
+        "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, outcome, score_notes, lesson, created_at, scored_at
          FROM user_predictions",
     );
 
@@ -93,6 +179,9 @@ pub fn list_predictions(
     }
     if let Some(sym) = symbol {
         where_parts.push(format!("symbol = '{}'", sym.replace('"', "''")));
+    }
+    if let Some(tf) = timeframe_filter {
+        where_parts.push(format!("timeframe = '{}'", tf.replace('"', "''")));
     }
     if !where_parts.is_empty() {
         query.push_str(" WHERE ");
@@ -114,12 +203,18 @@ pub fn list_predictions(
     Ok(items)
 }
 
-pub fn score_prediction(conn: &Connection, id: i64, outcome: &str, notes: Option<&str>) -> Result<()> {
+pub fn score_prediction(
+    conn: &Connection,
+    id: i64,
+    outcome: &str,
+    notes: Option<&str>,
+    lesson: Option<&str>,
+) -> Result<()> {
     conn.execute(
         "UPDATE user_predictions
-         SET outcome = ?, score_notes = ?, scored_at = datetime('now')
+         SET outcome = ?, score_notes = ?, lesson = ?, scored_at = datetime('now')
          WHERE id = ?",
-        params![outcome, notes, id],
+        params![outcome, notes, lesson, id],
     )?;
     Ok(())
 }
@@ -158,11 +253,13 @@ fn compute_stats(items: &[UserPrediction]) -> ConvictionStats {
 
 #[allow(dead_code)]
 pub fn get_stats(conn: &Connection) -> Result<PredictionStats> {
-    let all = list_predictions(conn, None, None, None)?;
+    let all = list_predictions(conn, None, None, None, None)?;
     let overall = compute_stats(&all);
 
     let mut by_conviction_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
     let mut by_symbol_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+    let mut by_timeframe_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+    let mut by_source_agent_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
 
     for item in &all {
         by_conviction_map
@@ -172,6 +269,22 @@ pub fn get_stats(conn: &Connection) -> Result<PredictionStats> {
 
         let sym = item.symbol.clone().unwrap_or_else(|| "unknown".to_string());
         by_symbol_map.entry(sym).or_default().push(item.clone());
+        let timeframe = item
+            .timeframe
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        by_timeframe_map
+            .entry(timeframe)
+            .or_default()
+            .push(item.clone());
+        let source = item
+            .source_agent
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        by_source_agent_map
+            .entry(source)
+            .or_default()
+            .push(item.clone());
     }
 
     let by_conviction = by_conviction_map
@@ -180,6 +293,14 @@ pub fn get_stats(conn: &Connection) -> Result<PredictionStats> {
         .collect();
 
     let by_symbol = by_symbol_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+    let by_timeframe = by_timeframe_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+    let by_source_agent = by_source_agent_map
         .into_iter()
         .map(|(k, v)| (k, compute_stats(&v)))
         .collect();
@@ -194,6 +315,8 @@ pub fn get_stats(conn: &Connection) -> Result<PredictionStats> {
         hit_rate_pct: overall.hit_rate_pct,
         by_conviction,
         by_symbol,
+        by_timeframe,
+        by_source_agent,
     })
 }
 
@@ -203,12 +326,39 @@ pub fn add_prediction_backend(
     claim: &str,
     symbol: Option<&str>,
     conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
     target_date: Option<&str>,
 ) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| add_prediction(conn, claim, symbol, conviction, target_date),
-        |pool| add_prediction_postgres(pool, claim, symbol, conviction, target_date),
+        |conn| {
+            ensure_prediction_columns(conn)?;
+            add_prediction(
+                conn,
+                claim,
+                symbol,
+                conviction,
+                timeframe,
+                confidence,
+                source_agent,
+                target_date,
+            )
+        },
+        |pool| {
+            ensure_prediction_columns_postgres(pool)?;
+            add_prediction_postgres(
+                pool,
+                claim,
+                symbol,
+                conviction,
+                timeframe,
+                confidence,
+                source_agent,
+                target_date,
+            )
+        },
     )
 }
 
@@ -216,12 +366,19 @@ pub fn list_predictions_backend(
     backend: &BackendConnection,
     outcome_filter: Option<&str>,
     symbol: Option<&str>,
+    timeframe_filter: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<UserPrediction>> {
     query::dispatch(
         backend,
-        |conn| list_predictions(conn, outcome_filter, symbol, limit),
-        |pool| list_predictions_postgres(pool, outcome_filter, symbol, limit),
+        |conn| {
+            ensure_prediction_columns(conn)?;
+            list_predictions(conn, outcome_filter, symbol, timeframe_filter, limit)
+        },
+        |pool| {
+            ensure_prediction_columns_postgres(pool)?;
+            list_predictions_postgres(pool, outcome_filter, symbol, timeframe_filter, limit)
+        },
     )
 }
 
@@ -231,21 +388,30 @@ pub fn score_prediction_backend(
     id: i64,
     outcome: &str,
     notes: Option<&str>,
+    lesson: Option<&str>,
 ) -> Result<()> {
     query::dispatch(
         backend,
-        |conn| score_prediction(conn, id, outcome, notes),
-        |pool| score_prediction_postgres(pool, id, outcome, notes),
+        |conn| {
+            ensure_prediction_columns(conn)?;
+            score_prediction(conn, id, outcome, notes, lesson)
+        },
+        |pool| {
+            ensure_prediction_columns_postgres(pool)?;
+            score_prediction_postgres(pool, id, outcome, notes, lesson)
+        },
     )
 }
 
 #[allow(dead_code)]
 pub fn get_stats_backend(backend: &BackendConnection) -> Result<PredictionStats> {
-    let all = list_predictions_backend(backend, None, None, None)?;
+    let all = list_predictions_backend(backend, None, None, None, None)?;
     let overall = compute_stats(&all);
 
     let mut by_conviction_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
     let mut by_symbol_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+    let mut by_timeframe_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+    let mut by_source_agent_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
 
     for item in &all {
         by_conviction_map
@@ -255,6 +421,22 @@ pub fn get_stats_backend(backend: &BackendConnection) -> Result<PredictionStats>
 
         let sym = item.symbol.clone().unwrap_or_else(|| "unknown".to_string());
         by_symbol_map.entry(sym).or_default().push(item.clone());
+        let timeframe = item
+            .timeframe
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        by_timeframe_map
+            .entry(timeframe)
+            .or_default()
+            .push(item.clone());
+        let source = item
+            .source_agent
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        by_source_agent_map
+            .entry(source)
+            .or_default()
+            .push(item.clone());
     }
 
     let by_conviction = by_conviction_map
@@ -263,6 +445,14 @@ pub fn get_stats_backend(backend: &BackendConnection) -> Result<PredictionStats>
         .collect();
 
     let by_symbol = by_symbol_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+    let by_timeframe = by_timeframe_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+    let by_source_agent = by_source_agent_map
         .into_iter()
         .map(|(k, v)| (k, compute_stats(&v)))
         .collect();
@@ -277,6 +467,8 @@ pub fn get_stats_backend(backend: &BackendConnection) -> Result<PredictionStats>
         hit_rate_pct: overall.hit_rate_pct,
         by_conviction,
         by_symbol,
+        by_timeframe,
+        by_source_agent,
     })
 }
 
@@ -286,7 +478,11 @@ type PredictionRow = (
     Option<String>,
     String,
     Option<String>,
+    Option<f64>,
+    Option<String>,
+    Option<String>,
     String,
+    Option<String>,
     Option<String>,
     String,
     Option<String>,
@@ -298,11 +494,15 @@ fn from_pg_row(r: PredictionRow) -> UserPrediction {
         claim: r.1,
         symbol: r.2,
         conviction: r.3,
-        target_date: r.4,
-        outcome: r.5,
-        score_notes: r.6,
-        created_at: r.7,
-        scored_at: r.8,
+        timeframe: r.4,
+        confidence: r.5,
+        source_agent: r.6,
+        target_date: r.7,
+        outcome: r.8,
+        score_notes: r.9,
+        lesson: r.10,
+        created_at: r.11,
+        scored_at: r.12,
     }
 }
 
@@ -312,17 +512,23 @@ fn add_prediction_postgres(
     claim: &str,
     symbol: Option<&str>,
     conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
     target_date: Option<&str>,
 ) -> Result<i64> {
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO user_predictions (claim, symbol, conviction, target_date)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING id",
         )
         .bind(claim)
         .bind(symbol)
         .bind(conviction.unwrap_or("medium"))
+        .bind(timeframe.unwrap_or("medium"))
+        .bind(confidence)
+        .bind(source_agent)
         .bind(target_date)
         .fetch_one(pool)
         .await
@@ -334,117 +540,50 @@ fn list_predictions_postgres(
     pool: &PgPool,
     outcome_filter: Option<&str>,
     symbol: Option<&str>,
+    timeframe_filter: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<UserPrediction>> {
-    let rows: Vec<PredictionRow> = match (outcome_filter, symbol, limit) {
-        (Some(o), Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 WHERE outcome = $1 AND symbol = $2
-                 ORDER BY created_at DESC
-                 LIMIT $3",
-            )
-            .bind(o)
-            .bind(s)
-            .bind(n as i64)
-            .fetch_all(pool)
-            .await
-        })?,
-        (Some(o), Some(s), None) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 WHERE outcome = $1 AND symbol = $2
-                 ORDER BY created_at DESC",
-            )
-            .bind(o)
-            .bind(s)
-            .fetch_all(pool)
-            .await
-        })?,
-        (Some(o), None, Some(n)) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 WHERE outcome = $1
-                 ORDER BY created_at DESC
-                 LIMIT $2",
-            )
-            .bind(o)
-            .bind(n as i64)
-            .fetch_all(pool)
-            .await
-        })?,
-        (Some(o), None, None) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 WHERE outcome = $1
-                 ORDER BY created_at DESC",
-            )
-            .bind(o)
-            .fetch_all(pool)
-            .await
-        })?,
-        (None, Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 WHERE symbol = $1
-                 ORDER BY created_at DESC
-                 LIMIT $2",
-            )
-            .bind(s)
-            .bind(n as i64)
-            .fetch_all(pool)
-            .await
-        })?,
-        (None, Some(s), None) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 WHERE symbol = $1
-                 ORDER BY created_at DESC",
-            )
-            .bind(s)
-            .fetch_all(pool)
-            .await
-        })?,
-        (None, None, Some(n)) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 ORDER BY created_at DESC
-                 LIMIT $1",
-            )
-            .bind(n as i64)
-            .fetch_all(pool)
-            .await
-        })?,
-        (None, None, None) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, claim, symbol, conviction, target_date, outcome, score_notes, created_at::text, scored_at::text
-                 FROM user_predictions
-                 ORDER BY created_at DESC",
-            )
-            .fetch_all(pool)
-            .await
-        })?,
-    };
+    let mut rows: Vec<PredictionRow> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, outcome, score_notes, lesson, created_at::text, scored_at::text
+             FROM user_predictions
+             ORDER BY created_at DESC",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    if let Some(o) = outcome_filter {
+        rows.retain(|r| r.8 == o);
+    }
+    if let Some(s) = symbol {
+        rows.retain(|r| r.2.as_deref().is_some_and(|v| v == s));
+    }
+    if let Some(tf) = timeframe_filter {
+        rows.retain(|r| r.4.as_deref().is_some_and(|v| v == tf));
+    }
+    if let Some(n) = limit {
+        rows.truncate(n);
+    }
     Ok(rows.into_iter().map(from_pg_row).collect())
 }
 
 #[allow(dead_code)]
-fn score_prediction_postgres(pool: &PgPool, id: i64, outcome: &str, notes: Option<&str>) -> Result<()> {
+fn score_prediction_postgres(
+    pool: &PgPool,
+    id: i64,
+    outcome: &str,
+    notes: Option<&str>,
+    lesson: Option<&str>,
+) -> Result<()> {
     crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE user_predictions
-             SET outcome = $1, score_notes = $2, scored_at = NOW()
-             WHERE id = $3",
+             SET outcome = $1, score_notes = $2, lesson = $3, scored_at = NOW()
+             WHERE id = $4",
         )
         .bind(outcome)
         .bind(notes)
+        .bind(lesson)
         .bind(id)
         .execute(pool)
         .await?;

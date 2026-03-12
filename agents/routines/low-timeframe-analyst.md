@@ -77,12 +77,7 @@ Example prediction format:
 - "[Technical level hold/break] leads to [momentum outcome]" (confidence: 0.5)
 
 ```bash
-pftui predict add "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level]
-```
-Tag predictions with timeframe and confidence via SQL:
-```sql
-UPDATE user_predictions SET timeframe='low', confidence=[0.X], source_agent='low-agent'
-WHERE id=(SELECT max(id) FROM user_predictions);
+pftui predict add "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent
 ```
 
 ## Midday Run
@@ -108,14 +103,14 @@ pftui notes add "LOW PREDICTION REVIEW: [prediction] — [outcome]. [If wrong: e
 
 7. FINAL SCORING. Score ALL remaining daily predictions. Data is final.
 ```bash
-pftui predict score <id> --outcome <correct|wrong|partial> --notes "EOD final: [closing data vs prediction]"
+pftui predict score <id> --outcome <correct|wrong|partial> --notes "EOD final: [closing data vs prediction]" --lesson "[what this teaches for next low-timeframe call]"
 ```
 Mandatory lesson for every wrong call.
 
 8. Calculate daily scorecard:
-```sql
-SELECT outcome, count(*) FROM user_predictions
-WHERE timeframe='low' AND created_at::date = CURRENT_DATE GROUP BY outcome;
+```bash
+pftui predict list --filter pending --timeframe low --json
+pftui predict stats --json
 ```
 
 9. Send comprehensive EOD data package to Evening Analyst:

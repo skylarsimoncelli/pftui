@@ -11,6 +11,13 @@ fn validate_conviction(value: &str) -> Result<()> {
     }
 }
 
+fn validate_timeframe(value: &str) -> Result<()> {
+    match value {
+        "low" | "medium" | "high" | "macro" => Ok(()),
+        _ => bail!("invalid timeframe '{}'. Valid: low, medium, high, macro", value),
+    }
+}
+
 fn validate_outcome(value: &str) -> Result<()> {
     match value {
         "pending" | "correct" | "partial" | "wrong" => Ok(()),
@@ -26,9 +33,13 @@ pub fn run(
     id: Option<i64>,
     symbol: Option<&str>,
     conviction: Option<&str>,
+    timeframe: Option<&str>,
+    confidence: Option<f64>,
+    source_agent: Option<&str>,
     target_date: Option<&str>,
     outcome: Option<&str>,
     notes: Option<&str>,
+    lesson: Option<&str>,
     filter: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
@@ -39,16 +50,28 @@ pub fn run(
             if let Some(c) = conviction {
                 validate_conviction(c)?;
             }
+            if let Some(tf) = timeframe {
+                validate_timeframe(tf)?;
+            }
+            if let Some(conf) = confidence {
+                if !(0.0..=1.0).contains(&conf) {
+                    bail!("invalid confidence '{}'. Valid range: 0.0..=1.0", conf);
+                }
+            }
             let new_id = user_predictions::add_prediction_backend(
                 backend,
                 claim,
                 symbol,
                 conviction,
+                timeframe,
+                confidence,
+                source_agent,
                 target_date,
             )?;
 
             if json_output {
-                let rows = user_predictions::list_predictions_backend(backend, None, None, None)?;
+                let rows =
+                    user_predictions::list_predictions_backend(backend, None, None, None, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 }
@@ -61,7 +84,16 @@ pub fn run(
             if let Some(f) = filter {
                 validate_outcome(f)?;
             }
-            let rows = user_predictions::list_predictions_backend(backend, filter, symbol, limit)?;
+            if let Some(tf) = timeframe {
+                validate_timeframe(tf)?;
+            }
+            let rows = user_predictions::list_predictions_backend(
+                backend,
+                filter,
+                symbol,
+                timeframe,
+                limit,
+            )?;
 
             if json_output {
                 println!(
@@ -86,10 +118,11 @@ pub fn run(
             let pid = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
             let out = outcome.ok_or_else(|| anyhow::anyhow!("--outcome required"))?;
             validate_outcome(out)?;
-            user_predictions::score_prediction_backend(backend, pid, out, notes)?;
+            user_predictions::score_prediction_backend(backend, pid, out, notes, lesson)?;
 
             if json_output {
-                let rows = user_predictions::list_predictions_backend(backend, None, None, None)?;
+                let rows =
+                    user_predictions::list_predictions_backend(backend, None, None, None, None)?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == pid) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 } else {
@@ -113,6 +146,8 @@ pub fn run(
                 println!("  Partial: {}", stats.partial);
                 println!("  Wrong: {}", stats.wrong);
                 println!("  Hit rate: {:.1}%", stats.hit_rate_pct);
+                println!("  Timeframes tracked: {}", stats.by_timeframe.len());
+                println!("  Source agents tracked: {}", stats.by_source_agent.len());
             }
         }
 

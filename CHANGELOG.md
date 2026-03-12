@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-12 — Prediction CLI workflow completion (timeframe/confidence/source/lesson)
+
+- What: extended `pftui predict add` with native `--timeframe`, `--confidence`, and `--source-agent` flags; extended `pftui predict score` with `--lesson`; extended `pftui predict list` with timeframe filtering via `--timeframe`; and expanded `pftui predict stats` to include breakdowns by timeframe and source agent. Added safe schema migration paths for SQLite/Postgres prediction columns.
+- Why: removes raw-SQL workarounds from agent workflows and closes the main prediction-framework TODO blockers.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`, `src/db/user_predictions.rs`, `src/db/schema.rs`, `agents/routines/low-timeframe-analyst.md`, `agents/routines/medium-timeframe-analyst.md`, `agents/routines/high-timeframe-analyst.md`, `agents/routines/macro-timeframe-analyst.md`, `agents/routines/evening-analysis.md`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed prediction CLI gap items (`predict add flags`, `predict score --lesson`, `predict stats timeframe/source`, `predict list timeframe`) and related routine follow-up checkboxes
+
 ### 2026-03-12 — Agent message reply/flag workflow + sender filtering
 
 - What: added `pftui agent-msg reply` and `pftui agent-msg flag` actions for fast response/escalation against an existing message ID. Added backend message lookup by ID and `agent-msg list --from` sender filtering in both SQLite and Postgres paths.

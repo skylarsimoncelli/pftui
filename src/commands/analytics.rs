@@ -384,8 +384,14 @@ fn run_medium(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let thesis_sections = thesis::list_thesis_backend(backend).unwrap_or_default();
     let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
     let questions = research_questions::list_questions_backend(backend, Some("open")).unwrap_or_default();
-    let predictions = user_predictions::list_predictions_backend(backend, Some("pending"), None, Some(20))
-        .unwrap_or_default();
+    let predictions = user_predictions::list_predictions_backend(
+        backend,
+        Some("pending"),
+        None,
+        None,
+        Some(20),
+    )
+    .unwrap_or_default();
 
     if json_output {
         println!(

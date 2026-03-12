@@ -679,9 +679,9 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui question list [--status open] --json` | List tracked research questions |
 | `pftui question update --id N [--tilt ...] [--evidence "..."]` | Update evidence tilt/notes for a question |
 | `pftui question resolve --id N --resolution "..."` | Resolve/supersede a question with outcome notes |
-| `pftui predict add "CLAIM" [--symbol BTC] [--conviction high]` | Add a prediction call for later scoring |
-| `pftui predict score --id N --outcome correct|partial|wrong` | Score a previous prediction outcome |
-| `pftui predict stats --json` | Compute hit-rate stats by conviction and symbol |
+| `pftui predict add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent]` | Add a prediction call for later scoring |
+| `pftui predict score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
+| `pftui predict stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
 | `pftui agent-msg send "TEXT" --from agent-a [--to agent-b]` | Send a structured message between agent roles |
 | `pftui agent-msg reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
 | `pftui agent-msg flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |

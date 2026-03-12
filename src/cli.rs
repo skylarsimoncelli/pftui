@@ -617,6 +617,18 @@ pub enum Command {
         #[arg(long)]
         conviction: Option<String>,
 
+        /// Timeframe: low, medium, high, macro
+        #[arg(long)]
+        timeframe: Option<String>,
+
+        /// Confidence score (0.0 - 1.0)
+        #[arg(long)]
+        confidence: Option<f64>,
+
+        /// Source agent identifier (e.g. low-agent, evening-analyst)
+        #[arg(long = "source-agent")]
+        source_agent: Option<String>,
+
         /// Expected resolution date
         #[arg(long)]
         target_date: Option<String>,
@@ -628,6 +640,10 @@ pub enum Command {
         /// Scoring notes
         #[arg(long)]
         notes: Option<String>,
+
+        /// Lesson learned after scoring
+        #[arg(long)]
+        lesson: Option<String>,
 
         /// Filter: pending, correct, partial, wrong
         #[arg(long)]

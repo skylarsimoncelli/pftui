@@ -426,9 +426,13 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             claim TEXT NOT NULL,
             symbol TEXT,
             conviction TEXT NOT NULL DEFAULT 'medium',
+            timeframe TEXT NOT NULL DEFAULT 'medium',
+            confidence REAL,
+            source_agent TEXT,
             target_date TEXT,
             outcome TEXT NOT NULL DEFAULT 'pending',
             score_notes TEXT,
+            lesson TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             scored_at TEXT
         );

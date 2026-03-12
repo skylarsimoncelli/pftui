@@ -54,12 +54,7 @@ pftui structural log-add --date $(date +%Y-%m-%d) \
 
 6. Make 1-2 MACRO predictions (6-24 month horizon):
 ```bash
-pftui predict add "[structural/macro claim]" --target-date [YYYY-MM-DD] --conviction [level]
-```
-Tag with timeframe and confidence via SQL:
-```sql
-UPDATE user_predictions SET timeframe='macro', confidence=[0.X], source_agent='macro-agent'
-WHERE id=(SELECT max(id) FROM user_predictions);
+pftui predict add "[structural/macro claim]" --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source-agent macro-agent
 ```
 
 7. Score any MACRO predictions that accumulated enough evidence:

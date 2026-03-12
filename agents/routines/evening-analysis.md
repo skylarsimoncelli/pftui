@@ -56,14 +56,9 @@ Full accounting of today's predictions across ALL timeframes:
 
 For EVERY wrong prediction across any timeframe:
 ```bash
-pftui predict score <id> --outcome wrong --notes "[what happened vs predicted]"
+pftui predict score <id> --outcome wrong --notes "[what happened vs predicted]" --lesson "[Genuine reflection: what cause-effect assumption was wrong]"
 pftui notes add "WRONG CALL: [prediction]. Expected [X] because [reasoning]. Got [Y] because [actual cause]. Lesson: [specific analytical change]." \
   --date $(date +%Y-%m-%d) --section analysis
-```
-Tag lessons via SQL:
-```sql
-UPDATE user_predictions SET lesson='[Genuine reflection: what cause-effect assumption was wrong]'
-WHERE id=<id>;
 ```
 
 ### 2. Cross-Timeframe Synthesis

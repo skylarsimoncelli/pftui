@@ -92,12 +92,7 @@ Make 1-3 structural cause-and-effect predictions (3-12 month horizon):
 
 ```bash
 pftui predict add "[structural cause] will [structural effect] by [date]" \
-  --target-date [YYYY-MM-DD] --conviction [level]
-```
-Tag with timeframe and confidence via SQL:
-```sql
-UPDATE user_predictions SET timeframe='high', confidence=[0.X], source_agent='high-agent'
-WHERE id=(SELECT max(id) FROM user_predictions);
+  --target-date [YYYY-MM-DD] --conviction [level] --timeframe high --confidence [0.X] --source-agent high-agent
 ```
 
 ## Output to Evening Analyst

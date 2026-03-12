@@ -382,7 +382,6 @@ TOP INSIGHT (Druckenmiller):
 
 ### Integration Optimiser Recommendations (2026-03-11)
 
-- **P1: prediction schema needs CLI support** — `timeframe`, `confidence`, `source_agent`, `lesson` columns added to Postgres but CLI `pftui predict add` doesn't support `--timeframe`, `--confidence`, or `--source` flags yet. Agents currently have to use raw SQL to set these. Add CLI flags.
 - **P1: alignment scoring algorithm** — Current alignment score (5.6%) is too basic. Need per-asset alignment score (0-100) that weights: conviction score, trend direction, regime state, scenario probability impact. This is the deployment signal tracker — needs to be the best feature in pftui.
 - **P2: prediction resolution criteria** — Add `resolution_criteria` column to `user_predictions` so auto-scoring knows exactly what to check (e.g., "daily close above $5,000" vs "intraday touch of $5,000").
 - **P2: scan query keyword matching** — `pftui scan` currently only filters on portfolio metrics (gain_pct, allocation_pct). Add news keyword scanning: `pftui scan --news-keyword "FOMC" --save fomc-watch` that triggers when news_cache contains matching items.
@@ -390,10 +389,6 @@ TOP INSIGHT (Druckenmiller):
 ### Prediction Framework Enhancement (2026-03-11)
 
 **For dev cron (pftui code changes):**
-- **P1: `pftui predict add` needs `--timeframe`, `--confidence`, `--source-agent` flags** — Currently agents use raw SQL to set these columns (added to Postgres but not CLI). This is the #1 blocker for clean prediction workflow.
-- **P1: `pftui predict add` needs `--lesson` flag for scoring** — When scoring wrong predictions, agents should be able to set the lesson in one command: `pftui predict score <id> --outcome wrong --notes "..." --lesson "..."`
-- **P1: `pftui predict stats` should break down by timeframe** — Show hit rate per timeframe (low/medium/high/macro), per source_agent, and per conviction level. This is how the system tracks whether it's improving.
-- **P2: `pftui predict list` needs `--timeframe` filter** — `pftui predict list --timeframe low --filter pending` to let data processors only see their own predictions
 - **P2: `pftui predict` needs resolution_criteria field** — Add column and CLI flag so predictions have explicit criteria (e.g., "daily close above $5,000" vs "intraday touch")
 - **P1: Alignment scoring algorithm upgrade** — Current 5.6% alignment score is too basic. Need per-asset alignment score (0-100) weighting: conviction score, trend direction, regime state, scenario probability. This IS the deployment signal tracker. Must be pftui's best feature.
 - **P2: `pftui scan --news-keyword` flag** — Scan news_cache for keyword matches. `pftui scan --news-keyword "FOMC" --save fomc-watch` triggers when matching news appears. Enables data processors to catch breaking news without web_search.
@@ -417,8 +412,6 @@ TOP INSIGHT (Druckenmiller):
 - [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
 - [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
 - [ ] **`predict scorecard` shipped** → Update `morning-brief.md`: replace manual scorecard section with `pftui predict scorecard --date yesterday --json`. Update `evening-analysis.md`: use scorecard for prediction self-reflection opening.
-- [ ] **`predict add --timeframe/--confidence/--source` shipped** → Update ALL four timeframe analyst routines: remove raw SQL UPDATE workaround, use native flags. Remove `psql` and SQL blocks from routines entirely.
-- [ ] **`predict score --lesson` shipped** → Update `evening-analysis.md` and `low-timeframe-analyst.md`: replace SQL UPDATE for lesson with `--lesson` flag on score command.
 - [ ] **`movers --overnight` shipped** → Update `morning-brief.md`: replace web_search overnight check with `pftui movers --overnight --json` as primary data source. Keep web_search for news only.
 
 ---

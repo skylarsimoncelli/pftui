@@ -94,12 +94,7 @@ pftui notes add "MEDIUM WRONG CALL: [prediction]. Expected [X] because [thesis].
 Make 3-5 cause-and-effect predictions for the next 1-4 weeks:
 
 ```bash
-pftui predict add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level]
-```
-Tag with timeframe and confidence via SQL:
-```sql
-UPDATE user_predictions SET timeframe='medium', confidence=[0.X], source_agent='medium-agent'
-WHERE id=(SELECT max(id) FROM user_predictions);
+pftui predict add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent
 ```
 
 ## Output to Evening Analyst
