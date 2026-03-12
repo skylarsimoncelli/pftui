@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
@@ -9,6 +10,7 @@ use crate::db::{
     convictions, correlation_snapshots, regime_snapshots, research_questions, scenarios, structural,
     thesis, timeframe_signals, transactions, trends, user_predictions, watchlist,
 };
+use crate::db::query;
 use crate::models::asset::AssetCategory;
 
 pub fn run(
@@ -28,11 +30,193 @@ pub fn run(
         "high" => run_high(backend, json_output),
         "macro" => run_macro(backend, json_output),
         "alignment" => run_alignment(backend, symbol, json_output),
+        "gaps" => run_gaps(backend, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment",
+            "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment, gaps",
             action
         ),
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct GapRow {
+    layer: &'static str,
+    table: &'static str,
+    count: i64,
+    status: &'static str,
+    last_update: Option<String>,
+    age_hours: Option<f64>,
+}
+
+fn parse_dt(raw: &str) -> Option<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
+        return Some(DateTime::from_naive_utc_and_offset(dt, Utc));
+    }
+    chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+}
+
+fn table_stats(
+    backend: &BackendConnection,
+    table: &str,
+    ts_col: &str,
+    epoch_seconds: bool,
+) -> Result<(i64, Option<String>)> {
+    let sqlite_sql = if epoch_seconds {
+        format!("SELECT COUNT(*), CAST(MAX({}) AS TEXT) FROM {}", ts_col, table)
+    } else {
+        format!("SELECT COUNT(*), MAX({}) FROM {}", ts_col, table)
+    };
+    let pg_sql = if epoch_seconds {
+        format!("SELECT COUNT(*)::BIGINT, MAX({})::text FROM {}", ts_col, table)
+    } else {
+        format!("SELECT COUNT(*)::BIGINT, MAX({})::text FROM {}", ts_col, table)
+    };
+
+    query::dispatch(
+        backend,
+        |conn| {
+            let (count, ts): (i64, Option<String>) =
+                conn.query_row(&sqlite_sql, [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            Ok((count, ts))
+        },
+        |pool| {
+            let row: (i64, Option<String>) = crate::db::pg_runtime::block_on(async {
+                sqlx::query_as(&pg_sql).fetch_one(pool).await
+            })?;
+            Ok(row)
+        },
+    )
+}
+
+fn classify_gap(
+    layer: &'static str,
+    table: &'static str,
+    count: i64,
+    raw_ts: Option<String>,
+    max_age_hours: i64,
+    epoch_seconds: bool,
+) -> GapRow {
+    if count <= 0 {
+        return GapRow {
+            layer,
+            table,
+            count,
+            status: "missing",
+            last_update: None,
+            age_hours: None,
+        };
+    }
+
+    let parsed = raw_ts.as_ref().and_then(|raw| {
+        if epoch_seconds {
+            raw.parse::<i64>()
+                .ok()
+                .and_then(|secs| DateTime::from_timestamp(secs, 0).map(|d| d.with_timezone(&Utc)))
+        } else {
+            parse_dt(raw)
+        }
+    });
+
+    let now = Utc::now();
+    let age_hours = parsed.map(|dt| (now.signed_duration_since(dt).num_seconds() as f64) / 3600.0);
+    let status = if let Some(age) = age_hours {
+        if age > max_age_hours as f64 {
+            "stale"
+        } else {
+            "fresh"
+        }
+    } else {
+        "stale"
+    };
+
+    GapRow {
+        layer,
+        table,
+        count,
+        status,
+        last_update: parsed.map(|dt| dt.to_rfc3339()),
+        age_hours,
+    }
+}
+
+fn run_gaps(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let specs: [(&str, &str, &str, i64, bool); 13] = [
+        ("low", "price_cache", "fetched_at", 1, false),
+        ("low", "price_history", "date", 48, false),
+        ("low", "regime_snapshots", "recorded_at", 24, false),
+        ("low", "timeframe_signals", "detected_at", 24, false),
+        ("medium", "scenarios", "updated_at", 24 * 7, false),
+        ("medium", "thesis", "updated_at", 24 * 14, false),
+        ("medium", "convictions", "recorded_at", 24 * 14, false),
+        ("high", "trend_tracker", "updated_at", 24 * 14, false),
+        ("macro", "structural_outcomes", "updated_at", 24 * 30, false),
+        ("macro", "news_cache", "fetched_at", 12, false),
+        ("macro", "predictions_cache", "updated_at", 24, true),
+        ("macro", "cot_cache", "fetched_at", 24 * 8, false),
+        ("macro", "onchain_cache", "fetched_at", 24 * 2, false),
+    ];
+
+    let mut rows = Vec::new();
+    for (layer, table, ts_col, max_age_hours, epoch_seconds) in specs {
+        if let Ok((count, last_update)) = table_stats(backend, table, ts_col, epoch_seconds) {
+            rows.push(classify_gap(
+                layer,
+                table,
+                count,
+                last_update,
+                max_age_hours,
+                epoch_seconds,
+            ));
+        }
+    }
+
+    let missing = rows.iter().filter(|r| r.status == "missing").count();
+    let stale = rows.iter().filter(|r| r.status == "stale").count();
+    let fresh = rows.iter().filter(|r| r.status == "fresh").count();
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "gaps": rows,
+                "summary": {
+                    "missing": missing,
+                    "stale": stale,
+                    "fresh": fresh,
+                    "checked": rows.len()
+                }
+            }))?
+        );
+    } else {
+        println!("Analytics Data Gaps");
+        println!("{:<7} {:<20} {:>8} {:<8} {:>8}", "Layer", "Table", "Records", "Status", "Age(h)");
+        println!("{}", "─".repeat(62));
+        for row in &rows {
+            let age = row
+                .age_hours
+                .map(|v| format!("{:.1}", v))
+                .unwrap_or_else(|| "-".to_string());
+            println!(
+                "{:<7} {:<20} {:>8} {:<8} {:>8}",
+                row.layer, row.table, row.count, row.status, age
+            );
+        }
+        println!(
+            "\nChecked {} tables: {} fresh, {} stale, {} missing",
+            rows.len(),
+            fresh,
+            stale,
+            missing
+        );
+    }
+
+    Ok(())
 }
 
 fn run_signals(

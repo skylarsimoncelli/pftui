@@ -70,7 +70,7 @@ pub fn run(
 
             if json_output {
                 let rows = agent_messages::list_messages_backend(
-                    backend, None, None, false, None, None,
+                    backend, None, None, None, false, None, None,
                 )?;
                 if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
@@ -85,7 +85,7 @@ pub fn run(
                 validate_layer(l)?;
             }
             let rows = agent_messages::list_messages_backend(
-                backend, to, layer, unacked, since, limit,
+                backend, from, to, layer, unacked, since, limit,
             )?;
             if json_output {
                 println!(
@@ -107,6 +107,91 @@ pub fn run(
                         row.content
                     );
                 }
+            }
+        }
+
+        "reply" => {
+            let parent_id = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
+            let from_agent = from.ok_or_else(|| anyhow::anyhow!("--from required"))?;
+            let content = value.ok_or_else(|| anyhow::anyhow!("reply content required"))?;
+            let parent = agent_messages::get_message_by_id_backend(backend, parent_id)?
+                .ok_or_else(|| anyhow::anyhow!("message #{} not found", parent_id))?;
+            if let Some(l) = layer {
+                validate_layer(l)?;
+            }
+            if let Some(p) = priority {
+                validate_priority(p)?;
+            }
+            if let Some(c) = category {
+                validate_category(c)?;
+            }
+            let to_agent = parent.from_agent.as_str();
+            let body = format!("RE #{}: {}", parent_id, content);
+            let new_id = agent_messages::send_message_backend(
+                backend,
+                from_agent,
+                Some(to_agent),
+                priority.or(Some("normal")),
+                &body,
+                category.or(Some("handoff")),
+                layer.or(parent.layer.as_deref()),
+            )?;
+            if json_output {
+                let inserted = agent_messages::get_message_by_id_backend(backend, new_id)?
+                    .ok_or_else(|| anyhow::anyhow!("failed to load inserted message #{}", new_id))?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "reply_to": parent_id,
+                        "message": inserted
+                    }))?
+                );
+            } else {
+                println!("Replied to message #{} with #{}", parent_id, new_id);
+            }
+        }
+
+        "flag" => {
+            let parent_id = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
+            let from_agent = from.ok_or_else(|| anyhow::anyhow!("--from required"))?;
+            let parent = agent_messages::get_message_by_id_backend(backend, parent_id)?
+                .ok_or_else(|| anyhow::anyhow!("message #{} not found", parent_id))?;
+            if let Some(l) = layer {
+                validate_layer(l)?;
+            }
+            if let Some(p) = priority {
+                validate_priority(p)?;
+            }
+            if let Some(c) = category {
+                validate_category(c)?;
+            }
+            let reason = value.unwrap_or("Data quality issue detected");
+            let to_agent = parent.from_agent.as_str();
+            let body = format!(
+                "FLAG #{} from {}: {} | original: {}",
+                parent_id, parent.from_agent, reason, parent.content
+            );
+            let new_id = agent_messages::send_message_backend(
+                backend,
+                from_agent,
+                Some(to_agent),
+                priority.or(Some("high")),
+                &body,
+                category.or(Some("escalation")),
+                layer.or(parent.layer.as_deref()),
+            )?;
+            if json_output {
+                let inserted = agent_messages::get_message_by_id_backend(backend, new_id)?
+                    .ok_or_else(|| anyhow::anyhow!("failed to load inserted message #{}", new_id))?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "flagged_message_id": parent_id,
+                        "message": inserted
+                    }))?
+                );
+            } else {
+                println!("Flagged message #{} with escalation #{}", parent_id, new_id);
             }
         }
 
@@ -146,7 +231,7 @@ pub fn run(
             }
         }
 
-        _ => bail!("unknown agent-msg action '{}'. Valid: send, list, ack, ack-all, purge", action),
+        _ => bail!("unknown agent-msg action '{}'. Valid: send, list, reply, flag, ack, ack-all, purge", action),
     }
 
     Ok(())

@@ -549,6 +549,7 @@ Query history to see how your views evolved.
 ### Convictions (`pftui conviction`)
 Asset-level conviction scores (-5 to +5) over time. Append-only log — every
 `set` creates a new row. Current conviction = latest row per symbol.
+For negative scores, use `--score=-2` (or compatibility form `-- -2`).
 
 ### Agent Signals (`pftui analytics signals`)
 Cross-timeframe signal detection (alignment/divergence/transition) computed during
@@ -671,7 +672,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | Command | What It Does |
 |---|---|
 | `pftui scenario add "NAME" --probability N` | Add macro scenario with initial probability |
-| `pftui scenario update "NAME" --probability N --driver "WHY"` | Update scenario probability and auto-log history |
+| `pftui scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
 | `pftui scenario signal-add --scenario "NAME" "SIGNAL"` | Attach a tracked signal to a scenario |
 | `pftui scenario history "NAME" --limit N --json` | Show scenario probability history |
 | `pftui question add "TEXT" [--signal "..."]` | Add an open research question |
@@ -682,7 +683,9 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui predict score --id N --outcome correct|partial|wrong` | Score a previous prediction outcome |
 | `pftui predict stats --json` | Compute hit-rate stats by conviction and symbol |
 | `pftui agent-msg send "TEXT" --from agent-a [--to agent-b]` | Send a structured message between agent roles |
-| `pftui agent-msg list [--unacked] --json` | Query queued agent messages |
+| `pftui agent-msg reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
+| `pftui agent-msg flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
+| `pftui agent-msg list [--from agent-a] [--unacked] --json` | Query queued agent messages |
 | `pftui agent-msg ack --id N` | Acknowledge a single message |
 | `pftui notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
 | `pftui notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
@@ -698,6 +701,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui trends impact-add --trend \"NAME\" --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact |
 | `pftui analytics summary --json` | Unified 4-layer analytics snapshot (low/medium/high/macro + top signal) |
 | `pftui analytics alignment --symbol SYM --json` | Per-asset cross-timeframe alignment matrix |
+| `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
 | `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |

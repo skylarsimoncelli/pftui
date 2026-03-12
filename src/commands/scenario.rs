@@ -17,6 +17,7 @@ pub fn run(
     precedent: Option<&str>,
     status: Option<&str>,
     driver: Option<&str>,
+    notes: Option<&str>,
     evidence: Option<&str>,
     source: Option<&str>,
     scenario_name: Option<&str>,
@@ -84,10 +85,11 @@ pub fn run(
             let name = value.ok_or_else(|| anyhow::anyhow!("scenario name required"))?;
             let scenario = scenarios::get_scenario_by_name_backend(backend, name)?
                 .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", name))?;
+            let history_note = driver.or(notes);
 
             // If probability is being updated, use special handler
             if let Some(prob) = probability {
-                scenarios::update_scenario_probability_backend(backend, scenario.id, prob, driver)?;
+                scenarios::update_scenario_probability_backend(backend, scenario.id, prob, history_note)?;
                 if !json_output {
                     println!("Updated probability for '{}' to {:.1}%", name, prob);
                 }

@@ -26,10 +26,6 @@ Current references:
 
 ### CLI Enhancements
 
-- [ ] [Feedback] `pftui scenario update` should support `--notes` flag for inline annotation (currently errors with unexpected argument) — low effort, high agent UX value
-- [ ] [Feedback] `pftui analytics gaps` command — show which tables have stale or missing data per timeframe layer (`src/commands/analytics.rs`)
-- [ ] [Feedback] `pftui agent-msg reply` or `pftui agent-msg flag` command — allow receiving agents to flag data quality issues in messages (e.g., wrong FOMC data cascading across pipeline). Prevents bad data propagation between timeframe agents. (`src/commands/agent_msg.rs`, `src/db/agent_messages.rs`) — Evening Analysis Mar 12
-- [ ] [Feedback] `pftui conviction` negative score syntax — improve error messages when `-- -2` fails; document that `--score=-2` is required for negative values. Consider accepting `-- -2` syntax. (`src/cli.rs` clap config, `AGENTS.md`) — Medium-timeframe Analyst Mar 12
 
 ### Analytics Engine: Agent Offload (F38)
 
@@ -381,7 +377,6 @@ TOP INSIGHT (Druckenmiller):
 - [ ] [P1] Investigate why 8/10 data sources show stale on `pftui status` 
 - [ ] [P1] Morning Research should use `pftui predict add` for every specific market call to build prediction track record
 - [ ] [P2] Add MODELS.md Edit guidance header following SCENARIOS.md pattern to prevent agent edit failures
-- [ ] [P2] New command: `pftui analytics gaps` that shows which tables have stale or missing data
 
 ---
 
@@ -402,7 +397,6 @@ TOP INSIGHT (Druckenmiller):
 - **P2: `pftui predict` needs resolution_criteria field** — Add column and CLI flag so predictions have explicit criteria (e.g., "daily close above $5,000" vs "intraday touch")
 - **P1: Alignment scoring algorithm upgrade** — Current 5.6% alignment score is too basic. Need per-asset alignment score (0-100) weighting: conviction score, trend direction, regime state, scenario probability. This IS the deployment signal tracker. Must be pftui's best feature.
 - **P2: `pftui scan --news-keyword` flag** — Scan news_cache for keyword matches. `pftui scan --news-keyword "FOMC" --save fomc-watch` triggers when matching news appears. Enables data processors to catch breaking news without web_search.
-- **P2: `pftui agent-msg list` needs `--from` and `--unacked` filters** — Currently agents can't filter by sender or acknowledgement status via CLI
 
 ### Sentinel Integration Tasks (2026-03-11)
 **For finance sentinel to complete:**

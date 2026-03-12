@@ -333,6 +333,7 @@ fn main() -> Result<()> {
             precedent,
             status,
             driver,
+            notes,
             evidence,
             source,
             scenario,
@@ -352,6 +353,7 @@ fn main() -> Result<()> {
                 precedent.as_deref(),
                 status.as_deref(),
                 driver.as_deref(),
+                notes.as_deref(),
                 evidence.as_deref(),
                 source.as_deref(),
                 scenario.as_deref(),
@@ -563,6 +565,7 @@ fn main() -> Result<()> {
             action,
             value,
             score,
+            score_positional,
             notes,
             limit,
             json,
@@ -571,9 +574,20 @@ fn main() -> Result<()> {
                 let symbol = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing symbol. Usage: pftui conviction set SYMBOL --score N")
                 })?;
-                let score_val = score.ok_or_else(|| {
-                    anyhow::anyhow!("Missing score. Usage: pftui conviction set SYMBOL --score N")
-                })?;
+                let score_val = if let Some(s) = score {
+                    s
+                } else if let Some(raw) = score_positional.as_deref() {
+                    raw.parse::<i32>().map_err(|_| {
+                        anyhow::anyhow!(
+                            "Invalid score '{}'. Use an integer -5..5 (for negatives: --score=-2).",
+                            raw
+                        )
+                    })?
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Missing score. Usage: pftui conviction set SYMBOL --score N (for negatives: --score=-2)"
+                    ));
+                };
                 commands::conviction::run_set(&backend, symbol, score_val, notes.as_deref(), json)
             }
             "list" => commands::conviction::run_list(&backend, json),

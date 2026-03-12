@@ -3,6 +3,22 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-12 — Agent message reply/flag workflow + sender filtering
+
+- What: added `pftui agent-msg reply` and `pftui agent-msg flag` actions for fast response/escalation against an existing message ID. Added backend message lookup by ID and `agent-msg list --from` sender filtering in both SQLite and Postgres paths.
+- Why: closes active TODO feedback about cascading bad data across agent pipelines and removes friction in message triage/quality control loops.
+- Files: `src/commands/agent_msg.rs`, `src/db/agent_messages.rs`, `src/cli.rs`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 feedback item for `agent-msg reply/flag` and stale recommendation for `agent-msg list --from`
+
+### 2026-03-12 — Analytics gaps command + scenario notes alias + conviction UX polish
+
+- What: added `pftui analytics gaps` to report missing/stale/fresh data tables across LOW/MEDIUM/HIGH/MACRO layers with both human-readable and `--json` output. Added `--notes` support to `pftui scenario update` as an inline annotation alias for history logging (`driver`). Improved conviction negative-score UX by documenting and supporting compatibility positional parsing after `--` (e.g. `pftui conviction set BTC -- -2`) and clearer error guidance (`--score=-2`).
+- Why: addresses active TODO feedback on agent workflow friction and data-health visibility without requiring raw SQL.
+- Files: `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/scenario.rs`, `AGENTS.md`, `README.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed P1 `scenario update --notes`, P1/P2 `analytics gaps`, and conviction negative-score syntax feedback items
+
 ### 2026-03-12 — Default predictions to macro-relevant categories
 
 - What: changed `pftui predictions` to filter for finance-relevant markets (economics, geopolitics, crypto) by default instead of showing all categories including sports/entertainment. The "macro" category selector is now the default when `--category` is not specified. Users can still see all markets with explicit category filters.

@@ -56,6 +56,7 @@ pub fn send_message(
 
 pub fn list_messages(
     conn: &Connection,
+    from: Option<&str>,
     to: Option<&str>,
     layer: Option<&str>,
     unacked_only: bool,
@@ -68,6 +69,9 @@ pub fn list_messages(
     );
 
     let mut where_parts = Vec::new();
+    if let Some(f) = from {
+        where_parts.push(format!("from_agent = '{}'", f.replace('"', "''")));
+    }
     if let Some(t) = to {
         where_parts.push(format!(
             "(to_agent IS NULL OR to_agent = '{}')",
@@ -102,6 +106,16 @@ pub fn list_messages(
         items.push(row?);
     }
     Ok(items)
+}
+
+pub fn get_message_by_id(conn: &Connection, id: i64) -> Result<Option<AgentMessage>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at, acknowledged_at
+         FROM agent_messages
+         WHERE id = ?",
+    )?;
+    let mut rows = stmt.query_map([id], AgentMessage::from_row)?;
+    Ok(rows.next().transpose()?)
 }
 
 pub fn acknowledge(conn: &Connection, id: i64) -> Result<()> {
@@ -153,6 +167,7 @@ pub fn send_message_backend(
 
 pub fn list_messages_backend(
     backend: &BackendConnection,
+    from: Option<&str>,
     to: Option<&str>,
     layer: Option<&str>,
     unacked_only: bool,
@@ -161,8 +176,19 @@ pub fn list_messages_backend(
 ) -> Result<Vec<AgentMessage>> {
     query::dispatch(
         backend,
-        |conn| list_messages(conn, to, layer, unacked_only, since, limit),
-        |pool| list_messages_postgres(pool, to, layer, unacked_only, since, limit),
+        |conn| list_messages(conn, from, to, layer, unacked_only, since, limit),
+        |pool| list_messages_postgres(pool, from, to, layer, unacked_only, since, limit),
+    )
+}
+
+pub fn get_message_by_id_backend(
+    backend: &BackendConnection,
+    id: i64,
+) -> Result<Option<AgentMessage>> {
+    query::dispatch(
+        backend,
+        |conn| get_message_by_id(conn, id),
+        |pool| get_message_by_id_postgres(pool, id),
     )
 }
 
@@ -278,6 +304,7 @@ fn send_message_postgres(
 
 fn list_messages_postgres(
     pool: &PgPool,
+    from: Option<&str>,
     to: Option<&str>,
     layer: Option<&str>,
     unacked_only: bool,
@@ -285,15 +312,16 @@ fn list_messages_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<AgentMessage>> {
     ensure_tables_postgres(pool)?;
-    let rows: Vec<AgentMsgRow> = match (to, layer, unacked_only, since, limit) {
-        (Some(t), Some(l), true, Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
+    let rows: Vec<AgentMsgRow> = match (from, to, layer, unacked_only, since, limit) {
+        (Some(f), Some(t), Some(l), true, Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
                  FROM agent_messages
-                 WHERE (to_agent IS NULL OR to_agent = $1) AND layer = $2 AND acknowledged = 0 AND created_at::text >= $3
+                 WHERE from_agent = $1 AND (to_agent IS NULL OR to_agent = $2) AND layer = $3 AND acknowledged = 0 AND created_at::text >= $4
                  ORDER BY created_at DESC
-                 LIMIT $4",
+                 LIMIT $5",
             )
+            .bind(f)
             .bind(t)
             .bind(l)
             .bind(s)
@@ -312,6 +340,9 @@ fn list_messages_postgres(
                 .fetch_all(pool)
                 .await
             })?;
+            if let Some(f) = from {
+                rows.retain(|r| r.1 == f);
+            }
             if let Some(t) = to {
                 rows.retain(|r| r.2.as_deref().is_none_or(|v| v == t));
             }
@@ -331,6 +362,21 @@ fn list_messages_postgres(
         }
     };
     Ok(rows.into_iter().map(from_pg_row).collect())
+}
+
+fn get_message_by_id_postgres(pool: &PgPool, id: i64) -> Result<Option<AgentMessage>> {
+    ensure_tables_postgres(pool)?;
+    let row: Option<AgentMsgRow> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
+             FROM agent_messages
+             WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(row.map(from_pg_row))
 }
 
 fn acknowledge_postgres(pool: &PgPool, id: i64) -> Result<()> {

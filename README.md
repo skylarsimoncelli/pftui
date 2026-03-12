@@ -325,7 +325,7 @@ Every feature in pftui has a CLI command with `--json` output. Agents use the sa
 
 ```bash
 pftui refresh && pftui brief --json        # Agent gets full portfolio state
-pftui scenario update "Stagflation" --probability 35
+pftui scenario update "Stagflation" --probability 35 --notes "Sticky inflation + growth slowdown"
 pftui conviction set GC=F --score 4 --notes "War + BRICS + CB buying"
 pftui agent-msg send "Gold alignment: all 4 layers bullish" --from morning-agent --layer cross
 ```

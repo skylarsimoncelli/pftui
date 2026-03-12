@@ -416,6 +416,10 @@ pub enum Command {
         #[arg(long)]
         driver: Option<String>,
 
+        /// Inline notes for probability updates (alias of --driver)
+        #[arg(long)]
+        notes: Option<String>,
+
         /// Evidence for signal update
         #[arg(long)]
         evidence: Option<String>,
@@ -476,15 +480,16 @@ pub enum Command {
     /// Inter-agent structured message passing
     #[command(name = "agent-msg")]
     AgentMsg {
-        /// Action: send, list, ack, ack-all, purge
+        /// Action: send, list, reply, flag, ack, ack-all, purge
         action: String,
 
-        /// Message content (for send)
+        /// Message content (for send/reply/flag)
         value: Option<String>,
 
         #[arg(long)]
         id: Option<i64>,
 
+        /// Sender (required for send/reply/flag; filter for list)
         #[arg(long)]
         from: Option<String>,
 
@@ -525,7 +530,7 @@ pub enum Command {
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
-        /// Action: signals, summary, low, medium, high, macro, alignment
+        /// Action: signals, summary, low, medium, high, macro, alignment, gaps
         action: String,
 
         /// Symbol filter (mainly for `signals`)
@@ -789,9 +794,13 @@ pub enum Command {
         /// Symbol (for set/history) or days (for changes, default 7)
         value: Option<String>,
 
-        /// Score -5 to +5
+        /// Score -5 to +5 (negative values: prefer --score=-2)
         #[arg(long)]
         score: Option<i32>,
+
+        /// Compatibility positional for negative score after `--` (e.g. `... -- -2`)
+        #[arg(hide = true)]
+        score_positional: Option<String>,
 
         /// Notes explaining the score
         #[arg(long)]
