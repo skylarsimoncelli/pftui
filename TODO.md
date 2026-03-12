@@ -28,6 +28,8 @@ Current references:
 
 - [ ] [Feedback] `pftui scenario update` should support `--notes` flag for inline annotation (currently errors with unexpected argument) — low effort, high agent UX value
 - [ ] [Feedback] `pftui analytics gaps` command — show which tables have stale or missing data per timeframe layer (`src/commands/analytics.rs`)
+- [ ] [Feedback] `pftui agent-msg reply` or `pftui agent-msg flag` command — allow receiving agents to flag data quality issues in messages (e.g., wrong FOMC data cascading across pipeline). Prevents bad data propagation between timeframe agents. (`src/commands/agent_msg.rs`, `src/db/agent_messages.rs`) — Evening Analysis Mar 12
+- [ ] [Feedback] `pftui conviction` negative score syntax — improve error messages when `-- -2` fails; document that `--score=-2` is required for negative values. Consider accepting `-- -2` syntax. (`src/cli.rs` clap config, `AGENTS.md`) — Medium-timeframe Analyst Mar 12
 
 ### Analytics Engine: Agent Offload (F38)
 
@@ -424,3 +426,34 @@ TOP INSIGHT (Druckenmiller):
 - [ ] **`predict add --timeframe/--confidence/--source` shipped** → Update ALL four timeframe analyst routines: remove raw SQL UPDATE workaround, use native flags. Remove `psql` and SQL blocks from routines entirely.
 - [ ] **`predict score --lesson` shipped** → Update `evening-analysis.md` and `low-timeframe-analyst.md`: replace SQL UPDATE for lesson with `--lesson` flag on score command.
 - [ ] **`movers --overnight` shipped** → Update `morning-brief.md`: replace web_search overnight check with `pftui movers --overnight --json` as primary data source. Keep web_search for news only.
+
+---
+
+## Feedback Summary
+
+> Last reviewed: 2026-03-12
+
+### Current Scores (latest per tester)
+
+| Tester | Usefulness | Overall | Date | Trend |
+|--------|-----------|---------|------|-------|
+| Morning Market Research | 15 | 30 | Mar 9 | ↓ (API hang — fixed in v0.7.0+) |
+| Evening Eventuality Planner | 35 | 55 | Mar 9 | ↓ (DB hang — fixed in v0.7.0+) |
+| Market Close | 60 | 72 | Mar 9 | ↓ (TIMESTAMPTZ panic + movers bug — fixed) |
+| Sentinel Main TUI | 75 | 72 | Mar 10 | ↓ (TUI display corruption) |
+| Integration Optimiser | 75 | 70 | Mar 11 | → (first review, scenario bug fixed) |
+| UX Analyst | 75 | — | Mar 8 | → |
+| Medium-timeframe Analyst | — | — | Mar 12 | → (enhancement only, no scores) |
+| Evening Analysis | — | — | Mar 12 | → (enhancement only, no scores) |
+
+### Score Analysis
+
+All three main testers (Morning, Evening, Market Close) hit rock bottom on Mar 8-9 due to SQLite migration crash, API rate limiting hang, and TIMESTAMPTZ panic. These bugs have ALL been fixed in subsequent releases but **no new scored reviews have come in post-fix**. Scores should recover significantly in next review cycle.
+
+The lowest-scoring testers (Morning 15/30, Evening 35/55) both suffered from the same root cause: commands hanging indefinitely when APIs fail. The timeout/fallback fix shipped in v0.7.0+ should resolve this.
+
+### Top 3 Priorities Based on Feedback
+
+1. **Data source reliability** (P1) — 8/10 sources stale, price_history writes stopped. Must stabilize before next review cycle or scores won't recover. Multiple testers affected.
+2. **Agent-msg data quality flagging** (P1, NEW) — Evening analysis received bad FOMC data from medium-agent with no way to flag it. Cascading bad data across the pipeline is a systemic risk.
+3. **Conviction negative score syntax** (P2, NEW) — Agents hitting friction with basic CLI operations. Small fix, high agent UX impact.
