@@ -30,7 +30,49 @@ Current references:
 - [ ] [Feedback] `pftui scenario update` should support `--notes` flag for inline annotation (currently errors with unexpected argument) — low effort, high agent UX value
 - [ ] [Feedback] `pftui analytics gaps` command — show which tables have stale or missing data per timeframe layer (`src/commands/analytics.rs`)
 
-### Analytics
+### Analytics Engine: Agent Offload (F38)
+
+> Move mechanical data assembly out of agent token budgets and into native pftui commands.
+> Principle: pftui computes, agents interpret. No agent should run raw SQL or stitch
+> together data that the analytics engine already has.
+
+**`pftui analytics divergence [--json]`**
+- Cross-layer disagreement per asset. Where LOW/MEDIUM/HIGH/MACRO conflict.
+- Conviction says +3 but price dropped 5%. LOW says risk-on, HIGH says headwinds.
+- Output: asset, layer signals, direction of disagreement, magnitude.
+- Pairs with existing `analytics alignment` (agreement). Two sides of the same coin.
+- Replaces: evening-analysis manually cross-referencing 4 layers per asset.
+- Source: `src/commands/analytics.rs`
+
+**`pftui analytics digest [--from low-agent|medium-agent|evening-analyst] [--json]`**
+- Auto-generate structured agent report from current DB state.
+- LOW close: prices, changes, regime, scorecard, mismatches, surprises.
+- MEDIUM: scenario probabilities with deltas, thesis changes, conviction moves.
+- EVENING: cross-timeframe summary, prediction results, trend evidence.
+- Replaces: agents spending 200+ tokens composing data summaries that are 90% DB lookups.
+- Source: `src/commands/analytics.rs`
+
+**`pftui analytics recap [--date YYYY-MM-DD] [--json]`**
+- Chronological event log: price moves, prediction results, scenario changes,
+  conviction changes, trend evidence added, regime shifts, agent messages.
+- One query instead of agents running 8 separate commands and mentally stitching.
+- Source: `src/commands/analytics.rs`
+
+**`pftui predict scorecard [--date YYYY-MM-DD] [--timeframe low] [--json]`**
+- Computed: total, correct, wrong, partial, hit rate, streak, by timeframe, by source.
+- Replaces: agents running raw SQL GROUP BY and doing arithmetic in tokens.
+- Source: `src/commands/predict.rs`
+
+**`pftui predict add --timeframe --confidence --source` (flag extension)**
+- Native `--timeframe low|medium|high|macro`, `--confidence 0.7`, `--source low-agent` flags.
+- One command instead of `predict add` + raw SQL UPDATE.
+- Also: `pftui predict score --lesson "..."` flag for wrong call reflection.
+- Source: `src/commands/predict.rs`
+
+**`pftui movers --overnight [--json]`**
+- Price changes since last market close for all held + watchlist assets.
+- Replaces: morning-brief web searching "what moved overnight" for data pftui already has.
+- Source: `src/commands/movers.rs`
 
 ### Infrastructure
 
