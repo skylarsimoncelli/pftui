@@ -32,11 +32,10 @@ pub fn run(
         return Ok(());
     }
 
-    // Filter by category if specified
-    if let Some(cat_str) = category {
-        let selectors = parse_category_selectors(cat_str)?;
-        markets.retain(|m| market_matches_any_selector(m, &selectors));
-    }
+    // Filter by category - default to finance-relevant (macro) if not specified
+    let cat_str = category.unwrap_or("macro");
+    let selectors = parse_category_selectors(cat_str)?;
+    markets.retain(|m| market_matches_any_selector(m, &selectors));
 
     // Filter by search query if specified
     if let Some(query) = search {

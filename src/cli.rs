@@ -577,7 +577,7 @@ pub enum Command {
 
     /// Show prediction market odds from Polymarket and Manifold
     Predictions {
-        /// Filter by category: crypto, economics, geopolitics, ai, finance, macro (supports pipe lists, e.g. geopolitics|macro)
+        /// Filter by category: crypto, economics, geopolitics, ai, finance, macro (supports pipe lists, e.g. geopolitics|macro). Defaults to "macro" (economics|geopolitics|crypto).
         #[arg(long)]
         category: Option<String>,
 
