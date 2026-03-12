@@ -300,8 +300,12 @@ fn main() -> Result<()> {
             commands::etf_flows::run(days, fund, json)
         }
 
-        Some(Command::Movers { threshold, json }) => {
-            commands::movers::run(&backend, &config, Some(&threshold), json)
+        Some(Command::Movers {
+            threshold,
+            overnight,
+            json,
+        }) => {
+            commands::movers::run(&backend, &config, Some(&threshold), overnight, json)
         }
         Some(Command::Scan {
             filter,

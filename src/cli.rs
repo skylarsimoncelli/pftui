@@ -343,6 +343,10 @@ pub enum Command {
         #[arg(long, default_value = "3")]
         threshold: String,
 
+        /// Use overnight framing (since last close) for briefing workflows
+        #[arg(long)]
+        overnight: bool,
+
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,

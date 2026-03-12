@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-12 — Add `movers --overnight` mode and morning routine integration
+
+- What: extended `pftui movers` with `--overnight` mode (same close-to-current move math, explicit overnight framing in text/JSON output) and updated the morning routine to use `pftui movers --overnight --json` as primary overnight movement input.
+- Why: closes the next F38 routine integration item by replacing ad-hoc overnight move discovery with native pftui output.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/movers.rs`, `agents/routines/morning-brief.md`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed shipped `movers --overnight` spec/checklist entries from F38 backlog
+
 ### 2026-03-12 — Predict scorecard command + routine adoption
 
 - What: added `pftui predict scorecard` with `--date` (`YYYY-MM-DD|today|yesterday`) and `--timeframe` filters, hit-rate/streak reporting, and missing-lesson visibility for wrong calls. Updated morning/evening routines to use scorecard directly.

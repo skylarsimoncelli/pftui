@@ -98,6 +98,7 @@ pub fn run(
     backend: &BackendConnection,
     config: &Config,
     threshold: Option<&str>,
+    overnight: bool,
     json: bool,
 ) -> Result<()> {
     // Parse threshold (default 3%)
@@ -218,6 +219,7 @@ pub fn run(
             .collect();
         let output = serde_json::json!({
             "threshold_pct": threshold_pct.to_string().parse::<f64>().unwrap_or(3.0),
+            "mode": if overnight { "overnight" } else { "daily" },
             "total_scanned": symbols.len(),
             "movers_count": movers.len(),
             "movers": entries,
@@ -235,8 +237,9 @@ pub fn run(
     }
 
     println!(
-        "Movers (≥{}% daily change) — {}/{} symbols:",
+        "Movers (≥{}% {} change) — {}/{} symbols:",
         threshold_pct,
+        if overnight { "overnight" } else { "daily" },
         movers.len(),
         symbols.len()
     );
@@ -296,7 +299,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = crate::config::Config::default();
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -308,7 +311,7 @@ mod tests {
 
         add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -347,7 +350,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -402,7 +405,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -442,11 +445,11 @@ mod tests {
 
         // 1% threshold — should appear
         let backend = to_backend(conn);
-        let result = run(&backend, &config, Some("1"), false);
+        let result = run(&backend, &config, Some("1"), false, false);
         assert!(result.is_ok());
 
         // 5% threshold — should not appear
-        let result = run(&backend, &config, Some("5"), false);
+        let result = run(&backend, &config, Some("5"), false, false);
         assert!(result.is_ok());
     }
 
@@ -485,7 +488,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, true);
+        let result = run(&backend, &config, None, false, true);
         assert!(result.is_ok());
     }
 
@@ -512,7 +515,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -551,7 +554,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 
@@ -609,7 +612,7 @@ mod tests {
 
         // Should only show AAPL once (as "held")
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, false);
+        let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
     }
 

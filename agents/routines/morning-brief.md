@@ -23,6 +23,7 @@ Use this pre-digested intelligence. Don't redo their work.
 pftui analytics summary --json
 pftui analytics alignment --json
 pftui brief --json
+pftui movers --overnight --json
 pftui predict scorecard --date yesterday --json
 pftui predict list --filter pending --json
 pftui conviction list --json
@@ -30,7 +31,7 @@ pftui conviction list --json
 
 3. Read user profile and portfolio for conviction state and allocation context.
 
-4. Quick overnight news check (2-3 targeted searches only):
+4. Quick overnight news check (2-3 targeted searches only, for context behind movers):
 ```bash
 web_search "[specific overnight developments based on active scenarios]"
 ```
