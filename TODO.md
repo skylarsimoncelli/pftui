@@ -411,3 +411,17 @@ TOP INSIGHT (Druckenmiller):
 - **Evening Analyst should build a "cause-effect model library"** — When a cause-effect prediction is confirmed (e.g., "CB buying dominates DXY for gold"), log it as a validated model in notes. Future predictions can reference validated models for higher confidence.
 - **Data processors need scenario keyword list from Evening Analyst** — Evening should send a "WATCH TOMORROW" agent-msg listing specific keywords/events to flag, so data processors scan for the right things.
 - **Weekly Review should audit prediction lessons** — Are lessons being written? Are they specific or generic? Are agents actually changing behavior based on lessons? Flag if lessons are templated.
+
+### F38 Routine Integration (Sentinel, post-dev-cron)
+
+> After dev cron ships each F38 item, update the corresponding agent routine in
+> `agents/routines/` to use the new command instead of the manual workaround.
+> Changes go to the repo; crons pick up automatically via raw GitHub fetch.
+
+- [ ] **`analytics divergence` shipped** → Update `evening-analysis.md`: replace manual cross-layer comparison in "Cross-Timeframe Synthesis" section with `pftui analytics divergence --json`. Agent interprets the output instead of assembling it.
+- [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
+- [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
+- [ ] **`predict scorecard` shipped** → Update `morning-brief.md`: replace manual scorecard section with `pftui predict scorecard --date yesterday --json`. Update `evening-analysis.md`: use scorecard for prediction self-reflection opening.
+- [ ] **`predict add --timeframe/--confidence/--source` shipped** → Update ALL four timeframe analyst routines: remove raw SQL UPDATE workaround, use native flags. Remove `psql` and SQL blocks from routines entirely.
+- [ ] **`predict score --lesson` shipped** → Update `evening-analysis.md` and `low-timeframe-analyst.md`: replace SQL UPDATE for lesson with `--lesson` flag on score command.
+- [ ] **`movers --overnight` shipped** → Update `morning-brief.md`: replace web_search overnight check with `pftui movers --overnight --json` as primary data source. Keep web_search for news only.
