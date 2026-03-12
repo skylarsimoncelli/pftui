@@ -74,3 +74,4 @@ pftui agent-msg ack --id <id>
 - Deep analysis happens in evening-analysis. Don't duplicate it.
 - No shallow hedging ("could be significant", "data suggests"). State what happened and what it means, briefly.
 - Lead with alignment status. That's the strategic signal.
+- **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it.

@@ -143,4 +143,5 @@ pftui notes add "[Pre-market/Midday/Close]: [key data points] | Alerts: [X] | Ne
 - Stay in your domain: hours to days. Don't analyze empire cycles or structural trends.
 - Web search for BREAKING/SHORT-TERM intelligence only.
 - Prediction reflection is mandatory. Never skip it.
+- **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.
 - Maximum 4 minutes per run.

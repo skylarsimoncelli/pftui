@@ -80,3 +80,4 @@ pftui agent-msg send "MACRO LAYER [date]: [Key changes. Power metric shifts. Cyc
 - Structural layer is weekly context. Does NOT affect daily trading decisions.
 - Update STRUCTURAL.md only if the qualitative framework needs revision.
 - All quantitative outputs go to pftui database.
+- **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.

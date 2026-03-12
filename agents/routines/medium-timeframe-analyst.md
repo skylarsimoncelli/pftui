@@ -116,4 +116,5 @@ pftui agent-msg send "MEDIUM LAYER [date]: Scenarios: [name->prob% for each]. Ke
 - Deep research > shallow scanning. 3 deep dives beat 8 headline checks.
 - Every scenario update needs an analytical chain, not just "probability up."
 - Prediction reflection is mandatory.
+- **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.
 - Maximum 8 minutes.

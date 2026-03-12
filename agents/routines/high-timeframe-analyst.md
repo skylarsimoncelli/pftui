@@ -114,4 +114,5 @@ pftui agent-msg send "HIGH LAYER [date]: Trends: [name->direction for each]. Key
 - Research depth > breadth. One deep dive beats 5 surface-level checks.
 - When HIGH and LOW/MEDIUM disagree, that's the most interesting signal. Explain WHY they disagree.
 - Prediction reflection is mandatory.
+- **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.
 - Maximum 8 minutes.

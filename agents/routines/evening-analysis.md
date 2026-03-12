@@ -163,3 +163,5 @@ pftui agent-msg ack --id <id>
 - Cross-timeframe synthesis is your unique value. No other agent can do this.
 - Quality over quantity: 3 deep insights beat 8 shallow summaries.
 - Connect everything to structural forces. "Gold up 2%" is a headline. "Gold up 2% despite DXY strength, confirming a decoupling pattern driven by central bank structural buying" is analysis.
+- **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it. One bad source can cascade into wrong predictions, wrong convictions, and wrong scenario probabilities.
+- **Cross-check lower layers:** When a timeframe agent reports data that seems anomalous or would cause large scenario/conviction shifts, verify independently before acting on it.
