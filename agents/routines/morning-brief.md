@@ -23,7 +23,8 @@ Use this pre-digested intelligence. Don't redo their work.
 pftui analytics summary --json
 pftui analytics alignment --json
 pftui brief --json
-pftui predict list --json
+pftui predict scorecard --date yesterday --json
+pftui predict list --filter pending --json
 pftui conviction list --json
 ```
 

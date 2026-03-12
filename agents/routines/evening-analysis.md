@@ -25,6 +25,7 @@ pftui analytics high --json
 pftui regime current --json
 pftui regime history
 pftui movers --json
+pftui predict scorecard --date today --json
 pftui predict list --json
 pftui notes list --json
 ```

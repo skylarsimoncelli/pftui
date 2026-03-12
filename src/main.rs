@@ -482,6 +482,7 @@ fn main() -> Result<()> {
             notes,
             lesson,
             filter,
+            date,
             limit,
             json,
         }) => commands::predict::run(
@@ -499,6 +500,7 @@ fn main() -> Result<()> {
             notes.as_deref(),
             lesson.as_deref(),
             filter.as_deref(),
+            date.as_deref(),
             limit,
             json,
         ),

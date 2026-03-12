@@ -602,7 +602,7 @@ pub enum Command {
     /// Track your market predictions and score accuracy
     #[command(name = "predict")]
     Predict {
-        /// Action: add, list, score, stats
+        /// Action: add, list, score, stats, scorecard
         action: String,
 
         /// Prediction claim text (for add)
@@ -648,6 +648,10 @@ pub enum Command {
         /// Filter: pending, correct, partial, wrong
         #[arg(long)]
         filter: Option<String>,
+
+        /// Date filter for scorecard: YYYY-MM-DD, today, yesterday
+        #[arg(long)]
+        date: Option<String>,
 
         #[arg(long)]
         limit: Option<usize>,

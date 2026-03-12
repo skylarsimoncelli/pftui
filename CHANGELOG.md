@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-12 — Predict scorecard command + routine adoption
+
+- What: added `pftui predict scorecard` with `--date` (`YYYY-MM-DD|today|yesterday`) and `--timeframe` filters, hit-rate/streak reporting, and missing-lesson visibility for wrong calls. Updated morning/evening routines to use scorecard directly.
+- Why: closes the next agent offload TODO by replacing manual prediction score aggregation and enabling consistent morning/evening accountability loops.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`, `AGENTS.md`, `agents/routines/morning-brief.md`, `agents/routines/evening-analysis.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed shipped `predict scorecard` spec/checklist entries from F38 backlog
+
 ### 2026-03-12 — Prediction CLI workflow completion (timeframe/confidence/source/lesson)
 
 - What: extended `pftui predict add` with native `--timeframe`, `--confidence`, and `--source-agent` flags; extended `pftui predict score` with `--lesson`; extended `pftui predict list` with timeframe filtering via `--timeframe`; and expanded `pftui predict stats` to include breakdowns by timeframe and source agent. Added safe schema migration paths for SQLite/Postgres prediction columns.

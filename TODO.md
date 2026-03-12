@@ -55,17 +55,6 @@ Current references:
 - One query instead of agents running 8 separate commands and mentally stitching.
 - Source: `src/commands/analytics.rs`
 
-**`pftui predict scorecard [--date YYYY-MM-DD] [--timeframe low] [--json]`**
-- Computed: total, correct, wrong, partial, hit rate, streak, by timeframe, by source.
-- Replaces: agents running raw SQL GROUP BY and doing arithmetic in tokens.
-- Source: `src/commands/predict.rs`
-
-**`pftui predict add --timeframe --confidence --source` (flag extension)**
-- Native `--timeframe low|medium|high|macro`, `--confidence 0.7`, `--source low-agent` flags.
-- One command instead of `predict add` + raw SQL UPDATE.
-- Also: `pftui predict score --lesson "..."` flag for wrong call reflection.
-- Source: `src/commands/predict.rs`
-
 **`pftui movers --overnight [--json]`**
 - Price changes since last market close for all held + watchlist assets.
 - Replaces: morning-brief web searching "what moved overnight" for data pftui already has.
@@ -411,7 +400,6 @@ TOP INSIGHT (Druckenmiller):
 - [ ] **`analytics divergence` shipped** → Update `evening-analysis.md`: replace manual cross-layer comparison in "Cross-Timeframe Synthesis" section with `pftui analytics divergence --json`. Agent interprets the output instead of assembling it.
 - [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
 - [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
-- [ ] **`predict scorecard` shipped** → Update `morning-brief.md`: replace manual scorecard section with `pftui predict scorecard --date yesterday --json`. Update `evening-analysis.md`: use scorecard for prediction self-reflection opening.
 - [ ] **`movers --overnight` shipped** → Update `morning-brief.md`: replace web_search overnight check with `pftui movers --overnight --json` as primary data source. Keep web_search for news only.
 
 ---
