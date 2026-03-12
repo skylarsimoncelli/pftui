@@ -33,14 +33,6 @@ Current references:
 > Principle: pftui computes, agents interpret. No agent should run raw SQL or stitch
 > together data that the analytics engine already has.
 
-**`pftui analytics divergence [--json]`**
-- Cross-layer disagreement per asset. Where LOW/MEDIUM/HIGH/MACRO conflict.
-- Conviction says +3 but price dropped 5%. LOW says risk-on, HIGH says headwinds.
-- Output: asset, layer signals, direction of disagreement, magnitude.
-- Pairs with existing `analytics alignment` (agreement). Two sides of the same coin.
-- Replaces: evening-analysis manually cross-referencing 4 layers per asset.
-- Source: `src/commands/analytics.rs`
-
 **`pftui analytics digest [--from low-agent|medium-agent|evening-analyst] [--json]`**
 - Auto-generate structured agent report from current DB state.
 - LOW close: prices, changes, regime, scorecard, mismatches, surprises.
@@ -392,7 +384,6 @@ TOP INSIGHT (Druckenmiller):
 > `agents/routines/` to use the new command instead of the manual workaround.
 > Changes go to the repo; crons pick up automatically via raw GitHub fetch.
 
-- [ ] **`analytics divergence` shipped** → Update `evening-analysis.md`: replace manual cross-layer comparison in "Cross-Timeframe Synthesis" section with `pftui analytics divergence --json`. Agent interprets the output instead of assembling it.
 - [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
 - [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
 

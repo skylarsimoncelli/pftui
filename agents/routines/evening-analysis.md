@@ -20,6 +20,7 @@ You should receive structured reports from:
 ```bash
 pftui analytics summary --json
 pftui analytics alignment --json
+pftui analytics divergence --json
 pftui analytics medium --json
 pftui analytics high --json
 pftui regime current --json

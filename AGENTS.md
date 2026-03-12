@@ -702,6 +702,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui trends impact-add --trend \"NAME\" --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact |
 | `pftui analytics summary --json` | Unified 4-layer analytics snapshot (low/medium/high/macro + top signal) |
 | `pftui analytics alignment --symbol SYM --json` | Per-asset cross-timeframe alignment matrix |
+| `pftui analytics divergence --json` | Cross-layer disagreement table for conflicting signals |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |

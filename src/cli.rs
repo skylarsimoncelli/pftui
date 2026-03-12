@@ -534,7 +534,7 @@ pub enum Command {
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
-        /// Action: signals, summary, low, medium, high, macro, alignment, gaps
+        /// Action: signals, summary, low, medium, high, macro, alignment, divergence, gaps
         action: String,
 
         /// Symbol filter (mainly for `signals`)

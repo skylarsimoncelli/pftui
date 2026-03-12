@@ -30,9 +30,10 @@ pub fn run(
         "high" => run_high(backend, json_output),
         "macro" => run_macro(backend, json_output),
         "alignment" => run_alignment(backend, symbol, json_output),
+        "divergence" => run_divergence(backend, symbol, json_output),
         "gaps" => run_gaps(backend, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment, gaps",
+            "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment, divergence, gaps",
             action
         ),
     }
@@ -511,6 +512,88 @@ fn run_alignment(
             println!(
                 "{:<10} {:<7} {:<7} {:<7} {:<7} {:<13} {:>5.0}%",
                 a.symbol, a.low, a.medium, a.high, a.macro_bias, a.consensus, a.score_pct
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct DivergenceRow {
+    symbol: String,
+    low: String,
+    medium: String,
+    high: String,
+    macro_bias: String,
+    bull_layers: usize,
+    bear_layers: usize,
+    disagreement_pct: f64,
+    dominant_side: String,
+}
+
+fn run_divergence(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let mut rows: Vec<DivergenceRow> = build_alignment_rows(backend, symbol)?
+        .into_iter()
+        .filter(|a| a.bull_layers > 0 && a.bear_layers > 0)
+        .map(|a| {
+            let dominant_side = if a.bull_layers > a.bear_layers {
+                "bull"
+            } else if a.bear_layers > a.bull_layers {
+                "bear"
+            } else {
+                "split"
+            }
+            .to_string();
+            let disagreement_pct = (a.bull_layers.min(a.bear_layers) as f64 / 4.0) * 100.0;
+            DivergenceRow {
+                symbol: a.symbol,
+                low: a.low,
+                medium: a.medium,
+                high: a.high,
+                macro_bias: a.macro_bias,
+                bull_layers: a.bull_layers,
+                bear_layers: a.bear_layers,
+                disagreement_pct,
+                dominant_side,
+            }
+        })
+        .collect();
+
+    rows.sort_by(|a, b| b.disagreement_pct.partial_cmp(&a.disagreement_pct).unwrap_or(std::cmp::Ordering::Equal));
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "divergences": rows,
+                "count": rows.len(),
+            }))?
+        );
+    } else if rows.is_empty() {
+        println!("No cross-layer divergences detected.");
+    } else {
+        println!("Cross-Layer Divergence");
+        println!(
+            "{:<10} {:<7} {:<7} {:<7} {:<7} {:>6} {:>6} {:>8}",
+            "Symbol", "Low", "Medium", "High", "Macro", "Bull", "Bear", "Split%"
+        );
+        println!("{}", "─".repeat(72));
+        for row in rows {
+            println!(
+                "{:<10} {:<7} {:<7} {:<7} {:<7} {:>6} {:>6} {:>7.0}%",
+                row.symbol,
+                row.low,
+                row.medium,
+                row.high,
+                row.macro_bias,
+                row.bull_layers,
+                row.bear_layers,
+                row.disagreement_pct
             );
         }
     }

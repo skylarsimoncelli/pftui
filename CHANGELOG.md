@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-12 — Add `analytics divergence` command and wire evening analysis input
+
+- What: added `pftui analytics divergence` to surface cross-layer conflicts per asset (LOW/MEDIUM/HIGH/MACRO), including bull/bear layer counts and disagreement magnitude. Updated evening-analysis routine inputs to consume the new command.
+- Why: removes manual cross-timeframe conflict assembly in evening workflows and closes the corresponding F38 offload/routine TODO item.
+- Files: `src/commands/analytics.rs`, `agents/routines/evening-analysis.md`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed shipped `analytics divergence` spec/checklist entries from F38 backlog
+
 ### 2026-03-12 — Add `movers --overnight` mode and morning routine integration
 
 - What: extended `pftui movers` with `--overnight` mode (same close-to-current move math, explicit overnight framing in text/JSON output) and updated the morning routine to use `pftui movers --overnight --json` as primary overnight movement input.
