@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-12 — Default predictions to macro-relevant categories
+
+- What: changed `pftui predictions` to filter for finance-relevant markets (economics, geopolitics, crypto) by default instead of showing all categories including sports/entertainment. The "macro" category selector is now the default when `--category` is not specified. Users can still see all markets with explicit category filters.
+- Why: user feedback from Morning Research, Evening Planner, and Market Close agents requested focus on finance/geopolitics markets. Default behavior was returning mostly sports/entertainment instead of macro-relevant data.
+- Files: `src/commands/predictions.rs`, `src/cli.rs`
+- Tests: 1197 passing (all 17 predictions tests pass, 1 unrelated World Bank API timeout)
+
 ### 2026-03-11 — F36 shipped: Investor Perspectives Panel skill scaffold
 
 - What: implemented the full `skills/investor-panel` package for multi-persona macro analysis: orchestration guide (`SKILL.md`), data collection script (`collect-data.sh`), strict response schema (`schema.json`), configurable default roster (`config.toml`), and persona library (`15` legends + `10` archetypes + customizable `personas/custom/.gitkeep`).

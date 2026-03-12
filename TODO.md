@@ -21,7 +21,6 @@ Current references:
 
 ### Data & Display
 
-- [ ] [Feedback] Fix predictions command to filter for finance/geopolitics categories — currently returns mostly sports/entertainment markets instead of macro-relevant data (requested by Morning Research, Evening Planner, Market Close ×6 reviews)
 - [ ] [Feedback] Fix data source reliability: COT (all failed), on-chain (decode error), BLS (parse error), news (0 articles intermittently), predictions (parse error) — `pftui status` shows 8/10 sources stale (Integration Optimiser Mar 11)
 - [ ] [Feedback] Debug why `pftui refresh` stopped populating `price_history` table (0 writes observed — Integration Optimiser Mar 11)
 
