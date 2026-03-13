@@ -441,13 +441,8 @@ TOP INSIGHT (Druckenmiller):
 > `agents/routines/` to use the new command instead of the manual workaround.
 > Changes go to the repo; crons pick up automatically via raw GitHub fetch.
 
-- [ ] **`analytics divergence` shipped** → Update `evening-analysis.md`: replace manual cross-layer comparison in "Cross-Timeframe Synthesis" section with `pftui analytics divergence --json`. Agent interprets the output instead of assembling it.
-- [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
-- [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
-- [ ] **`predict scorecard` shipped** → Update `morning-brief.md`: replace manual scorecard section with `pftui predict scorecard --date yesterday --json`. Update `evening-analysis.md`: use scorecard for prediction self-reflection opening.
-- [ ] **`predict add --timeframe/--confidence/--source` shipped** → Update ALL four timeframe analyst routines: remove raw SQL UPDATE workaround, use native flags. Remove `psql` and SQL blocks from routines entirely.
-- [ ] **`predict score --lesson` shipped** → Update `evening-analysis.md` and `low-timeframe-analyst.md`: replace SQL UPDATE for lesson with `--lesson` flag on score command.
-- [ ] **`movers --overnight` shipped** → Update `morning-brief.md`: replace web_search overnight check with `pftui movers --overnight --json` as primary data source. Keep web_search for news only.
+All F38 routine integrations completed by dev cron as part of feature shipping.
+Zero raw SQL remaining in agent routines. Verified 2026-03-13.
 
 ### F39 Routine Integration (Sentinel, post-dev-cron)
 
