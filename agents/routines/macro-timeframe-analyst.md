@@ -9,14 +9,14 @@ Your domain: empire cycles, reserve currency transitions, debt supercycles, demo
 ## Inputs
 
 ```bash
-pftui structural dashboard
-pftui structural metric-list US
-pftui structural metric-list China
-pftui structural cycle-list
-pftui structural outcome-list
-pftui structural outcome-history
-pftui structural parallel-list
-pftui structural log-list --limit 10
+pftui analytics macro
+pftui analytics macro metrics US --json
+pftui analytics macro metrics China --json
+pftui analytics macro compare US China --json
+pftui analytics macro cycles --json
+pftui analytics macro outcomes --json
+pftui analytics macro parallels --json
+pftui analytics macro log --json --limit 10
 pftui analytics high --json
 pftui predict list --json
 ```
@@ -26,28 +26,37 @@ Use web_search for: IMF data, World Bank reports, reserve currency data, debt/GD
 
 ## Analysis Tasks
 
-1. Update power metrics with latest data:
+1. Lens 1: Dalio Big Cycle (8 determinants)
+- Review determinant scores for US and China.
+- Track composite trend and US-China gap closure from `analytics macro compare`.
+- Classify Big Cycle pressure as accelerating / stable / decelerating.
+
+Update power metrics with latest data:
 ```bash
-pftui structural metric-set US --metric "[metric]" --score [1-10] --rank [1-5] \
-  --trend [rising|stable|declining] --description "[evidence-based assessment]"
+pftui analytics macro metric-set US --metric "[metric]" --score [1-10] --rank [1-5] \
+  --trend [rising|stable|declining] --notes "[evidence-based assessment]" --source "[source]"
 ```
 
-2. Update cycle stages if evidence warrants:
+2. Lens 2: Strauss-Howe Fourth Turning
+- Assess phase: catalyst / regeneracy / climax / resolution.
+- Track institutional stress, generational transfer, and external conflict markers.
+
+Update cycle stages if evidence warrants:
 ```bash
-pftui structural cycle-set "[cycle]" --stage "[stage]" --evidence "[what changed]"
+pftui analytics macro cycle-update "[cycle]" --phase "[phase]" --evidence "[what changed]" \
+  --notes "[why phase assignment changed]"
 ```
 
 3. Update outcome probabilities:
 ```bash
-pftui structural outcome-update "[name]" --probability [X] --notes "[What shifted and why]"
+pftui analytics macro outcome-update "[name]" --probability [X] --driver "[What shifted and why]"
 ```
 
 4. Add weekly structural log entry:
 ```bash
-pftui structural log-add --date $(date +%Y-%m-%d) \
-  --driver "[key structural driver this week]" \
+pftui analytics macro log-add "[key structural driver this week]" --date $(date +%Y-%m-%d) \
   --impact "[how it affects the macro picture]" \
-  --notes "[detailed observation]"
+  --outcome "[which structural outcome moved, if any]"
 ```
 
 5. Check if any historical parallels are strengthening or weakening. Add new ones if warranted.

@@ -370,6 +370,10 @@ pub enum Command {
         #[arg(long)]
         list: bool,
 
+        /// Require matching recent news items containing this keyword
+        #[arg(long = "news-keyword")]
+        news_keyword: Option<String>,
+
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -554,6 +558,58 @@ pub enum Command {
         #[arg(long)]
         symbol: Option<String>,
 
+        /// Country code/name for macro subcommands
+        #[arg(long)]
+        country: Option<String>,
+
+        /// Metric name for macro metric updates
+        #[arg(long)]
+        metric: Option<String>,
+
+        /// Numeric score for macro metric updates
+        #[arg(long)]
+        score: Option<f64>,
+
+        /// Ranking value for macro metric updates
+        #[arg(long)]
+        rank: Option<i32>,
+
+        /// Trend label (e.g. rising, stable, declining)
+        #[arg(long)]
+        trend: Option<String>,
+
+        /// Probability value for macro outcome updates
+        #[arg(long)]
+        probability: Option<f64>,
+
+        /// Stage/phase for macro cycle updates
+        #[arg(long = "phase", alias = "stage")]
+        phase: Option<String>,
+
+        /// Free-text evidence for macro cycle updates
+        #[arg(long)]
+        evidence: Option<String>,
+
+        /// Free-text notes
+        #[arg(long)]
+        notes: Option<String>,
+
+        /// Data source / citation label
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Driver text for outcome updates
+        #[arg(long)]
+        driver: Option<String>,
+
+        /// Impact text for structural log rows
+        #[arg(long)]
+        impact: Option<String>,
+
+        /// Outcome shift text for structural log rows
+        #[arg(long)]
+        outcome: Option<String>,
+
         /// Signal type filter: alignment, divergence, transition
         #[arg(long)]
         signal_type: Option<String>,
@@ -657,6 +713,10 @@ pub enum Command {
         /// Expected resolution date
         #[arg(long)]
         target_date: Option<String>,
+
+        /// Explicit scoring criterion (e.g. "daily close above 5000")
+        #[arg(long = "resolution-criteria")]
+        resolution_criteria: Option<String>,
 
         /// Outcome: correct, partial, wrong
         #[arg(long)]

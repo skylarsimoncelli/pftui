@@ -430,6 +430,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             confidence REAL,
             source_agent TEXT,
             target_date TEXT,
+            resolution_criteria TEXT,
             outcome TEXT NOT NULL DEFAULT 'pending',
             score_notes TEXT,
             lesson TEXT,
@@ -672,6 +673,16 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             (3, 'Research');
          CREATE INDEX IF NOT EXISTS idx_watchlist_group_id ON watchlist(group_id);",
     )?;
+
+    // Migration: add resolution_criteria to user_predictions
+    let has_resolution_criteria: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('user_predictions') WHERE name = 'resolution_criteria'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_resolution_criteria {
+        conn.execute_batch("ALTER TABLE user_predictions ADD COLUMN resolution_criteria TEXT")?;
+    }
 
     // Migration: add source_type column to news_cache (rss|brave)
     let has_news_source_type: bool = conn

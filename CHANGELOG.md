@@ -3,6 +3,37 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — TODO backlog normalized to zero active items
+
+- What: cleaned `TODO.md` sections after completing tracked F39/scan/alignment/prediction items; replaced stale empty headings with explicit "No active items" markers for P1/P2/P3.
+- Why: keeps TODO file truthful and prevents future runs from reprocessing already-completed work.
+- Files: `TODO.md`
+- Tests: not run (docs only)
+
+### 2026-03-13 — Predict `resolution_criteria` field + CLI support
+
+- What: added `resolution_criteria` to prediction storage and workflow, including SQLite/Postgres schema/migration coverage, predict CLI flag wiring (`pftui predict add --resolution-criteria "..."`), and propagation through add/list JSON payloads.
+- Why: closes the TODO asking for explicit prediction resolution criteria so later scoring can evaluate against concrete conditions instead of ambiguous claim interpretation.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`, `src/db/user_predictions.rs`, `src/db/schema.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed `Prediction resolution criteria column + CLI flag`
+
+### 2026-03-13 — Alignment scoring upgrade + `scan --news-keyword`
+
+- What: replaced basic alignment scoring with weighted per-asset scoring (0-100) using regime state/confidence, conviction magnitude, trend impact balance, and scenario probability impacts. Added `pftui scan --news-keyword` to require symbol-linked hits from `news_cache` (title/description/snippets/symbol tags) alongside scan filters, with both text and JSON output metadata (`news_keyword`, `matching_news_count`).
+- Why: closes the alignment-algorithm and scan-keyword TODO items and improves deployment signal quality plus event-driven scan workflows.
+- Files: `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/scan.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed alignment algorithm item, removed `scan --news-keyword`, removed stale brief-movers scope note
+
+### 2026-03-13 — F39 completion: macro write-subcommands + routine migration
+
+- What: expanded `analytics macro` to support structural write workflows used by macro routines: `metrics set`/`metric-set`, `cycles update`/`cycle-update` with `--phase` + `--evidence`, `outcomes update`/`outcome-update`, and `log add`/`log-add` with date/impact/outcome fields. Added analytics CLI flags required for macro write paths (`--country`, `--metric`, `--score`, `--rank`, `--trend`, `--probability`, `--phase`, `--evidence`, `--notes`, `--source`, `--driver`, `--impact`, `--outcome`). Updated macro timeframe routine to use `pftui analytics macro ...` commands only, added explicit Dalio + Fourth Turning lenses, and integrated `compare US China --json` + composite tracking in weekly flow.
+- Why: closes remaining F39 migration/routine TODO items and removes direct `pftui structural` dependency from the macro analyst routine.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `agents/routines/macro-timeframe-analyst.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed F39.5 and F39 routine integration checklist block
+
 ### 2026-03-13 — F39 macro consolidation pass: `analytics macro` routing, composites, compare
 
 - What: extended `pftui analytics` parsing to support `analytics macro` subcommands (`metrics`, `compare`, `cycles`, `outcomes`, `parallels`, `log`) with positional arguments, while preserving `analytics macro` dashboard default behavior. Added `structural` deprecation warning in main dispatch. Implemented country-grouped macro metrics view with Dalio-style composite score + previous-delta, and upgraded `analytics macro compare` with determinant rows, gap trend (`Closing/Widening/Stable/Unknown`), composite gap, and graceful missing-metric handling (`—`).

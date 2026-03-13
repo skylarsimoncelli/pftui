@@ -11,6 +11,7 @@ use crate::db::price_cache::{get_all_cached_prices, get_all_cached_prices_backen
 use crate::db::scan_queries::{
     get_scan_query_backend, list_scan_queries_backend, upsert_scan_query_backend,
 };
+use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 use crate::db::transactions::{list_transactions, list_transactions_backend};
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
@@ -50,6 +51,7 @@ pub fn run(
     save: Option<&str>,
     load: Option<&str>,
     list: bool,
+    news_keyword: Option<&str>,
     json: bool,
 ) -> Result<()> {
     if list {
@@ -86,9 +88,25 @@ pub fn run(
         return Ok(());
     }
 
+    let matching_news = if let Some(keyword) = news_keyword {
+        get_latest_news_backend(backend, 200, None, None, Some(keyword), Some(168))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     let mut matches: Vec<&ScanRow> = Vec::new();
     for row in &rows {
-        if matches_all_clauses(row, &clauses)? {
+        let clause_match = matches_all_clauses(row, &clauses)?;
+        if !clause_match {
+            continue;
+        }
+        let news_match = if news_keyword.is_some() {
+            row_matches_news(row, &matching_news)
+        } else {
+            true
+        };
+        if news_match {
             matches.push(row);
         }
     }
@@ -96,6 +114,8 @@ pub fn run(
     if json {
         let output = serde_json::json!({
             "filter": filter_expr,
+            "news_keyword": news_keyword,
+            "matching_news_count": matching_news.len(),
             "total_scanned": rows.len(),
             "match_count": matches.len(),
             "matches": matches.into_iter().map(to_json).collect::<Vec<_>>(),
@@ -104,7 +124,14 @@ pub fn run(
         return Ok(());
     }
 
-    print_table(matches, rows.len(), &filter_expr, &config.base_currency);
+    print_table(
+        matches,
+        rows.len(),
+        &filter_expr,
+        &config.base_currency,
+        news_keyword,
+        matching_news.len(),
+    );
     Ok(())
 }
 
@@ -464,13 +491,26 @@ fn get_numeric(row: &ScanRow, field: &str) -> Option<Decimal> {
     }
 }
 
-fn print_table(rows: Vec<&ScanRow>, total_scanned: usize, filter: &str, base_currency: &str) {
+fn print_table(
+    rows: Vec<&ScanRow>,
+    total_scanned: usize,
+    filter: &str,
+    base_currency: &str,
+    news_keyword: Option<&str>,
+    matching_news_count: usize,
+) {
     println!(
         "Scan results: {}/{} matched (`{}`)\n",
         rows.len(),
         total_scanned,
         filter
     );
+    if let Some(keyword) = news_keyword {
+        println!(
+            "News keyword filter: '{}' ({} recent matching articles)\n",
+            keyword, matching_news_count
+        );
+    }
 
     if rows.is_empty() {
         println!("No matches.");
@@ -531,6 +571,30 @@ fn print_table(rows: Vec<&ScanRow>, total_scanned: usize, filter: &str, base_cur
             price,
         );
     }
+}
+
+fn row_matches_news(row: &ScanRow, entries: &[NewsEntry]) -> bool {
+    let symbol = row.symbol.to_ascii_uppercase();
+    for n in entries {
+        if n.symbol_tag
+            .as_ref()
+            .map(|s| s.eq_ignore_ascii_case(&symbol))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        let text = format!(
+            "{} {} {}",
+            n.title,
+            n.description,
+            n.extra_snippets.join(" ")
+        )
+        .to_ascii_uppercase();
+        if text.contains(&symbol) {
+            return true;
+        }
+    }
+    false
 }
 
 fn truncate_name(name: &str, width: usize) -> String {

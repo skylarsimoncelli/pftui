@@ -68,6 +68,7 @@ pub fn run(
     confidence: Option<f64>,
     source_agent: Option<&str>,
     target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
     outcome: Option<&str>,
     notes: Option<&str>,
     lesson: Option<&str>,
@@ -99,6 +100,7 @@ pub fn run(
                 confidence,
                 source_agent,
                 target_date,
+                resolution_criteria,
             )?;
 
             if json_output {

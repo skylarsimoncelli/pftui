@@ -18,6 +18,7 @@ pub struct UserPrediction {
     pub confidence: Option<f64>,
     pub source_agent: Option<String>,
     pub target_date: Option<String>,
+    pub resolution_criteria: Option<String>,
     pub outcome: String,
     pub score_notes: Option<String>,
     pub lesson: Option<String>,
@@ -62,11 +63,12 @@ impl UserPrediction {
             confidence: row.get(5)?,
             source_agent: row.get(6)?,
             target_date: row.get(7)?,
-            outcome: row.get(8)?,
-            score_notes: row.get(9)?,
-            lesson: row.get(10)?,
-            created_at: row.get(11)?,
-            scored_at: row.get(12)?,
+            resolution_criteria: row.get(8)?,
+            outcome: row.get(9)?,
+            score_notes: row.get(10)?,
+            lesson: row.get(11)?,
+            created_at: row.get(12)?,
+            scored_at: row.get(13)?,
         })
     }
 }
@@ -77,6 +79,7 @@ fn ensure_prediction_columns(conn: &Connection) -> Result<()> {
         ("confidence", "REAL"),
         ("source_agent", "TEXT"),
         ("lesson", "TEXT"),
+        ("resolution_criteria", "TEXT"),
     ];
     for (col, ty) in required {
         let exists: bool = conn
@@ -103,6 +106,7 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
                 confidence DOUBLE PRECISION,
                 source_agent TEXT,
                 target_date TEXT,
+                resolution_criteria TEXT,
                 outcome TEXT NOT NULL DEFAULT 'pending',
                 score_notes TEXT,
                 lesson TEXT,
@@ -127,6 +131,9 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS source_agent TEXT")
             .execute(pool)
             .await?;
+        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS resolution_criteria TEXT")
+            .execute(pool)
+            .await?;
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS lesson TEXT")
             .execute(pool)
             .await?;
@@ -145,10 +152,11 @@ pub fn add_prediction(
     confidence: Option<f64>,
     source_agent: Option<&str>,
     target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
 ) -> Result<i64> {
     conn.execute(
-        "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             claim,
             symbol,
@@ -156,7 +164,8 @@ pub fn add_prediction(
             timeframe.unwrap_or("medium"),
             confidence,
             source_agent,
-            target_date
+            target_date,
+            resolution_criteria
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -170,7 +179,7 @@ pub fn list_predictions(
     limit: Option<usize>,
 ) -> Result<Vec<UserPrediction>> {
     let mut query = String::from(
-        "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, outcome, score_notes, lesson, created_at, scored_at
+        "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, created_at, scored_at
          FROM user_predictions",
     );
 
@@ -332,6 +341,7 @@ pub fn add_prediction_backend(
     confidence: Option<f64>,
     source_agent: Option<&str>,
     target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
 ) -> Result<i64> {
     query::dispatch(
         backend,
@@ -346,6 +356,7 @@ pub fn add_prediction_backend(
                 confidence,
                 source_agent,
                 target_date,
+                resolution_criteria,
             )
         },
         |pool| {
@@ -359,6 +370,7 @@ pub fn add_prediction_backend(
                 confidence,
                 source_agent,
                 target_date,
+                resolution_criteria,
             )
         },
     )
@@ -483,6 +495,7 @@ type PredictionRow = (
     Option<f64>,
     Option<String>,
     Option<String>,
+    Option<String>,
     String,
     Option<String>,
     Option<String>,
@@ -500,11 +513,12 @@ fn from_pg_row(r: PredictionRow) -> UserPrediction {
         confidence: r.5,
         source_agent: r.6,
         target_date: r.7,
-        outcome: r.8,
-        score_notes: r.9,
-        lesson: r.10,
-        created_at: r.11,
-        scored_at: r.12,
+        resolution_criteria: r.8,
+        outcome: r.9,
+        score_notes: r.10,
+        lesson: r.11,
+        created_at: r.12,
+        scored_at: r.13,
     }
 }
 
@@ -519,11 +533,12 @@ fn add_prediction_postgres(
     confidence: Option<f64>,
     source_agent: Option<&str>,
     target_date: Option<&str>,
+    resolution_criteria: Option<&str>,
 ) -> Result<i64> {
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO user_predictions (claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING id",
         )
         .bind(claim)
@@ -533,6 +548,7 @@ fn add_prediction_postgres(
         .bind(confidence)
         .bind(source_agent)
         .bind(target_date)
+        .bind(resolution_criteria)
         .fetch_one(pool)
         .await
     })?;
@@ -548,7 +564,7 @@ fn list_predictions_postgres(
 ) -> Result<Vec<UserPrediction>> {
     let mut rows: Vec<PredictionRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, outcome, score_notes, lesson, created_at::text, scored_at::text
+            "SELECT id, claim, symbol, conviction, timeframe, confidence, source_agent, target_date, resolution_criteria, outcome, score_notes, lesson, created_at::text, scored_at::text
              FROM user_predictions
              ORDER BY created_at DESC",
         )
@@ -556,7 +572,7 @@ fn list_predictions_postgres(
         .await
     })?;
     if let Some(o) = outcome_filter {
-        rows.retain(|r| r.8 == o);
+        rows.retain(|r| r.9 == o);
     }
     if let Some(s) = symbol {
         rows.retain(|r| r.2.as_deref().is_some_and(|v| v == s));

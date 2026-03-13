@@ -22,6 +22,19 @@ pub fn run(
     value2: Option<&str>,
     value3: Option<&str>,
     symbol: Option<&str>,
+    country: Option<&str>,
+    metric: Option<&str>,
+    score: Option<f64>,
+    rank: Option<i32>,
+    trend: Option<&str>,
+    probability: Option<f64>,
+    phase: Option<&str>,
+    evidence: Option<&str>,
+    notes: Option<&str>,
+    source: Option<&str>,
+    driver: Option<&str>,
+    impact: Option<&str>,
+    outcome: Option<&str>,
     signal_type: Option<&str>,
     severity: Option<&str>,
     from: Option<&str>,
@@ -35,7 +48,29 @@ pub fn run(
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
         "high" => run_high(backend, json_output),
-        "macro" => run_macro(backend, value, value2, value3, json_output),
+        "macro" => run_macro(
+            backend,
+            value,
+            value2,
+            value3,
+            country,
+            metric,
+            score,
+            rank,
+            trend,
+            probability,
+            phase,
+            evidence,
+            notes,
+            source,
+            driver,
+            impact,
+            outcome,
+            from,
+            date,
+            limit,
+            json_output,
+        ),
         "alignment" => run_alignment(backend, symbol, json_output),
         "divergence" => run_divergence(backend, symbol, json_output),
         "digest" => run_digest(backend, from, limit, json_output),
@@ -697,23 +732,141 @@ fn run_macro(
     subaction: Option<&str>,
     arg1: Option<&str>,
     arg2: Option<&str>,
+    country: Option<&str>,
+    metric: Option<&str>,
+    score: Option<f64>,
+    rank: Option<i32>,
+    trend: Option<&str>,
+    probability: Option<f64>,
+    phase: Option<&str>,
+    evidence: Option<&str>,
+    notes: Option<&str>,
+    source: Option<&str>,
+    driver: Option<&str>,
+    impact: Option<&str>,
+    outcome: Option<&str>,
+    _from: Option<&str>,
+    date: Option<&str>,
+    limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
     match subaction.unwrap_or("dashboard") {
         "dashboard" => {}
-        "metrics" => return run_macro_metrics(backend, arg1, json_output),
+        "metrics" => {
+            if arg1 == Some("set") {
+                let c = arg2
+                    .or(country)
+                    .ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro metrics set <country> --metric <name> [--score N] [--rank N] [--trend rising|stable|declining]"))?;
+                let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
+                let tr = trend.unwrap_or("stable");
+                let id = structural::set_metric_backend(backend, c, m, score, rank, tr, notes, source)?;
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&json!({"id": id, "country": c, "metric": m}))?);
+                } else {
+                    println!("Set macro metric: {} {} = {:?}", c, m, score);
+                }
+                return Ok(());
+            }
+            return run_macro_metrics(backend, arg1.or(country), json_output);
+        }
+        "metric-set" => {
+            let c = country
+                .or(arg1)
+                .ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro metric-set <country> --metric <name> [--score N] [--rank N] [--trend rising|stable|declining]"))?;
+            let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
+            let tr = trend.unwrap_or("stable");
+            let id = structural::set_metric_backend(backend, c, m, score, rank, tr, notes, source)?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({"id": id, "country": c, "metric": m}))?);
+            } else {
+                println!("Set macro metric: {} {} = {:?}", c, m, score);
+            }
+            return Ok(());
+        }
         "compare" => {
             let left = arg1.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>"))?;
             let right = arg2.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>"))?;
             return run_macro_compare(backend, left, right, json_output);
         }
-        "cycles" => return run_macro_cycles(backend, json_output),
-        "outcomes" => return run_macro_outcomes(backend, json_output),
+        "cycles" => {
+            if arg1 == Some("update") {
+                let name = arg2.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro cycles update <name> --phase <phase> [--evidence text]"))?;
+                let stage = phase.ok_or_else(|| anyhow::anyhow!("--phase required"))?;
+                structural::set_cycle_backend(backend, name, stage, None, notes, evidence)?;
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&json!({"name": name, "phase": stage}))?);
+                } else {
+                    println!("Updated cycle: {} -> {}", name, stage);
+                }
+                return Ok(());
+            }
+            return run_macro_cycles(backend, json_output);
+        }
+        "cycle-update" => {
+            let name = arg1.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro cycle-update <name> --phase <phase> [--evidence text]"))?;
+            let stage = phase.ok_or_else(|| anyhow::anyhow!("--phase required"))?;
+            structural::set_cycle_backend(backend, name, stage, None, notes, evidence)?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({"name": name, "phase": stage}))?);
+            } else {
+                println!("Updated cycle: {} -> {}", name, stage);
+            }
+            return Ok(());
+        }
+        "outcomes" => {
+            if arg1 == Some("update") {
+                let name = arg2.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro outcomes update <name> --probability <N> [--driver text]"))?;
+                let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
+                structural::update_outcome_probability_backend(backend, name, prob, driver)?;
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&json!({"name": name, "probability": prob, "driver": driver}))?);
+                } else {
+                    println!("Updated outcome: {} -> {:.1}%", name, prob);
+                }
+                return Ok(());
+            }
+            return run_macro_outcomes(backend, json_output);
+        }
+        "outcome-update" => {
+            let name = arg1.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro outcome-update <name> --probability <N> [--driver text]"))?;
+            let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
+            structural::update_outcome_probability_backend(backend, name, prob, driver)?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({"name": name, "probability": prob, "driver": driver}))?);
+            } else {
+                println!("Updated outcome: {} -> {:.1}%", name, prob);
+            }
+            return Ok(());
+        }
         "parallels" => return run_macro_parallels(backend, json_output),
-        "log" => return run_macro_log(backend, json_output),
+        "log" => {
+            if arg1 == Some("add") {
+                let development = arg2.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro log add <development> --date YYYY-MM-DD [--impact text] [--outcome text]"))?;
+                let d = date.ok_or_else(|| anyhow::anyhow!("--date required"))?;
+                let id = structural::add_log_backend(backend, d, development, impact, outcome)?;
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&json!({"id": id, "date": d}))?);
+                } else {
+                    println!("Added macro log entry for {}", d);
+                }
+                return Ok(());
+            }
+            return run_macro_log(backend, limit, json_output);
+        }
+        "log-add" => {
+            let development = arg1.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro log-add <development> --date YYYY-MM-DD [--impact text] [--outcome text]"))?;
+            let d = date.ok_or_else(|| anyhow::anyhow!("--date required"))?;
+            let id = structural::add_log_backend(backend, d, development, impact, outcome)?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&json!({"id": id, "date": d}))?);
+            } else {
+                println!("Added macro log entry for {}", d);
+            }
+            return Ok(());
+        }
         other => {
             bail!(
-                "unknown analytics macro subcommand '{}'. Valid: dashboard, metrics, compare, cycles, outcomes, parallels, log",
+                "unknown analytics macro subcommand '{}'. Valid: dashboard, metrics, metric-set, compare, cycles, cycle-update, outcomes, outcome-update, parallels, log, log-add",
                 other
             )
         }
@@ -1148,8 +1301,8 @@ fn run_macro_parallels(backend: &BackendConnection, json_output: bool) -> Result
     Ok(())
 }
 
-fn run_macro_log(backend: &BackendConnection, json_output: bool) -> Result<()> {
-    let rows = structural::list_log_backend(backend, None, Some(20)).unwrap_or_default();
+fn run_macro_log(backend: &BackendConnection, limit: Option<usize>, json_output: bool) -> Result<()> {
+    let rows = structural::list_log_backend(backend, None, Some(limit.unwrap_or(20))).unwrap_or_default();
     if json_output {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {
@@ -1361,23 +1514,35 @@ fn build_alignment_rows(
     filter_symbol: Option<&str>,
 ) -> Result<Vec<AlignmentRow>> {
     let symbols = discover_alignment_symbols(backend, filter_symbol);
-    let low_bias = regime_snapshots::get_current_backend(backend)?
+    let low_regime = regime_snapshots::get_current_backend(backend)?;
+    let low_bias = low_regime
+        .as_ref()
         .map(|r| regime_to_bias(&r.regime).to_string())
         .unwrap_or_else(|| "neutral".to_string());
+    let low_conf = low_regime
+        .as_ref()
+        .and_then(|r| r.confidence)
+        .map(normalize_confidence)
+        .unwrap_or(0.5);
 
-    let conviction_map: HashMap<String, String> = convictions::list_current_backend(backend)
-        .unwrap_or_default()
-        .into_iter()
+    let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
+    let conviction_bias_map: HashMap<String, String> = conviction_rows
+        .iter()
         .map(|c| (c.symbol.to_uppercase(), bias_from_score(c.score)))
         .collect();
+    let conviction_score_map: HashMap<String, f64> = conviction_rows
+        .iter()
+        .map(|c| (c.symbol.to_uppercase(), (c.score as f64 / 5.0).clamp(-1.0, 1.0)))
+        .collect();
 
-    let macro_outcomes = structural::list_outcomes_backend(backend).unwrap_or_default();
+    let scenarios_list = scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let mut rows = Vec::new();
     for sym in symbols {
-        let medium = conviction_map
+        let medium = conviction_bias_map
             .get(&sym)
             .cloned()
             .unwrap_or_else(|| "neutral".to_string());
+        let medium_signal = conviction_score_map.get(&sym).copied().unwrap_or(0.0);
 
         let high_impacts = trends::get_impacts_for_symbol_backend(backend, &sym).unwrap_or_default();
         let bull_high = high_impacts
@@ -1396,28 +1561,50 @@ fn build_alignment_rows(
             "neutral"
         }
         .to_string();
+        let high_total = bull_high + bear_high;
+        let high_signal = if high_total == 0 {
+            0.0
+        } else {
+            (bull_high as f64 - bear_high as f64) / high_total as f64
+        };
 
         let mut macro_bias = "neutral".to_string();
+        let mut macro_signal = 0.0;
         let needle = sym.to_lowercase();
-        for o in &macro_outcomes {
-            if let Some(ai) = o.asset_implications.as_ref() {
+        for s in &scenarios_list {
+            if let Some(ai) = s.asset_impact.as_ref() {
                 let lower = ai.to_lowercase();
                 if lower.contains(&needle) {
-                    if lower.contains("bull") && !lower.contains("bear") {
-                        macro_bias = "bull".to_string();
+                    let direction = if lower.contains("bull") && !lower.contains("bear") {
+                        1.0
                     } else if lower.contains("bear") && !lower.contains("bull") {
-                        macro_bias = "bear".to_string();
-                    }
-                    break;
+                        -1.0
+                    } else {
+                        0.0
+                    };
+                    macro_signal += direction * (s.probability / 100.0);
                 }
             }
         }
+        macro_signal = macro_signal.clamp(-1.0, 1.0);
+        if macro_signal > 0.05 {
+            macro_bias = "bull".to_string();
+        } else if macro_signal < -0.05 {
+            macro_bias = "bear".to_string();
+        }
 
-        let layers = [low_bias.clone(), medium.clone(), high.clone(), macro_bias.clone()];
-        let bull = layers.iter().filter(|v| v.as_str() == "bull").count();
-        let bear = layers.iter().filter(|v| v.as_str() == "bear").count();
+        let low_signal = bias_to_signal(&low_bias) * low_conf;
+        let bull = [low_signal, medium_signal, high_signal, macro_signal]
+            .iter()
+            .filter(|v| **v > 0.05)
+            .count();
+        let bear = [low_signal, medium_signal, high_signal, macro_signal]
+            .iter()
+            .filter(|v| **v < -0.05)
+            .count();
         let consensus = consensus_from_counts(bull, bear);
-        let score_pct = (bull.max(bear) as f64 / 4.0) * 100.0;
+        let weighted = (0.20 * low_signal) + (0.30 * medium_signal) + (0.25 * high_signal) + (0.25 * macro_signal);
+        let score_pct = (weighted.abs() * 100.0).clamp(0.0, 100.0);
 
         rows.push(AlignmentRow {
             symbol: sym,
@@ -1433,4 +1620,20 @@ fn build_alignment_rows(
     }
     rows.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     Ok(rows)
+}
+
+fn normalize_confidence(raw: f64) -> f64 {
+    if raw > 1.0 {
+        (raw / 100.0).clamp(0.0, 1.0)
+    } else {
+        raw.clamp(0.0, 1.0)
+    }
+}
+
+fn bias_to_signal(bias: &str) -> f64 {
+    match bias {
+        "bull" => 1.0,
+        "bear" => -1.0,
+        _ => 0.0,
+    }
 }
