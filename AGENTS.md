@@ -768,6 +768,12 @@ If using PostgreSQL backend, query via your configured `database_url`:
 psql "$DATABASE_URL" -c "SELECT symbol, quantity, price_per FROM transactions LIMIT 20;"
 ```
 
+If `psql` fails with peer-auth/default-db issues, connect explicitly:
+```bash
+# Explicit host avoids local peer auth defaults; -d selects correct database.
+psql -h localhost -U <postgres_user> -d <database_name> -c "SELECT NOW();"
+```
+
 Backend status:
 - `sqlite` (default): fully supported
 - `postgres`: fully supported natively (`database_backend`, `database_url`)

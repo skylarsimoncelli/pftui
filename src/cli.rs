@@ -1271,9 +1271,10 @@ pub enum Command {
     #[command(name = "trends")]
     Trends {
         /// Action: add, list, update, evidence-add, evidence-list, impact-add, impact-list, dashboard
+        /// Example: `pftui trends evidence-add --trend "AI capex wave" --date 2026-03-13 --evidence "Hyperscaler capex +35% YoY" --source "earnings call"`
         action: String,
 
-        /// Value (trend name for add/update, evidence text for evidence-add)
+        /// Value (trend name for add/update, or evidence text for evidence-add if `--evidence` is omitted)
         value: Option<String>,
 
         #[arg(long)]
@@ -1296,6 +1297,7 @@ pub enum Command {
         status: Option<String>,
         #[arg(long)]
         date: Option<String>,
+        /// Evidence text (preferred for `evidence-add`; clearer than positional value)
         #[arg(long)]
         evidence: Option<String>,
         #[arg(long)]

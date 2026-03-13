@@ -26,11 +26,9 @@ Current references:
 
 - [ ] [Feedback] `agent-msg send` batch mode — allow sending multiple related messages as a single intel package (low-timeframe-analyst, Mar 12)
 - [ ] [Feedback] `brief --json` movers section should include top market movers outside portfolio (NVDA, TSLA, oil stocks) for deployment opportunity tracking (morning-brief-agent, Mar 12)
-- [ ] [Feedback] `trends evidence-add` help text unclear — `--evidence` flag not obvious from `--help` output. Add examples to help text (high-timeframe-analyst, Mar 12)
 
 ### Infrastructure
 
-- [ ] [Feedback] Document psql connection requirements (`-h localhost` flag, correct db name) for direct metadata updates — agents hitting peer auth errors (low-timeframe-analyst, Mar 12)
 
 ### Code Quality
 

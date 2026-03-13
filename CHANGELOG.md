@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Clarify `trends evidence-add` help + document `psql` connection requirements
+
+- What: improved `trends` CLI help text with a concrete `evidence-add` example and explicit `--evidence` guidance. Added explicit PostgreSQL `psql` connection fallback guidance (`-h localhost`, `-d <db>`) in AGENTS.md for peer-auth/default-db failure cases.
+- Why: closes two agent UX/documentation feedback items that were causing avoidable command friction.
+- Files: `src/cli.rs`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed feedback items for `trends evidence-add` help clarity and `psql` connection requirements docs
+
 ### 2026-03-13 — Clippy clean under `-D warnings` (release/CI unblock)
 
 - What: resolved strict clippy blockers by removing a redundant `if/else` branch in analytics SQL generation and adding explicit `#[allow(clippy::too_many_arguments)]` on multi-arg prediction DB helper functions and analytics command entrypoint.
