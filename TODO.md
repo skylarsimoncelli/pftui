@@ -31,6 +31,81 @@ Current references:
 ### Code Quality
 
 
+### F39: Macro Analytics Consolidation (`pftui analytics macro`)
+
+> Collapse `pftui structural` into `pftui analytics macro`. Every analytical view
+> lives under one namespace. The user discovers the whole engine from one `--help`.
+> Database schema unchanged. This is a CLI routing + computation layer change.
+
+**F39.1: Route `analytics macro` subcommands (rename)**
+
+Reroute all `structural` subcommands under `analytics macro`:
+```
+pftui analytics macro                    # dashboard (default view)
+pftui analytics macro metrics US         # Dalio 8 determinants for country
+pftui analytics macro metrics China      # same
+pftui analytics macro compare US China   # side-by-side power comparison
+pftui analytics macro cycles             # Big Cycle + Fourth Turning stages
+pftui analytics macro outcomes           # structural outcome probabilities
+pftui analytics macro parallels          # historical parallel tracker
+pftui analytics macro log                # weekly structural observations
+```
+Keep `pftui structural` as a deprecated alias (prints warning + forwards).
+Source: `src/commands/analytics.rs` (add macro subcommand dispatch),
+`src/commands/structural.rs` (existing logic, reuse).
+
+**F39.2: Dalio composite score computation**
+
+`pftui analytics macro metrics US` should compute and display a weighted composite
+score (0-10) from the 8 Dalio determinants: education, innovation, competitiveness,
+military, trade, economic output, financial center, reserve currency.
+Show: individual scores with trend arrows, composite at bottom, delta from last update.
+Source: `src/db/structural.rs` (add composite query), `src/commands/analytics.rs`.
+
+Tables: `power_metrics` (existing). Query all metrics for country, compute weighted avg.
+Default weights: equal (1/8 each). Config override later if needed.
+
+**F39.3: Country-filtered metric list**
+
+`pftui analytics macro metrics --country US` returns ONLY that country's metrics.
+Currently `metric-list` dumps all countries mixed together. Add `--country` filter.
+Also: `pftui analytics macro metrics` (no country) shows all with country grouping.
+Source: `src/commands/structural.rs` (add WHERE clause on country).
+
+**F39.4: Head-to-head power comparison**
+
+`pftui analytics macro compare US China` shows side-by-side table:
+```
+Determinant      | US    | China | Gap   | Trend
+Education        | 7.5 ↓ | 7.0 ↑ | -0.5  | Closing
+Innovation       | 8.0 → | 6.5 ↑ | -1.5  | Closing
+Military         | 9.0 → | 6.5 ↑ | -2.5  | Closing
+...
+Composite        | 6.7 ↓ | 6.1 ↑ | -0.6  | Closing
+```
+Source: `src/commands/analytics.rs`. Query both countries from `power_metrics`,
+compute composites, calculate gaps and trend direction.
+
+**F39.5: Fourth Turning cycle enrichment**
+
+Extend `structural_cycles` to support richer metadata for Fourth Turning tracking.
+Add optional JSON `metadata` column (or use existing `evidence` text field) to store:
+- `turning_number` (1-4)
+- `phase` (catalyst / regeneracy / climax / resolution)
+- `catalyst_event` (free text)
+- `estimated_climax_range` (date range)
+- `key_institutions` (list of institutions under stress)
+
+CLI: `pftui analytics macro cycles` displays this enriched data.
+`pftui analytics macro cycles update "Fourth Turning" --phase climax --evidence "..."`
+
+**F39.6: Ensure China metric parity**
+
+Current state: US has 8+ metrics, China has only 4 (education, innovation, military, financial).
+Missing China metrics: competitiveness, trade, economic output, reserve currency, governance.
+The agent will populate these, but the comparison command (F39.4) should gracefully handle
+missing metrics (show "—" not crash).
+
 ### Analytics Engine: Agent Offload (F38)
 
 > Move mechanical data assembly out of agent token budgets and into native pftui commands.
@@ -365,6 +440,39 @@ TOP INSIGHT (Druckenmiller):
 > After dev cron ships each F38 item, update the corresponding agent routine in
 > `agents/routines/` to use the new command instead of the manual workaround.
 > Changes go to the repo; crons pick up automatically via raw GitHub fetch.
+
+- [ ] **`analytics divergence` shipped** → Update `evening-analysis.md`: replace manual cross-layer comparison in "Cross-Timeframe Synthesis" section with `pftui analytics divergence --json`. Agent interprets the output instead of assembling it.
+- [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
+- [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
+- [ ] **`predict scorecard` shipped** → Update `morning-brief.md`: replace manual scorecard section with `pftui predict scorecard --date yesterday --json`. Update `evening-analysis.md`: use scorecard for prediction self-reflection opening.
+- [ ] **`predict add --timeframe/--confidence/--source` shipped** → Update ALL four timeframe analyst routines: remove raw SQL UPDATE workaround, use native flags. Remove `psql` and SQL blocks from routines entirely.
+- [ ] **`predict score --lesson` shipped** → Update `evening-analysis.md` and `low-timeframe-analyst.md`: replace SQL UPDATE for lesson with `--lesson` flag on score command.
+- [ ] **`movers --overnight` shipped** → Update `morning-brief.md`: replace web_search overnight check with `pftui movers --overnight --json` as primary data source. Keep web_search for news only.
+
+### F39 Routine Integration (Sentinel, post-dev-cron)
+
+> After dev cron ships F39 (macro analytics consolidation), rewrite the macro-timeframe-analyst
+> routine to use the new commands and explicitly ground analysis in Dalio + Fourth Turning.
+
+- [ ] **F39.1 shipped (route rename)** → Update `macro-timeframe-analyst.md`: replace all `pftui structural` commands with `pftui analytics macro` equivalents. Update `evening-analysis.md` and `morning-brief.md` if they reference structural commands.
+- [ ] **F39.2 shipped (composite score)** → Update `macro-timeframe-analyst.md`: add composite score check to every run. Agent should track composite trend and flag when gap between US and China narrows below threshold.
+- [ ] **F39.4 shipped (compare command)** → Update `macro-timeframe-analyst.md`: add `pftui analytics macro compare US China --json` as primary input. Agent focuses on interpreting gap closure rate instead of manually comparing metrics.
+- [ ] **F39.5 shipped (Fourth Turning enrichment)** → Rewrite `macro-timeframe-analyst.md` to explicitly use two analytical lenses:
+  **Lens 1: Dalio Big Cycle (8 Determinants)**
+  - Every run: review all 8 determinants for US and China
+  - Update any metric where new data is available (IMF, World Bank, WIPO, SIPRI, WGC)
+  - Track composite score trend and gap closure rate
+  - Map current Big Cycle stage (which of Dalio's 6 stages are we in?)
+  - Key question: "Is the empire transition accelerating or decelerating?"
+  
+  **Lens 2: Strauss-Howe Fourth Turning**
+  - Every run: assess current phase (catalyst / regeneracy / climax / resolution)
+  - Track crisis arc markers: institutional legitimacy, generational power transfer, external conflict
+  - Update Fourth Turning cycle with phase, catalyst event, climax estimate
+  - Historical parallel: what happened at this phase in previous Fourth Turnings (1929-1945, 1860-1865, 1773-1794)?
+  - Key question: "Where are we in the crisis arc and what does resolution look like?"
+  
+  Both lenses should produce specific, falsifiable observations that constrain lower timeframes.
 
 
 ---
