@@ -98,7 +98,8 @@ pftui predict add "[structural cause] will [structural effect] by [date]" \
 ## Output to Evening Analyst
 
 ```bash
-pftui agent-msg send "HIGH LAYER [date]: Trends: [name->direction for each]. Key research finding: [ONE most important structural insight]. Evidence added: [X points across Y trends]. Conviction changes: [asset old->new, reason]. Predictions: [new + scored]. Emerging theme: [anything new]. Cross-timeframe tension: [where HIGH disagrees with LOW/MEDIUM]." \
+DIGEST=$(pftui analytics digest --from high-agent --json)
+pftui agent-msg send "HIGH LAYER DIGEST [date]: ${DIGEST}" \
   --from high-agent --to evening-analyst --priority normal --category signal --layer high
 ```
 

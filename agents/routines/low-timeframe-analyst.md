@@ -115,7 +115,8 @@ pftui predict stats --json
 
 9. Send comprehensive EOD data package to Evening Analyst:
 ```bash
-pftui agent-msg send "LOW EOD [date]: [asset prices and changes] | Regime: [state] | Predictions: [X/Y correct, Z%] | Wrong call lessons: [takeaways] | Conviction mismatches: [list] | Biggest surprise: [unexpected] | Tomorrow watch: [levels and events]" \
+DIGEST=$(pftui analytics digest --from low-agent --json)
+pftui agent-msg send "LOW EOD DIGEST [date]: ${DIGEST}" \
   --from low-agent --to evening-analyst --priority normal --category signal --layer low
 ```
 

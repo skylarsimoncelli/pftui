@@ -44,20 +44,6 @@ Current references:
 > Principle: pftui computes, agents interpret. No agent should run raw SQL or stitch
 > together data that the analytics engine already has.
 
-**`pftui analytics digest [--from low-agent|medium-agent|evening-analyst] [--json]`**
-- Auto-generate structured agent report from current DB state.
-- LOW close: prices, changes, regime, scorecard, mismatches, surprises.
-- MEDIUM: scenario probabilities with deltas, thesis changes, conviction moves.
-- EVENING: cross-timeframe summary, prediction results, trend evidence.
-- Replaces: agents spending 200+ tokens composing data summaries that are 90% DB lookups.
-- Source: `src/commands/analytics.rs`
-
-**`pftui analytics recap [--date YYYY-MM-DD] [--json]`**
-- Chronological event log: price moves, prediction results, scenario changes,
-  conviction changes, trend evidence added, regime shifts, agent messages.
-- One query instead of agents running 8 separate commands and mentally stitching.
-- Source: `src/commands/analytics.rs`
-
 ### Infrastructure
 
 ### Code Quality Quick Wins (audit-driven)
@@ -395,8 +381,6 @@ TOP INSIGHT (Druckenmiller):
 > `agents/routines/` to use the new command instead of the manual workaround.
 > Changes go to the repo; crons pick up automatically via raw GitHub fetch.
 
-- [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
-- [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
 
 ---
 

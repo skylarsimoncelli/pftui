@@ -422,6 +422,8 @@ fn main() -> Result<()> {
             symbol,
             signal_type,
             severity,
+            from,
+            date,
             limit,
             json,
         }) => commands::analytics::run(
@@ -430,6 +432,8 @@ fn main() -> Result<()> {
             symbol.as_deref(),
             signal_type.as_deref(),
             severity.as_deref(),
+            from.as_deref(),
+            date.as_deref(),
             limit,
             json,
         ),

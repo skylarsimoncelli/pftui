@@ -534,7 +534,7 @@ pub enum Command {
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
-        /// Action: signals, summary, low, medium, high, macro, alignment, divergence, gaps
+        /// Action: signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps
         action: String,
 
         /// Symbol filter (mainly for `signals`)
@@ -548,6 +548,14 @@ pub enum Command {
         /// Severity filter: info, notable, critical
         #[arg(long)]
         severity: Option<String>,
+
+        /// Agent role for digest mode (e.g. low-agent, medium-agent, evening-analyst)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Date filter (YYYY-MM-DD, today, yesterday) for recap mode
+        #[arg(long)]
+        date: Option<String>,
 
         /// Max results
         #[arg(long)]

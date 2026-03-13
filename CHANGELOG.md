@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Add `analytics digest` and `analytics recap` + routine adoption
+
+- What: added `pftui analytics digest` (role-aware structured snapshot, `--from`) and `pftui analytics recap` (date-filtered chronological events, `--date`). Updated low/medium/high routines to send digest-based handoffs and morning/evening routines to consume recap.
+- Why: closes the next F38 agent-offload/routine TODO items by replacing manual cross-command assembly with native analytics payloads.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `AGENTS.md`, `agents/routines/low-timeframe-analyst.md`, `agents/routines/medium-timeframe-analyst.md`, `agents/routines/high-timeframe-analyst.md`, `agents/routines/morning-brief.md`, `agents/routines/evening-analysis.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed shipped `analytics digest`/`analytics recap` spec and routine-checklist entries
+
 ### 2026-03-12 — Add `analytics divergence` command and wire evening analysis input
 
 - What: added `pftui analytics divergence` to surface cross-layer conflicts per asset (LOW/MEDIUM/HIGH/MACRO), including bull/bear layer counts and disagreement magnitude. Updated evening-analysis routine inputs to consume the new command.

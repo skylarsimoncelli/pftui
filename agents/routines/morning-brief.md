@@ -22,6 +22,7 @@ Use this pre-digested intelligence. Don't redo their work.
 ```bash
 pftui analytics summary --json
 pftui analytics alignment --json
+pftui analytics recap --date yesterday --json
 pftui brief --json
 pftui movers --overnight --json
 pftui predict scorecard --date yesterday --json

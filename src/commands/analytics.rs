@@ -1,11 +1,12 @@
 use anyhow::{bail, Result};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::alerts::AlertStatus;
 use crate::db::backend::BackendConnection;
 use crate::db::{
+    agent_messages,
     alerts, price_cache,
     convictions, correlation_snapshots, regime_snapshots, research_questions, scenarios, structural,
     thesis, timeframe_signals, transactions, trends, user_predictions, watchlist,
@@ -19,6 +20,8 @@ pub fn run(
     symbol: Option<&str>,
     signal_type: Option<&str>,
     severity: Option<&str>,
+    from: Option<&str>,
+    date: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
@@ -31,12 +34,256 @@ pub fn run(
         "macro" => run_macro(backend, json_output),
         "alignment" => run_alignment(backend, symbol, json_output),
         "divergence" => run_divergence(backend, symbol, json_output),
+        "digest" => run_digest(backend, from, limit, json_output),
+        "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment, divergence, gaps",
+            "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct RecapEvent {
+    at: String,
+    event_type: String,
+    source: String,
+    summary: String,
+}
+
+fn parse_day_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    let normalized = raw.trim().to_lowercase();
+    let today = Utc::now().date_naive();
+    if normalized == "today" {
+        return Ok(Some(today));
+    }
+    if normalized == "yesterday" {
+        return Ok(Some(today - Duration::days(1)));
+    }
+    let parsed = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .map_err(|_| anyhow::anyhow!("invalid date '{}'. Use YYYY-MM-DD, today, or yesterday", raw))?;
+    Ok(Some(parsed))
+}
+
+fn ts_matches_day(ts: &str, day: Option<NaiveDate>) -> bool {
+    let Some(target) = day else {
+        return true;
+    };
+    if ts.len() < 10 {
+        return false;
+    }
+    NaiveDate::parse_from_str(&ts[..10], "%Y-%m-%d")
+        .map(|d| d == target)
+        .unwrap_or(false)
+}
+
+fn run_digest(
+    backend: &BackendConnection,
+    from: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let role = from.unwrap_or("evening-analyst");
+    let lim = limit.unwrap_or(10);
+
+    let regime = regime_snapshots::get_current_backend(backend).ok().flatten();
+    let top_signals =
+        timeframe_signals::list_signals_backend(backend, None, None, Some(lim)).unwrap_or_default();
+    let divergences = build_alignment_rows(backend, None)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|a| a.bull_layers > 0 && a.bear_layers > 0)
+        .take(lim)
+        .collect::<Vec<_>>();
+    let scenarios_list =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
+    let pending_predictions = user_predictions::list_predictions_backend(
+        backend,
+        Some("pending"),
+        None,
+        None,
+        Some(lim),
+    )
+    .unwrap_or_default();
+    let scorecard = user_predictions::get_stats_backend(backend).ok();
+    let recent_messages = agent_messages::list_messages_backend(
+        backend,
+        None,
+        Some(role),
+        None,
+        true,
+        None,
+        Some(lim),
+    )
+    .unwrap_or_default();
+
+    let payload = match role {
+        "low-agent" | "low-timeframe-analyst" => json!({
+            "from": role,
+            "regime": regime,
+            "signals": top_signals,
+            "divergences": divergences,
+            "pending_predictions": pending_predictions,
+            "unacked_messages": recent_messages,
+        }),
+        "medium-agent" | "medium-timeframe-analyst" => json!({
+            "from": role,
+            "scenarios": scenarios_list,
+            "convictions": conviction_rows,
+            "pending_predictions": pending_predictions,
+            "signals": top_signals,
+            "unacked_messages": recent_messages,
+        }),
+        _ => json!({
+            "from": role,
+            "regime": regime,
+            "scenarios": scenarios_list,
+            "signals": top_signals,
+            "divergences": divergences,
+            "prediction_stats": scorecard,
+            "pending_predictions": pending_predictions,
+            "unacked_messages": recent_messages,
+        }),
+    };
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("Analytics Digest ({})", role);
+        println!("  Signals: {}", top_signals.len());
+        println!("  Divergences: {}", divergences.len());
+        println!("  Pending predictions: {}", pending_predictions.len());
+        println!("  Unacked messages: {}", recent_messages.len());
+    }
+
+    Ok(())
+}
+
+fn run_recap(
+    backend: &BackendConnection,
+    date: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let day = parse_day_filter(date)?;
+    let mut events: Vec<RecapEvent> = Vec::new();
+
+    let preds = user_predictions::list_predictions_backend(backend, None, None, None, None)
+        .unwrap_or_default();
+    for p in preds {
+        if ts_matches_day(&p.created_at, day) {
+            events.push(RecapEvent {
+                at: p.created_at.clone(),
+                event_type: "prediction_added".to_string(),
+                source: p.source_agent.clone().unwrap_or_else(|| "predict".to_string()),
+                summary: format!("#{} {}", p.id, p.claim),
+            });
+        }
+        if let Some(scored_at) = p.scored_at.as_ref() {
+            if ts_matches_day(scored_at, day) {
+                events.push(RecapEvent {
+                    at: scored_at.clone(),
+                    event_type: "prediction_scored".to_string(),
+                    source: p.source_agent.clone().unwrap_or_else(|| "predict".to_string()),
+                    summary: format!("#{} -> {}", p.id, p.outcome),
+                });
+            }
+        }
+    }
+
+    let scenario_rows = scenarios::list_scenarios_backend(backend, None).unwrap_or_default();
+    for s in scenario_rows {
+        if ts_matches_day(&s.updated_at, day) {
+            events.push(RecapEvent {
+                at: s.updated_at.clone(),
+                event_type: "scenario_updated".to_string(),
+                source: "scenario".to_string(),
+                summary: format!("{} {:.1}% ({})", s.name, s.probability, s.status),
+            });
+        }
+    }
+
+    let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
+    for c in conviction_rows {
+        if ts_matches_day(&c.recorded_at, day) {
+            events.push(RecapEvent {
+                at: c.recorded_at.clone(),
+                event_type: "conviction_set".to_string(),
+                source: "conviction".to_string(),
+                summary: format!("{} -> {}", c.symbol, c.score),
+            });
+        }
+    }
+
+    let signal_rows = timeframe_signals::list_signals_backend(backend, None, None, None)
+        .unwrap_or_default();
+    for s in signal_rows {
+        if ts_matches_day(&s.detected_at, day) {
+            events.push(RecapEvent {
+                at: s.detected_at.clone(),
+                event_type: "timeframe_signal".to_string(),
+                source: "analytics".to_string(),
+                summary: format!("[{}] {}", s.severity, s.description),
+            });
+        }
+    }
+
+    let regime_rows = regime_snapshots::get_history_backend(backend, Some(limit.unwrap_or(50)))
+        .unwrap_or_default();
+    for r in regime_rows {
+        if ts_matches_day(&r.recorded_at, day) {
+            events.push(RecapEvent {
+                at: r.recorded_at.clone(),
+                event_type: "regime_snapshot".to_string(),
+                source: "regime".to_string(),
+                summary: format!("{} ({:.2})", r.regime, r.confidence.unwrap_or(0.0)),
+            });
+        }
+    }
+
+    let msg_rows =
+        agent_messages::list_messages_backend(backend, None, None, None, false, None, None)
+            .unwrap_or_default();
+    for m in msg_rows {
+        if ts_matches_day(&m.created_at, day) {
+            events.push(RecapEvent {
+                at: m.created_at.clone(),
+                event_type: "agent_message".to_string(),
+                source: m.from_agent.clone(),
+                summary: m.content.chars().take(120).collect(),
+            });
+        }
+    }
+
+    events.sort_by(|a, b| b.at.cmp(&a.at));
+    if let Some(n) = limit {
+        events.truncate(n);
+    }
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "date": day.map(|d| d.to_string()),
+                "events": events,
+                "count": events.len(),
+            }))?
+        );
+    } else if events.is_empty() {
+        println!("No recap events found.");
+    } else {
+        println!("Analytics Recap");
+        for e in events {
+            println!("  {} [{}:{}] {}", e.at, e.source, e.event_type, e.summary);
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
