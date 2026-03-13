@@ -14,6 +14,7 @@ use crate::db::{
 use crate::db::query;
 use crate::models::asset::AssetCategory;
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     backend: &BackendConnection,
     action: &str,
@@ -320,11 +321,7 @@ fn table_stats(
     } else {
         format!("SELECT COUNT(*), MAX({}) FROM {}", ts_col, table)
     };
-    let pg_sql = if epoch_seconds {
-        format!("SELECT COUNT(*)::BIGINT, MAX({})::text FROM {}", ts_col, table)
-    } else {
-        format!("SELECT COUNT(*)::BIGINT, MAX({})::text FROM {}", ts_col, table)
-    };
+    let pg_sql = format!("SELECT COUNT(*)::BIGINT, MAX({})::text FROM {}", ts_col, table);
 
     query::dispatch(
         backend,

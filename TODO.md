@@ -34,7 +34,6 @@ Current references:
 
 ### Code Quality
 
-- [ ] Fix clippy warnings blocking release: `if_same_then_else` in `src/commands/analytics.rs:76`, `too_many_arguments` (3 functions) in `src/db/user_predictions.rs:138,324,510` — must pass `cargo clippy --all-targets -- -D warnings` for CI
 
 ### Analytics Engine: Agent Offload (F38)
 

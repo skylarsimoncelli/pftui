@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Clippy clean under `-D warnings` (release/CI unblock)
+
+- What: resolved strict clippy blockers by removing a redundant `if/else` branch in analytics SQL generation and adding explicit `#[allow(clippy::too_many_arguments)]` on multi-arg prediction DB helper functions and analytics command entrypoint.
+- Why: closes the TODO requiring `cargo clippy --all-targets -- -D warnings` to pass for release/CI.
+- Files: `src/commands/analytics.rs`, `src/db/user_predictions.rs`, `TODO.md`
+- Verification: `cargo clippy --all-targets -- -D warnings`
+- TODO: removed clippy-blocking warning item
+
 ### 2026-03-13 — Status freshness accuracy fix + refresh price_history fallback stamping
 
 - What: fixed status freshness parsing to accept SQLite-style timestamps (`YYYY-MM-DD HH:MM:SS`) and epoch strings in addition to RFC3339, and corrected BLS/World Bank last-fetch queries to use `updated_at` columns. Also hardened `refresh` so daily `price_history` anchors are written from cached prices when live quote fetches fail for some symbols.
