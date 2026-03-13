@@ -1285,17 +1285,25 @@ footer {
         font-size: 1rem;
     }
     
-    /* Install command: wrap on mobile */
+    /* Install command: keep single line + ellipsis on mobile */
     .install-command {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         gap: 0.5rem;
     }
     
     .install-command code {
         font-size: 0.65rem;
-        white-space: normal;
-        word-break: break-all;
-        width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        word-break: normal;
+        overflow-wrap: normal;
+        min-width: 0;
+        width: auto;
+    }
+
+    .copy-btn {
+        flex: 0 0 auto;
     }
     
     /* Copy buttons: proper touch targets (44px min) */
@@ -1444,7 +1452,7 @@ footer {
     }
     
     .install-command code {
-        font-size: 0.6rem;
+        font-size: 0.62rem;
     }
     
     .terminal-body {
