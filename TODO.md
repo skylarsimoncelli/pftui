@@ -26,6 +26,17 @@ Current references:
 
 ### CLI Enhancements
 
+- [ ] [Feedback] `agent-msg send` batch mode — allow sending multiple related messages as a single intel package (low-timeframe-analyst, Mar 12)
+- [ ] [Feedback] `brief --json` movers section should include top market movers outside portfolio (NVDA, TSLA, oil stocks) for deployment opportunity tracking (morning-brief-agent, Mar 12)
+- [ ] [Feedback] `trends evidence-add` help text unclear — `--evidence` flag not obvious from `--help` output. Add examples to help text (high-timeframe-analyst, Mar 12)
+
+### Infrastructure
+
+- [ ] [Feedback] Document psql connection requirements (`-h localhost` flag, correct db name) for direct metadata updates — agents hitting peer auth errors (low-timeframe-analyst, Mar 12)
+
+### Code Quality
+
+- [ ] Fix clippy warnings blocking release: `if_same_then_else` in `src/commands/analytics.rs:76`, `too_many_arguments` (3 functions) in `src/db/user_predictions.rs:138,324,510` — must pass `cargo clippy --all-targets -- -D warnings` for CI
 
 ### Analytics Engine: Agent Offload (F38)
 
@@ -391,7 +402,7 @@ TOP INSIGHT (Druckenmiller):
 
 ## Feedback Summary
 
-> Last reviewed: 2026-03-12
+> Last reviewed: 2026-03-13
 
 ### Current Scores (latest per tester)
 
@@ -403,17 +414,29 @@ TOP INSIGHT (Druckenmiller):
 | Sentinel Main TUI | 75 | 72 | Mar 10 | ↓ (TUI display corruption) |
 | Integration Optimiser | 75 | 70 | Mar 11 | → (first review, scenario bug fixed) |
 | UX Analyst | 75 | — | Mar 8 | → |
-| Medium-timeframe Analyst | — | — | Mar 12 | → (enhancement only, no scores) |
+| Medium Agent | — | — | Mar 13 | → (enhancement only, no scores) |
+| Sentinel Evening | — | — | Mar 13 | → (enhancement only, no scores) |
+| Low-timeframe Analyst | — | — | Mar 12 | → (enhancement only, no scores) |
+| High-timeframe Analyst | — | — | Mar 12 | → (enhancement only, no scores) |
+| Morning Brief Agent | — | — | Mar 12 | → (enhancement only, no scores) |
 | Evening Analysis | — | — | Mar 12 | → (enhancement only, no scores) |
 
 ### Score Analysis
 
-All three main testers (Morning, Evening, Market Close) hit rock bottom on Mar 8-9 due to SQLite migration crash, API rate limiting hang, and TIMESTAMPTZ panic. These bugs have ALL been fixed in subsequent releases but **no new scored reviews have come in post-fix**. Scores should recover significantly in next review cycle.
+No new scored reviews since Mar 9-11. All three main testers (Morning 15/30, Evening 35/55, Market Close 60/72) bottomed out during the API hang / DB crash / TIMESTAMPTZ panic incidents, all of which are fixed. The Mar 12-13 feedback consists entirely of enhancement requests from analytics pipeline agents — this is a healthy sign that the tool is stable enough for daily use and agents are now requesting workflow refinements rather than reporting crashes.
 
-The lowest-scoring testers (Morning 15/30, Evening 35/55) both suffered from the same root cause: commands hanging indefinitely when APIs fail. The timeout/fallback fix shipped in v0.7.0+ should resolve this.
+Notable: both Mar 13 feedback items (medium-agent, sentinel-evening) request `scenario update --notes` support, which was **already shipped on Mar 12** (analytics gaps commit). These agents may be running against a stale binary. Scores should recover significantly once post-fix reviews come in.
 
 ### Top 3 Priorities Based on Feedback
 
 1. **Data source reliability** (P1) — 8/10 sources stale, price_history writes stopped. Must stabilize before next review cycle or scores won't recover. Multiple testers affected.
-2. **Agent-msg data quality flagging** (P1, NEW) — Evening analysis received bad FOMC data from medium-agent with no way to flag it. Cascading bad data across the pipeline is a systemic risk.
-3. **Conviction negative score syntax** (P2, NEW) — Agents hitting friction with basic CLI operations. Small fix, high agent UX impact.
+2. **Clippy warnings blocking release** (P1) — 4 clippy errors (`if_same_then_else`, `too_many_arguments`) prevent clean CI. Must fix before cutting v0.10.0.
+3. **Brief movers scope** (P2) — Morning brief agent wants market movers outside portfolio in `brief --json` output. High-value for deployment opportunity tracking.
+
+### Release Blocklist
+
+v0.10.0 is ready feature-wise (12 commits since v0.9.0 with significant features) and tests pass (1197/1197). **Blocked by:** 4 clippy warnings-as-errors in `src/commands/analytics.rs` and `src/db/user_predictions.rs`. Fix these and ship.
+
+### Homebrew Core
+
+GitHub stars: 0. Need 50+ before submitting to homebrew-core.
