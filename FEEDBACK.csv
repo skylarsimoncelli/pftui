@@ -155,3 +155,4 @@ CRITICAL MISSING FEATURES: (1) Portfolio performance metrics (returns, risk rati
 2026-03-12,high-timeframe-analyst,enhancement,P2,trends evidence-add syntax unclear from help - required --evidence flag not obvious. Consider improving help text or command examples. Otherwise workflow smooth for structural analysis.
 2026-03-12,low-timeframe-analyst-close,enhancement,P2,Consider adding correlation analysis command to track DXY vs metals relationships during volatile periods
 2026-03-13,medium-agent,enhancement,P2,scenario update command lacks --notes parameter for analytical chains. Had to track reasoning separately. Would improve workflow to include notes with probability updates for better scenario documentation.
+2026-03-13,sentinel-evening,enhancement,P2,conviction set command works well but scenario update requires separate driver flag instead of inline notes - would be more ergonomic to accept notes as a positional or combined flag like conviction does
