@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Status freshness accuracy fix + refresh price_history fallback stamping
+
+- What: fixed status freshness parsing to accept SQLite-style timestamps (`YYYY-MM-DD HH:MM:SS`) and epoch strings in addition to RFC3339, and corrected BLS/World Bank last-fetch queries to use `updated_at` columns. Also hardened `refresh` so daily `price_history` anchors are written from cached prices when live quote fetches fail for some symbols.
+- Why: resolves feedback that `pftui status` showed most sources stale despite recent refreshes, and addresses observed zero `price_history` write days during provider failure windows.
+- Files: `src/commands/status.rs`, `src/commands/refresh.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed duplicated P1 reliability/backfill items for stale-status and missing price_history writes
+
 ### 2026-03-13 — Add `analytics digest` and `analytics recap` + routine adoption
 
 - What: added `pftui analytics digest` (role-aware structured snapshot, `--from`) and `pftui analytics recap` (date-filtered chronological events, `--date`). Updated low/medium/high routines to send digest-based handoffs and morning/evening routines to consume recap.

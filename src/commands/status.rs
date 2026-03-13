@@ -52,10 +52,24 @@ impl SourceStatus {
 
 type UtcDateTime = chrono::DateTime<chrono::Utc>;
 
+fn parse_timestamp_utc(raw: &str) -> Option<UtcDateTime> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    if let Ok(ts) = raw.parse::<i64>() {
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+            return Some(dt.with_timezone(&chrono::Utc));
+        }
+    }
+    chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc))
+}
+
 fn format_time_ago(rfc3339_str: &str) -> String {
     let now = chrono::Utc::now();
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(rfc3339_str) {
-        let age = now.signed_duration_since(dt.with_timezone(&chrono::Utc));
+    if let Some(dt) = parse_timestamp_utc(rfc3339_str) {
+        let age = now.signed_duration_since(dt);
         let secs = age.num_seconds();
         
         if secs < 60 {
@@ -72,9 +86,7 @@ fn format_time_ago(rfc3339_str: &str) -> String {
 }
 
 fn parse_rfc3339_utc(raw: &str) -> Option<UtcDateTime> {
-    chrono::DateTime::parse_from_rfc3339(raw)
-        .ok()
-        .map(|dt| dt.with_timezone(&chrono::Utc))
+    parse_timestamp_utc(raw)
 }
 
 fn update_most_recent(most_recent: &mut Option<UtcDateTime>, candidate: UtcDateTime) {
@@ -318,11 +330,11 @@ fn check_bls(conn: &Connection) -> Result<DataSourceStatus> {
     
     // Get last update timestamp from bls_cache table
     let last_fetch = conn.query_row(
-        "SELECT MAX(fetched_at) FROM bls_cache",
+        "SELECT MAX(updated_at) FROM bls_cache",
         [],
-        |row| row.get::<_, Option<i64>>(0),
-    ).optional().ok().flatten().flatten().and_then(|ts| {
-        chrono::DateTime::from_timestamp(ts, 0).map(|dt| dt.to_rfc3339())
+        |row| row.get::<_, Option<String>>(0),
+    ).optional().ok().flatten().flatten().and_then(|raw| {
+        parse_timestamp_utc(&raw).map(|dt| dt.to_rfc3339())
     });
     
     Ok(DataSourceStatus {
@@ -360,11 +372,11 @@ fn check_worldbank(conn: &Connection) -> Result<DataSourceStatus> {
     
     // Get last update timestamp from worldbank_cache table
     let last_fetch = conn.query_row(
-        "SELECT MAX(fetched_at) FROM worldbank_cache",
+        "SELECT MAX(updated_at) FROM worldbank_cache",
         [],
-        |row| row.get::<_, Option<i64>>(0),
-    ).optional().ok().flatten().flatten().and_then(|ts| {
-        chrono::DateTime::from_timestamp(ts, 0).map(|dt| dt.to_rfc3339())
+        |row| row.get::<_, Option<String>>(0),
+    ).optional().ok().flatten().flatten().and_then(|raw| {
+        parse_timestamp_utc(&raw).map(|dt| dt.to_rfc3339())
     });
     
     Ok(DataSourceStatus {
@@ -633,20 +645,9 @@ fn check_source_postgres(
 
 fn is_stale_timestamp(raw: &str, max_age_secs: i64) -> bool {
     let now = chrono::Utc::now();
-
-    if let Ok(ts) = raw.parse::<i64>() {
-        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
-            return now.signed_duration_since(dt).num_seconds() > max_age_secs;
-        }
+    if let Some(dt) = parse_timestamp_utc(raw) {
+        return now.signed_duration_since(dt).num_seconds() > max_age_secs;
     }
-
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
-        return now
-            .signed_duration_since(dt.with_timezone(&chrono::Utc))
-            .num_seconds()
-            > max_age_secs;
-    }
-
     true
 }
 

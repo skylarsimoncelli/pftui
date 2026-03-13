@@ -21,8 +21,6 @@ Current references:
 
 ### Data & Display
 
-- [ ] [Feedback] Fix data source reliability: COT (all failed), on-chain (decode error), BLS (parse error), news (0 articles intermittently), predictions (parse error) — `pftui status` shows 8/10 sources stale (Integration Optimiser Mar 11)
-- [ ] [Feedback] Debug why `pftui refresh` stopped populating `price_history` table (0 writes observed — Integration Optimiser Mar 11)
 
 ### CLI Enhancements
 
@@ -346,8 +344,6 @@ TOP INSIGHT (Druckenmiller):
 - [ ] [P1] Morning Research: Move pftui write-back commands BEFORE Telegram send to ensure execution under timeout pressure
 - [ ] [P1] Morning Research: Add explicit "WRITE TO PFTUI BEFORE SENDING BRIEF" instruction to prompt
 - [ ] [P1] Market Close: Ensure `pftui agent-msg send --from market-close --to evening-planner` executes for notable moves
-- [ ] [P1] Debug why `pftui refresh` stopped populating price_history table (0 writes today)
-- [ ] [P1] Investigate why 8/10 data sources show stale on `pftui status` 
 - [ ] [P1] Morning Research should use `pftui predict add` for every specific market call to build prediction track record
 - [ ] [P2] Add MODELS.md Edit guidance header following SCENARIOS.md pattern to prevent agent edit failures
 
