@@ -335,12 +335,6 @@ TOP INSIGHT (Druckenmiller):
 
 > From Integration Optimiser cron — integration gaps between AI agents and pftui
 
-- [ ] [P0] Market Close cron: Change `--section eod` to `--section market` (eod is invalid section)
-- [ ] [P1] Morning Research: Move pftui write-back commands BEFORE Telegram send to ensure execution under timeout pressure
-- [ ] [P1] Morning Research: Add explicit "WRITE TO PFTUI BEFORE SENDING BRIEF" instruction to prompt
-- [ ] [P1] Market Close: Ensure `pftui agent-msg send --from market-close --to evening-planner` executes for notable moves
-- [ ] [P1] Morning Research should use `pftui predict add` for every specific market call to build prediction track record
-- [ ] [P2] Add MODELS.md Edit guidance header following SCENARIOS.md pattern to prevent agent edit failures
 
 ---
 

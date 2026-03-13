@@ -126,6 +126,12 @@ pftui agent-msg send "NOTABLE: [held assets >3% or watched >5%]" \
   --from low-agent --to morning-intelligence --priority normal --category signal --layer low
 ```
 
+11. Send notable market-close handoff to Evening Planner:
+```bash
+pftui agent-msg send "MARKET CLOSE NOTABLE: [largest moves + why they matter for tonight]" \
+  --from market-close --to evening-planner --priority normal --category handoff --layer low
+```
+
 ## Every Run: Log
 
 ```bash

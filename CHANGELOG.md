@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Routine integration hardening (write-back order, market-close handoff, models guidance)
+
+- What: updated agent routine docs to enforce write-back-before-send sequencing, added explicit morning prediction logging requirements (`pftui predict add` for specific calls), added explicit market-close notable-move handoff command (`--from market-close --to evening-planner`), and documented guardrails including valid notes section usage (`--section market`, not `eod`). Added a starter `MODELS.md` with edit guidance header/template.
+- Why: closes outstanding Integration Optimiser routine checklist items and reduces timeout-loss/memory-loss risk in operational runs.
+- Files: `agents/routines/morning-brief.md`, `agents/routines/low-timeframe-analyst.md`, `agents/routines/README.md`, `MODELS.md`, `TODO.md`
+- Tests: not run (docs/template only)
+- TODO: removed Integration Optimiser checklist items for market-close section, write-back ordering, morning prediction logging, evening-planner handoff, and MODELS guidance
+
 ### 2026-03-13 — Add `agent-msg send` batch mode (`--batch`)
 
 - What: extended `agent-msg send` to accept repeated `--batch` values so one command can enqueue multiple related messages with shared routing/metadata (`--from`, `--to`, `--priority`, `--category`, `--layer`). Kept legacy single-message behavior and JSON shape for non-batch sends, with batch JSON returning `{ sent_count, ids, messages }`.

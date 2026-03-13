@@ -65,7 +65,16 @@ Anything that needs attention or a decision. A scenario crossing a threshold. A 
 
 ## After Sending
 
-Acknowledge all consumed agent messages:
+WRITE TO PFTUI BEFORE SENDING BRIEF.
+
+If you make any specific market call in the morning brief, log it first:
+```bash
+pftui predict add "[cause] will [effect] by [date]" --symbol [SYM] \
+  --target-date [YYYY-MM-DD] --conviction [level] --timeframe low \
+  --confidence [0.X] --source-agent morning-intelligence
+```
+
+Acknowledge all consumed agent messages before sending the user-facing brief:
 ```bash
 pftui agent-msg ack --id <id>
 ```
@@ -77,4 +86,6 @@ pftui agent-msg ack --id <id>
 - Deep analysis happens in evening-analysis. Don't duplicate it.
 - No shallow hedging ("could be significant", "data suggests"). State what happened and what it means, briefly.
 - Lead with alignment status. That's the strategic signal.
+- Every specific directional market call must be written via `pftui predict add` before publishing the brief.
+- Persist all `pftui` write-back operations before any Telegram/chat send to reduce timeout-loss risk.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it.
