@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Add `brief --json` external `market_movers` for deployment tracking
+
+- What: extended agent brief JSON with `market_movers` (top non-held movers by absolute 1D move), sourced from watchlist symbols plus a curated market set (mega-cap equities, indices, and commodity proxies). Existing `movers` remains held-position movers for backward compatibility.
+- Why: closes feedback that `brief --json` lacked outside-portfolio mover visibility (e.g., NVDA/TSLA/oil) needed for deployment opportunity scans.
+- Files: `src/commands/brief.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed feedback item for `brief --json` external market movers
+
 ### 2026-03-13 — Clarify `trends evidence-add` help + document `psql` connection requirements
 
 - What: improved `trends` CLI help text with a concrete `evidence-add` example and explicit `--evidence` guidance. Added explicit PostgreSQL `psql` connection fallback guidance (`-h localhost`, `-d <db>`) in AGENTS.md for peer-auth/default-db failure cases.

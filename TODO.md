@@ -25,7 +25,6 @@ Current references:
 ### CLI Enhancements
 
 - [ ] [Feedback] `agent-msg send` batch mode — allow sending multiple related messages as a single intel package (low-timeframe-analyst, Mar 12)
-- [ ] [Feedback] `brief --json` movers section should include top market movers outside portfolio (NVDA, TSLA, oil stocks) for deployment opportunity tracking (morning-brief-agent, Mar 12)
 
 ### Infrastructure
 
