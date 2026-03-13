@@ -33,6 +33,7 @@ pub fn run(
     backend: &BackendConnection,
     action: &str,
     value: Option<&str>,
+    batch: &[String],
     id: Option<i64>,
     from: Option<&str>,
     to: Option<&str>,
@@ -47,7 +48,6 @@ pub fn run(
 ) -> Result<()> {
     match action {
         "send" => {
-            let content = value.ok_or_else(|| anyhow::anyhow!("message content required"))?;
             let from_agent = from.ok_or_else(|| anyhow::anyhow!("--from required"))?;
             if let Some(p) = priority {
                 validate_priority(p)?;
@@ -58,25 +58,56 @@ pub fn run(
             if let Some(l) = layer {
                 validate_layer(l)?;
             }
-            let new_id = agent_messages::send_message_backend(
-                backend,
-                from_agent,
-                to,
-                priority,
-                content,
-                category,
-                layer,
-            )?;
+
+            let mut messages: Vec<String> = Vec::new();
+            if let Some(content) = value {
+                messages.push(content.to_string());
+            }
+            messages.extend(batch.iter().cloned());
+            if messages.is_empty() {
+                bail!("message content required (positional text or one/more --batch values)");
+            }
+
+            let mut ids = Vec::new();
+            let mut inserted = Vec::new();
+            for content in &messages {
+                let new_id = agent_messages::send_message_backend(
+                    backend, from_agent, to, priority, content, category, layer,
+                )?;
+                ids.push(new_id);
+                if json_output {
+                    if let Some(row) = agent_messages::get_message_by_id_backend(backend, new_id)? {
+                        inserted.push(row);
+                    }
+                }
+            }
 
             if json_output {
-                let rows = agent_messages::list_messages_backend(
-                    backend, None, None, None, false, None, None,
-                )?;
-                if let Some(row) = rows.into_iter().find(|r| r.id == new_id) {
-                    println!("{}", serde_json::to_string_pretty(&row)?);
+                if messages.len() == 1 && batch.is_empty() {
+                    if let Some(row) = inserted.into_iter().next() {
+                        println!("{}", serde_json::to_string_pretty(&row)?);
+                    }
+                } else {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json!({
+                            "sent_count": ids.len(),
+                            "ids": ids,
+                            "messages": inserted,
+                        }))?
+                    );
                 }
             } else {
-                println!("Sent agent message #{}", new_id);
+                if ids.len() == 1 {
+                    println!("Sent agent message #{}", ids[0]);
+                } else {
+                    let joined = ids
+                        .iter()
+                        .map(|id| format!("#{}", id))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    println!("Sent {} agent messages: {}", ids.len(), joined);
+                }
             }
         }
 

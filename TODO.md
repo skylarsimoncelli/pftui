@@ -24,7 +24,6 @@ Current references:
 
 ### CLI Enhancements
 
-- [ ] [Feedback] `agent-msg send` batch mode — allow sending multiple related messages as a single intel package (low-timeframe-analyst, Mar 12)
 
 ### Infrastructure
 

@@ -390,6 +390,7 @@ fn main() -> Result<()> {
         Some(Command::AgentMsg {
             action,
             value,
+            batch,
             id,
             from,
             to,
@@ -405,6 +406,7 @@ fn main() -> Result<()> {
             &backend,
             &action,
             value.as_deref(),
+            &batch,
             id,
             from.as_deref(),
             to.as_deref(),

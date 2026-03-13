@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Add `agent-msg send` batch mode (`--batch`)
+
+- What: extended `agent-msg send` to accept repeated `--batch` values so one command can enqueue multiple related messages with shared routing/metadata (`--from`, `--to`, `--priority`, `--category`, `--layer`). Kept legacy single-message behavior and JSON shape for non-batch sends, with batch JSON returning `{ sent_count, ids, messages }`.
+- Why: closes feedback requesting native multi-message intel package dispatch without multiple command invocations.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/agent_msg.rs`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed feedback item for `agent-msg send` batch mode
+
 ### 2026-03-13 — Add `brief --json` external `market_movers` for deployment tracking
 
 - What: extended agent brief JSON with `market_movers` (top non-held movers by absolute 1D move), sourced from watchlist symbols plus a curated market set (mega-cap equities, indices, and commodity proxies). Existing `movers` remains held-position movers for backward compatibility.

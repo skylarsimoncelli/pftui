@@ -490,6 +490,10 @@ pub enum Command {
         /// Message content (for send/reply/flag)
         value: Option<String>,
 
+        /// Batch mode for send: repeat to enqueue multiple related messages
+        #[arg(long = "batch")]
+        batch: Vec<String>,
+
         #[arg(long)]
         id: Option<i64>,
 
