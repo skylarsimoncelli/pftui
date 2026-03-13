@@ -683,7 +683,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui predict score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
 | `pftui predict stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
 | `pftui predict scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
-| `pftui agent-msg send "TEXT" --from agent-a [--to agent-b]` | Send a structured message between agent roles |
+| `pftui agent-msg send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"]` | Send one or multiple structured messages between agent roles |
 | `pftui agent-msg reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
 | `pftui agent-msg flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
 | `pftui agent-msg list [--from agent-a] [--unacked] --json` | Query queued agent messages |
@@ -703,6 +703,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics summary --json` | Unified 4-layer analytics snapshot (low/medium/high/macro + top signal) |
 | `pftui analytics alignment --symbol SYM --json` | Per-asset cross-timeframe alignment matrix |
 | `pftui analytics divergence --json` | Cross-layer disagreement table for conflicting signals |
+| `pftui analytics digest --from low-agent --json` | Role-aware summary payload for agent handoffs |
+| `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
 | `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
 | `pftui thesis list --json` | List all current thesis sections |
@@ -764,6 +766,12 @@ sqlite3 ~/.local/share/pftui/pftui.db "SELECT symbol, quantity, price_per FROM t
 If using PostgreSQL backend, query via your configured `database_url`:
 ```bash
 psql "$DATABASE_URL" -c "SELECT symbol, quantity, price_per FROM transactions LIMIT 20;"
+```
+
+If `psql` fails with peer-auth/default-db issues, connect explicitly:
+```bash
+# Explicit host avoids local peer auth defaults; -d selects correct database.
+psql -h localhost -U <postgres_user> -d <database_name> -c "SELECT NOW();"
 ```
 
 Backend status:

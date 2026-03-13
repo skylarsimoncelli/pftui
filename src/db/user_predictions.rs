@@ -135,6 +135,7 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn add_prediction(
     conn: &Connection,
     claim: &str,
@@ -321,6 +322,7 @@ pub fn get_stats(conn: &Connection) -> Result<PredictionStats> {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub fn add_prediction_backend(
     backend: &BackendConnection,
     claim: &str,
@@ -507,6 +509,7 @@ fn from_pg_row(r: PredictionRow) -> UserPrediction {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 fn add_prediction_postgres(
     pool: &PgPool,
     claim: &str,

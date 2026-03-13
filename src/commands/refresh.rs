@@ -534,6 +534,33 @@ pub fn run(
             let _ = upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]);
         }
 
+        // If live providers failed for some symbols, still stamp today's close from
+        // existing cache so 1D analytics keep moving forward instead of stalling.
+        let live_symbols: HashSet<String> = quotes
+            .iter()
+            .filter(|q| q.source != "static")
+            .map(|q| q.symbol.clone())
+            .collect();
+        let cached_prices = get_all_cached_prices_backend(backend).unwrap_or_default();
+        for cached in cached_prices {
+            if live_symbols.contains(&cached.symbol) {
+                continue;
+            }
+            // Avoid stamping synthetic FX/cash/static rows into history.
+            if cached.source == "static" {
+                continue;
+            }
+            let record = HistoryRecord {
+                date: today.clone(),
+                close: cached.price,
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            };
+            let _ = upsert_history_backend(backend, &cached.symbol, "cache", &[record]);
+        }
+
         let fetched_count = quotes.iter().filter(|q| q.source != "static").count();
         if fetched_count > 0 {
             println!("✓ Prices ({} symbols)", fetched_count);

@@ -100,7 +100,8 @@ pftui predict add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-da
 ## Output to Evening Analyst
 
 ```bash
-pftui agent-msg send "MEDIUM LAYER [date]: Scenarios: [name->prob% for each]. Key evidence: [top 2-3 findings]. Thesis changes: [any]. Conviction changes: [asset old->new, reason]. Predictions: [new + scored]. Research gaps: [what matters but couldn't find data on]." \
+DIGEST=$(pftui analytics digest --from medium-agent --json)
+pftui agent-msg send "MEDIUM LAYER DIGEST [date]: ${DIGEST}" \
   --from medium-agent --to evening-analyst --priority normal --category signal --layer medium
 ```
 

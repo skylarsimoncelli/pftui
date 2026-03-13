@@ -3,6 +3,62 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — Routine integration hardening (write-back order, market-close handoff, models guidance)
+
+- What: updated agent routine docs to enforce write-back-before-send sequencing, added explicit morning prediction logging requirements (`pftui predict add` for specific calls), added explicit market-close notable-move handoff command (`--from market-close --to evening-planner`), and documented guardrails including valid notes section usage (`--section market`, not `eod`). Added a starter `MODELS.md` with edit guidance header/template.
+- Why: closes outstanding Integration Optimiser routine checklist items and reduces timeout-loss/memory-loss risk in operational runs.
+- Files: `agents/routines/morning-brief.md`, `agents/routines/low-timeframe-analyst.md`, `agents/routines/README.md`, `MODELS.md`, `TODO.md`
+- Tests: not run (docs/template only)
+- TODO: removed Integration Optimiser checklist items for market-close section, write-back ordering, morning prediction logging, evening-planner handoff, and MODELS guidance
+
+### 2026-03-13 — Add `agent-msg send` batch mode (`--batch`)
+
+- What: extended `agent-msg send` to accept repeated `--batch` values so one command can enqueue multiple related messages with shared routing/metadata (`--from`, `--to`, `--priority`, `--category`, `--layer`). Kept legacy single-message behavior and JSON shape for non-batch sends, with batch JSON returning `{ sent_count, ids, messages }`.
+- Why: closes feedback requesting native multi-message intel package dispatch without multiple command invocations.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/agent_msg.rs`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed feedback item for `agent-msg send` batch mode
+
+### 2026-03-13 — Add `brief --json` external `market_movers` for deployment tracking
+
+- What: extended agent brief JSON with `market_movers` (top non-held movers by absolute 1D move), sourced from watchlist symbols plus a curated market set (mega-cap equities, indices, and commodity proxies). Existing `movers` remains held-position movers for backward compatibility.
+- Why: closes feedback that `brief --json` lacked outside-portfolio mover visibility (e.g., NVDA/TSLA/oil) needed for deployment opportunity scans.
+- Files: `src/commands/brief.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed feedback item for `brief --json` external market movers
+
+### 2026-03-13 — Clarify `trends evidence-add` help + document `psql` connection requirements
+
+- What: improved `trends` CLI help text with a concrete `evidence-add` example and explicit `--evidence` guidance. Added explicit PostgreSQL `psql` connection fallback guidance (`-h localhost`, `-d <db>`) in AGENTS.md for peer-auth/default-db failure cases.
+- Why: closes two agent UX/documentation feedback items that were causing avoidable command friction.
+- Files: `src/cli.rs`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed feedback items for `trends evidence-add` help clarity and `psql` connection requirements docs
+
+### 2026-03-13 — Clippy clean under `-D warnings` (release/CI unblock)
+
+- What: resolved strict clippy blockers by removing a redundant `if/else` branch in analytics SQL generation and adding explicit `#[allow(clippy::too_many_arguments)]` on multi-arg prediction DB helper functions and analytics command entrypoint.
+- Why: closes the TODO requiring `cargo clippy --all-targets -- -D warnings` to pass for release/CI.
+- Files: `src/commands/analytics.rs`, `src/db/user_predictions.rs`, `TODO.md`
+- Verification: `cargo clippy --all-targets -- -D warnings`
+- TODO: removed clippy-blocking warning item
+
+### 2026-03-13 — Status freshness accuracy fix + refresh price_history fallback stamping
+
+- What: fixed status freshness parsing to accept SQLite-style timestamps (`YYYY-MM-DD HH:MM:SS`) and epoch strings in addition to RFC3339, and corrected BLS/World Bank last-fetch queries to use `updated_at` columns. Also hardened `refresh` so daily `price_history` anchors are written from cached prices when live quote fetches fail for some symbols.
+- Why: resolves feedback that `pftui status` showed most sources stale despite recent refreshes, and addresses observed zero `price_history` write days during provider failure windows.
+- Files: `src/commands/status.rs`, `src/commands/refresh.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed duplicated P1 reliability/backfill items for stale-status and missing price_history writes
+
+### 2026-03-13 — Add `analytics digest` and `analytics recap` + routine adoption
+
+- What: added `pftui analytics digest` (role-aware structured snapshot, `--from`) and `pftui analytics recap` (date-filtered chronological events, `--date`). Updated low/medium/high routines to send digest-based handoffs and morning/evening routines to consume recap.
+- Why: closes the next F38 agent-offload/routine TODO items by replacing manual cross-command assembly with native analytics payloads.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `AGENTS.md`, `agents/routines/low-timeframe-analyst.md`, `agents/routines/medium-timeframe-analyst.md`, `agents/routines/high-timeframe-analyst.md`, `agents/routines/morning-brief.md`, `agents/routines/evening-analysis.md`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed shipped `analytics digest`/`analytics recap` spec and routine-checklist entries
+
 ### 2026-03-12 — Add `analytics divergence` command and wire evening analysis input
 
 - What: added `pftui analytics divergence` to surface cross-layer conflicts per asset (LOW/MEDIUM/HIGH/MACRO), including bull/bear layer counts and disagreement magnitude. Updated evening-analysis routine inputs to consume the new command.

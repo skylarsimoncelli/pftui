@@ -21,42 +21,21 @@ Current references:
 
 ### Data & Display
 
-- [ ] [Feedback] Fix data source reliability: COT (all failed), on-chain (decode error), BLS (parse error), news (0 articles intermittently), predictions (parse error) — `pftui status` shows 8/10 sources stale (Integration Optimiser Mar 11)
-- [ ] [Feedback] Debug why `pftui refresh` stopped populating `price_history` table (0 writes observed — Integration Optimiser Mar 11)
 
 ### CLI Enhancements
 
-- [ ] [Feedback] `agent-msg send` batch mode — allow sending multiple related messages as a single intel package (low-timeframe-analyst, Mar 12)
-- [ ] [Feedback] `brief --json` movers section should include top market movers outside portfolio (NVDA, TSLA, oil stocks) for deployment opportunity tracking (morning-brief-agent, Mar 12)
-- [ ] [Feedback] `trends evidence-add` help text unclear — `--evidence` flag not obvious from `--help` output. Add examples to help text (high-timeframe-analyst, Mar 12)
 
 ### Infrastructure
 
-- [ ] [Feedback] Document psql connection requirements (`-h localhost` flag, correct db name) for direct metadata updates — agents hitting peer auth errors (low-timeframe-analyst, Mar 12)
 
 ### Code Quality
 
-- [ ] Fix clippy warnings blocking release: `if_same_then_else` in `src/commands/analytics.rs:76`, `too_many_arguments` (3 functions) in `src/db/user_predictions.rs:138,324,510` — must pass `cargo clippy --all-targets -- -D warnings` for CI
 
 ### Analytics Engine: Agent Offload (F38)
 
 > Move mechanical data assembly out of agent token budgets and into native pftui commands.
 > Principle: pftui computes, agents interpret. No agent should run raw SQL or stitch
 > together data that the analytics engine already has.
-
-**`pftui analytics digest [--from low-agent|medium-agent|evening-analyst] [--json]`**
-- Auto-generate structured agent report from current DB state.
-- LOW close: prices, changes, regime, scorecard, mismatches, surprises.
-- MEDIUM: scenario probabilities with deltas, thesis changes, conviction moves.
-- EVENING: cross-timeframe summary, prediction results, trend evidence.
-- Replaces: agents spending 200+ tokens composing data summaries that are 90% DB lookups.
-- Source: `src/commands/analytics.rs`
-
-**`pftui analytics recap [--date YYYY-MM-DD] [--json]`**
-- Chronological event log: price moves, prediction results, scenario changes,
-  conviction changes, trend evidence added, regime shifts, agent messages.
-- One query instead of agents running 8 separate commands and mentally stitching.
-- Source: `src/commands/analytics.rs`
 
 ### Infrastructure
 
@@ -356,14 +335,6 @@ TOP INSIGHT (Druckenmiller):
 
 > From Integration Optimiser cron — integration gaps between AI agents and pftui
 
-- [ ] [P0] Market Close cron: Change `--section eod` to `--section market` (eod is invalid section)
-- [ ] [P1] Morning Research: Move pftui write-back commands BEFORE Telegram send to ensure execution under timeout pressure
-- [ ] [P1] Morning Research: Add explicit "WRITE TO PFTUI BEFORE SENDING BRIEF" instruction to prompt
-- [ ] [P1] Market Close: Ensure `pftui agent-msg send --from market-close --to evening-planner` executes for notable moves
-- [ ] [P1] Debug why `pftui refresh` stopped populating price_history table (0 writes today)
-- [ ] [P1] Investigate why 8/10 data sources show stale on `pftui status` 
-- [ ] [P1] Morning Research should use `pftui predict add` for every specific market call to build prediction track record
-- [ ] [P2] Add MODELS.md Edit guidance header following SCENARIOS.md pattern to prevent agent edit failures
 
 ---
 
@@ -395,8 +366,6 @@ TOP INSIGHT (Druckenmiller):
 > `agents/routines/` to use the new command instead of the manual workaround.
 > Changes go to the repo; crons pick up automatically via raw GitHub fetch.
 
-- [ ] **`analytics digest` shipped** → Update `low-timeframe-analyst.md`: replace hand-written EOD agent-msg with `pftui analytics digest --from low-agent --json`. Update `medium-timeframe-analyst.md` and `high-timeframe-analyst.md` similarly for their output messages.
-- [ ] **`analytics recap` shipped** → Update `evening-analysis.md`: add `pftui analytics recap --json` to inputs. Replaces reading 8 separate commands for "what happened today." Update `morning-brief.md`: use recap for overnight catch-up.
 
 ---
 

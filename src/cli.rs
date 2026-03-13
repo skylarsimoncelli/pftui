@@ -490,6 +490,10 @@ pub enum Command {
         /// Message content (for send/reply/flag)
         value: Option<String>,
 
+        /// Batch mode for send: repeat to enqueue multiple related messages
+        #[arg(long = "batch")]
+        batch: Vec<String>,
+
         #[arg(long)]
         id: Option<i64>,
 
@@ -534,7 +538,7 @@ pub enum Command {
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
-        /// Action: signals, summary, low, medium, high, macro, alignment, divergence, gaps
+        /// Action: signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps
         action: String,
 
         /// Symbol filter (mainly for `signals`)
@@ -548,6 +552,14 @@ pub enum Command {
         /// Severity filter: info, notable, critical
         #[arg(long)]
         severity: Option<String>,
+
+        /// Agent role for digest mode (e.g. low-agent, medium-agent, evening-analyst)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Date filter (YYYY-MM-DD, today, yesterday) for recap mode
+        #[arg(long)]
+        date: Option<String>,
 
         /// Max results
         #[arg(long)]
@@ -1263,9 +1275,10 @@ pub enum Command {
     #[command(name = "trends")]
     Trends {
         /// Action: add, list, update, evidence-add, evidence-list, impact-add, impact-list, dashboard
+        /// Example: `pftui trends evidence-add --trend "AI capex wave" --date 2026-03-13 --evidence "Hyperscaler capex +35% YoY" --source "earnings call"`
         action: String,
 
-        /// Value (trend name for add/update, evidence text for evidence-add)
+        /// Value (trend name for add/update, or evidence text for evidence-add if `--evidence` is omitted)
         value: Option<String>,
 
         #[arg(long)]
@@ -1288,6 +1301,7 @@ pub enum Command {
         status: Option<String>,
         #[arg(long)]
         date: Option<String>,
+        /// Evidence text (preferred for `evidence-add`; clearer than positional value)
         #[arg(long)]
         evidence: Option<String>,
         #[arg(long)]

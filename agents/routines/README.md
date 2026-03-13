@@ -70,3 +70,9 @@ These routines use the full pftui analytics engine:
 - `trends`, `trend_evidence`, `convictions` (HIGH)
 - `structural_cycles`, `power_metrics`, `structural_outcomes`, `historical_parallels` (MACRO)
 - `user_predictions`, `agent_messages`, `daily_notes` (ALL)
+
+## Integration Guardrails
+
+- Use `pftui notes add ... --section market` for market-close logs. Do not use `--section eod` (invalid section).
+- Run all `pftui` write-back commands (predictions, notes, agent-msg, scenario/conviction updates) before sending Telegram/chat briefs.
+- For notable market-close moves, send explicit handoff messaging to the evening planner flow (`pftui agent-msg send ... --from market-close --to evening-planner`).

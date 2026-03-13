@@ -21,6 +21,7 @@ You should receive structured reports from:
 pftui analytics summary --json
 pftui analytics alignment --json
 pftui analytics divergence --json
+pftui analytics recap --date today --json
 pftui analytics medium --json
 pftui analytics high --json
 pftui regime current --json

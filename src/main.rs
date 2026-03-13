@@ -390,6 +390,7 @@ fn main() -> Result<()> {
         Some(Command::AgentMsg {
             action,
             value,
+            batch,
             id,
             from,
             to,
@@ -405,6 +406,7 @@ fn main() -> Result<()> {
             &backend,
             &action,
             value.as_deref(),
+            &batch,
             id,
             from.as_deref(),
             to.as_deref(),
@@ -422,6 +424,8 @@ fn main() -> Result<()> {
             symbol,
             signal_type,
             severity,
+            from,
+            date,
             limit,
             json,
         }) => commands::analytics::run(
@@ -430,6 +434,8 @@ fn main() -> Result<()> {
             symbol.as_deref(),
             signal_type.as_deref(),
             severity.as_deref(),
+            from.as_deref(),
+            date.as_deref(),
             limit,
             json,
         ),

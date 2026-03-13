@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use chrono::Utc;
@@ -36,6 +36,8 @@ struct AgentBrief {
     watchlist: Vec<WatchlistItemJson>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     movers: Vec<MoverJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    market_movers: Vec<MoverJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
     macro_data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -116,6 +118,11 @@ struct MoverJson {
     daily_change_pct: String,
     daily_change_abs: String,
 }
+
+const DEFAULT_MARKET_MOVER_SYMBOLS: &[&str] = &[
+    "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOG", "SPY", "QQQ", "XLE", "XOP", "CL=F",
+    "GC=F", "SI=F", "HG=F",
+];
 
 #[derive(Debug, Clone)]
 struct CorrelationPair {
@@ -283,8 +290,11 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     // Watchlist
     let watchlist_json = get_watchlist_json(conn, &prices, &hist_1d, &technicals_data)?;
 
-    // Top movers
+    // Top movers (held positions)
     let movers_json = get_movers_json(&positions, &hist_1d);
+    let watchlist_symbols: Vec<String> = watchlist_json.iter().map(|w| w.symbol.clone()).collect();
+    let market_movers_json =
+        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
 
     // Macro data (if available)
     let macro_data = get_macro_json(conn).ok();
@@ -311,6 +321,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         positions: positions_json,
         watchlist: watchlist_json,
         movers: movers_json,
+        market_movers: market_movers_json,
         macro_data,
         news_summary,
         economic_data,
@@ -443,6 +454,9 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
 
     let watchlist_json = get_watchlist_json_backend(backend, &prices, &hist_1d, &technicals_data)?;
     let movers_json = get_movers_json(&positions, &hist_1d);
+    let watchlist_symbols: Vec<String> = watchlist_json.iter().map(|w| w.symbol.clone()).collect();
+    let market_movers_json =
+        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
     let macro_data = get_macro_json_backend(backend).ok();
     let alerts_json = get_alerts_json_backend(backend);
     let drift_json = get_drift_json_backend(backend).ok();
@@ -461,6 +475,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         positions: positions_json,
         watchlist: watchlist_json,
         movers: movers_json,
+        market_movers: market_movers_json,
         macro_data,
         news_summary,
         economic_data,
@@ -750,6 +765,51 @@ fn get_movers_json(positions: &[Position], hist_1d: &HashMap<String, Decimal>) -
     movers.sort_by(|a, b| b.2.abs().cmp(&a.2.abs()));
     movers.truncate(5);
 
+    movers
+        .into_iter()
+        .map(|(symbol, name, pct)| MoverJson {
+            symbol,
+            name,
+            daily_change_pct: pct.round_dp(2).to_string(),
+            daily_change_abs: pct.abs().round_dp(2).to_string(),
+        })
+        .collect()
+}
+
+fn get_market_movers_json(
+    positions: &[Position],
+    watchlist_symbols: &[String],
+    prices: &HashMap<String, Decimal>,
+    hist_1d: &HashMap<String, Decimal>,
+) -> Vec<MoverJson> {
+    let held: HashSet<String> = positions
+        .iter()
+        .filter(|p| p.category != AssetCategory::Cash)
+        .map(|p| p.symbol.to_ascii_uppercase())
+        .collect();
+
+    let mut candidates: HashSet<String> = HashSet::new();
+    for symbol in watchlist_symbols {
+        candidates.insert(symbol.to_ascii_uppercase());
+    }
+    for symbol in DEFAULT_MARKET_MOVER_SYMBOLS {
+        candidates.insert((*symbol).to_string());
+    }
+
+    let mut movers: Vec<(String, String, Decimal)> = Vec::new();
+    for symbol in candidates {
+        if held.contains(&symbol) {
+            continue;
+        }
+        if let (Some(current), Some(&prev)) = (prices.get(&symbol), hist_1d.get(&symbol)) {
+            if let Some(pct) = pct_change(*current, prev) {
+                movers.push((symbol.clone(), resolve_name(&symbol), pct));
+            }
+        }
+    }
+
+    movers.sort_by(|a, b| b.2.abs().cmp(&a.2.abs()));
+    movers.truncate(5);
     movers
         .into_iter()
         .map(|(symbol, name, pct)| MoverJson {
@@ -2875,6 +2935,78 @@ mod tests {
 
         // Verify it doesn't panic — output goes to stdout
         print_top_movers(&positions, &hist_1d, "USD");
+    }
+
+    #[test]
+    fn market_movers_exclude_held_symbols() {
+        let positions = vec![
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(100),
+                Some(dec!(110)),
+                Some(dec!(10000)),
+            ),
+            make_position(
+                "BTC",
+                AssetCategory::Crypto,
+                dec!(1),
+                dec!(80000),
+                Some(dec!(85000)),
+                Some(dec!(10000)),
+            ),
+        ];
+
+        let watchlist_symbols = vec!["NVDA".to_string(), "AAPL".to_string(), "TSLA".to_string()];
+        let mut prices = HashMap::new();
+        prices.insert("AAPL".to_string(), dec!(110));
+        prices.insert("NVDA".to_string(), dec!(120));
+        prices.insert("TSLA".to_string(), dec!(180));
+
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("AAPL".to_string(), dec!(100));
+        hist_1d.insert("NVDA".to_string(), dec!(100));
+        hist_1d.insert("TSLA".to_string(), dec!(200));
+
+        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
+        assert!(!movers.iter().any(|m| m.symbol == "AAPL"));
+        assert!(movers.iter().any(|m| m.symbol == "NVDA"));
+        assert!(movers.iter().any(|m| m.symbol == "TSLA"));
+    }
+
+    #[test]
+    fn market_movers_sorted_by_absolute_change() {
+        let positions = vec![make_position(
+            "AAPL",
+            AssetCategory::Equity,
+            dec!(1),
+            dec!(100),
+            Some(dec!(100)),
+            Some(dec!(1000)),
+        )];
+
+        let watchlist_symbols = vec![
+            "NVDA".to_string(),
+            "TSLA".to_string(),
+            "XLE".to_string(),
+            "SPY".to_string(),
+        ];
+        let mut prices = HashMap::new();
+        prices.insert("NVDA".to_string(), dec!(130)); // +30%
+        prices.insert("TSLA".to_string(), dec!(75)); // -25%
+        prices.insert("XLE".to_string(), dec!(105)); // +5%
+        prices.insert("SPY".to_string(), dec!(97)); // -3%
+
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("NVDA".to_string(), dec!(100));
+        hist_1d.insert("TSLA".to_string(), dec!(100));
+        hist_1d.insert("XLE".to_string(), dec!(100));
+        hist_1d.insert("SPY".to_string(), dec!(100));
+
+        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
+        assert_eq!(movers.first().map(|m| m.symbol.as_str()), Some("NVDA"));
+        assert_eq!(movers.get(1).map(|m| m.symbol.as_str()), Some("TSLA"));
     }
 
     #[test]

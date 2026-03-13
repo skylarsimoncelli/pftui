@@ -115,7 +115,8 @@ pftui predict stats --json
 
 9. Send comprehensive EOD data package to Evening Analyst:
 ```bash
-pftui agent-msg send "LOW EOD [date]: [asset prices and changes] | Regime: [state] | Predictions: [X/Y correct, Z%] | Wrong call lessons: [takeaways] | Conviction mismatches: [list] | Biggest surprise: [unexpected] | Tomorrow watch: [levels and events]" \
+DIGEST=$(pftui analytics digest --from low-agent --json)
+pftui agent-msg send "LOW EOD DIGEST [date]: ${DIGEST}" \
   --from low-agent --to evening-analyst --priority normal --category signal --layer low
 ```
 
@@ -123,6 +124,12 @@ pftui agent-msg send "LOW EOD [date]: [asset prices and changes] | Regime: [stat
 ```bash
 pftui agent-msg send "NOTABLE: [held assets >3% or watched >5%]" \
   --from low-agent --to morning-intelligence --priority normal --category signal --layer low
+```
+
+11. Send notable market-close handoff to Evening Planner:
+```bash
+pftui agent-msg send "MARKET CLOSE NOTABLE: [largest moves + why they matter for tonight]" \
+  --from market-close --to evening-planner --priority normal --category handoff --layer low
 ```
 
 ## Every Run: Log
