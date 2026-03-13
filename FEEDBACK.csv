@@ -159,3 +159,4 @@ CRITICAL MISSING FEATURES: (1) Portfolio performance metrics (returns, risk rati
 2026-03-13,low-timeframe-analyst,enhancement,P2,correlations latest command failed - need correlations history with specific symbols or a simpler latest snapshot command for understanding asset relationships in current regime
 2026-03-13,morning-intelligence,enhancement,P2,pftui predict add syntax unclear - timeframe param rejected but not documented in help. Also would benefit from --confidence flag for prediction confidence scoring.
 2026-03-13,low-timeframe-analyst,enhancement,P2,Add quick silver trackline breach detection to scan alerts - would have caught the 3 break faster for real-time positioning
+2026-03-13,low-timeframe-analyst,enhancement,P2,Could benefit from pftui alert command to show only triggered alerts from today rather than all historical alerts. Would help focus on fresh signals during market close routine.
