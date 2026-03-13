@@ -541,6 +541,15 @@ pub enum Command {
         /// Action: signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps
         action: String,
 
+        /// Macro subcommand (for `analytics macro`): metrics, compare, cycles, outcomes, parallels, log
+        value: Option<String>,
+
+        /// Optional macro argument #1 (example: `US` in `analytics macro metrics US`)
+        value2: Option<String>,
+
+        /// Optional macro argument #2 (example: `China` in `analytics macro compare US China`)
+        value3: Option<String>,
+
         /// Symbol filter (mainly for `signals`)
         #[arg(long)]
         symbol: Option<String>,

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-13 — F39 macro consolidation pass: `analytics macro` routing, composites, compare
+
+- What: extended `pftui analytics` parsing to support `analytics macro` subcommands (`metrics`, `compare`, `cycles`, `outcomes`, `parallels`, `log`) with positional arguments, while preserving `analytics macro` dashboard default behavior. Added `structural` deprecation warning in main dispatch. Implemented country-grouped macro metrics view with Dalio-style composite score + previous-delta, and upgraded `analytics macro compare` with determinant rows, gap trend (`Closing/Widening/Stable/Unknown`), composite gap, and graceful missing-metric handling (`—`).
+- Why: closes the core F39 macro-consolidation UX goals and removes manual stitching for macro power comparison.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed completed F39.1/F39.2/F39.3/F39.4/F39.6 items; F39.5 remains
+
 ### 2026-03-13 — Routine integration hardening (write-back order, market-close handoff, models guidance)
 
 - What: updated agent routine docs to enforce write-back-before-send sequencing, added explicit morning prediction logging requirements (`pftui predict add` for specific calls), added explicit market-close notable-move handoff command (`--from market-close --to evening-planner`), and documented guardrails including valid notes section usage (`--section market`, not `eod`). Added a starter `MODELS.md` with edit guidance header/template.

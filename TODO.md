@@ -11,51 +11,6 @@
 > Collapse `pftui structural` into `pftui analytics macro`. Every analytical view
 > lives under one namespace. Database schema unchanged. CLI routing + computation layer.
 
-**F39.1: Route `analytics macro` subcommands (rename)**
-
-Reroute all `structural` subcommands under `analytics macro`:
-```
-pftui analytics macro                    # dashboard (default view)
-pftui analytics macro metrics US         # Dalio 8 determinants for country
-pftui analytics macro metrics China      # same
-pftui analytics macro compare US China   # side-by-side power comparison
-pftui analytics macro cycles             # Big Cycle + Fourth Turning stages
-pftui analytics macro outcomes           # structural outcome probabilities
-pftui analytics macro parallels          # historical parallel tracker
-pftui analytics macro log                # weekly structural observations
-```
-Keep `pftui structural` as a deprecated alias (prints warning + forwards).
-Source: `src/commands/analytics.rs` (add macro subcommand dispatch),
-`src/commands/structural.rs` (existing logic, reuse).
-
-**F39.2: Dalio composite score computation**
-
-`pftui analytics macro metrics US` should compute and display a weighted composite
-score (0-10) from the 8 Dalio determinants: education, innovation, competitiveness,
-military, trade, economic output, financial center, reserve currency.
-Show: individual scores with trend arrows, composite at bottom, delta from last update.
-Source: `src/db/structural.rs` (add composite query), `src/commands/analytics.rs`.
-Tables: `power_metrics` (existing). Default weights: equal (1/8 each).
-
-**F39.3: Country-filtered metric list**
-
-`pftui analytics macro metrics --country US` returns ONLY that country's metrics.
-Currently `metric-list` dumps all countries mixed together. Add `--country` filter.
-Source: `src/commands/structural.rs` (add WHERE clause on country).
-
-**F39.4: Head-to-head power comparison**
-
-`pftui analytics macro compare US China` shows side-by-side table:
-```
-Determinant      | US    | China | Gap   | Trend
-Education        | 7.5 ↓ | 7.0 ↑ | -0.5  | Closing
-Innovation       | 8.0 → | 6.5 ↑ | -1.5  | Closing
-Military         | 9.0 → | 6.5 ↑ | -2.5  | Closing
-...
-Composite        | 6.7 ↓ | 6.1 ↑ | -0.6  | Closing
-```
-Source: `src/commands/analytics.rs`. Gracefully handle missing metrics (show "—").
-
 **F39.5: Fourth Turning cycle enrichment**
 
 Extend `structural_cycles` to support richer metadata for Fourth Turning tracking.
@@ -66,10 +21,6 @@ Add optional JSON `metadata` column (or use existing `evidence` text field) to s
 
 CLI: `pftui analytics macro cycles update "Fourth Turning" --phase climax --evidence "..."`
 
-**F39.6: Ensure China metric parity**
-
-US has 8+ metrics, China has only 4. Missing: competitiveness, trade, economic output,
-reserve currency, governance. Comparison command (F39.4) must handle missing gracefully.
 
 ### Alignment Scoring Algorithm
 

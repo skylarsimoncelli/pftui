@@ -421,6 +421,9 @@ fn main() -> Result<()> {
         ),
         Some(Command::Analytics {
             action,
+            value,
+            value2,
+            value3,
             symbol,
             signal_type,
             severity,
@@ -431,6 +434,9 @@ fn main() -> Result<()> {
         }) => commands::analytics::run(
             &backend,
             &action,
+            value.as_deref(),
+            value2.as_deref(),
+            value3.as_deref(),
             symbol.as_deref(),
             signal_type.as_deref(),
             severity.as_deref(),
@@ -911,6 +917,9 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => {
+            eprintln!(
+                "Warning: `pftui structural` is deprecated. Use `pftui analytics macro ...` instead."
+            );
             commands::structural::run(
                 &backend,
                 &action,

@@ -18,6 +18,9 @@ use crate::models::asset::AssetCategory;
 pub fn run(
     backend: &BackendConnection,
     action: &str,
+    value: Option<&str>,
+    value2: Option<&str>,
+    value3: Option<&str>,
     symbol: Option<&str>,
     signal_type: Option<&str>,
     severity: Option<&str>,
@@ -32,7 +35,7 @@ pub fn run(
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
         "high" => run_high(backend, json_output),
-        "macro" => run_macro(backend, json_output),
+        "macro" => run_macro(backend, value, value2, value3, json_output),
         "alignment" => run_alignment(backend, symbol, json_output),
         "divergence" => run_divergence(backend, symbol, json_output),
         "digest" => run_digest(backend, from, limit, json_output),
@@ -689,7 +692,33 @@ fn run_high(backend: &BackendConnection, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_macro(backend: &BackendConnection, json_output: bool) -> Result<()> {
+fn run_macro(
+    backend: &BackendConnection,
+    subaction: Option<&str>,
+    arg1: Option<&str>,
+    arg2: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    match subaction.unwrap_or("dashboard") {
+        "dashboard" => {}
+        "metrics" => return run_macro_metrics(backend, arg1, json_output),
+        "compare" => {
+            let left = arg1.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>"))?;
+            let right = arg2.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>"))?;
+            return run_macro_compare(backend, left, right, json_output);
+        }
+        "cycles" => return run_macro_cycles(backend, json_output),
+        "outcomes" => return run_macro_outcomes(backend, json_output),
+        "parallels" => return run_macro_parallels(backend, json_output),
+        "log" => return run_macro_log(backend, json_output),
+        other => {
+            bail!(
+                "unknown analytics macro subcommand '{}'. Valid: dashboard, metrics, compare, cycles, outcomes, parallels, log",
+                other
+            )
+        }
+    }
+
     let metrics = structural::list_metrics_backend(backend, None, None).unwrap_or_default();
     let cycles = structural::list_cycles_backend(backend).unwrap_or_default();
     let outcomes = structural::list_outcomes_backend(backend).unwrap_or_default();
@@ -715,6 +744,419 @@ fn run_macro(backend: &BackendConnection, json_output: bool) -> Result<()> {
         println!("  Parallels: {}", parallels.len());
     }
 
+    Ok(())
+}
+
+fn run_macro_metrics(
+    backend: &BackendConnection,
+    country: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let metrics = structural::list_metrics_backend(backend, country, None).unwrap_or_default();
+    if metrics.is_empty() {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "country": country,
+                    "metrics": [],
+                    "count": 0,
+                }))?
+            );
+        } else {
+            println!("No macro power metrics found.");
+        }
+        return Ok(());
+    }
+
+    let grouped = build_country_metric_views(&metrics);
+    if json_output {
+        let out = if let Some(c) = country {
+            if let Some(view) = grouped.get(c) {
+                json!({
+                    "country": c,
+                    "metrics": view.metrics,
+                    "composite": view.composite,
+                    "composite_prev": view.composite_prev,
+                    "composite_delta": view.composite_delta,
+                })
+            } else {
+                json!({
+                    "country": c,
+                    "metrics": [],
+                    "composite": null,
+                    "composite_prev": null,
+                    "composite_delta": null,
+                })
+            }
+        } else {
+            json!({ "countries": grouped })
+        };
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else if let Some(c) = country {
+        if let Some(view) = grouped.get(c) {
+            println!("Macro Metrics ({})", c);
+            for m in &view.metrics {
+                println!(
+                    "  {:<20} score={} rank={} trend={} {}",
+                    m.metric,
+                    m.score
+                        .map(|v| format!("{:.2}", v))
+                        .unwrap_or_else(|| "—".to_string()),
+                    m.rank
+                        .map(|r| r.to_string())
+                        .unwrap_or_else(|| "—".to_string()),
+                    m.trend,
+                    trend_arrow(&m.trend),
+                );
+            }
+            println!(
+                "\n  Composite (0-10): {}{}",
+                view.composite
+                    .map(|v| format!("{:.2}", v))
+                    .unwrap_or_else(|| "—".to_string()),
+                view.composite_delta
+                    .map(|d| format!(" ({:+.2} vs prev)", d))
+                    .unwrap_or_default()
+            );
+        } else {
+            println!("No macro power metrics found for {}.", c);
+        }
+    } else {
+        println!("Macro Metrics (all countries)");
+        for (c, view) in grouped {
+            println!(
+                "  {:<10} composite={}{} ({} metrics)",
+                c,
+                view.composite
+                    .map(|v| format!("{:.2}", v))
+                    .unwrap_or_else(|| "—".to_string()),
+                view.composite_delta
+                    .map(|d| format!(" {:+.2}", d))
+                    .unwrap_or_default(),
+                view.metrics.len()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_macro_compare(
+    backend: &BackendConnection,
+    country_a: &str,
+    country_b: &str,
+    json_output: bool,
+) -> Result<()> {
+    let a_rows = structural::list_metrics_backend(backend, Some(country_a), None).unwrap_or_default();
+    let b_rows = structural::list_metrics_backend(backend, Some(country_b), None).unwrap_or_default();
+    let a_view = build_country_metric_view(&a_rows);
+    let b_view = build_country_metric_view(&b_rows);
+
+    let mut keys: BTreeSet<String> = BTreeSet::new();
+    for row in &a_view.metrics {
+        keys.insert(row.metric.clone());
+    }
+    for row in &b_view.metrics {
+        keys.insert(row.metric.clone());
+    }
+    let map_a: HashMap<String, MetricCurrentRow> = a_view
+        .metrics
+        .iter()
+        .map(|m| (m.metric.clone(), m.clone()))
+        .collect();
+    let map_b: HashMap<String, MetricCurrentRow> = b_view
+        .metrics
+        .iter()
+        .map(|m| (m.metric.clone(), m.clone()))
+        .collect();
+
+    let rows: Vec<serde_json::Value> = keys
+        .into_iter()
+        .map(|metric| {
+            let left = map_a.get(&metric);
+            let right = map_b.get(&metric);
+            let left_score = left.and_then(|m| m.score);
+            let right_score = right.and_then(|m| m.score);
+            let gap = match (left_score, right_score) {
+                (Some(l), Some(r)) => Some(l - r),
+                _ => None,
+            };
+            let left_prev = a_view.prev_scores.get(&metric).copied().flatten();
+            let right_prev = b_view.prev_scores.get(&metric).copied().flatten();
+            let prev_gap = match (left_prev, right_prev) {
+                (Some(l), Some(r)) => Some(l - r),
+                _ => None,
+            };
+            json!({
+                "metric": metric,
+                "left_score": left_score,
+                "left_trend": left.map(|m| m.trend.clone()),
+                "right_score": right_score,
+                "right_trend": right.map(|m| m.trend.clone()),
+                "gap": gap,
+                "trend": gap_trend(gap, prev_gap),
+            })
+        })
+        .collect();
+
+    let composite_gap = match (a_view.composite, b_view.composite) {
+        (Some(l), Some(r)) => Some(l - r),
+        _ => None,
+    };
+    let composite_prev_gap = match (a_view.composite_prev, b_view.composite_prev) {
+        (Some(l), Some(r)) => Some(l - r),
+        _ => None,
+    };
+    let composite_trend = gap_trend(composite_gap, composite_prev_gap);
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "left_country": country_a,
+                "right_country": country_b,
+                "rows": rows,
+                "composite": {
+                    "left": a_view.composite,
+                    "right": b_view.composite,
+                    "gap": composite_gap,
+                    "trend": composite_trend,
+                }
+            }))?
+        );
+    } else {
+        println!("Macro Compare: {} vs {}", country_a, country_b);
+        println!(
+            "{:<16} {:>10} {:>10} {:>8} {:>10}",
+            "Determinant", country_a, country_b, "Gap", "Trend"
+        );
+        println!("{}", "─".repeat(62));
+        for row in &rows {
+            let metric = row["metric"].as_str().unwrap_or("metric");
+            let left = row["left_score"]
+                .as_f64()
+                .map(|v| format!("{:.2}", v))
+                .unwrap_or_else(|| "—".to_string());
+            let right = row["right_score"]
+                .as_f64()
+                .map(|v| format!("{:.2}", v))
+                .unwrap_or_else(|| "—".to_string());
+            let gap = row["gap"]
+                .as_f64()
+                .map(|v| format!("{:+.2}", v))
+                .unwrap_or_else(|| "—".to_string());
+            let trend = row["trend"].as_str().unwrap_or("Unknown");
+            println!(
+                "{:<16} {:>10} {:>10} {:>8} {:>10}",
+                metric, left, right, gap, trend
+            );
+        }
+        println!("{}", "─".repeat(62));
+        println!(
+            "{:<16} {:>10} {:>10} {:>8} {:>10}",
+            "Composite",
+            a_view
+                .composite
+                .map(|v| format!("{:.2}", v))
+                .unwrap_or_else(|| "—".to_string()),
+            b_view
+                .composite
+                .map(|v| format!("{:.2}", v))
+                .unwrap_or_else(|| "—".to_string()),
+            composite_gap
+                .map(|v| format!("{:+.2}", v))
+                .unwrap_or_else(|| "—".to_string()),
+            composite_trend
+        );
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct MetricCurrentRow {
+    metric: String,
+    score: Option<f64>,
+    rank: Option<i32>,
+    trend: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct CountryMetricView {
+    metrics: Vec<MetricCurrentRow>,
+    composite: Option<f64>,
+    composite_prev: Option<f64>,
+    composite_delta: Option<f64>,
+    #[serde(skip_serializing)]
+    prev_scores: HashMap<String, Option<f64>>,
+}
+
+fn build_country_metric_views(
+    rows: &[structural::PowerMetric],
+) -> HashMap<String, CountryMetricView> {
+    let mut grouped: HashMap<String, Vec<structural::PowerMetric>> = HashMap::new();
+    for row in rows {
+        grouped
+            .entry(row.country.clone())
+            .or_default()
+            .push(row.clone());
+    }
+    grouped
+        .into_iter()
+        .map(|(country, list)| (country, build_country_metric_view(&list)))
+        .collect()
+}
+
+fn build_country_metric_view(rows: &[structural::PowerMetric]) -> CountryMetricView {
+    let mut latest: HashMap<String, MetricCurrentRow> = HashMap::new();
+    let mut prev: HashMap<String, Option<f64>> = HashMap::new();
+
+    for row in rows {
+        if !latest.contains_key(&row.metric) {
+            latest.insert(
+                row.metric.clone(),
+                MetricCurrentRow {
+                    metric: row.metric.clone(),
+                    score: row.score,
+                    rank: row.rank,
+                    trend: row.trend.clone(),
+                },
+            );
+        } else if !prev.contains_key(&row.metric) {
+            prev.insert(row.metric.clone(), row.score);
+        }
+    }
+
+    let mut metrics: Vec<MetricCurrentRow> = latest.into_values().collect();
+    metrics.sort_by(|a, b| a.metric.cmp(&b.metric));
+
+    let mut current_components: Vec<f64> = Vec::new();
+    let mut prev_components: Vec<f64> = Vec::new();
+    for m in &metrics {
+        if dalio_metric_key(&m.metric).is_some() {
+            if let Some(score) = m.score {
+                current_components.push(score);
+            }
+            if let Some(Some(prev_score)) = prev.get(&m.metric) {
+                prev_components.push(*prev_score);
+            }
+        }
+    }
+
+    let composite = avg(&current_components);
+    let composite_prev = avg(&prev_components);
+    let composite_delta = match (composite, composite_prev) {
+        (Some(c), Some(p)) => Some(c - p),
+        _ => None,
+    };
+
+    CountryMetricView {
+        metrics,
+        composite,
+        composite_prev,
+        composite_delta,
+        prev_scores: prev,
+    }
+}
+
+fn avg(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.iter().sum::<f64>() / values.len() as f64)
+    }
+}
+
+fn dalio_metric_key(metric: &str) -> Option<&'static str> {
+    let m = metric.to_ascii_lowercase();
+    if m.contains("education") {
+        Some("education")
+    } else if m.contains("innovation") {
+        Some("innovation")
+    } else if m.contains("competit") {
+        Some("competitiveness")
+    } else if m.contains("military") {
+        Some("military")
+    } else if m.contains("trade") {
+        Some("trade")
+    } else if m.contains("economic") || m.contains("gdp") || m.contains("output") {
+        Some("economic_output")
+    } else if m.contains("financial") {
+        Some("financial_center")
+    } else if m.contains("reserve") || m.contains("currency") {
+        Some("reserve_currency")
+    } else {
+        None
+    }
+}
+
+fn trend_arrow(trend: &str) -> &'static str {
+    match trend.to_ascii_lowercase().as_str() {
+        "up" | "rising" | "improving" | "bullish" => "↑",
+        "down" | "falling" | "weakening" | "bearish" => "↓",
+        _ => "→",
+    }
+}
+
+fn gap_trend(gap: Option<f64>, prev_gap: Option<f64>) -> &'static str {
+    match (gap, prev_gap) {
+        (Some(g), Some(p)) if g.abs() < p.abs() => "Closing",
+        (Some(g), Some(p)) if g.abs() > p.abs() => "Widening",
+        (Some(_), Some(_)) => "Stable",
+        _ => "Unknown",
+    }
+}
+
+fn run_macro_cycles(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let cycles = structural::list_cycles_backend(backend).unwrap_or_default();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cycles)?);
+    } else {
+        for c in cycles {
+            println!(
+                "{}: {} (since {})",
+                c.cycle_name,
+                c.current_stage,
+                c.stage_entered.unwrap_or_else(|| "?".to_string())
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_macro_outcomes(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let outcomes = structural::list_outcomes_backend(backend).unwrap_or_default();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&outcomes)?);
+    } else {
+        for o in outcomes {
+            println!("{}: {:.0}%", o.name, o.probability);
+        }
+    }
+    Ok(())
+}
+
+fn run_macro_parallels(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let parallels = structural::list_parallels_backend(backend, None).unwrap_or_default();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&parallels)?);
+    } else {
+        for p in parallels {
+            println!("{} | {} → {}", p.period, p.event, p.parallel_to);
+        }
+    }
+    Ok(())
+}
+
+fn run_macro_log(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let rows = structural::list_log_backend(backend, None, Some(20)).unwrap_or_default();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+    } else {
+        for l in rows {
+            println!("{} | {}", l.date, l.development);
+        }
+    }
     Ok(())
 }
 
