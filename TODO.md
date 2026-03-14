@@ -34,19 +34,20 @@ Live metrics change weekly; 1940 US military score never changes.
 
 CLI subcommands (nested under existing `cycles`):
 ```
-pftui analytics macro cycles                                          # current cycle stages (existing, unchanged)
-pftui analytics macro cycles history <COUNTRY>                        # all determinants, all decades
-pftui analytics macro cycles history <COUNTRY> --metric <METRIC>      # single determinant timeline
-pftui analytics macro cycles history <A> <B> --metric <METRIC>        # two powers, one metric compared
-pftui analytics macro cycles history --decade <YEAR>                  # all powers at a point in time
-pftui analytics macro cycles history --composite                      # composite scores over time, all powers
-pftui analytics macro cycles history --json                           # JSON output for agent consumption
+pftui analytics macro cycles                                   # current cycle stages (existing, unchanged)
+pftui analytics macro cycles history                           # composite scores, all powers, all decades (default view)
+pftui analytics macro cycles history country US                # all determinants for one power
+pftui analytics macro cycles history country US China          # two powers compared
+pftui analytics macro cycles history metric trade              # one determinant, all powers
+pftui analytics macro cycles history metric military US China  # one determinant, specific powers
+pftui analytics macro cycles history decade 1940               # all powers at one point in time
+pftui analytics macro cycles history composite                 # composite trajectories (same as default)
 ```
 
 CRUD for populating:
 ```
-pftui analytics macro cycles history add <COUNTRY> --metric <METRIC> --decade <YEAR> --score <N> --notes "..." --source "..."
-pftui analytics macro cycles history add-batch --file <CSV>           # bulk import from CSV
+pftui analytics macro cycles history add country US metric trade decade 1940 score 7.5 notes "..." source "..."
+pftui analytics macro cycles history add-batch file data.csv
 ```
 
 Display format (for `--composite`):
