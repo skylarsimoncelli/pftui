@@ -79,6 +79,17 @@ fn main() -> Result<()> {
                 commands::global::run(&backend, country.as_deref(), indicator.as_deref(), json)
             }
         },
+        Some(Command::Data { command }) => match command {
+            cli::DataCommand::Refresh { notify } => {
+                if cached_only {
+                    println!("Cached-only mode enabled; skipping refresh network calls.");
+                    Ok(())
+                } else {
+                    commands::refresh::run(&backend, &config, notify)
+                }
+            }
+            cli::DataCommand::Status { json, .. } => commands::status::run_backend(&backend, json),
+        },
 
         Some(Command::Summary { group_by, period, what_if, json }) => {
             commands::summary::run(
@@ -231,6 +242,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Refresh { notify }) => {
+            eprintln!("Warning: `pftui refresh` is deprecated. Use `pftui data refresh` instead.");
             if cached_only {
                 println!("Cached-only mode enabled; skipping refresh network calls.");
                 Ok(())
@@ -239,6 +251,7 @@ fn main() -> Result<()> {
             }
         }
         Some(Command::Status { json, .. }) => {
+            eprintln!("Warning: `pftui status` is deprecated. Use `pftui data status` instead.");
             commands::status::run_backend(&backend, json)
         }
         Some(Command::DbInfo { json }) => {

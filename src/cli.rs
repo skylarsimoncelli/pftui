@@ -135,6 +135,25 @@ pub enum DashboardCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum DataCommand {
+    /// Fetch and cache current prices for tracked symbols
+    Refresh {
+        /// Send OS notification for newly triggered alerts
+        #[arg(long)]
+        notify: bool,
+    },
+    /// Show data freshness status for all cached sources
+    Status {
+        /// Explicitly request per-source data health output
+        #[arg(long)]
+        data: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -159,6 +178,12 @@ pub enum Command {
     Dashboard {
         #[command(subcommand)]
         command: DashboardCommand,
+    },
+
+    /// Data management operations
+    Data {
+        #[command(subcommand)]
+        command: DataCommand,
     },
 
     /// Portfolio summary to stdout

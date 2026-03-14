@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Add `pftui data` namespace (`refresh`, `status`)
+
+- What: added `data` top-level namespace with `refresh` and `status` subcommands mapped to existing implementations. Added deprecated alias warnings for legacy `pftui refresh` and `pftui status`.
+- Why: closes F40.7 hierarchy step and extends F40.10 alias migration coverage.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed F40.7 data namespace item
+
 ### 2026-03-14 — Add `pftui dashboard` namespace with alias warnings
 
 - What: added `dashboard` top-level namespace with subcommands `macro`, `oil`, `crisis`, `sector`, `heatmap`, and `global`. Wired existing implementations under the new path. Kept old top-level dashboard commands as deprecated aliases with stderr warnings and unchanged behavior.

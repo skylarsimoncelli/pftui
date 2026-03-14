@@ -136,15 +136,6 @@ pftui market sovereign           # was: pftui sovereign
 ```
 Source: `src/cli.rs`, `src/main.rs`.
 
-**F40.7: `pftui data` namespace**
-
-Data management:
-```
-pftui data refresh               # was: pftui refresh
-pftui data status                # was: pftui status
-```
-Source: `src/cli.rs`, `src/main.rs`.
-
 **F40.8: `pftui system` namespace**
 
 Admin/system commands:
