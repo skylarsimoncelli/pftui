@@ -269,18 +269,33 @@ Implementation: match old command names in `src/main.rs`, print warning to stder
 forward to new dispatch. Remove aliases after 3 major versions.
 `structural` already uses this pattern -- reuse the same mechanism.
 
+**F40.11: `pftui agent` namespace**
+
+All agent-specific operations:
+```
+pftui agent message send         # was: pftui agent-msg send
+pftui agent message list         # was: pftui agent-msg list
+pftui agent message ack          # was: pftui agent-msg ack
+```
+Future agent commands will nest here naturally:
+```
+pftui agent digest               # was: pftui analytics digest (agent report generation)
+pftui agent status               # agent pipeline health check (future)
+```
+Source: `src/cli.rs`, `src/main.rs`.
+
 **Final top-level tree after F40:**
 ```
 pftui
-├── portfolio        # holdings, value, performance, targets, transactions
-├── watchlist        # add, remove, list
-├── journal          # prediction, conviction, notes, scenario, entry
-├── analytics        # engine views, trends, alerts, research, scan, macro, regime
-├── market           # news, sentiment, calendar, fedwatch, economy, etc.
-├── dashboard        # macro, oil, crisis, sector, heatmap, global
-├── data             # refresh, status
-├── agent-msg        # inter-agent messaging
-├── system           # config, doctor, export, import, setup, demo, web
+├── portfolio        # your money: holdings, transactions, targets, rebalancing
+├── watchlist        # tracked symbols
+├── journal          # your thinking: predictions, convictions, notes, scenarios
+├── analytics        # the engine: timeframes, trends, alerts, research, regime
+├── market           # external data: news, sentiment, calendar, fedwatch
+├── dashboard        # pre-built views: macro, oil, crisis, sector
+├── data             # data management: refresh, status
+├── agent            # agentic operations: messaging, digest, pipeline
+├── system           # admin: config, doctor, export, setup
 └── help
 ```
 55 top-level → 9 + help. Every grouping navigable via `--help`.
