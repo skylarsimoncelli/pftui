@@ -442,6 +442,140 @@ pub enum PortfolioCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum MarketCommand {
+    /// Show latest financial news from RSS feeds
+    News {
+        /// Filter by source (e.g. "Reuters", "CoinDesk", "ZeroHedge")
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Search title text (case-insensitive substring match)
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Show only news from last N hours
+        #[arg(long)]
+        hours: Option<i64>,
+
+        /// Maximum number of articles to show (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show market sentiment: Fear & Greed indices + COT positioning
+    Sentiment {
+        /// Symbol to show COT detail (GC=F, SI=F, CL=F, BTC). Omit for overview.
+        symbol: Option<String>,
+
+        /// Show historical F&G trend over N days
+        #[arg(long)]
+        history: Option<usize>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show upcoming economic calendar events
+    Calendar {
+        /// Number of days to look ahead (default: 7)
+        #[arg(long, default_value = "7")]
+        days: i64,
+
+        /// Filter by impact level: high, medium, low
+        #[arg(long)]
+        impact: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// CME FedWatch probabilities from Fed funds futures implied pricing
+    Fedwatch {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show cached economic indicators (Brave/BLS)
+    Economy {
+        /// Filter to a specific indicator (e.g. cpi, nfp, fed_funds_rate)
+        #[arg(long)]
+        indicator: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show prediction market odds from Polymarket and Manifold
+    Predictions {
+        /// Filter by category: crypto, economics, geopolitics, ai, finance, macro (supports pipe lists, e.g. geopolitics|macro). Defaults to "macro" (economics|geopolitics|crypto).
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Search question text/topics (e.g. "ceasefire", "Fed rate")
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Maximum number of markets to show (default: 10)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show options chain for an equity symbol (Yahoo free data)
+    Options {
+        /// Underlying symbol (e.g. AAPL, TSLA)
+        symbol: String,
+
+        /// Expiry date in YYYY-MM-DD (default: nearest expiry)
+        #[arg(long)]
+        expiry: Option<String>,
+
+        /// Number of strikes per side to show (default: 12)
+        #[arg(long, default_value = "12")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show BTC ETF flow data (inflows/outflows by fund)
+    #[command(name = "etf-flows")]
+    EtfFlows {
+        /// Number of days to show (default: 1, today only)
+        #[arg(long, default_value = "1")]
+        days: u16,
+
+        /// Filter to a specific fund (e.g. IBIT, FBTC, GBTC)
+        #[arg(long)]
+        fund: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show COMEX warehouse inventory (gold, silver)
+    Supply {
+        /// Specific metal symbol (GC=F for gold, SI=F for silver). Omit for all.
+        symbol: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Sovereign holdings tracker: CB gold (WGC), government BTC, COMEX silver
+    Sovereign {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -472,6 +606,12 @@ pub enum Command {
     Data {
         #[command(subcommand)]
         command: DataCommand,
+    },
+
+    /// External market data: news, sentiment, calendar, predictions, options, and supply
+    Market {
+        #[command(subcommand)]
+        command: MarketCommand,
     },
 
     /// Portfolio operations: holdings, value, targets, rebalancing, and transactions

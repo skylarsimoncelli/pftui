@@ -92,23 +92,6 @@ pftui analytics macro regime transitions         # was: pftui regime transitions
 ```
 Source: `src/cli.rs`, `src/commands/analytics.rs`.
 
-**F40.5: `pftui market` namespace**
-
-Group external market data:
-```
-pftui market news                # was: pftui news
-pftui market sentiment           # was: pftui sentiment
-pftui market calendar            # was: pftui calendar
-pftui market fedwatch            # was: pftui fedwatch
-pftui market economy             # was: pftui economy
-pftui market predictions         # was: pftui predictions (Polymarket)
-pftui market options             # was: pftui options
-pftui market etf-flows           # was: pftui etf-flows
-pftui market supply              # was: pftui supply
-pftui market sovereign           # was: pftui sovereign
-```
-Source: `src/cli.rs`, `src/main.rs`.
-
 **F40.8: `pftui system` namespace**
 
 Admin/system commands:

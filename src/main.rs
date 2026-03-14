@@ -90,6 +90,42 @@ fn main() -> Result<()> {
             }
             cli::DataCommand::Status { json, .. } => commands::status::run_backend(&backend, json),
         },
+        Some(Command::Market { command }) => match command {
+            cli::MarketCommand::News {
+                source,
+                search,
+                hours,
+                limit,
+                json,
+            } => commands::news::run(&backend, source.as_deref(), search.as_deref(), hours, limit, json),
+            cli::MarketCommand::Sentiment { symbol, history, json } => {
+                commands::sentiment::run(symbol.as_deref(), history, json)
+            }
+            cli::MarketCommand::Calendar { days, impact, json } => {
+                commands::calendar::run(days, impact.as_deref(), json)
+            }
+            cli::MarketCommand::Fedwatch { json } => commands::fedwatch::run(json),
+            cli::MarketCommand::Economy { indicator, json } => {
+                commands::economy::run(&backend, indicator.as_deref(), json)
+            }
+            cli::MarketCommand::Predictions {
+                category,
+                search,
+                limit,
+                json,
+            } => commands::predictions::run(&backend, category.as_deref(), search.as_deref(), limit, json),
+            cli::MarketCommand::Options {
+                symbol,
+                expiry,
+                limit,
+                json,
+            } => commands::options::run(&symbol, expiry.as_deref(), limit, json),
+            cli::MarketCommand::EtfFlows { days, fund, json } => {
+                commands::etf_flows::run(days, fund, json)
+            }
+            cli::MarketCommand::Supply { symbol, json } => commands::supply::run(&backend, symbol, json),
+            cli::MarketCommand::Sovereign { json } => commands::sovereign::run(json),
+        },
         Some(Command::Portfolio { command }) => match command {
             None => commands::summary::run(&backend, &config, None, None, None, true, false),
             Some(cli::PortfolioCommand::Summary {

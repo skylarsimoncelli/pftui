@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Add `pftui market` namespace for external data commands
+
+- What: added `market` top-level namespace with subcommands `news`, `sentiment`, `calendar`, `fedwatch`, `economy`, `predictions`, `options`, `etf-flows`, `supply`, and `sovereign`, all mapped to existing command implementations.
+- Why: closes F40.5 hierarchy step by grouping external market intelligence commands under a single discoverable namespace.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`, `cargo clippy --all-targets -- -D warnings`
+- TODO: removed F40.5 `pftui market` namespace item
+
 ### 2026-03-14 — Add `pftui portfolio` namespace for holdings operations
 
 - What: added nested `pftui portfolio` subcommands for summary/value/brief/eod/performance/history/target/drift/rebalance/stress-test/dividends/annotate/group/opportunity/set-cash and `portfolio transaction add|remove|list`. `pftui portfolio` with no subcommand now defaults to summary output. Kept existing top-level commands operational for compatibility, and moved named portfolio profile management to `pftui portfolios` to avoid namespace collision.
