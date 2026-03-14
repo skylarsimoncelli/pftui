@@ -126,6 +126,58 @@ fn main() -> Result<()> {
             cli::MarketCommand::Supply { symbol, json } => commands::supply::run(&backend, symbol, json),
             cli::MarketCommand::Sovereign { json } => commands::sovereign::run(json),
         },
+        Some(Command::System { command }) => match command {
+            cli::SystemCommand::Config {
+                action,
+                field,
+                value,
+                json,
+            } => commands::config_cmd::run(&action, field.as_deref(), value.as_deref(), json),
+            cli::SystemCommand::DbInfo { json } => {
+                commands::db_info::run(&backend, &db_path, config.database_url.as_deref(), json)
+            }
+            cli::SystemCommand::Doctor { json } => {
+                let runtime = tokio::runtime::Runtime::new()?;
+                runtime.block_on(async { commands::doctor::run(json).await })
+            }
+            cli::SystemCommand::Export { format, output } => {
+                commands::export::run(&backend, &format, &config, output.as_deref())
+            }
+            cli::SystemCommand::Import { path, mode } => {
+                let import_mode = match mode {
+                    cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,
+                    cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
+                };
+                commands::import::run(&backend, &config, &path, import_mode)
+            }
+            cli::SystemCommand::Snapshot {
+                width,
+                height,
+                plain,
+            } => commands::snapshot::run(&config, Some(width), Some(height), plain),
+            cli::SystemCommand::Setup => commands::setup::run(&config, true),
+            cli::SystemCommand::Demo => commands::demo::run(&config),
+            cli::SystemCommand::Web { port, bind, no_auth } => {
+                let runtime = tokio::runtime::Runtime::new()?;
+                runtime.block_on(async {
+                    web::run_server(db_path.to_string_lossy().to_string(), config, &bind, port, !no_auth).await
+                })
+            }
+            cli::SystemCommand::MigrateJournal {
+                path,
+                dry_run,
+                default_tag,
+                default_status,
+                json,
+            } => commands::migrate_journal::run(
+                &backend,
+                &path,
+                dry_run,
+                default_tag.as_deref(),
+                &default_status,
+                json,
+            ),
+        },
         Some(Command::Portfolio { command }) => match command {
             None => commands::summary::run(&backend, &config, None, None, None, true, false),
             Some(cli::PortfolioCommand::Summary {

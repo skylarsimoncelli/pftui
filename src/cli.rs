@@ -576,6 +576,108 @@ pub enum MarketCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum SystemCommand {
+    /// View and update pftui configuration fields
+    Config {
+        /// Action: list, get, set
+        action: String,
+        /// Field name (required for get/set)
+        field: Option<String>,
+        /// Field value (required for set)
+        value: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show active database backend details and table row counts
+    #[command(name = "db-info")]
+    DbInfo {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run system diagnostics: test DB connection, API endpoints, and cache freshness
+    Doctor {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Export portfolio data (JSON exports full snapshot; CSV exports positions only)
+    Export {
+        #[arg(value_enum)]
+        format: ExportFormat,
+
+        /// Write output to a file instead of stdout
+        #[arg(long, short)]
+        output: Option<String>,
+    },
+    /// Import data from a JSON snapshot file (as produced by `pftui export json`)
+    Import {
+        /// Path to the JSON snapshot file
+        path: String,
+
+        /// Import mode: replace wipes existing data, merge adds without deleting
+        #[arg(long, value_enum, default_value = "replace")]
+        mode: ImportModeArg,
+    },
+    /// Render the TUI as ANSI text to stdout (no interactive terminal required)
+    Snapshot {
+        /// Terminal width in columns (default: 120)
+        #[arg(long, default_value = "120")]
+        width: u16,
+
+        /// Terminal height in rows (default: 40)
+        #[arg(long, default_value = "40")]
+        height: u16,
+
+        /// Strip colors and output plain text only
+        #[arg(long)]
+        plain: bool,
+    },
+    /// Run the portfolio setup wizard
+    Setup,
+    /// Launch pftui with a realistic demo portfolio (your real data is untouched)
+    Demo,
+    /// Start the web dashboard server
+    Web {
+        /// Port to bind to (default: 8080)
+        #[arg(long, short, default_value = "8080")]
+        port: u16,
+
+        /// Host to bind to (default: 127.0.0.1)
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
+
+        /// Disable authentication (NOT recommended for non-localhost)
+        #[arg(long)]
+        no_auth: bool,
+    },
+    /// One-time migration from legacy JOURNAL.md into SQLite journal table
+    #[command(name = "migrate-journal")]
+    MigrateJournal {
+        /// Path to source markdown journal file
+        #[arg(long, default_value = "JOURNAL.md")]
+        path: String,
+
+        /// Parse and report but do not write to database
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Default tag for entries without explicit tag metadata
+        #[arg(long)]
+        default_tag: Option<String>,
+
+        /// Default status for entries without explicit status metadata
+        #[arg(long, default_value = "open")]
+        default_status: String,
+
+        /// Output summary as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -612,6 +714,12 @@ pub enum Command {
     Market {
         #[command(subcommand)]
         command: MarketCommand,
+    },
+
+    /// System/admin operations: config, diagnostics, import/export, setup, web
+    System {
+        #[command(subcommand)]
+        command: SystemCommand,
     },
 
     /// Portfolio operations: holdings, value, targets, rebalancing, and transactions

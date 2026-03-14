@@ -92,23 +92,6 @@ pftui analytics macro regime transitions         # was: pftui regime transitions
 ```
 Source: `src/cli.rs`, `src/commands/analytics.rs`.
 
-**F40.8: `pftui system` namespace**
-
-Admin/system commands:
-```
-pftui system config              # was: pftui config
-pftui system db-info             # was: pftui db-info
-pftui system doctor              # was: pftui doctor
-pftui system export              # was: pftui export
-pftui system import              # was: pftui import
-pftui system snapshot            # was: pftui snapshot
-pftui system setup               # was: pftui setup
-pftui system demo                # was: pftui demo
-pftui system web                 # was: pftui web
-pftui system migrate-journal     # was: pftui migrate-journal
-```
-Source: `src/cli.rs`, `src/main.rs`.
-
 **F40.9: Convert all positional `<ACTION>` to proper clap subcommands**
 
 Every command that currently uses `<ACTION>` as a positional string must be converted

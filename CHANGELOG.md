@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Add `pftui system` namespace for admin commands
+
+- What: added `system` top-level namespace with `config`, `db-info`, `doctor`, `export`, `import`, `snapshot`, `setup`, `demo`, `web`, and `migrate-journal` subcommands, all routed to existing command handlers.
+- Why: closes F40.8 hierarchy step by grouping administrative and operational commands under a single namespace.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`, `cargo clippy --all-targets -- -D warnings`
+- TODO: removed F40.8 `pftui system` namespace item
+
 ### 2026-03-14 — Add `pftui market` namespace for external data commands
 
 - What: added `market` top-level namespace with subcommands `news`, `sentiment`, `calendar`, `fedwatch`, `economy`, `predictions`, `options`, `etf-flows`, `supply`, and `sovereign`, all mapped to existing command implementations.
