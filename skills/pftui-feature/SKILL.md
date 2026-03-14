@@ -132,7 +132,8 @@ Before stopping:
 5. Push the final branch state.
 6. Open or update a pull request from the feature branch to the base branch.
 7. Merge through the pull request path after validation is green. Do not push feature commits directly to `master`.
-8. Remove the feature worktree after merge if it is no longer needed.
+8. Build the latest pftui binary and install it into `/usr/local/bin/pftui` so the user's `PATH` resolves to the just-finished feature build.
+9. Remove the feature worktree after merge if it is no longer needed.
 
 ## Output Standard
 
@@ -145,6 +146,7 @@ When using this skill, the work product should leave the repo in a state where:
 - the implementation still aligns with product vision and philosophy
 - the implementation was developed in a dedicated worktree so parallel feature work does not collide
 - the work lands through a feature branch and PR merge, not direct pushes to `master`
+- the latest completed build is installed at `/usr/local/bin/pftui`
 
 ## Guardrails
 
@@ -154,4 +156,5 @@ When using this skill, the work product should leave the repo in a state where:
 - Never leave `TODO.md` showing in-progress work without a matching follow-up commit.
 - Never work directly in the shared checkout when implementing a feature; always create a dedicated worktree.
 - Never work directly on `master`; always branch first and merge via PR.
+- Never finish a feature without refreshing `/usr/local/bin/pftui` to the latest built binary.
 - Prefer repo conventions over generic solutions when they differ.
