@@ -114,6 +114,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Watch { symbol, category, bulk, target, direction }) => {
+            eprintln!("Warning: `pftui watch` is deprecated. Use `pftui watchlist add` instead.");
             use crate::models::asset_names::infer_category;
 
             // Collect symbols: either --bulk or single positional
@@ -205,6 +206,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Unwatch { symbol }) => {
+            eprintln!("Warning: `pftui unwatch` is deprecated. Use `pftui watchlist remove` instead.");
             let upper = symbol.to_uppercase();
             if db::watchlist::remove_from_watchlist_backend(&backend, &upper)? {
                 println!("Removed {} from watchlist", upper);
@@ -241,8 +243,105 @@ fn main() -> Result<()> {
         Some(Command::Brief { json }) => {
             commands::brief::run_backend(&backend, &config, true, json, cached_only)
         }
-        Some(Command::Watchlist { approaching, json }) => {
-            commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json, cached_only)
+        Some(Command::Watchlist { action, approaching, json }) => match action {
+            Some(cli::WatchlistCommand::Add {
+                symbol,
+                category,
+                bulk,
+                target,
+                direction,
+            }) => {
+                use crate::models::asset_names::infer_category;
+
+                let symbols: Vec<String> = if let Some(bulk_str) = bulk {
+                    bulk_str
+                        .split(',')
+                        .map(|s| s.trim().to_uppercase())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                } else if let Some(sym) = symbol {
+                    vec![sym.to_uppercase()]
+                } else {
+                    bail!("Provide a symbol or use --bulk SYMBOL1,SYMBOL2,...");
+                };
+                if symbols.is_empty() {
+                    bail!("No valid symbols provided");
+                }
+                if let Some(ref t) = target {
+                    let cleaned = t.replace(['$', ','], "");
+                    if rust_decimal::Decimal::from_str_exact(&cleaned).is_err() {
+                        bail!("Invalid target price: '{}'. Use a number (e.g. 300, 55000.50)", t);
+                    }
+                    if direction != "above" && direction != "below" {
+                        bail!("Invalid direction: '{}'. Use 'above' or 'below'", direction);
+                    }
+                    if symbols.len() > 1 {
+                        bail!("--target can only be set for a single symbol, not with --bulk");
+                    }
+                }
+
+                let mut added = 0;
+                let runtime = tokio::runtime::Runtime::new()?;
+                for upper in &symbols {
+                    let cat = match &category {
+                        Some(c) => c.parse().unwrap_or_else(|_| infer_category(upper)),
+                        None => infer_category(upper),
+                    };
+                    let yahoo_sym = match cat {
+                        crate::models::asset::AssetCategory::Crypto => {
+                            if upper.ends_with("-USD") { upper.clone() } else { format!("{}-USD", upper) }
+                        }
+                        _ => upper.clone(),
+                    };
+                    match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
+                        Ok(_) => {
+                            db::watchlist::add_to_watchlist_backend(&backend, upper, cat)?;
+                            let name = crate::models::asset_names::resolve_name(upper);
+                            let display = if name.is_empty() { upper.clone() } else { name };
+                            println!("Added {} ({}) to watchlist as {}", upper, display, cat);
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "Warning: skipping {} — price lookup failed ({}). Symbol may be invalid.",
+                                upper, e
+                            );
+                            continue;
+                        }
+                    }
+                    if let Some(ref t) = target {
+                        let cleaned = t.replace(['$', ','], "");
+                        db::watchlist::set_watchlist_target_backend(&backend, upper, Some(&cleaned), Some(&direction))?;
+                        println!("  Target: {} {} {}", upper, direction, cleaned);
+                        let rule_text = format!("{} {} {}", upper, direction, cleaned);
+                        db::alerts::add_alert_backend(&backend, "price", upper, &direction, &cleaned, &rule_text)?;
+                        println!("  Alert created: {}", rule_text);
+                    }
+                    added += 1;
+                }
+                if added > 1 {
+                    println!("\n{} symbols added to watchlist.", added);
+                }
+                Ok(())
+            }
+            Some(cli::WatchlistCommand::Remove { symbol }) => {
+                let upper = symbol.to_uppercase();
+                if db::watchlist::remove_from_watchlist_backend(&backend, &upper)? {
+                    println!("Removed {} from watchlist", upper);
+                } else {
+                    println!("{} was not in the watchlist", upper);
+                }
+                Ok(())
+            }
+            Some(cli::WatchlistCommand::List { approaching, json }) => {
+                commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json, cached_only)
+            }
+            None => commands::watchlist_cli::run(
+                &backend,
+                &config,
+                approaching.as_deref(),
+                json,
+                cached_only,
+            ),
         }
 
         Some(Command::SetCash { symbol, amount }) => {

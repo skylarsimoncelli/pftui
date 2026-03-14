@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Consolidate watchlist into `pftui watchlist add/remove/list`
+
+- What: added nested `watchlist` subcommands (`add`, `remove`, `list`) while keeping `pftui watchlist` defaulting to list behavior. Preserved old `watch`/`unwatch` commands as deprecated aliases with warnings and equivalent behavior.
+- Why: closes F40.2 watchlist consolidation step in CLI hierarchy work without breaking existing workflows.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed F40.2 watchlist consolidation item
+
 ### 2026-03-14 — Add `pftui agent message ...` namespace + deprecate `agent-msg`
 
 - What: added new top-level `agent` namespace with `message` operations (`send`, `list`, `reply`, `flag`, `ack`, `ack-all`, `purge`) using the existing agent message command handler. Kept legacy `agent-msg` path as deprecated alias with stderr warning and unchanged behavior.

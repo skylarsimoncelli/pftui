@@ -44,17 +44,6 @@ pftui portfolio transaction list     # was: pftui list-tx
 Source: `src/cli.rs` (add Portfolio subcommand enum), `src/main.rs` (dispatch).
 Keep old top-level commands as deprecated aliases.
 
-**F40.2: `pftui watchlist` consolidation**
-
-Merge three commands into one:
-```
-pftui watchlist add AAPL         # was: pftui watch AAPL
-pftui watchlist remove AAPL      # was: pftui unwatch AAPL
-pftui watchlist list             # was: pftui watchlist (unchanged, becomes default)
-```
-`pftui watchlist` with no subcommand shows `list`.
-Source: `src/cli.rs`, `src/main.rs`.
-
 **F40.3: `pftui journal` as unified knowledge layer**
 
 All recorded thinking lives under `journal`:

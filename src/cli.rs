@@ -56,6 +56,41 @@ pub enum AgentCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum WatchlistCommand {
+    /// Add symbol(s) to watchlist
+    Add {
+        /// Symbol to watch (e.g. AAPL, BTC, GC=F). Omit when using --bulk.
+        symbol: Option<String>,
+        /// Asset category (equity, crypto, forex, cash, commodity, fund). Auto-detected if omitted.
+        #[arg(long)]
+        category: Option<String>,
+        /// Add multiple symbols at once, comma-separated (e.g. GOOG,META,AMZN,TSLA)
+        #[arg(long)]
+        bulk: Option<String>,
+        /// Set a target entry price (e.g. 300, 55000). Creates an alert when hit.
+        #[arg(long)]
+        target: Option<String>,
+        /// Direction for target: "below" (default, buy dip) or "above" (breakout)
+        #[arg(long, default_value = "below")]
+        direction: String,
+    },
+    /// Remove a symbol from watchlist
+    Remove {
+        /// Symbol to unwatch
+        symbol: String,
+    },
+    /// List watchlist symbols with cached prices
+    List {
+        /// Filter to symbols within N% of their target price (e.g. 10)
+        #[arg(long)]
+        approaching: Option<String>,
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -229,6 +264,9 @@ pub enum Command {
 
     /// Display watchlist symbols with current cached prices
     Watchlist {
+        #[command(subcommand)]
+        action: Option<WatchlistCommand>,
+
         /// Filter to symbols within N% of their target price (e.g. 10)
         #[arg(long)]
         approaching: Option<String>,
