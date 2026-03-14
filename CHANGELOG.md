@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Migration Safety Policy for Schema Refactors
+
+- What: established a release policy for database schema modernization to avoid breaking existing user databases: additive tables first, deterministic backfill, dual-read/write compatibility window, canonical-only cutover in a later release, and legacy table drop only after validated overlap period.
+- Why: upcoming schema naming consolidation (F43) should align with CLI/product domains without forcing risky one-shot renames or destructive upgrades.
+- Files: `TODO.md`
+- Tests: not run (planning/policy update only)
+
 ### 2026-03-14 — Convert remaining journal positional actions to clap subcommands
 
 - What: replaced remaining `journal` positional action arguments with proper nested clap subcommands: `journal entry {add|list|search|update|remove|tags|stats}`, `journal prediction {add|list|score|stats|scorecard}`, `journal conviction {set|list|history|changes}`, `journal notes {add|list|search|remove}`, and `journal scenario {add|list|update|remove|history|signal ...}` with `signal {add|list|update|remove}`.

@@ -50,6 +50,96 @@ Routing and composite score shipped. Remaining alignment scoring algorithm work.
 
 8/10 sources stale, price_history writes stopped. Must stabilize.
 
+### F43: Schema Modernization (Non-Breaking User Upgrades)
+
+Goal: modernize table naming to align with command domains while guaranteeing
+existing local databases upgrade safely with no data loss.
+
+**Hard constraints for this epic**
+- No destructive rename/drop in the first shipping release.
+- Additive migrations first, then backfill, then dual-read/write, then cleanup in later release.
+- SQLite and Postgres migration paths must remain functionally equivalent.
+- If migration fails mid-run, app must start in prior-compatible read mode (no hard lockout).
+
+#### Phase A — Contract + Safety Rails
+
+- [ ] **F43.1 — Freeze canonical schema contract**
+  - Add `docs/DB-SCHEMA.md` with canonical resource tables by domain:
+    - journal: `journal_entries`, `journal_predictions`, `journal_notes`, etc.
+    - portfolio: `portfolio_opportunities`, `watchlist`, `allocation_targets`, etc.
+    - data: one canonical predictions cache, one normalized economy aggregate strategy.
+    - analytics/agent/system table inventory.
+  - Acceptance: document includes old->new mapping and lifecycle (`keep/rename/merge/drop`).
+
+- [ ] **F43.2 — Add migration ledger for SQLite parity**
+  - Introduce a SQLite migration-version table (Postgres already has `pftui_migrations`).
+  - Acceptance: app can report schema version consistently on both backends.
+
+#### Phase B — Additive Introductions (No Breaking Changes)
+
+- [ ] **F43.3 — Introduce canonical journal table names (additive)**
+  - Create new tables without removing old:
+    - `journal_entries` (from `journal`)
+    - `journal_predictions` (from `user_predictions`)
+    - `journal_notes` (from `daily_notes`)
+    - `journal_questions` (from `research_questions`) if feature retained
+    - `journal_thesis`, `journal_thesis_history` if thesis remains DB-backed
+  - Acceptance: migrations are idempotent and no existing code path breaks.
+
+- [ ] **F43.4 — Introduce canonical portfolio opportunity table (additive)**
+  - Create `portfolio_opportunities` alongside `opportunity_cost`.
+  - Acceptance: both tables coexist; no user-visible behavior change yet.
+
+- [ ] **F43.5 — Introduce canonical analytics trend naming (additive)**
+  - Create `trends` and `trend_impacts` aliases/tables alongside `trend_tracker` and `trend_asset_impact`.
+  - Acceptance: migrations create structures safely without data mutation yet.
+
+- [ ] **F43.6 — Predictions cache convergence scaffolding**
+  - Define canonical target table (`predictions_cache`) and create compatibility views/helpers for `prediction_cache`.
+  - Acceptance: both legacy and new readers can function during transition.
+
+#### Phase C — Backfill + Compatibility Runtime
+
+- [ ] **F43.7 — Backfill old -> new tables (one-time, resumable)**
+  - Implement deterministic, idempotent copy routines with progress logging.
+  - Acceptance: repeated runs produce identical final row counts/checksums.
+
+- [ ] **F43.8 — Dual-read then dual-write DB adapters**
+  - Reads: prefer canonical tables, fallback to legacy.
+  - Writes: write to both canonical + legacy during transition window.
+  - Acceptance: old and new command paths produce identical results during overlap release.
+
+- [ ] **F43.9 — Export/import schema-versioned snapshot v2**
+  - Extend JSON export to include domain sections beyond core portfolio:
+    - journal, agent messages, selected analytics state as needed.
+  - Add `snapshot_version` and importer adapters (v1 + v2).
+  - Acceptance: v1 imports still work; v2 supports schema-independent restore.
+
+#### Phase D — Cutover + Cleanup (Later Release)
+
+- [ ] **F43.10 — Switch runtime to canonical-only writes**
+  - Stop writing legacy tables after one full release cycle of dual-write.
+  - Acceptance: telemetry/log checks show no fallback reads in normal operation.
+
+- [ ] **F43.11 — Drop legacy tables in a dedicated cleanup migration**
+  - Remove only after successful cutover release and documented rollback window.
+  - Acceptance: no command references dropped tables; startup migration succeeds on upgraded user DBs.
+
+#### Verification + Release Gating
+
+- [ ] **F43.12 — Migration test matrix (must-pass)**
+  - Cases:
+    - old DB -> latest binary (SQLite + Postgres)
+    - partially migrated DB -> restart recovery
+    - dual-write release -> canonical-only release
+    - export/import v1 and v2 roundtrip
+  - Acceptance: CI includes these scenarios and blocks release on failure.
+
+- [ ] **F43.13 — User-safe release runbook**
+  - Add `docs/MIGRATION-SAFETY.md` with upgrade/rollback steps and recovery commands.
+  - Include explicit guarantee: no user action required for standard upgrade.
+  - Acceptance: runbook tested end-to-end on a copy of an old-version database fixture.
+
 ### F42: CLI Domain Consolidation (Hierarchy Finalization)
 
 Align CLI strictly to product domains: `portfolio`, `data`, `analytics`, `agent`, `system`.
