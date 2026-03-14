@@ -6,6 +6,30 @@
 
 ## P1 — Feature Requests
 
+### Move `journal` to top-level command
+
+`journal` is currently nested under `pftui agent journal`. It should be top-level: `pftui journal`.
+
+Journal is the shared knowledge layer (predictions, convictions, notes, scenarios, entries).
+It is used by both humans and agents. Nesting it under `agent` implies it's agent-only,
+but a human tracks predictions and convictions too. It belongs alongside `portfolio`,
+`analytics`, `data`, `agent`, and `system` as a peer.
+
+```
+# Current (wrong):
+pftui agent journal prediction add ...
+pftui agent journal conviction set ...
+
+# Target:
+pftui journal prediction add ...
+pftui journal conviction set ...
+```
+
+Move `journal` out of `agent` to top-level. Keep `agent message` under `agent`.
+Update `docs/CLI-TREE.md` and `docs/CLI-MIGRATION.md`.
+
+Source: `src/cli.rs` (move Journal enum from Agent to top-level Commands), `src/main.rs`.
+
 ### [x] [Feedback] Data Source Conflict Detection
 
 When multiple data sources provide contradictory data (e.g., 92% hold vs 98.9% cut probability from different FOMC sources), the system should flag the conflict and suggest the most reliable source based on track record. Currently wrong data cascades across the agent pipeline unchecked.
