@@ -1645,38 +1645,31 @@ fn main() -> Result<()> {
         },
         Some(Command::Journal { command }) => match command {
             None => commands::journal::run_list(&backend, Some(20), None, None, None, None, false),
-            Some(cli::JournalCommand::Entry {
-                action,
-                value,
-                id,
-                date,
-                tag,
-                symbol,
-                conviction,
-                status,
-                filter_status,
-                content,
-                since,
-                limit,
-                json,
-            }) => match action.as_str() {
-                "add" => {
-                    let content_text = value.as_deref().ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Missing content text. Usage: pftui journal entry add \"your entry text\""
-                        )
-                    })?;
-                    commands::journal::run_add(
-                        &backend,
-                        content_text,
-                        date.as_deref(),
-                        tag.as_deref(),
-                        symbol.as_deref(),
-                        conviction.as_deref(),
-                        json,
-                    )
-                }
-                "list" => commands::journal::run_list(
+            Some(cli::JournalCommand::Entry { command }) => match command {
+                cli::JournalEntryCommand::Add {
+                    value,
+                    date,
+                    tag,
+                    symbol,
+                    conviction,
+                    json,
+                } => commands::journal::run_add(
+                    &backend,
+                    &value,
+                    date.as_deref(),
+                    tag.as_deref(),
+                    symbol.as_deref(),
+                    conviction.as_deref(),
+                    json,
+                ),
+                cli::JournalEntryCommand::List {
+                    limit,
+                    since,
+                    tag,
+                    symbol,
+                    filter_status,
+                    json,
+                } => commands::journal::run_list(
                     &backend,
                     limit,
                     since.as_deref(),
@@ -1685,90 +1678,130 @@ fn main() -> Result<()> {
                     filter_status.as_deref(),
                     json,
                 ),
-                "search" => {
-                    let query = value.as_deref().ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Missing search query. Usage: pftui journal entry search \"query\""
-                        )
-                    })?;
-                    commands::journal::run_search(&backend, query, since.as_deref(), limit, json)
+                cli::JournalEntryCommand::Search {
+                    query,
+                    since,
+                    limit,
+                    json,
+                } => commands::journal::run_search(&backend, &query, since.as_deref(), limit, json),
+                cli::JournalEntryCommand::Update {
+                    id,
+                    content,
+                    status,
+                    json,
+                } => commands::journal::run_update(
+                    &backend,
+                    id,
+                    content.as_deref(),
+                    status.as_deref(),
+                    json,
+                ),
+                cli::JournalEntryCommand::Remove { id, json } => {
+                    commands::journal::run_remove(&backend, id, json)
                 }
-                "update" => {
-                    let entry_id = id.ok_or_else(|| {
-                        anyhow::anyhow!("Missing entry ID. Usage: pftui journal entry update --id N [--content \"...\"] [--status ...]")
-                    })?;
-                    commands::journal::run_update(
-                        &backend,
-                        entry_id,
-                        content.as_deref(),
-                        status.as_deref(),
-                        json,
-                    )
-                }
-                "remove" => {
-                    let entry_id = id.ok_or_else(|| {
-                        anyhow::anyhow!("Missing entry ID. Usage: pftui journal entry remove --id N")
-                    })?;
-                    commands::journal::run_remove(&backend, entry_id, json)
-                }
-                "tags" => commands::journal::run_tags(&backend, json),
-                "stats" => commands::journal::run_stats(&backend, json),
-                _ => Err(anyhow::anyhow!(
-                    "Unknown journal entry action '{}'. Valid actions: add, list, search, update, remove, tags, stats",
-                    action
-                )),
+                cli::JournalEntryCommand::Tags { json } => commands::journal::run_tags(&backend, json),
+                cli::JournalEntryCommand::Stats { json } => commands::journal::run_stats(&backend, json),
             },
-            Some(cli::JournalCommand::Prediction {
-                action,
-                value,
-                id,
-                symbol,
-                conviction,
-                timeframe,
-                confidence,
-                source_agent,
-                target_date,
-                resolution_criteria,
-                outcome,
-                notes,
-                lesson,
-                filter,
-                date,
-                limit,
-                json,
-            }) => commands::predict::run(
-                &backend,
-                &action,
-                value.as_deref(),
-                id,
-                symbol.as_deref(),
-                conviction.as_deref(),
-                timeframe.as_deref(),
-                confidence,
-                source_agent.as_deref(),
-                target_date.as_deref(),
-                resolution_criteria.as_deref(),
-                outcome.as_deref(),
-                notes.as_deref(),
-                lesson.as_deref(),
-                filter.as_deref(),
-                date.as_deref(),
-                limit,
-                json,
-            ),
-            Some(cli::JournalCommand::Conviction {
-                action,
-                value,
-                score,
-                score_positional,
-                notes,
-                limit,
-                json,
-            }) => match action.as_str() {
-                "set" => {
-                    let symbol = value.as_deref().ok_or_else(|| {
-                        anyhow::anyhow!("Missing symbol. Usage: pftui journal conviction set SYMBOL --score N")
-                    })?;
+            Some(cli::JournalCommand::Prediction { command }) => match command {
+                cli::JournalPredictionCommand::Add {
+                    value,
+                    symbol,
+                    conviction,
+                    timeframe,
+                    confidence,
+                    source_agent,
+                    target_date,
+                    resolution_criteria,
+                    json,
+                } => commands::predict::run(
+                    &backend,
+                    "add",
+                    Some(&value),
+                    None,
+                    symbol.as_deref(),
+                    conviction.as_deref(),
+                    timeframe.as_deref(),
+                    confidence,
+                    source_agent.as_deref(),
+                    target_date.as_deref(),
+                    resolution_criteria.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::JournalPredictionCommand::List {
+                    filter,
+                    timeframe,
+                    symbol,
+                    limit,
+                    json,
+                } => commands::predict::run(
+                    &backend,
+                    "list",
+                    None,
+                    None,
+                    symbol.as_deref(),
+                    None,
+                    timeframe.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    filter.as_deref(),
+                    None,
+                    limit,
+                    json,
+                ),
+                cli::JournalPredictionCommand::Score {
+                    id,
+                    outcome,
+                    notes,
+                    lesson,
+                    json,
+                } => commands::predict::run(
+                    &backend,
+                    "score",
+                    None,
+                    Some(id),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    outcome.as_deref(),
+                    notes.as_deref(),
+                    lesson.as_deref(),
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::JournalPredictionCommand::Stats { json } => commands::predict::run(
+                    &backend, "stats", None, None, None, None, None, None, None, None, None, None, None,
+                    None, None, None, None, json,
+                ),
+                cli::JournalPredictionCommand::Scorecard { date, limit, json } => commands::predict::run(
+                    &backend, "scorecard", None, None, None, None, None, None, None, None, None, None,
+                    None, None, None, date.as_deref(), limit, json,
+                ),
+            },
+            Some(cli::JournalCommand::Conviction { command }) => match command {
+                cli::JournalConvictionCommand::Set {
+                    symbol,
+                    score,
+                    score_positional,
+                    notes,
+                    json,
+                } => {
                     let score_val = if let Some(s) = score {
                         s
                     } else if let Some(raw) = score_positional.as_deref() {
@@ -1783,85 +1816,250 @@ fn main() -> Result<()> {
                             "Missing score. Usage: pftui journal conviction set SYMBOL --score N (for negatives: --score=-2)"
                         ));
                     };
-                    commands::conviction::run_set(&backend, symbol, score_val, notes.as_deref(), json)
+                    commands::conviction::run_set(&backend, &symbol, score_val, notes.as_deref(), json)
                 }
-                "list" => commands::conviction::run_list(&backend, json),
-                "history" => {
-                    let symbol = value.as_deref().ok_or_else(|| {
-                        anyhow::anyhow!("Missing symbol. Usage: pftui journal conviction history SYMBOL")
-                    })?;
-                    commands::conviction::run_history(&backend, symbol, limit, json)
+                cli::JournalConvictionCommand::List { json } => {
+                    commands::conviction::run_list(&backend, json)
                 }
-                "changes" => {
-                    let days = if let Some(val) = value.as_deref() {
-                        val.parse::<usize>().unwrap_or(7)
-                    } else {
-                        7
-                    };
-                    commands::conviction::run_changes(&backend, days, json)
+                cli::JournalConvictionCommand::History { symbol, limit, json } => {
+                    commands::conviction::run_history(&backend, &symbol, limit, json)
                 }
-                _ => Err(anyhow::anyhow!(
-                    "Invalid action. Use: set, list, history, changes"
-                )),
+                cli::JournalConvictionCommand::Changes { days, json } => {
+                    let d = days
+                        .as_deref()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(7);
+                    commands::conviction::run_changes(&backend, d, json)
+                }
             },
-            Some(cli::JournalCommand::Notes {
-                action,
-                value,
-                id,
-                date,
-                section,
-                since,
-                limit,
-                json,
-            }) => commands::notes::run(
-                &backend,
-                &action,
-                value.as_deref(),
-                id,
-                date.as_deref(),
-                section.as_deref(),
-                since.as_deref(),
-                limit,
-                json,
-            ),
-            Some(cli::JournalCommand::Scenario {
-                action,
-                value,
-                id,
-                signal_id,
-                probability,
-                description,
-                impact,
-                triggers,
-                precedent,
-                status,
-                driver,
-                notes,
-                evidence,
-                source,
-                scenario,
-                limit,
-                json,
-            }) => commands::scenario::run(
-                &backend,
-                &action,
-                value.as_deref(),
-                id,
-                signal_id,
-                probability,
-                description.as_deref(),
-                impact.as_deref(),
-                triggers.as_deref(),
-                precedent.as_deref(),
-                status.as_deref(),
-                driver.as_deref(),
-                notes.as_deref(),
-                evidence.as_deref(),
-                source.as_deref(),
-                scenario.as_deref(),
-                limit,
-                json,
-            ),
+            Some(cli::JournalCommand::Notes { command }) => match command {
+                cli::JournalNotesCommand::Add {
+                    value,
+                    date,
+                    section,
+                    json,
+                } => commands::notes::run(
+                    &backend,
+                    "add",
+                    Some(&value),
+                    None,
+                    date.as_deref(),
+                    section.as_deref(),
+                    None,
+                    None,
+                    json,
+                ),
+                cli::JournalNotesCommand::List { since, limit, json } => commands::notes::run(
+                    &backend,
+                    "list",
+                    None,
+                    None,
+                    None,
+                    None,
+                    since.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::JournalNotesCommand::Search {
+                    query,
+                    since,
+                    limit,
+                    json,
+                } => commands::notes::run(
+                    &backend,
+                    "search",
+                    Some(&query),
+                    None,
+                    None,
+                    None,
+                    since.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::JournalNotesCommand::Remove { id, json } => commands::notes::run(
+                    &backend,
+                    "remove",
+                    None,
+                    Some(id),
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+            },
+            Some(cli::JournalCommand::Scenario { command }) => match command {
+                cli::JournalScenarioCommand::Add {
+                    value,
+                    probability,
+                    description,
+                    impact,
+                    triggers,
+                    precedent,
+                    status,
+                    json,
+                } => commands::scenario::run(
+                    &backend,
+                    "add",
+                    Some(&value),
+                    None,
+                    None,
+                    probability,
+                    description.as_deref(),
+                    impact.as_deref(),
+                    triggers.as_deref(),
+                    precedent.as_deref(),
+                    status.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::JournalScenarioCommand::List { status, limit, json } => commands::scenario::run(
+                    &backend, "list", None, None, None, None, None, None, None, None, status.as_deref(),
+                    None, None, None, None, None, limit, json,
+                ),
+                cli::JournalScenarioCommand::Update {
+                    value,
+                    probability,
+                    description,
+                    impact,
+                    triggers,
+                    precedent,
+                    status,
+                    driver,
+                    notes,
+                    json,
+                } => commands::scenario::run(
+                    &backend,
+                    "update",
+                    Some(&value),
+                    None,
+                    None,
+                    probability,
+                    description.as_deref(),
+                    impact.as_deref(),
+                    triggers.as_deref(),
+                    precedent.as_deref(),
+                    status.as_deref(),
+                    driver.as_deref(),
+                    notes.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::JournalScenarioCommand::Remove { value, json } => commands::scenario::run(
+                    &backend, "remove", Some(&value), None, None, None, None, None, None, None, None,
+                    None, None, None, None, None, None, json,
+                ),
+                cli::JournalScenarioCommand::History { value, limit, json } => commands::scenario::run(
+                    &backend, "history", Some(&value), None, None, None, None, None, None, None, None,
+                    None, None, None, None, None, limit, json,
+                ),
+                cli::JournalScenarioCommand::Signal { command } => match command {
+                    cli::JournalScenarioSignalCommand::Add {
+                        value,
+                        scenario,
+                        source,
+                        status,
+                        json,
+                    } => commands::scenario::run(
+                        &backend,
+                        "signal-add",
+                        Some(&value),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        status.as_deref(),
+                        None,
+                        None,
+                        None,
+                        source.as_deref(),
+                        scenario.as_deref(),
+                        None,
+                        json,
+                    ),
+                    cli::JournalScenarioSignalCommand::List {
+                        scenario,
+                        status,
+                        limit,
+                        json,
+                    } => commands::scenario::run(
+                        &backend,
+                        "signal-list",
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        status.as_deref(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        scenario.as_deref(),
+                        limit,
+                        json,
+                    ),
+                    cli::JournalScenarioSignalCommand::Update {
+                        signal_id,
+                        evidence,
+                        status,
+                        json,
+                    } => commands::scenario::run(
+                        &backend,
+                        "signal-update",
+                        None,
+                        None,
+                        Some(signal_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        status.as_deref(),
+                        None,
+                        None,
+                        evidence.as_deref(),
+                        None,
+                        None,
+                        None,
+                        json,
+                    ),
+                    cli::JournalScenarioSignalCommand::Remove { signal_id, json } => commands::scenario::run(
+                        &backend,
+                        "signal-remove",
+                        None,
+                        None,
+                        Some(signal_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        json,
+                    ),
+                },
+            },
         },
         Some(Command::Notes {
             action,

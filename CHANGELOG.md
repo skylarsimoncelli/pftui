@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Convert remaining journal positional actions to clap subcommands
+
+- What: replaced remaining `journal` positional action arguments with proper nested clap subcommands: `journal entry {add|list|search|update|remove|tags|stats}`, `journal prediction {add|list|score|stats|scorecard}`, `journal conviction {set|list|history|changes}`, `journal notes {add|list|search|remove}`, and `journal scenario {add|list|update|remove|history|signal ...}` with `signal {add|list|update|remove}`.
+- Why: closes F40.9 by eliminating positional `<ACTION>` usage in the restructured F40.3/F40.4 command trees so each action has focused `--help`.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`, `cargo clippy --all-targets -- -D warnings`
+- TODO: removed F40.9 positional action conversion item
+
 ### 2026-03-14 — Convert `analytics` to subcommands and absorb analysis tools
 
 - What: replaced flat `pftui analytics <action>` parsing with clap subcommands, including `signals/summary/low/medium/high/macro/alignment/divergence/digest/recap/gaps` plus absorbed `movers/correlations/scan/research/trends/alerts`. Added nested analytics trees for macro regime, trend evidence/impact, alerts, and correlations. Kept legacy top-level `movers`, `scan`, `correlations`, `research`, `trends`, `alerts`, and `regime` paths as deprecated aliases with warnings.

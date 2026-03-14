@@ -17,14 +17,6 @@ Routing and composite score shipped. Remaining:
 > No functionality changes. Pure routing refactor.
 > See PRODUCT-PHILOSOPHY.md principle 9 and CLAUDE.md CLI Design Rules.
 
-**F40.9: Convert all positional `<ACTION>` to proper clap subcommands**
-
-Every command that currently uses `<ACTION>` as a positional string must be converted
-to proper clap `Subcommand` enums. This gives each action its own `--help` with only
-relevant flags. Applies to all commands restructured in F40.3 and F40.4.
-
-Source: `src/cli.rs` (refactor each into nested Subcommand enum), `src/main.rs` (dispatch).
-
 **Final top-level tree after F40:**
 ```
 pftui
