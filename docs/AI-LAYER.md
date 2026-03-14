@@ -17,8 +17,8 @@ Agents consume and write through CLI commands with `--json`, using the same stat
 Typical loop:
 
 ```bash
-pftui refresh
-pftui brief --agent --json
+pftui data refresh
+pftui portfolio brief --agent --json
 ```
 
 From there, agents can:
@@ -71,6 +71,6 @@ and aggregates consensus/divergence. It is analysis-only and does not execute tr
 
 - Local interactive sessions (Codex/Claude/OpenClaw)
 - Scheduled cron-based routines
-- Server mode with `pftui web` + authenticated API
+- Server mode with `pftui system web` + authenticated API
 
 Start with one daily morning routine, then expand to market-close and weekly review passes.

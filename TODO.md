@@ -91,9 +91,9 @@ Source: `src/commands/agent_msg.rs`.
 ### F40: CLI Hierarchy Restructure (Cleanup Phase)
 
 Core namespace restructure shipped (portfolio, market, system, dashboard, data, agent, watchlist, journal, analytics all routed). Remaining:
-- Remove legacy top-level aliases after deprecation period
-- Update all agent routine docs to use new paths exclusively
-- Update README examples to new command paths
+- [x] Remove legacy top-level aliases after deprecation period
+- [x] Update all agent routine docs to use new paths exclusively
+- [x] Update README examples to new command paths
 
 ### F41: Interactive Shell (`pftui shell`)
 

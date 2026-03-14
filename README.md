@@ -74,8 +74,8 @@ Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
 pftui also includes a responsive browser interface backed by the same local data.
 
 ```bash
-pftui web                          # Start on localhost:8080 with auth
-pftui web --port 3000 --bind 0.0.0.0   # Custom port, remote access
+pftui system web                          # Start on localhost:8080 with auth
+pftui system web --port 3000 --bind 0.0.0.0   # Custom port, remote access
 ```
 
 Features include:
@@ -109,32 +109,32 @@ That makes pftui a strong foundation for:
 ### Core commands
 
 ```bash
-pftui refresh --json               # Refresh prices, macro, sentiment, news
-pftui brief --json                 # Full portfolio state
-pftui summary --json               # Position-level breakdown
-pftui macro --json                 # Macro, rates, commodities, sentiment
+pftui data refresh --json               # Refresh prices, macro, sentiment, news
+pftui portfolio brief --json                 # Full portfolio state
+pftui portfolio summary --json               # Position-level breakdown
+pftui dashboard macro --json                 # Macro, rates, commodities, sentiment
 pftui watchlist --json             # Watched symbols and targets
-pftui news --json                  # Aggregated financial news
-pftui performance --json           # Returns across key periods
-pftui drift --json                 # Allocation drift vs targets
-pftui status --json                # Data source freshness
+pftui market news --json                  # Aggregated financial news
+pftui portfolio performance --json           # Returns across key periods
+pftui portfolio drift --json                 # Allocation drift vs targets
+pftui data status --json                # Data source freshness
 ```
 
 ### Portfolio Management
 
 ```bash
-pftui add-tx --symbol AAPL --category equity --tx-type buy \
+pftui portfolio transaction add --symbol AAPL --category equity --tx-type buy \
   --quantity 100 --price 175.50 --date 2026-03-01 --notes "Earnings dip"
-pftui remove-tx 42
-pftui set-cash USD 50000
-pftui watch TSLA --target 300
-pftui unwatch TSLA
-pftui target set AAPL --target 15  # Target allocation %
-pftui rebalance --json             # Suggested trades to hit targets
-pftui alerts add "BTC above 100000"
-pftui journal add --content "Gold thesis validated by CPI" --tag macro
-pftui config list --json           # List all config fields
-pftui config set brave_api_key <key>  # Set Brave Search API key
+pftui portfolio transaction remove 42
+pftui portfolio set-cash USD 50000
+pftui watchlist add TSLA --target 300
+pftui watchlist remove TSLA
+pftui portfolio target set AAPL --target 15  # Target allocation %
+pftui portfolio rebalance --json             # Suggested trades to hit targets
+pftui analytics alerts add "BTC above 100000"
+pftui journal entry add "Gold thesis validated by CPI" --tag macro
+pftui system config list --json           # List all config fields
+pftui system config set brave_api_key <key>  # Set Brave Search API key
 ```
 ---
 
@@ -207,16 +207,16 @@ A quick look at pftui across the terminal UI, web dashboard, analytics views, an
   <tr>
     <td align="center"><img width="400" alt="pftui portfolio overview" src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" /><br><sub>portfolio overview</sub></td>
     <td align="center"><img width="400" alt="pftui tx overview" src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" /><br><sub>transactions</sub></td>
-    <td align="center"><img width="400" alt="pftui economy overview" src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" /><br><sub>economy</sub></td>
+    <td align="center"><img width="400" alt="pftui market economy overview" src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" /><br><sub>economy</sub></td>
   </tr>
   <tr>
     <td align="center"><img width="400" alt="pftui analytics" src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" /><br><sub>analytics</sub></td>
-    <td align="center"><img width="400" alt="pftui web" src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" /><br><sub>web dashboard</sub></td>
-    <td align="center"><img width="400" alt="pftui web search" src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" /><br><sub>web search</sub></td>
+    <td align="center"><img width="400" alt="pftui system web" src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" /><br><sub>web dashboard</sub></td>
+    <td align="center"><img width="400" alt="pftui system web search" src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" /><br><sub>web search</sub></td>
   </tr>
   <tr>
-    <td align="center"><img width="400" alt="pftui web economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" /><br><sub>web economy</sub></td>
-    <td align="center"><img width="400" alt="pftui web asset detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" /><br><sub>web asset detail</sub></td>
+    <td align="center"><img width="400" alt="pftui system web economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" /><br><sub>web economy</sub></td>
+    <td align="center"><img width="400" alt="pftui system web asset detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" /><br><sub>web asset detail</sub></td>
     <td align="center"><img width="400" alt="pftui cli" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" /><br><sub>cli</sub></td>
   </tr>
 </table>
@@ -233,7 +233,7 @@ pftui is built as a four-layer intelligence stack. Each layer builds on the one 
 
 ### Data Aggregation Engine
 
-One `pftui refresh` pulls from 10+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.
+One `pftui data refresh` pulls from 10+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.
 
 **What it collects:** Equity/crypto/commodity/forex prices across 84 symbols. CFTC Commitments of Traders positioning. COMEX gold and silver warehouse inventory. BLS economic data (CPI, NFP, unemployment, wages across 101 series). World Bank structural indicators for 8 economies. Polymarket prediction market odds. Crypto and traditional Fear and Greed indices. Economic calendar events. Financial news from 10+ RSS feeds and Brave Search. BTC on-chain data and ETF flows.
 
@@ -244,9 +244,9 @@ This pre-processing is important. The Analytics Engine does not re-derive techni
 **No API keys required** for core sources. Optional Brave Search API unlocks additional news, economic data, and research queries. See [docs/DATA-AGGREGATION.md](docs/DATA-AGGREGATION.md) for full source catalog and pipeline details.
 
 ```bash
-pftui refresh     # Run the full pipeline
-pftui status      # Check freshness per source
-pftui doctor      # Connectivity diagnostics
+pftui data refresh     # Run the full pipeline
+pftui data status      # Check freshness per source
+pftui system doctor      # Connectivity diagnostics
 ```
 
 Every data source works out of the box with no API keys:
@@ -300,9 +300,9 @@ When all four layers agree on an asset, that is the highest conviction signal in
 ```bash
 pftui analytics summary                    # All four layers in one view
 pftui analytics alignment --symbol GC=F    # Per-asset cross-timeframe consensus
-pftui scenario add "Recession" --probability 30
-pftui trends add "AI Disruption" --direction accelerating
-pftui structural cycle-set "Big Debt Cycle" --stage 6
+pftui journal scenario add "Recession" --probability 30
+pftui analytics trends add "AI Disruption" --direction accelerating
+pftui analytics macro cycles --json
 ```
 
 See the full documentation: [docs/ANALYTICS-ENGINE.md](docs/ANALYTICS-ENGINE.md)
@@ -319,15 +319,15 @@ Every feature in pftui has a CLI command with `--json` output. Agents use the sa
 
 **Bidirectional communication.** Your agent does not just read your data. It contributes to it. Agents update scenario probabilities, log evidence against research questions, set conviction scores, and write daily notes. You review what the agent wrote, adjust where you disagree, and the system incorporates both perspectives. The ongoing dialogue between human conviction and agent analysis is the most valuable output.
 
-**Scheduled routines.** Morning briefs, market close summaries, weekly reviews, scenario analysis, feedback loop optimization. All cron-driven, all reading from and writing to the same database. Multiple agents can coordinate through `pftui agent-msg`, a structured message bus with priority levels, analytics layer tags, and acknowledgment tracking.
+**Scheduled routines.** Morning briefs, market close summaries, weekly reviews, scenario analysis, feedback loop optimization. All cron-driven, all reading from and writing to the same database. Multiple agents can coordinate through `pftui agent message`, a structured message bus with priority levels, analytics layer tags, and acknowledgment tracking.
 
 **Investor Perspectives Panel.** Feed your analytics engine data to sub-agents prompted as famous investors. Warren Buffett, Ray Dalio, Stanley Druckenmiller, Michael Burry, and 21 others. Each interprets the same data through a fundamentally different investment philosophy. The consensus tells you where conviction is strongest. The divergence tells you where the interesting questions are.
 
 ```bash
-pftui refresh && pftui brief --json        # Agent gets full portfolio state
-pftui scenario update "Stagflation" --probability 35 --notes "Sticky inflation + growth slowdown"
-pftui conviction set GC=F --score 4 --notes "War + BRICS + CB buying"
-pftui agent-msg send "Gold alignment: all 4 layers bullish" --from morning-agent --layer cross
+pftui data refresh && pftui portfolio brief --json        # Agent gets full portfolio state
+pftui journal scenario update "Stagflation" --probability 35 --notes "Sticky inflation + growth slowdown"
+pftui journal conviction set GC=F --score 4 --notes "War + BRICS + CB buying"
+pftui agent message send "Gold alignment: all 4 layers bullish" --from morning-agent --layer cross
 ```
 
 See the full AI layer guide: [docs/AI-LAYER.md](docs/AI-LAYER.md) and agent operator guide: [AGENTS.md](AGENTS.md)

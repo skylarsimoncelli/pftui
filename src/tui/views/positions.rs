@@ -206,16 +206,21 @@ fn format_signed_value(value: Option<Decimal>) -> String {
     }
 }
 
-/// Estimate one-day dollar P&L from current value and day change %.
-/// Formula: day_pnl = current - (current / (1 + day_pct/100)).
-fn compute_day_pnl_dollars(current_value: Option<Decimal>, day_change_pct: Option<Decimal>) -> Option<Decimal> {
-    let current = current_value?;
-    let pct = day_change_pct?;
-    let denominator = dec!(1) + (pct / dec!(100));
-    if denominator <= dec!(0) {
+/// Compute one-day dollar P&L from previous close and current price.
+/// Formula: (current_price - previous_close) * quantity.
+fn compute_day_pnl_dollars(
+    app: &App,
+    symbol: &str,
+    quantity: Decimal,
+    current_price: Option<Decimal>,
+) -> Option<Decimal> {
+    let current = current_price?;
+    let history = app.price_history.get(symbol)?;
+    if history.len() < 2 {
         return None;
     }
-    Some(current - (current / denominator))
+    let prev_close = history[history.len() - 2].close;
+    Some((current - prev_close) * quantity)
 }
 
 /// Build compact RSI indicator spans for a position row.
@@ -554,7 +559,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
             // Position value (price × quantity)
             let position_value = pos.current_price.map(|p| p * pos.quantity);
             let value_text = position_value.map(format_value).unwrap_or_else(|| "---".to_string());
-            let day_pnl = compute_day_pnl_dollars(position_value, compute_change_pct(app, &pos.symbol));
+            let day_pnl = compute_day_pnl_dollars(app, &pos.symbol, pos.quantity, pos.current_price);
             let day_pnl_color = match day_pnl {
                 Some(v) if v > Decimal::ZERO => t.gain_green,
                 Some(v) if v < Decimal::ZERO => t.loss_red,
@@ -1293,6 +1298,28 @@ mod tests {
         let app = make_test_app_with_history("AAPL", &["0", "100"]);
         let result = compute_change_pct(&app, "AAPL");
         assert!(result.is_none()); // Division by zero guarded
+    }
+
+    #[test]
+    fn compute_day_pnl_dollars_basic() {
+        let app = make_test_app_with_history("AAPL", &["100", "110"]);
+        let result = compute_day_pnl_dollars(&app, "AAPL", dec!(10), Some(dec!(110)));
+        assert_eq!(result, Some(dec!(100))); // (110 - 100) * 10
+    }
+
+    #[test]
+    fn compute_day_pnl_dollars_negative() {
+        let app = make_test_app_with_history("AAPL", &["100", "95"]);
+        let result = compute_day_pnl_dollars(&app, "AAPL", dec!(8), Some(dec!(95)));
+        assert_eq!(result, Some(dec!(-40))); // (95 - 100) * 8
+    }
+
+    #[test]
+    fn compute_day_pnl_dollars_no_history() {
+        let config = crate::config::Config::default();
+        let app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_day_pnl.db"));
+        let result = compute_day_pnl_dollars(&app, "AAPL", dec!(10), Some(dec!(110)));
+        assert!(result.is_none());
     }
 
     #[test]

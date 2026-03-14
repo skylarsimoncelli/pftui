@@ -66,10 +66,10 @@ curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/insta
 pftui --version
 
 # Test with demo data (no real portfolio needed)
-pftui demo
+pftui system demo
 ```
 
-If `pftui demo` launches and shows a TUI with sample positions, charts, and market data — installation is complete.
+If `pftui system demo` launches and shows a TUI with sample positions, charts, and market data — installation is complete.
 
 **Alternative install methods:** Homebrew (`brew install pftui`), Cargo (`cargo install pftui`), Docker, apt, dnf, Nix. See [README.md](README.md#-installation).
 
@@ -96,33 +96,33 @@ This is your most important setup task. Ask the human operator for their complet
 **Full mode (recommended) — with cost basis:**
 ```bash
 # Stocks
-pftui add-tx --symbol AAPL --category equity --tx-type buy \
+pftui portfolio transaction add --symbol AAPL --category equity --tx-type buy \
   --quantity 100 --price 175.50 --date 2025-06-15 --notes "Core position"
 
 # Crypto
-pftui add-tx --symbol BTC --category crypto --tx-type buy \
+pftui portfolio transaction add --symbol BTC --category crypto --tx-type buy \
   --quantity 0.5 --price 45000 --date 2025-03-01 --notes "DCA buy"
 
 # Physical gold (use GC=F as the price proxy)
-pftui add-tx --symbol GC=F --category commodity --tx-type buy \
+pftui portfolio transaction add --symbol GC=F --category commodity --tx-type buy \
   --quantity 10 --price 2800 --date 2025-08-01 --notes "10 oz physical gold"
 
 # Physical silver (use SI=F as the price proxy)
-pftui add-tx --symbol SI=F --category commodity --tx-type buy \
+pftui portfolio transaction add --symbol SI=F --category commodity --tx-type buy \
   --quantity 100 --price 32 --date 2025-09-15 --notes "100 oz physical silver"
 
 # ETFs / Funds
-pftui add-tx --symbol PSLV --category fund --tx-type buy \
+pftui portfolio transaction add --symbol PSLV --category fund --tx-type buy \
   --quantity 500 --price 9.50 --date 2025-10-01 --notes "Silver ETF"
 
 # Cash positions
-pftui set-cash USD 50000
-pftui set-cash GBP 20000
+pftui portfolio set-cash USD 50000
+pftui portfolio set-cash GBP 20000
 ```
 
 **Percentage mode — allocation only (no monetary data stored):**
 ```bash
-pftui setup  # Interactive wizard — choose "percentage mode"
+pftui system setup  # Interactive wizard — choose "percentage mode"
 # Wizard also offers optional Brave Search API key entry (press Enter to skip)
 ```
 
@@ -143,10 +143,10 @@ pftui setup  # Interactive wizard — choose "percentage mode"
 After populating everything:
 
 ```bash
-pftui refresh                  # Fetch live prices
-pftui value                    # Check total portfolio value
-pftui summary                  # Detailed position breakdown
-pftui brief                    # Full portfolio brief
+pftui data refresh                  # Fetch live prices
+pftui portfolio value                    # Check total portfolio value
+pftui portfolio summary                  # Detailed position breakdown
+pftui portfolio brief                    # Full portfolio brief
 ```
 
 **Check that:**
@@ -158,9 +158,9 @@ pftui brief                    # Full portfolio brief
 
 If anything looks wrong, fix it:
 ```bash
-pftui list-tx                  # See all transactions with IDs
-pftui remove-tx 5              # Remove transaction #5
-pftui set-cash USD 60000       # Adjust cash
+pftui portfolio transaction list                  # See all transactions with IDs
+pftui portfolio transaction remove 5              # Remove transaction #5
+pftui portfolio set-cash USD 60000       # Adjust cash
 ```
 
 ### What a Complete Setup Looks Like
@@ -184,26 +184,26 @@ Ask the human: *"What assets are you watching but don't currently hold? Any pric
 
 ```bash
 # Stocks they're eyeing
-pftui watch TSLA --target 300          # Buy target at $300
-pftui watch GOOG --target 150
-pftui watch NVDA
+pftui watchlist add TSLA --target 300          # Buy target at $300
+pftui watchlist add GOOG --target 150
+pftui watchlist add NVDA
 
 # Sector ETFs
-pftui watch XLE                        # Energy
-pftui watch URA                        # Uranium
-pftui watch COPX                       # Copper miners
+pftui watchlist add XLE                        # Energy
+pftui watchlist add URA                        # Uranium
+pftui watchlist add COPX                       # Copper miners
 
 # Indices they track
-pftui watch SPY
-pftui watch QQQ
+pftui watchlist add SPY
+pftui watchlist add QQQ
 
 # Commodities
-pftui watch CL=F                       # Oil
-pftui watch HG=F                       # Copper
+pftui watchlist add CL=F                       # Oil
+pftui watchlist add HG=F                       # Copper
 
 # Crypto they're watching
-pftui watch ETH
-pftui watch SOL
+pftui watchlist add ETH
+pftui watchlist add SOL
 ```
 
 ### Allocation Targets
@@ -211,17 +211,17 @@ pftui watch SOL
 Ask: *"What's your ideal portfolio allocation? If you could wave a magic wand, what percentage would you want in each asset class?"*
 
 ```bash
-pftui target set BTC --target 20       # 20% in Bitcoin
-pftui target set GC=F --target 25      # 25% in gold
-pftui target set SI=F --target 5       # 5% in silver
-pftui target set USD --target 40       # 40% cash
-pftui target set AAPL --target 10      # 10% in Apple
+pftui portfolio target set BTC --target 20       # 20% in Bitcoin
+pftui portfolio target set GC=F --target 25      # 25% in gold
+pftui portfolio target set SI=F --target 5       # 5% in silver
+pftui portfolio target set USD --target 40       # 40% cash
+pftui portfolio target set AAPL --target 10      # 10% in Apple
 
 # Check current drift from targets
-pftui drift
+pftui portfolio drift
 
 # Get suggested rebalance trades
-pftui rebalance
+pftui portfolio rebalance
 ```
 
 ---
@@ -271,7 +271,7 @@ The web dashboard lets the human check their portfolio from any device — phone
 ### Localhost Only (Default — Safest)
 
 ```bash
-pftui web
+pftui system web
 ```
 
 - Accessible at `http://localhost:8080`
@@ -284,7 +284,7 @@ pftui web
 For checking on phone/tablet while on the same WiFi:
 
 ```bash
-pftui web --bind 0.0.0.0 --port 8080
+pftui system web --bind 0.0.0.0 --port 8080
 ```
 
 - Accessible at `http://<machine-ip>:8080` from any device on the network
@@ -299,7 +299,7 @@ For accessing from anywhere (VPS deployment, remote server):
 
 ```bash
 # ALWAYS use authentication
-pftui web --bind 0.0.0.0 --port 8080
+pftui system web --bind 0.0.0.0 --port 8080
 # Token is printed on startup — save it
 ```
 
@@ -331,7 +331,7 @@ server {
 
 3. **Bind pftui to localhost** when using a reverse proxy — let nginx handle external connections:
 ```bash
-pftui web --bind 127.0.0.1 --port 8080
+pftui system web --bind 127.0.0.1 --port 8080
 ```
 
 4. **Firewall rules** — only expose ports 80/443 (nginx), not 8080 (pftui direct):
@@ -351,14 +351,14 @@ For persistent web dashboard access:
 # Systemd service
 sudo tee /etc/systemd/system/pftui-web.service << 'EOF'
 [Unit]
-Description=pftui web dashboard
+Description=pftui system web dashboard
 After=network.target
 
 [Service]
 Type=simple
 User=youruser
 WorkingDirectory=/home/youruser
-ExecStart=/usr/local/bin/pftui web --port 8080 --bind 127.0.0.1
+ExecStart=/usr/local/bin/pftui system web --port 8080 --bind 127.0.0.1
 Restart=on-failure
 
 [Install]
@@ -373,10 +373,10 @@ sudo systemctl start pftui-web
 
 | Setup | Auth | HTTPS | Who Can See It |
 |---|---|---|---|
-| `pftui web` (default) | ✅ Token | ❌ HTTP | Only this machine |
-| `pftui web --no-auth` | ❌ None | ❌ HTTP | Only this machine (safe) |
-| `pftui web --bind 0.0.0.0` | ✅ Token | ❌ HTTP | Anyone on the network |
-| `pftui web --bind 0.0.0.0 --no-auth` | ❌ None | ❌ HTTP | ⛔ DANGEROUS — anyone can see everything |
+| `pftui system web` (default) | ✅ Token | ❌ HTTP | Only this machine |
+| `pftui system web --no-auth` | ❌ None | ❌ HTTP | Only this machine (safe) |
+| `pftui system web --bind 0.0.0.0` | ✅ Token | ❌ HTTP | Anyone on the network |
+| `pftui system web --bind 0.0.0.0 --no-auth` | ❌ None | ❌ HTTP | ⛔ DANGEROUS — anyone can see everything |
 | Reverse proxy + `--bind 127.0.0.1` | ✅ Token | ✅ TLS | Internet (secured) |
 
 ---
@@ -389,31 +389,31 @@ pftui is most valuable when checked regularly. Here's the recommended cadence:
 
 ```bash
 # Morning (before market open)
-pftui refresh                          # Fetch all data sources
-pftui brief                            # Full portfolio state
-pftui movers                           # Overnight moves
-pftui news --limit 10                  # Key headlines
-pftui predictions --limit 5            # Prediction market shifts
-pftui sentiment                        # Fear & Greed
+pftui data refresh                          # Fetch all data sources
+pftui portfolio brief                            # Full portfolio state
+pftui analytics movers                           # Overnight moves
+pftui market news --limit 10                  # Key headlines
+pftui market predictions --limit 5            # Prediction market shifts
+pftui market sentiment                        # Fear & Greed
 
 # Market close
-pftui refresh && pftui brief           # End-of-day snapshot
-pftui performance                      # Today's returns
-pftui movers --threshold 3             # Significant moves
+pftui data refresh && pftui portfolio brief           # End-of-day snapshot
+pftui portfolio performance                      # Today's returns
+pftui analytics movers --threshold 3             # Significant moves
 
 # Evening (optional deep research)
-pftui macro                            # Full macro dashboard
-pftui supply                           # COMEX inventory
-pftui global                           # World Bank data
+pftui dashboard macro                            # Full macro dashboard
+pftui market supply                           # COMEX inventory
+pftui dashboard global                           # World Bank data
 ```
 
 ### Weekly
 
 ```bash
-pftui drift                            # Allocation drift check
-pftui rebalance                        # Suggested trades
-pftui performance --since YYYY-MM-DD   # Week's performance
-pftui journal list                     # Review decision history
+pftui portfolio drift                            # Allocation drift check
+pftui portfolio rebalance                        # Suggested trades
+pftui portfolio performance --since YYYY-MM-DD   # Week's performance
+pftui journal entry list                     # Review decision history
 ```
 
 ### Alerts
@@ -422,13 +422,13 @@ Set up alerts for the things that matter to the human:
 
 ```bash
 # Price alerts
-pftui alerts add "BTC below 50000"
-pftui alerts add "BTC above 100000"
-pftui alerts add "GC=F above 6000"
-pftui alerts add "TSLA below 300"
+pftui analytics alerts add "BTC below 50000"
+pftui analytics alerts add "BTC above 100000"
+pftui analytics alerts add "GC=F above 6000"
+pftui analytics alerts add "TSLA below 300"
 
 # Check alerts on each refresh
-pftui alerts list
+pftui analytics alerts list
 ```
 
 ### Automation
@@ -442,26 +442,26 @@ pftui alerts list
 ```bash
 # Morning brief at 10:30 AM
 openclaw cron add --name "Morning Brief" --schedule "30 10 * * *" --tz "America/Chicago" \
-  --prompt "Run pftui refresh && pftui brief --json. Analyse the data and send a morning brief to the user covering: prices, key developments, scenario watch, portfolio positioning, and any action items."
+  --prompt "Run pftui data refresh && pftui portfolio brief --json. Analyse the data and send a morning brief to the user covering: prices, key developments, scenario watch, portfolio positioning, and any action items."
 
 # Market close at 4:30 PM
 openclaw cron add --name "Market Close" --schedule "30 16 * * 1-5" --tz "America/Chicago" \
-  --prompt "Run pftui refresh && pftui brief --json && pftui movers --json. If anything moved >3%, send a summary to the user."
+  --prompt "Run pftui data refresh && pftui portfolio brief --json && pftui analytics movers --json. If anything moved >3%, send a summary to the user."
 ```
 
 #### Generic Cron (crontab)
 
 ```bash
 # Morning data refresh
-30 15 * * * /usr/local/bin/pftui refresh && /usr/local/bin/pftui brief --json > /tmp/pftui-brief.json
+30 15 * * * /usr/local/bin/pftui data refresh && /usr/local/bin/pftui portfolio brief --json > /tmp/pftui-brief.json
 
 # Save daily snapshot
-0 22 * * * /usr/local/bin/pftui export json > ~/pftui-snapshots/$(date +\%Y-\%m-\%d).json
+0 22 * * * /usr/local/bin/pftui system export json > ~/pftui-snapshots/$(date +\%Y-\%m-\%d).json
 ```
 
 #### Claude Code / Codex
 
-These platforms don't have native cron — instead, begin each session by running `pftui refresh && pftui brief --json` to load current state. Recommend the human set up an external scheduler if they want automated briefs.
+These platforms don't have native cron — instead, begin each session by running `pftui data refresh && pftui portfolio brief --json` to load current state. Recommend the human set up an external scheduler if they want automated briefs.
 
 ---
 
@@ -538,22 +538,21 @@ LOW (hours→days), MEDIUM (weeks→months), HIGH (months→years), MACRO (years
 Each layer uses different data, updates at different frequencies, and produces different signals.
 Layers constrain downward and signal upward. Use `pftui analytics signals` for active cross-timeframe signals.
 
-### Scenarios (`pftui scenario`)
+### Scenarios (`pftui journal scenario`)
 Track macro scenarios with probability estimates. Each probability update is logged
 to history for calibration. Signals track evidence for/against each scenario.
 
-### Thesis (`pftui thesis`)
-Versioned macro outlook by section. Every update snapshots the previous version.
-Query history to see how your views evolved.
+### Thesis
+Thesis tracking is maintained as narrative workflow files (`THESIS.md`) and journal notes.
 
-### Convictions (`pftui conviction`)
+### Convictions (`pftui journal conviction`)
 Asset-level conviction scores (-5 to +5) over time. Append-only log — every
 `set` creates a new row. Current conviction = latest row per symbol.
-For negative scores, use `--score=-2` (or compatibility form `-- -2`).
+For negative scores, use `--score=-2`.
 
 ### Agent Signals (`pftui analytics signals`)
 Cross-timeframe signal detection (alignment/divergence/transition) computed during
-`pftui refresh` and stored in `timeframe_signals`.
+`pftui data refresh` and stored in `timeframe_signals`.
 
 ---
 
@@ -561,29 +560,29 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 ### Day 1 — Setup
 
-1. Install pftui and verify with `pftui demo`
+1. Install pftui and verify with `pftui system demo`
 2. Have the portfolio conversation (Step 2) — populate all holdings
 3. Configure watchlist and targets (Step 3)
 4. Ask the understanding questions (Step 4) — write to USER.md
 5. Set up the web dashboard if desired (Step 5)
-6. Run your first brief: `pftui refresh && pftui brief`
+6. Run your first brief: `pftui data refresh && pftui portfolio brief`
 7. Create THESIS.md with your initial macro read
 8. Create JOURNAL.md with "Day 1 — Setup complete" entry
 9. Deliver the first brief to the human with your initial observations
 
 ### Day 2 — First Full Cycle
 
-1. Morning: `pftui refresh && pftui brief` — deliver morning brief
+1. Morning: `pftui data refresh && pftui portfolio brief` — deliver morning brief
 2. Note what the human reacts to — update USER.md
-3. Research: dig into the human's top concerns using `pftui macro`, `pftui predictions`, `pftui news`
+3. Research: dig into the human's top concerns using `pftui dashboard macro`, `pftui market predictions`, `pftui market news`
 4. Evening: update THESIS.md with your research findings
 5. Save daily data to memory/YYYY-MM-DD.md
 
 ### Day 3 — Calibration
 
 1. Morning brief — is the format right? Too long? Too short? Ask the human
-2. Check `pftui drift` — has anything moved significantly?
-3. Look at `pftui movers` — classify moves: caught ✅, missed 🔴, avoided 🟡
+2. Check `pftui portfolio drift` — has anything moved significantly?
+3. Look at `pftui analytics movers` — classify moves: caught ✅, missed 🔴, avoided 🟡
 4. Start tracking predictions in JOURNAL.md: "I think X will happen because Y"
 5. Update SCENARIOS.md if you have one — begin mapping macro narratives
 
@@ -597,9 +596,9 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 ### Day 6-7 — First Weekly Review
 
-1. Run: `pftui performance` — how did the portfolio do this week?
+1. Run: `pftui portfolio performance` — how did the portfolio do this week?
 2. Review every prediction in JOURNAL.md — were you right or wrong?
-3. `pftui drift` — has allocation drifted from targets?
+3. `pftui portfolio drift` — has allocation drifted from targets?
 4. Update THESIS.md with the week's evidence
 5. Update MODELS.md with accuracy data and lessons
 6. Deliver a weekly summary to the human:
@@ -619,109 +618,102 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 | Command | What It Returns |
 |---|---|
-| `pftui brief --json` | Complete portfolio snapshot — positions, allocations, movers, technicals, macro |
-| `pftui value --json` | Total value with category breakdown and daily change |
-| `pftui summary --json` | Detailed position-level data — price, quantity, cost basis, gain/loss, allocation % |
-| `pftui performance --json` | Returns: 1D, MTD, QTD, YTD, since inception |
-| `pftui drift --json` | Current vs target allocation with drift % and rebalance suggestions |
-| `pftui history --date YYYY-MM-DD --json` | Historical portfolio snapshot for any past date |
-| `pftui export json` | Full portfolio export (positions + transactions) |
-| `pftui list-tx` | List all transactions with IDs |
+| `pftui portfolio brief --json` | Complete portfolio snapshot — positions, allocations, movers, technicals, macro |
+| `pftui portfolio value --json` | Total value with category breakdown and daily change |
+| `pftui portfolio summary --json` | Detailed position-level data — price, quantity, cost basis, gain/loss, allocation % |
+| `pftui portfolio performance --json` | Returns: 1D, MTD, QTD, YTD, since inception |
+| `pftui portfolio drift --json` | Current vs target allocation with drift % and rebalance suggestions |
+| `pftui portfolio history --date YYYY-MM-DD --json` | Historical portfolio snapshot for any past date |
+| `pftui system export json` | Full portfolio export (positions + transactions) |
+| `pftui portfolio transaction list` | List all transactions with IDs |
 
 ### Market Data
 
 | Command | What It Returns |
 |---|---|
-| `pftui refresh` | Fetches ALL data sources (10+ sources, ~50 symbols) |
-| `pftui macro --json` | DXY, VIX, yields, currencies, commodities, derived ratios |
+| `pftui data refresh` | Fetches ALL data sources (10+ sources, ~50 symbols) |
+| `pftui dashboard macro --json` | DXY, VIX, yields, currencies, commodities, derived ratios |
 | `pftui watchlist --json` | All watched symbols with prices, day change, 52W range |
-| `pftui movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
-| `pftui predictions --json [--limit N]` | Polymarket prediction market odds |
-| `pftui sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
-| `pftui news --json [--limit N]` | Financial news from RSS feeds |
-| `pftui supply --json` | COMEX gold/silver inventory |
-| `pftui global --json` | World Bank macro data (GDP, debt, reserves) |
-| `pftui status --json` | Data source freshness — last update time per source |
+| `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
+| `pftui market predictions --json [--limit N]` | Polymarket prediction market odds |
+| `pftui market sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
+| `pftui market news --json [--limit N]` | Financial news from RSS feeds |
+| `pftui market supply --json` | COMEX gold/silver inventory |
+| `pftui dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
+| `pftui data status --json` | Data source freshness — last update time per source |
 
 ### Portfolio Management
 
 | Command | What It Does |
 |---|---|
-| `pftui add-tx --symbol SYM --category CAT --tx-type buy/sell --quantity N --price P --date D` | Add transaction |
-| `pftui remove-tx ID` | Remove transaction by ID |
-| `pftui set-cash CURRENCY AMOUNT` | Set cash position |
-| `pftui watch SYMBOL [--target PRICE]` | Add to watchlist |
-| `pftui unwatch SYMBOL` | Remove from watchlist |
-| `pftui target set SYMBOL --target PCT` | Set target allocation % |
-| `pftui target remove SYMBOL` | Remove target |
-| `pftui rebalance --json` | Suggested trades to reach targets |
-| `pftui alerts add "CONDITION"` | Add alert |
-| `pftui alerts list --json` | List active alerts |
-| `pftui alerts remove ID` | Remove alert |
+| `pftui portfolio transaction add --symbol SYM --category CAT --tx-type buy/sell --quantity N --price P --date D` | Add transaction |
+| `pftui portfolio transaction remove ID` | Remove transaction by ID |
+| `pftui portfolio set-cash CURRENCY AMOUNT` | Set cash position |
+| `pftui watchlist add SYMBOL [--target PRICE]` | Add to watchlist |
+| `pftui watchlist remove SYMBOL` | Remove from watchlist |
+| `pftui portfolio target set SYMBOL --target PCT` | Set target allocation % |
+| `pftui portfolio target remove SYMBOL` | Remove target |
+| `pftui portfolio rebalance --json` | Suggested trades to reach targets |
+| `pftui analytics alerts add "CONDITION"` | Add alert |
+| `pftui analytics alerts list --json` | List active alerts |
+| `pftui analytics alerts remove ID` | Remove alert |
 
 ### Journal
 
 | Command | What It Does |
 |---|---|
-| `pftui journal add --content "TEXT" --tag TAG --symbol SYM` | Add entry |
-| `pftui journal list --json` | List all entries |
-| `pftui journal search "QUERY" --json` | Search entries |
+| `pftui journal entry add "TEXT" --tag TAG --symbol SYM` | Add entry |
+| `pftui journal entry list --json` | List all entries |
+| `pftui journal entry search "QUERY" --json` | Search entries |
 
 ### Intelligence Database
 
 | Command | What It Does |
 |---|---|
-| `pftui scenario add "NAME" --probability N` | Add macro scenario with initial probability |
-| `pftui scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
-| `pftui scenario signal-add --scenario "NAME" "SIGNAL"` | Attach a tracked signal to a scenario |
-| `pftui scenario history "NAME" --limit N --json` | Show scenario probability history |
-| `pftui question add "TEXT" [--signal "..."]` | Add an open research question |
-| `pftui question list [--status open] --json` | List tracked research questions |
-| `pftui question update --id N [--tilt ...] [--evidence "..."]` | Update evidence tilt/notes for a question |
-| `pftui question resolve --id N --resolution "..."` | Resolve/supersede a question with outcome notes |
-| `pftui predict add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent]` | Add a prediction call for later scoring |
-| `pftui predict score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
-| `pftui predict stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
-| `pftui predict scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
-| `pftui agent-msg send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"]` | Send one or multiple structured messages between agent roles |
-| `pftui agent-msg reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
-| `pftui agent-msg flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
-| `pftui agent-msg list [--from agent-a] [--unacked] --json` | Query queued agent messages |
-| `pftui agent-msg ack --id N` | Acknowledge a single message |
-| `pftui notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
-| `pftui notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
-| `pftui opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
-| `pftui opportunity stats --json` | Show net missed-vs-avoided positioning stats |
-| `pftui correlations compute --store --period 30d` | Compute live correlations and persist snapshots |
-| `pftui correlations history BTC SPY --period 30d --limit 30 --json` | Show stored correlation history for a pair |
-| `pftui regime current --json` | Show latest automated market regime classification |
-| `pftui regime transitions --limit 20 --json` | Show regime change points over time |
-| `pftui structural dashboard --json` | Show long-cycle macro dashboard (cycles, outcomes, recent structural log) |
-| `pftui structural outcome-update \"NAME\" --probability N --driver \"...\"` | Update structural outcome probability with history logging |
-| `pftui trends dashboard --json` | Show active high-timeframe trends with direction/conviction |
-| `pftui trends impact-add --trend \"NAME\" --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact |
+| `pftui journal scenario add "NAME" --probability N` | Add macro scenario with initial probability |
+| `pftui journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
+| `pftui journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
+| `pftui journal scenario history "NAME" --limit N --json` | Show scenario probability history |
+| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent]` | Add a prediction call for later scoring |
+| `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
+| `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
+| `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
+| `pftui agent message send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"]` | Send one or multiple structured messages between agent roles |
+| `pftui agent message reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
+| `pftui agent message flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
+| `pftui agent message list [--from agent-a] [--unacked] --json` | Query queued agent messages |
+| `pftui agent message ack --id N` | Acknowledge a single message |
+| `pftui journal notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
+| `pftui journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
+| `pftui portfolio opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
+| `pftui portfolio opportunity stats --json` | Show net missed-vs-avoided positioning stats |
+| `pftui analytics correlations compute --store --period 30d` | Compute live correlations and persist snapshots |
+| `pftui analytics correlations history BTC SPY --period 30d --limit 30 --json` | Show stored correlation history for a pair |
+| `pftui analytics macro regime current --json` | Show latest automated market regime classification |
+| `pftui analytics macro regime transitions --limit 20 --json` | Show regime change points over time |
+| `pftui analytics macro --json` | Show long-cycle macro dashboard (cycles, outcomes, recent structural log) |
+| `pftui analytics macro outcomes --json` | Show structural outcome probabilities |
+| `pftui analytics trends dashboard --json` | Show active high-timeframe trends with direction/conviction |
+| `pftui analytics trends impact add --trend \"NAME\" --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact |
 | `pftui analytics summary --json` | Unified 4-layer analytics snapshot (low/medium/high/macro + top signal) |
 | `pftui analytics alignment --symbol SYM --json` | Per-asset cross-timeframe alignment matrix |
 | `pftui analytics divergence --json` | Cross-layer disagreement table for conflicting signals |
 | `pftui analytics digest --from low-agent --json` | Role-aware summary payload for agent handoffs |
 | `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
-| `pftui thesis update SECTION --content "TEXT" [--conviction high|medium|low]` | Update thesis section with versioned history |
-| `pftui thesis list --json` | List all current thesis sections |
-| `pftui thesis history SECTION --limit N --json` | Show historical thesis revisions for one section |
 | `pftui analytics signals --json` | Show cross-timeframe alignment/divergence/transition signals |
 
 ### Utility
 
 | Command | What It Does |
 |---|---|
-| `pftui config list [--json]` | List all configuration fields |
-| `pftui config get FIELD [--json]` | Get a specific config value |
-| `pftui config set FIELD VALUE` | Set a config field (e.g., `brave_api_key`) |
-| `pftui snapshot` | Render full TUI to stdout (for sharing or screenshots) |
-| `pftui demo` | Launch with sample data (for testing, no real data) |
-| `pftui web [--port N] [--bind ADDR] [--no-auth]` | Start web dashboard |
-| `pftui setup` | Interactive setup wizard |
+| `pftui system config list [--json]` | List all configuration fields |
+| `pftui system config get FIELD [--json]` | Get a specific config value |
+| `pftui system config set FIELD VALUE` | Set a config field (e.g., `brave_api_key`) |
+| `pftui system snapshot` | Render full TUI to stdout (for sharing or screenshots) |
+| `pftui system demo` | Launch with sample data (for testing, no real data) |
+| `pftui system web [--port N] [--bind ADDR] [--no-auth]` | Start web dashboard |
+| `pftui system setup` | Interactive setup wizard |
 
 ---
 
@@ -802,17 +794,17 @@ Every source works out of the box with no API keys:
 pftui supports an optional [Brave Search API](https://brave.com/search/api/) key that dramatically improves data quality. With Brave configured:
 - **News** upgrades from RSS headlines to full article summaries from targeted searches
 - **Economic data** (CPI, NFP, PMI, Fed rate) is pulled from live web search results
-- **`pftui research`** lets you answer any financial question without leaving pftui
+- **`pftui analytics research`** lets you answer any financial question without leaving pftui
 - **`brief --agent`** includes news summaries and economic data in one JSON blob
 
 Free tier gives $5/month in auto-credited queries — more than enough for daily use.
 
 ```bash
 # Add Brave API key during setup or later:
-pftui config set brave_api_key <your_key>
+pftui system config set brave_api_key <your_key>
 
 # Verify it's working:
-pftui status
+pftui data status
 # Should show: Brave Search: ✓ Configured
 ```
 
@@ -827,22 +819,22 @@ Other optional API keys unlock additional sources. See [docs/API-SOURCES.md](doc
 ### Morning Brief
 
 ```bash
-pftui refresh
-BRIEF=$(pftui brief --json)
-MOVERS=$(pftui movers --json --threshold 3)
-NEWS=$(pftui news --json --limit 10)
-MACRO=$(pftui macro --json)
-PREDICTIONS=$(pftui predictions --json --limit 5)
-SENTIMENT=$(pftui sentiment --json)
+pftui data refresh
+BRIEF=$(pftui portfolio brief --json)
+MOVERS=$(pftui analytics movers --json --threshold 3)
+NEWS=$(pftui market news --json --limit 10)
+MACRO=$(pftui dashboard macro --json)
+PREDICTIONS=$(pftui market predictions --json --limit 5)
+SENTIMENT=$(pftui market sentiment --json)
 # Analyse all of the above, then compose and deliver your brief
 ```
 
 ### Alert Monitoring
 
 ```bash
-pftui refresh
-ALERTS=$(pftui alerts list --json)
-DRIFT=$(pftui drift --json)
+pftui data refresh
+ALERTS=$(pftui analytics alerts list --json)
+DRIFT=$(pftui portfolio drift --json)
 # Check if any alerts triggered or drift exceeds tolerance
 # Notify human if action needed
 ```
@@ -850,22 +842,22 @@ DRIFT=$(pftui drift --json)
 ### Historical Comparison
 
 ```bash
-TODAY=$(pftui brief --json)
-LAST_WEEK=$(pftui history --date $(date -d '7 days ago' +%Y-%m-%d) --json)
+TODAY=$(pftui portfolio brief --json)
+LAST_WEEK=$(pftui portfolio history --date $(date -d '7 days ago' +%Y-%m-%d) --json)
 # Compare: what changed, what gained, what lost, what narrative shifted
 ```
 
 ### Full Research Session
 
 ```bash
-pftui refresh
-pftui brief --json > /tmp/portfolio.json
-pftui macro --json > /tmp/macro.json
-pftui predictions --json > /tmp/predictions.json
-pftui sentiment --json > /tmp/sentiment.json
-pftui news --json > /tmp/news.json
-pftui supply --json > /tmp/supply.json
-pftui movers --json > /tmp/movers.json
+pftui data refresh
+pftui portfolio brief --json > /tmp/portfolio.json
+pftui dashboard macro --json > /tmp/macro.json
+pftui market predictions --json > /tmp/predictions.json
+pftui market sentiment --json > /tmp/sentiment.json
+pftui market news --json > /tmp/news.json
+pftui market supply --json > /tmp/supply.json
+pftui analytics movers --json > /tmp/movers.json
 # Load all files, cross-reference, write analysis to THESIS.md
 ```
 
@@ -881,7 +873,7 @@ pftui movers --json > /tmp/movers.json
 #    - response contract in skills/investor-panel/schema.json
 
 # 3) Store summary in pftui for auditability
-pftui agent-msg send "Investor panel complete: consensus + divergences ready" --from investor-panel
+pftui agent message send "Investor panel complete: consensus + divergences ready" --from investor-panel
 ```
 
 Skill package:
@@ -893,13 +885,13 @@ Skill package:
 
 ## Best Practices
 
-1. **Always `pftui refresh` before reading data.** Cached prices go stale. Refresh fetches from 10+ sources in one call.
+1. **Always `pftui data refresh` before reading data.** Cached prices go stale. Refresh fetches from 10+ sources in one call.
 
 2. **Use `--json` for programmatic access.** Every command supports it. Parse structured output instead of scraping text.
 
-3. **Keep the journal active.** `pftui journal add` builds a searchable decision history. Log your predictions, rationale, and outcomes.
+3. **Keep the journal active.** `pftui journal entry add` builds a searchable decision history. Log your predictions, rationale, and outcomes.
 
-4. **Monitor drift regularly.** `pftui drift` shows when the portfolio has moved from targets. Flag this to the human early.
+4. **Monitor drift regularly.** `pftui portfolio drift` shows when the portfolio has moved from targets. Flag this to the human early.
 
 5. **Cross-reference sources.** No single data point tells the story. `macro` for regime, `predictions` for crowd wisdom, `sentiment` for extremes, `news` for catalysts, `supply` for physical markets, `movers` for what's actually moving money.
 
