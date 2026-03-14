@@ -65,6 +65,25 @@ cargo clippy                 # lint — no new warnings
 
 **Always run `cargo test` before committing.** All tests must pass. If you add or change logic, add or update tests. No commit should regress the test suite.
 
+## CLI Design Rules
+
+- **Commands navigate, arguments parameterize.** Functions are subcommands in a hierarchy. Data inputs are `--flags`. Never make a parameter a subcommand or a function a flag.
+  ```
+  # Correct: 'history' and 'add' are commands, '--country' and '--metric' are arguments
+  pftui analytics macro cycles history --country US --metric trade
+  pftui analytics macro cycles history add --country US --decade 1940 --score 7.5
+
+  # Wrong: 'country' and 'metric' as subcommands
+  pftui analytics macro cycles history country US metric trade
+
+  # Wrong: 'history' as a flag
+  pftui analytics macro cycles --history --country US
+  ```
+- **Deep hierarchy over flat namespaces.** Every command lives in a logical tree. No top-level explosion. A user discovers features by walking `--help` down the tree.
+- **No shortcut aliases that bypass the tree.** If it's an analytical view, it lives under `analytics`. No exceptions.
+- **`--json` on every CLI command.** Agents need structured output.
+- See PRODUCT-PHILOSOPHY.md principle 9 for full rationale.
+
 ## Code Standards
 
 - **rust_decimal for all money** — no f32/f64 for prices, quantities, costs, gains, or allocations. Ever.
