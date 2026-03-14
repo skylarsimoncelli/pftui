@@ -34,21 +34,24 @@ Live metrics change weekly; 1940 US military score never changes.
 
 CLI subcommands (nested under existing `cycles`):
 ```
-pftui analytics macro cycles                                   # current cycle stages (existing, unchanged)
-pftui analytics macro cycles history                           # composite scores, all powers, all decades (default view)
-pftui analytics macro cycles history country US                # all determinants for one power
-pftui analytics macro cycles history country US China          # two powers compared
-pftui analytics macro cycles history metric trade              # one determinant, all powers
-pftui analytics macro cycles history metric military US China  # one determinant, specific powers
-pftui analytics macro cycles history decade 1940               # all powers at one point in time
-pftui analytics macro cycles history composite                 # composite trajectories (same as default)
+pftui analytics macro cycles                                                          # current cycle stages (existing, unchanged)
+pftui analytics macro cycles history                                                  # composite scores, all powers, all decades (default)
+pftui analytics macro cycles history --country US                                     # all determinants for one power
+pftui analytics macro cycles history --country US --country China                     # two powers compared
+pftui analytics macro cycles history --metric trade                                   # one determinant, all powers
+pftui analytics macro cycles history --metric military --country US --country China   # one determinant, specific powers
+pftui analytics macro cycles history --decade 1940                                    # all powers at one point in time
+pftui analytics macro cycles history --composite                                      # composite trajectories (same as default)
 ```
 
 CRUD for populating:
 ```
-pftui analytics macro cycles history add country US metric trade decade 1940 score 7.5 notes "..." source "..."
-pftui analytics macro cycles history add-batch file data.csv
+pftui analytics macro cycles history add --country US --metric trade --decade 1940 --score 7.5 --notes "..." --source "..."
+pftui analytics macro cycles history add-batch --file data.csv
 ```
+
+CLI design rule: functions are commands (navigation tree). Parameters are arguments (--flags).
+See PRODUCT-PHILOSOPHY.md principle 9.
 
 Display format (for `--composite`):
 ```
