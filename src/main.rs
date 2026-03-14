@@ -90,6 +90,200 @@ fn main() -> Result<()> {
             }
             cli::DataCommand::Status { json, .. } => commands::status::run_backend(&backend, json),
         },
+        Some(Command::Portfolio { command }) => match command {
+            None => commands::summary::run(&backend, &config, None, None, None, true, false),
+            Some(cli::PortfolioCommand::Summary {
+                group_by,
+                period,
+                what_if,
+                json,
+            }) => commands::summary::run(
+                &backend,
+                &config,
+                group_by.as_ref(),
+                period.as_ref(),
+                what_if.as_deref(),
+                true,
+                json,
+            ),
+            Some(cli::PortfolioCommand::Value { json }) => {
+                commands::value::run(&backend, &config, json)
+            }
+            Some(cli::PortfolioCommand::Brief { json }) => {
+                commands::brief::run_backend(&backend, &config, true, json, cached_only)
+            }
+            Some(cli::PortfolioCommand::Eod { json }) => commands::eod::run(&backend, &config, json),
+            Some(cli::PortfolioCommand::Performance {
+                since,
+                period,
+                vs,
+                json,
+            }) => commands::performance::run(
+                &backend,
+                &config,
+                since.as_deref(),
+                period.as_deref(),
+                vs.as_deref(),
+                json,
+            ),
+            Some(cli::PortfolioCommand::History { date, group_by }) => {
+                commands::history::run(&backend, &config, &date, group_by.as_ref())
+            }
+            Some(cli::PortfolioCommand::Target {
+                action,
+                symbol,
+                target,
+                band,
+                json,
+            }) => match action.as_str() {
+                "set" => {
+                    let sym = symbol
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("--symbol required for 'set'"))?;
+                    let tgt = target
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("--target required for 'set'"))?;
+                    commands::target::run(&backend, sym, tgt, band.as_deref())
+                }
+                "list" => commands::target::list(&backend, json),
+                "remove" => {
+                    let sym = symbol
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("--symbol required for 'remove'"))?;
+                    commands::target::remove(&backend, sym)
+                }
+                _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove")),
+            },
+            Some(cli::PortfolioCommand::Drift { json }) => commands::drift::run(&backend, json),
+            Some(cli::PortfolioCommand::Rebalance { json }) => {
+                commands::rebalance::run(&backend, json)
+            }
+            Some(cli::PortfolioCommand::StressTest { scenario, json }) => {
+                commands::stress_test::run(&backend, &config, &scenario, json)
+            }
+            Some(cli::PortfolioCommand::Dividends {
+                action,
+                value,
+                amount,
+                pay_date,
+                ex_date,
+                currency,
+                notes,
+                json,
+            }) => {
+                let args = commands::dividends::DividendsArgs {
+                    value,
+                    amount,
+                    pay_date,
+                    ex_date,
+                    currency,
+                    notes,
+                    json,
+                };
+                commands::dividends::run(&backend, &action, args)
+            }
+            Some(cli::PortfolioCommand::Annotate {
+                symbol,
+                thesis,
+                invalidation,
+                review_date,
+                target,
+                show,
+                list,
+                remove,
+                json,
+            }) => {
+                let args = commands::annotate::AnnotateArgs {
+                    symbol: symbol.as_deref(),
+                    thesis: thesis.as_deref(),
+                    invalidation: invalidation.as_deref(),
+                    review_date: review_date.as_deref(),
+                    target: target.as_deref(),
+                    show,
+                    list,
+                    remove,
+                    json,
+                };
+                commands::annotate::run(&backend, args)
+            }
+            Some(cli::PortfolioCommand::Group {
+                action,
+                name,
+                symbols,
+                json,
+            }) => commands::group::run(
+                &backend,
+                &config,
+                &action,
+                name.as_deref(),
+                symbols.as_deref(),
+                json,
+            ),
+            Some(cli::PortfolioCommand::Opportunity {
+                action,
+                value,
+                date,
+                asset,
+                missed_gain_pct,
+                missed_gain_usd,
+                avoided_loss_pct,
+                avoided_loss_usd,
+                rational,
+                notes,
+                since,
+                limit,
+                json,
+            }) => commands::opportunity::run(
+                &backend,
+                &action,
+                value.as_deref(),
+                date.as_deref(),
+                asset.as_deref(),
+                missed_gain_pct,
+                missed_gain_usd,
+                avoided_loss_pct,
+                avoided_loss_usd,
+                rational,
+                notes.as_deref(),
+                since.as_deref(),
+                limit,
+                json,
+            ),
+            Some(cli::PortfolioCommand::SetCash { symbol, amount }) => {
+                commands::set_cash::run(&backend, &symbol, &amount)
+            }
+            Some(cli::PortfolioCommand::Transaction { command }) => match command {
+                cli::PortfolioTransactionCommand::Add {
+                    symbol,
+                    category,
+                    tx_type,
+                    quantity,
+                    price,
+                    currency,
+                    date,
+                    notes,
+                } => {
+                    if config.is_percentage_mode() {
+                        bail!("add-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
+                    }
+                    commands::add_tx::run(
+                        &backend, symbol, category, tx_type, quantity, price, currency, date, notes,
+                    )
+                }
+                cli::PortfolioTransactionCommand::Remove { id } => {
+                    if config.is_percentage_mode() {
+                        bail!("remove-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
+                    }
+                    commands::remove_tx::run(&backend, id)
+                }
+                cli::PortfolioTransactionCommand::List { notes, json } => {
+                    if config.is_percentage_mode() {
+                        bail!("list-tx is not available in percentage mode (no transactions).\nRun `pftui setup` to switch to full mode.");
+                    }
+                    commands::list_tx::run(&backend, notes, json)
+                }
+            },
+        },
 
         Some(Command::Summary { group_by, period, what_if, json }) => {
             commands::summary::run(
@@ -1064,7 +1258,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => commands::options::run(&symbol, expiry.as_deref(), limit, json),
-        Some(Command::Portfolio { action, name, json }) => {
+        Some(Command::Portfolios { action, name, json }) => {
             commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {

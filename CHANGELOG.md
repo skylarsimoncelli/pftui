@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Add `pftui portfolio` namespace for holdings operations
+
+- What: added nested `pftui portfolio` subcommands for summary/value/brief/eod/performance/history/target/drift/rebalance/stress-test/dividends/annotate/group/opportunity/set-cash and `portfolio transaction add|remove|list`. `pftui portfolio` with no subcommand now defaults to summary output. Kept existing top-level commands operational for compatibility, and moved named portfolio profile management to `pftui portfolios` to avoid namespace collision.
+- Why: closes F40.1 hierarchy step by making holdings workflows discoverable under a single portfolio namespace while preserving current behavior.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test`, `cargo clippy --all-targets -- -D warnings`
+- TODO: removed F40.1 `pftui portfolio` namespace item
+
 ### 2026-03-14 — Add `pftui data` namespace (`refresh`, `status`)
 
 - What: added `data` top-level namespace with `refresh` and `status` subcommands mapped to existing implementations. Added deprecated alias warnings for legacy `pftui refresh` and `pftui status`.

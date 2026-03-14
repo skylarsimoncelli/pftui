@@ -17,33 +17,6 @@ Routing and composite score shipped. Remaining:
 > No functionality changes. Pure routing refactor.
 > See PRODUCT-PHILOSOPHY.md principle 9 and CLAUDE.md CLI Design Rules.
 
-**F40.1: `pftui portfolio` namespace**
-
-Move portfolio-related commands under `portfolio`:
-```
-pftui portfolio summary              # was: pftui summary
-pftui portfolio value                # was: pftui value
-pftui portfolio performance          # was: pftui performance
-pftui portfolio history              # was: pftui history
-pftui portfolio brief                # was: pftui brief
-pftui portfolio eod                  # was: pftui eod
-pftui portfolio target               # was: pftui target
-pftui portfolio drift                # was: pftui drift
-pftui portfolio rebalance            # was: pftui rebalance
-pftui portfolio stress-test          # was: pftui stress-test
-pftui portfolio dividends            # was: pftui dividends
-pftui portfolio annotate             # was: pftui annotate
-pftui portfolio group                # was: pftui group
-pftui portfolio opportunity          # was: pftui opportunity
-pftui portfolio set-cash             # was: pftui set-cash
-pftui portfolio transaction add      # was: pftui add-tx
-pftui portfolio transaction remove   # was: pftui remove-tx
-pftui portfolio transaction list     # was: pftui list-tx
-```
-`pftui portfolio` with no subcommand shows `summary` (default view).
-Source: `src/cli.rs` (add Portfolio subcommand enum), `src/main.rs` (dispatch).
-Keep old top-level commands as deprecated aliases.
-
 **F40.3: `pftui journal` as unified knowledge layer**
 
 All recorded thinking lives under `journal`:

@@ -154,6 +154,294 @@ pub enum DataCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum PortfolioTransactionCommand {
+    /// Add a transaction
+    Add {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        tx_type: Option<String>,
+        #[arg(long)]
+        quantity: Option<String>,
+        #[arg(long)]
+        price: Option<String>,
+        #[arg(long, default_value = "USD")]
+        currency: String,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+    },
+    /// Remove a transaction by ID
+    Remove {
+        /// Transaction ID to remove
+        id: i64,
+    },
+    /// List all transactions
+    List {
+        /// Show transaction notes column
+        #[arg(long)]
+        notes: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioCommand {
+    /// Portfolio summary to stdout (default when no subcommand is provided)
+    Summary {
+        /// Group output by a field (e.g. "category")
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+
+        /// Show P&L over a time period instead of total gain from cost basis
+        #[arg(long, value_enum)]
+        period: Option<SummaryPeriod>,
+
+        /// Model hypothetical prices: SYMBOL:PRICE,SYMBOL:PRICE (e.g. GC=F:5500,BTC:55000)
+        #[arg(long, value_name = "OVERRIDES")]
+        what_if: Option<String>,
+
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show total portfolio value with gain/loss (uses cached prices)
+    Value {
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
+    Brief {
+        /// Output structured JSON (includes all available data)
+        #[arg(long)]
+        json: bool,
+    },
+    /// End-of-Day summary: brief + movers + macro + sentiment combined
+    Eod {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show portfolio performance: returns over time (MTD, QTD, YTD, since inception)
+    Performance {
+        /// Custom start date for return calculation (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Return series grouping: daily, weekly, monthly
+        #[arg(long)]
+        period: Option<String>,
+
+        /// Benchmark symbol to compare against (e.g. SPY)
+        #[arg(long)]
+        vs: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show portfolio value and positions as of a past date using cached price history
+    History {
+        /// Target date in YYYY-MM-DD format (e.g. 2026-02-28)
+        #[arg(long)]
+        date: String,
+
+        /// Group output by a field (e.g. "category")
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+    },
+    /// Manage allocation targets for positions
+    Target {
+        /// Action: set, list, remove
+        action: String,
+
+        /// Symbol (for set/remove)
+        symbol: Option<String>,
+
+        /// Target allocation percentage (e.g. "25", "10.5"). Accepts % suffix.
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Drift band percentage (default: 2%). Accepts % suffix.
+        #[arg(long)]
+        band: Option<String>,
+
+        /// Output as JSON (for list)
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show allocation drift vs targets
+    Drift {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Suggest trades to rebalance to target allocations
+    Rebalance {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run named portfolio stress scenarios
+    #[command(name = "stress-test")]
+    StressTest {
+        /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
+        scenario: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Track dividend payments, ex-dates, and trailing yield
+    Dividends {
+        /// Action: add, list, remove
+        action: String,
+
+        /// Symbol (for add), ID (for remove), or optional symbol filter (for list)
+        value: Option<String>,
+
+        /// Amount per share (for add)
+        #[arg(long)]
+        amount: Option<String>,
+
+        /// Pay date in YYYY-MM-DD (for add)
+        #[arg(long)]
+        pay_date: Option<String>,
+
+        /// Ex-dividend date in YYYY-MM-DD (for add)
+        #[arg(long)]
+        ex_date: Option<String>,
+
+        /// Currency (default: USD)
+        #[arg(long, default_value = "USD")]
+        currency: String,
+
+        /// Optional note
+        #[arg(long)]
+        notes: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add, view, or remove position thesis annotations
+    Annotate {
+        /// Asset symbol (required unless using --list)
+        symbol: Option<String>,
+
+        /// Thesis text
+        #[arg(long)]
+        thesis: Option<String>,
+
+        /// Invalidation criteria
+        #[arg(long)]
+        invalidation: Option<String>,
+
+        /// Review date in YYYY-MM-DD
+        #[arg(long)]
+        review_date: Option<String>,
+
+        /// Target price/level
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Show annotation for symbol
+        #[arg(long)]
+        show: bool,
+
+        /// List all annotations
+        #[arg(long)]
+        list: bool,
+
+        /// Remove annotation for symbol
+        #[arg(long)]
+        remove: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage named asset groups
+    Group {
+        /// Action: create, list, show, remove
+        action: String,
+
+        /// Group name (required for create/show/remove)
+        name: Option<String>,
+
+        /// Comma-separated symbols for create (e.g. GC=F,SI=F,BTC)
+        #[arg(long)]
+        symbols: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Track what your positioning saved and cost you
+    Opportunity {
+        /// Action: add, list, stats
+        action: String,
+
+        /// Event description (for add)
+        value: Option<String>,
+
+        #[arg(long)]
+        date: Option<String>,
+
+        #[arg(long)]
+        asset: Option<String>,
+
+        #[arg(long)]
+        missed_gain_pct: Option<f64>,
+
+        #[arg(long)]
+        missed_gain_usd: Option<f64>,
+
+        #[arg(long)]
+        avoided_loss_pct: Option<f64>,
+
+        #[arg(long)]
+        avoided_loss_usd: Option<f64>,
+
+        /// Was this a rational decision? (true/false, default true)
+        #[arg(long)]
+        rational: Option<bool>,
+
+        #[arg(long)]
+        notes: Option<String>,
+
+        #[arg(long)]
+        since: Option<String>,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set a cash position to an exact amount (replaces existing transactions for that currency)
+    #[command(name = "set-cash")]
+    SetCash {
+        /// Currency symbol (e.g. USD, GBP, EUR)
+        symbol: String,
+        /// Amount to set (e.g. 45000, 12500.50). Use 0 to clear.
+        amount: String,
+    },
+    /// Manage transactions
+    Transaction {
+        #[command(subcommand)]
+        command: PortfolioTransactionCommand,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -184,6 +472,12 @@ pub enum Command {
     Data {
         #[command(subcommand)]
         command: DataCommand,
+    },
+
+    /// Portfolio operations: holdings, value, targets, rebalancing, and transactions
+    Portfolio {
+        #[command(subcommand)]
+        command: Option<PortfolioCommand>,
     },
 
     /// Portfolio summary to stdout
@@ -1393,7 +1687,8 @@ pub enum Command {
     },
 
     /// Manage named portfolios (list/current/create/switch/remove)
-    Portfolio {
+    #[command(name = "portfolios")]
+    Portfolios {
         /// Action: list, current, create, switch, remove
         action: String,
 
