@@ -864,6 +864,398 @@ pub enum JournalCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum AnalyticsCorrelationsCommand {
+    /// Compute rolling correlations
+    Compute {
+        /// Primary window for sorting/display emphasis: 7, 30, or 90
+        #[arg(long, default_value = "30")]
+        window: usize,
+        /// Period for snapshots/history: 7d, 30d, 90d
+        #[arg(long)]
+        period: Option<String>,
+        /// Store computed correlations as snapshots
+        #[arg(long)]
+        store: bool,
+        /// Maximum number of pairs to show
+        #[arg(long, default_value = "15")]
+        limit: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show stored correlation history for a pair
+    History {
+        /// Symbol A
+        symbol_a: String,
+        /// Symbol B
+        symbol_b: String,
+        /// Primary window for sorting/display emphasis: 7, 30, or 90
+        #[arg(long, default_value = "30")]
+        window: usize,
+        /// Period for snapshots/history: 7d, 30d, 90d
+        #[arg(long)]
+        period: Option<String>,
+        /// Maximum number of rows to show
+        #[arg(long, default_value = "15")]
+        limit: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsAlertsCommand {
+    /// Add an alert rule
+    Add { rule: String },
+    /// List alerts
+    List {
+        /// Filter by status: armed, triggered, acknowledged
+        #[arg(long)]
+        status: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove alert by ID
+    Remove { id: i64 },
+    /// Check alerts against current data
+    Check {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Acknowledge alert by ID
+    Ack { id: i64 },
+    /// Rearm alert by ID
+    Rearm { id: i64 },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsTrendsEvidenceCommand {
+    /// Add evidence to a trend
+    Add {
+        /// Trend ID
+        #[arg(long)]
+        id: Option<i64>,
+        /// Evidence text
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Optional positional fallback for evidence text
+        value: Option<String>,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long = "direction-impact")]
+        direction_impact: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List trend evidence rows
+    List {
+        #[arg(long)]
+        id: Option<i64>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsTrendsImpactCommand {
+    /// Add an asset impact mapping for a trend
+    Add {
+        #[arg(long)]
+        id: Option<i64>,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        impact: Option<String>,
+        #[arg(long)]
+        mechanism: Option<String>,
+        #[arg(long = "impact-timeframe")]
+        impact_timeframe: Option<String>,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List trend impact mappings
+    List {
+        #[arg(long)]
+        id: Option<i64>,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsTrendsCommand {
+    Add {
+        value: Option<String>,
+        #[arg(long)]
+        timeframe: Option<String>,
+        #[arg(long)]
+        direction: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long = "asset-impact")]
+        asset_impact: Option<String>,
+        #[arg(long = "key-signal")]
+        key_signal: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    List {
+        #[arg(long)]
+        timeframe: Option<String>,
+        #[arg(long)]
+        direction: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Update {
+        value: Option<String>,
+        #[arg(long)]
+        id: Option<i64>,
+        #[arg(long)]
+        timeframe: Option<String>,
+        #[arg(long)]
+        direction: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long = "asset-impact")]
+        asset_impact: Option<String>,
+        #[arg(long = "key-signal")]
+        key_signal: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Dashboard {
+        #[arg(long)]
+        json: bool,
+    },
+    Evidence {
+        #[command(subcommand)]
+        command: AnalyticsTrendsEvidenceCommand,
+    },
+    Impact {
+        #[command(subcommand)]
+        command: AnalyticsTrendsImpactCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsMacroRegimeCommand {
+    Current {
+        #[arg(long)]
+        json: bool,
+    },
+    History {
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Transitions {
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsMacroCommand {
+    Metrics {
+        country: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Compare {
+        left: Option<String>,
+        right: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Cycles {
+        #[arg(long)]
+        json: bool,
+    },
+    Outcomes {
+        #[arg(long)]
+        json: bool,
+    },
+    Parallels {
+        #[arg(long)]
+        json: bool,
+    },
+    Log {
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Regime {
+        #[command(subcommand)]
+        command: AnalyticsMacroRegimeCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsCommand {
+    Signals {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long = "signal-type")]
+        signal_type: Option<String>,
+        #[arg(long)]
+        severity: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Summary {
+        #[arg(long)]
+        json: bool,
+    },
+    Low {
+        #[arg(long)]
+        json: bool,
+    },
+    Medium {
+        #[arg(long)]
+        json: bool,
+    },
+    High {
+        #[arg(long)]
+        json: bool,
+    },
+    Macro {
+        #[command(subcommand)]
+        command: Option<AnalyticsMacroCommand>,
+        #[arg(long)]
+        json: bool,
+    },
+    Alignment {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Divergence {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Digest {
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Recap {
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Gaps {
+        #[arg(long)]
+        json: bool,
+    },
+    Movers {
+        #[arg(long, default_value = "3")]
+        threshold: String,
+        #[arg(long)]
+        overnight: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    Correlations {
+        #[command(subcommand)]
+        command: Option<AnalyticsCorrelationsCommand>,
+    },
+    Scan {
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long)]
+        save: Option<String>,
+        #[arg(long)]
+        load: Option<String>,
+        #[arg(long)]
+        list: bool,
+        #[arg(long = "news-keyword")]
+        news_keyword: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Research {
+        query: Option<String>,
+        #[arg(long)]
+        news: bool,
+        #[arg(long)]
+        freshness: Option<String>,
+        #[arg(long, default_value = "5")]
+        count: usize,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        fed: bool,
+        #[arg(long)]
+        earnings: Option<String>,
+        #[arg(long)]
+        geopolitics: bool,
+        #[arg(long)]
+        cot: Option<String>,
+        #[arg(long)]
+        etf: Option<String>,
+        #[arg(long)]
+        opec: bool,
+    },
+    Trends {
+        #[command(subcommand)]
+        command: AnalyticsTrendsCommand,
+    },
+    Alerts {
+        #[command(subcommand)]
+        command: AnalyticsAlertsCommand,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -1445,109 +1837,8 @@ pub enum Command {
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
-        /// Action: signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps
-        action: String,
-
-        /// Macro subcommand (for `analytics macro`): metrics, compare, cycles, outcomes, parallels, log
-        value: Option<String>,
-
-        /// Optional macro argument #1 (example: `US` in `analytics macro metrics US`)
-        value2: Option<String>,
-
-        /// Optional macro argument #2 (example: `China` in `analytics macro compare US China`)
-        value3: Option<String>,
-
-        /// Symbol filter (mainly for `signals`)
-        #[arg(long)]
-        symbol: Option<String>,
-
-        /// Country filter (repeatable for comparison/history views)
-        #[arg(long)]
-        country: Vec<String>,
-
-        /// Metric name for macro metric updates
-        #[arg(long)]
-        metric: Option<String>,
-
-        /// Numeric score for macro metric updates
-        #[arg(long)]
-        score: Option<f64>,
-
-        /// Ranking value for macro metric updates
-        #[arg(long)]
-        rank: Option<i32>,
-
-        /// Trend label (e.g. rising, stable, declining)
-        #[arg(long)]
-        trend: Option<String>,
-
-        /// Probability value for macro outcome updates
-        #[arg(long)]
-        probability: Option<f64>,
-
-        /// Stage/phase for macro cycle updates
-        #[arg(long = "phase", alias = "stage")]
-        phase: Option<String>,
-
-        /// Free-text evidence for macro cycle updates
-        #[arg(long)]
-        evidence: Option<String>,
-
-        /// Free-text notes
-        #[arg(long)]
-        notes: Option<String>,
-
-        /// Data source / citation label
-        #[arg(long)]
-        source: Option<String>,
-
-        /// Driver text for outcome updates
-        #[arg(long)]
-        driver: Option<String>,
-
-        /// Impact text for structural log rows
-        #[arg(long)]
-        impact: Option<String>,
-
-        /// Outcome shift text for structural log rows
-        #[arg(long)]
-        outcome: Option<String>,
-
-        /// Decade filter for macro history views (e.g. 1940)
-        #[arg(long)]
-        decade: Option<i32>,
-
-        /// Show composite trajectories in macro history view
-        #[arg(long)]
-        composite: bool,
-
-        /// CSV file path for batch import operations
-        #[arg(long)]
-        file: Option<String>,
-
-        /// Signal type filter: alignment, divergence, transition
-        #[arg(long)]
-        signal_type: Option<String>,
-
-        /// Severity filter: info, notable, critical
-        #[arg(long)]
-        severity: Option<String>,
-
-        /// Agent role for digest mode (e.g. low-agent, medium-agent, evening-analyst)
-        #[arg(long)]
-        from: Option<String>,
-
-        /// Date filter (YYYY-MM-DD, today, yesterday) for recap mode
-        #[arg(long)]
-        date: Option<String>,
-
-        /// Max results
-        #[arg(long)]
-        limit: Option<usize>,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(subcommand)]
+        command: AnalyticsCommand,
     },
 
     /// Manage your macro thesis — versioned outlook by section

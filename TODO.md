@@ -17,43 +17,6 @@ Routing and composite score shipped. Remaining:
 > No functionality changes. Pure routing refactor.
 > See PRODUCT-PHILOSOPHY.md principle 9 and CLAUDE.md CLI Design Rules.
 
-**F40.4: `pftui analytics` absorbs analytical tools**
-
-```
-pftui analytics summary                          # unchanged
-pftui analytics low / medium / high              # unchanged
-pftui analytics alignment / divergence           # unchanged
-pftui analytics digest / recap                   # unchanged
-pftui analytics movers                           # was: pftui movers
-pftui analytics correlations                     # was: pftui correlations
-pftui analytics scan                             # was: pftui scan
-pftui analytics research                         # was: pftui research
-pftui analytics trends add                       # was: pftui trends add
-pftui analytics trends list                      # was: pftui trends list
-pftui analytics trends update                    # was: pftui trends update
-pftui analytics trends evidence add              # was: pftui trends evidence-add
-pftui analytics trends evidence list             # was: pftui trends evidence-list
-pftui analytics trends impact add                # was: pftui trends impact-add
-pftui analytics trends impact list               # was: pftui trends impact-list
-pftui analytics trends dashboard                 # was: pftui trends dashboard
-pftui analytics alerts add                       # was: pftui alerts add
-pftui analytics alerts list                      # was: pftui alerts list
-pftui analytics alerts remove                    # was: pftui alerts remove
-pftui analytics alerts check                     # was: pftui alerts check
-pftui analytics alerts ack                       # was: pftui alerts ack
-pftui analytics alerts rearm                     # was: pftui alerts rearm
-pftui analytics macro metrics                    # unchanged
-pftui analytics macro compare                    # unchanged
-pftui analytics macro cycles                     # unchanged
-pftui analytics macro outcomes                   # unchanged
-pftui analytics macro parallels                  # unchanged
-pftui analytics macro log                        # unchanged
-pftui analytics macro regime current             # was: pftui regime current
-pftui analytics macro regime history             # was: pftui regime history
-pftui analytics macro regime transitions         # was: pftui regime transitions
-```
-Source: `src/cli.rs`, `src/commands/analytics.rs`.
-
 **F40.9: Convert all positional `<ACTION>` to proper clap subcommands**
 
 Every command that currently uses `<ACTION>` as a positional string must be converted

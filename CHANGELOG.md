@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Convert `analytics` to subcommands and absorb analysis tools
+
+- What: replaced flat `pftui analytics <action>` parsing with clap subcommands, including `signals/summary/low/medium/high/macro/alignment/divergence/digest/recap/gaps` plus absorbed `movers/correlations/scan/research/trends/alerts`. Added nested analytics trees for macro regime, trend evidence/impact, alerts, and correlations. Kept legacy top-level `movers`, `scan`, `correlations`, `research`, `trends`, `alerts`, and `regime` paths as deprecated aliases with warnings.
+- Why: closes F40.4 by consolidating analytical workflows under `pftui analytics` and improving command discoverability.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`, `cargo clippy --all-targets -- -D warnings`
+- TODO: removed F40.4 analytics-absorption item
+
 ### 2026-03-14 — Add unified `pftui journal` command tree
 
 - What: replaced flat `journal` action flags with nested `pftui journal` subcommands (`entry`, `prediction`, `conviction`, `notes`, `scenario`) and routed each branch to existing handlers. Added compatibility deprecation warnings on legacy top-level `predict`, `conviction`, `notes`, and `scenario` commands toward `journal ...` paths.
