@@ -238,6 +238,27 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS power_metrics_history (
+                id BIGSERIAL PRIMARY KEY,
+                country TEXT NOT NULL,
+                metric TEXT NOT NULL,
+                decade INTEGER NOT NULL,
+                score DOUBLE PRECISION NOT NULL,
+                notes TEXT,
+                source TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(country, metric, decade)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_pmh_country ON power_metrics_history(country)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_pmh_decade ON power_metrics_history(decade)")
+            .execute(pool)
+            .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS structural_cycles (
                 id BIGSERIAL PRIMARY KEY,
                 cycle_name TEXT NOT NULL UNIQUE,

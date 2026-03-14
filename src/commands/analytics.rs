@@ -22,7 +22,7 @@ pub fn run(
     value2: Option<&str>,
     value3: Option<&str>,
     symbol: Option<&str>,
-    country: Option<&str>,
+    countries: &[String],
     metric: Option<&str>,
     score: Option<f64>,
     rank: Option<i32>,
@@ -35,6 +35,9 @@ pub fn run(
     driver: Option<&str>,
     impact: Option<&str>,
     outcome: Option<&str>,
+    decade: Option<i32>,
+    composite: bool,
+    file: Option<&str>,
     signal_type: Option<&str>,
     severity: Option<&str>,
     from: Option<&str>,
@@ -53,7 +56,7 @@ pub fn run(
             value,
             value2,
             value3,
-            country,
+            countries,
             metric,
             score,
             rank,
@@ -66,6 +69,9 @@ pub fn run(
             driver,
             impact,
             outcome,
+            decade,
+            composite,
+            file,
             from,
             date,
             limit,
@@ -733,7 +739,7 @@ fn run_macro(
     subaction: Option<&str>,
     arg1: Option<&str>,
     arg2: Option<&str>,
-    country: Option<&str>,
+    countries: &[String],
     metric: Option<&str>,
     score: Option<f64>,
     rank: Option<i32>,
@@ -746,11 +752,15 @@ fn run_macro(
     driver: Option<&str>,
     impact: Option<&str>,
     outcome: Option<&str>,
+    decade: Option<i32>,
+    composite: bool,
+    file: Option<&str>,
     _from: Option<&str>,
     date: Option<&str>,
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
+    let country = countries.first().map(|s| s.as_str());
     match subaction.unwrap_or("dashboard") {
         "dashboard" => {}
         "metrics" => {
@@ -790,6 +800,54 @@ fn run_macro(
             return run_macro_compare(backend, left, right, json_output);
         }
         "cycles" => {
+            if arg1 == Some("history") {
+                if arg2 == Some("add") {
+                    let c = country.ok_or_else(|| anyhow::anyhow!("--country required"))?;
+                    let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
+                    let d = decade.ok_or_else(|| anyhow::anyhow!("--decade required"))?;
+                    let sc = score.ok_or_else(|| anyhow::anyhow!("--score required"))?;
+                    let id = structural::add_metric_history_backend(backend, c, m, d, sc, notes, source)?;
+                    if json_output {
+                        println!("{}", serde_json::to_string_pretty(&json!({"id": id, "country": c, "metric": m, "decade": d, "score": sc}))?);
+                    } else {
+                        println!("Added history row: {} {} {} = {:.2}", c, m, d, sc);
+                    }
+                    return Ok(());
+                }
+                if arg2 == Some("add-batch") {
+                    let path = file.ok_or_else(|| anyhow::anyhow!("--file required for add-batch"))?;
+                    let mut rdr = csv::Reader::from_path(path)?;
+                    let mut inserted = 0usize;
+                    for rec in rdr.records() {
+                        let rec = rec?;
+                        let c = rec.get(0).unwrap_or("").trim();
+                        let m = rec.get(1).unwrap_or("").trim();
+                        let d: i32 = rec.get(2).unwrap_or("").trim().parse()?;
+                        let sc: f64 = rec.get(3).unwrap_or("").trim().parse()?;
+                        let n = rec.get(4).map(str::trim).filter(|v| !v.is_empty());
+                        let s = rec.get(5).map(str::trim).filter(|v| !v.is_empty());
+                        if c.is_empty() || m.is_empty() {
+                            continue;
+                        }
+                        structural::add_metric_history_backend(backend, c, m, d, sc, n, s)?;
+                        inserted += 1;
+                    }
+                    if json_output {
+                        println!("{}", serde_json::to_string_pretty(&json!({"inserted": inserted, "file": path}))?);
+                    } else {
+                        println!("Imported {} history rows from {}", inserted, path);
+                    }
+                    return Ok(());
+                }
+                return run_macro_cycles_history(
+                    backend,
+                    countries,
+                    metric,
+                    decade,
+                    composite,
+                    json_output,
+                );
+            }
             if arg1 == Some("update") {
                 let name = arg2.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro cycles update <name> --phase <phase> [--evidence text]"))?;
                 let stage = phase.ok_or_else(|| anyhow::anyhow!("--phase required"))?;
@@ -1272,6 +1330,113 @@ fn run_macro_cycles(backend: &BackendConnection, json_output: bool) -> Result<()
                 c.cycle_name,
                 c.current_stage,
                 c.stage_entered.unwrap_or_else(|| "?".to_string())
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_macro_cycles_history(
+    backend: &BackendConnection,
+    countries: &[String],
+    metric: Option<&str>,
+    decade: Option<i32>,
+    composite: bool,
+    json_output: bool,
+) -> Result<()> {
+    let rows = structural::list_metric_history_backend(backend, countries, metric, decade).unwrap_or_default();
+    let show_composite = composite || metric.is_none();
+
+    if show_composite {
+        let mut country_decade_scores: HashMap<String, HashMap<i32, Vec<f64>>> = HashMap::new();
+        for r in &rows {
+            country_decade_scores
+                .entry(r.country.clone())
+                .or_default()
+                .entry(r.decade)
+                .or_default()
+                .push(r.score);
+        }
+
+        let live_metrics = structural::list_metrics_backend(backend, None, None).unwrap_or_default();
+        let live_views = build_country_metric_views(&live_metrics);
+        let mut decades: BTreeSet<i32> = BTreeSet::new();
+        for dmap in country_decade_scores.values() {
+            for d in dmap.keys() {
+                decades.insert(*d);
+            }
+        }
+        let mut decades_vec: Vec<i32> = decades.into_iter().collect();
+        decades_vec.sort_unstable();
+
+        if json_output {
+            let countries_json = country_decade_scores
+                .iter()
+                .map(|(country, dmap)| {
+                    let mut points = serde_json::Map::new();
+                    for d in &decades_vec {
+                        let val = dmap
+                            .get(d)
+                            .and_then(|vals| avg(vals))
+                            .map(|v| (v * 100.0).round() / 100.0);
+                        points.insert(d.to_string(), json!(val));
+                    }
+                    let live = live_views
+                        .get(country)
+                        .and_then(|v| v.composite)
+                        .map(|v| (v * 100.0).round() / 100.0);
+                    points.insert("2026".to_string(), json!(live));
+                    json!({"country": country, "series": points})
+                })
+                .collect::<Vec<_>>();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "mode": "composite",
+                    "decades": decades_vec,
+                    "countries": countries_json,
+                    "rows": rows,
+                }))?
+            );
+        } else {
+            let mut header = String::from("        ");
+            for d in &decades_vec {
+                header.push_str(&format!("{:>6}", d));
+            }
+            header.push_str(&format!("{:>6}", 2026));
+            println!("{}", header);
+            let mut countries_sorted = country_decade_scores.keys().cloned().collect::<Vec<_>>();
+            countries_sorted.sort();
+            for c in countries_sorted {
+                let mut line = format!("{:<8}", c);
+                let dmap = country_decade_scores.get(&c).expect("country exists");
+                for d in &decades_vec {
+                    let val = dmap.get(d).and_then(|vals| avg(vals));
+                    match val {
+                        Some(v) => line.push_str(&format!("{:>6.1}", v)),
+                        None => line.push_str(&format!("{:>6}", "—")),
+                    }
+                }
+                let live = live_views.get(&c).and_then(|v| v.composite);
+                match live {
+                    Some(v) => line.push_str(&format!("{:>6.1}", v)),
+                    None => line.push_str(&format!("{:>6}", "—")),
+                }
+                println!("{}", line);
+            }
+        }
+        return Ok(());
+    }
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&json!({"rows": rows, "count": rows.len()}))?);
+    } else if rows.is_empty() {
+        println!("No power metric history rows found.");
+    } else {
+        for r in rows {
+            println!(
+                "{} {} {} = {:.2}",
+                r.country, r.metric, r.decade, r.score
             );
         }
     }

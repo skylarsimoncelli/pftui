@@ -7,6 +7,7 @@ use crate::db::backend::BackendConnection;
 
 // Type aliases for complex Postgres query rows
 type PowerMetricRow = (i64, String, String, Option<f64>, Option<i32>, String, Option<String>, Option<String>, String);
+type PowerMetricHistoryRow = (i64, String, String, i32, f64, Option<String>, Option<String>, String);
 type StructuralCycleRow = (i64, String, String, Option<String>, Option<String>, Option<String>, String);
 type StructuralOutcomeRow = (i64, String, f64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, String, String);
 type HistoricalParallelRow = (i64, String, String, String, Option<i32>, Option<String>, Option<String>, Option<String>, String);
@@ -27,6 +28,18 @@ pub struct PowerMetric {
     pub notes: Option<String>,
     pub source: Option<String>,
     pub recorded_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PowerMetricHistory {
+    pub id: i64,
+    pub country: String,
+    pub metric: String,
+    pub decade: i32,
+    pub score: f64,
+    pub notes: Option<String>,
+    pub source: Option<String>,
+    pub created_at: String,
 }
 
 impl PowerMetric {
@@ -109,6 +122,76 @@ pub fn get_metric_history(
          LIMIT ?",
     )?;
     let rows = stmt.query_map(params![country, metric, limit_val as i64], PowerMetric::from_row)?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+pub fn add_metric_history(
+    conn: &Connection,
+    country: &str,
+    metric: &str,
+    decade: i32,
+    score: f64,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO power_metrics_history (country, metric, decade, score, notes, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(country, metric, decade) DO UPDATE SET
+            score = excluded.score,
+            notes = excluded.notes,
+            source = excluded.source",
+        params![country, metric, decade, score, notes, source],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn list_metric_history(
+    conn: &Connection,
+    countries: &[String],
+    metric: Option<&str>,
+    decade: Option<i32>,
+) -> Result<Vec<PowerMetricHistory>> {
+    let mut query = String::from(
+        "SELECT id, country, metric, decade, score, notes, source, created_at
+         FROM power_metrics_history WHERE 1=1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+
+    if !countries.is_empty() {
+        let placeholders = std::iter::repeat_n("?", countries.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        query.push_str(&format!(" AND country IN ({})", placeholders));
+        for c in countries {
+            params.push(Box::new(c.clone()));
+        }
+    }
+    if let Some(m) = metric {
+        query.push_str(" AND metric = ?");
+        params.push(Box::new(m.to_string()));
+    }
+    if let Some(d) = decade {
+        query.push_str(" AND decade = ?");
+        params.push(Box::new(d));
+    }
+    query.push_str(" ORDER BY decade ASC, country ASC, metric ASC");
+
+    let mut stmt = conn.prepare(&query)?;
+    let params_refs: Vec<&dyn rusqlite::ToSql> =
+        params.iter().map(|p| p.as_ref() as &dyn rusqlite::ToSql).collect();
+    let rows = stmt.query_map(&*params_refs, |row| {
+        Ok(PowerMetricHistory {
+            id: row.get(0)?,
+            country: row.get(1)?,
+            metric: row.get(2)?,
+            decade: row.get(3)?,
+            score: row.get(4)?,
+            notes: row.get(5)?,
+            source: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -573,6 +656,81 @@ fn get_metric_history_postgres(
         .collect())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn add_metric_history_postgres(
+    pool: &PgPool,
+    country: &str,
+    metric: &str,
+    decade: i32,
+    score: f64,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    let id = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO power_metrics_history (country, metric, decade, score, notes, source)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT(country, metric, decade) DO UPDATE SET
+                score = EXCLUDED.score,
+                notes = EXCLUDED.notes,
+                source = EXCLUDED.source
+             RETURNING id",
+        )
+        .bind(country)
+        .bind(metric)
+        .bind(decade)
+        .bind(score)
+        .bind(notes)
+        .bind(source)
+        .fetch_one(pool)
+        .await
+    })?;
+    Ok(id)
+}
+
+fn list_metric_history_postgres(
+    pool: &PgPool,
+    countries: &[String],
+    metric: Option<&str>,
+    decade: Option<i32>,
+) -> Result<Vec<PowerMetricHistory>> {
+    let rows: Vec<PowerMetricHistoryRow> = crate::db::pg_runtime::block_on(async {
+        let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+            "SELECT id, country, metric, decade, score, notes, source, created_at::TEXT
+             FROM power_metrics_history WHERE 1=1",
+        );
+        if !countries.is_empty() {
+            qb.push(" AND country IN (");
+            let mut separated = qb.separated(", ");
+            for c in countries {
+                separated.push_bind(c);
+            }
+            qb.push(")");
+        }
+        if let Some(m) = metric {
+            qb.push(" AND metric = ").push_bind(m);
+        }
+        if let Some(d) = decade {
+            qb.push(" AND decade = ").push_bind(d);
+        }
+        qb.push(" ORDER BY decade ASC, country ASC, metric ASC");
+        qb.build_query_as::<PowerMetricHistoryRow>().fetch_all(pool).await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| PowerMetricHistory {
+            id: r.0,
+            country: r.1,
+            metric: r.2,
+            decade: r.3,
+            score: r.4,
+            notes: r.5,
+            source: r.6,
+            created_at: r.7,
+        })
+        .collect())
+}
+
 fn set_cycle_postgres(
     pool: &PgPool,
     name: &str,
@@ -951,6 +1109,39 @@ pub fn get_metric_history_backend(
     match backend {
         BackendConnection::Sqlite { conn } => get_metric_history(conn, country, metric, limit),
         BackendConnection::Postgres { pool } => get_metric_history_postgres(pool, country, metric, limit),
+    }
+}
+
+pub fn add_metric_history_backend(
+    backend: &BackendConnection,
+    country: &str,
+    metric: &str,
+    decade: i32,
+    score: f64,
+    notes: Option<&str>,
+    source: Option<&str>,
+) -> Result<i64> {
+    match backend {
+        BackendConnection::Sqlite { conn } => {
+            add_metric_history(conn, country, metric, decade, score, notes, source)
+        }
+        BackendConnection::Postgres { pool } => {
+            add_metric_history_postgres(pool, country, metric, decade, score, notes, source)
+        }
+    }
+}
+
+pub fn list_metric_history_backend(
+    backend: &BackendConnection,
+    countries: &[String],
+    metric: Option<&str>,
+    decade: Option<i32>,
+) -> Result<Vec<PowerMetricHistory>> {
+    match backend {
+        BackendConnection::Sqlite { conn } => list_metric_history(conn, countries, metric, decade),
+        BackendConnection::Postgres { pool } => {
+            list_metric_history_postgres(pool, countries, metric, decade)
+        }
     }
 }
 

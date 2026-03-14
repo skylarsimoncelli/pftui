@@ -521,6 +521,20 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_power_metrics_country ON power_metrics(country);
         CREATE INDEX IF NOT EXISTS idx_power_metrics_metric ON power_metrics(metric);
 
+        CREATE TABLE IF NOT EXISTS power_metrics_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            country TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            decade INTEGER NOT NULL,
+            score REAL NOT NULL,
+            notes TEXT,
+            source TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(country, metric, decade)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pmh_country ON power_metrics_history(country);
+        CREATE INDEX IF NOT EXISTS idx_pmh_decade ON power_metrics_history(decade);
+
         CREATE TABLE IF NOT EXISTS structural_cycles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cycle_name TEXT NOT NULL UNIQUE,

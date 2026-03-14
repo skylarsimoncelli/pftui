@@ -558,9 +558,9 @@ pub enum Command {
         #[arg(long)]
         symbol: Option<String>,
 
-        /// Country code/name for macro subcommands
+        /// Country filter (repeatable for comparison/history views)
         #[arg(long)]
-        country: Option<String>,
+        country: Vec<String>,
 
         /// Metric name for macro metric updates
         #[arg(long)]
@@ -609,6 +609,18 @@ pub enum Command {
         /// Outcome shift text for structural log rows
         #[arg(long)]
         outcome: Option<String>,
+
+        /// Decade filter for macro history views (e.g. 1940)
+        #[arg(long)]
+        decade: Option<i32>,
+
+        /// Show composite trajectories in macro history view
+        #[arg(long)]
+        composite: bool,
+
+        /// CSV file path for batch import operations
+        #[arg(long)]
+        file: Option<String>,
 
         /// Signal type filter: alignment, divergence, transition
         #[arg(long)]

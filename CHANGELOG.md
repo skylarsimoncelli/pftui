@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — F39.7 empire cycle history storage + macro history CLI
+
+- What: added `power_metrics_history` storage for immutable decade-based power scores (SQLite + Postgres schema paths), including backend CRUD in `db::structural`. Extended `analytics macro cycles` with `history` mode and population commands: `history` query view with filters (`--country`, `--metric`, `--decade`, `--composite`), `history add`, and `history add-batch --file`. Default history mode renders composite trajectories and appends live 2026 composite from current `power_metrics`.
+- Why: closes F39.7 history tracking requirements and enables persistent empire-cycle reference data separate from live weekly metrics.
+- Files: `src/db/structural.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed F39.7 spec block and stale already-shipped P2/F39 follow-up bullets
+
 ### 2026-03-14 — Fix remaining clippy warnings (3 → 0)
 
 - What: resolved 3 clippy warnings — collapsed nested `else { if }` in `agent_msg.rs` to `else if`, added `#[allow(clippy::too_many_arguments)]` to `analytics.rs` `run_macro()` (21 params) and `scan.rs` `run()` (8 params).
