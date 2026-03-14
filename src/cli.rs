@@ -91,6 +91,50 @@ pub enum WatchlistCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum DashboardCommand {
+    /// Macro dashboard: key economic indicators, yields, commodities, currencies, and derived metrics
+    Macro {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Oil dashboard: WTI/Brent, spread, RSI, and oil-geopolitics headlines
+    Oil {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Crisis dashboard: oil, VIX, defense, safe havens, shipping/geopolitics context
+    Crisis {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Sector heatmap and sector-relative performance views
+    Sector {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Treemap-style market heatmap by category and move
+    Heatmap {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Global macro dashboard for country indicators
+    Global {
+        /// Country code (e.g., US, CN, IN). Omit to show defaults.
+        country: Option<String>,
+        /// Indicator key (e.g., GDP, debt_to_gdp)
+        indicator: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -109,6 +153,12 @@ pub enum Command {
     Agent {
         #[command(subcommand)]
         command: AgentCommand,
+    },
+
+    /// Pre-built dashboard views
+    Dashboard {
+        #[command(subcommand)]
+        command: DashboardCommand,
     },
 
     /// Portfolio summary to stdout

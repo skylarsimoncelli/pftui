@@ -136,19 +136,6 @@ pftui market sovereign           # was: pftui sovereign
 ```
 Source: `src/cli.rs`, `src/main.rs`.
 
-**F40.6: `pftui dashboard` namespace**
-
-Group pre-built dashboard views:
-```
-pftui dashboard macro            # was: pftui macro
-pftui dashboard oil              # was: pftui oil
-pftui dashboard crisis           # was: pftui crisis
-pftui dashboard sector           # was: pftui sector
-pftui dashboard heatmap          # was: pftui heatmap
-pftui dashboard global           # was: pftui global
-```
-Source: `src/cli.rs`, `src/main.rs`.
-
 **F40.7: `pftui data` namespace**
 
 Data management:

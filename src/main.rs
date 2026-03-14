@@ -65,6 +65,20 @@ fn main() -> Result<()> {
         Some(Command::Setup) => {
             commands::setup::run(&config, true)
         }
+        Some(Command::Dashboard { command }) => match command {
+            cli::DashboardCommand::Macro { json } => {
+                commands::macro_cmd::run(&backend, &config, json, cached_only)
+            }
+            cli::DashboardCommand::Oil { json } => commands::oil::run(&backend, json, cached_only),
+            cli::DashboardCommand::Crisis { json } => {
+                commands::crisis::run(&backend, json, cached_only)
+            }
+            cli::DashboardCommand::Sector { json } => commands::sector::run(&backend, &config, json),
+            cli::DashboardCommand::Heatmap { json } => commands::heatmap::run(&backend, json),
+            cli::DashboardCommand::Global { country, indicator, json } => {
+                commands::global::run(&backend, country.as_deref(), indicator.as_deref(), json)
+            }
+        },
 
         Some(Command::Summary { group_by, period, what_if, json }) => {
             commands::summary::run(
@@ -371,9 +385,18 @@ fn main() -> Result<()> {
             commands::history::run(&backend, &config, &date, group_by.as_ref())
         }
 
-        Some(Command::Macro { json }) => commands::macro_cmd::run(&backend, &config, json, cached_only),
-        Some(Command::Oil { json }) => commands::oil::run(&backend, json, cached_only),
-        Some(Command::Crisis { json }) => commands::crisis::run(&backend, json, cached_only),
+        Some(Command::Macro { json }) => {
+            eprintln!("Warning: `pftui macro` is deprecated. Use `pftui dashboard macro` instead.");
+            commands::macro_cmd::run(&backend, &config, json, cached_only)
+        }
+        Some(Command::Oil { json }) => {
+            eprintln!("Warning: `pftui oil` is deprecated. Use `pftui dashboard oil` instead.");
+            commands::oil::run(&backend, json, cached_only)
+        }
+        Some(Command::Crisis { json }) => {
+            eprintln!("Warning: `pftui crisis` is deprecated. Use `pftui dashboard crisis` instead.");
+            commands::crisis::run(&backend, json, cached_only)
+        }
         Some(Command::Regime { action, limit, json }) => {
             commands::regime::run(&backend, &action, limit, json)
         }
@@ -388,6 +411,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Global { country, indicator, json }) => {
+            eprintln!("Warning: `pftui global` is deprecated. Use `pftui dashboard global` instead.");
             commands::global::run(&backend, country.as_deref(), indicator.as_deref(), json)
         }
 
@@ -1013,8 +1037,14 @@ fn main() -> Result<()> {
             })
         }
 
-        Some(Command::Sector { json }) => commands::sector::run(&backend, &config, json),
-        Some(Command::Heatmap { json }) => commands::heatmap::run(&backend, json),
+        Some(Command::Sector { json }) => {
+            eprintln!("Warning: `pftui sector` is deprecated. Use `pftui dashboard sector` instead.");
+            commands::sector::run(&backend, &config, json)
+        }
+        Some(Command::Heatmap { json }) => {
+            eprintln!("Warning: `pftui heatmap` is deprecated. Use `pftui dashboard heatmap` instead.");
+            commands::heatmap::run(&backend, json)
+        }
         Some(Command::Options {
             symbol,
             expiry,

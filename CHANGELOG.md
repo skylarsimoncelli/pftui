@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Add `pftui dashboard` namespace with alias warnings
+
+- What: added `dashboard` top-level namespace with subcommands `macro`, `oil`, `crisis`, `sector`, `heatmap`, and `global`. Wired existing implementations under the new path. Kept old top-level dashboard commands as deprecated aliases with stderr warnings and unchanged behavior.
+- Why: closes F40.6 hierarchy step and advances F40.10 alias coverage for dashboard commands.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`
+- TODO: removed F40.6 dashboard namespace item
+
 ### 2026-03-14 — Consolidate watchlist into `pftui watchlist add/remove/list`
 
 - What: added nested `watchlist` subcommands (`add`, `remove`, `list`) while keeping `pftui watchlist` defaulting to list behavior. Preserved old `watch`/`unwatch` commands as deprecated aliases with warnings and equivalent behavior.
