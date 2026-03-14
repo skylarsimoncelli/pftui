@@ -10,7 +10,7 @@
 
 Routing and composite score shipped. Remaining:
 
-**F39.7: Historical Power Metrics (`pftui analytics macro history`)**
+**F39.7: Empire Cycle History (`pftui analytics macro cycles history`)**
 
 New table `power_metrics_history`:
 ```sql
@@ -32,20 +32,21 @@ CREATE INDEX idx_pmh_decade ON power_metrics_history(decade);
 Separate from live `power_metrics` because historical scores are immutable reference data.
 Live metrics change weekly; 1940 US military score never changes.
 
-CLI subcommands:
+CLI subcommands (nested under existing `cycles`):
 ```
-pftui analytics macro history <COUNTRY>                      # all determinants, all decades
-pftui analytics macro history <COUNTRY> --metric <METRIC>    # single determinant timeline
-pftui analytics macro history <A> <B> --metric <METRIC>      # two powers, one metric compared
-pftui analytics macro history --decade <YEAR>                 # all powers at a point in time
-pftui analytics macro history --composite                     # composite scores over time, all powers
-pftui analytics macro history --json                          # JSON output for agent consumption
+pftui analytics macro cycles                                          # current cycle stages (existing, unchanged)
+pftui analytics macro cycles history <COUNTRY>                        # all determinants, all decades
+pftui analytics macro cycles history <COUNTRY> --metric <METRIC>      # single determinant timeline
+pftui analytics macro cycles history <A> <B> --metric <METRIC>        # two powers, one metric compared
+pftui analytics macro cycles history --decade <YEAR>                  # all powers at a point in time
+pftui analytics macro cycles history --composite                      # composite scores over time, all powers
+pftui analytics macro cycles history --json                           # JSON output for agent consumption
 ```
 
 CRUD for populating:
 ```
-pftui analytics macro history add <COUNTRY> --metric <METRIC> --decade <YEAR> --score <N> --notes "..." --source "..."
-pftui analytics macro history add-batch --file <CSV>          # bulk import from CSV
+pftui analytics macro cycles history add <COUNTRY> --metric <METRIC> --decade <YEAR> --score <N> --notes "..." --source "..."
+pftui analytics macro cycles history add-batch --file <CSV>           # bulk import from CSV
 ```
 
 Display format (for `--composite`):
