@@ -727,6 +727,7 @@ fn run_high(backend: &BackendConnection, json_output: bool) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_macro(
     backend: &BackendConnection,
     subaction: Option<&str>,

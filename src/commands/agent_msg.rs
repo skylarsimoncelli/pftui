@@ -97,17 +97,15 @@ pub fn run(
                         }))?
                     );
                 }
+            } else if ids.len() == 1 {
+                println!("Sent agent message #{}", ids[0]);
             } else {
-                if ids.len() == 1 {
-                    println!("Sent agent message #{}", ids[0]);
-                } else {
-                    let joined = ids
-                        .iter()
-                        .map(|id| format!("#{}", id))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    println!("Sent {} agent messages: {}", ids.len(), joined);
-                }
+                let joined = ids
+                    .iter()
+                    .map(|id| format!("#{}", id))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                println!("Sent {} agent messages: {}", ids.len(), joined);
             }
         }
 

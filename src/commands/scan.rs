@@ -44,6 +44,7 @@ struct ScanRow {
     allocation_pct: Option<Decimal>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     backend: &BackendConnection,
     config: &Config,
