@@ -2,6 +2,8 @@ use anyhow::{anyhow, Context, Result};
 use scraper::{Html, Selector};
 use std::sync::OnceLock;
 
+use crate::data::predictions::{MarketCategory, PredictionMarket};
+
 const FEDWATCH_URL: &str =
     "https://cmegroup-tools.quikstrike.net/User/QuikStrikeView.aspx?viewitemid=IntegratedFedWatchTool&userId=lwolf";
 const FEDWATCH_REFERER: &str =
@@ -43,6 +45,17 @@ pub struct TargetProbability {
     pub one_month_pct: f64,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProbabilityConflict {
+    pub metric: String,
+    pub cme_value_pct: f64,
+    pub alt_value_pct: f64,
+    pub delta_pct_points: f64,
+    pub recommended_source: String,
+    pub rationale: String,
+    pub alt_source_label: String,
+}
+
 pub fn fetch_snapshot() -> Result<FedWatchSnapshot> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
@@ -82,8 +95,8 @@ fn parse_snapshot(html: &str) -> Result<FedWatchSnapshot> {
 
 fn cached_selector<'a>(slot: &'a OnceLock<Selector>, css: &str) -> Result<&'a Selector> {
     if slot.get().is_none() {
-        let parsed = Selector::parse(css)
-            .map_err(|e| anyhow!("invalid CSS selector '{}': {:?}", css, e))?;
+        let parsed =
+            Selector::parse(css).map_err(|e| anyhow!("invalid CSS selector '{}': {:?}", css, e))?;
         let _ = slot.set(parsed);
     }
     slot.get()
@@ -260,9 +273,86 @@ fn parse_f64(input: &str) -> Result<f64> {
         .with_context(|| format!("failed to parse number from '{}'", input))
 }
 
+pub fn detect_no_change_conflict(
+    snapshot: &FedWatchSnapshot,
+    markets: &[PredictionMarket],
+    threshold_pct_points: f64,
+) -> Option<ProbabilityConflict> {
+    let (alt_no_change, label, volume_24h) = infer_alt_no_change_probability(markets)?;
+    let cme_no_change = snapshot.summary.no_change_pct;
+    let delta = (cme_no_change - alt_no_change).abs();
+    if delta < threshold_pct_points {
+        return None;
+    }
+
+    let (recommended_source, rationale) = if volume_24h >= 50_000.0 && delta <= 20.0 {
+        (
+            "CME FedWatch + investigate divergence".to_string(),
+            "Prediction market has meaningful liquidity, but CME FedWatch remains canonical for implied Fed path."
+                .to_string(),
+        )
+    } else {
+        (
+            "CME FedWatch".to_string(),
+            "CME contract-implied probabilities are generally more stable for near-term policy path than thin/noisy event markets."
+                .to_string(),
+        )
+    };
+
+    Some(ProbabilityConflict {
+        metric: "next_fomc_no_change_probability".to_string(),
+        cme_value_pct: cme_no_change,
+        alt_value_pct: alt_no_change,
+        delta_pct_points: delta,
+        recommended_source,
+        rationale,
+        alt_source_label: label,
+    })
+}
+
+fn infer_alt_no_change_probability(markets: &[PredictionMarket]) -> Option<(f64, String, f64)> {
+    let mut best: Option<(f64, String, f64)> = None;
+
+    for market in markets {
+        if market.category != MarketCategory::Economics {
+            continue;
+        }
+        let q = market.question.to_lowercase();
+        if !(q.contains("fed") || q.contains("fomc") || q.contains("federal reserve")) {
+            continue;
+        }
+
+        let no_change = if q.contains("no change")
+            || q.contains("hold rates")
+            || q.contains("rates unchanged")
+            || q.contains("unchanged")
+        {
+            market.probability * 100.0
+        } else if q.contains("rate cut")
+            || q.contains("cut rates")
+            || q.contains("rate hike")
+            || q.contains("hike rates")
+        {
+            100.0 - (market.probability * 100.0)
+        } else {
+            continue;
+        };
+
+        match &best {
+            Some((_, _, v)) if *v >= market.volume_24h => {}
+            _ => {
+                best = Some((no_change, market.question.clone(), market.volume_24h));
+            }
+        }
+    }
+
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::predictions::MarketCategory;
 
     #[test]
     fn parses_cme_fedwatch_snapshot_snippet() {
@@ -296,5 +386,41 @@ mod tests {
         assert_eq!(parsed.target_probabilities[0].target_rate_bps, "350-375");
         assert_eq!(parsed.target_probabilities[0].now_pct, 96.3);
         assert_eq!(parsed.target_probabilities[1].target_rate_bps, "325-350");
+    }
+
+    #[test]
+    fn detects_no_change_conflict_against_prediction_markets() {
+        let snapshot = FedWatchSnapshot {
+            source_url: "cme".to_string(),
+            fetched_at: "2026-03-13T00:00:00Z".to_string(),
+            meetings: vec!["18 Mar26".to_string()],
+            meeting_info: MeetingInfo {
+                meeting_date: "18 Mar 2026".to_string(),
+                contract: "ZQH6".to_string(),
+                expires: "31 Mar 2026".to_string(),
+                mid_price: 96.0,
+                prior_volume: 1,
+                prior_open_interest: 1,
+            },
+            summary: SummaryProbabilities {
+                ease_pct: 1.0,
+                no_change_pct: 92.0,
+                hike_pct: 7.0,
+            },
+            target_probabilities: vec![],
+        };
+        let markets = vec![PredictionMarket {
+            id: "1".to_string(),
+            question: "Will the Fed cut rates at the next FOMC meeting?".to_string(),
+            probability: 0.989,
+            volume_24h: 80_000.0,
+            category: MarketCategory::Economics,
+            updated_at: 0,
+        }];
+
+        let conflict =
+            detect_no_change_conflict(&snapshot, &markets, 5.0).expect("should detect conflict");
+        assert!(conflict.delta_pct_points > 5.0);
+        assert_eq!(conflict.metric, "next_fomc_no_change_probability");
     }
 }

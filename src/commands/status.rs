@@ -71,7 +71,7 @@ fn format_time_ago(rfc3339_str: &str) -> String {
     if let Some(dt) = parse_timestamp_utc(rfc3339_str) {
         let age = now.signed_duration_since(dt);
         let secs = age.num_seconds();
-        
+
         if secs < 60 {
             return format!("{}s ago", secs);
         } else if secs < 3600 {
@@ -109,22 +109,21 @@ where
     I: IntoIterator<Item = String>,
 {
     let mut most_recent: Option<UtcDateTime> = None;
-    let mut is_stale = false;
     for fetched_at in fetched_values {
         if let Some(dt_utc) = parse_rfc3339_utc(&fetched_at) {
             update_most_recent(&mut most_recent, dt_utc);
-            if now.signed_duration_since(dt_utc).num_seconds() > freshness_secs {
-                is_stale = true;
-            }
         }
     }
+    let is_stale = most_recent
+        .map(|dt| now.signed_duration_since(dt).num_seconds() > freshness_secs)
+        .unwrap_or(true);
     (most_recent, is_stale)
 }
 
 fn check_prices(conn: &Connection) -> Result<DataSourceStatus> {
     let prices = price_cache::get_all_cached_prices(conn)?;
     let count = prices.len();
-    
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "Prices",
@@ -133,26 +132,30 @@ fn check_prices(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     let now = chrono::Utc::now();
     let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
         prices.iter().map(|price| price.fetched_at.clone()),
         now,
         PRICE_FRESHNESS_SECS,
     );
-    
+
     Ok(DataSourceStatus {
         name: "Prices",
         last_fetch: most_recent.map(|dt| dt.to_rfc3339()),
         records: count,
-        status: if is_stale { SourceStatus::Stale } else { SourceStatus::Fresh },
+        status: if is_stale {
+            SourceStatus::Stale
+        } else {
+            SourceStatus::Fresh
+        },
     })
 }
 
 fn check_predictions(conn: &Connection) -> Result<DataSourceStatus> {
     let markets = predictions_cache::get_cached_predictions(conn, 100)?;
     let count = markets.len();
-    
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "Predictions",
@@ -161,31 +164,34 @@ fn check_predictions(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     let last_update = predictions_cache::get_last_update(conn)?;
     let now = chrono::Utc::now().timestamp();
-    
+
     let (last_fetch_str, is_stale) = match last_update {
         Some(ts) => {
-            let dt = chrono::DateTime::from_timestamp(ts, 0)
-                .unwrap_or_else(chrono::Utc::now);
+            let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap_or_else(chrono::Utc::now);
             let age = now - ts;
             (Some(dt.to_rfc3339()), age > PREDICTIONS_FRESHNESS_SECS)
         }
         None => (None, true),
     };
-    
+
     Ok(DataSourceStatus {
         name: "Predictions",
         last_fetch: last_fetch_str,
         records: count,
-        status: if is_stale { SourceStatus::Stale } else { SourceStatus::Fresh },
+        status: if is_stale {
+            SourceStatus::Stale
+        } else {
+            SourceStatus::Fresh
+        },
     })
 }
 
 fn check_news(conn: &Connection) -> Result<DataSourceStatus> {
     let news = news_cache::get_latest_news(conn, 1, None, None, None, None)?;
-    
+
     if news.is_empty() {
         return Ok(DataSourceStatus {
             name: "News",
@@ -194,13 +200,13 @@ fn check_news(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
-    let count = conn.query_row(
-        "SELECT COUNT(*) FROM news_cache",
-        [],
-        |row| row.get::<_, i64>(0),
-    ).unwrap_or(0) as usize;
-    
+
+    let count = conn
+        .query_row("SELECT COUNT(*) FROM news_cache", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_or(0) as usize;
+
     let now = chrono::Utc::now();
     let fetched_at = &news[0].fetched_at;
     let is_stale = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(fetched_at) {
@@ -209,19 +215,23 @@ fn check_news(conn: &Connection) -> Result<DataSourceStatus> {
     } else {
         true
     };
-    
+
     Ok(DataSourceStatus {
         name: "News",
         last_fetch: Some(fetched_at.clone()),
         records: count,
-        status: if is_stale { SourceStatus::Stale } else { SourceStatus::Fresh },
+        status: if is_stale {
+            SourceStatus::Stale
+        } else {
+            SourceStatus::Fresh
+        },
     })
 }
 
 fn check_cot(conn: &Connection) -> Result<DataSourceStatus> {
     let reports = cot_cache::get_all_latest(conn)?;
     let count = reports.len();
-    
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "COT",
@@ -230,28 +240,32 @@ fn check_cot(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     let now = chrono::Utc::now();
     let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
         reports.iter().map(|report| report.fetched_at.clone()),
         now,
         COT_FRESHNESS_SECS,
     );
-    
+
     Ok(DataSourceStatus {
         name: "COT",
         last_fetch: most_recent.map(|dt| dt.to_rfc3339()),
         records: count,
-        status: if is_stale { SourceStatus::Stale } else { SourceStatus::Fresh },
+        status: if is_stale {
+            SourceStatus::Stale
+        } else {
+            SourceStatus::Fresh
+        },
     })
 }
 
 fn check_sentiment(conn: &Connection) -> Result<DataSourceStatus> {
     let crypto = sentiment_cache::get_latest(conn, "crypto_fng")?;
     let trad = sentiment_cache::get_latest(conn, "traditional_fng")?;
-    
+
     let count = if crypto.is_some() { 1 } else { 0 } + if trad.is_some() { 1 } else { 0 };
-    
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "Sentiment",
@@ -260,7 +274,7 @@ fn check_sentiment(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     let now = chrono::Utc::now();
     let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
         [crypto, trad]
@@ -270,12 +284,16 @@ fn check_sentiment(conn: &Connection) -> Result<DataSourceStatus> {
         now,
         SENTIMENT_FRESHNESS_SECS,
     );
-    
+
     Ok(DataSourceStatus {
         name: "Sentiment",
         last_fetch: most_recent.map(|dt| dt.to_rfc3339()),
         records: count,
-        status: if is_stale { SourceStatus::Stale } else { SourceStatus::Fresh },
+        status: if is_stale {
+            SourceStatus::Stale
+        } else {
+            SourceStatus::Fresh
+        },
     })
 }
 
@@ -283,7 +301,7 @@ fn check_calendar(conn: &Connection) -> Result<DataSourceStatus> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let events = calendar_cache::get_upcoming_events(conn, &today, 100)?;
     let count = events.len();
-    
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "Calendar",
@@ -292,30 +310,34 @@ fn check_calendar(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     let now = chrono::Utc::now();
     let (most_recent, is_stale) = most_recent_and_stale_from_fetched(
         events.iter().map(|event| event.fetched_at.clone()),
         now,
         CALENDAR_FRESHNESS_SECS,
     );
-    
+
     Ok(DataSourceStatus {
         name: "Calendar",
         last_fetch: most_recent.map(|dt| dt.to_rfc3339()),
         records: count,
-        status: if is_stale { SourceStatus::Stale } else { SourceStatus::Fresh },
+        status: if is_stale {
+            SourceStatus::Stale
+        } else {
+            SourceStatus::Fresh
+        },
     })
 }
 
 fn check_bls(conn: &Connection) -> Result<DataSourceStatus> {
     // Count all BLS records
-    let count = conn.query_row(
-        "SELECT COUNT(*) FROM bls_cache",
-        [],
-        |row| row.get::<_, i64>(0),
-    ).unwrap_or(0) as usize;
-    
+    let count = conn
+        .query_row("SELECT COUNT(*) FROM bls_cache", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_or(0) as usize;
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "BLS",
@@ -324,19 +346,22 @@ fn check_bls(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     // Check freshness of a key series
-    let is_fresh = bls_cache::is_cache_fresh(conn, "CUUR0000SA0", BLS_FRESHNESS_DAYS).unwrap_or(false);
-    
+    let is_fresh =
+        bls_cache::is_cache_fresh(conn, "CUUR0000SA0", BLS_FRESHNESS_DAYS).unwrap_or(false);
+
     // Get last update timestamp from bls_cache table
-    let last_fetch = conn.query_row(
-        "SELECT MAX(updated_at) FROM bls_cache",
-        [],
-        |row| row.get::<_, Option<String>>(0),
-    ).optional().ok().flatten().flatten().and_then(|raw| {
-        parse_timestamp_utc(&raw).map(|dt| dt.to_rfc3339())
-    });
-    
+    let last_fetch = conn
+        .query_row("SELECT MAX(updated_at) FROM bls_cache", [], |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .optional()
+        .ok()
+        .flatten()
+        .flatten()
+        .and_then(|raw| parse_timestamp_utc(&raw).map(|dt| dt.to_rfc3339()));
+
     Ok(DataSourceStatus {
         name: "BLS",
         last_fetch,
@@ -353,12 +378,12 @@ fn check_bls(conn: &Connection) -> Result<DataSourceStatus> {
 
 fn check_worldbank(conn: &Connection) -> Result<DataSourceStatus> {
     // Count all World Bank records
-    let count = conn.query_row(
-        "SELECT COUNT(*) FROM worldbank_cache",
-        [],
-        |row| row.get::<_, i64>(0),
-    ).unwrap_or(0) as usize;
-    
+    let count = conn
+        .query_row("SELECT COUNT(*) FROM worldbank_cache", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_or(0) as usize;
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "World Bank",
@@ -367,18 +392,20 @@ fn check_worldbank(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     let needs_refresh = worldbank_cache::needs_refresh(conn).unwrap_or(true);
-    
+
     // Get last update timestamp from worldbank_cache table
-    let last_fetch = conn.query_row(
-        "SELECT MAX(updated_at) FROM worldbank_cache",
-        [],
-        |row| row.get::<_, Option<String>>(0),
-    ).optional().ok().flatten().flatten().and_then(|raw| {
-        parse_timestamp_utc(&raw).map(|dt| dt.to_rfc3339())
-    });
-    
+    let last_fetch = conn
+        .query_row("SELECT MAX(updated_at) FROM worldbank_cache", [], |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .optional()
+        .ok()
+        .flatten()
+        .flatten()
+        .and_then(|raw| parse_timestamp_utc(&raw).map(|dt| dt.to_rfc3339()));
+
     Ok(DataSourceStatus {
         name: "World Bank",
         last_fetch,
@@ -394,21 +421,20 @@ fn check_worldbank(conn: &Connection) -> Result<DataSourceStatus> {
 fn check_comex(conn: &Connection) -> Result<DataSourceStatus> {
     let mut count = 0;
     let mut most_recent: Option<UtcDateTime> = None;
-    let mut is_stale = false;
     let now = chrono::Utc::now();
-    
+
     for symbol in &["GC=F", "SI=F"] {
         if let Ok(Some(inv)) = comex_cache::get_latest_inventory(conn, symbol) {
             count += 1;
             if let Some(dt_utc) = parse_rfc3339_utc(&inv.fetched_at) {
                 update_most_recent(&mut most_recent, dt_utc);
-                if now.signed_duration_since(dt_utc).num_seconds() > COMEX_FRESHNESS_SECS {
-                    is_stale = true;
-                }
             }
         }
     }
-    
+    let is_stale = most_recent
+        .map(|dt| now.signed_duration_since(dt).num_seconds() > COMEX_FRESHNESS_SECS)
+        .unwrap_or(true);
+
     Ok(DataSourceStatus {
         name: "COMEX",
         last_fetch: most_recent.map(|dt| dt.to_rfc3339()),
@@ -426,7 +452,7 @@ fn check_comex(conn: &Connection) -> Result<DataSourceStatus> {
 fn check_onchain(conn: &Connection) -> Result<DataSourceStatus> {
     let metrics = onchain_cache::get_metrics_by_type(conn, "network", 100)?;
     let count = metrics.len();
-    
+
     if count == 0 {
         return Ok(DataSourceStatus {
             name: "On-chain",
@@ -435,20 +461,22 @@ fn check_onchain(conn: &Connection) -> Result<DataSourceStatus> {
             status: SourceStatus::Empty,
         });
     }
-    
+
     let now = chrono::Utc::now();
     let (most_recent, _) = most_recent_and_stale_from_fetched(
         metrics.iter().map(|metric| metric.fetched_at.clone()),
         now,
         i64::MAX,
     );
-    
+
     // On-chain data is "fresh" if fetched today
-    let is_fresh = most_recent.map(|dt| {
-        let age = now.signed_duration_since(dt);
-        age.num_hours() < 24
-    }).unwrap_or(false);
-    
+    let is_fresh = most_recent
+        .map(|dt| {
+            let age = now.signed_duration_since(dt);
+            age.num_hours() < 24
+        })
+        .unwrap_or(false);
+
     Ok(DataSourceStatus {
         name: "On-chain",
         last_fetch: most_recent.map(|dt| dt.to_rfc3339()),
@@ -482,7 +510,7 @@ pub fn run(conn: &Connection, json: bool) -> Result<()> {
     } else {
         print_table(&config, &sources);
     }
-    
+
     Ok(())
 }
 
@@ -598,7 +626,11 @@ fn check_source_postgres(
     };
 
     let count_sql = format!("SELECT COUNT(*)::BIGINT FROM {}", table);
-    let count: i64 = match runtime.block_on(async { sqlx::query_scalar::<_, i64>(&count_sql).fetch_one(pool).await }) {
+    let count: i64 = match runtime.block_on(async {
+        sqlx::query_scalar::<_, i64>(&count_sql)
+            .fetch_one(pool)
+            .await
+    }) {
         Ok(v) => v,
         Err(_) => {
             return DataSourceStatus {
@@ -620,8 +652,14 @@ fn check_source_postgres(
     }
 
     let last_sql = format!("SELECT {} FROM {}", last_fetch_expr, table);
-    let last_fetch: Option<String> =
-        runtime.block_on(async { sqlx::query_scalar::<_, Option<String>>(&last_sql).fetch_one(pool).await }).ok().flatten();
+    let last_fetch: Option<String> = runtime
+        .block_on(async {
+            sqlx::query_scalar::<_, Option<String>>(&last_sql)
+                .fetch_one(pool)
+                .await
+        })
+        .ok()
+        .flatten();
 
     let status = match (freshness_secs, last_fetch.as_deref()) {
         (Some(max_age), Some(ts)) => {
@@ -653,8 +691,9 @@ fn is_stale_timestamp(raw: &str, max_age_secs: i64) -> bool {
 
 fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> Result<()> {
     use serde_json::json;
-    
-    let brave_configured = config.brave_api_key
+
+    let brave_configured = config
+        .brave_api_key
         .as_ref()
         .map(|k| !k.trim().is_empty())
         .unwrap_or(false);
@@ -688,21 +727,27 @@ fn print_table(config: &crate::config::Config, sources: &[DataSourceStatus]) {
         );
     } else {
         println!("Brave Search: ✓ Configured");
-        println!("Brave usage: query count / credits unavailable via current API response metadata");
+        println!(
+            "Brave usage: query count / credits unavailable via current API response metadata"
+        );
     }
     println!();
-    
+
     // Print header
-    println!("{:<16} {:<18} {:<8} Status", "Source", "Last Fetch", "Records");
+    println!(
+        "{:<16} {:<18} {:<8} Status",
+        "Source", "Last Fetch", "Records"
+    );
     println!("{}", "─".repeat(60));
-    
+
     // Print each source
     for source in sources {
-        let last_fetch_str = source.last_fetch
+        let last_fetch_str = source
+            .last_fetch
             .as_ref()
             .map(|s| format_time_ago(s))
             .unwrap_or_else(|| "never".to_string());
-        
+
         println!(
             "{:<16} {:<18} {:<8} {} {}",
             source.name,
@@ -711,5 +756,21 @@ fn print_table(config: &crate::config::Config, sources: &[DataSourceStatus]) {
             source.status.symbol(),
             source.status.name()
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn stale_check_uses_most_recent_timestamp() {
+        let now = chrono::Utc::now();
+        let fresh = (now - Duration::minutes(5)).to_rfc3339();
+        let old = (now - Duration::hours(4)).to_rfc3339();
+        let (_latest, is_stale) =
+            most_recent_and_stale_from_fetched(vec![old, fresh], now, 15 * 60);
+        assert!(!is_stale);
     }
 }

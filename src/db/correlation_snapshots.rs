@@ -330,3 +330,30 @@ fn ensure_table_postgres(pool: &PgPool) -> Result<()> {
     })?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::open_in_memory;
+
+    #[test]
+    fn list_current_returns_latest_per_pair_and_period() {
+        let conn = open_in_memory();
+        let first_id = store_snapshot(&conn, "BTC", "SPY", 0.42, "30d").unwrap();
+        conn.execute(
+            "UPDATE correlation_snapshots SET recorded_at = '2026-03-01T00:00:00Z' WHERE id = ?1",
+            rusqlite::params![first_id],
+        )
+        .unwrap();
+        store_snapshot(&conn, "BTC", "SPY", 0.61, "30d").unwrap();
+        store_snapshot(&conn, "BTC", "GC=F", -0.25, "30d").unwrap();
+
+        let rows = list_current(&conn, Some("30d")).unwrap();
+        assert_eq!(rows.len(), 2);
+        let btc_spy = rows
+            .iter()
+            .find(|r| r.symbol_a == "BTC" && r.symbol_b == "SPY")
+            .unwrap();
+        assert!((btc_spy.correlation - 0.61).abs() < f64::EPSILON);
+    }
+}

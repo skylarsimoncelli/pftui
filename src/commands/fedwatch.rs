@@ -1,12 +1,28 @@
 use anyhow::Result;
 
 use crate::data::fedwatch;
+use crate::db::backend::BackendConnection;
+use crate::db::predictions_cache;
 
-pub fn run(json: bool) -> Result<()> {
+const CONFLICT_THRESHOLD_PCT_POINTS: f64 = 5.0;
+
+pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     let snapshot = fedwatch::fetch_snapshot()?;
+    let prediction_markets = predictions_cache::get_cached_predictions_backend(backend, 200)?;
+    let conflict = fedwatch::detect_no_change_conflict(
+        &snapshot,
+        &prediction_markets,
+        CONFLICT_THRESHOLD_PCT_POINTS,
+    );
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&snapshot)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "snapshot": snapshot,
+                "conflicts": conflict.as_ref().map(|c| vec![c]).unwrap_or_default(),
+            }))?
+        );
         return Ok(());
     }
 
@@ -42,6 +58,20 @@ pub fn run(json: bool) -> Result<()> {
     if !snapshot.meetings.is_empty() {
         println!("  Upcoming meetings:");
         println!("    {}", snapshot.meetings.join(", "));
+        println!();
+    }
+    if let Some(conflict) = conflict {
+        println!("  ⚠ Data source conflict detected:");
+        println!(
+            "    Metric: {} | CME {:.1}% vs alt {:.1}% (Δ {:.1}pp)",
+            conflict.metric,
+            conflict.cme_value_pct,
+            conflict.alt_value_pct,
+            conflict.delta_pct_points
+        );
+        println!("    Alt source: {}", conflict.alt_source_label);
+        println!("    Recommended source: {}", conflict.recommended_source);
+        println!("    Rationale: {}", conflict.rationale);
         println!();
     }
 

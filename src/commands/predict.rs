@@ -15,14 +15,20 @@ fn validate_conviction(value: &str) -> Result<()> {
 fn validate_timeframe(value: &str) -> Result<()> {
     match value {
         "low" | "medium" | "high" | "macro" => Ok(()),
-        _ => bail!("invalid timeframe '{}'. Valid: low, medium, high, macro", value),
+        _ => bail!(
+            "invalid timeframe '{}'. Valid: low, medium, high, macro",
+            value
+        ),
     }
 }
 
 fn validate_outcome(value: &str) -> Result<()> {
     match value {
         "pending" | "correct" | "partial" | "wrong" => Ok(()),
-        _ => bail!("invalid outcome '{}'. Valid: pending, correct, partial, wrong", value),
+        _ => bail!(
+            "invalid outcome '{}'. Valid: pending, correct, partial, wrong",
+            value
+        ),
     }
 }
 
@@ -38,8 +44,12 @@ fn parse_date_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
     if normalized == "yesterday" {
         return Ok(Some(today - Duration::days(1)));
     }
-    let parsed = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
-        .map_err(|_| anyhow::anyhow!("invalid date '{}'. Use YYYY-MM-DD, today, or yesterday", raw))?;
+    let parsed = NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| {
+        anyhow::anyhow!(
+            "invalid date '{}'. Use YYYY-MM-DD, today, or yesterday",
+            raw
+        )
+    })?;
     Ok(Some(parsed))
 }
 
@@ -122,17 +132,15 @@ pub fn run(
                 validate_timeframe(tf)?;
             }
             let rows = user_predictions::list_predictions_backend(
-                backend,
-                filter,
-                symbol,
-                timeframe,
-                limit,
+                backend, filter, symbol, timeframe, limit,
             )?;
 
             if json_output {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&json!({ "predictions": rows, "count": rows.len() }))?
+                    serde_json::to_string_pretty(
+                        &json!({ "predictions": rows, "count": rows.len() })
+                    )?
                 );
             } else if rows.is_empty() {
                 println!("No predictions found.");
@@ -149,8 +157,16 @@ pub fn run(
         }
 
         "score" => {
-            let pid = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
-            let out = outcome.ok_or_else(|| anyhow::anyhow!("--outcome required"))?;
+            let pid = id.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "prediction id required. Usage: pftui journal prediction score <ID> <OUTCOME> [NOTES] [--lesson ...] or --id/--outcome flags"
+                )
+            })?;
+            let out = outcome.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "prediction outcome required. Usage: pftui journal prediction score <ID> <OUTCOME> [NOTES] [--lesson ...] or --id/--outcome flags"
+                )
+            })?;
             validate_outcome(out)?;
             user_predictions::score_prediction_backend(backend, pid, out, notes, lesson)?;
 
@@ -160,7 +176,10 @@ pub fn run(
                 if let Some(row) = rows.into_iter().find(|r| r.id == pid) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 } else {
-                    println!("{}", serde_json::to_string_pretty(&json!({ "scored": pid }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json!({ "scored": pid }))?
+                    );
                 }
             } else {
                 println!("Scored prediction #{} as {}", pid, out);
@@ -190,8 +209,9 @@ pub fn run(
                 validate_timeframe(tf)?;
             }
             let target_date = parse_date_filter(date)?;
-            let mut rows =
-                user_predictions::list_predictions_backend(backend, filter, symbol, timeframe, limit)?;
+            let mut rows = user_predictions::list_predictions_backend(
+                backend, filter, symbol, timeframe, limit,
+            )?;
             if let Some(d) = target_date {
                 rows.retain(|row| {
                     let event_date = row
@@ -295,7 +315,10 @@ pub fn run(
             }
         }
 
-        _ => bail!("unknown predict action '{}'. Valid: add, list, score, stats, scorecard", action),
+        _ => bail!(
+            "unknown predict action '{}'. Valid: add, list, score, stats, scorecard",
+            action
+        ),
     }
 
     Ok(())
