@@ -1,0 +1,4 @@
+interface:
+  display_name: "pftui Feature"
+  short_description: "Deliver one pftui TODO feature end-to-end."
+  default_prompt: "Use $pftui-feature to complete pftui feature FXX end-to-end."
