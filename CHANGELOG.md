@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Finalize five-domain CLI tree and remove deprecated namespaces
+
+- What: completed F42 by hard-cutting the CLI to five top-level domains (`agent`, `analytics`, `data`, `portfolio`, `system`). Moved `watchlist` under `portfolio`, `market` and `dashboard` under `data`, and `journal` under `agent`. Replaced positional action parsing for `agent message`, `portfolio target`, and `portfolio opportunity` with nested subcommands, added canonical tree and migration docs, and refreshed operator/product docs to the new paths.
+- Why: the F40 transition left extra top-level namespaces and stringly action dispatch in place. F42 finalizes the hierarchy so help output, docs, and parser behavior all agree on one canonical command tree.
+- Files: `src/cli.rs`, `src/main.rs`, `docs/CLI-TREE.md`, `docs/CLI-MIGRATION.md`, `README.md`, `AGENTS.md`, `PRODUCT-VISION.md`, `PRODUCT-PHILOSOPHY.md`, `CLAUDE.md`, `TODO.md`
+- Tests: `cargo test cli::tests -- --nocapture`
+
 ### 2026-03-14 — Migration Safety Policy for Schema Refactors
 
 - What: established a release policy for database schema modernization to avoid breaking existing user databases: additive tables first, deterministic backfill, dual-read/write compatibility window, canonical-only cutover in a later release, and legacy table drop only after validated overlap period.

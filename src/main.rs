@@ -22,6 +22,494 @@ use crate::config::load_config_with_first_run_prompt;
 use crate::db::backend::open_from_config;
 use crate::db::default_db_path;
 
+fn run_agent_journal(
+    backend: &crate::db::backend::BackendConnection,
+    command: Option<cli::JournalCommand>,
+) -> Result<()> {
+    match command {
+        None => commands::journal::run_list(backend, Some(20), None, None, None, None, false),
+        Some(cli::JournalCommand::Entry { command }) => match command {
+            cli::JournalEntryCommand::Add {
+                value,
+                date,
+                tag,
+                symbol,
+                conviction,
+                json,
+            } => commands::journal::run_add(
+                backend,
+                &value,
+                date.as_deref(),
+                tag.as_deref(),
+                symbol.as_deref(),
+                conviction.as_deref(),
+                json,
+            ),
+            cli::JournalEntryCommand::List {
+                limit,
+                since,
+                tag,
+                symbol,
+                filter_status,
+                json,
+            } => commands::journal::run_list(
+                backend,
+                limit,
+                since.as_deref(),
+                tag.as_deref(),
+                symbol.as_deref(),
+                filter_status.as_deref(),
+                json,
+            ),
+            cli::JournalEntryCommand::Search {
+                query,
+                since,
+                limit,
+                json,
+            } => commands::journal::run_search(backend, &query, since.as_deref(), limit, json),
+            cli::JournalEntryCommand::Update {
+                id,
+                content,
+                status,
+                json,
+            } => commands::journal::run_update(
+                backend,
+                id,
+                content.as_deref(),
+                status.as_deref(),
+                json,
+            ),
+            cli::JournalEntryCommand::Remove { id, json } => {
+                commands::journal::run_remove(backend, id, json)
+            }
+            cli::JournalEntryCommand::Tags { json } => commands::journal::run_tags(backend, json),
+            cli::JournalEntryCommand::Stats { json } => commands::journal::run_stats(backend, json),
+        },
+        Some(cli::JournalCommand::Prediction { command }) => match command {
+            cli::JournalPredictionCommand::Add {
+                value,
+                symbol,
+                conviction,
+                timeframe,
+                confidence,
+                source_agent,
+                target_date,
+                resolution_criteria,
+                json,
+            } => commands::predict::run(
+                backend,
+                "add",
+                Some(&value),
+                None,
+                symbol.as_deref(),
+                conviction.as_deref(),
+                timeframe.as_deref(),
+                confidence,
+                source_agent.as_deref(),
+                target_date.as_deref(),
+                resolution_criteria.as_deref(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
+            ),
+            cli::JournalPredictionCommand::List {
+                filter,
+                timeframe,
+                symbol,
+                limit,
+                json,
+            } => commands::predict::run(
+                backend,
+                "list",
+                None,
+                None,
+                symbol.as_deref(),
+                None,
+                timeframe.as_deref(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                filter.as_deref(),
+                None,
+                limit,
+                json,
+            ),
+            cli::JournalPredictionCommand::Score {
+                id,
+                outcome,
+                notes,
+                lesson,
+                json,
+            } => commands::predict::run(
+                backend,
+                "score",
+                None,
+                Some(id),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                outcome.as_deref(),
+                notes.as_deref(),
+                lesson.as_deref(),
+                None,
+                None,
+                None,
+                json,
+            ),
+            cli::JournalPredictionCommand::Stats { json } => commands::predict::run(
+                backend, "stats", None, None, None, None, None, None, None, None, None, None, None,
+                None, None, None, None, json,
+            ),
+            cli::JournalPredictionCommand::Scorecard { date, limit, json } => {
+                commands::predict::run(
+                    backend,
+                    "scorecard",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    date.as_deref(),
+                    limit,
+                    json,
+                )
+            }
+        },
+        Some(cli::JournalCommand::Conviction { command }) => match command {
+            cli::JournalConvictionCommand::Set {
+                symbol,
+                score,
+                notes,
+                json,
+            } => {
+                let score_val = score.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Missing score. Usage: pftui agent journal conviction set SYMBOL --score N"
+                    )
+                })?;
+                commands::conviction::run_set(backend, &symbol, score_val, notes.as_deref(), json)
+            }
+            cli::JournalConvictionCommand::List { json } => {
+                commands::conviction::run_list(backend, json)
+            }
+            cli::JournalConvictionCommand::History {
+                symbol,
+                limit,
+                json,
+            } => commands::conviction::run_history(backend, &symbol, limit, json),
+            cli::JournalConvictionCommand::Changes { days, json } => {
+                let d = days
+                    .as_deref()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(7);
+                commands::conviction::run_changes(backend, d, json)
+            }
+        },
+        Some(cli::JournalCommand::Notes { command }) => match command {
+            cli::JournalNotesCommand::Add {
+                value,
+                date,
+                section,
+                json,
+            } => commands::notes::run(
+                backend,
+                "add",
+                Some(&value),
+                None,
+                date.as_deref(),
+                section.as_deref(),
+                None,
+                None,
+                json,
+            ),
+            cli::JournalNotesCommand::List { since, limit, json } => commands::notes::run(
+                backend,
+                "list",
+                None,
+                None,
+                None,
+                None,
+                since.as_deref(),
+                limit,
+                json,
+            ),
+            cli::JournalNotesCommand::Search {
+                query,
+                since,
+                limit,
+                json,
+            } => commands::notes::run(
+                backend,
+                "search",
+                Some(&query),
+                None,
+                None,
+                None,
+                since.as_deref(),
+                limit,
+                json,
+            ),
+            cli::JournalNotesCommand::Remove { id, json } => commands::notes::run(
+                backend,
+                "remove",
+                None,
+                Some(id),
+                None,
+                None,
+                None,
+                None,
+                json,
+            ),
+        },
+        Some(cli::JournalCommand::Scenario { command }) => match command {
+            cli::JournalScenarioCommand::Add {
+                value,
+                probability,
+                description,
+                impact,
+                triggers,
+                precedent,
+                status,
+                json,
+            } => commands::scenario::run(
+                backend,
+                "add",
+                Some(&value),
+                None,
+                None,
+                probability,
+                description.as_deref(),
+                impact.as_deref(),
+                triggers.as_deref(),
+                precedent.as_deref(),
+                status.as_deref(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
+            ),
+            cli::JournalScenarioCommand::List {
+                status,
+                limit,
+                json,
+            } => commands::scenario::run(
+                backend,
+                "list",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                status.as_deref(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                limit,
+                json,
+            ),
+            cli::JournalScenarioCommand::Update {
+                value,
+                probability,
+                description,
+                impact,
+                triggers,
+                precedent,
+                status,
+                driver,
+                notes,
+                json,
+            } => commands::scenario::run(
+                backend,
+                "update",
+                Some(&value),
+                None,
+                None,
+                probability,
+                description.as_deref(),
+                impact.as_deref(),
+                triggers.as_deref(),
+                precedent.as_deref(),
+                status.as_deref(),
+                driver.as_deref(),
+                notes.as_deref(),
+                None,
+                None,
+                None,
+                None,
+                json,
+            ),
+            cli::JournalScenarioCommand::Remove { value, json } => commands::scenario::run(
+                backend,
+                "remove",
+                Some(&value),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
+            ),
+            cli::JournalScenarioCommand::History { value, limit, json } => commands::scenario::run(
+                backend,
+                "history",
+                Some(&value),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                limit,
+                json,
+            ),
+            cli::JournalScenarioCommand::Signal { command } => match command {
+                cli::JournalScenarioSignalCommand::Add {
+                    value,
+                    scenario,
+                    source,
+                    status,
+                    json,
+                } => commands::scenario::run(
+                    backend,
+                    "signal-add",
+                    Some(&value),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    status.as_deref(),
+                    None,
+                    None,
+                    None,
+                    source.as_deref(),
+                    scenario.as_deref(),
+                    None,
+                    json,
+                ),
+                cli::JournalScenarioSignalCommand::List {
+                    scenario,
+                    status,
+                    limit,
+                    json,
+                } => commands::scenario::run(
+                    backend,
+                    "signal-list",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    status.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    scenario.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::JournalScenarioSignalCommand::Update {
+                    signal_id,
+                    evidence,
+                    status,
+                    json,
+                } => commands::scenario::run(
+                    backend,
+                    "signal-update",
+                    None,
+                    None,
+                    Some(signal_id),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    status.as_deref(),
+                    None,
+                    None,
+                    evidence.as_deref(),
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::JournalScenarioSignalCommand::Remove { signal_id, json } => {
+                    commands::scenario::run(
+                        backend,
+                        "signal-remove",
+                        None,
+                        None,
+                        Some(signal_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        json,
+                    )
+                }
+            },
+        },
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let cached_only = cli.cached_only;
@@ -52,20 +540,6 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(Command::Dashboard { command }) => match command {
-            cli::DashboardCommand::Macro { json } => {
-                commands::macro_cmd::run(&backend, &config, json, cached_only)
-            }
-            cli::DashboardCommand::Oil { json } => commands::oil::run(&backend, json, cached_only),
-            cli::DashboardCommand::Crisis { json } => {
-                commands::crisis::run(&backend, json, cached_only)
-            }
-            cli::DashboardCommand::Sector { json } => commands::sector::run(&backend, &config, json),
-            cli::DashboardCommand::Heatmap { json } => commands::heatmap::run(&backend, json),
-            cli::DashboardCommand::Global { country, indicator, json } => {
-                commands::global::run(&backend, country.as_deref(), indicator.as_deref(), json)
-            }
-        },
         Some(Command::Data { command }) => match command {
             cli::DataCommand::Refresh { notify } => {
                 if cached_only {
@@ -76,42 +550,79 @@ fn main() -> Result<()> {
                 }
             }
             cli::DataCommand::Status { json, .. } => commands::status::run_backend(&backend, json),
-        },
-        Some(Command::Market { command }) => match command {
-            cli::MarketCommand::News {
+            cli::DataCommand::Dashboard { command } => match command {
+                cli::DashboardCommand::Macro { json } => {
+                    commands::macro_cmd::run(&backend, &config, json, cached_only)
+                }
+                cli::DashboardCommand::Oil { json } => {
+                    commands::oil::run(&backend, json, cached_only)
+                }
+                cli::DashboardCommand::Crisis { json } => {
+                    commands::crisis::run(&backend, json, cached_only)
+                }
+                cli::DashboardCommand::Sector { json } => {
+                    commands::sector::run(&backend, &config, json)
+                }
+                cli::DashboardCommand::Heatmap { json } => commands::heatmap::run(&backend, json),
+                cli::DashboardCommand::Global {
+                    country,
+                    indicator,
+                    json,
+                } => {
+                    commands::global::run(&backend, country.as_deref(), indicator.as_deref(), json)
+                }
+            },
+            cli::DataCommand::News {
                 source,
                 search,
                 hours,
                 limit,
                 json,
-            } => commands::news::run(&backend, source.as_deref(), search.as_deref(), hours, limit, json),
-            cli::MarketCommand::Sentiment { symbol, history, json } => {
-                commands::sentiment::run(symbol.as_deref(), history, json)
-            }
-            cli::MarketCommand::Calendar { days, impact, json } => {
+            } => commands::news::run(
+                &backend,
+                source.as_deref(),
+                search.as_deref(),
+                hours,
+                limit,
+                json,
+            ),
+            cli::DataCommand::Sentiment {
+                symbol,
+                history,
+                json,
+            } => commands::sentiment::run(symbol.as_deref(), history, json),
+            cli::DataCommand::Calendar { days, impact, json } => {
                 commands::calendar::run(days, impact.as_deref(), json)
             }
-            cli::MarketCommand::Fedwatch { json } => commands::fedwatch::run(json),
-            cli::MarketCommand::Economy { indicator, json } => {
+            cli::DataCommand::Fedwatch { json } => commands::fedwatch::run(json),
+            cli::DataCommand::Economy { indicator, json } => {
                 commands::economy::run(&backend, indicator.as_deref(), json)
             }
-            cli::MarketCommand::Predictions {
+            cli::DataCommand::Predictions {
                 category,
                 search,
                 limit,
                 json,
-            } => commands::predictions::run(&backend, category.as_deref(), search.as_deref(), limit, json),
-            cli::MarketCommand::Options {
+            } => commands::predictions::run(
+                &backend,
+                category.as_deref(),
+                search.as_deref(),
+                limit,
+                json,
+            ),
+            cli::DataCommand::Options {
                 symbol,
                 expiry,
                 limit,
                 json,
             } => commands::options::run(&symbol, expiry.as_deref(), limit, json),
-            cli::MarketCommand::EtfFlows { days, fund, json } => {
+            cli::DataCommand::EtfFlows { days, fund, json } => {
                 commands::etf_flows::run(days, fund, json)
             }
-            cli::MarketCommand::Supply { symbol, json } => commands::supply::run(&backend, symbol, json),
-            cli::MarketCommand::Sovereign { json } => commands::sovereign::run(json),
+            cli::DataCommand::Supply { symbol, json } => {
+                commands::supply::run(&backend, symbol, json)
+            }
+            cli::DataCommand::Sovereign { json } => commands::sovereign::run(json),
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Config {
@@ -144,10 +655,21 @@ fn main() -> Result<()> {
             } => commands::snapshot::run(&config, Some(width), Some(height), plain),
             cli::SystemCommand::Setup => commands::setup::run(&config, true),
             cli::SystemCommand::Demo => commands::demo::run(&config),
-            cli::SystemCommand::Web { port, bind, no_auth } => {
+            cli::SystemCommand::Web {
+                port,
+                bind,
+                no_auth,
+            } => {
                 let runtime = tokio::runtime::Runtime::new()?;
                 runtime.block_on(async {
-                    web::run_server(db_path.to_string_lossy().to_string(), config, &bind, port, !no_auth).await
+                    web::run_server(
+                        db_path.to_string_lossy().to_string(),
+                        config,
+                        &bind,
+                        port,
+                        !no_auth,
+                    )
+                    .await
                 })
             }
             cli::SystemCommand::MigrateJournal {
@@ -187,7 +709,9 @@ fn main() -> Result<()> {
             Some(cli::PortfolioCommand::Brief { json }) => {
                 commands::brief::run_backend(&backend, &config, true, json, cached_only)
             }
-            Some(cli::PortfolioCommand::Eod { json }) => commands::eod::run(&backend, &config, json),
+            Some(cli::PortfolioCommand::Eod { json }) => {
+                commands::eod::run(&backend, &config, json)
+            }
             Some(cli::PortfolioCommand::Performance {
                 since,
                 period,
@@ -204,14 +728,12 @@ fn main() -> Result<()> {
             Some(cli::PortfolioCommand::History { date, group_by }) => {
                 commands::history::run(&backend, &config, &date, group_by.as_ref())
             }
-            Some(cli::PortfolioCommand::Target {
-                action,
-                symbol,
-                target,
-                band,
-                json,
-            }) => match action.as_str() {
-                "set" => {
+            Some(cli::PortfolioCommand::Target { command }) => match command {
+                cli::PortfolioTargetCommand::Set {
+                    symbol,
+                    target,
+                    band,
+                } => {
                     let sym = symbol
                         .as_ref()
                         .ok_or_else(|| anyhow::anyhow!("--symbol required for 'set'"))?;
@@ -220,14 +742,15 @@ fn main() -> Result<()> {
                         .ok_or_else(|| anyhow::anyhow!("--target required for 'set'"))?;
                     commands::target::run(&backend, sym, tgt, band.as_deref())
                 }
-                "list" => commands::target::list(&backend, json),
-                "remove" => {
+                cli::PortfolioTargetCommand::List { json } => {
+                    commands::target::list(&backend, json)
+                }
+                cli::PortfolioTargetCommand::Remove { symbol } => {
                     let sym = symbol
                         .as_ref()
                         .ok_or_else(|| anyhow::anyhow!("--symbol required for 'remove'"))?;
                     commands::target::remove(&backend, sym)
                 }
-                _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove")),
             },
             Some(cli::PortfolioCommand::Drift { json }) => commands::drift::run(&backend, json),
             Some(cli::PortfolioCommand::Rebalance { json }) => {
@@ -294,36 +817,215 @@ fn main() -> Result<()> {
                 symbols.as_deref(),
                 json,
             ),
-            Some(cli::PortfolioCommand::Opportunity {
+            Some(cli::PortfolioCommand::Opportunity { command }) => match command {
+                cli::PortfolioOpportunityCommand::Add {
+                    value,
+                    date,
+                    asset,
+                    missed_gain_pct,
+                    missed_gain_usd,
+                    avoided_loss_pct,
+                    avoided_loss_usd,
+                    rational,
+                    notes,
+                    json,
+                } => commands::opportunity::run(
+                    &backend,
+                    "add",
+                    value.as_deref(),
+                    date.as_deref(),
+                    asset.as_deref(),
+                    missed_gain_pct,
+                    missed_gain_usd,
+                    avoided_loss_pct,
+                    avoided_loss_usd,
+                    rational,
+                    notes.as_deref(),
+                    None,
+                    None,
+                    json,
+                ),
+                cli::PortfolioOpportunityCommand::List {
+                    since,
+                    asset,
+                    limit,
+                    json,
+                } => commands::opportunity::run(
+                    &backend,
+                    "list",
+                    None,
+                    None,
+                    asset.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    since.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::PortfolioOpportunityCommand::Stats { since, json } => {
+                    commands::opportunity::run(
+                        &backend,
+                        "stats",
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        since.as_deref(),
+                        None,
+                        json,
+                    )
+                }
+            },
+            Some(cli::PortfolioCommand::Profiles { command }) => match command {
+                cli::PortfolioProfilesCommand::List { json } => {
+                    commands::portfolio::run("list", None, json)
+                }
+                cli::PortfolioProfilesCommand::Current { json } => {
+                    commands::portfolio::run("current", None, json)
+                }
+                cli::PortfolioProfilesCommand::Create { name, json } => {
+                    commands::portfolio::run("create", name.as_deref(), json)
+                }
+                cli::PortfolioProfilesCommand::Switch { name, json } => {
+                    commands::portfolio::run("switch", name.as_deref(), json)
+                }
+                cli::PortfolioProfilesCommand::Remove { name, json } => {
+                    commands::portfolio::run("remove", name.as_deref(), json)
+                }
+            },
+            Some(cli::PortfolioCommand::Watchlist {
                 action,
-                value,
-                date,
-                asset,
-                missed_gain_pct,
-                missed_gain_usd,
-                avoided_loss_pct,
-                avoided_loss_usd,
-                rational,
-                notes,
-                since,
-                limit,
+                approaching,
                 json,
-            }) => commands::opportunity::run(
-                &backend,
-                &action,
-                value.as_deref(),
-                date.as_deref(),
-                asset.as_deref(),
-                missed_gain_pct,
-                missed_gain_usd,
-                avoided_loss_pct,
-                avoided_loss_usd,
-                rational,
-                notes.as_deref(),
-                since.as_deref(),
-                limit,
-                json,
-            ),
+            }) => match action {
+                Some(cli::WatchlistCommand::Add {
+                    symbol,
+                    category,
+                    bulk,
+                    target,
+                    direction,
+                }) => {
+                    use crate::models::asset_names::infer_category;
+
+                    let symbols: Vec<String> = if let Some(bulk_str) = bulk {
+                        bulk_str
+                            .split(',')
+                            .map(|s| s.trim().to_uppercase())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    } else if let Some(sym) = symbol {
+                        vec![sym.to_uppercase()]
+                    } else {
+                        bail!("Provide a symbol or use --bulk SYMBOL1,SYMBOL2,...");
+                    };
+                    if symbols.is_empty() {
+                        bail!("No valid symbols provided");
+                    }
+                    if let Some(ref t) = target {
+                        let cleaned = t.replace(['$', ','], "");
+                        if rust_decimal::Decimal::from_str_exact(&cleaned).is_err() {
+                            bail!(
+                                "Invalid target price: '{}'. Use a number (e.g. 300, 55000.50)",
+                                t
+                            );
+                        }
+                        if direction != "above" && direction != "below" {
+                            bail!("Invalid direction: '{}'. Use 'above' or 'below'", direction);
+                        }
+                        if symbols.len() > 1 {
+                            bail!("--target can only be set for a single symbol, not with --bulk");
+                        }
+                    }
+
+                    let mut added = 0;
+                    let runtime = tokio::runtime::Runtime::new()?;
+                    for upper in &symbols {
+                        let cat = match &category {
+                            Some(c) => c.parse().unwrap_or_else(|_| infer_category(upper)),
+                            None => infer_category(upper),
+                        };
+                        let yahoo_sym = match cat {
+                            crate::models::asset::AssetCategory::Crypto => {
+                                if upper.ends_with("-USD") {
+                                    upper.clone()
+                                } else {
+                                    format!("{}-USD", upper)
+                                }
+                            }
+                            _ => upper.clone(),
+                        };
+                        match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
+                            Ok(_) => {
+                                db::watchlist::add_to_watchlist_backend(&backend, upper, cat)?;
+                                let name = crate::models::asset_names::resolve_name(upper);
+                                let display = if name.is_empty() { upper.clone() } else { name };
+                                println!("Added {} ({}) to watchlist as {}", upper, display, cat);
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "Warning: skipping {} — price lookup failed ({}). Symbol may be invalid.",
+                                    upper, e
+                                );
+                                continue;
+                            }
+                        }
+                        if let Some(ref t) = target {
+                            let cleaned = t.replace(['$', ','], "");
+                            db::watchlist::set_watchlist_target_backend(
+                                &backend,
+                                upper,
+                                Some(&cleaned),
+                                Some(&direction),
+                            )?;
+                            println!("  Target: {} {} {}", upper, direction, cleaned);
+                            let rule_text = format!("{} {} {}", upper, direction, cleaned);
+                            db::alerts::add_alert_backend(
+                                &backend, "price", upper, &direction, &cleaned, &rule_text,
+                            )?;
+                            println!("  Alert created: {}", rule_text);
+                        }
+                        added += 1;
+                    }
+                    if added > 1 {
+                        println!("\n{} symbols added to watchlist.", added);
+                    }
+                    Ok(())
+                }
+                Some(cli::WatchlistCommand::Remove { symbol }) => {
+                    let upper = symbol.to_uppercase();
+                    if db::watchlist::remove_from_watchlist_backend(&backend, &upper)? {
+                        println!("Removed {} from watchlist", upper);
+                    } else {
+                        println!("{} was not in the watchlist", upper);
+                    }
+                    Ok(())
+                }
+                Some(cli::WatchlistCommand::List { approaching, json }) => {
+                    commands::watchlist_cli::run(
+                        &backend,
+                        &config,
+                        approaching.as_deref(),
+                        json,
+                        cached_only,
+                    )
+                }
+                None => commands::watchlist_cli::run(
+                    &backend,
+                    &config,
+                    approaching.as_deref(),
+                    json,
+                    cached_only,
+                ),
+            },
             Some(cli::PortfolioCommand::SetCash { symbol, amount }) => {
                 commands::set_cash::run(&backend, &symbol, &amount)
             }
@@ -360,140 +1062,162 @@ fn main() -> Result<()> {
             },
         },
 
-        Some(Command::Watchlist { action, approaching, json }) => match action {
-            Some(cli::WatchlistCommand::Add {
-                symbol,
-                category,
-                bulk,
-                target,
-                direction,
-            }) => {
-                use crate::models::asset_names::infer_category;
-
-                let symbols: Vec<String> = if let Some(bulk_str) = bulk {
-                    bulk_str
-                        .split(',')
-                        .map(|s| s.trim().to_uppercase())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                } else if let Some(sym) = symbol {
-                    vec![sym.to_uppercase()]
-                } else {
-                    bail!("Provide a symbol or use --bulk SYMBOL1,SYMBOL2,...");
-                };
-                if symbols.is_empty() {
-                    bail!("No valid symbols provided");
-                }
-                if let Some(ref t) = target {
-                    let cleaned = t.replace(['$', ','], "");
-                    if rust_decimal::Decimal::from_str_exact(&cleaned).is_err() {
-                        bail!("Invalid target price: '{}'. Use a number (e.g. 300, 55000.50)", t);
-                    }
-                    if direction != "above" && direction != "below" {
-                        bail!("Invalid direction: '{}'. Use 'above' or 'below'", direction);
-                    }
-                    if symbols.len() > 1 {
-                        bail!("--target can only be set for a single symbol, not with --bulk");
-                    }
-                }
-
-                let mut added = 0;
-                let runtime = tokio::runtime::Runtime::new()?;
-                for upper in &symbols {
-                    let cat = match &category {
-                        Some(c) => c.parse().unwrap_or_else(|_| infer_category(upper)),
-                        None => infer_category(upper),
-                    };
-                    let yahoo_sym = match cat {
-                        crate::models::asset::AssetCategory::Crypto => {
-                            if upper.ends_with("-USD") { upper.clone() } else { format!("{}-USD", upper) }
-                        }
-                        _ => upper.clone(),
-                    };
-                    match runtime.block_on(price::yahoo::fetch_price(&yahoo_sym)) {
-                        Ok(_) => {
-                            db::watchlist::add_to_watchlist_backend(&backend, upper, cat)?;
-                            let name = crate::models::asset_names::resolve_name(upper);
-                            let display = if name.is_empty() { upper.clone() } else { name };
-                            println!("Added {} ({}) to watchlist as {}", upper, display, cat);
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "Warning: skipping {} — price lookup failed ({}). Symbol may be invalid.",
-                                upper, e
-                            );
-                            continue;
-                        }
-                    }
-                    if let Some(ref t) = target {
-                        let cleaned = t.replace(['$', ','], "");
-                        db::watchlist::set_watchlist_target_backend(&backend, upper, Some(&cleaned), Some(&direction))?;
-                        println!("  Target: {} {} {}", upper, direction, cleaned);
-                        let rule_text = format!("{} {} {}", upper, direction, cleaned);
-                        db::alerts::add_alert_backend(&backend, "price", upper, &direction, &cleaned, &rule_text)?;
-                        println!("  Alert created: {}", rule_text);
-                    }
-                    added += 1;
-                }
-                if added > 1 {
-                    println!("\n{} symbols added to watchlist.", added);
-                }
-                Ok(())
-            }
-            Some(cli::WatchlistCommand::Remove { symbol }) => {
-                let upper = symbol.to_uppercase();
-                if db::watchlist::remove_from_watchlist_backend(&backend, &upper)? {
-                    println!("Removed {} from watchlist", upper);
-                } else {
-                    println!("{} was not in the watchlist", upper);
-                }
-                Ok(())
-            }
-            Some(cli::WatchlistCommand::List { approaching, json }) => {
-                commands::watchlist_cli::run(&backend, &config, approaching.as_deref(), json, cached_only)
-            }
-            None => commands::watchlist_cli::run(
-                &backend,
-                &config,
-                approaching.as_deref(),
-                json,
-                cached_only,
-            ),
-        }
-
         Some(Command::Agent { command }) => match command {
-            crate::cli::AgentCommand::Message {
-                action,
-                value,
-                batch,
-                id,
-                from,
-                to,
-                priority,
-                category,
-                layer,
-                unacked,
-                since,
-                days,
-                limit,
-                json,
-            } => commands::agent_msg::run(
-                &backend,
-                &action,
-                value.as_deref(),
-                &batch,
-                id,
-                from.as_deref(),
-                to.as_deref(),
-                priority.as_deref(),
-                category.as_deref(),
-                layer.as_deref(),
-                unacked,
-                since.as_deref(),
-                days,
-                limit,
-                json,
-            ),
+            crate::cli::AgentCommand::Message { command } => match command {
+                cli::AgentMessageCommand::Send {
+                    value,
+                    batch,
+                    from,
+                    to,
+                    priority,
+                    category,
+                    layer,
+                    json,
+                } => commands::agent_msg::run(
+                    &backend,
+                    "send",
+                    value.as_deref(),
+                    &batch,
+                    None,
+                    from.as_deref(),
+                    to.as_deref(),
+                    priority.as_deref(),
+                    category.as_deref(),
+                    layer.as_deref(),
+                    false,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::AgentMessageCommand::List {
+                    from,
+                    to,
+                    layer,
+                    unacked,
+                    since,
+                    limit,
+                    json,
+                } => commands::agent_msg::run(
+                    &backend,
+                    "list",
+                    None,
+                    &[],
+                    None,
+                    from.as_deref(),
+                    to.as_deref(),
+                    None,
+                    None,
+                    layer.as_deref(),
+                    unacked,
+                    since.as_deref(),
+                    None,
+                    limit,
+                    json,
+                ),
+                cli::AgentMessageCommand::Reply {
+                    value,
+                    id,
+                    from,
+                    priority,
+                    category,
+                    layer,
+                    json,
+                } => commands::agent_msg::run(
+                    &backend,
+                    "reply",
+                    value.as_deref(),
+                    &[],
+                    id,
+                    from.as_deref(),
+                    None,
+                    priority.as_deref(),
+                    category.as_deref(),
+                    layer.as_deref(),
+                    false,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::AgentMessageCommand::Flag {
+                    value,
+                    id,
+                    from,
+                    priority,
+                    category,
+                    layer,
+                    json,
+                } => commands::agent_msg::run(
+                    &backend,
+                    "flag",
+                    value.as_deref(),
+                    &[],
+                    id,
+                    from.as_deref(),
+                    None,
+                    priority.as_deref(),
+                    category.as_deref(),
+                    layer.as_deref(),
+                    false,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::AgentMessageCommand::Ack { id, json } => commands::agent_msg::run(
+                    &backend,
+                    "ack",
+                    None,
+                    &[],
+                    id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::AgentMessageCommand::AckAll { to, json } => commands::agent_msg::run(
+                    &backend,
+                    "ack-all",
+                    None,
+                    &[],
+                    None,
+                    None,
+                    to.as_deref(),
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                cli::AgentMessageCommand::Purge { days, json } => commands::agent_msg::run(
+                    &backend,
+                    "purge",
+                    None,
+                    &[],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    days,
+                    None,
+                    json,
+                ),
+            },
+            crate::cli::AgentCommand::Journal { command } => run_agent_journal(&backend, command),
         },
         Some(Command::Analytics { command }) => match command {
             cli::AnalyticsCommand::Signals {
@@ -533,77 +1257,501 @@ fn main() -> Result<()> {
                 json,
             ),
             cli::AnalyticsCommand::Summary { json } => commands::analytics::run(
-                &backend, "summary", None, None, None, None, &[], None, None, None, None, None, None,
-                None, None, None, None, None, None, None, false, None, None, None, None, None, None, json,
+                &backend,
+                "summary",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
             ),
             cli::AnalyticsCommand::Low { json } => commands::analytics::run(
-                &backend, "low", None, None, None, None, &[], None, None, None, None, None, None, None,
-                None, None, None, None, None, None, false, None, None, None, None, None, None, json,
+                &backend,
+                "low",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
             ),
             cli::AnalyticsCommand::Medium { json } => commands::analytics::run(
-                &backend, "medium", None, None, None, None, &[], None, None, None, None, None, None, None,
-                None, None, None, None, None, None, false, None, None, None, None, None, None, json,
+                &backend,
+                "medium",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
             ),
             cli::AnalyticsCommand::High { json } => commands::analytics::run(
-                &backend, "high", None, None, None, None, &[], None, None, None, None, None, None, None,
-                None, None, None, None, None, None, false, None, None, None, None, None, None, json,
+                &backend,
+                "high",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
             ),
-            cli::AnalyticsCommand::Macro { command, json } => {
-                match command {
-                    None => commands::analytics::run(
-                        &backend, "macro", None, None, None, None, &[], None, None, None, None, None, None,
-                        None, None, None, None, None, None, None, false, None, None, None, None, None, None, json,
-                    ),
-                    Some(cli::AnalyticsMacroCommand::Metrics { country, json }) => commands::analytics::run(
-                        &backend, "macro", Some("metrics"), country.as_deref(), None, None, &[], None, None, None, None, None, None,
-                        None, None, None, None, None, None, None, false, None, None, None, None, None, None, json,
-                    ),
-                    Some(cli::AnalyticsMacroCommand::Compare { left, right, json }) => commands::analytics::run(
-                        &backend, "macro", Some("compare"), left.as_deref(), right.as_deref(), None, &[], None, None, None, None, None, None,
-                        None, None, None, None, None, None, None, false, None, None, None, None, None, None, json,
-                    ),
-                    Some(cli::AnalyticsMacroCommand::Cycles { json }) => commands::analytics::run(
-                        &backend, "macro", Some("cycles"), None, None, None, &[], None, None, None, None, None, None,
-                        None, None, None, None, None, None, None, false, None, None, None, None, None, None, json,
-                    ),
-                    Some(cli::AnalyticsMacroCommand::Outcomes { json }) => commands::analytics::run(
-                        &backend, "macro", Some("outcomes"), None, None, None, &[], None, None, None, None, None, None,
-                        None, None, None, None, None, None, None, false, None, None, None, None, None, None, json,
-                    ),
-                    Some(cli::AnalyticsMacroCommand::Parallels { json }) => commands::analytics::run(
-                        &backend, "macro", Some("parallels"), None, None, None, &[], None, None, None, None, None, None,
-                        None, None, None, None, None, None, None, false, None, None, None, None, None, None, json,
-                    ),
-                    Some(cli::AnalyticsMacroCommand::Log { limit, json }) => commands::analytics::run(
-                        &backend, "macro", Some("log"), None, None, None, &[], None, None, None, None, None, None,
-                        None, None, None, None, None, None, None, false, None, None, None, None, None, limit, json,
-                    ),
-                    Some(cli::AnalyticsMacroCommand::Regime { command }) => match command {
-                        cli::AnalyticsMacroRegimeCommand::Current { json } => commands::regime::run(&backend, "current", None, json),
-                        cli::AnalyticsMacroRegimeCommand::History { limit, json } => commands::regime::run(&backend, "history", limit, json),
-                        cli::AnalyticsMacroRegimeCommand::Transitions { limit, json } => commands::regime::run(&backend, "transitions", limit, json),
-                    },
+            cli::AnalyticsCommand::Macro { command, json } => match command {
+                None => commands::analytics::run(
+                    &backend,
+                    "macro",
+                    None,
+                    None,
+                    None,
+                    None,
+                    &[],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                Some(cli::AnalyticsMacroCommand::Metrics { country, json }) => {
+                    commands::analytics::run(
+                        &backend,
+                        "macro",
+                        Some("metrics"),
+                        country.as_deref(),
+                        None,
+                        None,
+                        &[],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        json,
+                    )
                 }
-            }
+                Some(cli::AnalyticsMacroCommand::Compare { left, right, json }) => {
+                    commands::analytics::run(
+                        &backend,
+                        "macro",
+                        Some("compare"),
+                        left.as_deref(),
+                        right.as_deref(),
+                        None,
+                        &[],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        json,
+                    )
+                }
+                Some(cli::AnalyticsMacroCommand::Cycles { json }) => commands::analytics::run(
+                    &backend,
+                    "macro",
+                    Some("cycles"),
+                    None,
+                    None,
+                    None,
+                    &[],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                Some(cli::AnalyticsMacroCommand::Outcomes { json }) => commands::analytics::run(
+                    &backend,
+                    "macro",
+                    Some("outcomes"),
+                    None,
+                    None,
+                    None,
+                    &[],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                Some(cli::AnalyticsMacroCommand::Parallels { json }) => commands::analytics::run(
+                    &backend,
+                    "macro",
+                    Some("parallels"),
+                    None,
+                    None,
+                    None,
+                    &[],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                ),
+                Some(cli::AnalyticsMacroCommand::Log { limit, json }) => commands::analytics::run(
+                    &backend,
+                    "macro",
+                    Some("log"),
+                    None,
+                    None,
+                    None,
+                    &[],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    limit,
+                    json,
+                ),
+                Some(cli::AnalyticsMacroCommand::Regime { command }) => match command {
+                    cli::AnalyticsMacroRegimeCommand::Current { json } => {
+                        commands::regime::run(&backend, "current", None, json)
+                    }
+                    cli::AnalyticsMacroRegimeCommand::History { limit, json } => {
+                        commands::regime::run(&backend, "history", limit, json)
+                    }
+                    cli::AnalyticsMacroRegimeCommand::Transitions { limit, json } => {
+                        commands::regime::run(&backend, "transitions", limit, json)
+                    }
+                },
+            },
             cli::AnalyticsCommand::Alignment { symbol, json } => commands::analytics::run(
-                &backend, "alignment", None, None, None, symbol.as_deref(), &[], None, None, None, None, None, None, None, None,
-                None, None, None, None, None, false, None, None, None, None, None, None, json,
+                &backend,
+                "alignment",
+                None,
+                None,
+                None,
+                symbol.as_deref(),
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
             ),
             cli::AnalyticsCommand::Divergence { symbol, json } => commands::analytics::run(
-                &backend, "divergence", None, None, None, symbol.as_deref(), &[], None, None, None, None, None, None, None, None,
-                None, None, None, None, None, false, None, None, None, None, None, None, json,
+                &backend,
+                "divergence",
+                None,
+                None,
+                None,
+                symbol.as_deref(),
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
             ),
             cli::AnalyticsCommand::Digest { from, limit, json } => commands::analytics::run(
-                &backend, "digest", None, None, None, None, &[], None, None, None, None, None, None, None, None, None, None,
-                None, None, None, false, None, None, None, from.as_deref(), None, limit, json,
+                &backend,
+                "digest",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                from.as_deref(),
+                None,
+                limit,
+                json,
             ),
             cli::AnalyticsCommand::Recap { date, limit, json } => commands::analytics::run(
-                &backend, "recap", None, None, None, None, &[], None, None, None, None, None, None, None, None, None, None,
-                None, None, None, false, None, None, None, None, date.as_deref(), limit, json,
+                &backend,
+                "recap",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                date.as_deref(),
+                limit,
+                json,
             ),
             cli::AnalyticsCommand::Gaps { json } => commands::analytics::run(
-                &backend, "gaps", None, None, None, None, &[], None, None, None, None, None, None, None, None, None, None,
-                None, None, None, false, None, None, None, None, None, None, json,
+                &backend,
+                "gaps",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
             ),
             cli::AnalyticsCommand::Movers {
                 threshold,
@@ -611,7 +1759,17 @@ fn main() -> Result<()> {
                 json,
             } => commands::movers::run(&backend, &config, Some(&threshold), overnight, json),
             cli::AnalyticsCommand::Correlations { command } => match command {
-                None => commands::correlations::run(&backend, Some("compute"), None, None, 30, None, false, 15, false),
+                None => commands::correlations::run(
+                    &backend,
+                    Some("compute"),
+                    None,
+                    None,
+                    30,
+                    None,
+                    false,
+                    15,
+                    false,
+                ),
                 Some(cli::AnalyticsCorrelationsCommand::Compute {
                     window,
                     period,
@@ -863,30 +2021,32 @@ fn main() -> Result<()> {
                             json,
                         )
                     }
-                    cli::AnalyticsTrendsEvidenceCommand::List { id, limit, json } => commands::trends::run(
-                        &backend,
-                        "evidence-list",
-                        None,
-                        id,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        limit,
-                        json,
-                    ),
+                    cli::AnalyticsTrendsEvidenceCommand::List { id, limit, json } => {
+                        commands::trends::run(
+                            &backend,
+                            "evidence-list",
+                            None,
+                            id,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            limit,
+                            json,
+                        )
+                    }
                 },
                 cli::AnalyticsTrendsCommand::Impact { command } => match command {
                     cli::AnalyticsTrendsImpactCommand::Add {
@@ -1012,417 +2172,6 @@ fn main() -> Result<()> {
                 commands::alerts::run(&backend, action, &args)
             }
         },
-        Some(Command::Journal { command }) => match command {
-            None => commands::journal::run_list(&backend, Some(20), None, None, None, None, false),
-            Some(cli::JournalCommand::Entry { command }) => match command {
-                cli::JournalEntryCommand::Add {
-                    value,
-                    date,
-                    tag,
-                    symbol,
-                    conviction,
-                    json,
-                } => commands::journal::run_add(
-                    &backend,
-                    &value,
-                    date.as_deref(),
-                    tag.as_deref(),
-                    symbol.as_deref(),
-                    conviction.as_deref(),
-                    json,
-                ),
-                cli::JournalEntryCommand::List {
-                    limit,
-                    since,
-                    tag,
-                    symbol,
-                    filter_status,
-                    json,
-                } => commands::journal::run_list(
-                    &backend,
-                    limit,
-                    since.as_deref(),
-                    tag.as_deref(),
-                    symbol.as_deref(),
-                    filter_status.as_deref(),
-                    json,
-                ),
-                cli::JournalEntryCommand::Search {
-                    query,
-                    since,
-                    limit,
-                    json,
-                } => commands::journal::run_search(&backend, &query, since.as_deref(), limit, json),
-                cli::JournalEntryCommand::Update {
-                    id,
-                    content,
-                    status,
-                    json,
-                } => commands::journal::run_update(
-                    &backend,
-                    id,
-                    content.as_deref(),
-                    status.as_deref(),
-                    json,
-                ),
-                cli::JournalEntryCommand::Remove { id, json } => {
-                    commands::journal::run_remove(&backend, id, json)
-                }
-                cli::JournalEntryCommand::Tags { json } => commands::journal::run_tags(&backend, json),
-                cli::JournalEntryCommand::Stats { json } => commands::journal::run_stats(&backend, json),
-            },
-            Some(cli::JournalCommand::Prediction { command }) => match command {
-                cli::JournalPredictionCommand::Add {
-                    value,
-                    symbol,
-                    conviction,
-                    timeframe,
-                    confidence,
-                    source_agent,
-                    target_date,
-                    resolution_criteria,
-                    json,
-                } => commands::predict::run(
-                    &backend,
-                    "add",
-                    Some(&value),
-                    None,
-                    symbol.as_deref(),
-                    conviction.as_deref(),
-                    timeframe.as_deref(),
-                    confidence,
-                    source_agent.as_deref(),
-                    target_date.as_deref(),
-                    resolution_criteria.as_deref(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    json,
-                ),
-                cli::JournalPredictionCommand::List {
-                    filter,
-                    timeframe,
-                    symbol,
-                    limit,
-                    json,
-                } => commands::predict::run(
-                    &backend,
-                    "list",
-                    None,
-                    None,
-                    symbol.as_deref(),
-                    None,
-                    timeframe.as_deref(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    filter.as_deref(),
-                    None,
-                    limit,
-                    json,
-                ),
-                cli::JournalPredictionCommand::Score {
-                    id,
-                    outcome,
-                    notes,
-                    lesson,
-                    json,
-                } => commands::predict::run(
-                    &backend,
-                    "score",
-                    None,
-                    Some(id),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    outcome.as_deref(),
-                    notes.as_deref(),
-                    lesson.as_deref(),
-                    None,
-                    None,
-                    None,
-                    json,
-                ),
-                cli::JournalPredictionCommand::Stats { json } => commands::predict::run(
-                    &backend, "stats", None, None, None, None, None, None, None, None, None, None, None,
-                    None, None, None, None, json,
-                ),
-                cli::JournalPredictionCommand::Scorecard { date, limit, json } => commands::predict::run(
-                    &backend, "scorecard", None, None, None, None, None, None, None, None, None, None,
-                    None, None, None, date.as_deref(), limit, json,
-                ),
-            },
-            Some(cli::JournalCommand::Conviction { command }) => match command {
-                cli::JournalConvictionCommand::Set {
-                    symbol,
-                    score,
-                    notes,
-                    json,
-                } => {
-                    let score_val = score.ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Missing score. Usage: pftui journal conviction set SYMBOL --score N"
-                        )
-                    })?;
-                    commands::conviction::run_set(&backend, &symbol, score_val, notes.as_deref(), json)
-                }
-                cli::JournalConvictionCommand::List { json } => {
-                    commands::conviction::run_list(&backend, json)
-                }
-                cli::JournalConvictionCommand::History { symbol, limit, json } => {
-                    commands::conviction::run_history(&backend, &symbol, limit, json)
-                }
-                cli::JournalConvictionCommand::Changes { days, json } => {
-                    let d = days
-                        .as_deref()
-                        .and_then(|v| v.parse::<usize>().ok())
-                        .unwrap_or(7);
-                    commands::conviction::run_changes(&backend, d, json)
-                }
-            },
-            Some(cli::JournalCommand::Notes { command }) => match command {
-                cli::JournalNotesCommand::Add {
-                    value,
-                    date,
-                    section,
-                    json,
-                } => commands::notes::run(
-                    &backend,
-                    "add",
-                    Some(&value),
-                    None,
-                    date.as_deref(),
-                    section.as_deref(),
-                    None,
-                    None,
-                    json,
-                ),
-                cli::JournalNotesCommand::List { since, limit, json } => commands::notes::run(
-                    &backend,
-                    "list",
-                    None,
-                    None,
-                    None,
-                    None,
-                    since.as_deref(),
-                    limit,
-                    json,
-                ),
-                cli::JournalNotesCommand::Search {
-                    query,
-                    since,
-                    limit,
-                    json,
-                } => commands::notes::run(
-                    &backend,
-                    "search",
-                    Some(&query),
-                    None,
-                    None,
-                    None,
-                    since.as_deref(),
-                    limit,
-                    json,
-                ),
-                cli::JournalNotesCommand::Remove { id, json } => commands::notes::run(
-                    &backend,
-                    "remove",
-                    None,
-                    Some(id),
-                    None,
-                    None,
-                    None,
-                    None,
-                    json,
-                ),
-            },
-            Some(cli::JournalCommand::Scenario { command }) => match command {
-                cli::JournalScenarioCommand::Add {
-                    value,
-                    probability,
-                    description,
-                    impact,
-                    triggers,
-                    precedent,
-                    status,
-                    json,
-                } => commands::scenario::run(
-                    &backend,
-                    "add",
-                    Some(&value),
-                    None,
-                    None,
-                    probability,
-                    description.as_deref(),
-                    impact.as_deref(),
-                    triggers.as_deref(),
-                    precedent.as_deref(),
-                    status.as_deref(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    json,
-                ),
-                cli::JournalScenarioCommand::List { status, limit, json } => commands::scenario::run(
-                    &backend, "list", None, None, None, None, None, None, None, None, status.as_deref(),
-                    None, None, None, None, None, limit, json,
-                ),
-                cli::JournalScenarioCommand::Update {
-                    value,
-                    probability,
-                    description,
-                    impact,
-                    triggers,
-                    precedent,
-                    status,
-                    driver,
-                    notes,
-                    json,
-                } => commands::scenario::run(
-                    &backend,
-                    "update",
-                    Some(&value),
-                    None,
-                    None,
-                    probability,
-                    description.as_deref(),
-                    impact.as_deref(),
-                    triggers.as_deref(),
-                    precedent.as_deref(),
-                    status.as_deref(),
-                    driver.as_deref(),
-                    notes.as_deref(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    json,
-                ),
-                cli::JournalScenarioCommand::Remove { value, json } => commands::scenario::run(
-                    &backend, "remove", Some(&value), None, None, None, None, None, None, None, None,
-                    None, None, None, None, None, None, json,
-                ),
-                cli::JournalScenarioCommand::History { value, limit, json } => commands::scenario::run(
-                    &backend, "history", Some(&value), None, None, None, None, None, None, None, None,
-                    None, None, None, None, None, limit, json,
-                ),
-                cli::JournalScenarioCommand::Signal { command } => match command {
-                    cli::JournalScenarioSignalCommand::Add {
-                        value,
-                        scenario,
-                        source,
-                        status,
-                        json,
-                    } => commands::scenario::run(
-                        &backend,
-                        "signal-add",
-                        Some(&value),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        status.as_deref(),
-                        None,
-                        None,
-                        None,
-                        source.as_deref(),
-                        scenario.as_deref(),
-                        None,
-                        json,
-                    ),
-                    cli::JournalScenarioSignalCommand::List {
-                        scenario,
-                        status,
-                        limit,
-                        json,
-                    } => commands::scenario::run(
-                        &backend,
-                        "signal-list",
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        status.as_deref(),
-                        None,
-                        None,
-                        None,
-                        None,
-                        scenario.as_deref(),
-                        limit,
-                        json,
-                    ),
-                    cli::JournalScenarioSignalCommand::Update {
-                        signal_id,
-                        evidence,
-                        status,
-                        json,
-                    } => commands::scenario::run(
-                        &backend,
-                        "signal-update",
-                        None,
-                        None,
-                        Some(signal_id),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        status.as_deref(),
-                        None,
-                        None,
-                        evidence.as_deref(),
-                        None,
-                        None,
-                        None,
-                        json,
-                    ),
-                    cli::JournalScenarioSignalCommand::Remove { signal_id, json } => commands::scenario::run(
-                        &backend,
-                        "signal-remove",
-                        None,
-                        None,
-                        Some(signal_id),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        json,
-                    ),
-                },
-            },
-        },
-        Some(Command::Portfolios { action, name, json }) => {
-            commands::portfolio::run(&action, name.as_deref(), json)
-        }
     };
 
     match (result, backend.flush()) {

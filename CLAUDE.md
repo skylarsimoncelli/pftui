@@ -80,6 +80,7 @@ cargo clippy                 # lint — no new warnings
   pftui analytics macro cycles --history --country US
   ```
 - **Deep hierarchy over flat namespaces.** Every command lives in a logical tree. No top-level explosion. A user discovers features by walking `--help` down the tree.
+- **Canonical domains only.** Top-level CLI domains are `agent`, `analytics`, `data`, `portfolio`, and `system`. Removed namespaces stay removed.
 - **No shortcut aliases that bypass the tree.** If it's an analytical view, it lives under `analytics`. No exceptions.
 - **`--json` on every CLI command.** Agents need structured output.
 - See PRODUCT-PHILOSOPHY.md principle 9 for full rationale.
