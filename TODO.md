@@ -6,18 +6,6 @@
 
 ## P1 — Feature Requests
 
-### [Feedback] Daily P&L Dollar Column in TUI Positions View
-
-Add a `Day P&L $` column to the main positions table (Tab 1). This is the single most requested feature across ALL Sentinel TUI reviews (6 consecutive reviews). Portfolio managers need to see actual dollar impact per position immediately, not just percentages. For a $370k portfolio, daily movements of $5-15k are routine and need immediate visibility.
-
-Source: `src/tui/views/positions.rs`. Use `price_history` day-over-day delta × quantity for each position.
-
-### [Feedback] Sector/Category Grouping in Positions View
-
-Add toggle or secondary view showing positions grouped by asset class (Cash, Commodities, Crypto, Equities) with subtotals per group. A macro investor thinks in asset classes, not individual symbols. Include group-level allocation %, P&L, and optional sparklines.
-
-Source: `src/tui/views/positions.rs`. Leverage existing `category` field on transactions.
-
 ### [Feedback] Data Source Conflict Detection
 
 When multiple data sources provide contradictory data (e.g., 92% hold vs 98.9% cut probability from different FOMC sources), the system should flag the conflict and suggest the most reliable source based on track record. Currently wrong data cascades across the agent pipeline unchecked.
@@ -41,10 +29,6 @@ Source: `src/commands/correlations.rs`.
 `pftui analytics alerts` should support a `--today` flag to show only alerts triggered since midnight, filtering out historical noise. During market close routines, agents need to focus on fresh signals only.
 
 Source: `src/commands/alerts.rs`, `src/alerts/engine.rs`.
-
-### F39: Macro Analytics Consolidation (Remaining)
-
-Routing and composite score shipped. Remaining alignment scoring algorithm work.
 
 ### Data Source Reliability
 
