@@ -678,6 +678,192 @@ pub enum SystemCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum JournalCommand {
+    /// Journal entries and decision log rows
+    Entry {
+        /// Action: add, list, search, update, remove, tags, stats
+        action: String,
+        /// Content text (for add) or search query (for search)
+        value: Option<String>,
+        /// Entry ID (for update/remove)
+        #[arg(long)]
+        id: Option<i64>,
+        /// ISO 8601 timestamp (for add). Defaults to now.
+        #[arg(long)]
+        date: Option<String>,
+        /// Tag: trade, thesis, prediction, reflection, alert, lesson, call
+        #[arg(long)]
+        tag: Option<String>,
+        /// Asset symbol (e.g. GC=F, BTC)
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Conviction: high, medium, low
+        #[arg(long)]
+        conviction: Option<String>,
+        /// Entry status: open, validated, invalidated, closed
+        #[arg(long)]
+        status: Option<String>,
+        /// Filter by status (for list)
+        #[arg(long)]
+        filter_status: Option<String>,
+        /// Updated content (for update)
+        #[arg(long)]
+        content: Option<String>,
+        /// Time filter: "7d", "30d", "2026-02-24" (for list/search)
+        #[arg(long)]
+        since: Option<String>,
+        /// Maximum number of results (for list/search)
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Prediction tracking and scoring
+    Prediction {
+        /// Action: add, list, score, stats, scorecard
+        action: String,
+        /// Prediction claim text (for add)
+        value: Option<String>,
+        #[arg(long)]
+        id: Option<i64>,
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        conviction: Option<String>,
+        /// Timeframe: low, medium, high, macro
+        #[arg(long)]
+        timeframe: Option<String>,
+        /// Confidence score (0.0 - 1.0)
+        #[arg(long)]
+        confidence: Option<f64>,
+        /// Source agent identifier (e.g. low-agent, evening-analyst)
+        #[arg(long = "source-agent")]
+        source_agent: Option<String>,
+        /// Expected resolution date
+        #[arg(long)]
+        target_date: Option<String>,
+        /// Explicit scoring criterion (e.g. "daily close above 5000")
+        #[arg(long = "resolution-criteria")]
+        resolution_criteria: Option<String>,
+        /// Outcome: correct, partial, wrong
+        #[arg(long)]
+        outcome: Option<String>,
+        /// Scoring notes
+        #[arg(long)]
+        notes: Option<String>,
+        /// Lesson learned after scoring
+        #[arg(long)]
+        lesson: Option<String>,
+        /// Filter: pending, correct, partial, wrong
+        #[arg(long)]
+        filter: Option<String>,
+        /// Date filter for scorecard: YYYY-MM-DD, today, yesterday
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Asset conviction scores over time (-5 to +5)
+    Conviction {
+        /// Action: set, list, history, changes
+        action: String,
+        /// Symbol (for set/history) or days (for changes, default 7)
+        value: Option<String>,
+        /// Score -5 to +5 (negative values: prefer --score=-2)
+        #[arg(long)]
+        score: Option<i32>,
+        /// Compatibility positional for negative score after `--` (e.g. `... -- -2`)
+        #[arg(hide = true)]
+        score_positional: Option<String>,
+        /// Notes explaining the score
+        #[arg(long)]
+        notes: Option<String>,
+        /// Max results for history
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Date-keyed narrative notes
+    Notes {
+        /// Action: add, list, search, remove
+        action: String,
+        /// Content (for add) or search query (for search)
+        value: Option<String>,
+        #[arg(long)]
+        id: Option<i64>,
+        /// Date YYYY-MM-DD (defaults to today for add)
+        #[arg(long)]
+        date: Option<String>,
+        /// Section: market, decisions, system, analysis, events, general
+        #[arg(long)]
+        section: Option<String>,
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Macro scenarios and scenario signals
+    Scenario {
+        /// Action: add, list, update, remove, signal-add, signal-list, signal-update, signal-remove, history
+        action: String,
+        /// Scenario name (for add/update/remove/history) or signal text (for signal-add)
+        value: Option<String>,
+        /// Scenario ID
+        #[arg(long)]
+        id: Option<i64>,
+        /// Signal ID (for signal-update/signal-remove)
+        #[arg(long)]
+        signal_id: Option<i64>,
+        /// Probability 0-100
+        #[arg(long)]
+        probability: Option<f64>,
+        /// Description text
+        #[arg(long)]
+        description: Option<String>,
+        /// Asset impact as JSON string
+        #[arg(long)]
+        impact: Option<String>,
+        /// Trigger conditions text
+        #[arg(long)]
+        triggers: Option<String>,
+        /// Historical precedent text
+        #[arg(long)]
+        precedent: Option<String>,
+        /// Status: active, resolved, archived (scenarios) or watching, triggered, invalidated (signals)
+        #[arg(long)]
+        status: Option<String>,
+        /// What drove the probability change
+        #[arg(long)]
+        driver: Option<String>,
+        /// Inline notes for probability updates (alias of --driver)
+        #[arg(long)]
+        notes: Option<String>,
+        /// Evidence for signal update
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Source of signal
+        #[arg(long)]
+        source: Option<String>,
+        /// Scenario name for signal operations
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Max results
+        #[arg(long)]
+        limit: Option<usize>,
+        /// JSON output
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -1649,57 +1835,10 @@ pub enum Command {
         json: bool,
     },
 
-    /// Manage trade journal and decision log
+    /// Unified knowledge layer: entries, predictions, convictions, notes, scenarios
     Journal {
-        /// Action: add, list, search, update, remove, tags, stats
-        action: String,
-
-        /// Content text (for add) or search query (for search)
-        value: Option<String>,
-
-        /// Entry ID (for update/remove)
-        #[arg(long)]
-        id: Option<i64>,
-
-        /// ISO 8601 timestamp (for add). Defaults to now.
-        #[arg(long)]
-        date: Option<String>,
-
-        /// Tag: trade, thesis, prediction, reflection, alert, lesson, call
-        #[arg(long)]
-        tag: Option<String>,
-
-        /// Asset symbol (e.g. GC=F, BTC)
-        #[arg(long)]
-        symbol: Option<String>,
-
-        /// Conviction: high, medium, low
-        #[arg(long)]
-        conviction: Option<String>,
-
-        /// Entry status: open, validated, invalidated, closed
-        #[arg(long)]
-        status: Option<String>,
-
-        /// Filter by status (for list)
-        #[arg(long)]
-        filter_status: Option<String>,
-
-        /// Updated content (for update)
-        #[arg(long)]
-        content: Option<String>,
-
-        /// Time filter: "7d", "30d", "2026-02-24" (for list/search)
-        #[arg(long)]
-        since: Option<String>,
-
-        /// Maximum number of results (for list/search)
-        #[arg(long)]
-        limit: Option<usize>,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(subcommand)]
+        command: Option<JournalCommand>,
     },
 
     /// Date-keyed research notes and narrative entries

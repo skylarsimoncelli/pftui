@@ -17,44 +17,6 @@ Routing and composite score shipped. Remaining:
 > No functionality changes. Pure routing refactor.
 > See PRODUCT-PHILOSOPHY.md principle 9 and CLAUDE.md CLI Design Rules.
 
-**F40.3: `pftui journal` as unified knowledge layer**
-
-All recorded thinking lives under `journal`:
-```
-pftui journal                              # overview / recent entries across all types
-pftui journal entry add                    # was: pftui journal add (free-form entries)
-pftui journal entry list                   # was: pftui journal list
-pftui journal entry search                 # was: pftui journal search
-pftui journal entry update                 # was: pftui journal update
-pftui journal entry remove                 # was: pftui journal remove
-pftui journal entry tags                   # was: pftui journal tags
-pftui journal entry stats                  # was: pftui journal stats
-pftui journal prediction add               # was: pftui predict add
-pftui journal prediction list              # was: pftui predict list
-pftui journal prediction score             # was: pftui predict score
-pftui journal prediction stats             # was: pftui predict stats
-pftui journal prediction scorecard         # was: pftui predict scorecard
-pftui journal conviction set               # was: pftui conviction set
-pftui journal conviction list              # was: pftui conviction list
-pftui journal conviction history           # was: pftui conviction history
-pftui journal conviction changes           # was: pftui conviction changes
-pftui journal notes add                    # was: pftui notes add
-pftui journal notes list                   # was: pftui notes list
-pftui journal notes search                 # was: pftui notes search
-pftui journal notes remove                 # was: pftui notes remove
-pftui journal scenario add                 # was: pftui scenario add
-pftui journal scenario list                # was: pftui scenario list
-pftui journal scenario update              # was: pftui scenario update
-pftui journal scenario remove              # was: pftui scenario remove
-pftui journal scenario history             # was: pftui scenario history
-pftui journal scenario signal add          # was: pftui scenario signal-add
-pftui journal scenario signal list         # was: pftui scenario signal-list
-pftui journal scenario signal update       # was: pftui scenario signal-update
-pftui journal scenario signal remove       # was: pftui scenario signal-remove
-```
-Source: `src/cli.rs` (Journal subcommand with nested Prediction, Conviction,
-Notes, Scenario sub-enums), `src/main.rs` (dispatch).
-
 **F40.4: `pftui analytics` absorbs analytical tools**
 
 ```

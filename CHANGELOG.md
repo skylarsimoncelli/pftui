@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Add unified `pftui journal` command tree
+
+- What: replaced flat `journal` action flags with nested `pftui journal` subcommands (`entry`, `prediction`, `conviction`, `notes`, `scenario`) and routed each branch to existing handlers. Added compatibility deprecation warnings on legacy top-level `predict`, `conviction`, `notes`, and `scenario` commands toward `journal ...` paths.
+- Why: closes F40.3 by consolidating recorded thinking workflows under one discoverable knowledge-layer namespace.
+- Files: `src/cli.rs`, `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`, `cargo clippy --all-targets -- -D warnings`
+- TODO: removed F40.3 unified journal item
+
 ### 2026-03-14 — Expand deprecated alias warnings for legacy top-level commands
 
 - What: added a shared deprecation warning helper in `main.rs` and applied it across legacy top-level commands that now belong under namespace trees (`portfolio`, `market`, `system`). This preserves old command behavior while consistently guiding users toward the new hierarchy.

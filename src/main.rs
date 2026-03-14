@@ -794,6 +794,7 @@ fn main() -> Result<()> {
             limit,
             json,
         }) => {
+            warn_deprecated("scenario", "journal scenario");
             commands::scenario::run(
                 &backend,
                 &action,
@@ -1024,26 +1025,29 @@ fn main() -> Result<()> {
             date,
             limit,
             json,
-        }) => commands::predict::run(
-            &backend,
-            &action,
-            value.as_deref(),
-            id,
-            symbol.as_deref(),
-            conviction.as_deref(),
-            timeframe.as_deref(),
-            confidence,
-            source_agent.as_deref(),
-            target_date.as_deref(),
-            resolution_criteria.as_deref(),
-            outcome.as_deref(),
-            notes.as_deref(),
-            lesson.as_deref(),
-            filter.as_deref(),
-            date.as_deref(),
-            limit,
-            json,
-        ),
+        }) => {
+            warn_deprecated("predict", "journal prediction");
+            commands::predict::run(
+                &backend,
+                &action,
+                value.as_deref(),
+                id,
+                symbol.as_deref(),
+                conviction.as_deref(),
+                timeframe.as_deref(),
+                confidence,
+                source_agent.as_deref(),
+                target_date.as_deref(),
+                resolution_criteria.as_deref(),
+                outcome.as_deref(),
+                notes.as_deref(),
+                lesson.as_deref(),
+                filter.as_deref(),
+                date.as_deref(),
+                limit,
+                json,
+            )
+        }
         Some(Command::Correlations {
             action,
             value,
@@ -1130,7 +1134,9 @@ fn main() -> Result<()> {
             notes,
             limit,
             json,
-        }) => match action.as_str() {
+        }) => {
+            warn_deprecated("conviction", "journal conviction");
+            match action.as_str() {
             "set" => {
                 let symbol = value.as_deref().ok_or_else(|| {
                     anyhow::anyhow!("Missing symbol. Usage: pftui conviction set SYMBOL --score N")
@@ -1169,75 +1175,227 @@ fn main() -> Result<()> {
             _ => Err(anyhow::anyhow!(
                 "Invalid action. Use: set, list, history, changes"
             )),
+        }
         },
-        Some(Command::Journal {
-            action,
-            value,
-            id,
-            date,
-            tag,
-            symbol,
-            conviction,
-            status,
-            filter_status,
-            content,
-            since,
-            limit,
-            json,
-        }) => match action.as_str() {
-            "add" => {
-                let content_text = value.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!("Missing content text. Usage: pftui journal add \"your entry text\"")
-                })?;
-                commands::journal::run_add(
+        Some(Command::Journal { command }) => match command {
+            None => commands::journal::run_list(&backend, Some(20), None, None, None, None, false),
+            Some(cli::JournalCommand::Entry {
+                action,
+                value,
+                id,
+                date,
+                tag,
+                symbol,
+                conviction,
+                status,
+                filter_status,
+                content,
+                since,
+                limit,
+                json,
+            }) => match action.as_str() {
+                "add" => {
+                    let content_text = value.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Missing content text. Usage: pftui journal entry add \"your entry text\""
+                        )
+                    })?;
+                    commands::journal::run_add(
+                        &backend,
+                        content_text,
+                        date.as_deref(),
+                        tag.as_deref(),
+                        symbol.as_deref(),
+                        conviction.as_deref(),
+                        json,
+                    )
+                }
+                "list" => commands::journal::run_list(
                     &backend,
-                    content_text,
-                    date.as_deref(),
+                    limit,
+                    since.as_deref(),
                     tag.as_deref(),
                     symbol.as_deref(),
-                    conviction.as_deref(),
+                    filter_status.as_deref(),
                     json,
-                )
-            }
-            "list" => commands::journal::run_list(
-                &backend,
+                ),
+                "search" => {
+                    let query = value.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Missing search query. Usage: pftui journal entry search \"query\""
+                        )
+                    })?;
+                    commands::journal::run_search(&backend, query, since.as_deref(), limit, json)
+                }
+                "update" => {
+                    let entry_id = id.ok_or_else(|| {
+                        anyhow::anyhow!("Missing entry ID. Usage: pftui journal entry update --id N [--content \"...\"] [--status ...]")
+                    })?;
+                    commands::journal::run_update(
+                        &backend,
+                        entry_id,
+                        content.as_deref(),
+                        status.as_deref(),
+                        json,
+                    )
+                }
+                "remove" => {
+                    let entry_id = id.ok_or_else(|| {
+                        anyhow::anyhow!("Missing entry ID. Usage: pftui journal entry remove --id N")
+                    })?;
+                    commands::journal::run_remove(&backend, entry_id, json)
+                }
+                "tags" => commands::journal::run_tags(&backend, json),
+                "stats" => commands::journal::run_stats(&backend, json),
+                _ => Err(anyhow::anyhow!(
+                    "Unknown journal entry action '{}'. Valid actions: add, list, search, update, remove, tags, stats",
+                    action
+                )),
+            },
+            Some(cli::JournalCommand::Prediction {
+                action,
+                value,
+                id,
+                symbol,
+                conviction,
+                timeframe,
+                confidence,
+                source_agent,
+                target_date,
+                resolution_criteria,
+                outcome,
+                notes,
+                lesson,
+                filter,
+                date,
                 limit,
-                since.as_deref(),
-                tag.as_deref(),
+                json,
+            }) => commands::predict::run(
+                &backend,
+                &action,
+                value.as_deref(),
+                id,
                 symbol.as_deref(),
-                filter_status.as_deref(),
+                conviction.as_deref(),
+                timeframe.as_deref(),
+                confidence,
+                source_agent.as_deref(),
+                target_date.as_deref(),
+                resolution_criteria.as_deref(),
+                outcome.as_deref(),
+                notes.as_deref(),
+                lesson.as_deref(),
+                filter.as_deref(),
+                date.as_deref(),
+                limit,
                 json,
             ),
-            "search" => {
-                let query = value.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!("Missing search query. Usage: pftui journal search \"query\"")
-                })?;
-                commands::journal::run_search(&backend, query, since.as_deref(), limit, json)
-            }
-            "update" => {
-                let entry_id = id.ok_or_else(|| {
-                    anyhow::anyhow!("Missing entry ID. Usage: pftui journal update --id N [--content \"...\"] [--status ...]")
-                })?;
-                commands::journal::run_update(
-                    &backend,
-                    entry_id,
-                    content.as_deref(),
-                    status.as_deref(),
-                    json,
-                )
-            }
-            "remove" => {
-                let entry_id = id.ok_or_else(|| {
-                    anyhow::anyhow!("Missing entry ID. Usage: pftui journal remove --id N")
-                })?;
-                commands::journal::run_remove(&backend, entry_id, json)
-            }
-            "tags" => commands::journal::run_tags(&backend, json),
-            "stats" => commands::journal::run_stats(&backend, json),
-            _ => Err(anyhow::anyhow!(
-                "Unknown journal action '{}'. Valid actions: add, list, search, update, remove, tags, stats",
-                action
-            )),
+            Some(cli::JournalCommand::Conviction {
+                action,
+                value,
+                score,
+                score_positional,
+                notes,
+                limit,
+                json,
+            }) => match action.as_str() {
+                "set" => {
+                    let symbol = value.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!("Missing symbol. Usage: pftui journal conviction set SYMBOL --score N")
+                    })?;
+                    let score_val = if let Some(s) = score {
+                        s
+                    } else if let Some(raw) = score_positional.as_deref() {
+                        raw.parse::<i32>().map_err(|_| {
+                            anyhow::anyhow!(
+                                "Invalid score '{}'. Use an integer -5..5 (for negatives: --score=-2).",
+                                raw
+                            )
+                        })?
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "Missing score. Usage: pftui journal conviction set SYMBOL --score N (for negatives: --score=-2)"
+                        ));
+                    };
+                    commands::conviction::run_set(&backend, symbol, score_val, notes.as_deref(), json)
+                }
+                "list" => commands::conviction::run_list(&backend, json),
+                "history" => {
+                    let symbol = value.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!("Missing symbol. Usage: pftui journal conviction history SYMBOL")
+                    })?;
+                    commands::conviction::run_history(&backend, symbol, limit, json)
+                }
+                "changes" => {
+                    let days = if let Some(val) = value.as_deref() {
+                        val.parse::<usize>().unwrap_or(7)
+                    } else {
+                        7
+                    };
+                    commands::conviction::run_changes(&backend, days, json)
+                }
+                _ => Err(anyhow::anyhow!(
+                    "Invalid action. Use: set, list, history, changes"
+                )),
+            },
+            Some(cli::JournalCommand::Notes {
+                action,
+                value,
+                id,
+                date,
+                section,
+                since,
+                limit,
+                json,
+            }) => commands::notes::run(
+                &backend,
+                &action,
+                value.as_deref(),
+                id,
+                date.as_deref(),
+                section.as_deref(),
+                since.as_deref(),
+                limit,
+                json,
+            ),
+            Some(cli::JournalCommand::Scenario {
+                action,
+                value,
+                id,
+                signal_id,
+                probability,
+                description,
+                impact,
+                triggers,
+                precedent,
+                status,
+                driver,
+                notes,
+                evidence,
+                source,
+                scenario,
+                limit,
+                json,
+            }) => commands::scenario::run(
+                &backend,
+                &action,
+                value.as_deref(),
+                id,
+                signal_id,
+                probability,
+                description.as_deref(),
+                impact.as_deref(),
+                triggers.as_deref(),
+                precedent.as_deref(),
+                status.as_deref(),
+                driver.as_deref(),
+                notes.as_deref(),
+                evidence.as_deref(),
+                source.as_deref(),
+                scenario.as_deref(),
+                limit,
+                json,
+            ),
         },
         Some(Command::Notes {
             action,
@@ -1248,17 +1406,20 @@ fn main() -> Result<()> {
             since,
             limit,
             json,
-        }) => commands::notes::run(
-            &backend,
-            &action,
-            value.as_deref(),
-            id,
-            date.as_deref(),
-            section.as_deref(),
-            since.as_deref(),
-            limit,
-            json,
-        ),
+        }) => {
+            warn_deprecated("notes", "journal notes");
+            commands::notes::run(
+                &backend,
+                &action,
+                value.as_deref(),
+                id,
+                date.as_deref(),
+                section.as_deref(),
+                since.as_deref(),
+                limit,
+                json,
+            )
+        }
         Some(Command::Opportunity {
             action,
             value,
