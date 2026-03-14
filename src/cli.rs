@@ -1,5 +1,61 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
+#[derive(Subcommand)]
+pub enum AgentCommand {
+    /// Inter-agent structured message passing
+    Message {
+        /// Action: send, list, reply, flag, ack, ack-all, purge
+        action: String,
+
+        /// Message content (for send/reply/flag)
+        value: Option<String>,
+
+        /// Batch mode for send: repeat to enqueue multiple related messages
+        #[arg(long = "batch")]
+        batch: Vec<String>,
+
+        #[arg(long)]
+        id: Option<i64>,
+
+        /// Sender (required for send/reply/flag; filter for list)
+        #[arg(long)]
+        from: Option<String>,
+
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Priority: low, normal, high, critical
+        #[arg(long)]
+        priority: Option<String>,
+
+        /// Category: signal, feedback, alert, handoff, escalation
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Analytics engine layer: low, medium, high, macro, cross
+        #[arg(long)]
+        layer: Option<String>,
+
+        /// Show only unacknowledged
+        #[arg(long)]
+        unacked: bool,
+
+        /// Time filter
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Days for purge
+        #[arg(long)]
+        days: Option<usize>,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "pftui", version, about = "Terminal portfolio tracker")]
 pub struct Cli {
@@ -14,6 +70,12 @@ pub struct Cli {
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
+    /// Agentic operations and inter-agent workflows
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommand,
+    },
+
     /// Portfolio summary to stdout
     Summary {
         /// Group output by a field (e.g. "category")

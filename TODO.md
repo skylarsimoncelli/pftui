@@ -206,21 +206,6 @@ Implementation: match old command names in `src/main.rs`, print warning to stder
 forward to new dispatch. Remove aliases after 3 major versions.
 `structural` already uses this pattern -- reuse the same mechanism.
 
-**F40.11: `pftui agent` namespace**
-
-All agent-specific operations:
-```
-pftui agent message send         # was: pftui agent-msg send
-pftui agent message list         # was: pftui agent-msg list
-pftui agent message ack          # was: pftui agent-msg ack
-```
-Future agent commands will nest here naturally:
-```
-pftui agent digest               # was: pftui analytics digest (agent report generation)
-pftui agent status               # agent pipeline health check (future)
-```
-Source: `src/cli.rs`, `src/main.rs`.
-
 **Final top-level tree after F40:**
 ```
 pftui
