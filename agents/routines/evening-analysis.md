@@ -8,7 +8,7 @@ This is where the REAL analysis happens. Morning brief gives the headlines. You 
 
 1. Read all timeframe agent outputs:
 ```bash
-pftui agent-msg list --to evening-analyst --unacked
+pftui agent message list --to evening-analyst --unacked
 ```
 You should receive structured reports from:
 - low-timeframe-analyst: EOD data, prediction scorecard, surprises, conviction mismatches
@@ -24,12 +24,12 @@ pftui analytics divergence --json
 pftui analytics recap --date today --json
 pftui analytics medium --json
 pftui analytics high --json
-pftui regime current --json
-pftui regime history
-pftui movers --json
-pftui predict scorecard --date today --json
-pftui predict list --json
-pftui notes list --json
+pftui analytics macro regime current --json
+pftui analytics macro regime history
+pftui analytics movers --json
+pftui agent journal prediction scorecard --date today --json
+pftui agent journal prediction list --json
+pftui agent journal notes list --json
 ```
 
 3. Read user profile and portfolio for conviction state and allocation context.
@@ -59,8 +59,8 @@ Full accounting of today's predictions across ALL timeframes:
 
 For EVERY wrong prediction across any timeframe:
 ```bash
-pftui predict score <id> --outcome wrong --notes "[what happened vs predicted]" --lesson "[Genuine reflection: what cause-effect assumption was wrong]"
-pftui notes add "WRONG CALL: [prediction]. Expected [X] because [reasoning]. Got [Y] because [actual cause]. Lesson: [specific analytical change]." \
+pftui agent journal prediction score <id> --outcome wrong --notes "[what happened vs predicted]" --lesson "[Genuine reflection: what cause-effect assumption was wrong]"
+pftui agent journal notes add "WRONG CALL: [prediction]. Expected [X] because [reasoning]. Got [Y] because [actual cause]. Lesson: [specific analytical change]." \
   --date $(date +%Y-%m-%d) --section analysis
 ```
 
@@ -97,13 +97,13 @@ The 2-3 things from today that deserve genuine analytical depth:
 
 Update scenarios with full analytical reasoning:
 ```bash
-pftui scenario update "<name>" --probability <new> \
+pftui agent journal scenario update "<name>" --probability <new> \
   --notes "[Evidence chain]: [Why probability changed]: [Reversal condition]"
 ```
 
 Update convictions where today's analysis changed your view:
 ```bash
-pftui conviction set <SYMBOL> --score <n> \
+pftui agent journal conviction set <SYMBOL> --score <n> \
   --notes "Evening [date]: [Analysis-driven update]. Evidence: [specific]. Changed because [reason]."
 ```
 
@@ -111,14 +111,14 @@ pftui conviction set <SYMBOL> --score <n> \
 
 Make 3-5 cause-and-effect predictions across MEDIUM and HIGH timeframes:
 ```bash
-pftui predict add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level]
+pftui agent journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level]
 ```
 
 ### 7. Add Trend Evidence
 
 Where today provided data on structural trends:
 ```bash
-pftui trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
+pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
   --impact <strengthens|weakens|neutral> --source "<source>" "<specific evidence>"
 ```
 
@@ -144,13 +144,13 @@ Send ONE detailed evening analysis:
 
 Send WATCH TOMORROW to low-timeframe-analyst:
 ```bash
-pftui agent-msg send "WATCH TOMORROW: Keywords: [scenario-relevant terms]. Events: [calendar]. Levels: [price levels that matter]. Predictions tracking: [IDs that could resolve]." \
+pftui agent message send "WATCH TOMORROW: Keywords: [scenario-relevant terms]. Events: [calendar]. Levels: [price levels that matter]. Predictions tracking: [IDs that could resolve]." \
   --from evening-analysis --to low-agent --priority normal --category feedback --layer low
 ```
 
 Acknowledge all consumed messages:
 ```bash
-pftui agent-msg ack --id <id>
+pftui agent message ack --id <id>
 ```
 
 ## Rules

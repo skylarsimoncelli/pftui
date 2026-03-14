@@ -12,14 +12,13 @@ You care about: will the central bank cut or hold? Is the geopolitical situation
 
 ```bash
 pftui analytics medium --json
-pftui scenario list --json
-pftui conviction list --json
-pftui thesis list --json
-pftui predict list --json
-pftui notes list --limit 10 --json
-pftui agent-msg list --to medium-agent --unacked
-pftui regime current --json
-pftui brief --json
+pftui agent journal scenario list --json
+pftui agent journal conviction list --json
+pftui agent journal prediction list --json
+pftui agent journal notes list --limit 10 --json
+pftui agent message list --to medium-agent --unacked
+pftui analytics macro regime current --json
+pftui portfolio brief --json
 ```
 
 Read the user profile and portfolio files for conviction state and allocation context.
@@ -37,7 +36,7 @@ Do 5-8 DEEP targeted searches. NOT headlines. Analysis and data:
 
 Review and update each active scenario:
 ```bash
-pftui scenario list --json
+pftui agent journal scenario list --json
 ```
 
 For each scenario:
@@ -47,7 +46,7 @@ For each scenario:
 4. What would reverse this trend?
 
 ```bash
-pftui scenario update "<name>" --probability <new> --notes "[Evidence]: [Analytical chain]: [Reversal condition]"
+pftui agent journal scenario update "<name>" --probability <new> --notes "[Evidence]: [Analytical chain]: [Reversal condition]"
 ```
 
 Update scenario signals:
@@ -60,21 +59,20 @@ WHERE id=<id>;
 
 Update thesis sections when evidence warrants:
 ```bash
-pftui thesis update "<section>" --content "[updated thesis based on this cycle's evidence]"
 ```
 
 ## Conviction Updates
 
 For assets affected by medium-term developments:
 ```bash
-pftui conviction set <SYMBOL> --score <n> --notes "MEDIUM [date]: [What medium-term force changed]. Evidence: [specific]. Changed from [old] because [reason]."
+pftui agent journal conviction set <SYMBOL> --score <n> --notes "MEDIUM [date]: [What medium-term force changed]. Evidence: [specific]. Changed from [old] because [reason]."
 ```
 
 ## Prediction Self-Reflection
 
 Score any MEDIUM predictions that accumulated enough evidence:
 ```bash
-pftui predict list --filter pending --json
+pftui agent journal prediction list --filter pending --json
 ```
 
 For EVERY wrong MEDIUM prediction, deep reflection:
@@ -84,8 +82,8 @@ For EVERY wrong MEDIUM prediction, deep reflection:
 4. Was the thesis wrong, or was the timing wrong?
 
 ```bash
-pftui predict score <id> --outcome <correct|wrong|partial> --notes "[Evidence that resolved it]"
-pftui notes add "MEDIUM WRONG CALL: [prediction]. Expected [X] because [thesis]. Got [Y] because [actual force]. Underweighted: [specific indicator]. Adjusting: [what to watch differently]." \
+pftui agent journal prediction score <id> --outcome <correct|wrong|partial> --notes "[Evidence that resolved it]"
+pftui agent journal notes add "MEDIUM WRONG CALL: [prediction]. Expected [X] because [thesis]. Got [Y] because [actual force]. Underweighted: [specific indicator]. Adjusting: [what to watch differently]." \
   --date $(date +%Y-%m-%d) --section analysis
 ```
 
@@ -94,14 +92,14 @@ pftui notes add "MEDIUM WRONG CALL: [prediction]. Expected [X] because [thesis].
 Make 3-5 cause-and-effect predictions for the next 1-4 weeks:
 
 ```bash
-pftui predict add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent
+pftui agent journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level] --timeframe medium --confidence [0.X] --source-agent medium-agent
 ```
 
 ## Output to Evening Analyst
 
 ```bash
 DIGEST=$(pftui analytics digest --from medium-agent --json)
-pftui agent-msg send "MEDIUM LAYER DIGEST [date]: ${DIGEST}" \
+pftui agent message send "MEDIUM LAYER DIGEST [date]: ${DIGEST}" \
   --from medium-agent --to evening-analyst --priority normal --category signal --layer medium
 ```
 

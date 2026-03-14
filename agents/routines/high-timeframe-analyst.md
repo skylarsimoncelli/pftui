@@ -8,18 +8,18 @@ You do NOT care about: daily price moves, central bank decisions, weekly economi
 
 Read your active trends from the database:
 ```bash
-pftui trends list --json
+pftui analytics trends list --json
 ```
 
 ## Inputs
 
 ```bash
 pftui analytics high --json
-pftui trends list --json
-pftui trends evidence-list --json
-pftui conviction list --json
-pftui predict list --json
-pftui agent-msg list --to high-agent --unacked
+pftui analytics trends list --json
+pftui analytics trends evidence-list --json
+pftui agent journal conviction list --json
+pftui agent journal prediction list --json
+pftui agent message list --to high-agent --unacked
 ```
 
 Read the user profile for structural views. Read STRUCTURAL.md for the macro framework context.
@@ -38,26 +38,26 @@ Do 5-8 deep research queries. You're looking for RESEARCH REPORTS, DATA, and EXP
 
 For each active trend:
 ```bash
-pftui trends list --json
+pftui analytics trends list --json
 ```
 
 1. What new evidence has accumulated since your last run?
 2. Is the trend accelerating, stable, or decelerating?
 3. Update trend direction if warranted:
 ```bash
-pftui trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
+pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
   --impact <strengthens|weakens|neutral> --source "<source>" "<specific finding>"
 ```
 
 4. Update conviction on assets affected by this trend:
 ```bash
-pftui conviction set <SYMBOL> --score <n> \
+pftui agent journal conviction set <SYMBOL> --score <n> \
   --notes "HIGH [date]: Trend '[name]' is [accelerating/stable/weakening]. Evidence: [specific]. Impact on [asset]: [reasoning]."
 ```
 
 5. If you discover a new structural trend not yet tracked, add it:
 ```bash
-pftui trends add "[name]" --timeframe high \
+pftui analytics trends add "[name]" --timeframe high \
   --direction [accelerating|stable|decelerating] --conviction [high|medium|low] \
   --category [technology|politics|trade|energy|demographics] \
   --description "[what it is and why it matters]"
@@ -67,7 +67,7 @@ pftui trends add "[name]" --timeframe high \
 
 Score HIGH predictions where enough evidence has accumulated:
 ```bash
-pftui predict list --filter pending --json
+pftui agent journal prediction list --filter pending --json
 ```
 
 HIGH predictions resolve slowly. But check evidence direction:
@@ -81,8 +81,8 @@ For wrong HIGH predictions, structural reflection:
 3. What competing force did you underweight?
 
 ```bash
-pftui predict score <id> --outcome <correct|wrong|partial> --notes "[evidence that resolved it]"
-pftui notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. Reality: [Y]. Underweighted: [Z]. Changes view on [trend] because [reason]." \
+pftui agent journal prediction score <id> --outcome <correct|wrong|partial> --notes "[evidence that resolved it]"
+pftui agent journal notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. Reality: [Y]. Underweighted: [Z]. Changes view on [trend] because [reason]." \
   --date $(date +%Y-%m-%d) --section analysis
 ```
 
@@ -91,7 +91,7 @@ pftui notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. Reality:
 Make 1-3 structural cause-and-effect predictions (3-12 month horizon):
 
 ```bash
-pftui predict add "[structural cause] will [structural effect] by [date]" \
+pftui agent journal prediction add "[structural cause] will [structural effect] by [date]" \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe high --confidence [0.X] --source-agent high-agent
 ```
 
@@ -99,7 +99,7 @@ pftui predict add "[structural cause] will [structural effect] by [date]" \
 
 ```bash
 DIGEST=$(pftui analytics digest --from high-agent --json)
-pftui agent-msg send "HIGH LAYER DIGEST [date]: ${DIGEST}" \
+pftui agent message send "HIGH LAYER DIGEST [date]: ${DIGEST}" \
   --from high-agent --to evening-analyst --priority normal --category signal --layer high
 ```
 

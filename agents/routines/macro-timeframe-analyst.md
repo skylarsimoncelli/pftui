@@ -24,7 +24,7 @@ pftui analytics macro outcomes --json
 pftui analytics macro parallels --json
 pftui analytics macro log --limit 10 --json
 pftui analytics high --json
-pftui predict list --json
+pftui agent journal prediction list --json
 ```
 
 Read STRUCTURAL.md for qualitative framework context.
@@ -44,7 +44,7 @@ pftui analytics macro metrics China --json
 
 Update with evidence:
 ```bash
-pftui structural metric-set US --metric "[determinant]" --score [1-10] --rank [1-5] \
+pftui analytics macro metrics set US --metric "[determinant]" --score [1-10] --rank [1-5] \
   --trend [rising|stable|declining] --description "[evidence-based assessment with source]"
 ```
 
@@ -67,7 +67,7 @@ Key questions every run:
 
 If the evidence warrants a stage change:
 ```bash
-pftui structural cycle-set "Dalio Big Cycle - US Empire" --stage "[stage]" \
+pftui analytics macro cycles update "Dalio Big Cycle - US Empire" --stage "[stage]" \
   --evidence "[what changed and why this constitutes a stage transition]"
 ```
 
@@ -89,7 +89,7 @@ Every run, assess:
 
 Update the cycle:
 ```bash
-pftui structural cycle-set "Strauss-Howe Fourth Turning" --stage "[phase]" \
+pftui analytics macro cycles update "Strauss-Howe Fourth Turning" --stage "[phase]" \
   --evidence "[crisis arc markers and evidence]"
 ```
 
@@ -107,7 +107,7 @@ pftui analytics macro parallels --json
 
 Add new parallels when warranted:
 ```bash
-pftui structural parallel-add --period "[dates]" \
+pftui analytics macro parallels add --period "[dates]" \
   --event "[historical event] → [current parallel]" \
   --similarity [1-10] --outcome "[what happened then]"
 ```
@@ -116,7 +116,7 @@ pftui structural parallel-add --period "[dates]" \
 
 Update outcome probabilities based on both lenses:
 ```bash
-pftui structural outcome-update "[name]" --probability [X] \
+pftui analytics macro outcomes update "[name]" --probability [X] \
   --notes "[Which lens provided the evidence. What shifted and why.]"
 ```
 
@@ -124,7 +124,7 @@ pftui structural outcome-update "[name]" --probability [X] \
 
 Add a structured log entry synthesizing both lenses:
 ```bash
-pftui structural log-add --date $(date +%Y-%m-%d) \
+pftui analytics macro log add --date $(date +%Y-%m-%d) \
   --driver "[most important structural development this week]" \
   --impact "[how it affects the macro picture across both frameworks]" \
   --notes "[Dalio lens: X. Fourth Turning lens: Y. Constraint on lower timeframes: Z.]"
@@ -135,7 +135,7 @@ pftui structural log-add --date $(date +%Y-%m-%d) \
 Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks:
 
 ```bash
-pftui predict add "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
+pftui agent journal prediction add "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source macro-agent
 ```
 
@@ -144,7 +144,7 @@ Score any MACRO predictions that accumulated enough evidence. For macro predicti
 ## Output to Evening Analyst
 
 ```bash
-pftui agent-msg send "MACRO LAYER [date]: Dalio composite US [X.XX] (Δ[change]) vs China [X.XX] (gap [X.XX], [widening/closing]). Fastest closing determinant: [X]. Big Cycle stage: [stage]. Fourth Turning phase: [phase], arc [accelerating/stable/decelerating]. Key development: [what changed]. Parallel strengthening: [which]. Constraint on lower timeframes: [how macro picture limits daily/weekly analysis]." \
+pftui agent message send "MACRO LAYER [date]: Dalio composite US [X.XX] (Δ[change]) vs China [X.XX] (gap [X.XX], [widening/closing]). Fastest closing determinant: [X]. Big Cycle stage: [stage]. Fourth Turning phase: [phase], arc [accelerating/stable/decelerating]. Key development: [what changed]. Parallel strengthening: [which]. Constraint on lower timeframes: [how macro picture limits daily/weekly analysis]." \
   --from macro-agent --to evening-analyst --priority normal --category feedback --layer macro
 ```
 
