@@ -50,6 +50,60 @@ Routing and composite score shipped. Remaining alignment scoring algorithm work.
 
 8/10 sources stale, price_history writes stopped. Must stabilize.
 
+### F42: CLI Domain Consolidation (Hierarchy Finalization)
+
+Align CLI strictly to product domains: `portfolio`, `data`, `analytics`, `agent`, `system`.
+No compatibility aliases. Nested commands for functions; flags only for params/filters.
+
+- [ ] **F42.1 — Freeze canonical command tree spec**
+  - Add `docs/CLI-TREE.md` with final hierarchy and naming conventions.
+  - Include explicit rule: no action positional args where subcommands apply.
+  - Acceptance: tree doc matches `--help` exactly.
+
+- [ ] **F42.2 — Rename top-level `portfolios` to `portfolio profiles`**
+  - Add `profiles` subcommand under `portfolio` (`list/current/create/switch/remove`).
+  - Remove top-level `portfolios`.
+  - Acceptance: `pftui --help` has no `portfolios`; `pftui portfolio profiles --help` works.
+
+- [ ] **F42.3 — Move `watchlist` under `portfolio`**
+  - Introduce `portfolio watchlist add/remove/list`.
+  - Remove top-level `watchlist`.
+  - Acceptance: `pftui --help` has no `watchlist`; all watchlist flows preserved.
+
+- [ ] **F42.4 — Collapse `market` namespace into `data`**
+  - Move `news/sentiment/calendar/fedwatch/economy/predictions/options/etf-flows/supply/sovereign` under `data`.
+  - Remove top-level `market`.
+  - Acceptance: `pftui --help` has no `market`; each moved command has equivalent `data` path.
+
+- [ ] **F42.5 — Normalize action-style commands into nested subcommands**
+  - Convert to subcommands:
+    - `agent message <action>` -> `agent message send|list|reply|flag|ack|ack-all|purge`
+    - `portfolio target <action>` -> `portfolio target set|list|remove`
+    - `portfolio opportunity <action>` -> `portfolio opportunity add|list|stats`
+  - Acceptance: these command families no longer depend on positional action args.
+
+- [ ] **F42.6 — Refactor `cli.rs` + `main.rs` dispatch to new tree only**
+  - Remove obsolete enum variants and routing branches.
+  - Acceptance: compile/test pass with no stale command references.
+
+- [ ] **F42.7 — Update docs to canonical paths**
+  - Update command examples in `README.md`, `AGENTS.md`, `PRODUCT-VISION.md`, `PRODUCT-PHILOSOPHY.md`, `docs/VISION.md`, `CLAUDE.md`.
+  - Acceptance: no stale command paths in these docs.
+
+- [ ] **F42.8 — Publish migration table**
+  - Add `docs/CLI-MIGRATION.md` with old -> new mapping.
+  - State explicitly: removed commands are not supported.
+  - Acceptance: each removed path has one canonical replacement.
+
+- [ ] **F42.9 — Add/refresh CLI parsing tests**
+  - Cover new paths and ensure removed top-level namespaces fail predictably.
+  - Acceptance: `cargo test` green with updated command-shape coverage.
+
+- [ ] **F42.10 — Help-output verification snapshot**
+  - Verify top-level help contains only `agent`, `analytics`, `data`, `portfolio`, `system`.
+  - Verify critical subtrees (`portfolio profiles/watchlist`, `data <moved market cmds>`, `agent message`).
+  - Acceptance: help tree consistent with `docs/CLI-TREE.md`.
+
 ---
 
 ## P2 — Nice to Have
