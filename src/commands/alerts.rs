@@ -1,18 +1,15 @@
 use anyhow::{bail, Result};
+use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use serde::Serialize;
 
 use crate::alerts::engine::{check_alerts_backend_only, AlertCheckResult};
 use crate::alerts::rules::parse_rule;
-use crate::alerts::AlertStatus;
-use crate::db::backend::BackendConnection;
+use crate::alerts::{AlertRule, AlertStatus};
 use crate::db::alerts as alerts_db;
+use crate::db::backend::BackendConnection;
 
 /// Run the alerts CLI subcommand.
-pub fn run(
-    backend: &BackendConnection,
-    action: &str,
-    args: &AlertsArgs,
-) -> Result<()> {
+pub fn run(backend: &BackendConnection, action: &str, args: &AlertsArgs) -> Result<()> {
     match action {
         "add" => run_add(backend, args),
         "list" => run_list(backend, args),
@@ -20,7 +17,10 @@ pub fn run(
         "check" => run_check(backend, args),
         "ack" => run_ack(backend, args),
         "rearm" => run_rearm(backend, args),
-        _ => bail!("Unknown alerts action: '{}'. Expected: add, list, remove, check, ack, rearm", action),
+        _ => bail!(
+            "Unknown alerts action: '{}'. Expected: add, list, remove, check, ack, rearm",
+            action
+        ),
     }
 }
 
@@ -30,6 +30,7 @@ pub struct AlertsArgs {
     pub id: Option<i64>,
     pub json: bool,
     pub status_filter: Option<String>,
+    pub today: bool,
 }
 
 fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
@@ -54,12 +55,15 @@ fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
 }
 
 fn run_list(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
-    let alerts = if let Some(ref status_str) = args.status_filter {
+    let mut alerts = if let Some(ref status_str) = args.status_filter {
         let status: AlertStatus = status_str.parse()?;
         alerts_db::list_alerts_by_status_backend(backend, status)?
     } else {
         alerts_db::list_alerts_backend(backend)?
     };
+    if args.today {
+        alerts.retain(alert_matches_today_filter);
+    }
 
     if alerts.is_empty() {
         if args.json {
@@ -83,7 +87,10 @@ fn run_list(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
             AlertStatus::Triggered => "🔴",
             AlertStatus::Acknowledged => "✅",
         };
-        println!("  {} [#{}] {} ({})", status_icon, alert.id, alert.rule_text, alert.kind);
+        println!(
+            "  {} [#{}] {} ({})",
+            status_icon, alert.id, alert.rule_text, alert.kind
+        );
         if let Some(ref triggered_at) = alert.triggered_at {
             println!("      Triggered: {}", triggered_at);
         }
@@ -107,7 +114,10 @@ fn run_remove(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
 }
 
 fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
-    let results = check_alerts_backend_only(backend)?;
+    let mut results = check_alerts_backend_only(backend)?;
+    if args.today {
+        results.retain(|r| alert_matches_today_filter(&r.rule));
+    }
 
     if results.is_empty() {
         if args.json {
@@ -126,15 +136,25 @@ fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     }
 
     // Separate by status for display
-    let newly_triggered: Vec<&AlertCheckResult> = results.iter().filter(|r| r.newly_triggered).collect();
-    let armed: Vec<&AlertCheckResult> = results.iter().filter(|r| r.rule.status == AlertStatus::Armed && !r.newly_triggered).collect();
-    let already_triggered: Vec<&AlertCheckResult> = results.iter().filter(|r| r.rule.status == AlertStatus::Triggered && !r.newly_triggered).collect();
+    let newly_triggered: Vec<&AlertCheckResult> =
+        results.iter().filter(|r| r.newly_triggered).collect();
+    let armed: Vec<&AlertCheckResult> = results
+        .iter()
+        .filter(|r| r.rule.status == AlertStatus::Armed && !r.newly_triggered)
+        .collect();
+    let already_triggered: Vec<&AlertCheckResult> = results
+        .iter()
+        .filter(|r| r.rule.status == AlertStatus::Triggered && !r.newly_triggered)
+        .collect();
 
     if !newly_triggered.is_empty() {
         println!("🔴 NEWLY TRIGGERED ({}):\n", newly_triggered.len());
         for r in &newly_triggered {
             let current = format_current_value(r);
-            println!("  🔴 [#{}] {} — current: {}", r.rule.id, r.rule.rule_text, current);
+            println!(
+                "  🔴 [#{}] {} — current: {}",
+                r.rule.id, r.rule.rule_text, current
+            );
         }
         println!();
     }
@@ -144,7 +164,10 @@ fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
         for r in &already_triggered {
             let current = format_current_value(r);
             let triggered_at = r.rule.triggered_at.as_deref().unwrap_or("unknown");
-            println!("  ⚠️  [#{}] {} — current: {} (triggered: {})", r.rule.id, r.rule.rule_text, current, triggered_at);
+            println!(
+                "  ⚠️  [#{}] {} — current: {} (triggered: {})",
+                r.rule.id, r.rule.rule_text, current, triggered_at
+            );
         }
         println!();
     }
@@ -154,12 +177,18 @@ fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
         for r in &armed {
             let current = format_current_value(r);
             let distance = format_distance(r);
-            println!("  🟢 [#{}] {} — current: {} {}", r.rule.id, r.rule.rule_text, current, distance);
+            println!(
+                "  🟢 [#{}] {} — current: {} {}",
+                r.rule.id, r.rule.rule_text, current, distance
+            );
         }
         println!();
     }
 
-    let ack: Vec<&AlertCheckResult> = results.iter().filter(|r| r.rule.status == AlertStatus::Acknowledged).collect();
+    let ack: Vec<&AlertCheckResult> = results
+        .iter()
+        .filter(|r| r.rule.status == AlertStatus::Acknowledged)
+        .collect();
     if !ack.is_empty() {
         println!("✅ Acknowledged ({}):\n", ack.len());
         for r in &ack {
@@ -169,6 +198,31 @@ fn run_check(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn alert_matches_today_filter(alert: &AlertRule) -> bool {
+    let Some(triggered_at) = alert.triggered_at.as_deref() else {
+        return false;
+    };
+    let Some(dt_utc) = parse_timestamp_utc(triggered_at) else {
+        return false;
+    };
+    let local_dt = dt_utc.with_timezone(&Local);
+    local_dt.date_naive() == Local::now().date_naive()
+}
+
+fn parse_timestamp_utc(raw: &str) -> Option<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    if let Ok(ts) = raw.parse::<i64>() {
+        if let Some(dt) = DateTime::from_timestamp(ts, 0) {
+            return Some(dt.with_timezone(&Utc));
+        }
+    }
+    NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
 }
 
 fn run_ack(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
@@ -266,13 +320,13 @@ impl From<&AlertCheckResult> for AlertCheckJson {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_decimal::Decimal;
-    use std::str::FromStr;
     use crate::alerts::AlertRule;
     use crate::db::backend::BackendConnection;
     use crate::db::open_in_memory;
-    use crate::models::price::PriceQuote;
     use crate::db::price_cache;
+    use crate::models::price::PriceQuote;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
 
     fn setup_db() -> rusqlite::Connection {
         let conn = open_in_memory();
@@ -284,11 +338,11 @@ mod tests {
                 currency: "USD".to_string(),
                 fetched_at: "2026-03-04T00:00:00Z".to_string(),
                 source: "test".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
         price_cache::upsert_price(
@@ -299,11 +353,11 @@ mod tests {
                 currency: "USD".to_string(),
                 fetched_at: "2026-03-04T00:00:00Z".to_string(),
                 source: "test".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
         conn
@@ -321,6 +375,7 @@ mod tests {
             id: None,
             json: false,
             status_filter: None,
+            today: false,
         };
         run_add(&backend, &args).unwrap();
         let alerts = alerts_db::list_alerts_backend(&backend).unwrap();
@@ -337,6 +392,7 @@ mod tests {
             id: None,
             json: false,
             status_filter: None,
+            today: false,
         };
         run_add(&backend, &args).unwrap();
         let alerts = alerts_db::list_alerts_backend(&backend).unwrap();
@@ -352,6 +408,7 @@ mod tests {
             id: None,
             json: false,
             status_filter: None,
+            today: false,
         };
         assert!(run_add(&backend, &args).is_err());
     }
@@ -359,12 +416,21 @@ mod tests {
     #[test]
     fn test_remove_alert_via_cli() {
         let backend = setup_backend();
-        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        let id = alerts_db::add_alert_backend(
+            &backend,
+            "price",
+            "GC=F",
+            "above",
+            "5500",
+            "GC=F above 5500",
+        )
+        .unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
+            today: false,
         };
         run_remove(&backend, &args).unwrap();
         assert!(alerts_db::list_alerts_backend(&backend).unwrap().is_empty());
@@ -378,6 +444,7 @@ mod tests {
             id: Some(999),
             json: false,
             status_filter: None,
+            today: false,
         };
         assert!(run_remove(&backend, &args).is_err());
     }
@@ -386,7 +453,15 @@ mod tests {
     fn test_check_triggers_armed_alert() {
         let backend = setup_backend();
         // GC=F at 5600, alert for above 5500 → should trigger
-        alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        alerts_db::add_alert_backend(
+            &backend,
+            "price",
+            "GC=F",
+            "above",
+            "5500",
+            "GC=F above 5500",
+        )
+        .unwrap();
         let results = check_alerts_backend_only(&backend).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].newly_triggered);
@@ -395,7 +470,15 @@ mod tests {
     #[test]
     fn test_check_json_output() {
         let backend = setup_backend();
-        alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
+        alerts_db::add_alert_backend(
+            &backend,
+            "price",
+            "GC=F",
+            "above",
+            "6000",
+            "GC=F above 6000",
+        )
+        .unwrap();
         let results = check_alerts_backend_only(&backend).unwrap();
         let json_results: Vec<AlertCheckJson> = results.iter().map(AlertCheckJson::from).collect();
         let json = serde_json::to_string(&json_results).unwrap();
@@ -406,7 +489,15 @@ mod tests {
     #[test]
     fn test_ack_triggered_alert() {
         let backend = setup_backend();
-        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        let id = alerts_db::add_alert_backend(
+            &backend,
+            "price",
+            "GC=F",
+            "above",
+            "5500",
+            "GC=F above 5500",
+        )
+        .unwrap();
         // Trigger it
         check_alerts_backend_only(&backend).unwrap();
         let args = AlertsArgs {
@@ -414,6 +505,7 @@ mod tests {
             id: Some(id),
             json: false,
             status_filter: None,
+            today: false,
         };
         run_ack(&backend, &args).unwrap();
         let alert = alerts_db::get_alert_backend(&backend, id).unwrap().unwrap();
@@ -423,12 +515,21 @@ mod tests {
     #[test]
     fn test_ack_armed_alert_fails() {
         let backend = setup_backend();
-        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
+        let id = alerts_db::add_alert_backend(
+            &backend,
+            "price",
+            "GC=F",
+            "above",
+            "6000",
+            "GC=F above 6000",
+        )
+        .unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
+            today: false,
         };
         assert!(run_ack(&backend, &args).is_err());
     }
@@ -436,13 +537,22 @@ mod tests {
     #[test]
     fn test_rearm_triggered_alert() {
         let backend = setup_backend();
-        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        let id = alerts_db::add_alert_backend(
+            &backend,
+            "price",
+            "GC=F",
+            "above",
+            "5500",
+            "GC=F above 5500",
+        )
+        .unwrap();
         check_alerts_backend_only(&backend).unwrap(); // triggers it
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
+            today: false,
         };
         run_rearm(&backend, &args).unwrap();
         let alert = alerts_db::get_alert_backend(&backend, id).unwrap().unwrap();
@@ -452,12 +562,21 @@ mod tests {
     #[test]
     fn test_rearm_already_armed_fails() {
         let backend = setup_backend();
-        let id = alerts_db::add_alert_backend(&backend, "price", "GC=F", "above", "6000", "GC=F above 6000").unwrap();
+        let id = alerts_db::add_alert_backend(
+            &backend,
+            "price",
+            "GC=F",
+            "above",
+            "6000",
+            "GC=F above 6000",
+        )
+        .unwrap();
         let args = AlertsArgs {
             rule: None,
             id: Some(id),
             json: false,
             status_filter: None,
+            today: false,
         };
         assert!(run_rearm(&backend, &args).is_err());
     }
@@ -483,5 +602,41 @@ mod tests {
         let dist = format_distance(&r);
         assert!(dist.contains("6.7"));
         assert!(dist.contains("+"));
+    }
+
+    #[test]
+    fn test_today_filter_accepts_triggered_today() {
+        let today = Local::now().format("%Y-%m-%dT08:30:00Z").to_string();
+        let alert = AlertRule {
+            id: 9,
+            kind: crate::alerts::AlertKind::Price,
+            symbol: "GC=F".to_string(),
+            direction: crate::alerts::AlertDirection::Above,
+            threshold: "6000".to_string(),
+            status: AlertStatus::Triggered,
+            rule_text: "GC=F above 6000".to_string(),
+            created_at: "2026-03-04".to_string(),
+            triggered_at: Some(today),
+        };
+        assert!(alert_matches_today_filter(&alert));
+    }
+
+    #[test]
+    fn test_today_filter_rejects_old_triggered_alert() {
+        let old = (Local::now() - chrono::Duration::days(2))
+            .format("%Y-%m-%dT08:30:00Z")
+            .to_string();
+        let alert = AlertRule {
+            id: 10,
+            kind: crate::alerts::AlertKind::Price,
+            symbol: "BTC".to_string(),
+            direction: crate::alerts::AlertDirection::Below,
+            threshold: "90000".to_string(),
+            status: AlertStatus::Triggered,
+            rule_text: "BTC below 90000".to_string(),
+            created_at: "2026-03-04".to_string(),
+            triggered_at: Some(old),
+        };
+        assert!(!alert_matches_today_filter(&alert));
     }
 }

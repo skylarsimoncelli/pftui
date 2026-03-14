@@ -776,12 +776,19 @@ pub enum JournalPredictionCommand {
         json: bool,
     },
     Score {
+        /// Prediction ID (flag form)
         #[arg(long)]
-        id: i64,
+        id: Option<i64>,
+        /// Prediction ID (positional form)
+        id_pos: Option<i64>,
         #[arg(long)]
         outcome: Option<String>,
+        /// Outcome (positional form): correct|partial|wrong|pending
+        outcome_pos: Option<String>,
         #[arg(long)]
         notes: Option<String>,
+        /// Notes (positional form)
+        notes_pos: Option<String>,
         #[arg(long)]
         lesson: Option<String>,
         #[arg(long)]
@@ -1041,6 +1048,18 @@ pub enum AnalyticsCorrelationsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show the latest stored correlation snapshot rows
+    Latest {
+        /// Period for snapshots/history: 7d, 30d, 90d
+        #[arg(long)]
+        period: Option<String>,
+        /// Maximum number of rows to show
+        #[arg(long, default_value = "25")]
+        limit: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1052,6 +1071,9 @@ pub enum AnalyticsAlertsCommand {
         /// Filter by status: armed, triggered, acknowledged
         #[arg(long)]
         status: Option<String>,
+        /// Only include alerts triggered since local midnight
+        #[arg(long)]
+        today: bool,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -1060,6 +1082,9 @@ pub enum AnalyticsAlertsCommand {
     Remove { id: i64 },
     /// Check alerts against current data
     Check {
+        /// Only include alerts triggered since local midnight
+        #[arg(long)]
+        today: bool,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -1545,5 +1570,51 @@ impl SummaryPeriod {
             SummaryPeriod::ThreeMonths => "3M",
             SummaryPeriod::OneYear => "1Y",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn parse_prediction_score_positional_syntax() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "score",
+            "51",
+            "correct",
+            "quick note",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal { command }) = cli.command else {
+            panic!("expected journal command");
+        };
+        let Some(JournalCommand::Prediction { command }) = command else {
+            panic!("expected prediction subcommand");
+        };
+        let JournalPredictionCommand::Score {
+            id,
+            id_pos,
+            outcome,
+            outcome_pos,
+            notes,
+            notes_pos,
+            ..
+        } = command
+        else {
+            panic!("expected score subcommand");
+        };
+
+        assert_eq!(id, None);
+        assert_eq!(id_pos, Some(51));
+        assert_eq!(outcome, None);
+        assert_eq!(outcome_pos.as_deref(), Some("correct"));
+        assert_eq!(notes, None);
+        assert_eq!(notes_pos.as_deref(), Some("quick note"));
     }
 }

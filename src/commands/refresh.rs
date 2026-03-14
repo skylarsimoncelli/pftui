@@ -9,7 +9,8 @@ use rust_decimal_macros::dec;
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
-    bls, brave, calendar, comex, cot, economic, fx, onchain, predictions, rss, sentiment, worldbank,
+    bls, brave, calendar, comex, cot, economic, fedwatch, fx, onchain, predictions, rss, sentiment,
+    worldbank,
 };
 use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
 use crate::db::backend::BackendConnection;
@@ -17,7 +18,9 @@ use crate::db::economic_data as economic_data_db;
 use crate::db::price_cache::{
     get_all_cached_prices_backend, get_cached_price_backend, upsert_price_backend,
 };
-use crate::db::price_history::{get_history_backend, get_price_at_date_backend, upsert_history_backend};
+use crate::db::price_history::{
+    get_history_backend, get_price_at_date_backend, upsert_history_backend,
+};
 use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
 use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
@@ -44,6 +47,7 @@ const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
 const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
 const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
 const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
+const FEDWATCH_CONFLICT_THRESHOLD_PCT_POINTS: f64 = 5.0;
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -75,7 +79,8 @@ fn collect_symbols(
 
     // Sector ETFs (XLE, XLK, etc.) — needed for `pftui sector` command
     for (symbol, _name) in crate::commands::sector::SECTOR_ETFS {
-        seen.entry(symbol.to_string()).or_insert(AssetCategory::Equity);
+        seen.entry(symbol.to_string())
+            .or_insert(AssetCategory::Equity);
     }
 
     Ok(seen.into_iter().collect())
@@ -112,10 +117,7 @@ fn compute_daily_change_pct(
     Some(((current - prev) / prev * dec!(100)).abs())
 }
 
-fn build_brave_news_queries(
-    backend: &BackendConnection,
-    config: &Config,
-) -> Result<Vec<String>> {
+fn build_brave_news_queries(backend: &BackendConnection, config: &Config) -> Result<Vec<String>> {
     let mut queries = if config.brave_news_queries.is_empty() {
         vec![
             "stock market today".to_string(),
@@ -294,25 +296,31 @@ async fn fetch_history_for_symbol(
 ) -> Result<(Vec<crate::models::price::HistoryRecord>, &'static str)> {
     match category {
         AssetCategory::Crypto => {
-            match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, coingecko::fetch_history(symbol, days))
-                .await
+            match tokio::time::timeout(
+                PRICE_REQUEST_TIMEOUT,
+                coingecko::fetch_history(symbol, days),
+            )
+            .await
             {
                 Ok(Ok(records)) if !records.is_empty() => Ok((records, "coingecko")),
                 Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {
                     let yahoo_sym = yahoo_crypto_symbol(symbol);
-                    let records =
-                        tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_history(&yahoo_sym, days))
-                            .await
-                            .map_err(|_| anyhow::anyhow!("{} history request timed out", yahoo_sym))??;
+                    let records = tokio::time::timeout(
+                        PRICE_REQUEST_TIMEOUT,
+                        yahoo::fetch_history(&yahoo_sym, days),
+                    )
+                    .await
+                    .map_err(|_| anyhow::anyhow!("{} history request timed out", yahoo_sym))??;
                     Ok((records, "yahoo"))
                 }
             }
         }
         AssetCategory::Cash => Ok((Vec::new(), "static")),
         _ => {
-            let records = tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_history(symbol, days))
-                .await
-                .map_err(|_| anyhow::anyhow!("{} history request timed out", symbol))??;
+            let records =
+                tokio::time::timeout(PRICE_REQUEST_TIMEOUT, yahoo::fetch_history(symbol, days))
+                    .await
+                    .map_err(|_| anyhow::anyhow!("{} history request timed out", symbol))??;
             Ok((records, "yahoo"))
         }
     }
@@ -370,8 +378,11 @@ async fn fetch_all_prices(
     // Fetch crypto: CoinGecko batch first, Yahoo fallback
     if !crypto_symbols.is_empty() {
         let mut cg_ok = false;
-        match tokio::time::timeout(PRICE_REQUEST_TIMEOUT, coingecko::fetch_prices(&crypto_symbols))
-            .await
+        match tokio::time::timeout(
+            PRICE_REQUEST_TIMEOUT,
+            coingecko::fetch_prices(&crypto_symbols),
+        )
+        .await
         {
             Ok(Ok(cg_quotes)) if !cg_quotes.is_empty() => {
                 for q in cg_quotes {
@@ -473,11 +484,7 @@ impl Drop for RefreshLock {
     }
 }
 
-pub fn run(
-    backend: &BackendConnection,
-    config: &Config,
-    notify: bool,
-) -> Result<()> {
+pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
     let _lock = RefreshLock::acquire()?;
 
     println!("Refreshing all data sources...\n");
@@ -519,6 +526,9 @@ pub fn run(
         // Always stamp today's close into price_history so 1D consumers
         // (movers/brief/correlations) have a daily anchor on refresh runs.
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let mut history_stamp_ok = 0usize;
+        let mut history_stamp_err = 0usize;
+        let mut history_stamp_examples: Vec<String> = Vec::new();
         for quote in &quotes {
             if quote.source == "static" {
                 continue;
@@ -531,7 +541,15 @@ pub fn run(
                 high: None,
                 low: None,
             };
-            let _ = upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]);
+            match upsert_history_backend(backend, &quote.symbol, &quote.source, &[record]) {
+                Ok(_) => history_stamp_ok += 1,
+                Err(e) => {
+                    history_stamp_err += 1;
+                    if history_stamp_examples.len() < 3 {
+                        history_stamp_examples.push(format!("{}: {}", quote.symbol, e));
+                    }
+                }
+            }
         }
 
         // If live providers failed for some symbols, still stamp today's close from
@@ -558,7 +576,23 @@ pub fn run(
                 high: None,
                 low: None,
             };
-            let _ = upsert_history_backend(backend, &cached.symbol, "cache", &[record]);
+            match upsert_history_backend(backend, &cached.symbol, "cache", &[record]) {
+                Ok(_) => history_stamp_ok += 1,
+                Err(e) => {
+                    history_stamp_err += 1;
+                    if history_stamp_examples.len() < 3 {
+                        history_stamp_examples.push(format!("{}: {}", cached.symbol, e));
+                    }
+                }
+            }
+        }
+        if history_stamp_err > 0 {
+            println!(
+                "⚠ Price history stamp issues: {} writes failed ({} ok). Sample: {}",
+                history_stamp_err,
+                history_stamp_ok,
+                history_stamp_examples.join(" | ")
+            );
         }
 
         let fetched_count = quotes.iter().filter(|q| q.source != "static").count();
@@ -568,7 +602,12 @@ pub fn run(
             println!("✗ Prices (no live quotes fetched)");
         }
         if !errors.is_empty() {
-            let sample = errors.iter().take(5).cloned().collect::<Vec<_>>().join(" | ");
+            let sample = errors
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" | ");
             println!(
                 "⚠ Prices fallback: {} symbol fetches failed; using cached values where available. {}",
                 errors.len(),
@@ -599,7 +638,8 @@ pub fn run(
             let latest_history_date = history
                 .last()
                 .and_then(|r| chrono::NaiveDate::parse_from_str(&r.date, "%Y-%m-%d").ok());
-            let stale_or_missing_recent = latest_history_date.map(|d| d < yesterday).unwrap_or(true);
+            let stale_or_missing_recent =
+                latest_history_date.map(|d| d < yesterday).unwrap_or(true);
             if history_len >= 30 && !stale_or_missing_recent {
                 continue;
             }
@@ -637,16 +677,14 @@ pub fn run(
     // 3. Predictions (Polymarket)
     if predictions_need_refresh(backend)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
-            Ok(markets) => {
-                match predictions_cache::upsert_predictions_backend(backend, &markets) {
-                    Ok(_) => println!("✓ Predictions ({} markets)", markets.len()),
-                    Err(e) => println!(
-                        "⚠ Predictions fetched ({} markets) but cache write failed: {}",
-                        markets.len(),
-                        e
-                    ),
-                }
-            }
+            Ok(markets) => match predictions_cache::upsert_predictions_backend(backend, &markets) {
+                Ok(_) => println!("✓ Predictions ({} markets)", markets.len()),
+                Err(e) => println!(
+                    "⚠ Predictions fetched ({} markets) but cache write failed: {}",
+                    markets.len(),
+                    e
+                ),
+            },
             Err(e) => {
                 println!("✗ Predictions (failed: {})", e);
             }
@@ -654,6 +692,7 @@ pub fn run(
     } else {
         println!("⊘ Predictions (fresh, skipping)");
     }
+    maybe_report_fedwatch_conflict(backend);
 
     // 4. News (Brave primary when configured, RSS supplements)
     if news_needs_refresh(backend)? {
@@ -986,13 +1025,13 @@ pub fn run(
                     value: flow.net_flow_btc.to_string(),
                     metadata: Some(
                         serde_json::json!({
-                            "fund": flow.fund,
-                            "net_flow_usd": flow.net_flow_usd,
-                    })
-                    .to_string(),
-                ),
-                fetched_at: fetched_at.clone(),
-            };
+                                "fund": flow.fund,
+                                "net_flow_usd": flow.net_flow_usd,
+                        })
+                        .to_string(),
+                    ),
+                    fetched_at: fetched_at.clone(),
+                };
                 let _ = onchain_cache::upsert_metric_backend(backend, &metric);
             }
             onchain_ok_parts.push("etf flows");
@@ -1062,6 +1101,32 @@ pub fn run(
 
     println!("\nRefresh complete.");
     Ok(())
+}
+
+fn maybe_report_fedwatch_conflict(backend: &BackendConnection) {
+    let markets = match predictions_cache::get_cached_predictions_backend(backend, 200) {
+        Ok(rows) if !rows.is_empty() => rows,
+        _ => return,
+    };
+    let snapshot = match fedwatch::fetch_snapshot() {
+        Ok(snapshot) => snapshot,
+        Err(_) => return,
+    };
+    if let Some(conflict) = fedwatch::detect_no_change_conflict(
+        &snapshot,
+        &markets,
+        FEDWATCH_CONFLICT_THRESHOLD_PCT_POINTS,
+    ) {
+        println!(
+            "⚠ Source conflict: {} | CME {:.1}% vs alt {:.1}% (Δ {:.1}pp) | use {}",
+            conflict.metric,
+            conflict.cme_value_pct,
+            conflict.alt_value_pct,
+            conflict.delta_pct_points,
+            conflict.recommended_source
+        );
+        println!("  Alt source: {}", conflict.alt_source_label);
+    }
 }
 
 fn classify_regime_bias(backend: &BackendConnection) -> Option<String> {
@@ -1209,7 +1274,8 @@ fn maybe_insert_signal(
     let layers_json = serde_json::to_string(layers)?;
     let assets_json = serde_json::to_string(assets)?;
 
-    let recent = timeframe_signals::list_signals_backend(backend, Some(signal_type), None, Some(100))?;
+    let recent =
+        timeframe_signals::list_signals_backend(backend, Some(signal_type), None, Some(100))?;
     let cutoff = chrono::Utc::now() - chrono::Duration::hours(6);
     let exists_recent = recent.into_iter().any(|s| {
         if s.description != description {
@@ -1296,7 +1362,8 @@ fn detect_timeframe_signals(backend: &BackendConnection) -> Result<()> {
             "notable",
         )?;
     }
-    let regimes = crate::db::regime_snapshots::get_history_backend(backend, Some(2)).unwrap_or_default();
+    let regimes =
+        crate::db::regime_snapshots::get_history_backend(backend, Some(2)).unwrap_or_default();
     if regimes.len() == 2 {
         let curr = &regimes[0].regime;
         let prev = &regimes[1].regime;
@@ -1317,10 +1384,7 @@ fn detect_timeframe_signals(backend: &BackendConnection) -> Result<()> {
 }
 
 /// Compute current positions and store a daily portfolio snapshot.
-fn store_portfolio_snapshot(
-    backend: &BackendConnection,
-    config: &Config,
-) -> Result<()> {
+fn store_portfolio_snapshot(backend: &BackendConnection, config: &Config) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> =
         cached.into_iter().map(|q| (q.symbol, q.price)).collect();

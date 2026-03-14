@@ -6,31 +6,31 @@
 
 ## P1 — Feature Requests
 
-### [Feedback] Data Source Conflict Detection
+### [x] [Feedback] Data Source Conflict Detection
 
 When multiple data sources provide contradictory data (e.g., 92% hold vs 98.9% cut probability from different FOMC sources), the system should flag the conflict and suggest the most reliable source based on track record. Currently wrong data cascades across the agent pipeline unchecked.
 
 Source: `src/commands/refresh.rs`, `src/commands/fedwatch.rs`. Add conflict detection layer that compares values from multiple sources for the same metric.
 
-### [Feedback] `predict score` Positional Argument Syntax
+### [x] [Feedback] `predict score` Positional Argument Syntax
 
 `pftui predict score 51 correct notes` fails with exit code 2 — users must discover `--id`/`--outcome`/`--notes` flag syntax from `--help`. The positional variant should work for faster scripting. At minimum, improve the error message to show correct syntax.
 
 Source: `src/cli.rs` (journal prediction score subcommand), `src/commands/predict.rs`.
 
-### [Feedback] `correlations latest` Command
+### [x] [Feedback] `correlations latest` Command
 
 `correlations latest` fails. Need a simpler snapshot command for understanding current asset relationships without specifying symbols or history windows. A quick `pftui analytics correlations latest` should show the most recent stored correlation snapshot.
 
 Source: `src/commands/correlations.rs`.
 
-### [Feedback] Today-Only Alert Filtering
+### [x] [Feedback] Today-Only Alert Filtering
 
 `pftui analytics alerts` should support a `--today` flag to show only alerts triggered since midnight, filtering out historical noise. During market close routines, agents need to focus on fresh signals only.
 
 Source: `src/commands/alerts.rs`, `src/alerts/engine.rs`.
 
-### Data Source Reliability
+### [x] Data Source Reliability
 
 8/10 sources stale, price_history writes stopped. Must stabilize.
 

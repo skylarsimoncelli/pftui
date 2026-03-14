@@ -87,7 +87,41 @@ pub fn run(
             }
             Ok(())
         }
-        other => anyhow::bail!("Unknown correlations action '{}'. Valid: compute, history", other),
+        "latest" => {
+            let mut rows = correlation_snapshots::list_current_backend(backend, period)?;
+            rows.sort_by(|a, b| {
+                b.correlation
+                    .abs()
+                    .partial_cmp(&a.correlation.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            rows.truncate(limit.max(1));
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "period": period,
+                        "snapshots": rows,
+                        "count": rows.len(),
+                    }))?
+                );
+            } else if rows.is_empty() {
+                println!("No stored correlation snapshots found. Run `pftui analytics correlations compute --store` first.");
+            } else {
+                println!("Latest correlation snapshots:");
+                for row in rows {
+                    println!(
+                        "  {:<8} {:<10} {:<10} {:+.3} ({})",
+                        row.period, row.symbol_a, row.symbol_b, row.correlation, row.recorded_at
+                    );
+                }
+            }
+            Ok(())
+        }
+        other => anyhow::bail!(
+            "Unknown correlations action '{}'. Valid: compute, history, latest",
+            other
+        ),
     }
 }
 
@@ -109,7 +143,9 @@ pub fn compute_pairs_backend(
     let history_limit = 180u32;
     let mut series_map: HashMap<String, Vec<f64>> = HashMap::new();
     for symbol in &candidates {
-        if let Some((resolved, closes)) = load_closes_with_fallback_backend(backend, symbol, history_limit) {
+        if let Some((resolved, closes)) =
+            load_closes_with_fallback_backend(backend, symbol, history_limit)
+        {
             if closes.len() >= 91 {
                 series_map.entry(symbol.clone()).or_insert(closes.clone());
                 series_map.entry(resolved).or_insert(closes);
@@ -168,13 +204,21 @@ pub fn compute_pairs_backend(
         90 => p.corr_90d.map(|v| v.abs()).unwrap_or(0.0),
         _ => 0.0,
     };
-    pairs.sort_by(|a, b| score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.sort_by(|a, b| {
+        score(b)
+            .partial_cmp(&score(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     pairs.truncate(limit.max(1));
     Ok(pairs)
 }
 
 #[allow(dead_code)]
-pub fn compute_pairs(conn: &Connection, window: usize, limit: usize) -> Result<Vec<PairCorrelation>> {
+pub fn compute_pairs(
+    conn: &Connection,
+    window: usize,
+    limit: usize,
+) -> Result<Vec<PairCorrelation>> {
     let held = collect_held_symbols(conn);
     if held.is_empty() {
         return Ok(Vec::new());
@@ -247,7 +291,11 @@ pub fn compute_pairs(conn: &Connection, window: usize, limit: usize) -> Result<V
         90 => p.corr_90d.map(|v| v.abs()).unwrap_or(0.0),
         _ => 0.0,
     };
-    pairs.sort_by(|a, b| score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.sort_by(|a, b| {
+        score(b)
+            .partial_cmp(&score(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     pairs.truncate(limit.max(1));
     Ok(pairs)
 }
@@ -263,7 +311,8 @@ fn store_pairs(conn: &Connection, pairs: &[PairCorrelation], period: &str) -> Re
             _ => p.corr_30d,
         };
         if let Some(c) = corr {
-            let _ = correlation_snapshots::store_snapshot(conn, &p.symbol_a, &p.symbol_b, c, period)?;
+            let _ =
+                correlation_snapshots::store_snapshot(conn, &p.symbol_a, &p.symbol_b, c, period)?;
             n += 1;
         }
     }
@@ -347,9 +396,7 @@ pub fn compute_and_store_default_snapshots(conn: &Connection) -> Result<usize> {
     Ok(stored)
 }
 
-pub fn compute_and_store_default_snapshots_backend(
-    backend: &BackendConnection,
-) -> Result<usize> {
+pub fn compute_and_store_default_snapshots_backend(backend: &BackendConnection) -> Result<usize> {
     let held = collect_held_symbols_backend(backend);
     if held.is_empty() {
         return Ok(0);
@@ -430,7 +477,10 @@ fn print_pairs(
         return Ok(());
     }
 
-    println!("Rolling Correlations (sorted by {}d absolute correlation)", window);
+    println!(
+        "Rolling Correlations (sorted by {}d absolute correlation)",
+        window
+    );
     println!();
     println!(
         "{:<22} {:>8} {:>8} {:>8} {:>10}",

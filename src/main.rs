@@ -91,7 +91,7 @@ fn main() -> Result<()> {
             cli::MarketCommand::Calendar { days, impact, json } => {
                 commands::calendar::run(days, impact.as_deref(), json)
             }
-            cli::MarketCommand::Fedwatch { json } => commands::fedwatch::run(json),
+            cli::MarketCommand::Fedwatch { json } => commands::fedwatch::run(&backend, json),
             cli::MarketCommand::Economy { indicator, json } => {
                 commands::economy::run(&backend, indicator.as_deref(), json)
             }
@@ -647,6 +647,17 @@ fn main() -> Result<()> {
                     limit,
                     json,
                 ),
+                Some(cli::AnalyticsCorrelationsCommand::Latest { period, limit, json }) => commands::correlations::run(
+                    &backend,
+                    Some("latest"),
+                    None,
+                    None,
+                    30,
+                    period.as_deref(),
+                    false,
+                    limit,
+                    json,
+                ),
             },
             cli::AnalyticsCommand::Scan {
                 filter,
@@ -961,15 +972,17 @@ fn main() -> Result<()> {
                             id: None,
                             json: false,
                             status_filter: None,
+                            today: false,
                         },
                     ),
-                    cli::AnalyticsAlertsCommand::List { status, json } => (
+                    cli::AnalyticsAlertsCommand::List { status, today, json } => (
                         "list",
                         commands::alerts::AlertsArgs {
                             rule: None,
                             id: None,
                             json,
                             status_filter: status,
+                            today,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Remove { id } => (
@@ -979,15 +992,17 @@ fn main() -> Result<()> {
                             id: Some(id),
                             json: false,
                             status_filter: None,
+                            today: false,
                         },
                     ),
-                    cli::AnalyticsAlertsCommand::Check { json } => (
+                    cli::AnalyticsAlertsCommand::Check { today, json } => (
                         "check",
                         commands::alerts::AlertsArgs {
                             rule: None,
                             id: None,
                             json,
                             status_filter: None,
+                            today,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Ack { id } => (
@@ -997,6 +1012,7 @@ fn main() -> Result<()> {
                             id: Some(id),
                             json: false,
                             status_filter: None,
+                            today: false,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Rearm { id } => (
@@ -1006,6 +1022,7 @@ fn main() -> Result<()> {
                             id: Some(id),
                             json: false,
                             status_filter: None,
+                            today: false,
                         },
                     ),
                 };
@@ -1130,30 +1147,37 @@ fn main() -> Result<()> {
                 ),
                 cli::JournalPredictionCommand::Score {
                     id,
+                    id_pos,
                     outcome,
+                    outcome_pos,
                     notes,
+                    notes_pos,
                     lesson,
                     json,
-                } => commands::predict::run(
-                    &backend,
-                    "score",
-                    None,
-                    Some(id),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    outcome.as_deref(),
-                    notes.as_deref(),
-                    lesson.as_deref(),
-                    None,
-                    None,
-                    None,
-                    json,
-                ),
+                } => {
+                    let merged_outcome = outcome.or(outcome_pos);
+                    let merged_notes = notes.or(notes_pos);
+                    commands::predict::run(
+                        &backend,
+                        "score",
+                        None,
+                        id.or(id_pos),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        merged_outcome.as_deref(),
+                        merged_notes.as_deref(),
+                        lesson.as_deref(),
+                        None,
+                        None,
+                        None,
+                        json,
+                    )
+                }
                 cli::JournalPredictionCommand::Stats { json } => commands::predict::run(
                     &backend, "stats", None, None, None, None, None, None, None, None, None, None, None,
                     None, None, None, None, json,

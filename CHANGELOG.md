@@ -3,6 +3,18 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Feedback fixes: predict score ergonomics, correlations latest, alerts today, reliability + source-conflict checks
+
+- What:
+  - added positional `journal prediction score` syntax support (`<id> <outcome> [notes]`) while retaining flag syntax.
+  - added `analytics correlations latest` to show current stored snapshot rows without symbol pair inputs.
+  - added `--today` filtering for `analytics alerts list` and `analytics alerts check` (triggered since local midnight).
+  - added Fed policy probability conflict detection between CME FedWatch and cached economics prediction markets, surfaced in `market fedwatch` and `data refresh`.
+  - hardened refresh/status reliability: `price_history` stamp write failures are now surfaced during refresh, and data staleness status now evaluates freshness from most-recent timestamps instead of any stale row.
+- Why: closes all active P1 feedback/reliability items requested in TODO for command ergonomics, alert noise reduction, data-source trust visibility, and stale-pipeline stabilization.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`, `src/commands/correlations.rs`, `src/db/correlation_snapshots.rs`, `src/commands/alerts.rs`, `src/data/fedwatch.rs`, `src/commands/fedwatch.rs`, `src/commands/refresh.rs`, `src/commands/status.rs`, `TODO.md`
+- Tests: `cargo test` (1208 passed), targeted new tests for CLI parsing, alerts today-filter, status freshness logic, fedwatch conflict detection, and correlation latest-row behavior. `cargo clippy --all-targets -- -D warnings` still fails due pre-existing repo-wide dead-code baseline in untouched modules.
+
 ### 2026-03-14 — Migration Safety Policy for Schema Refactors
 
 - What: established a release policy for database schema modernization to avoid breaking existing user databases: additive tables first, deterministic backfill, dual-read/write compatibility window, canonical-only cutover in a later release, and legacy table drop only after validated overlap period.
