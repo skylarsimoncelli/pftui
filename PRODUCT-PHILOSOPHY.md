@@ -90,6 +90,31 @@ Barrier to entry. If someone has to sign up for 3 API keys before seeing their p
 ### Why Brave Search API as the premium upgrade?
 One API, one key, covers everything: news, economic data, research, earnings, geopolitics. Instead of maintaining 10 fragile scrapers (each with their own failure modes), Brave gives us a single reliable data source that can answer ANY financial question. The free tier ($5/month in credits) is more than enough for daily use.
 
+### 9. Deep command hierarchy over flat namespaces
+
+pftui follows Cisco IOS-style CLI design: long, navigable, hierarchical commands over short ambiguous ones. The CLI is an operating system for financial intelligence, and it should feel like one.
+
+```
+# Yes: structured, navigable, discoverable
+pftui analytics macro history US --metric trade
+pftui analytics macro compare US China
+pftui predict scorecard --timeframe low --date 2026-03-13
+
+# No: flat, ambiguous, guesswork
+pftui history US trade
+pftui compare US China
+pftui scorecard low
+```
+
+Principles:
+- **Hierarchy over aliases.** Every command lives in a logical tree. `analytics` contains `low`, `medium`, `high`, `macro`, `alignment`, `divergence`. `macro` contains `metrics`, `compare`, `cycles`, `history`. A user can explore by tab-completing down the tree.
+- **No top-level explosion.** Top-level commands should be countable on two hands. Everything else nests. A flat namespace with 60 top-level commands is a search problem, not a CLI.
+- **Self-documenting depth.** `pftui analytics macro --help` shows you the macro sub-universe. You don't need to read docs to discover what exists.
+- **Verbosity is a feature.** A long command that reads like a sentence (`pftui analytics macro history US China --metric military --decade 1940`) is better than a short command that requires a man page (`pftui amh US CN -m mil -d 1940`).
+- **Consistency over brevity.** If `analytics` is the namespace for analytical views, ALL analytical views live there. No shortcuts that bypass the hierarchy.
+
+This compounds with agent usage: an agent can discover the full command tree by walking `--help` at each level. Flat namespaces require documentation or trial-and-error.
+
 ## What pftui Will Never Be
 
 - **A trading platform.** pftui is read-only. It tracks, analyses, and advises. It never executes trades or moves money. The human is always the decision-maker.
