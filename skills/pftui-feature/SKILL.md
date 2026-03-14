@@ -14,7 +14,7 @@ Execute one `TODO.md` feature to completion. Treat the feature id passed by the 
 
 ## Repo Root
 
-Work from the active repo root. In this repo that is usually the current workspace, but the canonical files are the equivalents of:
+Work from the active repo root. In this repo the current workspace may be only the coordination checkout. After creating the feature worktree, treat that worktree as the active repo root for implementation. The canonical files are the equivalents of:
 
 - `PRODUCT-VISION.md`
 - `PRODUCT-PHILOSOPHY.md`
@@ -36,7 +36,18 @@ If the user mentions `/root/pftui/...`, map those paths to the same files in the
    - Prefer `gh auth switch -u skylarsimoncelli`
    - If the environment exposes a repo-specific wrapper named `gh auth skylarsimoncelli`, use that
 4. Fetch and pull the latest changes from the current branch without discarding local work.
-5. Create a dedicated feature branch before making repo changes. Use a branch name derived from the feature id, for example `feat/f40-cli-hierarchy`.
+5. Create a dedicated git worktree for the feature before making repo changes. Do not implement features in the shared checkout.
+6. Create the feature branch as part of the new worktree. Use a branch name derived from the feature id, for example `feat/f40-cli-hierarchy`.
+
+Recommended pattern:
+
+```bash
+git fetch origin
+git worktree add ../pftui-f40 -b feat/f40-cli-hierarchy origin/master
+cd ../pftui-f40
+```
+
+If the branch already exists, create the worktree from that branch instead of creating a new one.
 
 ### 2. Read the alignment docs in order
 
@@ -121,6 +132,7 @@ Before stopping:
 5. Push the final branch state.
 6. Open or update a pull request from the feature branch to the base branch.
 7. Merge through the pull request path after validation is green. Do not push feature commits directly to `master`.
+8. Remove the feature worktree after merge if it is no longer needed.
 
 ## Output Standard
 
@@ -131,6 +143,7 @@ When using this skill, the work product should leave the repo in a state where:
 - tests and lint pass before every commit
 - documentation matches the shipped behavior
 - the implementation still aligns with product vision and philosophy
+- the implementation was developed in a dedicated worktree so parallel feature work does not collide
 - the work lands through a feature branch and PR merge, not direct pushes to `master`
 
 ## Guardrails
@@ -139,5 +152,6 @@ When using this skill, the work product should leave the repo in a state where:
 - Never use destructive git commands to force sync over user changes.
 - Never skip tests or clippy before committing.
 - Never leave `TODO.md` showing in-progress work without a matching follow-up commit.
+- Never work directly in the shared checkout when implementing a feature; always create a dedicated worktree.
 - Never work directly on `master`; always branch first and merge via PR.
 - Prefer repo conventions over generic solutions when they differ.
