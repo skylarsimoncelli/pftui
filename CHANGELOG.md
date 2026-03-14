@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Expand deprecated alias warnings for legacy top-level commands
+
+- What: added a shared deprecation warning helper in `main.rs` and applied it across legacy top-level commands that now belong under namespace trees (`portfolio`, `market`, `system`). This preserves old command behavior while consistently guiding users toward the new hierarchy.
+- Why: closes F40.10 alias migration requirement and improves discoverability during the transition period.
+- Files: `src/main.rs`, `TODO.md`
+- Tests: `cargo test -q`, `cargo clippy --all-targets -- -D warnings`
+- TODO: removed F40.10 deprecated alias system item
+
 ### 2026-03-14 — Add `pftui system` namespace for admin commands
 
 - What: added `system` top-level namespace with `config`, `db-info`, `doctor`, `export`, `import`, `snapshot`, `setup`, `demo`, `web`, and `migrate-journal` subcommands, all routed to existing command handlers.

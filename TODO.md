@@ -100,18 +100,6 @@ relevant flags. Applies to all commands restructured in F40.3 and F40.4.
 
 Source: `src/cli.rs` (refactor each into nested Subcommand enum), `src/main.rs` (dispatch).
 
-**F40.10: Deprecated alias system**
-
-All old top-level commands must continue working with a deprecation warning:
-```
-$ pftui macro
-Warning: `pftui macro` is deprecated. Use `pftui dashboard macro` instead.
-[normal output follows]
-```
-Implementation: match old command names in `src/main.rs`, print warning to stderr,
-forward to new dispatch. Remove aliases after 3 major versions.
-`structural` already uses this pattern -- reuse the same mechanism.
-
 **Final top-level tree after F40:**
 ```
 pftui

@@ -22,6 +22,10 @@ use crate::config::load_config_with_first_run_prompt;
 use crate::db::backend::open_from_config;
 use crate::db::default_db_path;
 
+fn warn_deprecated(old: &str, new: &str) {
+    eprintln!("Warning: `pftui {old}` is deprecated. Use `pftui {new}` instead.");
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let cached_only = cli.cached_only;
@@ -35,6 +39,7 @@ fn main() -> Result<()> {
         json,
     }) = &cli.command
     {
+        warn_deprecated("config", "system config");
         return commands::config_cmd::run(action, field.as_deref(), value.as_deref(), *json);
     }
 
@@ -63,6 +68,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Setup) => {
+            warn_deprecated("setup", "system setup");
             commands::setup::run(&config, true)
         }
         Some(Command::Dashboard { command }) => match command {
@@ -374,6 +380,7 @@ fn main() -> Result<()> {
         },
 
         Some(Command::Summary { group_by, period, what_if, json }) => {
+            warn_deprecated("summary", "portfolio summary");
             commands::summary::run(
                 &backend,
                 &config,
@@ -385,10 +392,12 @@ fn main() -> Result<()> {
             )
         }
         Some(Command::Export { format, output }) => {
+            warn_deprecated("export", "system export");
             commands::export::run(&backend, &format, &config, output.as_deref())
         }
 
         Some(Command::ListTx { notes, json }) => {
+            warn_deprecated("list-tx", "portfolio transaction list");
             if config.is_percentage_mode() {
                 bail!("list-tx is not available in percentage mode (no transactions).\nRun `pftui setup` to switch to full mode.");
             }
@@ -405,6 +414,7 @@ fn main() -> Result<()> {
             date,
             notes,
         }) => {
+            warn_deprecated("add-tx", "portfolio transaction add");
             if config.is_percentage_mode() {
                 bail!("add-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
@@ -414,6 +424,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::RemoveTx { id }) => {
+            warn_deprecated("remove-tx", "portfolio transaction remove");
             if config.is_percentage_mode() {
                 bail!("remove-tx is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
@@ -524,7 +535,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Refresh { notify }) => {
-            eprintln!("Warning: `pftui refresh` is deprecated. Use `pftui data refresh` instead.");
+            warn_deprecated("refresh", "data refresh");
             if cached_only {
                 println!("Cached-only mode enabled; skipping refresh network calls.");
                 Ok(())
@@ -533,13 +544,15 @@ fn main() -> Result<()> {
             }
         }
         Some(Command::Status { json, .. }) => {
-            eprintln!("Warning: `pftui status` is deprecated. Use `pftui data status` instead.");
+            warn_deprecated("status", "data status");
             commands::status::run_backend(&backend, json)
         }
         Some(Command::DbInfo { json }) => {
+            warn_deprecated("db-info", "system db-info");
             commands::db_info::run(&backend, &db_path, config.database_url.as_deref(), json)
         }
         Some(Command::Doctor { json }) => {
+            warn_deprecated("doctor", "system doctor");
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
                 commands::doctor::run(json).await
@@ -547,9 +560,11 @@ fn main() -> Result<()> {
         }
         Some(Command::Config { .. }) => unreachable!(),
         Some(Command::Value { json }) => {
+            warn_deprecated("value", "portfolio value");
             commands::value::run(&backend, &config, json)
         }
         Some(Command::Brief { json }) => {
+            warn_deprecated("brief", "portfolio brief");
             commands::brief::run_backend(&backend, &config, true, json, cached_only)
         }
         Some(Command::Watchlist { action, approaching, json }) => match action {
@@ -654,6 +669,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::SetCash { symbol, amount }) => {
+            warn_deprecated("set-cash", "portfolio set-cash");
             if config.is_percentage_mode() {
                 bail!("set-cash is not available in percentage mode.\nRun `pftui setup` to switch to full mode.");
             }
@@ -661,14 +677,17 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Demo) => {
+            warn_deprecated("demo", "system demo");
             commands::demo::run(&config)
         }
 
         Some(Command::Snapshot { width, height, plain }) => {
+            warn_deprecated("snapshot", "system snapshot");
             commands::snapshot::run(&config, Some(width), Some(height), plain)
         }
 
         Some(Command::Import { path, mode }) => {
+            warn_deprecated("import", "system import");
             let import_mode = match mode {
                 cli::ImportModeArg::Replace => commands::import::ImportMode::Replace,
                 cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
@@ -677,6 +696,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::History { date, group_by }) => {
+            warn_deprecated("history", "portfolio history");
             commands::history::run(&backend, &config, &date, group_by.as_ref())
         }
 
@@ -695,13 +715,21 @@ fn main() -> Result<()> {
         Some(Command::Regime { action, limit, json }) => {
             commands::regime::run(&backend, &action, limit, json)
         }
-        Some(Command::Fedwatch { json }) => commands::fedwatch::run(json),
-        Some(Command::Sovereign { json }) => commands::sovereign::run(json),
+        Some(Command::Fedwatch { json }) => {
+            warn_deprecated("fedwatch", "market fedwatch");
+            commands::fedwatch::run(json)
+        }
+        Some(Command::Sovereign { json }) => {
+            warn_deprecated("sovereign", "market sovereign");
+            commands::sovereign::run(json)
+        }
         Some(Command::Economy { indicator, json }) => {
+            warn_deprecated("economy", "market economy");
             commands::economy::run(&backend, indicator.as_deref(), json)
         }
 
         Some(Command::Eod { json }) => {
+            warn_deprecated("eod", "portfolio eod");
             commands::eod::run(&backend, &config, json)
         }
 
@@ -711,10 +739,12 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Performance { since, period, vs, json }) => {
+            warn_deprecated("performance", "portfolio performance");
             commands::performance::run(&backend, &config, since.as_deref(), period.as_deref(), vs.as_deref(), json)
         }
 
         Some(Command::EtfFlows { days, fund, json }) => {
+            warn_deprecated("etf-flows", "market etf-flows");
             commands::etf_flows::run(days, fund, json)
         }
 
@@ -973,6 +1003,7 @@ fn main() -> Result<()> {
         },
 
         Some(Command::Predictions { category, search, limit, json }) => {
+            warn_deprecated("predictions", "market predictions");
             commands::predictions::run(&backend, category.as_deref(), search.as_deref(), limit, json)
         }
         Some(Command::Predict {
@@ -1035,18 +1066,22 @@ fn main() -> Result<()> {
         ),
 
         Some(Command::News { source, search, hours, limit, json }) => {
+            warn_deprecated("news", "market news");
             commands::news::run(&backend, source.as_deref(), search.as_deref(), hours, limit, json)
         }
 
         Some(Command::Sentiment { symbol, history, json }) => {
+            warn_deprecated("sentiment", "market sentiment");
             commands::sentiment::run(symbol.as_deref(), history, json)
         }
 
         Some(Command::Supply { symbol, json }) => {
+            warn_deprecated("supply", "market supply");
             commands::supply::run(&backend, symbol, json)
         }
 
         Some(Command::Calendar { days, impact, json }) => {
+            warn_deprecated("calendar", "market calendar");
             commands::calendar::run(days, impact.as_deref(), json)
         }
 
@@ -1064,6 +1099,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Target { action, symbol, target, band, json }) => {
+            warn_deprecated("target", "portfolio target");
             match action.as_str() {
                 "set" => {
                     let sym = symbol.as_ref().ok_or_else(|| anyhow::anyhow!("--symbol required for 'set'"))?;
@@ -1078,8 +1114,14 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("Invalid action. Use: set, list, remove"))
             }
         }
-        Some(Command::Drift { json }) => commands::drift::run(&backend, json),
-        Some(Command::Rebalance { json }) => commands::rebalance::run(&backend, json),
+        Some(Command::Drift { json }) => {
+            warn_deprecated("drift", "portfolio drift");
+            commands::drift::run(&backend, json)
+        }
+        Some(Command::Rebalance { json }) => {
+            warn_deprecated("rebalance", "portfolio rebalance");
+            commands::rebalance::run(&backend, json)
+        }
         Some(Command::Conviction {
             action,
             value,
@@ -1231,22 +1273,25 @@ fn main() -> Result<()> {
             since,
             limit,
             json,
-        }) => commands::opportunity::run(
-            &backend,
-            &action,
-            value.as_deref(),
-            date.as_deref(),
-            asset.as_deref(),
-            missed_gain_pct,
-            missed_gain_usd,
-            avoided_loss_pct,
-            avoided_loss_usd,
-            rational,
-            notes.as_deref(),
-            since.as_deref(),
-            limit,
-            json,
-        ),
+        }) => {
+            warn_deprecated("opportunity", "portfolio opportunity");
+            commands::opportunity::run(
+                &backend,
+                &action,
+                value.as_deref(),
+                date.as_deref(),
+                asset.as_deref(),
+                missed_gain_pct,
+                missed_gain_usd,
+                avoided_loss_pct,
+                avoided_loss_usd,
+                rational,
+                notes.as_deref(),
+                since.as_deref(),
+                limit,
+                json,
+            )
+        }
         Some(Command::Dividends {
             action,
             value,
@@ -1257,6 +1302,7 @@ fn main() -> Result<()> {
             notes,
             json,
         }) => {
+            warn_deprecated("dividends", "portfolio dividends");
             let args = commands::dividends::DividendsArgs {
                 value,
                 amount,
@@ -1279,6 +1325,7 @@ fn main() -> Result<()> {
             remove,
             json,
         }) => {
+            warn_deprecated("annotate", "portfolio annotate");
             let args = commands::annotate::AnnotateArgs {
                 symbol: symbol.as_deref(),
                 thesis: thesis.as_deref(),
@@ -1298,6 +1345,7 @@ fn main() -> Result<()> {
             symbols,
             json,
         }) => {
+            warn_deprecated("group", "portfolio group");
             commands::group::run(
                 &backend,
                 &config,
@@ -1314,6 +1362,7 @@ fn main() -> Result<()> {
             default_status,
             json,
         }) => {
+            warn_deprecated("migrate-journal", "system migrate-journal");
             commands::migrate_journal::run(
                 &backend,
                 &path,
@@ -1325,6 +1374,7 @@ fn main() -> Result<()> {
         }
 
         Some(Command::Web { port, bind, no_auth }) => {
+            warn_deprecated("web", "system web");
             // Web server runs in async context
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
@@ -1345,11 +1395,15 @@ fn main() -> Result<()> {
             expiry,
             limit,
             json,
-        }) => commands::options::run(&symbol, expiry.as_deref(), limit, json),
+        }) => {
+            warn_deprecated("options", "market options");
+            commands::options::run(&symbol, expiry.as_deref(), limit, json)
+        }
         Some(Command::Portfolios { action, name, json }) => {
             commands::portfolio::run(&action, name.as_deref(), json)
         }
         Some(Command::StressTest { scenario, json }) => {
+            warn_deprecated("stress-test", "portfolio stress-test");
             commands::stress_test::run(&backend, &config, &scenario, json)
         }
         Some(Command::Research {
