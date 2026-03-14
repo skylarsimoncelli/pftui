@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Fix remaining clippy warnings (3 → 0)
+
+- What: resolved 3 clippy warnings — collapsed nested `else { if }` in `agent_msg.rs` to `else if`, added `#[allow(clippy::too_many_arguments)]` to `analytics.rs` `run_macro()` (21 params) and `scan.rs` `run()` (8 params).
+- Why: clean compiler output with `-D warnings` enabled. Codebase now clippy-clean across all targets.
+- Files: `src/commands/agent_msg.rs`, `src/commands/analytics.rs`, `src/commands/scan.rs`
+- Tests: all 1199 tests pass
+
 ### 2026-03-13 — TODO backlog normalized to zero active items
 
 - What: cleaned `TODO.md` sections after completing tracked F39/scan/alignment/prediction items; replaced stale empty headings with explicit "No active items" markers for P1/P2/P3.
