@@ -84,38 +84,30 @@ Source: `src/commands/analytics.rs`, `src/db/structural.rs`
 
 Move portfolio-related commands under `portfolio`:
 ```
-pftui portfolio summary         # was: pftui summary
-pftui portfolio value           # was: pftui value
-pftui portfolio performance     # was: pftui performance
-pftui portfolio history         # was: pftui history
-pftui portfolio brief           # was: pftui brief
-pftui portfolio eod             # was: pftui eod
-pftui portfolio target          # was: pftui target
-pftui portfolio drift           # was: pftui drift
-pftui portfolio rebalance       # was: pftui rebalance
-pftui portfolio stress-test     # was: pftui stress-test
-pftui portfolio dividends       # was: pftui dividends
-pftui portfolio annotate        # was: pftui annotate
-pftui portfolio group           # was: pftui group
-pftui portfolio opportunity     # was: pftui opportunity
-pftui portfolio set-cash        # was: pftui set-cash
+pftui portfolio summary              # was: pftui summary
+pftui portfolio value                # was: pftui value
+pftui portfolio performance          # was: pftui performance
+pftui portfolio history              # was: pftui history
+pftui portfolio brief                # was: pftui brief
+pftui portfolio eod                  # was: pftui eod
+pftui portfolio target               # was: pftui target
+pftui portfolio drift                # was: pftui drift
+pftui portfolio rebalance            # was: pftui rebalance
+pftui portfolio stress-test          # was: pftui stress-test
+pftui portfolio dividends            # was: pftui dividends
+pftui portfolio annotate             # was: pftui annotate
+pftui portfolio group                # was: pftui group
+pftui portfolio opportunity          # was: pftui opportunity
+pftui portfolio set-cash             # was: pftui set-cash
+pftui portfolio transaction add      # was: pftui add-tx
+pftui portfolio transaction remove   # was: pftui remove-tx
+pftui portfolio transaction list     # was: pftui list-tx
 ```
 `pftui portfolio` with no subcommand shows `summary` (default view).
 Source: `src/cli.rs` (add Portfolio subcommand enum), `src/main.rs` (dispatch).
 Keep old top-level commands as deprecated aliases.
 
-**F40.2: `pftui transaction` namespace**
-
-Consolidate transaction CRUD:
-```
-pftui transaction add            # was: pftui add-tx
-pftui transaction remove         # was: pftui remove-tx
-pftui transaction list           # was: pftui list-tx
-```
-Source: `src/cli.rs`, `src/main.rs`, `src/commands/transactions.rs`.
-Alias `add-tx` → `transaction add`, etc.
-
-**F40.3: `pftui watchlist` consolidation**
+**F40.2: `pftui watchlist` consolidation**
 
 Merge three commands into one:
 ```
@@ -126,9 +118,84 @@ pftui watchlist list             # was: pftui watchlist (unchanged, becomes defa
 `pftui watchlist` with no subcommand shows `list`.
 Source: `src/cli.rs`, `src/main.rs`.
 
-**F40.4: `pftui market` namespace**
+**F40.3: `pftui journal` as unified knowledge layer**
 
-Group external market data commands:
+All recorded thinking lives under `journal`:
+```
+pftui journal                              # overview / recent entries across all types
+pftui journal entry add                    # was: pftui journal add (free-form entries)
+pftui journal entry list                   # was: pftui journal list
+pftui journal entry search                 # was: pftui journal search
+pftui journal entry update                 # was: pftui journal update
+pftui journal entry remove                 # was: pftui journal remove
+pftui journal entry tags                   # was: pftui journal tags
+pftui journal entry stats                  # was: pftui journal stats
+pftui journal prediction add               # was: pftui predict add
+pftui journal prediction list              # was: pftui predict list
+pftui journal prediction score             # was: pftui predict score
+pftui journal prediction stats             # was: pftui predict stats
+pftui journal prediction scorecard         # was: pftui predict scorecard
+pftui journal conviction set               # was: pftui conviction set
+pftui journal conviction list              # was: pftui conviction list
+pftui journal conviction history           # was: pftui conviction history
+pftui journal conviction changes           # was: pftui conviction changes
+pftui journal notes add                    # was: pftui notes add
+pftui journal notes list                   # was: pftui notes list
+pftui journal notes search                 # was: pftui notes search
+pftui journal notes remove                 # was: pftui notes remove
+pftui journal scenario add                 # was: pftui scenario add
+pftui journal scenario list                # was: pftui scenario list
+pftui journal scenario update              # was: pftui scenario update
+pftui journal scenario remove              # was: pftui scenario remove
+pftui journal scenario history             # was: pftui scenario history
+pftui journal scenario signal add          # was: pftui scenario signal-add
+pftui journal scenario signal list         # was: pftui scenario signal-list
+pftui journal scenario signal update       # was: pftui scenario signal-update
+pftui journal scenario signal remove       # was: pftui scenario signal-remove
+```
+Source: `src/cli.rs` (Journal subcommand with nested Prediction, Conviction,
+Notes, Scenario sub-enums), `src/main.rs` (dispatch).
+
+**F40.4: `pftui analytics` absorbs analytical tools**
+
+```
+pftui analytics summary                          # unchanged
+pftui analytics low / medium / high              # unchanged
+pftui analytics alignment / divergence           # unchanged
+pftui analytics digest / recap                   # unchanged
+pftui analytics movers                           # was: pftui movers
+pftui analytics correlations                     # was: pftui correlations
+pftui analytics scan                             # was: pftui scan
+pftui analytics research                         # was: pftui research
+pftui analytics trends add                       # was: pftui trends add
+pftui analytics trends list                      # was: pftui trends list
+pftui analytics trends update                    # was: pftui trends update
+pftui analytics trends evidence add              # was: pftui trends evidence-add
+pftui analytics trends evidence list             # was: pftui trends evidence-list
+pftui analytics trends impact add                # was: pftui trends impact-add
+pftui analytics trends impact list               # was: pftui trends impact-list
+pftui analytics trends dashboard                 # was: pftui trends dashboard
+pftui analytics alerts add                       # was: pftui alerts add
+pftui analytics alerts list                      # was: pftui alerts list
+pftui analytics alerts remove                    # was: pftui alerts remove
+pftui analytics alerts check                     # was: pftui alerts check
+pftui analytics alerts ack                       # was: pftui alerts ack
+pftui analytics alerts rearm                     # was: pftui alerts rearm
+pftui analytics macro metrics                    # unchanged
+pftui analytics macro compare                    # unchanged
+pftui analytics macro cycles                     # unchanged
+pftui analytics macro outcomes                   # unchanged
+pftui analytics macro parallels                  # unchanged
+pftui analytics macro log                        # unchanged
+pftui analytics macro regime current             # was: pftui regime current
+pftui analytics macro regime history             # was: pftui regime history
+pftui analytics macro regime transitions         # was: pftui regime transitions
+```
+Source: `src/cli.rs`, `src/commands/analytics.rs`.
+
+**F40.5: `pftui market` namespace**
+
+Group external market data:
 ```
 pftui market news                # was: pftui news
 pftui market sentiment           # was: pftui sentiment
@@ -143,7 +210,7 @@ pftui market sovereign           # was: pftui sovereign
 ```
 Source: `src/cli.rs`, `src/main.rs`.
 
-**F40.5: `pftui dashboard` namespace**
+**F40.6: `pftui dashboard` namespace**
 
 Group pre-built dashboard views:
 ```
@@ -156,9 +223,18 @@ pftui dashboard global           # was: pftui global
 ```
 Source: `src/cli.rs`, `src/main.rs`.
 
-**F40.6: `pftui system` namespace**
+**F40.7: `pftui data` namespace**
 
-Group admin/system commands:
+Data management:
+```
+pftui data refresh               # was: pftui refresh
+pftui data status                # was: pftui status
+```
+Source: `src/cli.rs`, `src/main.rs`.
+
+**F40.8: `pftui system` namespace**
+
+Admin/system commands:
 ```
 pftui system config              # was: pftui config
 pftui system db-info             # was: pftui db-info
@@ -169,41 +245,19 @@ pftui system snapshot            # was: pftui snapshot
 pftui system setup               # was: pftui setup
 pftui system demo                # was: pftui demo
 pftui system web                 # was: pftui web
-pftui system status              # was: pftui status
 pftui system migrate-journal     # was: pftui migrate-journal
 ```
 Source: `src/cli.rs`, `src/main.rs`.
 
-**F40.7: Move `movers` and `correlations` under `analytics`**
+**F40.9: Convert all positional `<ACTION>` to proper clap subcommands**
 
-```
-pftui analytics movers           # was: pftui movers
-pftui analytics correlations     # was: pftui correlations
-```
-These are analytical views, not standalone tools.
-Source: `src/cli.rs`, `src/commands/analytics.rs`.
+Every command that currently uses `<ACTION>` as a positional string must be converted
+to proper clap `Subcommand` enums. This gives each action its own `--help` with only
+relevant flags. Applies to all commands restructured in F40.3 and F40.4.
 
-**F40.8: Convert positional `<ACTION>` to proper clap subcommands**
-
-These commands use `<ACTION>` as a positional string argument. Convert to proper
-clap `Subcommand` enums so each action gets its own `--help` with only relevant flags:
-
-- `scenario` (add, list, update, remove, signal-add, signal-list, signal-update, signal-remove, history)
-- `predict` (add, list, score, stats, scorecard)
-- `conviction` (set, list, history, changes)
-- `trends` (add, list, update, evidence-add, evidence-list, impact-add, impact-list, dashboard)
-- `notes` (add, list, search, remove)
-- `alerts` (add, list, remove, check, ack, rearm)
-- `journal` (add, list, search, update, remove, tags, stats)
-- `agent-msg` (send, list, ack)
-- `regime` (current, history, transitions)
-- `analytics` (summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps, signals)
-
-Currently `pftui scenario --help` shows ALL flags for ALL actions. After this change,
-`pftui scenario add --help` shows only add-relevant flags.
 Source: `src/cli.rs` (refactor each into nested Subcommand enum), `src/main.rs` (dispatch).
 
-**F40.9: Deprecated alias system**
+**F40.10: Deprecated alias system**
 
 All old top-level commands must continue working with a deprecation warning:
 ```
@@ -213,33 +267,23 @@ Warning: `pftui macro` is deprecated. Use `pftui dashboard macro` instead.
 ```
 Implementation: match old command names in `src/main.rs`, print warning to stderr,
 forward to new dispatch. Remove aliases after 3 major versions.
-`structural` already uses this pattern — reuse the same mechanism.
+`structural` already uses this pattern -- reuse the same mechanism.
 
 **Final top-level tree after F40:**
 ```
 pftui
-├── portfolio        # holdings, value, performance, targets, rebalancing
-├── transaction      # add, remove, list
+├── portfolio        # holdings, value, performance, targets, transactions
 ├── watchlist        # add, remove, list
-├── analytics        # multi-timeframe engine, movers, correlations
+├── journal          # prediction, conviction, notes, scenario, entry
+├── analytics        # engine views, trends, alerts, research, scan, macro, regime
 ├── market           # news, sentiment, calendar, fedwatch, economy, etc.
 ├── dashboard        # macro, oil, crisis, sector, heatmap, global
-├── scenario         # scenario tracking (proper subcommands)
-├── predict          # prediction tracking (proper subcommands)
-├── conviction       # conviction scoring (proper subcommands)
-├── trends           # structural trends (proper subcommands)
-├── journal          # trade journal (proper subcommands)
-├── notes            # research notes (proper subcommands)
-├── alerts           # price/allocation alerts (proper subcommands)
-├── agent-msg        # inter-agent messaging (proper subcommands)
-├── regime           # market regime (proper subcommands)
-├── scan             # position scanner
-├── research         # Brave search
-├── refresh          # data refresh
+├── data             # refresh, status
+├── agent-msg        # inter-agent messaging
 ├── system           # config, doctor, export, import, setup, demo, web
 └── help
 ```
-55 top-level → 19. Every grouping navigable via `--help`.
+55 top-level → 9 + help. Every grouping navigable via `--help`.
 
 ### Alignment Scoring Algorithm
 
