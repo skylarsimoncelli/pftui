@@ -112,9 +112,9 @@ That makes pftui a strong foundation for:
 pftui data refresh --json               # Refresh prices, macro, sentiment, news
 pftui portfolio brief --json                 # Full portfolio state
 pftui portfolio summary --json               # Position-level breakdown
-pftui dashboard macro --json                 # Macro, rates, commodities, sentiment
-pftui watchlist --json             # Watched symbols and targets
-pftui market news --json                  # Aggregated financial news
+pftui data dashboard macro --json            # Macro, rates, commodities, sentiment
+pftui portfolio watchlist --json             # Watched symbols and targets
+pftui data news --json                       # Aggregated financial news
 pftui portfolio performance --json           # Returns across key periods
 pftui portfolio drift --json                 # Allocation drift vs targets
 pftui data status --json                # Data source freshness
@@ -127,12 +127,12 @@ pftui portfolio transaction add --symbol AAPL --category equity --tx-type buy \
   --quantity 100 --price 175.50 --date 2026-03-01 --notes "Earnings dip"
 pftui portfolio transaction remove 42
 pftui portfolio set-cash USD 50000
-pftui watchlist add TSLA --target 300
-pftui watchlist remove TSLA
+pftui portfolio watchlist add TSLA --target 300
+pftui portfolio watchlist remove TSLA
 pftui portfolio target set AAPL --target 15  # Target allocation %
 pftui portfolio rebalance --json             # Suggested trades to hit targets
 pftui analytics alerts add "BTC above 100000"
-pftui journal entry add "Gold thesis validated by CPI" --tag macro
+pftui agent journal entry add "Gold thesis validated by CPI" --tag macro
 pftui system config list --json           # List all config fields
 pftui system config set brave_api_key <key>  # Set Brave Search API key
 ```
@@ -300,7 +300,7 @@ When all four layers agree on an asset, that is the highest conviction signal in
 ```bash
 pftui analytics summary                    # All four layers in one view
 pftui analytics alignment --symbol GC=F    # Per-asset cross-timeframe consensus
-pftui journal scenario add "Recession" --probability 30
+pftui agent journal scenario add "Recession" --probability 30
 pftui analytics trends add "AI Disruption" --direction accelerating
 pftui analytics macro cycles --json
 ```
@@ -325,8 +325,8 @@ Every feature in pftui has a CLI command with `--json` output. Agents use the sa
 
 ```bash
 pftui data refresh && pftui portfolio brief --json        # Agent gets full portfolio state
-pftui journal scenario update "Stagflation" --probability 35 --notes "Sticky inflation + growth slowdown"
-pftui journal conviction set GC=F --score 4 --notes "War + BRICS + CB buying"
+pftui agent journal scenario update "Stagflation" --probability 35 --notes "Sticky inflation + growth slowdown"
+pftui agent journal conviction set GC=F --score 4 --notes "War + BRICS + CB buying"
 pftui agent message send "Gold alignment: all 4 layers bullish" --from morning-agent --layer cross
 ```
 

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::db::backend::BackendConnection;
 use crate::db::thesis;
 use anyhow::Result;
@@ -26,7 +28,10 @@ pub fn run_list(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let entries = thesis::list_thesis_backend(backend)?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({ "sections": entries }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "sections": entries }))?
+        );
     } else {
         if entries.is_empty() {
             println!("No thesis sections found.");
@@ -68,7 +73,10 @@ pub fn run_history(
     let entries = thesis::get_thesis_history_backend(backend, section, limit)?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({ "history": entries }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "history": entries }))?
+        );
     } else {
         if entries.is_empty() {
             println!("No history found for section: {}", section);
@@ -80,7 +88,10 @@ pub fn run_history(
         println!();
 
         for entry in entries {
-            println!("Recorded: {} | Conviction: {}", entry.recorded_at, entry.conviction);
+            println!(
+                "Recorded: {} | Conviction: {}",
+                entry.recorded_at, entry.conviction
+            );
             println!("{}", entry.content);
             println!("{}", "─".repeat(80));
         }
@@ -93,7 +104,10 @@ pub fn run_remove(backend: &BackendConnection, section: &str, json_output: bool)
     thesis::remove_thesis_backend(backend, section)?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({ "removed": section }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "removed": section }))?
+        );
     } else {
         println!("Removed thesis section: {}", section);
     }

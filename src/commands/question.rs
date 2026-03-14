@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::db::backend::BackendConnection;
 use crate::db::research_questions;
 use anyhow::{bail, Result};
@@ -20,7 +22,10 @@ fn validate_tilt(tilt: &str) -> Result<()> {
 fn validate_status(status: &str) -> Result<()> {
     match status {
         "open" | "resolved" | "superseded" => Ok(()),
-        _ => bail!("invalid status '{}'. Valid: open, resolved, superseded", status),
+        _ => bail!(
+            "invalid status '{}'. Valid: open, resolved, superseded",
+            status
+        ),
     }
 }
 
@@ -65,7 +70,9 @@ pub fn run(
             if json_output {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&json!({ "questions": rows, "count": rows.len() }))?
+                    serde_json::to_string_pretty(
+                        &json!({ "questions": rows, "count": rows.len() })
+                    )?
                 );
             } else if rows.is_empty() {
                 println!("No research questions found.");
@@ -97,7 +104,10 @@ pub fn run(
                 if let Some(row) = rows.into_iter().find(|r| r.id == qid) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 } else {
-                    println!("{}", serde_json::to_string_pretty(&json!({ "updated": qid }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json!({ "updated": qid }))?
+                    );
                 }
             } else {
                 println!("Updated research question #{}", qid);
@@ -115,14 +125,20 @@ pub fn run(
                 if let Some(row) = rows.into_iter().find(|r| r.id == qid) {
                     println!("{}", serde_json::to_string_pretty(&row)?);
                 } else {
-                    println!("{}", serde_json::to_string_pretty(&json!({ "resolved": qid }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json!({ "resolved": qid }))?
+                    );
                 }
             } else {
                 println!("Resolved research question #{} as {}", qid, st);
             }
         }
         _ => {
-            bail!("unknown question action '{}'. Valid: add, list, update, resolve", action)
+            bail!(
+                "unknown question action '{}'. Valid: add, list, update, resolve",
+                action
+            )
         }
     }
 

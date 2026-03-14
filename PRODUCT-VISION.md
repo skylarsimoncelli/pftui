@@ -53,7 +53,7 @@ A new user installs pftui and tells their AI agent: "Set up pftui for me." The a
 
 ### Daily Operation
 
-The agent runs `pftui refresh` every morning, pulls all data sources (prices, news, macro, sentiment, predictions), assembles a brief, and delivers it. The human reads it on their phone (web dashboard) or terminal (TUI). If something big happened overnight — a 5% BTC move, an oil shock, a Fed surprise — the agent flags it immediately.
+The agent runs `pftui data refresh` every morning, pulls all data sources (prices, news, macro, sentiment, predictions), assembles a brief, and delivers it. The human reads it on their phone (web dashboard) or terminal (TUI). If something big happened overnight — a 5% BTC move, an oil shock, a Fed surprise — the agent flags it immediately.
 
 The human opens the TUI when they want to dig deeper. Charts, technicals, correlation data, economic calendar, prediction markets — all keyboard-navigable, all instant. When they have a question ("what's the COT positioning on gold?"), they ask the agent, who answers from pftui data without needing to web search.
 
@@ -67,7 +67,7 @@ Over weeks and months, the system builds institutional knowledge. The agent's th
 
 2. **Multi-timeframe analytics engine.** pftui maps signals across LOW, MEDIUM, HIGH, and MACRO layers. This turns raw data into structured, cross-timeframe intelligence instead of one-off snapshots.
 
-3. **Data centralisation.** One `pftui refresh` fetches prices, news, macro, sentiment, predictions, COT positioning, COMEX inventory, economic releases, and more. The agent doesn't need 10 web searches — it needs one command.
+3. **Data centralisation.** One `pftui data refresh` fetches prices, news, macro, sentiment, predictions, COT positioning, COMEX inventory, economic releases, and more. The agent doesn't need 10 web searches — it needs one command.
 
 4. **Local-first, zero-config.** SQLite database on your machine. No cloud account. No API keys required for core functionality. Optional Brave Search API key for enhanced intelligence. Install and go.
 
@@ -107,7 +107,7 @@ Over weeks and months, the system builds institutional knowledge. The agent's th
 
 pftui succeeds when:
 - A human installs it, tells their agent to set it up, and gets their first brief within 30 minutes
-- The agent's morning routine is `pftui refresh && pftui brief --agent --json` instead of 15 web searches
+- The agent's morning routine is `pftui data refresh && pftui portfolio brief --json` instead of 15 web searches
 - The human checks pftui (TUI or web) instead of opening 5 browser tabs
 - The system gets measurably smarter over time — better predictions, fewer missed moves, more calibrated advice
 - Someone says "I cancelled my Bloomberg Terminal subscription"

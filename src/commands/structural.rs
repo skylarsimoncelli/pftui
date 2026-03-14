@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::db::backend::BackendConnection;
 use crate::db::structural;
 use anyhow::Result;
@@ -90,7 +92,8 @@ pub fn run(
 
         // Cycles
         "cycle-set" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("cycle name required as first argument"))?;
+            let name =
+                value.ok_or_else(|| anyhow::anyhow!("cycle name required as first argument"))?;
             let s = stage.ok_or_else(|| anyhow::anyhow!("--stage required"))?;
             structural::set_cycle_backend(backend, name, s, entered, description, evidence)?;
             if json_output {
@@ -120,9 +123,19 @@ pub fn run(
 
         // Outcomes
         "outcome-add" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
+            let name =
+                value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
             let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
-            let id = structural::add_outcome_backend(backend, name, prob, horizon, description, parallel, outcome, signals)?;
+            let id = structural::add_outcome_backend(
+                backend,
+                name,
+                prob,
+                horizon,
+                description,
+                parallel,
+                outcome,
+                signals,
+            )?;
             if json_output {
                 println!("{}", json!({"id": id, "name": name, "probability": prob}));
             } else {
@@ -146,17 +159,22 @@ pub fn run(
             }
         }
         "outcome-update" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
+            let name =
+                value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
             let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
             structural::update_outcome_probability_backend(backend, name, prob, driver)?;
             if json_output {
-                println!("{}", json!({"name": name, "probability": prob, "driver": driver}));
+                println!(
+                    "{}",
+                    json!({"name": name, "probability": prob, "driver": driver})
+                );
             } else {
                 println!("Updated {} to {:.0}%", name, prob);
             }
         }
         "outcome-history" => {
-            let name = value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
+            let name =
+                value.ok_or_else(|| anyhow::anyhow!("outcome name required as first argument"))?;
             let history = structural::get_outcome_history_backend(backend, name, limit)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&history)?);
@@ -178,7 +196,9 @@ pub fn run(
             let p = period.ok_or_else(|| anyhow::anyhow!("--period required"))?;
             let e = event.ok_or_else(|| anyhow::anyhow!("--event required"))?;
             let pt = parallel_to.ok_or_else(|| anyhow::anyhow!("--parallel-to required"))?;
-            let id = structural::add_parallel_backend(backend, p, e, pt, similarity, outcome, notes, source)?;
+            let id = structural::add_parallel_backend(
+                backend, p, e, pt, similarity, outcome, notes, source,
+            )?;
             if json_output {
                 println!("{}", json!({"id": id, "period": p, "event": e}));
             } else {
@@ -191,10 +211,7 @@ pub fn run(
                 println!("{}", serde_json::to_string_pretty(&parallels)?);
             } else {
                 for p in &parallels {
-                    println!(
-                        "{} | {} → {}",
-                        p.period, p.event, p.parallel_to
-                    );
+                    println!("{} | {} → {}", p.period, p.event, p.parallel_to);
                     if let Some(score) = p.similarity_score {
                         println!("  Similarity: {}/10", score);
                     }
@@ -205,7 +222,8 @@ pub fn run(
             }
         }
         "parallel-search" => {
-            let query = value.ok_or_else(|| anyhow::anyhow!("search query required as first argument"))?;
+            let query =
+                value.ok_or_else(|| anyhow::anyhow!("search query required as first argument"))?;
             let results = structural::search_parallels_backend(backend, query)?;
             if json_output {
                 println!("{}", serde_json::to_string_pretty(&results)?);
@@ -219,7 +237,8 @@ pub fn run(
 
         // Log
         "log-add" => {
-            let dev = value.ok_or_else(|| anyhow::anyhow!("development text required as first argument"))?;
+            let dev = value
+                .ok_or_else(|| anyhow::anyhow!("development text required as first argument"))?;
             let d = date.ok_or_else(|| anyhow::anyhow!("--date required"))?;
             // CLI: --impact → cycle_impact, --outcome → outcome_shift
             let id = structural::add_log_backend(backend, d, dev, impact, outcome)?;
@@ -292,7 +311,8 @@ fn run_dashboard(backend: &BackendConnection, json_output: bool) -> Result<()> {
         // Power Metrics (group by country)
         if !metrics.is_empty() {
             println!("Power Metrics:");
-            let mut by_country: std::collections::HashMap<String, Vec<_>> = std::collections::HashMap::new();
+            let mut by_country: std::collections::HashMap<String, Vec<_>> =
+                std::collections::HashMap::new();
             for m in &metrics {
                 by_country.entry(m.country.clone()).or_default().push(m);
             }
@@ -332,12 +352,7 @@ fn run_dashboard(backend: &BackendConnection, json_output: bool) -> Result<()> {
                     .as_ref()
                     .map(|p| format!("  parallel: {}", p))
                     .unwrap_or_default();
-                println!(
-                    "  {:35} {:4.0}%{}",
-                    o.name,
-                    o.probability,
-                    parallel_text
-                );
+                println!("  {:35} {:4.0}%{}", o.name, o.probability, parallel_text);
             }
             println!();
         }

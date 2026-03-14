@@ -184,26 +184,26 @@ Ask the human: *"What assets are you watching but don't currently hold? Any pric
 
 ```bash
 # Stocks they're eyeing
-pftui watchlist add TSLA --target 300          # Buy target at $300
-pftui watchlist add GOOG --target 150
-pftui watchlist add NVDA
+pftui portfolio watchlist add TSLA --target 300          # Buy target at $300
+pftui portfolio watchlist add GOOG --target 150
+pftui portfolio watchlist add NVDA
 
 # Sector ETFs
-pftui watchlist add XLE                        # Energy
-pftui watchlist add URA                        # Uranium
-pftui watchlist add COPX                       # Copper miners
+pftui portfolio watchlist add XLE                        # Energy
+pftui portfolio watchlist add URA                        # Uranium
+pftui portfolio watchlist add COPX                       # Copper miners
 
 # Indices they track
-pftui watchlist add SPY
-pftui watchlist add QQQ
+pftui portfolio watchlist add SPY
+pftui portfolio watchlist add QQQ
 
 # Commodities
-pftui watchlist add CL=F                       # Oil
-pftui watchlist add HG=F                       # Copper
+pftui portfolio watchlist add CL=F                       # Oil
+pftui portfolio watchlist add HG=F                       # Copper
 
 # Crypto they're watching
-pftui watchlist add ETH
-pftui watchlist add SOL
+pftui portfolio watchlist add ETH
+pftui portfolio watchlist add SOL
 ```
 
 ### Allocation Targets
@@ -392,9 +392,9 @@ pftui is most valuable when checked regularly. Here's the recommended cadence:
 pftui data refresh                          # Fetch all data sources
 pftui portfolio brief                            # Full portfolio state
 pftui analytics movers                           # Overnight moves
-pftui market news --limit 10                  # Key headlines
-pftui market predictions --limit 5            # Prediction market shifts
-pftui market sentiment                        # Fear & Greed
+pftui data news --limit 10                    # Key headlines
+pftui data predictions --limit 5              # Prediction market shifts
+pftui data sentiment                          # Fear & Greed
 
 # Market close
 pftui data refresh && pftui portfolio brief           # End-of-day snapshot
@@ -402,9 +402,9 @@ pftui portfolio performance                      # Today's returns
 pftui analytics movers --threshold 3             # Significant moves
 
 # Evening (optional deep research)
-pftui dashboard macro                            # Full macro dashboard
-pftui market supply                           # COMEX inventory
-pftui dashboard global                           # World Bank data
+pftui data dashboard macro                    # Full macro dashboard
+pftui data supply                             # COMEX inventory
+pftui data dashboard global                   # World Bank data
 ```
 
 ### Weekly
@@ -413,7 +413,7 @@ pftui dashboard global                           # World Bank data
 pftui portfolio drift                            # Allocation drift check
 pftui portfolio rebalance                        # Suggested trades
 pftui portfolio performance --since YYYY-MM-DD   # Week's performance
-pftui journal entry list                     # Review decision history
+pftui agent journal entry list               # Review decision history
 ```
 
 ### Alerts
@@ -538,14 +538,14 @@ LOW (hours→days), MEDIUM (weeks→months), HIGH (months→years), MACRO (years
 Each layer uses different data, updates at different frequencies, and produces different signals.
 Layers constrain downward and signal upward. Use `pftui analytics signals` for active cross-timeframe signals.
 
-### Scenarios (`pftui journal scenario`)
+### Scenarios (`pftui agent journal scenario`)
 Track macro scenarios with probability estimates. Each probability update is logged
 to history for calibration. Signals track evidence for/against each scenario.
 
 ### Thesis
 Thesis tracking is maintained as narrative workflow files (`THESIS.md`) and journal notes.
 
-### Convictions (`pftui journal conviction`)
+### Convictions (`pftui agent journal conviction`)
 Asset-level conviction scores (-5 to +5) over time. Append-only log — every
 `set` creates a new row. Current conviction = latest row per symbol.
 For negative scores, use `--score=-2`.
@@ -574,7 +574,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 1. Morning: `pftui data refresh && pftui portfolio brief` — deliver morning brief
 2. Note what the human reacts to — update USER.md
-3. Research: dig into the human's top concerns using `pftui dashboard macro`, `pftui market predictions`, `pftui market news`
+3. Research: dig into the human's top concerns using `pftui data dashboard macro`, `pftui data predictions`, `pftui data news`
 4. Evening: update THESIS.md with your research findings
 5. Save daily data to memory/YYYY-MM-DD.md
 
@@ -632,14 +632,14 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | Command | What It Returns |
 |---|---|
 | `pftui data refresh` | Fetches ALL data sources (10+ sources, ~50 symbols) |
-| `pftui dashboard macro --json` | DXY, VIX, yields, currencies, commodities, derived ratios |
-| `pftui watchlist --json` | All watched symbols with prices, day change, 52W range |
+| `pftui data dashboard macro --json` | DXY, VIX, yields, currencies, commodities, derived ratios |
+| `pftui portfolio watchlist --json` | All watched symbols with prices, day change, 52W range |
 | `pftui analytics movers --json [--threshold N] [--overnight]` | Significant daily/overnight moves (default >3%) |
-| `pftui market predictions --json [--limit N]` | Polymarket prediction market odds |
-| `pftui market sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
-| `pftui market news --json [--limit N]` | Financial news from RSS feeds |
-| `pftui market supply --json` | COMEX gold/silver inventory |
-| `pftui dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
+| `pftui data predictions --json [--limit N]` | Polymarket prediction market odds |
+| `pftui data sentiment --json` | Crypto + traditional Fear & Greed, COT positioning |
+| `pftui data news --json [--limit N]` | Financial news from RSS feeds |
+| `pftui data supply --json` | COMEX gold/silver inventory |
+| `pftui data dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
 | `pftui data status --json` | Data source freshness — last update time per source |
 
 ### Portfolio Management
@@ -649,8 +649,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui portfolio transaction add --symbol SYM --category CAT --tx-type buy/sell --quantity N --price P --date D` | Add transaction |
 | `pftui portfolio transaction remove ID` | Remove transaction by ID |
 | `pftui portfolio set-cash CURRENCY AMOUNT` | Set cash position |
-| `pftui watchlist add SYMBOL [--target PRICE]` | Add to watchlist |
-| `pftui watchlist remove SYMBOL` | Remove from watchlist |
+| `pftui portfolio watchlist add SYMBOL [--target PRICE]` | Add to watchlist |
+| `pftui portfolio watchlist remove SYMBOL` | Remove from watchlist |
 | `pftui portfolio target set SYMBOL --target PCT` | Set target allocation % |
 | `pftui portfolio target remove SYMBOL` | Remove target |
 | `pftui portfolio rebalance --json` | Suggested trades to reach targets |
@@ -662,29 +662,29 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 | Command | What It Does |
 |---|---|
-| `pftui journal entry add "TEXT" --tag TAG --symbol SYM` | Add entry |
-| `pftui journal entry list --json` | List all entries |
-| `pftui journal entry search "QUERY" --json` | Search entries |
+| `pftui agent journal entry add "TEXT" --tag TAG --symbol SYM` | Add entry |
+| `pftui agent journal entry list --json` | List all entries |
+| `pftui agent journal entry search "QUERY" --json` | Search entries |
 
 ### Intelligence Database
 
 | Command | What It Does |
 |---|---|
-| `pftui journal scenario add "NAME" --probability N` | Add macro scenario with initial probability |
-| `pftui journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
-| `pftui journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
-| `pftui journal scenario history "NAME" --limit N --json` | Show scenario probability history |
-| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent]` | Add a prediction call for later scoring |
-| `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
-| `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
-| `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
+| `pftui agent journal scenario add "NAME" --probability N` | Add macro scenario with initial probability |
+| `pftui agent journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
+| `pftui agent journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
+| `pftui agent journal scenario history "NAME" --limit N --json` | Show scenario probability history |
+| `pftui agent journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent]` | Add a prediction call for later scoring |
+| `pftui agent journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
+| `pftui agent journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
+| `pftui agent journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
 | `pftui agent message send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"]` | Send one or multiple structured messages between agent roles |
 | `pftui agent message reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
 | `pftui agent message flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
 | `pftui agent message list [--from agent-a] [--unacked] --json` | Query queued agent messages |
 | `pftui agent message ack --id N` | Acknowledge a single message |
-| `pftui journal notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
-| `pftui journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
+| `pftui agent journal notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
+| `pftui agent journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
 | `pftui portfolio opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
 | `pftui portfolio opportunity stats --json` | Show net missed-vs-avoided positioning stats |
 | `pftui analytics correlations compute --store --period 30d` | Compute live correlations and persist snapshots |
@@ -822,10 +822,10 @@ Other optional API keys unlock additional sources. See [docs/API-SOURCES.md](doc
 pftui data refresh
 BRIEF=$(pftui portfolio brief --json)
 MOVERS=$(pftui analytics movers --json --threshold 3)
-NEWS=$(pftui market news --json --limit 10)
-MACRO=$(pftui dashboard macro --json)
-PREDICTIONS=$(pftui market predictions --json --limit 5)
-SENTIMENT=$(pftui market sentiment --json)
+NEWS=$(pftui data news --json --limit 10)
+MACRO=$(pftui data dashboard macro --json)
+PREDICTIONS=$(pftui data predictions --json --limit 5)
+SENTIMENT=$(pftui data sentiment --json)
 # Analyse all of the above, then compose and deliver your brief
 ```
 
@@ -852,11 +852,11 @@ LAST_WEEK=$(pftui portfolio history --date $(date -d '7 days ago' +%Y-%m-%d) --j
 ```bash
 pftui data refresh
 pftui portfolio brief --json > /tmp/portfolio.json
-pftui dashboard macro --json > /tmp/macro.json
-pftui market predictions --json > /tmp/predictions.json
-pftui market sentiment --json > /tmp/sentiment.json
-pftui market news --json > /tmp/news.json
-pftui market supply --json > /tmp/supply.json
+pftui data dashboard macro --json > /tmp/macro.json
+pftui data predictions --json > /tmp/predictions.json
+pftui data sentiment --json > /tmp/sentiment.json
+pftui data news --json > /tmp/news.json
+pftui data supply --json > /tmp/supply.json
 pftui analytics movers --json > /tmp/movers.json
 # Load all files, cross-reference, write analysis to THESIS.md
 ```
@@ -889,7 +889,7 @@ Skill package:
 
 2. **Use `--json` for programmatic access.** Every command supports it. Parse structured output instead of scraping text.
 
-3. **Keep the journal active.** `pftui journal entry add` builds a searchable decision history. Log your predictions, rationale, and outcomes.
+3. **Keep the journal active.** `pftui agent journal entry add` builds a searchable decision history. Log your predictions, rationale, and outcomes.
 
 4. **Monitor drift regularly.** `pftui portfolio drift` shows when the portfolio has moved from targets. Flag this to the human early.
 

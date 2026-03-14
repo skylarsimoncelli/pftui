@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::Result;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
@@ -304,7 +306,7 @@ fn upsert_thesis_postgres(
 
 fn list_thesis_postgres(pool: &PgPool) -> Result<Vec<ThesisEntry>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<ThesisRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<ThesisRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, section, content, conviction, updated_at::text
              FROM thesis
@@ -318,7 +320,7 @@ fn list_thesis_postgres(pool: &PgPool) -> Result<Vec<ThesisEntry>> {
 
 fn get_thesis_section_postgres(pool: &PgPool, section: &str) -> Result<Option<ThesisEntry>> {
     ensure_tables_postgres(pool)?;
-        let row: Option<ThesisRow> = crate::db::pg_runtime::block_on(async {
+    let row: Option<ThesisRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, section, content, conviction, updated_at::text
              FROM thesis
@@ -337,7 +339,7 @@ fn get_thesis_history_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<ThesisHistoryEntry>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<ThesisHistRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<ThesisHistRow> = crate::db::pg_runtime::block_on(async {
         if let Some(limit) = limit {
             sqlx::query_as(
                 "SELECT id, section, content, conviction, recorded_at::text
