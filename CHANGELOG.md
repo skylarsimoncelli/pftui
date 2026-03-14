@@ -15,6 +15,13 @@
 - Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`, `src/commands/correlations.rs`, `src/db/correlation_snapshots.rs`, `src/commands/alerts.rs`, `src/data/fedwatch.rs`, `src/commands/fedwatch.rs`, `src/commands/refresh.rs`, `src/commands/status.rs`, `TODO.md`
 - Tests: `cargo test` (1208 passed), targeted new tests for CLI parsing, alerts today-filter, status freshness logic, fedwatch conflict detection, and correlation latest-row behavior. `cargo clippy --all-targets -- -D warnings` still fails due pre-existing repo-wide dead-code baseline in untouched modules.
 
+### 2026-03-14 — Finalize five-domain CLI tree and remove deprecated namespaces
+
+- What: completed F42 by hard-cutting the CLI to five top-level domains (`agent`, `analytics`, `data`, `portfolio`, `system`). Moved `watchlist` under `portfolio`, `market` and `dashboard` under `data`, and `journal` under `agent`. Replaced positional action parsing for `agent message`, `portfolio target`, and `portfolio opportunity` with nested subcommands, added canonical tree and migration docs, and refreshed operator/product docs to the new paths.
+- Why: the F40 transition left extra top-level namespaces and stringly action dispatch in place. F42 finalizes the hierarchy so help output, docs, and parser behavior all agree on one canonical command tree.
+- Files: `src/cli.rs`, `src/main.rs`, `docs/CLI-TREE.md`, `docs/CLI-MIGRATION.md`, `README.md`, `AGENTS.md`, `PRODUCT-VISION.md`, `PRODUCT-PHILOSOPHY.md`, `CLAUDE.md`, `TODO.md`
+- Tests: `cargo test cli::tests -- --nocapture`
+
 ### 2026-03-14 — Migration Safety Policy for Schema Refactors
 
 - What: established a release policy for database schema modernization to avoid breaking existing user databases: additive tables first, deterministic backfill, dual-read/write compatibility window, canonical-only cutover in a later release, and legacy table drop only after validated overlap period.

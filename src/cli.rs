@@ -1,23 +1,17 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Subcommand)]
-pub enum AgentCommand {
-    /// Inter-agent structured message passing
-    Message {
-        /// Action: send, list, reply, flag, ack, ack-all, purge
-        action: String,
-
-        /// Message content (for send/reply/flag)
+pub enum AgentMessageCommand {
+    /// Send one or more structured messages
+    Send {
+        /// Message content (positional text or one/more --batch values)
         value: Option<String>,
 
         /// Batch mode for send: repeat to enqueue multiple related messages
         #[arg(long = "batch")]
         batch: Vec<String>,
 
-        #[arg(long)]
-        id: Option<i64>,
-
-        /// Sender (required for send/reply/flag; filter for list)
+        /// Sender (required)
         #[arg(long)]
         from: Option<String>,
 
@@ -36,6 +30,22 @@ pub enum AgentCommand {
         #[arg(long)]
         layer: Option<String>,
 
+        #[arg(long)]
+        json: bool,
+    },
+    /// List queued or historical messages
+    List {
+        /// Sender filter
+        #[arg(long)]
+        from: Option<String>,
+
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Analytics engine layer: low, medium, high, macro, cross
+        #[arg(long)]
+        layer: Option<String>,
+
         /// Show only unacknowledged
         #[arg(long)]
         unacked: bool,
@@ -44,15 +54,99 @@ pub enum AgentCommand {
         #[arg(long)]
         since: Option<String>,
 
-        /// Days for purge
-        #[arg(long)]
-        days: Option<usize>,
-
         #[arg(long)]
         limit: Option<usize>,
 
         #[arg(long)]
         json: bool,
+    },
+    /// Reply to an existing message
+    Reply {
+        /// Message content
+        value: Option<String>,
+
+        #[arg(long)]
+        id: Option<i64>,
+
+        /// Sender (required)
+        #[arg(long)]
+        from: Option<String>,
+
+        #[arg(long)]
+        priority: Option<String>,
+
+        #[arg(long)]
+        category: Option<String>,
+
+        #[arg(long)]
+        layer: Option<String>,
+
+        #[arg(long)]
+        json: bool,
+    },
+    /// Escalate an issue on an existing message
+    Flag {
+        /// Escalation reason
+        value: Option<String>,
+
+        #[arg(long)]
+        id: Option<i64>,
+
+        /// Sender (required)
+        #[arg(long)]
+        from: Option<String>,
+
+        #[arg(long)]
+        priority: Option<String>,
+
+        #[arg(long)]
+        category: Option<String>,
+
+        #[arg(long)]
+        layer: Option<String>,
+
+        #[arg(long)]
+        json: bool,
+    },
+    /// Acknowledge a single message
+    Ack {
+        #[arg(long)]
+        id: Option<i64>,
+
+        #[arg(long)]
+        json: bool,
+    },
+    /// Acknowledge all pending messages for a recipient
+    #[command(name = "ack-all")]
+    AckAll {
+        #[arg(long)]
+        to: Option<String>,
+
+        #[arg(long)]
+        json: bool,
+    },
+    /// Purge old messages
+    Purge {
+        /// Days to retain before purge
+        #[arg(long)]
+        days: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentCommand {
+    /// Inter-agent structured message passing
+    Message {
+        #[command(subcommand)]
+        command: AgentMessageCommand,
+    },
+    /// Shared knowledge layer: entries, predictions, convictions, notes, scenarios
+    Journal {
+        #[command(subcommand)]
+        command: Option<JournalCommand>,
     },
 }
 
@@ -152,298 +246,11 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
-}
-
-#[derive(Subcommand)]
-pub enum PortfolioTransactionCommand {
-    /// Add a transaction
-    Add {
-        #[arg(long)]
-        symbol: Option<String>,
-        #[arg(long)]
-        category: Option<String>,
-        #[arg(long)]
-        tx_type: Option<String>,
-        #[arg(long)]
-        quantity: Option<String>,
-        #[arg(long)]
-        price: Option<String>,
-        #[arg(long, default_value = "USD")]
-        currency: String,
-        #[arg(long)]
-        date: Option<String>,
-        #[arg(long)]
-        notes: Option<String>,
-    },
-    /// Remove a transaction by ID
-    Remove {
-        /// Transaction ID to remove
-        id: i64,
-    },
-    /// List all transactions
-    List {
-        /// Show transaction notes column
-        #[arg(long)]
-        notes: bool,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum PortfolioCommand {
-    /// Portfolio summary to stdout (default when no subcommand is provided)
-    Summary {
-        /// Group output by a field (e.g. "category")
-        #[arg(long, value_enum)]
-        group_by: Option<SummaryGroupBy>,
-
-        /// Show P&L over a time period instead of total gain from cost basis
-        #[arg(long, value_enum)]
-        period: Option<SummaryPeriod>,
-
-        /// Model hypothetical prices: SYMBOL:PRICE,SYMBOL:PRICE (e.g. GC=F:5500,BTC:55000)
-        #[arg(long, value_name = "OVERRIDES")]
-        what_if: Option<String>,
-
-        /// Output JSON instead of formatted text
-        #[arg(long)]
-        json: bool,
-    },
-    /// Show total portfolio value with gain/loss (uses cached prices)
-    Value {
-        /// Output JSON instead of formatted text
-        #[arg(long)]
-        json: bool,
-    },
-    /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
-    Brief {
-        /// Output structured JSON (includes all available data)
-        #[arg(long)]
-        json: bool,
-    },
-    /// End-of-Day summary: brief + movers + macro + sentiment combined
-    Eod {
-        /// Output as JSON for agent/script consumption
-        #[arg(long)]
-        json: bool,
-    },
-    /// Show portfolio performance: returns over time (MTD, QTD, YTD, since inception)
-    Performance {
-        /// Custom start date for return calculation (YYYY-MM-DD)
-        #[arg(long)]
-        since: Option<String>,
-
-        /// Return series grouping: daily, weekly, monthly
-        #[arg(long)]
-        period: Option<String>,
-
-        /// Benchmark symbol to compare against (e.g. SPY)
-        #[arg(long)]
-        vs: Option<String>,
-
-        /// Output as JSON for agent/script consumption
-        #[arg(long)]
-        json: bool,
-    },
-    /// Show portfolio value and positions as of a past date using cached price history
-    History {
-        /// Target date in YYYY-MM-DD format (e.g. 2026-02-28)
-        #[arg(long)]
-        date: String,
-
-        /// Group output by a field (e.g. "category")
-        #[arg(long, value_enum)]
-        group_by: Option<SummaryGroupBy>,
-    },
-    /// Manage allocation targets for positions
-    Target {
-        /// Action: set, list, remove
-        action: String,
-
-        /// Symbol (for set/remove)
-        symbol: Option<String>,
-
-        /// Target allocation percentage (e.g. "25", "10.5"). Accepts % suffix.
-        #[arg(long)]
-        target: Option<String>,
-
-        /// Drift band percentage (default: 2%). Accepts % suffix.
-        #[arg(long)]
-        band: Option<String>,
-
-        /// Output as JSON (for list)
-        #[arg(long)]
-        json: bool,
-    },
-    /// Show allocation drift vs targets
-    Drift {
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Suggest trades to rebalance to target allocations
-    Rebalance {
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Run named portfolio stress scenarios
-    #[command(name = "stress-test")]
-    StressTest {
-        /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
-        scenario: String,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Track dividend payments, ex-dates, and trailing yield
-    Dividends {
-        /// Action: add, list, remove
-        action: String,
-
-        /// Symbol (for add), ID (for remove), or optional symbol filter (for list)
-        value: Option<String>,
-
-        /// Amount per share (for add)
-        #[arg(long)]
-        amount: Option<String>,
-
-        /// Pay date in YYYY-MM-DD (for add)
-        #[arg(long)]
-        pay_date: Option<String>,
-
-        /// Ex-dividend date in YYYY-MM-DD (for add)
-        #[arg(long)]
-        ex_date: Option<String>,
-
-        /// Currency (default: USD)
-        #[arg(long, default_value = "USD")]
-        currency: String,
-
-        /// Optional note
-        #[arg(long)]
-        notes: Option<String>,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Add, view, or remove position thesis annotations
-    Annotate {
-        /// Asset symbol (required unless using --list)
-        symbol: Option<String>,
-
-        /// Thesis text
-        #[arg(long)]
-        thesis: Option<String>,
-
-        /// Invalidation criteria
-        #[arg(long)]
-        invalidation: Option<String>,
-
-        /// Review date in YYYY-MM-DD
-        #[arg(long)]
-        review_date: Option<String>,
-
-        /// Target price/level
-        #[arg(long)]
-        target: Option<String>,
-
-        /// Show annotation for symbol
-        #[arg(long)]
-        show: bool,
-
-        /// List all annotations
-        #[arg(long)]
-        list: bool,
-
-        /// Remove annotation for symbol
-        #[arg(long)]
-        remove: bool,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Manage named asset groups
-    Group {
-        /// Action: create, list, show, remove
-        action: String,
-
-        /// Group name (required for create/show/remove)
-        name: Option<String>,
-
-        /// Comma-separated symbols for create (e.g. GC=F,SI=F,BTC)
-        #[arg(long)]
-        symbols: Option<String>,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Track what your positioning saved and cost you
-    Opportunity {
-        /// Action: add, list, stats
-        action: String,
-
-        /// Event description (for add)
-        value: Option<String>,
-
-        #[arg(long)]
-        date: Option<String>,
-
-        #[arg(long)]
-        asset: Option<String>,
-
-        #[arg(long)]
-        missed_gain_pct: Option<f64>,
-
-        #[arg(long)]
-        missed_gain_usd: Option<f64>,
-
-        #[arg(long)]
-        avoided_loss_pct: Option<f64>,
-
-        #[arg(long)]
-        avoided_loss_usd: Option<f64>,
-
-        /// Was this a rational decision? (true/false, default true)
-        #[arg(long)]
-        rational: Option<bool>,
-
-        #[arg(long)]
-        notes: Option<String>,
-
-        #[arg(long)]
-        since: Option<String>,
-
-        #[arg(long)]
-        limit: Option<usize>,
-
-        #[arg(long)]
-        json: bool,
-    },
-    /// Set a cash position to an exact amount (replaces existing transactions for that currency)
-    #[command(name = "set-cash")]
-    SetCash {
-        /// Currency symbol (e.g. USD, GBP, EUR)
-        symbol: String,
-        /// Amount to set (e.g. 45000, 12500.50). Use 0 to clear.
-        amount: String,
-    },
-    /// Manage transactions
-    Transaction {
+    /// Pre-built dashboard views
+    Dashboard {
         #[command(subcommand)]
-        command: PortfolioTransactionCommand,
+        command: DashboardCommand,
     },
-}
-
-#[derive(Subcommand)]
-pub enum MarketCommand {
     /// Show latest financial news from RSS feeds
     News {
         /// Filter by source (e.g. "Reuters", "CoinDesk", "ZeroHedge")
@@ -573,6 +380,384 @@ pub enum MarketCommand {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioTransactionCommand {
+    /// Add a transaction
+    Add {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        tx_type: Option<String>,
+        #[arg(long)]
+        quantity: Option<String>,
+        #[arg(long)]
+        price: Option<String>,
+        #[arg(long, default_value = "USD")]
+        currency: String,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+    },
+    /// Remove a transaction by ID
+    Remove {
+        /// Transaction ID to remove
+        id: i64,
+    },
+    /// List all transactions
+    List {
+        /// Show transaction notes column
+        #[arg(long)]
+        notes: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioProfilesCommand {
+    /// List all portfolio profiles
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the current active portfolio profile
+    Current {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a named portfolio profile
+    Create {
+        name: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Switch to a named portfolio profile
+    Switch {
+        name: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a named portfolio profile
+    Remove {
+        name: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioTargetCommand {
+    /// Set a target allocation
+    Set {
+        /// Symbol to target
+        symbol: Option<String>,
+
+        /// Target allocation percentage (e.g. "25", "10.5"). Accepts % suffix.
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Drift band percentage (default: 2%). Accepts % suffix.
+        #[arg(long)]
+        band: Option<String>,
+    },
+    /// List current target allocations
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a target allocation
+    Remove {
+        /// Symbol to remove
+        symbol: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioOpportunityCommand {
+    /// Add an opportunity-cost entry
+    Add {
+        /// Event description
+        value: Option<String>,
+
+        #[arg(long)]
+        date: Option<String>,
+
+        #[arg(long)]
+        asset: Option<String>,
+
+        #[arg(long)]
+        missed_gain_pct: Option<f64>,
+
+        #[arg(long)]
+        missed_gain_usd: Option<f64>,
+
+        #[arg(long)]
+        avoided_loss_pct: Option<f64>,
+
+        #[arg(long)]
+        avoided_loss_usd: Option<f64>,
+
+        /// Was this a rational decision? (true/false, default true)
+        #[arg(long)]
+        rational: Option<bool>,
+
+        #[arg(long)]
+        notes: Option<String>,
+
+        #[arg(long)]
+        json: bool,
+    },
+    /// List opportunity-cost entries
+    List {
+        #[arg(long)]
+        since: Option<String>,
+
+        #[arg(long)]
+        asset: Option<String>,
+
+        #[arg(long)]
+        limit: Option<usize>,
+
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show opportunity-cost summary stats
+    Stats {
+        #[arg(long)]
+        since: Option<String>,
+
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioCommand {
+    /// Portfolio summary to stdout (default when no subcommand is provided)
+    Summary {
+        /// Group output by a field (e.g. "category")
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+
+        /// Show P&L over a time period instead of total gain from cost basis
+        #[arg(long, value_enum)]
+        period: Option<SummaryPeriod>,
+
+        /// Model hypothetical prices: SYMBOL:PRICE,SYMBOL:PRICE (e.g. GC=F:5500,BTC:55000)
+        #[arg(long, value_name = "OVERRIDES")]
+        what_if: Option<String>,
+
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show total portfolio value with gain/loss (uses cached prices)
+    Value {
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Output a markdown-formatted portfolio brief for agent consumption and daily reports
+    Brief {
+        /// Output structured JSON (includes all available data)
+        #[arg(long)]
+        json: bool,
+    },
+    /// End-of-Day summary: brief + movers + macro + sentiment combined
+    Eod {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show portfolio performance: returns over time (MTD, QTD, YTD, since inception)
+    Performance {
+        /// Custom start date for return calculation (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Return series grouping: daily, weekly, monthly
+        #[arg(long)]
+        period: Option<String>,
+
+        /// Benchmark symbol to compare against (e.g. SPY)
+        #[arg(long)]
+        vs: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show portfolio value and positions as of a past date using cached price history
+    History {
+        /// Target date in YYYY-MM-DD format (e.g. 2026-02-28)
+        #[arg(long)]
+        date: String,
+
+        /// Group output by a field (e.g. "category")
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+    },
+    /// Manage allocation targets for positions
+    Target {
+        #[command(subcommand)]
+        command: PortfolioTargetCommand,
+    },
+    /// Show allocation drift vs targets
+    Drift {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Suggest trades to rebalance to target allocations
+    Rebalance {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run named portfolio stress scenarios
+    #[command(name = "stress-test")]
+    StressTest {
+        /// Scenario name (e.g. "2008 GFC", "Oil $100", "BTC 40k")
+        scenario: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Track dividend payments, ex-dates, and trailing yield
+    Dividends {
+        /// Action: add, list, remove
+        action: String,
+
+        /// Symbol (for add), ID (for remove), or optional symbol filter (for list)
+        value: Option<String>,
+
+        /// Amount per share (for add)
+        #[arg(long)]
+        amount: Option<String>,
+
+        /// Pay date in YYYY-MM-DD (for add)
+        #[arg(long)]
+        pay_date: Option<String>,
+
+        /// Ex-dividend date in YYYY-MM-DD (for add)
+        #[arg(long)]
+        ex_date: Option<String>,
+
+        /// Currency (default: USD)
+        #[arg(long, default_value = "USD")]
+        currency: String,
+
+        /// Optional note
+        #[arg(long)]
+        notes: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add, view, or remove position thesis annotations
+    Annotate {
+        /// Asset symbol (required unless using --list)
+        symbol: Option<String>,
+
+        /// Thesis text
+        #[arg(long)]
+        thesis: Option<String>,
+
+        /// Invalidation criteria
+        #[arg(long)]
+        invalidation: Option<String>,
+
+        /// Review date in YYYY-MM-DD
+        #[arg(long)]
+        review_date: Option<String>,
+
+        /// Target price/level
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Show annotation for symbol
+        #[arg(long)]
+        show: bool,
+
+        /// List all annotations
+        #[arg(long)]
+        list: bool,
+
+        /// Remove annotation for symbol
+        #[arg(long)]
+        remove: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage named asset groups
+    Group {
+        /// Action: create, list, show, remove
+        action: String,
+
+        /// Group name (required for create/show/remove)
+        name: Option<String>,
+
+        /// Comma-separated symbols for create (e.g. GC=F,SI=F,BTC)
+        #[arg(long)]
+        symbols: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Track what your positioning saved and cost you
+    Opportunity {
+        #[command(subcommand)]
+        command: PortfolioOpportunityCommand,
+    },
+    /// Manage named portfolio profiles
+    Profiles {
+        #[command(subcommand)]
+        command: PortfolioProfilesCommand,
+    },
+    /// Track symbols you do not currently hold
+    Watchlist {
+        #[command(subcommand)]
+        action: Option<WatchlistCommand>,
+
+        /// Filter to symbols within N% of their target price (e.g. 10)
+        #[arg(long)]
+        approaching: Option<String>,
+
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set a cash position to an exact amount (replaces existing transactions for that currency)
+    #[command(name = "set-cash")]
+    SetCash {
+        /// Currency symbol (e.g. USD, GBP, EUR)
+        symbol: String,
+        /// Amount to set (e.g. 45000, 12500.50). Use 0 to clear.
+        amount: String,
+    },
+    /// Manage transactions
+    Transaction {
+        #[command(subcommand)]
+        command: PortfolioTransactionCommand,
     },
 }
 
@@ -1439,22 +1624,10 @@ pub enum Command {
         command: AgentCommand,
     },
 
-    /// Pre-built dashboard views
-    Dashboard {
-        #[command(subcommand)]
-        command: DashboardCommand,
-    },
-
     /// Data management operations
     Data {
         #[command(subcommand)]
         command: DataCommand,
-    },
-
-    /// External market data: news, sentiment, calendar, predictions, options, and supply
-    Market {
-        #[command(subcommand)]
-        command: MarketCommand,
     },
 
     /// System/admin operations: config, diagnostics, import/export, setup, web
@@ -1469,44 +1642,11 @@ pub enum Command {
         command: Option<PortfolioCommand>,
     },
 
-    /// Display watchlist symbols with current cached prices
-    Watchlist {
-        #[command(subcommand)]
-        action: Option<WatchlistCommand>,
-
-        /// Filter to symbols within N% of their target price (e.g. 10)
-        #[arg(long)]
-        approaching: Option<String>,
-        /// Output JSON instead of formatted text
-        #[arg(long)]
-        json: bool,
-    },
-
     /// Multi-timeframe analytics engine views
     #[command(name = "analytics")]
     Analytics {
         #[command(subcommand)]
         command: AnalyticsCommand,
-    },
-
-    /// Unified knowledge layer: entries, predictions, convictions, notes, scenarios
-    Journal {
-        #[command(subcommand)]
-        command: Option<JournalCommand>,
-    },
-
-    /// Manage named portfolios (list/current/create/switch/remove)
-    #[command(name = "portfolios")]
-    Portfolios {
-        /// Action: list, current, create, switch, remove
-        action: String,
-
-        /// Portfolio name (for create/switch/remove)
-        name: Option<String>,
-
-        /// Output as JSON for agent/script consumption
-        #[arg(long)]
-        json: bool,
     },
 }
 
@@ -1576,12 +1716,186 @@ impl SummaryPeriod {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use clap::Parser;
+    use clap::CommandFactory;
+
+    fn help_text() -> Result<String> {
+        let mut cmd = Cli::command();
+        let mut buffer = Vec::new();
+        cmd.write_long_help(&mut buffer)?;
+        Ok(String::from_utf8(buffer)?)
+    }
+
+    fn subcommand_help(path: &[&str]) -> Result<String> {
+        let mut cmd = Cli::command();
+        for segment in path {
+            cmd = cmd
+                .find_subcommand_mut(segment)
+                .unwrap_or_else(|| panic!("missing subcommand: {segment}"))
+                .clone();
+        }
+        let mut buffer = Vec::new();
+        cmd.write_long_help(&mut buffer)?;
+        Ok(String::from_utf8(buffer)?)
+    }
+
+    #[test]
+    fn top_level_help_lists_only_f42_domains() -> Result<()> {
+        let help = help_text()?;
+        for command in ["agent", "analytics", "data", "portfolio", "system"] {
+            assert!(
+                help.contains(command),
+                "missing top-level command: {command}"
+            );
+        }
+        for removed in ["dashboard", "journal", "market", "portfolios", "watchlist"] {
+            assert!(
+                !help.contains(removed),
+                "stale top-level command present: {removed}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parses_portfolio_profiles_path() {
+        let cli =
+            Cli::try_parse_from(["pftui", "portfolio", "profiles", "list", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Profiles {
+                        command: PortfolioProfilesCommand::List { json },
+                    }),
+            }) => assert!(json),
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_portfolio_watchlist_path() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "portfolio",
+            "watchlist",
+            "add",
+            "TSLA",
+            "--target",
+            "300",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Portfolio {
+                command:
+                    Some(PortfolioCommand::Watchlist {
+                        action: Some(WatchlistCommand::Add { symbol, target, .. }),
+                        ..
+                    }),
+            }) => {
+                assert_eq!(symbol.as_deref(), Some("TSLA"));
+                assert_eq!(target.as_deref(), Some("300"));
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_market_paths() {
+        let cli = Cli::try_parse_from(["pftui", "data", "news", "--limit", "5", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::News { limit, json, .. },
+            }) => {
+                assert_eq!(limit, 5);
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_agent_message_subcommands() {
+        let cli = Cli::try_parse_from([
+            "pftui", "agent", "message", "ack-all", "--to", "agent-b", "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Agent {
+                command:
+                    AgentCommand::Message {
+                        command: AgentMessageCommand::AckAll { to, json },
+                    },
+            }) => {
+                assert_eq!(to.as_deref(), Some("agent-b"));
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn removed_top_level_namespaces_fail_to_parse() {
+        for argv in [
+            ["pftui", "watchlist", "list"].as_slice(),
+            ["pftui", "market", "news"].as_slice(),
+            ["pftui", "portfolios", "list"].as_slice(),
+            ["pftui", "journal", "entry", "list"].as_slice(),
+            ["pftui", "dashboard", "macro"].as_slice(),
+        ] {
+            assert!(
+                Cli::try_parse_from(argv).is_err(),
+                "unexpectedly parsed: {argv:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn help_snapshots_cover_critical_f42_subtrees() -> Result<()> {
+        let portfolio_help = subcommand_help(&["portfolio"])?;
+        assert!(portfolio_help.contains("profiles"));
+        assert!(portfolio_help.contains("watchlist"));
+        assert!(!portfolio_help.contains("portfolios"));
+
+        let data_help = subcommand_help(&["data"])?;
+        for command in [
+            "dashboard",
+            "news",
+            "sentiment",
+            "calendar",
+            "fedwatch",
+            "economy",
+            "predictions",
+            "options",
+            "etf-flows",
+            "supply",
+            "sovereign",
+        ] {
+            assert!(
+                data_help.contains(command),
+                "missing data subtree command: {command}"
+            );
+        }
+
+        let agent_help = subcommand_help(&["agent"])?;
+        assert!(agent_help.contains("message"));
+        assert!(agent_help.contains("journal"));
+
+        let message_help = subcommand_help(&["agent", "message"])?;
+        for command in ["send", "list", "reply", "flag", "ack", "ack-all", "purge"] {
+            assert!(
+                message_help.contains(command),
+                "missing agent message command: {command}"
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn parse_prediction_score_positional_syntax() {
         let cli = Cli::try_parse_from([
             "pftui",
+            "agent",
             "journal",
             "prediction",
             "score",
@@ -1591,23 +1905,26 @@ mod tests {
         ])
         .expect("cli should parse");
 
-        let Some(Command::Journal { command }) = cli.command else {
-            panic!("expected journal command");
-        };
-        let Some(JournalCommand::Prediction { command }) = command else {
-            panic!("expected prediction subcommand");
-        };
-        let JournalPredictionCommand::Score {
-            id,
-            id_pos,
-            outcome,
-            outcome_pos,
-            notes,
-            notes_pos,
-            ..
-        } = command
+        let Some(Command::Agent {
+            command:
+                AgentCommand::Journal {
+                    command:
+                        Some(JournalCommand::Prediction {
+                            command:
+                                JournalPredictionCommand::Score {
+                                    id,
+                                    id_pos,
+                                    outcome,
+                                    outcome_pos,
+                                    notes,
+                                    notes_pos,
+                                    ..
+                                },
+                        }),
+                },
+        }) = cli.command
         else {
-            panic!("expected score subcommand");
+            panic!("expected agent journal prediction score command");
         };
 
         assert_eq!(id, None);
