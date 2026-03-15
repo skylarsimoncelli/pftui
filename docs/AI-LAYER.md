@@ -59,10 +59,10 @@ All agents coordinate via one data model and one command surface.
 
 For multi-lens macro interpretation, use the shipped skill scaffold at:
 
-- `skills/investor-panel/SKILL.md`
-- `skills/investor-panel/collect-data.sh`
-- `skills/investor-panel/schema.json`
-- `skills/investor-panel/personas/`
+- `agents/skills/investor-panel/SKILL.md`
+- `agents/skills/investor-panel/collect-data.sh`
+- `agents/skills/investor-panel/schema.json`
+- `agents/skills/investor-panel/personas/`
 
 This pattern runs multiple investor personas against the same `pftui` JSON payload
 and aggregates consensus/divergence. It is analysis-only and does not execute trades.
