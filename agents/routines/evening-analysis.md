@@ -16,7 +16,13 @@ You should receive structured reports from:
 - high-timeframe-analyst: trend evidence, structural research, emerging themes
 - macro-timeframe-analyst: power metrics, cycle updates, outcome probabilities (weekly)
 
-2. Read full analytics state:
+2. Read your own journal (your continuity across sessions):
+```bash
+pftui journal entry list --limit 3 --json
+```
+Read your recent entries. What were you thinking yesterday? What were you uncertain about? Has today's data resolved any of it?
+
+3. Read full analytics state:
 ```bash
 pftui analytics summary --json
 pftui analytics alignment --json
@@ -32,9 +38,9 @@ pftui journal prediction list --json
 pftui journal notes list --json
 ```
 
-3. Read user profile and portfolio for conviction state and allocation context.
+4. Read user profile and portfolio for conviction state and allocation context.
 
-4. DEEP web research on the 2-3 most important signals from today. Go beyond headlines:
+5. DEEP web research on the 2-3 most important signals from today. Go beyond headlines:
 - Historical parallels, expert analysis, data patterns
 - 5-8 targeted searches for genuine analytical depth
 
@@ -128,6 +134,23 @@ Where today provided data on structural trends:
 pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
   --impact <strengthens|weakens|neutral> --source "<source>" "<specific evidence>"
 ```
+
+### 8. Daily Journal Entry (mandatory)
+
+You are the only agent that sees the full picture daily. Use the journal as your thinking tool. Write a journal entry that captures your evolving view of the world. This is not a summary of what happened. It is your analytical state of mind:
+
+- What is the single most important thing you learned today?
+- What changed in your thinking vs yesterday? What didn't change but should have?
+- Where is conviction building and where is it dissolving?
+- What are you uncertain about and what would resolve that uncertainty?
+- What would you tell the user to do if they asked you right now, and how confident are you?
+
+```bash
+pftui journal entry add "[Your honest analytical journal for today. Think on paper.]" \
+  --date $(date +%Y-%m-%d)
+```
+
+This entry is your continuity. Tomorrow's evening analysis reads it. Your thinking compounds over time only if you write it down.
 
 ## Message Format
 
