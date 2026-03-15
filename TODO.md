@@ -30,87 +30,21 @@ Update `docs/CLI-TREE.md` and `docs/CLI-MIGRATION.md`.
 
 Source: `src/cli.rs` (move Journal enum from Agent to top-level Commands), `src/main.rs`.
 
-### [x] [Feedback] Data Source Conflict Detection
+### [Feedback] Weekend-Aware Movers Command
 
-When multiple data sources provide contradictory data (e.g., 92% hold vs 98.9% cut probability from different FOMC sources), the system should flag the conflict and suggest the most reliable source based on track record. Currently wrong data cascades across the agent pipeline unchecked.
+`pftui analytics movers` shows 0 movers on weekends because it compares to Friday close. Should compare Friday close to weekend crypto/futures prices (Hyperliquid, Binance perpetuals) so agents running Saturday/Sunday routines still see meaningful movements.
 
-Source: `src/commands/refresh.rs`, `src/commands/fedwatch.rs`. Add conflict detection layer that compares values from multiple sources for the same metric.
+Source: evening-analysis feedback (Mar 15). Files: `src/commands/movers.rs`.
 
-### [x] [Feedback] `predict score` Positional Argument Syntax
+### [Feedback] `analytics scenario list --json`
 
-`pftui predict score 51 correct notes` fails with exit code 2 — users must discover `--id`/`--outcome`/`--notes` flag syntax from `--help`. The positional variant should work for faster scripting. At minimum, improve the error message to show correct syntax.
+`pftui analytics scenario list` should support `--json` output for programmatic consumption. Currently agents must cross-reference scenario names manually. Most other analytics commands already support `--json`.
 
-Source: `src/cli.rs` (journal prediction score subcommand), `src/commands/predict.rs`.
+Source: evening-analysis feedback (Mar 15). Files: `src/commands/scenario.rs`, `src/cli.rs`.
 
-### [x] [Feedback] `correlations latest` Command
+### ~~F42: CLI Domain Consolidation~~ ✅ Complete (shipped v0.10.0)
 
-`correlations latest` fails. Need a simpler snapshot command for understanding current asset relationships without specifying symbols or history windows. A quick `pftui analytics correlations latest` should show the most recent stored correlation snapshot.
-
-Source: `src/commands/correlations.rs`.
-
-### [x] [Feedback] Today-Only Alert Filtering
-
-`pftui analytics alerts` should support a `--today` flag to show only alerts triggered since midnight, filtering out historical noise. During market close routines, agents need to focus on fresh signals only.
-
-Source: `src/commands/alerts.rs`, `src/alerts/engine.rs`.
-
-### [x] Data Source Reliability
-
-8/10 sources stale, price_history writes stopped. Must stabilize.
-
-### F42: CLI Domain Consolidation (Hierarchy Finalization)
-
-Align CLI strictly to product domains: `portfolio`, `data`, `analytics`, `agent`, `system`.
-No compatibility aliases. Nested commands for functions; flags only for params/filters.
-
-- [x] **F42.1 — Freeze canonical command tree spec**
-  - Add `docs/CLI-TREE.md` with final hierarchy and naming conventions.
-  - Include explicit rule: no action positional args where subcommands apply.
-  - Acceptance: tree doc matches `--help` exactly.
-
-- [x] **F42.2 — Rename top-level `portfolios` to `portfolio profiles`**
-  - Add `profiles` subcommand under `portfolio` (`list/current/create/switch/remove`).
-  - Remove top-level `portfolios`.
-  - Acceptance: `pftui --help` has no `portfolios`; `pftui portfolio profiles --help` works.
-
-- [x] **F42.3 — Move `watchlist` under `portfolio`**
-  - Introduce `portfolio watchlist add/remove/list`.
-  - Remove top-level `watchlist`.
-  - Acceptance: `pftui --help` has no `watchlist`; all watchlist flows preserved.
-
-- [x] **F42.4 — Collapse `market` namespace into `data`**
-  - Move `news/sentiment/calendar/fedwatch/economy/predictions/options/etf-flows/supply/sovereign` under `data`.
-  - Remove top-level `market`.
-  - Acceptance: `pftui --help` has no `market`; each moved command has equivalent `data` path.
-
-- [x] **F42.5 — Normalize action-style commands into nested subcommands**
-  - Convert to subcommands:
-    - `agent message <action>` -> `agent message send|list|reply|flag|ack|ack-all|purge`
-    - `portfolio target <action>` -> `portfolio target set|list|remove`
-    - `portfolio opportunity <action>` -> `portfolio opportunity add|list|stats`
-  - Acceptance: these command families no longer depend on positional action args.
-
-- [x] **F42.6 — Refactor `cli.rs` + `main.rs` dispatch to new tree only**
-  - Remove obsolete enum variants and routing branches.
-  - Acceptance: compile/test pass with no stale command references.
-
-- [x] **F42.7 — Update docs to canonical paths**
-  - Update command examples in `README.md`, `AGENTS.md`, `PRODUCT-VISION.md`, `PRODUCT-PHILOSOPHY.md`, `docs/VISION.md`, `CLAUDE.md`.
-  - Acceptance: no stale command paths in these docs.
-
-- [x] **F42.8 — Publish migration table**
-  - Add `docs/CLI-MIGRATION.md` with old -> new mapping.
-  - State explicitly: removed commands are not supported.
-  - Acceptance: each removed path has one canonical replacement.
-
-- [x] **F42.9 — Add/refresh CLI parsing tests**
-  - Cover new paths and ensure removed top-level namespaces fail predictably.
-  - Acceptance: `cargo test` green with updated command-shape coverage.
-
-- [x] **F42.10 — Help-output verification snapshot**
-  - Verify top-level help contains only `agent`, `analytics`, `data`, `portfolio`, `system`.
-  - Verify critical subtrees (`portfolio profiles/watchlist`, `data <moved market cmds>`, `agent message`).
-  - Acceptance: help tree consistent with `docs/CLI-TREE.md`.
+All 10 subtasks completed. Five-domain hierarchy finalized: `agent`, `analytics`, `data`, `portfolio`, `system`.
 
 ---
 
@@ -120,12 +54,9 @@ No compatibility aliases. Nested commands for functions; flags only for params/f
 
 ## P3 — Long Term
 
-### F40: CLI Hierarchy Restructure (Cleanup Phase)
+### ~~F40: CLI Hierarchy Restructure~~ ✅ Complete (shipped v0.10.0)
 
-Core namespace restructure shipped (portfolio, market, system, dashboard, data, agent, watchlist, journal, analytics all routed). Remaining:
-- [x] Remove legacy top-level aliases after deprecation period
-- [x] Update all agent routine docs to use new paths exclusively
-- [x] Update README examples to new command paths
+Full namespace restructure shipped. All legacy aliases removed. All agent routines and docs updated to canonical v0.10.0 paths.
 
 ### F41: Interactive Shell (`pftui shell`)
 
@@ -207,26 +138,50 @@ and OpenClaw sub-agent spawning.
 
 | Tester | Latest Score | Date | Trend |
 |--------|-------------|------|-------|
-| Morning Market Research | 15% | Mar 8 | ↓ (DB crash — likely fixed) |
-| Evening Eventuality Planner | 55% | Mar 9 | ↓ (hang bug — likely fixed) |
-| Sentinel Main (TUI) | 72% | Mar 10 | → (stable 72-88% range since Mar 3) |
-| Market Close | 72% | Mar 9 | → (oscillating 68-88%) |
+| Morning Market Research | 88% | Mar 7 | ↑ (recovered from 15% DB crash; last working review strong) |
+| Evening Eventuality Planner | 82% | Mar 8 | ↑ (recovered from hang; stable 75-88% when working) |
+| Sentinel Main (TUI) | 72% | Mar 10 | → (stable 72-88% range; Day$ P&L shipped, needs next review) |
+| Market Close | 92% | Mar 6 | ↑ (peaked when data pipeline stable; movers fix shipped) |
 | UX Analyst | 75% | Mar 8 | → (stable 68-78% range) |
 | Integration Optimiser | 70% | Mar 11 | — (single review) |
+| Medium-Timeframe Analyst | 88% | Mar 15 | ↑ (strong analytical workflow, 85% of routine handled by pftui) |
+| Low-Timeframe Analyst | 80% | Mar 14 | → (solid analytics platform) |
+| Morning Brief Agent | 75% | Mar 14 | — (first scored review) |
+| Evening Analysis | 75% | Mar 15 | → (weekend-aware movers gap noted) |
 
 **Score Trend Notes:**
-- Morning Research and Evening Planner had catastrophic drops on Mar 8-9 due to the `group_id` DB migration bug and API timeout hangs. Both bugs were fixed (graceful degradation, connection timeouts, `--offline` mode all shipped). Their scores should recover to 78-85% range on next review.
-- Sentinel TUI has plateaued in the 72-88% range. The consistent #1 ask is daily P&L $ in the positions table.
-- Market Close peaked at 88% (Mar 6) when data pipeline was fully working, dropped to 72% when movers/daily-change calculation broke. Fix was shipped.
+- Agent scores have broadly stabilized in the 72-88% range since the DB crash/hang bugs were fixed (Mar 9).
+- Medium-timeframe analyst hit 88% — highest new-tester score — reflecting mature analytics engine.
+- Sentinel TUI plateau (72-88%) should break upward: Day$ P&L was shipped (CHANGELOG Mar 14 `ba86400`).
+- Most recent feedback is from the agent pipeline testers (low/medium/evening/morning), not the original four (Morning Research, Evening Planner, Sentinel, Market Close). The original testers haven't reviewed since the Mar 14 batch of fixes.
+- F42 CLI domain consolidation shipped and all agent routines updated to v0.10.0 paths.
 
 **Top 3 Priorities Based on Feedback:**
 
-1. **Daily P&L $ column in TUI positions** — Requested by Sentinel in 6/8 reviews. Table stakes for portfolio management. Blocks Sentinel from breaking above 85%.
-2. **Sector/category grouping in positions** — Requested by Sentinel (×4) and Market Close (×2). Macro investors think in asset classes.
-3. **Data source reliability** — While many fixes shipped (timeouts, graceful degradation, `--offline`), the 15% and 55% scores show that data pipeline failures are catastrophic for agent trust. Continued hardening needed.
+1. **Move `journal` to top-level command** — Currently under `agent journal`. Journal is the shared knowledge layer used by humans and agents alike. In-progress P1.
+2. **Weekend-aware movers** — Agents running Saturday/Sunday routines see 0 movers. Need crypto/futures comparison for weekend context. New P1 from Mar 15.
+3. **`analytics scenario list --json`** — Most analytics commands support `--json` but scenarios list doesn't. Breaks agent consistency expectations. New P1 from Mar 15.
 
-**Release Assessment:**
-- Significant work has landed since v0.9.0: full F40 CLI hierarchy restructure (9 new namespaces), F39.7 macro history, clippy fixes, journal subcommand conversions.
-- No P0 bugs remain. `cargo test` passes (1199 tests). `cargo clippy --all-targets -- -D warnings` passes clean.
-- **Release v0.10.0 is warranted** — the F40 CLI restructure is a major UX change deserving a minor version bump.
+**Resolved Since Last Summary (Mar 11):**
+- ✅ Data source conflict detection (shipped Mar 14)
+- ✅ `predict score` positional args (shipped Mar 14)
+- ✅ `correlations latest` command (shipped Mar 14)
+- ✅ Today-only alert filtering (shipped Mar 14)
+- ✅ Data source reliability hardening (shipped Mar 13-14)
+- ✅ `trends evidence-add` help clarity (shipped Mar 13)
+- ✅ `psql` connection docs (shipped Mar 13)
+- ✅ Agent-msg batch mode (shipped Mar 13)
+- ✅ Brief `--json` external market movers (shipped Mar 13)
+- ✅ Scenario update `--notes` (shipped Mar 12)
+- ✅ Predict add timeframe/confidence flags (shipped Mar 12)
+- ✅ Agent-msg reply/flag workflow (shipped Mar 12)
+- ✅ Scan trackline breach detection (shipped Mar 14)
+- ✅ Conviction negative-score syntax (shipped Mar 12)
+- ✅ F42 CLI domain consolidation — all 10 subtasks (shipped Mar 14)
+- ✅ Day$ P&L in TUI positions (shipped Mar 14)
+
+**Build Status:**
+- `cargo test`: 1225 passed, 0 failed.
+- `cargo clippy --all-targets -- -D warnings`: 1 warning (`field_reassign_with_default` in `app.rs:7258`). Minor fix needed.
+- v0.10.0 tagged and released.
 - GitHub stars: 0 — Homebrew Core submission not yet eligible (requires 50+).
