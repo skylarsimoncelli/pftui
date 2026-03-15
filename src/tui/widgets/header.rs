@@ -209,7 +209,7 @@ fn build_ticker_spans(app: &App, width: usize) -> Vec<Span<'static>> {
         return vec![];
     }
 
-    let t = &app.theme;
+    let t = app.theme.clone();
 
     // Build the full ticker as a sequence of styled segments with known char lengths
     struct Segment {
@@ -335,7 +335,7 @@ fn build_news_ticker_line<'a>(app: &App, width: usize) -> Option<Line<'a>> {
         return None;
     }
 
-    let t = &app.theme;
+    let t = app.theme.clone();
 
     // Cycle through latest 3 headlines every 10 seconds (600 ticks at 60fps)
     const CYCLE_TICKS: u64 = 600;
@@ -412,8 +412,20 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let now = chrono::Utc::now().format("%H:%M UTC");
     let privacy = is_privacy_view(app);
     let pct_mode = app.portfolio_mode == PortfolioMode::Percentage;
-    let t = &app.theme;
+    let t = app.theme.clone();
     let compact = app.terminal_width < COMPACT_WIDTH;
+    app.header_tab_hitboxes.clear();
+    let spans_width =
+        |spans: &[Span<'static>]| spans.iter().map(|s| s.content.chars().count() as u16).sum();
+    let push_tab =
+        |spans: &mut Vec<Span<'static>>, app: &mut App, key: &str, label: &str, style, view_mode| {
+            spans.push(Span::raw(" "));
+            let start = spans_width(spans);
+            spans.push(Span::styled(key.to_string(), Style::default().fg(t.key_hint)));
+            spans.push(Span::styled(label.to_string(), style));
+            let end = spans_width(spans);
+            app.header_tab_hitboxes.push((start, end, view_mode));
+        };
 
     let pos_style = if matches!(app.view_mode, ViewMode::Positions) {
         Style::default().fg(t.text_primary).bold().underlined()
@@ -428,6 +440,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled("[1]", Style::default().fg(t.key_hint)),
         Span::styled(if compact { "Port" } else { "Portfolio" }, pos_style),
     ];
+    let positions_end = spans_width(&spans);
+    app.header_tab_hitboxes
+        .push((8, positions_end, ViewMode::Positions));
 
     if !pct_mode {
         let tx_style = if matches!(app.view_mode, ViewMode::Transactions) {
@@ -435,9 +450,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         } else {
             Style::default().fg(t.text_muted)
         };
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled("[2]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Tx", tx_style));
+        push_tab(&mut spans, app, "[2]", "Tx", tx_style, ViewMode::Transactions);
     }
 
     // Markets tab — always visible
@@ -446,9 +459,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         Style::default().fg(t.text_muted)
     };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[3]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled("Mkt", mkt_style));
+    push_tab(&mut spans, app, "[3]", "Mkt", mkt_style, ViewMode::Markets);
 
     // Economy tab — always visible
     let econ_style = if matches!(app.view_mode, ViewMode::Economy) {
@@ -456,12 +467,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         Style::default().fg(t.text_muted)
     };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[4]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(
+    push_tab(
+        &mut spans,
+        app,
+        "[4]",
         if compact { "Ec" } else { "Econ" },
         econ_style,
-    ));
+        ViewMode::Economy,
+    );
 
     // Watchlist tab — always visible
     let watch_style = if matches!(app.view_mode, ViewMode::Watchlist) {
@@ -469,12 +482,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         Style::default().fg(t.text_muted)
     };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(
+    push_tab(
+        &mut spans,
+        app,
+        "[5]",
         if compact { "W" } else { "Watch" },
         watch_style,
-    ));
+        ViewMode::Watchlist,
+    );
 
     // Analytics tab — always visible
     let analytics_style = if matches!(app.view_mode, ViewMode::Analytics) {
@@ -482,12 +497,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         Style::default().fg(t.text_muted)
     };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[6]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(
+    push_tab(
+        &mut spans,
+        app,
+        "[6]",
         if compact { "An" } else { "Analytics" },
         analytics_style,
-    ));
+        ViewMode::Analytics,
+    );
 
     // News tab — always visible
     let news_style = if matches!(app.view_mode, ViewMode::News) {
@@ -495,9 +512,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         Style::default().fg(t.text_muted)
     };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[7]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(if compact { "N" } else { "News" }, news_style));
+    push_tab(
+        &mut spans,
+        app,
+        "[7]",
+        if compact { "N" } else { "News" },
+        news_style,
+        ViewMode::News,
+    );
 
     // Chart grid tab — always visible
     let grid_style = if matches!(app.view_mode, ViewMode::ChartGrid) {
@@ -505,9 +527,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         Style::default().fg(t.text_muted)
     };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[8]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(if compact { "G" } else { "Grid" }, grid_style));
+    push_tab(
+        &mut spans,
+        app,
+        "[8]",
+        if compact { "G" } else { "Grid" },
+        grid_style,
+        ViewMode::ChartGrid,
+    );
 
     // Journal tab — always visible
     let journal_style = if matches!(app.view_mode, ViewMode::Journal) {
@@ -515,12 +542,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         Style::default().fg(t.text_muted)
     };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled("[9]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(
+    push_tab(
+        &mut spans,
+        app,
+        "[9]",
         if compact { "J" } else { "Journal" },
         journal_style,
-    ));
+        ViewMode::Journal,
+    );
 
     if !compact {
         spans.push(Span::styled("  │  ", Style::default().fg(t.text_muted)));

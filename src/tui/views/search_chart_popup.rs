@@ -72,11 +72,24 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     if history.len() < 2 {
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
+        let history_error = app
+            .last_price_error
+            .as_ref()
+            .filter(|msg| msg.contains(symbol) && msg.starts_with("History "))
+            .cloned();
+        let loading_line = if let Some(err) = history_error {
+            Line::from(Span::styled(
+                err,
+                Style::default().fg(t.loss_red),
+            ))
+        } else {
+            Line::from(Span::styled(
                 format!("Loading chart data for {}...", symbol),
                 Style::default().fg(t.text_muted),
-            ))),
+            ))
+        };
+        frame.render_widget(
+            Paragraph::new(loading_line),
             layout[1],
         );
         return;

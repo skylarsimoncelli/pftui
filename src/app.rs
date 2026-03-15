@@ -599,6 +599,8 @@ pub struct App {
     pub calendar_events: Vec<crate::data::calendar::Event>,
 
     // Header click targets (column ranges set during render)
+    /// Clickable tab ranges in the header, recorded during render.
+    pub header_tab_hitboxes: Vec<(u16, u16, ViewMode)>,
     /// Column range for the theme name indicator in the header (for mouse click cycling).
     pub header_theme_col_range: Option<(u16, u16)>,
     /// Column range for the privacy/percentage-view indicator in the header.
@@ -727,8 +729,36 @@ impl App {
         crate::db::backend::open_from_config(&cfg, &self.db_path).ok()
     }
 
+    fn view_mode_from_config_value(value: &str) -> ViewMode {
+        match value {
+            "watchlist" => ViewMode::Watchlist,
+            "transactions" => ViewMode::Transactions,
+            "markets" => ViewMode::Markets,
+            "economy" => ViewMode::Economy,
+            "analytics" => ViewMode::Analytics,
+            "news" => ViewMode::News,
+            "chartgrid" => ViewMode::ChartGrid,
+            "journal" => ViewMode::Journal,
+            _ => ViewMode::Positions,
+        }
+    }
+
+    fn view_mode_config_value(view_mode: ViewMode) -> &'static str {
+        match view_mode {
+            ViewMode::Positions => "positions",
+            ViewMode::Watchlist => "watchlist",
+            ViewMode::Transactions => "transactions",
+            ViewMode::Markets => "markets",
+            ViewMode::Economy => "economy",
+            ViewMode::Analytics => "analytics",
+            ViewMode::News => "news",
+            ViewMode::ChartGrid => "chartgrid",
+            ViewMode::Journal => "journal",
+        }
+    }
+
     pub fn new(config: &Config, db_path: std::path::PathBuf) -> Self {
-        let initial_view = ViewMode::Positions;
+        let initial_view = Self::view_mode_from_config_value(&config.home_tab);
         App {
             should_quit: false,
             view_mode: initial_view,
@@ -846,6 +876,7 @@ impl App {
             sparkline_timeframe: ChartTimeframe::ThreeMonths,
             crosshair_mode: false,
             crosshair_x: 0,
+            header_tab_hitboxes: Vec::new(),
             header_theme_col_range: None,
             header_privacy_col_range: None,
             alloc_bar_area: None,
@@ -1347,12 +1378,17 @@ impl App {
         needed_days: u32,
     ) {
         let already_fetched = self.fetched_history_days.get(symbol).copied().unwrap_or(0);
-        if already_fetched >= needed_days {
+        let cached_points = self
+            .price_history
+            .get(symbol)
+            .map(|records| records.len())
+            .unwrap_or(0);
+        if already_fetched >= needed_days && cached_points >= 2 {
             return; // already have enough data
         }
         // Track that we're fetching this range
         self.fetched_history_days
-            .insert(symbol.to_string(), needed_days);
+            .insert(symbol.to_string(), already_fetched.max(needed_days));
         self.history_attempted.insert(symbol.to_string());
         // Extract service ref and send command (avoid borrow conflict)
         if let Some(ref service) = self.price_service {
@@ -1854,12 +1890,18 @@ impl App {
         let category: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
         let symbol = watchlist_view::yahoo_symbol_for(&entry.symbol, category);
 
+        let history_len = self
+            .price_history
+            .get(&symbol)
+            .map(|records| records.len())
+            .unwrap_or(0);
+        if history_len < 2 {
+            self.request_history_if_needed(&symbol, category, 370);
+        }
+
         if let Some(svc) = &self.price_service {
             if !self.prices.contains_key(&symbol) {
                 svc.send_command(PriceCommand::FetchAll(vec![(symbol.clone(), category)]));
-            }
-            if !self.price_history.contains_key(&symbol) {
-                svc.send_command(PriceCommand::FetchHistory(symbol.clone(), category, 370));
             }
         }
         self.search_chart_popup =
@@ -2297,7 +2339,27 @@ impl App {
     }
 
     fn persist_home_tab_preference_if_needed(&mut self) {
-        self.last_saved_home_tab = ViewMode::Positions;
+        let desired = match self.view_mode {
+            ViewMode::Positions
+            | ViewMode::Watchlist
+            | ViewMode::Transactions
+            | ViewMode::Markets
+            | ViewMode::Economy
+            | ViewMode::Analytics
+            | ViewMode::News
+            | ViewMode::ChartGrid
+            | ViewMode::Journal => self.view_mode,
+        };
+
+        if desired == self.last_saved_home_tab {
+            return;
+        }
+
+        if let Ok(mut cfg) = config::load_config() {
+            cfg.home_tab = Self::view_mode_config_value(desired).to_string();
+            let _ = config::save_config(&cfg);
+            self.last_saved_home_tab = desired;
+        }
     }
 
     fn cache_price(&self, quote: &PriceQuote) {
@@ -3183,114 +3245,56 @@ impl App {
     }
 
     /// Handle a click in the header area. Detect which tab label was clicked.
-    ///
-    /// Tab layout (non-compact): " pftui  [1]Pos [2]Tx [3]Mkt [4]Econ [5]Watch [6]Analytics [7]News [8]Grid [9]Journal ..."
-    /// Character offsets are approximate; we use generous hit zones.
     fn handle_header_click(&mut self, col: u16) {
         let col = col as usize;
-        let compact = self.terminal_width < crate::tui::ui::COMPACT_WIDTH;
-        let pct_mode = self.portfolio_mode == PortfolioMode::Percentage;
-
-        // Tab label positions (0-indexed character columns).
-        // Layout: " pf" (3) + "tui" (3) + "  " (2) = 8 chars before [1]
-        // [1]Pos  = cols ~8..14
-        // [2]Tx   = cols ~15..20 (hidden in pct mode)
-        // [3]Mkt  = cols ~21..27
-        // [4]Econ = cols ~28..35
-        // [5]Watch = cols ~36..45
-        //
-        // These are rough ranges — generous to make clicking easy.
-        // When [2]Tx is hidden, subsequent tabs shift left by ~5 chars.
-
-        let tx_visible = !pct_mode;
-
-        // [1]Pos — always starts around col 8
-        if (8..14).contains(&col) {
-            self.switch_to_home_default();
-            return;
+        let mut fallback_hitboxes = Vec::new();
+        if self.header_tab_hitboxes.is_empty() {
+            let compact = self.terminal_width < crate::tui::ui::COMPACT_WIDTH;
+            let pct_mode = self.portfolio_mode == PortfolioMode::Percentage;
+            let mut cursor = 8u16;
+            let mut push = |label: &str, view_mode: ViewMode| {
+                let start = cursor;
+                let end = start + 3 + label.chars().count() as u16;
+                fallback_hitboxes.push((start, end, view_mode));
+                cursor = end + 1;
+            };
+            push(if compact { "Port" } else { "Portfolio" }, ViewMode::Positions);
+            if !pct_mode {
+                push("Tx", ViewMode::Transactions);
+            }
+            push("Mkt", ViewMode::Markets);
+            push(if compact { "Ec" } else { "Econ" }, ViewMode::Economy);
+            push(if compact { "W" } else { "Watch" }, ViewMode::Watchlist);
+            push(if compact { "An" } else { "Analytics" }, ViewMode::Analytics);
+            push(if compact { "N" } else { "News" }, ViewMode::News);
+            push(if compact { "G" } else { "Grid" }, ViewMode::ChartGrid);
+            push(if compact { "J" } else { "Journal" }, ViewMode::Journal);
         }
+        let hitboxes = if self.header_tab_hitboxes.is_empty() {
+            &fallback_hitboxes
+        } else {
+            &self.header_tab_hitboxes
+        };
 
-        // [2]Tx — only in full mode
-        if tx_visible && (15..20).contains(&col) {
-            self.view_mode = ViewMode::Transactions;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            return;
-        }
-
-        // Offset for remaining tabs depends on whether [2] is visible
-        let base = if tx_visible { 20 } else { 15 };
-
-        // [3]Mkt
-        if (base..base + 7).contains(&col) {
-            self.view_mode = ViewMode::Markets;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            self.request_market_data();
-            return;
-        }
-
-        let econ_label_len: usize = if compact { 5 } else { 7 }; // "[4]Ec" or "[4]Econ"
-        let base2 = base + 7;
-
-        // [4]Econ
-        if (base2..base2 + econ_label_len + 1).contains(&col) {
-            self.view_mode = ViewMode::Economy;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            self.request_economy_data();
-            return;
-        }
-
-        let base3 = base2 + econ_label_len + 1;
-        let watch_label_len: usize = if compact { 4 } else { 8 }; // "[5]W" or "[5]Watch"
-
-        // [5]Watch
-        if (base3..base3 + watch_label_len + 1).contains(&col) {
-            self.view_mode = ViewMode::Watchlist;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            self.load_watchlist();
-            self.request_watchlist_data();
-            return;
-        }
-
-        let base4 = base3 + watch_label_len + 1;
-        let analytics_label_len: usize = if compact { 5 } else { 12 }; // "[6]An" or "[6]Analytics"
-        if (base4..base4 + analytics_label_len + 1).contains(&col) {
-            self.view_mode = ViewMode::Analytics;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            return;
-        }
-
-        let base5 = base4 + analytics_label_len + 1;
-        let news_label_len: usize = if compact { 4 } else { 7 }; // "[7]N" or "[7]News"
-        if (base5..base5 + news_label_len + 1).contains(&col) {
-            self.view_mode = ViewMode::News;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            self.load_news();
-            return;
-        }
-
-        let base6 = base5 + news_label_len + 1;
-        let grid_label_len: usize = if compact { 4 } else { 7 }; // "[8]G" or "[8]Grid"
-        if (base6..base6 + grid_label_len + 1).contains(&col) {
-            self.view_mode = ViewMode::ChartGrid;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            return;
-        }
-
-        let base7 = base6 + grid_label_len + 1;
-        let journal_label_len: usize = if compact { 4 } else { 10 }; // "[9]J" or "[9]Journal"
-        if (base7..base7 + journal_label_len + 1).contains(&col) {
-            self.view_mode = ViewMode::Journal;
-            self.detail_open = false;
-            self.detail_popup_open = false;
-            self.load_journal();
-            return;
+        for &(start, end, view_mode) in hitboxes {
+            if (start as usize..end as usize).contains(&col) {
+                self.view_mode = view_mode;
+                self.detail_open = false;
+                self.detail_popup_open = false;
+                match view_mode {
+                    ViewMode::Positions => self.switch_to_home_default(),
+                    ViewMode::Watchlist => {
+                        self.load_watchlist();
+                        self.request_watchlist_data();
+                    }
+                    ViewMode::Markets => self.request_market_data(),
+                    ViewMode::Economy => self.request_economy_data(),
+                    ViewMode::News => self.load_news(),
+                    ViewMode::Journal => self.load_journal(),
+                    _ => {}
+                }
+                return;
+            }
         }
 
         // Theme indicator click — cycle theme (non-compact only)
@@ -3990,11 +3994,7 @@ impl App {
         // Persist to config
         if let Ok(mut cfg) = config::load_config() {
             cfg.theme = self.theme_name.clone();
-            cfg.home_tab = if self.view_mode == ViewMode::Watchlist {
-                "watchlist".to_string()
-            } else {
-                "positions".to_string()
-            };
+            cfg.home_tab = Self::view_mode_config_value(self.view_mode).to_string();
             let _ = config::save_config(&cfg);
         }
     }
@@ -4458,20 +4458,21 @@ impl App {
                 if let Some(result) = results.get(self.search_overlay_selected) {
                     let symbol = result.symbol.clone();
                     let category = crate::models::asset_names::infer_category(&symbol);
-                    // Request price data if we don't have it
+                    let history_len = self
+                        .price_history
+                        .get(&symbol)
+                        .map(|records| records.len())
+                        .unwrap_or(0);
+                    if history_len < 2 {
+                        self.request_history_if_needed(&symbol, category, 370);
+                    }
+                    // Request price data if we don't have it.
                     if let Some(svc) = &self.price_service {
                         if !self.prices.contains_key(&symbol) {
                             svc.send_command(PriceCommand::FetchAll(vec![(
                                 symbol.clone(),
                                 category,
                             )]));
-                        }
-                        if !self.price_history.contains_key(&symbol) {
-                            svc.send_command(PriceCommand::FetchHistory(
-                                symbol.clone(),
-                                category,
-                                370,
-                            ));
                         }
                     }
                     self.search_chart_popup = Some(
@@ -4531,7 +4532,6 @@ impl App {
         };
 
         let mut quote_batch: Vec<(String, AssetCategory)> = Vec::new();
-        let mut history_batch: Vec<(String, AssetCategory, u32)> = Vec::new();
 
         let results = build_results(self, &self.search_overlay_query);
         for result in results.into_iter().take(8) {
@@ -4549,18 +4549,12 @@ impl App {
             if !self.prices.contains_key(&result.symbol) {
                 quote_batch.push((result.symbol.clone(), category));
             }
-            if !self.price_history.contains_key(&result.symbol) {
-                history_batch.push((result.symbol.clone(), category, 370));
-            }
             self.search_overlay_requested_symbols
                 .insert(result.symbol.clone());
         }
 
         if !quote_batch.is_empty() {
             svc.send_command(PriceCommand::FetchAll(quote_batch));
-        }
-        if !history_batch.is_empty() {
-            svc.send_command(PriceCommand::FetchHistoryBatch(history_batch));
         }
     }
 
@@ -5840,6 +5834,32 @@ mod search_tests {
     }
 
     #[test]
+    fn test_search_overlay_enter_requests_history_when_cache_is_incomplete() {
+        let mut app = make_search_app();
+        app.price_history.insert(
+            "BTC".to_string(),
+            vec![HistoryRecord {
+                date: "2026-03-14".to_string(),
+                close: dec!(50000),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
+
+        app.handle_key(key('/'));
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+        app.handle_key(enter_key());
+
+        assert_eq!(app.fetched_history_days.get("BTC"), Some(&370));
+        assert!(app.history_attempted.contains("BTC"));
+        assert!(app.search_chart_popup.is_some());
+    }
+
+    #[test]
     fn test_search_chart_popup_esc_returns_to_search() {
         let mut app = make_search_app();
 
@@ -6349,6 +6369,27 @@ mod on_demand_history_tests {
         let mut app = make_app();
         // Pre-populate as if we already fetched 365 days
         app.fetched_history_days.insert("AAPL".to_string(), 365);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-03-13".to_string(),
+                    close: dec!(149),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-03-14".to_string(),
+                    close: dec!(150),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         // Requesting 90 days should be a no-op (already have more)
         app.request_history_if_needed("AAPL", AssetCategory::Equity, 90);
         // Should still be 365, not downgraded to 90
@@ -6369,9 +6410,41 @@ mod on_demand_history_tests {
     fn test_request_history_if_needed_exact_match_skips() {
         let mut app = make_app();
         app.fetched_history_days.insert("BTC".to_string(), 180);
+        app.price_history.insert(
+            "BTC".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-03-13".to_string(),
+                    close: dec!(49000),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-03-14".to_string(),
+                    close: dec!(50000),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         // Requesting exactly 180 should be a no-op
         app.request_history_if_needed("BTC", AssetCategory::Crypto, 180);
         assert_eq!(app.fetched_history_days.get("BTC"), Some(&180));
+    }
+
+    #[test]
+    fn test_request_history_if_needed_retries_when_marked_fetched_but_cache_empty() {
+        let mut app = make_app();
+        app.fetched_history_days.insert("BTC".to_string(), 370);
+
+        app.request_history_if_needed("BTC", AssetCategory::Crypto, 370);
+
+        assert_eq!(app.fetched_history_days.get("BTC"), Some(&370));
+        assert!(app.history_attempted.contains("BTC"));
     }
 }
 
@@ -7254,11 +7327,19 @@ mod watchlist_tab_tests {
     }
 
     #[test]
-    fn test_default_view_ignores_watchlist_home_tab_preference() {
+    fn test_default_view_uses_saved_watchlist_page() {
         let mut config = Config::default();
         config.home_tab = "watchlist".to_string();
         let app = App::new(&config, PathBuf::from(":memory:"));
-        assert_eq!(app.view_mode, ViewMode::Positions);
+        assert_eq!(app.view_mode, ViewMode::Watchlist);
+    }
+
+    #[test]
+    fn test_default_view_uses_saved_analytics_page() {
+        let mut config = Config::default();
+        config.home_tab = "analytics".to_string();
+        let app = App::new(&config, PathBuf::from(":memory:"));
+        assert_eq!(app.view_mode, ViewMode::Analytics);
     }
 
     #[test]
@@ -8103,6 +8184,7 @@ mod base64_tests {
 mod mouse_tests {
     use super::*;
     use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{backend::TestBackend, Terminal};
     use std::path::PathBuf;
 
     fn make_app() -> App {
@@ -8151,6 +8233,22 @@ mod mouse_tests {
             native_currency: None,
             fx_rate: None,
         }
+    }
+
+    fn render_app(app: &mut App) {
+        let backend = TestBackend::new(app.terminal_width, app.terminal_height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| crate::tui::ui::render(frame, app)).unwrap();
+    }
+
+    fn header_tab_center(app: &App, view_mode: ViewMode) -> u16 {
+        let (start, end, _) = app
+            .header_tab_hitboxes
+            .iter()
+            .copied()
+            .find(|(_, _, mode)| *mode == view_mode)
+            .unwrap_or_else(|| panic!("missing header hitbox for {:?}", view_mode));
+        start + ((end - start) / 2)
     }
 
     fn mouse_event(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
@@ -8257,9 +8355,10 @@ mod mouse_tests {
     fn click_header_tab_1_switches_to_positions() {
         let mut app = make_app();
         app.view_mode = ViewMode::Markets;
+        render_app(&mut app);
 
-        // Click on [1]Pos area (col ~8-13)
-        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 10, 0));
+        let col = header_tab_center(&app, ViewMode::Positions);
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), col, 0));
         assert_eq!(app.view_mode, ViewMode::Positions);
     }
 
@@ -8267,9 +8366,10 @@ mod mouse_tests {
     fn click_header_tab_2_switches_to_transactions() {
         let mut app = make_app();
         app.view_mode = ViewMode::Positions;
+        render_app(&mut app);
 
-        // Click on [2]Tx area (col ~15-19)
-        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 16, 0));
+        let col = header_tab_center(&app, ViewMode::Transactions);
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), col, 0));
         assert_eq!(app.view_mode, ViewMode::Transactions);
     }
 
@@ -8278,10 +8378,37 @@ mod mouse_tests {
         let mut app = make_app();
         app.portfolio_mode = PortfolioMode::Percentage;
         app.view_mode = ViewMode::Positions;
+        render_app(&mut app);
 
-        // In percentage mode, [2]Tx is hidden. Col 15-21 is now [3]Mkt
-        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 16, 0));
+        let col = header_tab_center(&app, ViewMode::Markets);
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), col, 0));
         assert_eq!(app.view_mode, ViewMode::Markets);
+    }
+
+    #[test]
+    fn rendered_header_tab_centers_select_the_expected_page() {
+        let mut app = make_app();
+        render_app(&mut app);
+        let hitboxes = app.header_tab_hitboxes.clone();
+
+        for (start, end, view_mode) in hitboxes {
+            app.view_mode = ViewMode::Positions;
+            let col = start + ((end - start) / 2);
+            app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), col, 0));
+            assert_eq!(app.view_mode, view_mode);
+        }
+    }
+
+    #[test]
+    fn rendered_header_tab_hitboxes_do_not_overlap() {
+        let mut app = make_app();
+        render_app(&mut app);
+
+        for pair in app.header_tab_hitboxes.windows(2) {
+            let (_, left_end, _) = pair[0];
+            let (right_start, _, _) = pair[1];
+            assert!(left_end <= right_start);
+        }
     }
 
     #[test]
@@ -8579,12 +8706,11 @@ mod mouse_tests {
     fn click_theme_indicator_cycles_theme() {
         let mut app = make_app();
         app.theme_name = "midnight".to_string();
-        // Simulate header render setting the click range
-        app.header_theme_col_range = Some((80, 92));
+        render_app(&mut app);
         let old_theme = app.theme_name.clone();
+        let (start, end) = app.header_theme_col_range.expect("missing theme click target");
 
-        // Click within the theme indicator range (row 0 = header)
-        app.handle_header_click(85);
+        app.handle_header_click(start + ((end - start) / 2));
         assert_ne!(app.theme_name, old_theme, "Theme should have cycled");
     }
 

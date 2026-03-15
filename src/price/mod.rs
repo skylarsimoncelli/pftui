@@ -270,7 +270,9 @@ impl PriceService {
 
     pub fn shutdown(self) {
         let _ = self.cmd_tx.send(PriceCommand::Shutdown);
-        let _ = self.rt_handle.join();
+        // Do not join here: if a network fetch is in flight, blocking on join
+        // makes `q` appear to hang after the TUI has already exited.
+        drop(self.rt_handle);
     }
 }
 
