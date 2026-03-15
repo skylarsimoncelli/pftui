@@ -11,6 +11,8 @@ pub struct AgentMessage {
     pub id: i64,
     pub from_agent: String,
     pub to_agent: Option<String>,
+    pub package_id: Option<String>,
+    pub package_title: Option<String>,
     pub priority: String,
     pub content: String,
     pub category: Option<String>,
@@ -26,17 +28,20 @@ impl AgentMessage {
             id: row.get(0)?,
             from_agent: row.get(1)?,
             to_agent: row.get(2)?,
-            priority: row.get(3)?,
-            content: row.get(4)?,
-            category: row.get(5)?,
-            layer: row.get(6)?,
-            acknowledged: row.get(7)?,
-            created_at: row.get(8)?,
-            acknowledged_at: row.get(9)?,
+            package_id: row.get(3)?,
+            package_title: row.get(4)?,
+            priority: row.get(5)?,
+            content: row.get(6)?,
+            category: row.get(7)?,
+            layer: row.get(8)?,
+            acknowledged: row.get(9)?,
+            created_at: row.get(10)?,
+            acknowledged_at: row.get(11)?,
         })
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn send_message(
     conn: &Connection,
     from: &str,
@@ -45,15 +50,27 @@ pub fn send_message(
     content: &str,
     category: Option<&str>,
     layer: Option<&str>,
+    package_id: Option<&str>,
+    package_title: Option<&str>,
 ) -> Result<i64> {
     conn.execute(
-        "INSERT INTO agent_messages (from_agent, to_agent, priority, content, category, layer)
-         VALUES (?, ?, ?, ?, ?, ?)",
-        params![from, to, priority.unwrap_or("normal"), content, category, layer],
+        "INSERT INTO agent_messages (from_agent, to_agent, package_id, package_title, priority, content, category, layer)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            from,
+            to,
+            package_id,
+            package_title,
+            priority.unwrap_or("normal"),
+            content,
+            category,
+            layer
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn list_messages(
     conn: &Connection,
     from: Option<&str>,
@@ -61,10 +78,11 @@ pub fn list_messages(
     layer: Option<&str>,
     unacked_only: bool,
     since: Option<&str>,
+    package_id: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<AgentMessage>> {
     let mut query = String::from(
-        "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at, acknowledged_at
+        "SELECT id, from_agent, to_agent, package_id, package_title, priority, content, category, layer, acknowledged, created_at, acknowledged_at
          FROM agent_messages",
     );
 
@@ -86,6 +104,9 @@ pub fn list_messages(
     }
     if let Some(s) = since {
         where_parts.push(format!("created_at >= '{}'", s.replace('"', "''")));
+    }
+    if let Some(pid) = package_id {
+        where_parts.push(format!("package_id = '{}'", pid.replace('"', "''")));
     }
 
     if !where_parts.is_empty() {
@@ -110,7 +131,7 @@ pub fn list_messages(
 
 pub fn get_message_by_id(conn: &Connection, id: i64) -> Result<Option<AgentMessage>> {
     let mut stmt = conn.prepare(
-        "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at, acknowledged_at
+        "SELECT id, from_agent, to_agent, package_id, package_title, priority, content, category, layer, acknowledged, created_at, acknowledged_at
          FROM agent_messages
          WHERE id = ?",
     )?;
@@ -157,14 +178,41 @@ pub fn send_message_backend(
     content: &str,
     category: Option<&str>,
     layer: Option<&str>,
+    package_id: Option<&str>,
+    package_title: Option<&str>,
 ) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| send_message(conn, from, to, priority, content, category, layer),
-        |pool| send_message_postgres(pool, from, to, priority, content, category, layer),
+        |conn| {
+            send_message(
+                conn,
+                from,
+                to,
+                priority,
+                content,
+                category,
+                layer,
+                package_id,
+                package_title,
+            )
+        },
+        |pool| {
+            send_message_postgres(
+                pool,
+                from,
+                to,
+                priority,
+                content,
+                category,
+                layer,
+                package_id,
+                package_title,
+            )
+        },
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn list_messages_backend(
     backend: &BackendConnection,
     from: Option<&str>,
@@ -172,12 +220,35 @@ pub fn list_messages_backend(
     layer: Option<&str>,
     unacked_only: bool,
     since: Option<&str>,
+    package_id: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<AgentMessage>> {
     query::dispatch(
         backend,
-        |conn| list_messages(conn, from, to, layer, unacked_only, since, limit),
-        |pool| list_messages_postgres(pool, from, to, layer, unacked_only, since, limit),
+        |conn| {
+            list_messages(
+                conn,
+                from,
+                to,
+                layer,
+                unacked_only,
+                since,
+                package_id,
+                limit,
+            )
+        },
+        |pool| {
+            list_messages_postgres(
+                pool,
+                from,
+                to,
+                layer,
+                unacked_only,
+                since,
+                package_id,
+                limit,
+            )
+        },
     )
 }
 
@@ -220,6 +291,8 @@ type AgentMsgRow = (
     i64,
     String,
     Option<String>,
+    Option<String>,
+    Option<String>,
     String,
     String,
     Option<String>,
@@ -234,13 +307,15 @@ fn from_pg_row(r: AgentMsgRow) -> AgentMessage {
         id: r.0,
         from_agent: r.1,
         to_agent: r.2,
-        priority: r.3,
-        content: r.4,
-        category: r.5,
-        layer: r.6,
-        acknowledged: r.7,
-        created_at: r.8,
-        acknowledged_at: r.9,
+        package_id: r.3,
+        package_title: r.4,
+        priority: r.5,
+        content: r.6,
+        category: r.7,
+        layer: r.8,
+        acknowledged: r.9,
+        created_at: r.10,
+        acknowledged_at: r.11,
     }
 }
 
@@ -251,6 +326,8 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 id BIGSERIAL PRIMARY KEY,
                 from_agent TEXT NOT NULL,
                 to_agent TEXT,
+                package_id TEXT,
+                package_title TEXT,
                 priority TEXT NOT NULL DEFAULT 'normal',
                 content TEXT NOT NULL,
                 category TEXT,
@@ -262,12 +339,25 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query("ALTER TABLE agent_messages ADD COLUMN IF NOT EXISTS package_id TEXT")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE agent_messages ADD COLUMN IF NOT EXISTS package_title TEXT")
+            .execute(pool)
+            .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_agent_messages_to ON agent_messages(to_agent)")
             .execute(pool)
             .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_agent_messages_ack ON agent_messages(acknowledged)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_agent_messages_ack ON agent_messages(acknowledged)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_agent_messages_package ON agent_messages(package_id)",
+        )
+        .execute(pool)
+        .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
@@ -282,16 +372,20 @@ fn send_message_postgres(
     content: &str,
     category: Option<&str>,
     layer: Option<&str>,
+    package_id: Option<&str>,
+    package_title: Option<&str>,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO agent_messages (from_agent, to_agent, priority, content, category, layer)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO agent_messages (from_agent, to_agent, package_id, package_title, priority, content, category, layer)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING id",
         )
         .bind(from)
         .bind(to)
+        .bind(package_id)
+        .bind(package_title)
         .bind(priority.unwrap_or("normal"))
         .bind(content)
         .bind(category)
@@ -302,6 +396,7 @@ fn send_message_postgres(
     Ok(id)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn list_messages_postgres(
     pool: &PgPool,
     from: Option<&str>,
@@ -309,13 +404,15 @@ fn list_messages_postgres(
     layer: Option<&str>,
     unacked_only: bool,
     since: Option<&str>,
+    package_id: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<AgentMessage>> {
     ensure_tables_postgres(pool)?;
-    let rows: Vec<AgentMsgRow> = match (from, to, layer, unacked_only, since, limit) {
-        (Some(f), Some(t), Some(l), true, Some(s), Some(n)) => crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
-                "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
+    let rows: Vec<AgentMsgRow> = match (from, to, layer, unacked_only, since, package_id, limit) {
+        (Some(f), Some(t), Some(l), true, Some(s), None, Some(n)) => {
+            crate::db::pg_runtime::block_on(async {
+                sqlx::query_as(
+                "SELECT id, from_agent, to_agent, package_id, package_title, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
                  FROM agent_messages
                  WHERE from_agent = $1 AND (to_agent IS NULL OR to_agent = $2) AND layer = $3 AND acknowledged = 0 AND created_at::text >= $4
                  ORDER BY created_at DESC
@@ -328,12 +425,13 @@ fn list_messages_postgres(
             .bind(n as i64)
             .fetch_all(pool)
             .await
-        })?,
+            })?
+        }
         _ => {
             // Simpler incremental filtering for maintainability.
             let mut rows: Vec<AgentMsgRow> = crate::db::pg_runtime::block_on(async {
                 sqlx::query_as(
-                    "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
+                    "SELECT id, from_agent, to_agent, package_id, package_title, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
                      FROM agent_messages
                      ORDER BY created_at DESC",
                 )
@@ -347,13 +445,16 @@ fn list_messages_postgres(
                 rows.retain(|r| r.2.as_deref().is_none_or(|v| v == t));
             }
             if let Some(l) = layer {
-                rows.retain(|r| r.6.as_deref().is_some_and(|v| v == l));
+                rows.retain(|r| r.8.as_deref().is_some_and(|v| v == l));
             }
             if unacked_only {
-                rows.retain(|r| r.7 == 0);
+                rows.retain(|r| r.9 == 0);
             }
             if let Some(s) = since {
-                rows.retain(|r| r.8.as_str() >= s);
+                rows.retain(|r| r.10.as_str() >= s);
+            }
+            if let Some(pid) = package_id {
+                rows.retain(|r| r.3.as_deref().is_some_and(|v| v == pid));
             }
             if let Some(n) = limit {
                 rows.truncate(n);
@@ -368,7 +469,7 @@ fn get_message_by_id_postgres(pool: &PgPool, id: i64) -> Result<Option<AgentMess
     ensure_tables_postgres(pool)?;
     let row: Option<AgentMsgRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, from_agent, to_agent, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
+            "SELECT id, from_agent, to_agent, package_id, package_title, priority, content, category, layer, acknowledged, created_at::text, acknowledged_at::text
              FROM agent_messages
              WHERE id = $1",
         )
@@ -423,4 +524,64 @@ fn purge_old_postgres(pool: &PgPool, days: usize) -> Result<usize> {
         .await
     })?;
     Ok(rows.rows_affected() as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::open_in_memory;
+
+    fn setup_test_db() -> Connection {
+        open_in_memory()
+    }
+
+    #[test]
+    fn send_and_filter_message_packages() {
+        let conn = setup_test_db();
+        let id1 = send_message(
+            &conn,
+            "macro-agent",
+            Some("risk-agent"),
+            Some("high"),
+            "Rates impulse turning",
+            Some("handoff"),
+            Some("macro"),
+            Some("pkg-1"),
+            Some("Fed package"),
+        )
+        .unwrap();
+        let id2 = send_message(
+            &conn,
+            "macro-agent",
+            Some("risk-agent"),
+            Some("high"),
+            "Watch DXY and front-end yields",
+            Some("handoff"),
+            Some("macro"),
+            Some("pkg-1"),
+            Some("Fed package"),
+        )
+        .unwrap();
+
+        let packaged = list_messages(
+            &conn,
+            Some("macro-agent"),
+            Some("risk-agent"),
+            Some("macro"),
+            false,
+            None,
+            Some("pkg-1"),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(packaged.len(), 2);
+        assert_eq!(packaged[0].package_id.as_deref(), Some("pkg-1"));
+        assert_eq!(packaged[0].package_title.as_deref(), Some("Fed package"));
+
+        let inserted = get_message_by_id(&conn, id1).unwrap().unwrap();
+        assert_eq!(inserted.package_id.as_deref(), Some("pkg-1"));
+        let inserted2 = get_message_by_id(&conn, id2).unwrap().unwrap();
+        assert_eq!(inserted2.package_title.as_deref(), Some("Fed package"));
+    }
 }

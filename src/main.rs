@@ -88,6 +88,8 @@ fn run_agent_journal(
         Some(cli::JournalCommand::Prediction { command }) => match command {
             cli::JournalPredictionCommand::Add {
                 value,
+                timeframe_pos,
+                confidence_pos,
                 symbol,
                 conviction,
                 timeframe,
@@ -103,8 +105,8 @@ fn run_agent_journal(
                 None,
                 symbol.as_deref(),
                 conviction.as_deref(),
-                timeframe.as_deref(),
-                confidence,
+                timeframe.as_deref().or(timeframe_pos.as_deref()),
+                confidence.or(confidence_pos),
                 source_agent.as_deref(),
                 target_date.as_deref(),
                 resolution_criteria.as_deref(),
@@ -205,16 +207,25 @@ fn run_agent_journal(
         Some(cli::JournalCommand::Conviction { command }) => match command {
             cli::JournalConvictionCommand::Set {
                 symbol,
+                score_pos,
                 score,
                 notes,
+                notes_pos,
                 json,
             } => {
-                let score_val = score.ok_or_else(|| {
+                let score_val = score.or(score_pos).ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Missing score. Usage: pftui agent journal conviction set SYMBOL --score N"
+                        "Missing score. Usage: pftui agent journal conviction set SYMBOL <SCORE> [NOTES] or --score N [--notes ...]"
                     )
                 })?;
-                commands::conviction::run_set(backend, &symbol, score_val, notes.as_deref(), json)
+                let merged_notes = notes.or(notes_pos);
+                commands::conviction::run_set(
+                    backend,
+                    &symbol,
+                    score_val,
+                    merged_notes.as_deref(),
+                    json,
+                )
             }
             cli::JournalConvictionCommand::List { json } => {
                 commands::conviction::run_list(backend, json)
@@ -344,6 +355,7 @@ fn run_agent_journal(
             ),
             cli::JournalScenarioCommand::Update {
                 value,
+                note_pos,
                 probability,
                 description,
                 impact,
@@ -353,26 +365,29 @@ fn run_agent_journal(
                 driver,
                 notes,
                 json,
-            } => commands::scenario::run(
-                backend,
-                "update",
-                Some(&value),
-                None,
-                None,
-                probability,
-                description.as_deref(),
-                impact.as_deref(),
-                triggers.as_deref(),
-                precedent.as_deref(),
-                status.as_deref(),
-                driver.as_deref(),
-                notes.as_deref(),
-                None,
-                None,
-                None,
-                None,
-                json,
-            ),
+            } => {
+                let merged_notes = driver.or(notes).or(note_pos);
+                commands::scenario::run(
+                    backend,
+                    "update",
+                    Some(&value),
+                    None,
+                    None,
+                    probability,
+                    description.as_deref(),
+                    impact.as_deref(),
+                    triggers.as_deref(),
+                    precedent.as_deref(),
+                    status.as_deref(),
+                    merged_notes.as_deref(),
+                    merged_notes.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    json,
+                )
+            }
             cli::JournalScenarioCommand::Remove { value, json } => commands::scenario::run(
                 backend,
                 "remove",
@@ -1074,6 +1089,8 @@ fn main() -> Result<()> {
                 cli::AgentMessageCommand::Send {
                     value,
                     batch,
+                    package_id,
+                    package_title,
                     from,
                     to,
                     priority,
@@ -1086,6 +1103,8 @@ fn main() -> Result<()> {
                     value.as_deref(),
                     &batch,
                     None,
+                    package_id.as_deref(),
+                    package_title.as_deref(),
                     from.as_deref(),
                     to.as_deref(),
                     priority.as_deref(),
@@ -1103,6 +1122,7 @@ fn main() -> Result<()> {
                     layer,
                     unacked,
                     since,
+                    package_id,
                     limit,
                     json,
                 } => commands::agent_msg::run(
@@ -1110,6 +1130,8 @@ fn main() -> Result<()> {
                     "list",
                     None,
                     &[],
+                    None,
+                    package_id.as_deref(),
                     None,
                     from.as_deref(),
                     to.as_deref(),
@@ -1136,6 +1158,8 @@ fn main() -> Result<()> {
                     value.as_deref(),
                     &[],
                     id,
+                    None,
+                    None,
                     from.as_deref(),
                     None,
                     priority.as_deref(),
@@ -1161,6 +1185,8 @@ fn main() -> Result<()> {
                     value.as_deref(),
                     &[],
                     id,
+                    None,
+                    None,
                     from.as_deref(),
                     None,
                     priority.as_deref(),
@@ -1183,6 +1209,8 @@ fn main() -> Result<()> {
                     None,
                     None,
                     None,
+                    None,
+                    None,
                     false,
                     None,
                     None,
@@ -1194,6 +1222,8 @@ fn main() -> Result<()> {
                     "ack-all",
                     None,
                     &[],
+                    None,
+                    None,
                     None,
                     None,
                     to.as_deref(),
@@ -1211,6 +1241,8 @@ fn main() -> Result<()> {
                     "purge",
                     None,
                     &[],
+                    None,
+                    None,
                     None,
                     None,
                     None,
@@ -1812,7 +1844,11 @@ fn main() -> Result<()> {
                     limit,
                     json,
                 ),
-                Some(cli::AnalyticsCorrelationsCommand::Latest { period, limit, json }) => commands::correlations::run(
+                Some(cli::AnalyticsCorrelationsCommand::Latest {
+                    period,
+                    limit,
+                    json,
+                }) => commands::correlations::run(
                     &backend,
                     Some("latest"),
                     None,
@@ -1830,6 +1866,7 @@ fn main() -> Result<()> {
                 load,
                 list,
                 news_keyword,
+                trackline_breaches,
                 json,
             } => commands::scan::run(
                 &backend,
@@ -1839,6 +1876,7 @@ fn main() -> Result<()> {
                 load.as_deref(),
                 list,
                 news_keyword.as_deref(),
+                trackline_breaches,
                 json,
             ),
             cli::AnalyticsCommand::Research {
@@ -2142,7 +2180,11 @@ fn main() -> Result<()> {
                             today: false,
                         },
                     ),
-                    cli::AnalyticsAlertsCommand::List { status, today, json } => (
+                    cli::AnalyticsAlertsCommand::List {
+                        status,
+                        today,
+                        json,
+                    } => (
                         "list",
                         commands::alerts::AlertsArgs {
                             rule: None,

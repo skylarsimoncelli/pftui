@@ -678,7 +678,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui agent journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
 | `pftui agent journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
 | `pftui agent journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
-| `pftui agent message send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"]` | Send one or multiple structured messages between agent roles |
+| `pftui agent message send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"] [--package-title "Fed handoff"] [--package-id pkg-123]` | Send one or multiple structured messages between agent roles, optionally grouped as one intel package |
 | `pftui agent message reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
 | `pftui agent message flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
 | `pftui agent message list [--from agent-a] [--unacked] --json` | Query queued agent messages |

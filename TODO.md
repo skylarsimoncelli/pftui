@@ -206,36 +206,6 @@ No compatibility aliases. Nested commands for functions; flags only for params/f
 
 ## P2 — Nice to Have
 
-### [Feedback] `predict add` Timeframe Parameter Handling
-
-`predict add` rejects the `timeframe` param despite it being documented. Improve error messaging or fix parameter acceptance. Also consider adding `--confidence` flag for prediction confidence scoring.
-
-Source: `src/cli.rs`, `src/commands/predict.rs`.
-
-### [Feedback] `scenario update --notes` Inline Annotation
-
-`scenario update` with `--notes` flag errors with "unexpected argument" (reported Mar 10, Mar 13). The `--notes` alias to `--driver` for history logging should be verified as working end-to-end.
-
-Source: `src/commands/scenario.rs`, `src/cli.rs`.
-
-### [Feedback] `conviction set` Ergonomics for Negative Scores
-
-`scenario update` requires a separate `--driver` flag instead of accepting inline notes like `conviction set` does. Make these commands more ergonomically consistent.
-
-Source: `src/commands/scenario.rs`, `src/commands/conviction.rs`.
-
-### [Feedback] Scan Alert for Trackline Breaches
-
-Add quick detection of technical level breaches (e.g., silver breaking $83 SMA50 support) to scan alerts. Would enable real-time positioning signals.
-
-Source: `src/alerts/engine.rs`, `src/commands/scan.rs`.
-
-### [Feedback] `agent-msg send` Batch Improvements
-
-Agent-msg batch mode works but could benefit from grouped intel package semantics — multiple related messages sent as a single logical unit with shared context.
-
-Source: `src/commands/agent_msg.rs`.
-
 ---
 
 ## P3 — Long Term

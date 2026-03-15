@@ -2,17 +2,20 @@ use anyhow::{bail, Context, Result};
 use rusqlite::Connection;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::collections::HashMap;
 
 use crate::config::{currency_symbol, Config, PortfolioMode};
 use crate::db::allocations::{list_allocations, list_allocations_backend};
 use crate::db::backend::BackendConnection;
 use crate::db::fx_cache::get_all_fx_rates;
+use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 use crate::db::price_cache::{get_all_cached_prices, get_all_cached_prices_backend};
+use crate::db::price_history::{get_history, get_history_backend};
 use crate::db::scan_queries::{
     get_scan_query_backend, list_scan_queries_backend, upsert_scan_query_backend,
 };
-use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 use crate::db::transactions::{list_transactions, list_transactions_backend};
+use crate::indicators::compute_sma;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +45,18 @@ struct ScanRow {
     current_value: Option<Decimal>,
     gain_pct: Option<Decimal>,
     allocation_pct: Option<Decimal>,
+    sma50: Option<Decimal>,
+    sma200: Option<Decimal>,
+    sma50_gap_pct: Option<Decimal>,
+    sma200_gap_pct: Option<Decimal>,
+    trackline_breach: String,
+    trackline_breach_count: Decimal,
+}
+
+#[derive(Debug, Clone, Default)]
+struct TechnicalSnapshot {
+    sma50: Option<Decimal>,
+    sma200: Option<Decimal>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -53,6 +68,7 @@ pub fn run(
     load: Option<&str>,
     list: bool,
     news_keyword: Option<&str>,
+    trackline_breaches: bool,
     json: bool,
 ) -> Result<()> {
     if list {
@@ -66,9 +82,16 @@ pub fn run(
         };
         effective_filter = Some(saved.filter_expr);
     }
+    if trackline_breaches {
+        let breach_clause = "trackline_breach != none";
+        effective_filter = Some(match effective_filter {
+            Some(existing) => format!("{existing} and {breach_clause}"),
+            None => breach_clause.to_string(),
+        });
+    }
     let Some(filter_expr) = effective_filter else {
         bail!(
-            "Missing filter. Use --filter, --load, or --list. Example: pftui scan --filter \"allocation_pct > 10\""
+            "Missing filter. Use --filter, --load, --trackline-breaches, or --list. Example: pftui analytics scan --filter \"allocation_pct > 10\""
         );
     };
 
@@ -132,6 +155,7 @@ pub fn run(
         &config.base_currency,
         news_keyword,
         matching_news.len(),
+        trackline_breaches || filter_expr.contains("trackline") || filter_expr.contains("sma"),
     );
     Ok(())
 }
@@ -186,11 +210,7 @@ fn print_saved_queries(backend: &BackendConnection, json: bool) -> Result<()> {
 
     let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
     println!("Saved scans ({}):", rows.len());
-    println!(
-        "  {:<name_w$}  {:<40}  Updated",
-        "Name",
-        "Filter",
-    );
+    println!("  {:<name_w$}  {:<40}  Updated", "Name", "Filter",);
     println!("  {}", "─".repeat(name_w + 56));
     for row in rows {
         println!(
@@ -229,21 +249,44 @@ fn load_rows(conn: &Connection, mode_hint: Option<PortfolioMode>) -> Result<Vec<
         }
     };
 
+    let symbols: Vec<String> = positions.iter().map(|p| p.symbol.clone()).collect();
+    let technicals = load_technical_snapshots(conn, &symbols);
+
     Ok(positions
         .into_iter()
-        .map(|p| ScanRow {
-            symbol: p.symbol,
-            name: p.name,
-            category: p.category.to_string(),
-            quantity: if p.quantity == dec!(0) {
-                None
+        .map(|p| {
+            let current_price = p.current_price;
+            let technical = technicals.get(&p.symbol);
+            let sma50 = technical.and_then(|t| t.sma50);
+            let sma200 = technical.and_then(|t| t.sma200);
+            let sma50_gap_pct = compute_gap_pct(current_price, sma50);
+            let sma200_gap_pct = compute_gap_pct(current_price, sma200);
+            let trackline_breach = build_trackline_breach(sma50_gap_pct, sma200_gap_pct);
+            let trackline_breach_count = if trackline_breach == "none" {
+                Decimal::ZERO
             } else {
-                Some(p.quantity)
-            },
-            current_price: p.current_price,
-            current_value: p.current_value,
-            gain_pct: p.gain_pct,
-            allocation_pct: p.allocation_pct,
+                Decimal::from(trackline_breach.split(',').count() as i64)
+            };
+            ScanRow {
+                symbol: p.symbol,
+                name: p.name,
+                category: p.category.to_string(),
+                quantity: if p.quantity == dec!(0) {
+                    None
+                } else {
+                    Some(p.quantity)
+                },
+                current_price,
+                current_value: p.current_value,
+                gain_pct: p.gain_pct,
+                allocation_pct: p.allocation_pct,
+                sma50,
+                sma200,
+                sma50_gap_pct,
+                sma200_gap_pct,
+                trackline_breach_count,
+                trackline_breach,
+            }
         })
         .collect())
 }
@@ -277,23 +320,129 @@ fn load_rows_backend(
         }
     };
 
+    let symbols: Vec<String> = positions.iter().map(|p| p.symbol.clone()).collect();
+    let technicals = load_technical_snapshots_backend(backend, &symbols);
+
     Ok(positions
         .into_iter()
-        .map(|p| ScanRow {
-            symbol: p.symbol,
-            name: p.name,
-            category: p.category.to_string(),
-            quantity: if p.quantity == dec!(0) {
-                None
+        .map(|p| {
+            let current_price = p.current_price;
+            let technical = technicals.get(&p.symbol);
+            let sma50 = technical.and_then(|t| t.sma50);
+            let sma200 = technical.and_then(|t| t.sma200);
+            let sma50_gap_pct = compute_gap_pct(current_price, sma50);
+            let sma200_gap_pct = compute_gap_pct(current_price, sma200);
+            let trackline_breach = build_trackline_breach(sma50_gap_pct, sma200_gap_pct);
+            let trackline_breach_count = if trackline_breach == "none" {
+                Decimal::ZERO
             } else {
-                Some(p.quantity)
-            },
-            current_price: p.current_price,
-            current_value: p.current_value,
-            gain_pct: p.gain_pct,
-            allocation_pct: p.allocation_pct,
+                Decimal::from(trackline_breach.split(',').count() as i64)
+            };
+            ScanRow {
+                symbol: p.symbol,
+                name: p.name,
+                category: p.category.to_string(),
+                quantity: if p.quantity == dec!(0) {
+                    None
+                } else {
+                    Some(p.quantity)
+                },
+                current_price,
+                current_value: p.current_value,
+                gain_pct: p.gain_pct,
+                allocation_pct: p.allocation_pct,
+                sma50,
+                sma200,
+                sma50_gap_pct,
+                sma200_gap_pct,
+                trackline_breach_count,
+                trackline_breach,
+            }
         })
         .collect())
+}
+
+fn load_technical_snapshots(
+    conn: &Connection,
+    symbols: &[String],
+) -> HashMap<String, TechnicalSnapshot> {
+    symbols
+        .iter()
+        .map(|symbol| {
+            (
+                symbol.clone(),
+                compute_technical_snapshot(get_history(conn, symbol, 250).ok()),
+            )
+        })
+        .collect()
+}
+
+fn load_technical_snapshots_backend(
+    backend: &BackendConnection,
+    symbols: &[String],
+) -> HashMap<String, TechnicalSnapshot> {
+    symbols
+        .iter()
+        .map(|symbol| {
+            (
+                symbol.clone(),
+                compute_technical_snapshot(get_history_backend(backend, symbol, 250).ok()),
+            )
+        })
+        .collect()
+}
+
+fn compute_technical_snapshot(
+    history: Option<Vec<crate::models::price::HistoryRecord>>,
+) -> TechnicalSnapshot {
+    let Some(history) = history else {
+        return TechnicalSnapshot::default();
+    };
+    if history.is_empty() {
+        return TechnicalSnapshot::default();
+    }
+
+    let closes: Vec<f64> = history
+        .iter()
+        .filter_map(|row| row.close.to_string().parse::<f64>().ok())
+        .collect();
+
+    TechnicalSnapshot {
+        sma50: compute_latest_sma(&closes, 50),
+        sma200: compute_latest_sma(&closes, 200),
+    }
+}
+
+fn compute_latest_sma(closes: &[f64], period: usize) -> Option<Decimal> {
+    let value = compute_sma(closes, period).iter().rev().find_map(|v| *v)?;
+    Decimal::from_str_exact(&format!("{value:.6}")).ok()
+}
+
+fn compute_gap_pct(current_price: Option<Decimal>, reference: Option<Decimal>) -> Option<Decimal> {
+    let current = current_price?;
+    let reference = reference?;
+    if reference.is_zero() {
+        return None;
+    }
+    Some((current - reference) / reference * Decimal::from(100))
+}
+
+fn build_trackline_breach(
+    sma50_gap_pct: Option<Decimal>,
+    sma200_gap_pct: Option<Decimal>,
+) -> String {
+    let mut breaches = Vec::new();
+    if sma50_gap_pct.is_some_and(|gap| gap < Decimal::ZERO) {
+        breaches.push("below_sma50");
+    }
+    if sma200_gap_pct.is_some_and(|gap| gap < Decimal::ZERO) {
+        breaches.push("below_sma200");
+    }
+    if breaches.is_empty() {
+        "none".to_string()
+    } else {
+        breaches.join(",")
+    }
 }
 
 fn parse_filter(input: &str) -> Result<Vec<Clause>> {
@@ -377,7 +526,7 @@ fn validate_clauses(clauses: &[Clause]) -> Result<()> {
     for clause in clauses {
         let Some(field_type) = field_type(&clause.field) else {
             bail!(
-                "Unknown field '{}'. Supported fields: symbol, name, category, quantity, current_price, current_value, gain_pct, allocation_pct",
+                "Unknown field '{}'. Supported fields: symbol, name, category, quantity, current_price, current_value, gain_pct, allocation_pct, sma50, sma200, sma50_gap_pct, sma200_gap_pct, trackline_breach, trackline_breach_count",
                 clause.field
             );
         };
@@ -409,10 +558,17 @@ enum FieldType {
 
 fn field_type(field: &str) -> Option<FieldType> {
     match normalize_field(field) {
-        "symbol" | "name" | "category" => Some(FieldType::Text),
-        "quantity" | "current_price" | "current_value" | "gain_pct" | "allocation_pct" => {
-            Some(FieldType::Numeric)
-        }
+        "symbol" | "name" | "category" | "trackline_breach" => Some(FieldType::Text),
+        "quantity"
+        | "current_price"
+        | "current_value"
+        | "gain_pct"
+        | "allocation_pct"
+        | "sma50"
+        | "sma200"
+        | "sma50_gap_pct"
+        | "sma200_gap_pct"
+        | "trackline_breach_count" => Some(FieldType::Numeric),
         _ => None,
     }
 }
@@ -424,6 +580,11 @@ fn normalize_field(field: &str) -> &str {
         "price" => "current_price",
         "value" => "current_value",
         "qty" => "quantity",
+        "sma_50" => "sma50",
+        "sma_200" => "sma200",
+        "sma50_gap" => "sma50_gap_pct",
+        "sma200_gap" => "sma200_gap_pct",
+        "breach" => "trackline_breach",
         other => other,
     }
 }
@@ -477,6 +638,7 @@ fn get_text<'a>(row: &'a ScanRow, field: &str) -> Option<&'a str> {
         "symbol" => Some(row.symbol.as_str()),
         "name" => Some(row.name.as_str()),
         "category" => Some(row.category.as_str()),
+        "trackline_breach" => Some(row.trackline_breach.as_str()),
         _ => None,
     }
 }
@@ -488,6 +650,11 @@ fn get_numeric(row: &ScanRow, field: &str) -> Option<Decimal> {
         "current_value" => row.current_value,
         "gain_pct" => row.gain_pct,
         "allocation_pct" => row.allocation_pct,
+        "sma50" => row.sma50,
+        "sma200" => row.sma200,
+        "sma50_gap_pct" => row.sma50_gap_pct,
+        "sma200_gap_pct" => row.sma200_gap_pct,
+        "trackline_breach_count" => Some(row.trackline_breach_count),
         _ => None,
     }
 }
@@ -499,6 +666,7 @@ fn print_table(
     base_currency: &str,
     news_keyword: Option<&str>,
     matching_news_count: usize,
+    show_trackline: bool,
 ) {
     println!(
         "Scan results: {}/{} matched (`{}`)\n",
@@ -538,11 +706,19 @@ fn print_table(
         .unwrap_or(8)
         .max(8);
 
-    println!(
-        "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
-        "Symbol", "Name", "Category", "Alloc%", "Gain%", "Value", "Price",
-    );
-    println!("  {}", "─".repeat(sym_w + name_w + cat_w + 50));
+    if show_trackline {
+        println!(
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}  {:<22}",
+            "Symbol", "Name", "Category", "Alloc%", "Gain%", "Value", "Price", "Trackline",
+        );
+        println!("  {}", "─".repeat(sym_w + name_w + cat_w + 74));
+    } else {
+        println!(
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
+            "Symbol", "Name", "Category", "Alloc%", "Gain%", "Value", "Price",
+        );
+        println!("  {}", "─".repeat(sym_w + name_w + cat_w + 50));
+    }
 
     for row in rows {
         let alloc = row
@@ -561,16 +737,30 @@ fn print_table(
             .current_price
             .map(|v| format!("{}{:.2}", csym, v))
             .unwrap_or_else(|| "-".to_string());
-        println!(
-            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
-            row.symbol,
-            truncate_name(&row.name, name_w),
-            row.category,
-            alloc,
-            gain,
-            value,
-            price,
-        );
+        if show_trackline {
+            println!(
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}  {:<22}",
+                row.symbol,
+                truncate_name(&row.name, name_w),
+                row.category,
+                alloc,
+                gain,
+                value,
+                price,
+                row.trackline_breach,
+            );
+        } else {
+            println!(
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
+                row.symbol,
+                truncate_name(&row.name, name_w),
+                row.category,
+                alloc,
+                gain,
+                value,
+                price,
+            );
+        }
     }
 }
 
@@ -619,12 +809,22 @@ fn to_json(row: &ScanRow) -> serde_json::Value {
         "current_value": row.current_value.and_then(|v| v.to_string().parse::<f64>().ok()),
         "gain_pct": row.gain_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
         "allocation_pct": row.allocation_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "sma50": row.sma50.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "sma200": row.sma200.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "sma50_gap_pct": row.sma50_gap_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "sma200_gap_pct": row.sma200_gap_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "trackline_breach": row.trackline_breach,
+        "trackline_breach_count": row.trackline_breach_count.to_string().parse::<f64>().ok(),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::open_in_memory;
+    use crate::db::price_cache;
+    use crate::db::price_history;
+    use crate::models::price::{HistoryRecord, PriceQuote};
 
     fn sample_row() -> ScanRow {
         ScanRow {
@@ -636,6 +836,12 @@ mod tests {
             current_value: Some(dec!(1900)),
             gain_pct: Some(dec!(15)),
             allocation_pct: Some(dec!(12.5)),
+            sma50: Some(dec!(195)),
+            sma200: Some(dec!(180)),
+            sma50_gap_pct: Some(dec!(-2.56)),
+            sma200_gap_pct: Some(dec!(5.56)),
+            trackline_breach: "below_sma50".to_string(),
+            trackline_breach_count: dec!(1),
         }
     }
 
@@ -666,5 +872,70 @@ mod tests {
         let row = sample_row();
         let clauses = parse_filter("name contains \"Apple\"").unwrap();
         assert!(matches_all_clauses(&row, &clauses).unwrap());
+    }
+
+    #[test]
+    fn supports_trackline_breach_text_filter() {
+        let row = sample_row();
+        let clauses = parse_filter("trackline_breach contains below_sma50").unwrap();
+        assert!(matches_all_clauses(&row, &clauses).unwrap());
+    }
+
+    #[test]
+    fn supports_trackline_gap_numeric_filter() {
+        let row = sample_row();
+        let clauses = parse_filter("sma50_gap_pct < 0").unwrap();
+        assert!(matches_all_clauses(&row, &clauses).unwrap());
+    }
+
+    #[test]
+    fn computes_trackline_breach_from_price_history() {
+        let conn = open_in_memory();
+        crate::db::transactions::insert_transaction(
+            &conn,
+            &crate::models::transaction::NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: crate::models::asset::AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: Decimal::from(1),
+                price_per: Decimal::from(100),
+                currency: "USD".to_string(),
+                date: "2026-03-09".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        price_cache::upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: Decimal::from(95),
+                currency: "USD".to_string(),
+                fetched_at: "2026-03-10T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
+        let base_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        let history: Vec<HistoryRecord> = (0..60)
+            .map(|day| HistoryRecord {
+                date: (base_date + chrono::Duration::days(day))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+                close: Decimal::from(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            })
+            .collect();
+        price_history::upsert_history(&conn, "AAPL", "test", &history).unwrap();
+
+        let rows = load_rows(&conn, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].trackline_breach, "below_sma50");
     }
 }

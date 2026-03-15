@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use chrono::Utc;
 use serde_json::json;
 
 use crate::db::agent_messages;
@@ -7,7 +8,10 @@ use crate::db::backend::BackendConnection;
 fn validate_priority(priority: &str) -> Result<()> {
     match priority {
         "low" | "normal" | "high" | "critical" => Ok(()),
-        _ => bail!("invalid priority '{}'. Valid: low, normal, high, critical", priority),
+        _ => bail!(
+            "invalid priority '{}'. Valid: low, normal, high, critical",
+            priority
+        ),
     }
 }
 
@@ -24,7 +28,10 @@ fn validate_category(category: &str) -> Result<()> {
 fn validate_layer(layer: &str) -> Result<()> {
     match layer {
         "low" | "medium" | "high" | "macro" | "cross" => Ok(()),
-        _ => bail!("invalid layer '{}'. Valid: low, medium, high, macro, cross", layer),
+        _ => bail!(
+            "invalid layer '{}'. Valid: low, medium, high, macro, cross",
+            layer
+        ),
     }
 }
 
@@ -35,6 +42,8 @@ pub fn run(
     value: Option<&str>,
     batch: &[String],
     id: Option<i64>,
+    package_id: Option<&str>,
+    package_title: Option<&str>,
     from: Option<&str>,
     to: Option<&str>,
     priority: Option<&str>,
@@ -68,11 +77,21 @@ pub fn run(
                 bail!("message content required (positional text or one/more --batch values)");
             }
 
+            let effective_package_id =
+                resolve_package_id(package_id, package_title, from_agent, messages.len());
             let mut ids = Vec::new();
             let mut inserted = Vec::new();
             for content in &messages {
                 let new_id = agent_messages::send_message_backend(
-                    backend, from_agent, to, priority, content, category, layer,
+                    backend,
+                    from_agent,
+                    to,
+                    priority,
+                    content,
+                    category,
+                    layer,
+                    effective_package_id.as_deref(),
+                    package_title,
                 )?;
                 ids.push(new_id);
                 if json_output {
@@ -91,6 +110,8 @@ pub fn run(
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&json!({
+                            "package_id": effective_package_id,
+                            "package_title": package_title,
                             "sent_count": ids.len(),
                             "ids": ids,
                             "messages": inserted,
@@ -105,7 +126,26 @@ pub fn run(
                     .map(|id| format!("#{}", id))
                     .collect::<Vec<_>>()
                     .join(", ");
-                println!("Sent {} agent messages: {}", ids.len(), joined);
+                match (effective_package_id.as_deref(), package_title) {
+                    (Some(pid), Some(title)) => {
+                        println!(
+                            "Sent {} agent messages in package {} ({}) : {}",
+                            ids.len(),
+                            pid,
+                            title,
+                            joined
+                        );
+                    }
+                    (Some(pid), None) => {
+                        println!(
+                            "Sent {} agent messages in package {}: {}",
+                            ids.len(),
+                            pid,
+                            joined
+                        );
+                    }
+                    _ => println!("Sent {} agent messages: {}", ids.len(), joined),
+                }
             }
         }
 
@@ -114,25 +154,38 @@ pub fn run(
                 validate_layer(l)?;
             }
             let rows = agent_messages::list_messages_backend(
-                backend, from, to, layer, unacked, since, limit,
+                backend, from, to, layer, unacked, since, package_id, limit,
             )?;
             if json_output {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&json!({ "messages": rows, "count": rows.len() }))?
+                    serde_json::to_string_pretty(
+                        &json!({ "messages": rows, "count": rows.len() })
+                    )?
                 );
             } else if rows.is_empty() {
                 println!("No messages found.");
             } else {
                 println!("Agent messages ({}):", rows.len());
                 for row in rows {
+                    let package = row
+                        .package_id
+                        .as_ref()
+                        .map(|pid| match row.package_title.as_deref() {
+                            Some(title) => format!(" [{}:{}]", pid, title),
+                            None => format!(" [{}]", pid),
+                        })
+                        .unwrap_or_default();
                     println!(
-                        "  #{} [{}|{}] {} -> {} | {}",
+                        "  #{} [{}|{}] {} -> {}{} | {}",
                         row.id,
                         row.priority,
                         row.layer.clone().unwrap_or_else(|| "-".to_string()),
                         row.from_agent,
-                        row.to_agent.clone().unwrap_or_else(|| "broadcast".to_string()),
+                        row.to_agent
+                            .clone()
+                            .unwrap_or_else(|| "broadcast".to_string()),
+                        package,
                         row.content
                     );
                 }
@@ -164,10 +217,14 @@ pub fn run(
                 &body,
                 category.or(Some("handoff")),
                 layer.or(parent.layer.as_deref()),
+                parent.package_id.as_deref(),
+                parent.package_title.as_deref(),
             )?;
             if json_output {
                 let inserted = agent_messages::get_message_by_id_backend(backend, new_id)?
-                    .ok_or_else(|| anyhow::anyhow!("failed to load inserted message #{}", new_id))?;
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("failed to load inserted message #{}", new_id)
+                    })?;
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&json!({
@@ -208,10 +265,14 @@ pub fn run(
                 &body,
                 category.or(Some("escalation")),
                 layer.or(parent.layer.as_deref()),
+                parent.package_id.as_deref(),
+                parent.package_title.as_deref(),
             )?;
             if json_output {
                 let inserted = agent_messages::get_message_by_id_backend(backend, new_id)?
-                    .ok_or_else(|| anyhow::anyhow!("failed to load inserted message #{}", new_id))?;
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("failed to load inserted message #{}", new_id)
+                    })?;
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&json!({
@@ -228,7 +289,10 @@ pub fn run(
             let msg_id = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
             agent_messages::acknowledge_backend(backend, msg_id)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "acked": msg_id }))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({ "acked": msg_id }))?
+                );
             } else {
                 println!("Acknowledged message #{}", msg_id);
             }
@@ -260,8 +324,44 @@ pub fn run(
             }
         }
 
-        _ => bail!("unknown agent-msg action '{}'. Valid: send, list, reply, flag, ack, ack-all, purge", action),
+        _ => bail!(
+            "unknown agent-msg action '{}'. Valid: send, list, reply, flag, ack, ack-all, purge",
+            action
+        ),
     }
 
     Ok(())
+}
+
+fn resolve_package_id(
+    package_id: Option<&str>,
+    package_title: Option<&str>,
+    from_agent: &str,
+    message_count: usize,
+) -> Option<String> {
+    if let Some(existing) = package_id {
+        return Some(existing.to_string());
+    }
+    if package_title.is_some() || message_count > 1 {
+        let ts = Utc::now().format("%Y%m%d%H%M%S");
+        return Some(format!(
+            "pkg-{}-{}",
+            ts,
+            sanitize_package_fragment(from_agent)
+        ));
+    }
+    None
+}
+
+fn sanitize_package_fragment(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }

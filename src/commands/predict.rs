@@ -16,7 +16,7 @@ fn validate_timeframe(value: &str) -> Result<()> {
     match value {
         "low" | "medium" | "high" | "macro" => Ok(()),
         _ => bail!(
-            "invalid timeframe '{}'. Valid: low, medium, high, macro",
+            "invalid timeframe '{}'. Valid: low, medium, high, macro. Use --timeframe <value> or positional shorthand after the claim.",
             value
         ),
     }
