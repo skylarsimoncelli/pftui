@@ -865,21 +865,21 @@ pftui analytics movers --json > /tmp/movers.json
 
 ```bash
 # 1) Collect one shared data blob from pftui
-./agents/skills/investor-panel/collect-data.sh > /tmp/pftui-investor-panel.json
+./agents/investor-panel/collect-data.sh > /tmp/pftui-investor-panel.json
 
 # 2) Run your orchestrator with:
 #    - /tmp/pftui-investor-panel.json
-#    - persona files in agents/skills/investor-panel/personas/
-#    - response contract in agents/skills/investor-panel/schema.json
+#    - persona files in agents/investor-panel/personas/
+#    - response contract in agents/investor-panel/schema.json
 
 # 3) Store summary in pftui for auditability
 pftui agent message send "Investor panel complete: consensus + divergences ready" --from investor-panel
 ```
 
 Skill package:
-- `agents/skills/investor-panel/SKILL.md`
-- `agents/skills/investor-panel/config.toml`
-- `agents/skills/investor-panel/personas/`
+- `agents/investor-panel/SKILL.md`
+- `agents/investor-panel/config.toml`
+- `agents/investor-panel/personas/`
 
 ---
 
