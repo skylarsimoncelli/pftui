@@ -80,6 +80,8 @@ When layers disagree: explain WHY. LOW might say risk-on because VIX dropped, bu
 
 **Rank assets by alignment strength.** Lead with whichever asset has the strongest cross-timeframe consensus, including confidence levels. Even 2/4 layers agreeing at high confidence is more actionable than a blended score. If no asset has strong alignment, say so and name which is closest. The user needs to know: where is conviction forming across the system?
 
+**Surface high-conviction assets outside the portfolio and watchlist.** If any timeframe layer has developed strong conviction on an asset the user doesn't hold or watch, raise it. The system should discover opportunities, not just monitor existing positions.
+
 ### 3. Expectations vs Reality
 
 Not "what happened today" but "what happened vs what we expected and what that teaches us":
