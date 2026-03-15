@@ -20,7 +20,7 @@ pftui portfolio brief --json
 pftui analytics movers --json
 pftui analytics macro regime current --json
 pftui analytics alerts list --json
-pftui agent journal conviction list --json
+pftui journal conviction list --json
 pftui analytics correlations latest --json
 pftui analytics scan --load big-gainers --json
 pftui analytics scan --load big-losers --json
@@ -41,8 +41,8 @@ pftui agent message send "ALERT: [asset] [condition] at [price]" \
 
 4. News keyword scanning. Derive keywords dynamically from active scenarios and held assets:
 ```bash
-pftui agent journal scenario list --json   # extract scenario names and themes
-pftui agent journal conviction list --json  # extract held asset symbols
+pftui journal scenario list --json   # extract scenario names and themes
+pftui journal conviction list --json  # extract held asset symbols
 ```
 Flag scenario-relevant news:
 ```bash
@@ -68,8 +68,8 @@ pftui agent message send "MISMATCH: [asset] conviction [+X] but moved [Y%]" \
 
 7. Make 3-5 LOW predictions for today. Cause-and-effect, not price targets. Read your notes and scenario context to inform predictions:
 ```bash
-pftui agent journal notes list --limit 5 --json
-pftui agent journal scenario list --json
+pftui journal notes list --limit 5 --json
+pftui journal scenario list --json
 ```
 
 Example prediction format:
@@ -77,25 +77,25 @@ Example prediction format:
 - "[Technical level hold/break] leads to [momentum outcome]" (confidence: 0.5)
 
 ```bash
-pftui agent journal prediction add "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent
+pftui journal prediction add "[cause] will [effect] today" --symbol [SYM] --target-date $(date +%Y-%m-%d) --conviction [level] --timeframe low --confidence [0.X] --source-agent low-agent
 ```
 
 ## Midday Run
 
 7. Score this morning's predictions against midday data:
 ```bash
-pftui agent journal prediction list --filter pending --json
+pftui journal prediction list --filter pending --json
 ```
 For each resolvable LOW prediction:
 - Was the cause-effect correct?
 - If WRONG: what actually drove the market? What signal did you miss?
 ```bash
-pftui agent journal prediction score <id> --outcome <correct|wrong|partial> --notes "[what happened vs predicted]"
+pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "[what happened vs predicted]"
 ```
 
 Write reflection note for wrong calls:
 ```bash
-pftui agent journal notes add "LOW PREDICTION REVIEW: [prediction] — [outcome]. [If wrong: expected [X] because [reason], got [Y] because [actual cause]. Should have watched [specific indicator].]" \
+pftui journal notes add "LOW PREDICTION REVIEW: [prediction] — [outcome]. [If wrong: expected [X] because [reason], got [Y] because [actual cause]. Should have watched [specific indicator].]" \
   --date $(date +%Y-%m-%d) --section analysis
 ```
 
@@ -103,14 +103,14 @@ pftui agent journal notes add "LOW PREDICTION REVIEW: [prediction] — [outcome]
 
 7. FINAL SCORING. Score ALL remaining daily predictions. Data is final.
 ```bash
-pftui agent journal prediction score <id> --outcome <correct|wrong|partial> --notes "EOD final: [closing data vs prediction]" --lesson "[what this teaches for next low-timeframe call]"
+pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "EOD final: [closing data vs prediction]" --lesson "[what this teaches for next low-timeframe call]"
 ```
 Mandatory lesson for every wrong call.
 
 8. Calculate daily scorecard:
 ```bash
-pftui agent journal prediction list --filter pending --timeframe low --json
-pftui agent journal prediction stats --json
+pftui journal prediction list --filter pending --timeframe low --json
+pftui journal prediction stats --json
 ```
 
 9. Send comprehensive EOD data package to Evening Analyst:
@@ -135,7 +135,7 @@ pftui agent message send "MARKET CLOSE NOTABLE: [largest moves + why they matter
 ## Every Run: Log
 
 ```bash
-pftui agent journal notes add "[Pre-market/Midday/Close]: [key data points] | Alerts: [X] | News flags: [X] | Predictions: [made X / scored Y / Z% correct] | Mismatches: [X]" \
+pftui journal notes add "[Pre-market/Midday/Close]: [key data points] | Alerts: [X] | News flags: [X] | Predictions: [made X / scored Y / Z% correct] | Mismatches: [X]" \
   --date $(date +%Y-%m-%d) --section market
 ```
 

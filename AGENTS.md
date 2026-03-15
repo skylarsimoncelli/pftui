@@ -413,7 +413,7 @@ pftui data dashboard global                   # World Bank data
 pftui portfolio drift                            # Allocation drift check
 pftui portfolio rebalance                        # Suggested trades
 pftui portfolio performance --since YYYY-MM-DD   # Week's performance
-pftui agent journal entry list               # Review decision history
+pftui journal entry list               # Review decision history
 ```
 
 ### Alerts
@@ -538,14 +538,14 @@ LOW (hours→days), MEDIUM (weeks→months), HIGH (months→years), MACRO (years
 Each layer uses different data, updates at different frequencies, and produces different signals.
 Layers constrain downward and signal upward. Use `pftui analytics signals` for active cross-timeframe signals.
 
-### Scenarios (`pftui agent journal scenario`)
+### Scenarios (`pftui journal scenario`)
 Track macro scenarios with probability estimates. Each probability update is logged
 to history for calibration. Signals track evidence for/against each scenario.
 
 ### Thesis
 Thesis tracking is maintained as narrative workflow files (`THESIS.md`) and journal notes.
 
-### Convictions (`pftui agent journal conviction`)
+### Convictions (`pftui journal conviction`)
 Asset-level conviction scores (-5 to +5) over time. Append-only log — every
 `set` creates a new row. Current conviction = latest row per symbol.
 For negative scores, use `--score=-2`.
@@ -662,29 +662,29 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 
 | Command | What It Does |
 |---|---|
-| `pftui agent journal entry add "TEXT" --tag TAG --symbol SYM` | Add entry |
-| `pftui agent journal entry list --json` | List all entries |
-| `pftui agent journal entry search "QUERY" --json` | Search entries |
+| `pftui journal entry add "TEXT" --tag TAG --symbol SYM` | Add entry |
+| `pftui journal entry list --json` | List all entries |
+| `pftui journal entry search "QUERY" --json` | Search entries |
 
 ### Intelligence Database
 
 | Command | What It Does |
 |---|---|
-| `pftui agent journal scenario add "NAME" --probability N` | Add macro scenario with initial probability |
-| `pftui agent journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
-| `pftui agent journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
-| `pftui agent journal scenario history "NAME" --limit N --json` | Show scenario probability history |
-| `pftui agent journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent]` | Add a prediction call for later scoring |
-| `pftui agent journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
-| `pftui agent journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
-| `pftui agent journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
+| `pftui journal scenario add "NAME" --probability N` | Add macro scenario with initial probability |
+| `pftui journal scenario update "NAME" --probability N [--driver "WHY"|--notes "WHY"]` | Update scenario probability and auto-log history |
+| `pftui journal scenario signal add "SIGNAL" --scenario "NAME"` | Attach a tracked signal to a scenario |
+| `pftui journal scenario history "NAME" --limit N --json` | Show scenario probability history |
+| `pftui journal prediction add "CLAIM" [--symbol BTC] [--conviction high] [--timeframe low|medium|high|macro] [--confidence 0.7] [--source-agent low-agent]` | Add a prediction call for later scoring |
+| `pftui journal prediction score --id N --outcome correct|partial|wrong [--notes "..."] [--lesson "..."]` | Score a previous prediction outcome |
+| `pftui journal prediction stats --json` | Compute hit-rate stats by conviction, symbol, timeframe, and source agent |
+| `pftui journal prediction scorecard [--date YYYY-MM-DD|today|yesterday] [--timeframe low] --json` | Day/timeframe scorecard with streak and lesson coverage |
 | `pftui agent message send "TEXT" --from agent-a [--to agent-b] [--batch "TEXT2" --batch "TEXT3"] [--package-title "Fed handoff"] [--package-id pkg-123]` | Send one or multiple structured messages between agent roles, optionally grouped as one intel package |
 | `pftui agent message reply "TEXT" --id N --from agent-b` | Reply to message `N` back to the original sender |
 | `pftui agent message flag "ISSUE" --id N --from agent-b` | Escalate data-quality/risk issue on message `N` |
 | `pftui agent message list [--from agent-a] [--unacked] --json` | Query queued agent messages |
 | `pftui agent message ack --id N` | Acknowledge a single message |
-| `pftui agent journal notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
-| `pftui agent journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
+| `pftui journal notes add "TEXT" --section market [--date YYYY-MM-DD]` | Add a date-keyed daily narrative note |
+| `pftui journal notes search "QUERY" --since YYYY-MM-DD --json` | Search historical daily notes |
 | `pftui portfolio opportunity add "EVENT" [--asset SYM] [--missed_gain_usd N] [--avoided_loss_usd N]` | Log an opportunity-cost event |
 | `pftui portfolio opportunity stats --json` | Show net missed-vs-avoided positioning stats |
 | `pftui analytics correlations compute --store --period 30d` | Compute live correlations and persist snapshots |
@@ -889,7 +889,7 @@ Skill package:
 
 2. **Use `--json` for programmatic access.** Every command supports it. Parse structured output instead of scraping text.
 
-3. **Keep the journal active.** `pftui agent journal entry add` builds a searchable decision history. Log your predictions, rationale, and outcomes.
+3. **Keep the journal active.** `pftui journal entry add` builds a searchable decision history. Log your predictions, rationale, and outcomes.
 
 4. **Monitor drift regularly.** `pftui portfolio drift` shows when the portfolio has moved from targets. Flag this to the human early.
 

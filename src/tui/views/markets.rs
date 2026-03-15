@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -60,25 +60,31 @@ pub fn market_symbols() -> Vec<MarketItem> {
     ]
 }
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
-    // Split area: markets table, correlation matrix, then predictions.
-    let chunks = Layout::default()
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(20),
-            Constraint::Percentage(30),
+            Constraint::Percentage(58),
+            Constraint::Percentage(18),
+            Constraint::Percentage(24),
         ])
         .split(area);
-    
-    render_markets_table(frame, chunks[0], app);
-    correlation_grid::render(frame, chunks[1], app);
-    render_predictions_panel(frame, chunks[2], app);
+
+    let top = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(64), Constraint::Percentage(36)])
+        .split(outer[0]);
+
+    render_markets_table(frame, top[0], app);
+    render_detail_panel(frame, top[1], app);
+    correlation_grid::render(frame, outer[1], app);
+    render_predictions_panel(frame, outer[2], app);
 }
 
-fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {
+fn render_markets_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = &app.theme;
     let items = market_symbols();
+    app.page_table_area = Some(area);
 
     let header = Row::new(vec![
         Cell::from("Symbol"),
@@ -213,11 +219,86 @@ fn render_markets_table(frame: &mut Frame, area: Rect, app: &App) {
                     " Markets ",
                     Style::default().fg(t.text_accent).bold(),
                 ))
+                .title(
+                    Line::from(Span::styled(
+                        "M:window  c:chart  a:alert  n:news",
+                        Style::default().fg(t.text_muted),
+                    ))
+                    .alignment(Alignment::Right),
+                )
                 .style(Style::default().bg(t.surface_0)),
         )
         .row_highlight_style(Style::default().bg(t.surface_3));
 
     frame.render_widget(table, area);
+}
+
+fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(" Selected Market ", Style::default().fg(t.text_accent).bold()));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let items = market_symbols();
+    let Some(item) = items.get(app.markets_selected_index) else {
+        return;
+    };
+    let day_change = compute_change_pct(app, &item.yahoo_symbol);
+    let momentum = compute_7d_momentum(app, &item.yahoo_symbol);
+    let cot = compute_cot_signal(app, &item.yahoo_symbol);
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Ticker: ", Style::default().fg(t.text_secondary)),
+            Span::styled(&item.symbol, Style::default().fg(t.text_primary).bold()),
+        ]),
+        Line::from(vec![
+            Span::styled("Name:   ", Style::default().fg(t.text_secondary)),
+            Span::styled(&item.name, Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
+            Span::styled("Price:  ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                app.prices
+                    .get(&item.yahoo_symbol)
+                    .copied()
+                    .map(format_price)
+                    .unwrap_or_else(|| "---".to_string()),
+                Style::default().fg(t.text_primary),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("1D:     ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                day_change
+                    .map(|value| format!("{:+.2}%", value))
+                    .unwrap_or_else(|| "---".to_string()),
+                Style::default().fg(t.text_primary),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("7D:     ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                momentum
+                    .map(|value| format!("{:+.1}%", value))
+                    .unwrap_or_else(|| "---".to_string()),
+                Style::default().fg(t.text_primary),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("COT:    ", Style::default().fg(t.text_secondary)),
+            Span::styled(cot, Style::default().fg(t.text_primary)),
+        ]),
+        Line::raw(""),
+        Line::styled("Actions", Style::default().fg(t.text_secondary).bold()),
+        Line::raw("c open full chart"),
+        Line::raw("a create +5% price alert"),
+        Line::raw("n fetch related news into News page"),
+    ];
+
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 /// Build a mini sparkline cell from the last 7 days of price history.

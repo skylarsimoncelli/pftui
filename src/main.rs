@@ -215,7 +215,7 @@ fn run_agent_journal(
             } => {
                 let score_val = score.or(score_pos).ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Missing score. Usage: pftui agent journal conviction set SYMBOL <SCORE> [NOTES] or --score N [--notes ...]"
+                        "Missing score. Usage: pftui journal conviction set SYMBOL <SCORE> [NOTES] or --score N [--notes ...]"
                     )
                 })?;
                 let merged_notes = notes.or(notes_pos);

@@ -26,7 +26,6 @@ const COMMANDS: &[CommandPaletteEntry] = &[
     CommandPaletteEntry { command: "view watchlist", description: "Switch to Watchlist view" },
     CommandPaletteEntry { command: "view analytics", description: "Switch to Analytics view" },
     CommandPaletteEntry { command: "view news", description: "Switch to News view" },
-    CommandPaletteEntry { command: "view chartgrid", description: "Switch to Chart Grid view" },
     CommandPaletteEntry { command: "view journal", description: "Switch to Journal view" },
     CommandPaletteEntry { command: "onboarding", description: "Open onboarding tour" },
     CommandPaletteEntry { command: "scan", description: "Open interactive scan builder" },

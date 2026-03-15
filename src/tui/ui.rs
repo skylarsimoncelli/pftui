@@ -40,6 +40,7 @@ fn choose_positions_layout_mode(
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
+    app.page_table_area = None;
 
     // Fill entire background with deepest surface
     let bg = Block::default().style(Style::default().bg(app.theme.surface_0));
@@ -70,7 +71,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         ViewMode::Watchlist => render_watchlist_layout(frame, chunks[1], app),
         ViewMode::Analytics => views::analytics::render(frame, chunks[1], app),
         ViewMode::News => views::news::render(frame, chunks[1], app),
-        ViewMode::ChartGrid => views::chart_grid::render(frame, chunks[1], app),
         ViewMode::Journal => views::journal::render(frame, chunks[1], app),
     }
 
@@ -98,6 +98,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     if app.watchlist_add_popup.is_some() {
         views::watchlist_add_popup::render(frame, size, app);
+    }
+
+    if app.watchlist_target_popup.is_some() {
+        views::watchlist_target_popup::render(frame, size, app);
     }
 
     if app.command_palette_open {
@@ -290,7 +294,7 @@ fn render_right_pane(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-fn render_watchlist_layout(frame: &mut Frame, area: Rect, app: &App) {
+fn render_watchlist_layout(frame: &mut Frame, area: Rect, app: &mut App) {
     use crate::tui::theme;
 
     let width = app.terminal_width;

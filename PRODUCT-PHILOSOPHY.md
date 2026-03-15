@@ -98,7 +98,7 @@ pftui follows Cisco IOS-style CLI design: long, navigable, hierarchical commands
 # Yes: structured, navigable, discoverable
 pftui analytics macro history US --metric trade
 pftui analytics macro compare US China
-pftui agent journal prediction scorecard --date 2026-03-13 --json
+pftui journal prediction scorecard --date 2026-03-13 --json
 
 # No: flat, ambiguous, guesswork
 pftui history US trade

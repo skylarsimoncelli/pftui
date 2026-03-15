@@ -39,7 +39,6 @@ pub enum ViewMode {
     Watchlist,
     Analytics,
     News,
-    ChartGrid,
     Journal,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,6 +370,36 @@ pub struct WatchlistAddPopupState {
     pub selected: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchlistTargetDirection {
+    Above,
+    Below,
+}
+
+impl WatchlistTargetDirection {
+    fn toggle(self) -> Self {
+        match self {
+            WatchlistTargetDirection::Above => WatchlistTargetDirection::Below,
+            WatchlistTargetDirection::Below => WatchlistTargetDirection::Above,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            WatchlistTargetDirection::Above => "above",
+            WatchlistTargetDirection::Below => "below",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WatchlistTargetPopupState {
+    pub symbol: String,
+    pub price_input: String,
+    pub direction: WatchlistTargetDirection,
+    pub message: Option<String>,
+}
+
 /// Which field is active in the add-transaction form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TxFormField {
@@ -485,6 +514,7 @@ pub struct App {
     pub selected_index: usize,
     pub selected_symbol: Option<String>,
     pub tx_selected_index: usize,
+    pub tx_filter_symbol: Option<String>,
     pub markets_selected_index: usize,
     pub markets_correlation_window: MarketCorrelationWindow,
     pub economy_selected_index: usize,
@@ -516,6 +546,7 @@ pub struct App {
     pub search_overlay_requested_symbols: std::collections::HashSet<String>,
     pub journal_entry_popup: Option<crate::app::JournalEntryPopupState>,
     pub watchlist_add_popup: Option<crate::app::WatchlistAddPopupState>,
+    pub watchlist_target_popup: Option<crate::app::WatchlistTargetPopupState>,
     pub command_palette_open: bool,
     pub command_palette_input: String,
     pub command_palette_selected: usize,
@@ -653,6 +684,8 @@ pub struct App {
     pub alloc_bar_area: Option<Rect>,
     /// Absolute Rect of the positions table widget (for precise mouse hit-testing).
     pub positions_table_area: Option<Rect>,
+    /// Absolute Rect of the active non-portfolio table/list widget.
+    pub page_table_area: Option<Rect>,
     /// Ordered list of categories as rendered in the allocation bars (top to bottom).
     /// Index 0 = first bar line inside the block border.
     pub alloc_bar_categories: Vec<AssetCategory>,
@@ -779,7 +812,6 @@ impl App {
             "economy" => ViewMode::Economy,
             "analytics" => ViewMode::Analytics,
             "news" => ViewMode::News,
-            "chartgrid" => ViewMode::ChartGrid,
             "journal" => ViewMode::Journal,
             _ => ViewMode::Positions,
         }
@@ -794,7 +826,6 @@ impl App {
             ViewMode::Economy => "economy",
             ViewMode::Analytics => "analytics",
             ViewMode::News => "news",
-            ViewMode::ChartGrid => "chartgrid",
             ViewMode::Journal => "journal",
         }
     }
@@ -829,6 +860,7 @@ impl App {
             selected_index: 0,
             selected_symbol: None,
             tx_selected_index: 0,
+            tx_filter_symbol: None,
             markets_selected_index: 0,
             markets_correlation_window: MarketCorrelationWindow::ThirtyDay,
             economy_selected_index: 0,
@@ -858,6 +890,7 @@ impl App {
             search_overlay_requested_symbols: std::collections::HashSet::new(),
             journal_entry_popup: None,
             watchlist_add_popup: None,
+            watchlist_target_popup: None,
             command_palette_open: false,
             command_palette_input: String::new(),
             command_palette_selected: 0,
@@ -925,6 +958,7 @@ impl App {
             header_privacy_col_range: None,
             alloc_bar_area: None,
             positions_table_area: None,
+            page_table_area: None,
             alloc_bar_categories: Vec::new(),
             timeframe_selector_buttons: Vec::new(),
             timeframe_selector_row: None,
@@ -1696,7 +1730,16 @@ impl App {
 
         // Sort transactions (only relevant in full mode)
         if self.portfolio_mode == PortfolioMode::Full {
-            let mut txs = self.transactions.clone();
+            let mut txs: Vec<_> = self
+                .transactions
+                .iter()
+                .filter(|tx| {
+                    self.tx_filter_symbol
+                        .as_ref()
+                        .is_none_or(|symbol| tx.symbol.eq_ignore_ascii_case(symbol))
+                })
+                .cloned()
+                .collect();
 
             if matches!(self.sort_field, SortField::Date) {
                 txs.sort_by(|a, b| a.date.cmp(&b.date));
@@ -1887,8 +1930,16 @@ impl App {
         self.display_positions.get(self.selected_index)
     }
 
-    fn selected_watchlist_entry(&self) -> Option<&db_watchlist::WatchlistEntry> {
+    pub(crate) fn selected_watchlist_entry(&self) -> Option<&db_watchlist::WatchlistEntry> {
         self.watchlist_entries.get(self.watchlist_selected_index)
+    }
+
+    pub(crate) fn selected_transaction(&self) -> Option<&Transaction> {
+        self.display_transactions.get(self.tx_selected_index)
+    }
+
+    pub(crate) fn selected_news_entry(&self) -> Option<&crate::db::news_cache::NewsEntry> {
+        self.news_entries.get(self.news_selected_index)
     }
 
     /// Update selected_index and sync selected_symbol to the position at that index.
@@ -1927,13 +1978,58 @@ impl App {
         self.watchlist_group_pending = false;
     }
 
-    fn watchlist_inline_open_chart(&mut self) {
-        let Some(entry) = self.selected_watchlist_entry().cloned() else {
-            return;
+    fn cycle_watchlist_group(&mut self, delta: i64) {
+        let next = if delta >= 0 {
+            if self.watchlist_active_group >= 3 {
+                1
+            } else {
+                self.watchlist_active_group + 1
+            }
+        } else if self.watchlist_active_group <= 1 {
+            3
+        } else {
+            self.watchlist_active_group - 1
         };
-        let category: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
-        let symbol = watchlist_view::yahoo_symbol_for(&entry.symbol, category);
+        self.set_watchlist_group(next);
+    }
 
+    fn cycle_transaction_symbol_filter(&mut self) {
+        let mut symbols: Vec<String> = self
+            .transactions
+            .iter()
+            .map(|tx| tx.symbol.clone())
+            .collect();
+        symbols.sort();
+        symbols.dedup();
+        if symbols.is_empty() {
+            self.tx_filter_symbol = None;
+            self.recompute();
+            return;
+        }
+
+        self.tx_filter_symbol = match &self.tx_filter_symbol {
+            None => Some(symbols[0].clone()),
+            Some(current) => {
+                let idx = symbols
+                    .iter()
+                    .position(|symbol| symbol.eq_ignore_ascii_case(current));
+                match idx {
+                    Some(i) if i + 1 < symbols.len() => Some(symbols[i + 1].clone()),
+                    _ => None,
+                }
+            }
+        };
+        self.tx_selected_index = 0;
+        self.recompute();
+    }
+
+    fn clear_transaction_symbol_filter(&mut self) {
+        self.tx_filter_symbol = None;
+        self.tx_selected_index = 0;
+        self.recompute();
+    }
+
+    fn open_chart_popup_for_symbol(&mut self, symbol: String, category: AssetCategory) {
         let history_len = self
             .price_history
             .get(&symbol)
@@ -1942,7 +2038,6 @@ impl App {
         if history_len < 2 {
             self.request_history_if_needed(&symbol, category, 370);
         }
-
         if let Some(svc) = &self.price_service {
             if !self.prices.contains_key(&symbol) {
                 svc.send_command(PriceCommand::FetchAll(vec![(symbol.clone(), category)]));
@@ -1950,6 +2045,73 @@ impl App {
         }
         self.search_chart_popup =
             Some(crate::tui::views::search_chart_popup::SearchChartPopupState { symbol });
+    }
+
+    fn create_price_alert(&mut self, symbol: &str, threshold: Decimal, direction: &str) {
+        let rule_text = format!("{} {} {}", symbol, direction, threshold);
+        if let Some(backend) = self.open_backend() {
+            let _ = crate::db::alerts::add_alert_backend(
+                &backend,
+                "price",
+                symbol,
+                direction,
+                &threshold.to_string(),
+                &rule_text,
+            );
+            self.load_alerts();
+        }
+    }
+
+    fn open_journal_entry_popup_prefilled(
+        &mut self,
+        content: String,
+        tag: Option<String>,
+        symbol: Option<String>,
+    ) {
+        self.journal_entry_popup = Some(JournalEntryPopupState {
+            content,
+            tag: tag.unwrap_or_default(),
+            symbol: symbol.unwrap_or_default(),
+            active_field: JournalEntryPopupField::Content,
+            message: None,
+        });
+    }
+
+    fn detected_symbols_in_text(&self, text: &str) -> Vec<String> {
+        let upper = text.to_uppercase();
+        let mut symbols: Vec<String> = self
+            .positions
+            .iter()
+            .map(|p| p.symbol.clone())
+            .chain(self.watchlist_entries.iter().map(|w| w.symbol.clone()))
+            .collect();
+        symbols.sort_by_key(|symbol| std::cmp::Reverse(symbol.len()));
+        symbols.dedup();
+        symbols
+            .into_iter()
+            .filter(|symbol| upper.contains(&symbol.to_uppercase()))
+            .collect()
+    }
+
+    pub(crate) fn selected_news_detected_symbols(&self) -> Vec<String> {
+        let Some(entry) = self.selected_news_entry() else {
+            return Vec::new();
+        };
+        let mut text = entry.title.clone();
+        if !entry.description.is_empty() {
+            text.push(' ');
+            text.push_str(&entry.description);
+        }
+        self.detected_symbols_in_text(&text)
+    }
+
+    fn watchlist_inline_open_chart(&mut self) {
+        let Some(entry) = self.selected_watchlist_entry().cloned() else {
+            return;
+        };
+        let category: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
+        let symbol = watchlist_view::yahoo_symbol_for(&entry.symbol, category);
+        self.open_chart_popup_for_symbol(symbol, category);
     }
 
     fn watchlist_inline_remove(&mut self) {
@@ -1985,19 +2147,8 @@ impl App {
             let above = (price * dec!(1.05)).round_dp(2);
             ("above".to_string(), above.to_string())
         };
-        let rule_text = format!("{} {} {}", alert_symbol, direction, threshold);
-
-        if let Some(backend) = self.open_backend() {
-            let _ = crate::db::alerts::add_alert_backend(
-                &backend,
-                "price",
-                &alert_symbol,
-                &direction,
-                &threshold,
-                &rule_text,
-            );
-            self.load_alerts();
-        }
+        let threshold = threshold.parse().unwrap_or(dec!(0));
+        self.create_price_alert(&alert_symbol, threshold, &direction);
     }
 
     /// Returns a context-aware breadcrumb string for the status bar.
@@ -2012,7 +2163,6 @@ impl App {
             ViewMode::Watchlist => "Watchlist",
             ViewMode::Analytics => "Analytics",
             ViewMode::News => "News",
-            ViewMode::ChartGrid => "Chart Grid",
             ViewMode::Journal => "Journal",
         };
 
@@ -2391,7 +2541,6 @@ impl App {
             | ViewMode::Economy
             | ViewMode::Analytics
             | ViewMode::News
-            | ViewMode::ChartGrid
             | ViewMode::Journal => self.view_mode,
         };
 
@@ -2494,6 +2643,11 @@ impl App {
 
         if self.watchlist_add_popup.is_some() {
             self.handle_watchlist_add_popup_key(key);
+            return;
+        }
+
+        if self.watchlist_target_popup.is_some() {
+            self.handle_watchlist_target_popup_key(key);
             return;
         }
 
@@ -2763,11 +2917,6 @@ impl App {
                 self.load_news();
             }
             KeyCode::Char('8') => {
-                self.view_mode = ViewMode::ChartGrid;
-                self.detail_open = false;
-                self.detail_popup_open = false;
-            }
-            KeyCode::Char('9') => {
                 self.view_mode = ViewMode::Journal;
                 self.detail_open = false;
                 self.detail_popup_open = false;
@@ -2787,8 +2936,36 @@ impl App {
                 self.open_journal_entry_popup();
             }
 
+            KeyCode::Char('a') if matches!(self.view_mode, ViewMode::Transactions) => {
+                if let Some(tx) = self.selected_transaction().cloned() {
+                    self.open_tx_form_for_symbol(tx.symbol);
+                }
+            }
+
             KeyCode::Char('i') if matches!(self.view_mode, ViewMode::Watchlist) => {
                 self.open_watchlist_add_popup();
+            }
+
+            KeyCode::Char('t') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                self.open_watchlist_target_popup();
+            }
+
+            KeyCode::Char('J') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                if let Some(entry) = self.selected_watchlist_entry().cloned() {
+                    self.open_journal_entry_popup_prefilled(
+                        format!("Watching {} for a setup", entry.symbol),
+                        Some("watchlist".to_string()),
+                        Some(entry.symbol),
+                    );
+                }
+            }
+
+            KeyCode::Char('[') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                self.cycle_watchlist_group(-1);
+            }
+
+            KeyCode::Char(']') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                self.cycle_watchlist_group(1);
             }
 
             // Drift columns toggle
@@ -2828,6 +3005,27 @@ impl App {
             KeyCode::Char('M') if matches!(self.view_mode, ViewMode::Markets) => {
                 self.markets_correlation_window = self.markets_correlation_window.next();
             }
+            KeyCode::Char('c') if matches!(self.view_mode, ViewMode::Markets) => {
+                self.open_selected_market_chart();
+            }
+            KeyCode::Char('a') if matches!(self.view_mode, ViewMode::Markets) => {
+                self.add_alert_for_selected_market();
+            }
+            KeyCode::Char('n') if matches!(self.view_mode, ViewMode::Markets) => {
+                if let Some(item) = self.selected_market_item() {
+                    self.fetch_asset_brave_news(&item.symbol);
+                    self.view_mode = ViewMode::News;
+                }
+            }
+            KeyCode::Char('c') if matches!(self.view_mode, ViewMode::Economy) => {
+                self.open_selected_economy_chart();
+            }
+            KeyCode::Char('n') if matches!(self.view_mode, ViewMode::Economy) => {
+                if let Some(item) = self.selected_economy_item() {
+                    self.fetch_asset_brave_news(&item.symbol);
+                    self.view_mode = ViewMode::News;
+                }
+            }
 
             // Detail popup toggle (chart is always visible in right pane)
             KeyCode::Enter if matches!(self.view_mode, ViewMode::Positions) => {
@@ -2857,6 +3055,12 @@ impl App {
                     let url = &self.news_entries[self.news_selected_index].url;
                     let _ = std::process::Command::new("xdg-open").arg(url).spawn();
                 }
+            }
+            KeyCode::Char('J') if matches!(self.view_mode, ViewMode::News) => {
+                self.journal_selected_news();
+            }
+            KeyCode::Char('A') if matches!(self.view_mode, ViewMode::News) => {
+                self.add_watchlist_for_selected_news_symbol();
             }
 
             // Chart variant cycling with J/K (when detail open)
@@ -2949,6 +3153,41 @@ impl App {
             }
             KeyCode::Char('r') if matches!(self.view_mode, ViewMode::Watchlist) => {
                 self.watchlist_inline_remove();
+            }
+            KeyCode::Char('x') if matches!(self.view_mode, ViewMode::Transactions) => {
+                self.delete_selected_transaction();
+            }
+            KeyCode::Char('f') if matches!(self.view_mode, ViewMode::Transactions) => {
+                self.cycle_transaction_symbol_filter();
+            }
+            KeyCode::Char('F') if matches!(self.view_mode, ViewMode::Transactions) => {
+                self.clear_transaction_symbol_filter();
+            }
+            KeyCode::Char('c') if matches!(self.view_mode, ViewMode::Journal) => {
+                if let Some(entry) = self.journal_entries.get(self.journal_selected_index).cloned() {
+                    if let Some(backend) = self.open_backend() {
+                        let _ = crate::db::journal::update_entry_backend(
+                            &backend,
+                            entry.id,
+                            None,
+                            Some("closed"),
+                        );
+                        self.load_journal();
+                    }
+                }
+            }
+            KeyCode::Char('x') if matches!(self.view_mode, ViewMode::Journal) => {
+                if let Some(entry) = self.journal_entries.get(self.journal_selected_index).cloned() {
+                    if let Some(backend) = self.open_backend() {
+                        let _ = crate::db::journal::update_entry_backend(
+                            &backend,
+                            entry.id,
+                            None,
+                            Some("invalidated"),
+                        );
+                        self.load_journal();
+                    }
+                }
             }
 
             // Sorting
@@ -3212,7 +3451,7 @@ impl App {
 
                 // Click in main content area → row selection
                 let content_y = row.saturating_sub(header_h);
-                self.handle_content_click(col, content_y);
+                self.handle_content_click(col, row, content_y);
             }
 
             MouseEventKind::Down(MouseButton::Right) => {
@@ -3337,7 +3576,6 @@ impl App {
             push(if compact { "W" } else { "Watch" }, ViewMode::Watchlist);
             push(if compact { "An" } else { "Analytics" }, ViewMode::Analytics);
             push(if compact { "N" } else { "News" }, ViewMode::News);
-            push(if compact { "G" } else { "Grid" }, ViewMode::ChartGrid);
             push(if compact { "J" } else { "Journal" }, ViewMode::Journal);
         }
         let hitboxes = if self.header_tab_hitboxes.is_empty() {
@@ -3479,7 +3717,64 @@ impl App {
 
     /// Handle a click in the main content area. `content_y` is relative to
     /// the top of the content area (below header).
-    fn handle_content_click(&mut self, col: u16, content_y: u16) {
+    fn handle_content_click(&mut self, col: u16, row: u16, content_y: u16) {
+        if !matches!(self.view_mode, ViewMode::Positions) {
+            if let Some(area) = self.page_table_area {
+                if col >= area.x
+                    && col < area.x + area.width
+                    && row >= area.y
+                    && row < area.y + area.height
+                {
+                    let relative_row = row.saturating_sub(area.y);
+                    if relative_row >= 2 {
+                        let clicked_row = (relative_row - 2) as usize;
+                        match self.view_mode {
+                            ViewMode::Watchlist => {
+                                if clicked_row < self.watchlist_entries.len() {
+                                    self.watchlist_selected_index = clicked_row;
+                                }
+                            }
+                            ViewMode::Transactions => {
+                                if clicked_row < self.display_transactions.len() {
+                                    self.tx_selected_index = clicked_row;
+                                }
+                            }
+                            ViewMode::Markets => {
+                                let count = markets::market_symbols().len();
+                                if clicked_row < count {
+                                    self.markets_selected_index = clicked_row;
+                                }
+                            }
+                            ViewMode::Economy => {
+                                let count = economy::economy_symbols().len();
+                                if clicked_row < count {
+                                    self.economy_selected_index = clicked_row;
+                                }
+                            }
+                            ViewMode::Analytics => {
+                                let count = self.analytics_scenario_count();
+                                if clicked_row < count {
+                                    self.analytics_selected_index = clicked_row;
+                                }
+                            }
+                            ViewMode::News => {
+                                if clicked_row < self.news_entries.len() {
+                                    self.news_selected_index = clicked_row;
+                                }
+                            }
+                            ViewMode::Journal => {
+                                if clicked_row < self.journal_entries.len() {
+                                    self.journal_selected_index = clicked_row;
+                                }
+                            }
+                            ViewMode::Positions => {}
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
         // In list views, each row in the table has:
         //   Row 0: section header (SECTION_HEADER_HEIGHT = 1 in wide mode)
         //   Row 1: table top border
@@ -3555,7 +3850,6 @@ impl App {
                     self.news_selected_index = clicked_row;
                 }
             }
-            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if clicked_row < self.journal_entries.len() {
                     self.journal_selected_index = clicked_row;
@@ -3795,7 +4089,6 @@ impl App {
                         (self.news_selected_index + 1).min(self.news_entries.len() - 1);
                 }
             }
-            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index =
@@ -3832,7 +4125,6 @@ impl App {
             ViewMode::News => {
                 self.news_selected_index = self.news_selected_index.saturating_sub(1);
             }
-            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(1);
             }
@@ -3866,7 +4158,6 @@ impl App {
             ViewMode::News => {
                 self.news_selected_index = 0;
             }
-            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 self.journal_selected_index = 0;
             }
@@ -3917,7 +4208,6 @@ impl App {
                     self.news_selected_index = self.news_entries.len() - 1;
                 }
             }
-            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index = self.journal_entries.len() - 1;
@@ -3993,7 +4283,6 @@ impl App {
                         (self.news_selected_index + step).min(self.news_entries.len() - 1);
                 }
             }
-            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 if !self.journal_entries.is_empty() {
                     self.journal_selected_index =
@@ -4031,7 +4320,6 @@ impl App {
             ViewMode::News => {
                 self.news_selected_index = self.news_selected_index.saturating_sub(step);
             }
-            ViewMode::ChartGrid => {}
             ViewMode::Journal => {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(step);
             }
@@ -4207,13 +4495,7 @@ impl App {
     }
 
     fn open_journal_entry_popup(&mut self) {
-        self.journal_entry_popup = Some(JournalEntryPopupState {
-            content: String::new(),
-            tag: String::new(),
-            symbol: String::new(),
-            active_field: JournalEntryPopupField::Content,
-            message: None,
-        });
+        self.open_journal_entry_popup_prefilled(String::new(), None, None);
     }
 
     fn open_watchlist_add_popup(&mut self) {
@@ -4221,6 +4503,201 @@ impl App {
             query: String::new(),
             selected: 0,
         });
+    }
+
+    fn open_watchlist_target_popup(&mut self) {
+        let Some(entry) = self.selected_watchlist_entry().cloned() else {
+            return;
+        };
+        let direction = match entry.target_direction.as_deref() {
+            Some("above") => WatchlistTargetDirection::Above,
+            _ => WatchlistTargetDirection::Below,
+        };
+        self.watchlist_target_popup = Some(WatchlistTargetPopupState {
+            symbol: entry.symbol,
+            price_input: entry.target_price.unwrap_or_default(),
+            direction,
+            message: None,
+        });
+    }
+
+    fn handle_watchlist_target_popup_key(&mut self, key: KeyEvent) {
+        enum TargetAction {
+            None,
+            Clear { symbol: String },
+            Save {
+                symbol: String,
+                price: String,
+                direction: WatchlistTargetDirection,
+            },
+        }
+
+        let mut action = TargetAction::None;
+
+        {
+            let Some(state) = self.watchlist_target_popup.as_mut() else {
+                return;
+            };
+
+            match key.code {
+                KeyCode::Esc => {
+                    self.watchlist_target_popup = None;
+                    return;
+                }
+                KeyCode::Tab | KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
+                    state.direction = state.direction.toggle();
+                }
+                KeyCode::Backspace => {
+                    state.price_input.pop();
+                    state.message = None;
+                }
+                KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
+                    state.price_input.push(c);
+                    state.message = None;
+                }
+                KeyCode::Char('c') => {
+                    action = TargetAction::Clear {
+                        symbol: state.symbol.clone(),
+                    };
+                }
+                KeyCode::Enter => {
+                    let price = state.price_input.trim().to_string();
+                    if price.is_empty() {
+                        state.message = Some("Enter a target or press c to clear".to_string());
+                        return;
+                    }
+                    if price.parse::<Decimal>().is_err() {
+                        state.message = Some("Target must be numeric".to_string());
+                        return;
+                    }
+                    action = TargetAction::Save {
+                        symbol: state.symbol.clone(),
+                        price,
+                        direction: state.direction,
+                    };
+                }
+                _ => {}
+            }
+        }
+
+        match action {
+            TargetAction::None => {}
+            TargetAction::Clear { symbol } => {
+                if let Some(backend) = self.open_backend() {
+                    let _ = db_watchlist::set_watchlist_target_backend(&backend, &symbol, None, None);
+                    self.load_watchlist();
+                }
+                self.watchlist_target_popup = None;
+            }
+            TargetAction::Save {
+                symbol,
+                price,
+                direction,
+            } => {
+                if let Some(backend) = self.open_backend() {
+                    match db_watchlist::set_watchlist_target_backend(
+                        &backend,
+                        &symbol,
+                        Some(&price),
+                        Some(direction.as_str()),
+                    ) {
+                        Ok(_) => {
+                            self.load_watchlist();
+                            self.watchlist_target_popup = None;
+                        }
+                        Err(err) => {
+                            if let Some(state) = self.watchlist_target_popup.as_mut() {
+                                state.message = Some(format!("Save failed: {err}"));
+                            }
+                        }
+                    }
+                } else if let Some(state) = self.watchlist_target_popup.as_mut() {
+                    state.message = Some("Database unavailable".to_string());
+                }
+            }
+        }
+    }
+
+    fn delete_selected_transaction(&mut self) {
+        let Some(tx) = self.selected_transaction().cloned() else {
+            return;
+        };
+        if let Some(backend) = self.open_backend() {
+            let _ = transactions::delete_transaction_backend(&backend, tx.id);
+            self.load_data();
+            self.recompute();
+        }
+    }
+
+    fn selected_market_item(&self) -> Option<markets::MarketItem> {
+        markets::market_symbols()
+            .get(self.markets_selected_index)
+            .cloned()
+    }
+
+    fn selected_economy_item(&self) -> Option<economy::EconomyItem> {
+        economy::economy_symbols()
+            .get(self.economy_selected_index)
+            .cloned()
+    }
+
+    fn open_selected_market_chart(&mut self) {
+        if let Some(item) = self.selected_market_item() {
+            self.open_chart_popup_for_symbol(item.yahoo_symbol, item.category);
+        }
+    }
+
+    fn open_selected_economy_chart(&mut self) {
+        if let Some(item) = self.selected_economy_item() {
+            self.open_chart_popup_for_symbol(
+                item.yahoo_symbol,
+                economy::category_for_group(item.group),
+            );
+        }
+    }
+
+    fn add_alert_for_selected_market(&mut self) {
+        let Some(item) = self.selected_market_item() else {
+            return;
+        };
+        let Some(price) = self.prices.get(&item.yahoo_symbol).copied() else {
+            return;
+        };
+        self.create_price_alert(&item.yahoo_symbol, (price * dec!(1.05)).round_dp(2), "above");
+    }
+
+    fn add_watchlist_for_selected_news_symbol(&mut self) {
+        let Some(symbol) = self.selected_news_detected_symbols().into_iter().next() else {
+            return;
+        };
+        if let Some(backend) = self.open_backend() {
+            let category = crate::models::asset_names::infer_category(&symbol);
+            let _ = db_watchlist::add_to_watchlist_in_group_backend(
+                &backend,
+                &symbol,
+                category,
+                self.watchlist_active_group,
+            );
+            self.load_watchlist();
+            self.request_watchlist_data();
+        }
+    }
+
+    fn journal_selected_news(&mut self) {
+        let Some(entry) = self.selected_news_entry() else {
+            return;
+        };
+        let symbol = self.selected_news_detected_symbols().into_iter().next();
+        let mut content = entry.title.clone();
+        if !entry.description.trim().is_empty() {
+            content.push_str(" — ");
+            content.push_str(entry.description.trim());
+        }
+        self.open_journal_entry_popup_prefilled(
+            content,
+            Some("news".to_string()),
+            symbol,
+        );
     }
 
     fn handle_journal_entry_popup_key(&mut self, key: KeyEvent) {
@@ -4449,9 +4926,6 @@ impl App {
             "view news" => {
                 self.view_mode = ViewMode::News;
                 self.load_news();
-            }
-            "view chartgrid" | "view charts" | "view chart-grid" => {
-                self.view_mode = ViewMode::ChartGrid
             }
             "view journal" => self.view_mode = ViewMode::Journal,
             "onboarding" => {
@@ -8961,6 +9435,45 @@ mod mouse_tests {
         app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), 2, 5));
         assert_eq!(app.sort_field, SortField::Name);
         assert!(app.sort_ascending); // Name defaults ascending
+    }
+
+    #[test]
+    fn click_transaction_row_uses_rendered_table_area() {
+        let mut app = make_app();
+        app.view_mode = ViewMode::Transactions;
+        app.display_transactions = vec![
+            Transaction {
+                id: 1,
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(100),
+                currency: "USD".to_string(),
+                date: "2026-03-01".to_string(),
+                notes: None,
+                created_at: "2026-03-01T00:00:00Z".to_string(),
+            },
+            Transaction {
+                id: 2,
+                symbol: "MSFT".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: dec!(5),
+                price_per: dec!(200),
+                currency: "USD".to_string(),
+                date: "2026-03-02".to_string(),
+                notes: None,
+                created_at: "2026-03-02T00:00:00Z".to_string(),
+            },
+        ];
+        render_app(&mut app);
+
+        let area = app.page_table_area.expect("missing transactions table area");
+        let row = area.y + 2 + 1;
+        let col = area.x + 2;
+        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), col, row));
+        assert_eq!(app.tx_selected_index, 1);
     }
 
     #[test]

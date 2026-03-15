@@ -73,6 +73,6 @@ These routines use the full pftui analytics engine:
 
 ## Integration Guardrails
 
-- Use `pftui agent journal notes add ... --section market` for market-close logs. Do not use `--section eod` (invalid section).
+- Use `pftui journal notes add ... --section market` for market-close logs. Do not use `--section eod` (invalid section).
 - Run all `pftui` write-back commands (predictions, notes, agent-msg, scenario/conviction updates) before sending Telegram/chat briefs.
 - For notable market-close moves, send explicit handoff messaging to the evening planner flow (`pftui agent message send ... --from market-close --to evening-planner`).

@@ -82,7 +82,7 @@ pub fn category_for_group(group: EconomyGroup) -> AssetCategory {
     }
 }
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     // Split into: top strip (3 rows) + body (rest)
     let outer = Layout::default()
         .direction(Direction::Vertical)
@@ -110,6 +110,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let right = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(8),  // selected indicator
             Constraint::Length(9),  // BLS indicators panel
             Constraint::Percentage(25),
             Constraint::Length(7),
@@ -118,11 +119,82 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(body[1]);
 
-    render_bls_indicators(frame, right[0], app);
-    render_yield_curve_chart(frame, right[1], app);
-    render_sentiment_panel(frame, right[2], app);
-    render_calendar_panel(frame, right[3], app);
-    render_predictions_panel(frame, right[4], app);
+    render_selected_indicator_panel(frame, right[0], app);
+    render_bls_indicators(frame, right[1], app);
+    render_yield_curve_chart(frame, right[2], app);
+    render_sentiment_panel(frame, right[3], app);
+    render_calendar_panel(frame, right[4], app);
+    render_predictions_panel(frame, right[5], app);
+}
+
+fn render_selected_indicator_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+    let items = economy_symbols();
+    let Some(item) = items.get(app.economy_selected_index) else {
+        return;
+    };
+    let price = app.prices.get(&item.yahoo_symbol).copied();
+    let change = app
+        .price_history
+        .get(&item.yahoo_symbol)
+        .and_then(|history| {
+            if history.len() < 2 {
+                return None;
+            }
+            let latest = history.last()?.close;
+            let prev = history.get(history.len().saturating_sub(2))?.close;
+            if prev == dec!(0) {
+                return None;
+            }
+            Some((latest - prev) / prev * dec!(100))
+        });
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Selected ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(&item.symbol, Style::default().fg(t.text_primary).bold()),
+        ]),
+        Line::from(item.name.clone()),
+        Line::from(vec![
+            Span::styled("Group: ", Style::default().fg(t.text_secondary)),
+            Span::styled(item.group.to_string(), Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
+            Span::styled("Value: ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                price
+                    .map(|v| format!("{:.2}", v))
+                    .unwrap_or_else(|| "---".to_string()),
+                Style::default().fg(t.text_primary),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("1D:   ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                change
+                    .map(|v| format!("{:+.2}%", v))
+                    .unwrap_or_else(|| "---".to_string()),
+                Style::default().fg(t.text_primary),
+            ),
+        ]),
+        Line::from(Span::styled(
+            "c chart  n news  j/k navigate indicators",
+            Style::default().fg(t.text_muted),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_set(theme::BORDER_ACTIVE)
+            .border_style(Style::default().fg(t.border_inactive))
+            .title(Span::styled(
+                " Selected Indicator ",
+                Style::default().fg(t.text_accent).bold(),
+            ))
+            .style(Style::default().bg(t.surface_0)),
+    );
+    frame.render_widget(paragraph, area);
 }
 
 /// BLS Economic Indicators panel — CPI, unemployment, NFP, hourly earnings.
@@ -327,8 +399,9 @@ fn render_top_strip(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Main macro indicators table (left panel).
-fn render_macro_table(frame: &mut Frame, area: Rect, app: &App) {
+fn render_macro_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = &app.theme;
+    app.page_table_area = Some(area);
     let items = economy_symbols();
 
     let header = Row::new(vec![

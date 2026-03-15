@@ -24,7 +24,7 @@ pftui analytics macro outcomes --json
 pftui analytics macro parallels --json
 pftui analytics macro log --limit 10 --json
 pftui analytics high --json
-pftui agent journal prediction list --json
+pftui journal prediction list --json
 ```
 
 Read STRUCTURAL.md for qualitative framework context.
@@ -135,7 +135,7 @@ pftui analytics macro log add --date $(date +%Y-%m-%d) \
 Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks:
 
 ```bash
-pftui agent journal prediction add "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
+pftui journal prediction add "[structural cause from Dalio/4T framework] will [measurable effect] by [date]" \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe macro --confidence [0.X] --source macro-agent
 ```
 

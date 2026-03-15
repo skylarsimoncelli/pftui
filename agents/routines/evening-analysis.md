@@ -27,9 +27,9 @@ pftui analytics high --json
 pftui analytics macro regime current --json
 pftui analytics macro regime history
 pftui analytics movers --json
-pftui agent journal prediction scorecard --date today --json
-pftui agent journal prediction list --json
-pftui agent journal notes list --json
+pftui journal prediction scorecard --date today --json
+pftui journal prediction list --json
+pftui journal notes list --json
 ```
 
 3. Read user profile and portfolio for conviction state and allocation context.
@@ -59,8 +59,8 @@ Full accounting of today's predictions across ALL timeframes:
 
 For EVERY wrong prediction across any timeframe:
 ```bash
-pftui agent journal prediction score <id> --outcome wrong --notes "[what happened vs predicted]" --lesson "[Genuine reflection: what cause-effect assumption was wrong]"
-pftui agent journal notes add "WRONG CALL: [prediction]. Expected [X] because [reasoning]. Got [Y] because [actual cause]. Lesson: [specific analytical change]." \
+pftui journal prediction score <id> --outcome wrong --notes "[what happened vs predicted]" --lesson "[Genuine reflection: what cause-effect assumption was wrong]"
+pftui journal notes add "WRONG CALL: [prediction]. Expected [X] because [reasoning]. Got [Y] because [actual cause]. Lesson: [specific analytical change]." \
   --date $(date +%Y-%m-%d) --section analysis
 ```
 
@@ -97,13 +97,13 @@ The 2-3 things from today that deserve genuine analytical depth:
 
 Update scenarios with full analytical reasoning:
 ```bash
-pftui agent journal scenario update "<name>" --probability <new> \
+pftui journal scenario update "<name>" --probability <new> \
   --notes "[Evidence chain]: [Why probability changed]: [Reversal condition]"
 ```
 
 Update convictions where today's analysis changed your view:
 ```bash
-pftui agent journal conviction set <SYMBOL> --score <n> \
+pftui journal conviction set <SYMBOL> --score <n> \
   --notes "Evening [date]: [Analysis-driven update]. Evidence: [specific]. Changed because [reason]."
 ```
 
@@ -111,7 +111,7 @@ pftui agent journal conviction set <SYMBOL> --score <n> \
 
 Make 3-5 cause-and-effect predictions across MEDIUM and HIGH timeframes:
 ```bash
-pftui agent journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level]
+pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level]
 ```
 
 ### 7. Add Trend Evidence

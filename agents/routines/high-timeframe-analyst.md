@@ -17,8 +17,8 @@ pftui analytics trends list --json
 pftui analytics high --json
 pftui analytics trends list --json
 pftui analytics trends evidence-list --json
-pftui agent journal conviction list --json
-pftui agent journal prediction list --json
+pftui journal conviction list --json
+pftui journal prediction list --json
 pftui agent message list --to high-agent --unacked
 ```
 
@@ -51,7 +51,7 @@ pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
 
 4. Update conviction on assets affected by this trend:
 ```bash
-pftui agent journal conviction set <SYMBOL> --score <n> \
+pftui journal conviction set <SYMBOL> --score <n> \
   --notes "HIGH [date]: Trend '[name]' is [accelerating/stable/weakening]. Evidence: [specific]. Impact on [asset]: [reasoning]."
 ```
 
@@ -67,7 +67,7 @@ pftui analytics trends add "[name]" --timeframe high \
 
 Score HIGH predictions where enough evidence has accumulated:
 ```bash
-pftui agent journal prediction list --filter pending --json
+pftui journal prediction list --filter pending --json
 ```
 
 HIGH predictions resolve slowly. But check evidence direction:
@@ -81,8 +81,8 @@ For wrong HIGH predictions, structural reflection:
 3. What competing force did you underweight?
 
 ```bash
-pftui agent journal prediction score <id> --outcome <correct|wrong|partial> --notes "[evidence that resolved it]"
-pftui agent journal notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. Reality: [Y]. Underweighted: [Z]. Changes view on [trend] because [reason]." \
+pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "[evidence that resolved it]"
+pftui journal notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. Reality: [Y]. Underweighted: [Z]. Changes view on [trend] because [reason]." \
   --date $(date +%Y-%m-%d) --section analysis
 ```
 
@@ -91,7 +91,7 @@ pftui agent journal notes add "HIGH WRONG CALL: [prediction]. Structural thesis:
 Make 1-3 structural cause-and-effect predictions (3-12 month horizon):
 
 ```bash
-pftui agent journal prediction add "[structural cause] will [structural effect] by [date]" \
+pftui journal prediction add "[structural cause] will [structural effect] by [date]" \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe high --confidence [0.X] --source-agent high-agent
 ```
 

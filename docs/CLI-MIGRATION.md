@@ -28,11 +28,11 @@ F42 removes the old paths. Only the new canonical paths are supported.
 | `pftui dashboard sector ...` | `pftui data dashboard sector ...` |
 | `pftui dashboard heatmap ...` | `pftui data dashboard heatmap ...` |
 | `pftui dashboard global ...` | `pftui data dashboard global ...` |
-| `pftui journal entry ...` | `pftui agent journal entry ...` |
-| `pftui journal prediction ...` | `pftui agent journal prediction ...` |
-| `pftui journal conviction ...` | `pftui agent journal conviction ...` |
-| `pftui journal notes ...` | `pftui agent journal notes ...` |
-| `pftui journal scenario ...` | `pftui agent journal scenario ...` |
+| `pftui agent journal entry ...` | `pftui journal entry ...` |
+| `pftui agent journal prediction ...` | `pftui journal prediction ...` |
+| `pftui agent journal conviction ...` | `pftui journal conviction ...` |
+| `pftui agent journal notes ...` | `pftui journal notes ...` |
+| `pftui agent journal scenario ...` | `pftui journal scenario ...` |
 | `pftui agent message send ...` | `pftui agent message send ...` |
 | `pftui agent message list ...` | `pftui agent message list ...` |
 | `pftui agent message reply ...` | `pftui agent message reply ...` |

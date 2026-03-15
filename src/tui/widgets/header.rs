@@ -521,21 +521,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         ViewMode::News,
     );
 
-    // Chart grid tab — always visible
-    let grid_style = if matches!(app.view_mode, ViewMode::ChartGrid) {
-        Style::default().fg(t.text_primary).bold().underlined()
-    } else {
-        Style::default().fg(t.text_muted)
-    };
-    push_tab(
-        &mut spans,
-        app,
-        "[8]",
-        if compact { "G" } else { "Grid" },
-        grid_style,
-        ViewMode::ChartGrid,
-    );
-
     // Journal tab — always visible
     let journal_style = if matches!(app.view_mode, ViewMode::Journal) {
         Style::default().fg(t.text_primary).bold().underlined()
@@ -545,7 +530,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     push_tab(
         &mut spans,
         app,
-        "[9]",
+        "[8]",
         if compact { "J" } else { "Journal" },
         journal_style,
         ViewMode::Journal,

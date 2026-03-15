@@ -1,7 +1,6 @@
 pub mod alerts_popup;
 pub mod analytics;
 pub mod asset_detail_popup;
-pub mod chart_grid;
 pub mod command_palette;
 pub mod context_menu;
 pub mod correlation_grid;
@@ -20,4 +19,5 @@ pub mod search_chart_popup;
 pub mod search_overlay;
 pub mod transactions;
 pub mod watchlist_add_popup;
+pub mod watchlist_target_popup;
 pub mod watchlist;

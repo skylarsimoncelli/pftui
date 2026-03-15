@@ -29,8 +29,7 @@ Full keybinding reference for pftui. Press `?` in the TUI for an interactive ver
 | `4` | Economy — treasury yields, currencies, macro indicators |
 | `5` | Watchlist — tracked assets you don't hold |
 | `W` then `1/2/3` | Switch watchlist group |
-| `8` | Chart Grid — mini charts for held positions |
-| `9` | Journal |
+| `8` | Journal |
 
 ## Charts
 
@@ -76,7 +75,7 @@ Charts display SMA(20) and SMA(50) moving averages on single-symbol views, and v
 | Action | Effect |
 |---|---|
 | Scroll wheel ↑↓ | Navigate up/down in current view |
-| Click tab label | Switch to that view (Pos/Tx/Mkt/Econ/Watch) |
+| Click tab label | Switch to that view |
 | Click row | Select that position/item |
 | Click anywhere | Dismiss help overlay, search overlay, or detail popup |
 

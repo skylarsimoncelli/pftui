@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -90,9 +90,23 @@ fn column_width(col: WatchlistColumn) -> Constraint {
     }
 }
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    if area.width >= 118 && !app.watchlist_entries.is_empty() {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(68), Constraint::Percentage(32)])
+            .split(area);
+        render_table(frame, chunks[0], app);
+        render_detail_panel(frame, chunks[1], app);
+    } else {
+        render_table(frame, area, app);
+    }
+}
+
+fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = &app.theme;
     let entries = &app.watchlist_entries;
+    app.page_table_area = Some(area);
 
     if entries.is_empty() {
         let empty_msg = vec![
@@ -364,13 +378,104 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .border_style(Style::default().fg(t.border_inactive))
                 .style(Style::default().bg(t.surface_0))
                 .title(format!(
-                    " Watchlist [Group {}] · i:add  a:alert  c:chart  r:remove ",
+                    " Watchlist [Group {}] · i:add  t:target  a:alert  c:chart  J:journal ",
                     app.watchlist_active_group
-                )),
+                ))
+                .title(
+                    Line::from(Span::styled(
+                        "[ ] group  r:remove",
+                        Style::default().fg(t.text_muted),
+                    ))
+                    .alignment(Alignment::Right),
+                ),
         )
         .row_highlight_style(Style::default().bg(t.surface_3));
 
     frame.render_widget(table, area);
+}
+
+fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.border_inactive))
+        .title(Span::styled(
+            " Watch Context ",
+            Style::default().fg(t.text_accent).bold(),
+        ));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let Some(entry) = app.selected_watchlist_entry() else {
+        return;
+    };
+    let category: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
+    let yahoo_sym = yahoo_symbol_for(&entry.symbol, category);
+    let price = app.prices.get(&yahoo_sym).copied();
+    let related_news: Vec<_> = app
+        .news_entries
+        .iter()
+        .filter(|item| item.title.to_uppercase().contains(&entry.symbol))
+        .take(4)
+        .collect();
+    let target_line = match (&entry.target_price, &entry.target_direction) {
+        (Some(price), Some(direction)) => format!("{direction} {price}"),
+        _ => "No target".to_string(),
+    };
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Symbol: ", Style::default().fg(t.text_secondary)),
+            Span::styled(&entry.symbol, Style::default().fg(t.text_primary).bold()),
+        ]),
+        Line::from(vec![
+            Span::styled("Price:  ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                price.map(format_price).unwrap_or_else(|| "---".to_string()),
+                Style::default().fg(t.text_primary),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Group:  ", Style::default().fg(t.text_secondary)),
+            Span::styled(format!("Group {}", app.watchlist_active_group), Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
+            Span::styled("Target: ", Style::default().fg(t.text_secondary)),
+            Span::styled(target_line, Style::default().fg(t.text_primary)),
+        ]),
+        Line::from(vec![
+            Span::styled("Held:   ", Style::default().fg(t.text_secondary)),
+            Span::styled(
+                if app.positions.iter().any(|pos| pos.symbol == entry.symbol) {
+                    "Yes"
+                } else {
+                    "No"
+                },
+                Style::default().fg(t.text_primary),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled("Recent headlines", Style::default().fg(t.text_secondary).bold())),
+        if related_news.is_empty() {
+            Line::from(Span::styled("No related cached headlines", Style::default().fg(t.text_muted)))
+        } else {
+            Line::from(Span::styled(
+                format!("{} cached items", related_news.len()),
+                Style::default().fg(t.text_muted),
+            ))
+        },
+        Line::from(""),
+        Line::from(Span::styled("Actions", Style::default().fg(t.text_secondary).bold())),
+        Line::from("t edit target"),
+        Line::from("a create alert"),
+        Line::from("c open chart"),
+        Line::from("J save journal note"),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(t.surface_0)),
+        inner,
+    );
 }
 
 /// Map a watchlist symbol to its Yahoo Finance ticker.

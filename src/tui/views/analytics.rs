@@ -20,7 +20,7 @@ const SCENARIOS: &[(ScenarioPreset, &str)] = &[
     (ScenarioPreset::OilCrisis1973, "1973 Oil Crisis"),
 ];
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let main = Block::default()
         .title("Analytics")
         .borders(Borders::ALL)
@@ -37,7 +37,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .constraints([
             Constraint::Length(7),
             Constraint::Length(10),
-            Constraint::Min(4),
+            Constraint::Length(10),
+            Constraint::Min(6),
         ])
         .split(inner);
 
@@ -61,7 +62,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     render_concentration_panel(frame, mid[0], app, risk_metrics.herfindahl_index);
     render_scenarios_panel(frame, mid[1], app);
 
-    render_projection_panel(frame, rows[2], app);
+    let lower = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(rows[2]);
+    render_projection_panel(frame, lower[0], app);
+    render_regime_monitor(frame, lower[1], app);
+
+    render_impact_panel(frame, rows[3], app);
 }
 
 fn render_risk_panel(frame: &mut Frame, area: Rect, app: &App, metrics: &risk::RiskMetrics) {
@@ -148,7 +156,8 @@ fn render_concentration_panel(
     frame.render_widget(p, area);
 }
 
-fn render_scenarios_panel(frame: &mut Frame, area: Rect, app: &App) {
+fn render_scenarios_panel(frame: &mut Frame, area: Rect, app: &mut App) {
+    app.page_table_area = Some(area);
     let mut lines: Vec<Line<'static>> = Vec::new();
     for (idx, (_, label)) in SCENARIOS.iter().enumerate() {
         let marker = if idx == app.analytics_selected_index { ">" } else { " " };
@@ -222,6 +231,108 @@ fn render_projection_panel(frame: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .title("Scenario Projection")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(app.theme.border_subtle)),
+        )
+        .style(Style::default().fg(app.theme.text_primary));
+    frame.render_widget(p, area);
+}
+
+fn render_regime_monitor(frame: &mut Frame, area: Rect, app: &App) {
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(format!(
+            "Regime: {} ({:+}/{})",
+            app.regime_score.label(),
+            app.regime_score.total,
+            app.regime_score.active_count
+        )),
+        Line::from(format!(
+            "Crypto F&G: {}",
+            app.crypto_fng
+                .as_ref()
+                .map(|(value, label)| format!("{value} {label}"))
+                .unwrap_or_else(|| "N/A".to_string())
+        )),
+        Line::from(format!(
+            "Traditional F&G: {}",
+            app.traditional_fng
+                .as_ref()
+                .map(|(value, label)| format!("{value} {label}"))
+                .unwrap_or_else(|| "N/A".to_string())
+        )),
+        Line::from(""),
+    ];
+
+    for signal in app.regime_score.signals.iter().take(4) {
+        lines.push(Line::from(format!(
+            "{} {}",
+            if signal.score > 0 {
+                "↑"
+            } else if signal.score < 0 {
+                "↓"
+            } else {
+                "·"
+            },
+            signal.label
+        )));
+    }
+
+    let p = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title("Regime Monitor")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(app.theme.border_subtle)),
+        )
+        .style(Style::default().fg(app.theme.text_primary));
+    frame.render_widget(p, area);
+}
+
+fn render_impact_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let (preset, label) = SCENARIOS[app.analytics_selected_index.min(SCENARIOS.len() - 1)];
+    let overrides = scaled_overrides(preset, &app.prices, app.analytics_shock_scale_pct);
+    let mut impacts: Vec<(String, Decimal)> = app
+        .positions
+        .iter()
+        .filter_map(|pos| {
+            let current = pos.current_price?;
+            let target = overrides.get(&pos.symbol).copied().unwrap_or(current);
+            let delta_pct = if current > dec!(0) {
+                (target - current) / current * dec!(100)
+            } else {
+                dec!(0)
+            };
+            Some((pos.symbol.clone(), delta_pct))
+        })
+        .collect();
+    impacts.sort_by(|a, b| {
+        b.1.abs()
+            .cmp(&a.1.abs())
+            .then_with(|| a.0.cmp(&b.0))
+    });
+
+    let mut lines = vec![
+        Line::from(format!("Scenario impact ranking for {}", label)),
+        Line::from(""),
+    ];
+    for (symbol, delta_pct) in impacts.into_iter().take(6) {
+        lines.push(Line::from(format!("{:<8} {:+.2}%", symbol, delta_pct)));
+    }
+    if app.calendar_events.first().is_some() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Next calendar event",
+            Style::default().fg(app.theme.text_secondary).bold(),
+        )));
+        if let Some(event) = app.calendar_events.first() {
+            lines.push(Line::from(format!("{} {}", event.date, event.name)));
+        }
+    }
+
+    let p = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title("Impact Map")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(app.theme.border_subtle)),
         )

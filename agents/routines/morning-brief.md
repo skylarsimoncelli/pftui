@@ -25,9 +25,9 @@ pftui analytics alignment --json
 pftui analytics recap --date yesterday --json
 pftui portfolio brief --json
 pftui analytics movers --overnight --json
-pftui agent journal prediction scorecard --date yesterday --json
-pftui agent journal prediction list --filter pending --json
-pftui agent journal conviction list --json
+pftui journal prediction scorecard --date yesterday --json
+pftui journal prediction list --filter pending --json
+pftui journal conviction list --json
 ```
 
 3. Read user profile and portfolio for conviction state and allocation context.
@@ -69,7 +69,7 @@ WRITE TO PFTUI BEFORE SENDING BRIEF.
 
 If you make any specific market call in the morning brief, log it first:
 ```bash
-pftui agent journal prediction add "[cause] will [effect] by [date]" --symbol [SYM] \
+pftui journal prediction add "[cause] will [effect] by [date]" --symbol [SYM] \
   --target-date [YYYY-MM-DD] --conviction [level] --timeframe low \
   --confidence [0.X] --source-agent morning-intelligence
 ```
@@ -86,6 +86,6 @@ pftui agent message ack --id <id>
 - Deep analysis happens in evening-analysis. Don't duplicate it.
 - No shallow hedging ("could be significant", "data suggests"). State what happened and what it means, briefly.
 - Lead with alignment status. That's the strategic signal.
-- Every specific directional market call must be written via `pftui agent journal prediction add` before publishing the brief.
+- Every specific directional market call must be written via `pftui journal prediction add` before publishing the brief.
 - Persist all `pftui` write-back operations before any Telegram/chat send to reduce timeout-loss risk.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it.

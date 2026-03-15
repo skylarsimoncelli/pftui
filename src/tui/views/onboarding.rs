@@ -12,11 +12,11 @@ const STEPS: [(&str, &str); 5] = [
     ),
     (
         "Core Views",
-        "1 Portfolio, 5 Watchlist, 8 Chart Grid, 3 Markets, 4 Economy. Press ? for full keybindings.",
+        "1 Portfolio, 5 Watchlist, 3 Markets, 4 Economy, 8 Journal. Press ? for full keybindings.",
     ),
     (
         "Command Palette",
-        "Press : for command mode. Useful commands: view chartgrid, refresh, scan, layout analyst.",
+        "Press : for command mode. Useful commands: view journal, refresh, scan, layout analyst.",
     ),
     (
         "Daily Routine",
