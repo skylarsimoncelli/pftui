@@ -58,48 +58,6 @@ All 10 subtasks completed. Five-domain hierarchy finalized: `agent`, `analytics`
 
 Full namespace restructure shipped. All legacy aliases removed. All agent routines and docs updated to canonical v0.10.0 paths.
 
-### F41: Interactive Shell (`pftui shell`)
-
-> A human-friendly interactive CLI session with autocompletion and command discovery.
-> Not a TUI with panels. A shell. Think Cisco IOS, Redis CLI, or MySQL monitor.
-
-```
-$ pftui shell
-pftui> analytics macro
-  compare      Head-to-head power comparison between two countries
-  cycles       Big Cycle and Fourth Turning stage tracking
-  history      Historical power metrics by decade
-  log          Weekly structural observations
-  metrics      Dalio 8 determinants for a country
-  outcomes     Structural outcome probabilities
-  parallels    Historical parallel tracker
-  regime       Market regime classification
-
-pftui> analytics macro cycles history --country US --decade 1940
-[output]
-
-pftui> journal prediction scorecard --date yesterday
-[output]
-```
-
-Features:
-- Tab completion at every level of the command tree
-- `?` or partial command shows available subcommands with descriptions (IOS-style)
-- Command history (readline/rustyline with persistent history file)
-- Context-aware: after typing `journal`, only journal subcommands complete
-- Colored output, same as CLI
-- `exit` or Ctrl-D to quit
-- Optional: `enable` mode for destructive operations (add, remove, update)
-
-Implementation: `rustyline` crate for readline. Build completer from the clap
-command tree (clap already knows the full hierarchy). Each command's `about` text
-becomes the description shown in the library view.
-
-Low priority. The deep CLI hierarchy must ship first (F40) since this shell
-is built on top of it. The better the tree, the better the shell.
-
-Source: new `src/commands/shell.rs`, `src/cli.rs` (add shell subcommand).
-
 ### F36: Investor Perspectives Panel
 
 Multi-lens macro analysis via sub-agents. 15 named legends + 10 archetypes + custom.

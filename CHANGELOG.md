@@ -3,6 +3,17 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Add `pftui console` interactive shell
+
+- What:
+  - added a new top-level `pftui console` command that opens an interactive REPL built from the existing clap command tree.
+  - implemented Cisco IOS-style navigation into non-leaf command namespaces, `?` context browsing, `run` execution of the current context, persistent readline history, and tab completion scoped to the current level.
+  - wired console command execution by spawning the current `pftui` binary with the selected command path, avoiding duplicated business-logic dispatch.
+  - removed the old F41 interactive shell TODO entry now that the console exists.
+- Why: the deep CLI hierarchy is now large enough that an interactive navigator materially improves discoverability and day-to-day operator speed without replacing the existing CLI.
+- Files: `Cargo.toml`, `src/cli.rs`, `src/main.rs`, `src/commands/mod.rs`, `src/commands/console.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test -q`, `cargo build --release -q`
+
 ### 2026-03-14 — Close remaining feedback backlog: journal CLI ergonomics, trackline scan alerts, grouped agent message packages
 
 - What:

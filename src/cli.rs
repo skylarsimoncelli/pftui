@@ -1637,6 +1637,9 @@ pub struct Cli {
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
+    /// Interactive command console with hierarchical navigation and tab completion
+    Console,
+
     /// Personal research journal: entries, predictions, convictions, notes, scenarios
     Journal {
         #[command(subcommand)]

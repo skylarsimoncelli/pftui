@@ -48,6 +48,8 @@ tokio-util = "0.7"
 tokio-stream = "0.1"
 scraper = "0.22"
 calamine = "0.33"
+rustyline = "14"
+shlex = "1"
 
 [package.metadata.generate-rpm]
 assets = [

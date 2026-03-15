@@ -535,6 +535,11 @@ fn run_agent_journal(
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let cached_only = cli.cached_only;
+
+    if matches!(cli.command, Some(Command::Console)) {
+        return commands::console::run(cached_only);
+    }
+
     let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
 
@@ -561,6 +566,8 @@ fn main() -> Result<()> {
                 result
             }
         }
+
+        Some(Command::Console) => unreachable!("console handled before backend initialization"),
 
         Some(Command::Journal { command }) => run_agent_journal(&backend, command),
 
