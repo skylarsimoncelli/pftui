@@ -25,7 +25,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     if filtered_entries.is_empty() {
         let empty_msg = if app.journal_search_query.is_empty() {
-            "No journal entries yet. Use 'pftui journal add' to create entries."
+            "No journal entries yet. Press 'a' to add one."
         } else {
             "No entries match your search."
         };
@@ -34,9 +34,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(t.border_inactive))
-                    .title(" Journal ")
-                    .title_style(Style::default().fg(t.text_primary).bold()),
+                .border_style(Style::default().fg(t.border_inactive))
+                .title(" Journal · a:add ")
+                .title_style(Style::default().fg(t.text_primary).bold()),
             );
         frame.render_widget(empty, area);
         return;
@@ -136,9 +136,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(t.border_inactive))
                 .title(if app.journal_search_query.is_empty() {
-                    " Journal "
+                    " Journal · a:add "
                 } else {
-                    " Journal (filtered) "
+                    " Journal (filtered) · a:add "
                 })
                 .title_style(Style::default().fg(t.text_primary).bold()),
         )

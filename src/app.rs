@@ -331,6 +331,46 @@ pub struct ContextMenuState {
     pub symbol: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JournalEntryPopupField {
+    Content,
+    Tag,
+    Symbol,
+}
+
+impl JournalEntryPopupField {
+    fn next(self) -> Self {
+        match self {
+            JournalEntryPopupField::Content => JournalEntryPopupField::Tag,
+            JournalEntryPopupField::Tag => JournalEntryPopupField::Symbol,
+            JournalEntryPopupField::Symbol => JournalEntryPopupField::Symbol,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            JournalEntryPopupField::Content => JournalEntryPopupField::Content,
+            JournalEntryPopupField::Tag => JournalEntryPopupField::Content,
+            JournalEntryPopupField::Symbol => JournalEntryPopupField::Tag,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct JournalEntryPopupState {
+    pub content: String,
+    pub tag: String,
+    pub symbol: String,
+    pub active_field: JournalEntryPopupField,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WatchlistAddPopupState {
+    pub query: String,
+    pub selected: usize,
+}
+
 /// Which field is active in the add-transaction form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TxFormField {
@@ -474,6 +514,8 @@ pub struct App {
     pub search_overlay_query: String,
     pub search_overlay_selected: usize,
     pub search_overlay_requested_symbols: std::collections::HashSet<String>,
+    pub journal_entry_popup: Option<crate::app::JournalEntryPopupState>,
+    pub watchlist_add_popup: Option<crate::app::WatchlistAddPopupState>,
     pub command_palette_open: bool,
     pub command_palette_input: String,
     pub command_palette_selected: usize,
@@ -814,6 +856,8 @@ impl App {
             search_overlay_query: String::new(),
             search_overlay_selected: 0,
             search_overlay_requested_symbols: std::collections::HashSet::new(),
+            journal_entry_popup: None,
+            watchlist_add_popup: None,
             command_palette_open: false,
             command_palette_input: String::new(),
             command_palette_selected: 0,
@@ -2443,6 +2487,16 @@ impl App {
             return;
         }
 
+        if self.journal_entry_popup.is_some() {
+            self.handle_journal_entry_popup_key(key);
+            return;
+        }
+
+        if self.watchlist_add_popup.is_some() {
+            self.handle_watchlist_add_popup_key(key);
+            return;
+        }
+
         // Asset detail popup (legacy, sits on top of search overlay)
         if self.asset_detail.is_some() {
             self.handle_asset_detail_key(key);
@@ -2727,6 +2781,14 @@ impl App {
                     self.alerts_scroll = 0;
                     self.load_alerts(); // refresh alerts when opening
                 }
+            }
+
+            KeyCode::Char('a') if matches!(self.view_mode, ViewMode::Journal) => {
+                self.open_journal_entry_popup();
+            }
+
+            KeyCode::Char('i') if matches!(self.view_mode, ViewMode::Watchlist) => {
+                self.open_watchlist_add_popup();
             }
 
             // Drift columns toggle
@@ -3078,6 +3140,14 @@ impl App {
                     self.command_palette_open = false;
                     self.command_palette_input.clear();
                     self.command_palette_selected = 0;
+                    return;
+                }
+                if self.journal_entry_popup.is_some() {
+                    self.journal_entry_popup = None;
+                    return;
+                }
+                if self.watchlist_add_popup.is_some() {
+                    self.watchlist_add_popup = None;
                     return;
                 }
                 if self.scan_builder_open {
@@ -4134,6 +4204,169 @@ impl App {
         self.command_palette_input.clear();
         self.command_palette_selected = 0;
         self.search_overlay_open = false;
+    }
+
+    fn open_journal_entry_popup(&mut self) {
+        self.journal_entry_popup = Some(JournalEntryPopupState {
+            content: String::new(),
+            tag: String::new(),
+            symbol: String::new(),
+            active_field: JournalEntryPopupField::Content,
+            message: None,
+        });
+    }
+
+    fn open_watchlist_add_popup(&mut self) {
+        self.watchlist_add_popup = Some(WatchlistAddPopupState {
+            query: String::new(),
+            selected: 0,
+        });
+    }
+
+    fn handle_journal_entry_popup_key(&mut self, key: KeyEvent) {
+        let Some(state) = self.journal_entry_popup.as_mut() else {
+            return;
+        };
+
+        let mut submit_entry = None;
+        match key.code {
+            KeyCode::Esc => {
+                self.journal_entry_popup = None;
+            }
+            KeyCode::Tab | KeyCode::Down => {
+                state.active_field = state.active_field.next();
+            }
+            KeyCode::BackTab | KeyCode::Up => {
+                state.active_field = state.active_field.prev();
+            }
+            KeyCode::Backspace => match state.active_field {
+                JournalEntryPopupField::Content => {
+                    state.content.pop();
+                }
+                JournalEntryPopupField::Tag => {
+                    state.tag.pop();
+                }
+                JournalEntryPopupField::Symbol => {
+                    state.symbol.pop();
+                }
+            },
+            KeyCode::Enter => {
+                if state.active_field != JournalEntryPopupField::Symbol {
+                    state.active_field = state.active_field.next();
+                    return;
+                }
+
+                let content = state.content.trim();
+                if content.is_empty() {
+                    state.message = Some("Content is required".to_string());
+                    return;
+                }
+
+                submit_entry = Some(crate::db::journal::NewJournalEntry {
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    content: content.to_string(),
+                    tag: match state.tag.trim() {
+                        "" => None,
+                        value => Some(value.to_string()),
+                    },
+                    symbol: match state.symbol.trim() {
+                        "" => None,
+                        value => Some(value.to_uppercase()),
+                    },
+                    conviction: None,
+                    status: "active".to_string(),
+                });
+            }
+            KeyCode::Char(c) => {
+                let target = match state.active_field {
+                    JournalEntryPopupField::Content => &mut state.content,
+                    JournalEntryPopupField::Tag => &mut state.tag,
+                    JournalEntryPopupField::Symbol => &mut state.symbol,
+                };
+                target.push(c);
+                state.message = None;
+            }
+            _ => {}
+        }
+
+        if let Some(entry) = submit_entry {
+            if let Some(backend) = self.open_backend() {
+                match crate::db::journal::add_entry_backend(&backend, &entry) {
+                    Ok(_) => {
+                        self.load_journal();
+                        self.journal_selected_index = 0;
+                        self.journal_entry_popup = None;
+                    }
+                    Err(err) => {
+                        if let Some(state) = self.journal_entry_popup.as_mut() {
+                            state.message = Some(format!("Save failed: {err}"));
+                        }
+                    }
+                }
+            } else if let Some(state) = self.journal_entry_popup.as_mut() {
+                state.message = Some("Database unavailable".to_string());
+            }
+        }
+    }
+
+    fn handle_watchlist_add_popup_key(&mut self, key: KeyEvent) {
+        use crate::tui::views::search_overlay::build_results;
+
+        let Some(state) = self.watchlist_add_popup.as_mut() else {
+            return;
+        };
+
+        let mut submit_selection = None;
+        match key.code {
+            KeyCode::Esc => {
+                self.watchlist_add_popup = None;
+            }
+            KeyCode::Backspace => {
+                state.query.pop();
+                state.selected = 0;
+            }
+            KeyCode::Char(c) => {
+                state.query.push(c);
+                state.selected = 0;
+            }
+            KeyCode::Down => {
+                if state.selected < 19 {
+                    state.selected += 1;
+                }
+            }
+            KeyCode::Up => {
+                state.selected = state.selected.saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                submit_selection = Some((state.query.clone(), state.selected));
+            }
+            _ => {}
+        }
+
+        if let Some((query, selected)) = submit_selection {
+            let results = build_results(self, &query);
+            if let Some(result) = results.get(selected) {
+                if let Some(backend) = self.open_backend() {
+                    let category = crate::models::asset_names::infer_category(&result.symbol);
+                    let _ = db_watchlist::add_to_watchlist_in_group_backend(
+                        &backend,
+                        &result.symbol,
+                        category,
+                        self.watchlist_active_group,
+                    );
+                    self.load_watchlist();
+                    self.request_watchlist_data();
+                    if let Some(index) = self
+                        .watchlist_entries
+                        .iter()
+                        .position(|entry| entry.symbol.eq_ignore_ascii_case(&result.symbol))
+                    {
+                        self.watchlist_selected_index = index;
+                    }
+                }
+                self.watchlist_add_popup = None;
+            }
+        }
     }
 
     fn handle_command_palette_key(&mut self, key: KeyEvent) {
@@ -7302,6 +7535,87 @@ mod breadcrumb_tests {
         app.chart_timeframe = ChartTimeframe::OneYear;
         let crumb = app.breadcrumb();
         assert!(crumb.contains("1Y"), "got: {crumb}");
+    }
+}
+
+#[cfg(test)]
+mod tui_add_popup_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_app(db_path: &str) -> App {
+        let config = crate::config::Config {
+            database_backend: crate::config::DatabaseBackend::Sqlite,
+            database_url: None,
+            postgres_max_connections: 5,
+            postgres_connect_timeout_secs: 10,
+            base_currency: "USD".to_string(),
+            refresh_interval: 60,
+            auto_refresh: true,
+            refresh_interval_secs: 300,
+            portfolio_mode: PortfolioMode::Full,
+            theme: "midnight".to_string(),
+            home_tab: "positions".to_string(),
+            layout: crate::config::WorkspaceLayout::Split,
+            fred_api_key: None,
+            brave_api_key: None,
+            news_poll_interval: 600,
+            custom_news_feeds: Vec::new(),
+            brave_news_queries: Vec::new(),
+            chart_sma: vec![20, 50],
+            watchlist: crate::config::WatchlistConfig::default(),
+            keybindings: crate::config::KeybindingsConfig::default(),
+        };
+        App::new(&config, PathBuf::from(db_path))
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn journal_popup_submit_adds_entry() {
+        let db_path = "/tmp/pftui_test_journal_popup.db";
+        let _ = std::fs::remove_file(db_path);
+        let mut app = make_app(db_path);
+        app.view_mode = ViewMode::Journal;
+
+        app.handle_key(key('a'));
+        assert!(app.journal_entry_popup.is_some());
+
+        app.handle_key(key('n'));
+        app.handle_key(key('o'));
+        app.handle_key(key('t'));
+        app.handle_key(key('e'));
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert!(app.journal_entry_popup.is_none());
+        assert!(!app.journal_entries.is_empty());
+        assert_eq!(app.journal_entries[0].content, "note");
+    }
+
+    #[test]
+    fn watchlist_popup_submit_adds_symbol() {
+        let db_path = "/tmp/pftui_test_watchlist_popup.db";
+        let _ = std::fs::remove_file(db_path);
+        let mut app = make_app(db_path);
+        app.view_mode = ViewMode::Watchlist;
+
+        app.handle_key(key('i'));
+        assert!(app.watchlist_add_popup.is_some());
+
+        app.handle_key(key('b'));
+        app.handle_key(key('t'));
+        app.handle_key(key('c'));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert!(app.watchlist_add_popup.is_none());
+        assert!(app
+            .watchlist_entries
+            .iter()
+            .any(|entry| entry.symbol.eq_ignore_ascii_case("BTC")));
     }
 }
 

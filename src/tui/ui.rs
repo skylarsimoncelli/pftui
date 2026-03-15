@@ -92,6 +92,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         views::search_chart_popup::render(frame, size, app);
     }
 
+    if app.journal_entry_popup.is_some() {
+        views::journal_entry_popup::render(frame, size, app);
+    }
+
+    if app.watchlist_add_popup.is_some() {
+        views::watchlist_add_popup::render(frame, size, app);
+    }
+
     if app.command_palette_open {
         views::command_palette::render(frame, size, app);
     }

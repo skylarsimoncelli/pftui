@@ -103,11 +103,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "  Add symbols with: pftui watch <SYMBOL>",
+                "  Press 'i' to add a symbol from inside the TUI",
                 Style::default().fg(t.text_secondary),
             )),
             Line::from(Span::styled(
-                "  Example: pftui watch AAPL",
+                "  Or use: pftui portfolio watchlist add AAPL",
                 Style::default().fg(t.text_secondary),
             )),
         ];
@@ -116,6 +116,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_set(crate::tui::theme::BORDER_INACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
+                .title(" Watchlist · i:add  a:alert  c:chart  r:remove ")
                 .style(Style::default().bg(t.surface_0)),
         );
         frame.render_widget(paragraph, area);
@@ -362,7 +363,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .border_set(crate::tui::theme::BORDER_INACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
                 .style(Style::default().bg(t.surface_0))
-                .title(format!(" Watchlist [Group {}] ", app.watchlist_active_group)),
+                .title(format!(
+                    " Watchlist [Group {}] · i:add  a:alert  c:chart  r:remove ",
+                    app.watchlist_active_group
+                )),
         )
         .row_highlight_style(Style::default().bg(t.surface_3));
 
