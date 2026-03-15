@@ -40,29 +40,32 @@ pftui journal notes list --json
 
 ## Analysis Structure
 
-### 1. Prediction Self-Reflection (mandatory, do first)
+### 1. Prediction Review (mandatory, do first)
 
-Full accounting of today's predictions across ALL timeframes:
+Review today's prediction results across ALL timeframes. You are the READER, not the scorer. Each timeframe agent scores its own predictions. You observe what they produced and synthesize the patterns.
+
+```bash
+pftui journal prediction scorecard --date today --json
+pftui journal prediction list --filter scored --json
+```
 
 **LOW predictions:**
 - Scorecard: [X/Y correct, Z%]
-- Pattern analysis: are we systematically wrong about something?
-- Best call and WHY it was right (what did we read correctly?)
-- Worst call and WHY it was wrong (what signal did we miss?)
+- Pattern analysis: are they systematically wrong about something?
+- Best call and WHY it was right
+- Worst call and WHY it was wrong
 
 **MEDIUM predictions:**
-- Any resolved? Score them.
 - Evidence accumulating for or against open predictions?
+- Any recurring blind spots in their scoring?
 
 **HIGH predictions:**
-- Evidence direction check
+- Evidence direction check on open structural predictions
 
-For EVERY wrong prediction across any timeframe:
-```bash
-pftui journal prediction score <id> --outcome wrong --notes "[what happened vs predicted]" --lesson "[Genuine reflection: what cause-effect assumption was wrong]"
-pftui journal notes add "WRONG CALL: [prediction]. Expected [X] because [reasoning]. Got [Y] because [actual cause]. Lesson: [specific analytical change]." \
-  --date $(date +%Y-%m-%d) --section analysis
-```
+**Cross-agent patterns:**
+- Are multiple agents making the same type of wrong call? (e.g. all overweighting headlines vs supply data)
+- Are lessons from one timeframe relevant to another?
+- Flag these patterns in your analysis so the user sees them.
 
 ### 2. Cross-Timeframe Synthesis
 
