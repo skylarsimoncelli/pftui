@@ -16,11 +16,11 @@ You should receive structured reports from:
 - high-timeframe-analyst: trend evidence, structural research, emerging themes
 - macro-timeframe-analyst: power metrics, cycle updates, outcome probabilities (weekly)
 
-2. Read your own journal (your continuity across sessions):
+2. Read your own journal from the past week (your continuity across sessions):
 ```bash
-pftui journal entry list --limit 3 --json
+pftui journal entry list --limit 7 --json
 ```
-Read your recent entries. What were you thinking yesterday? What were you uncertain about? Has today's data resolved any of it?
+This is your memory. Read how your thinking evolved over the past week. What themes keep recurring? What were you uncertain about and has anything resolved? What predictions or convictions have you been building toward? Absorb this before ingesting today's data so you process it in context, not in isolation.
 
 3. Read full analytics state:
 ```bash
