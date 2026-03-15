@@ -51,8 +51,8 @@ pub fn is_us_market_open_at(utc: chrono::DateTime<Utc>) -> bool {
     let hour = et.hour();
     let minute = et.minute();
     let time_minutes = hour * 60 + minute;
-    let open = 9 * 60 + 30;  // 9:30 AM = 570
-    let close = 16 * 60;     // 4:00 PM = 960
+    let open = 9 * 60 + 30; // 9:30 AM = 570
+    let close = 16 * 60; // 4:00 PM = 960
 
     time_minutes >= open && time_minutes < close
 }
@@ -66,7 +66,11 @@ fn is_us_eastern_dst(utc: chrono::DateTime<Utc>, year: i32) -> bool {
         None => return false,
     };
     let march_first_wd = march_start.weekday().num_days_from_sunday(); // Sun=0
-    let first_sunday_day = if march_first_wd == 0 { 1 } else { 1 + (7 - march_first_wd) };
+    let first_sunday_day = if march_first_wd == 0 {
+        1
+    } else {
+        1 + (7 - march_first_wd)
+    };
     let second_sunday_march = first_sunday_day + 7;
     // DST starts at 2:00 AM EST = 7:00 AM UTC
     let dst_start = chrono::NaiveDate::from_ymd_opt(year, 3, second_sunday_march)
@@ -83,7 +87,11 @@ fn is_us_eastern_dst(utc: chrono::DateTime<Utc>, year: i32) -> bool {
         None => return false,
     };
     let nov_first_wd = nov_start.weekday().num_days_from_sunday();
-    let first_sunday_nov = if nov_first_wd == 0 { 1 } else { 1 + (7 - nov_first_wd) };
+    let first_sunday_nov = if nov_first_wd == 0 {
+        1
+    } else {
+        1 + (7 - nov_first_wd)
+    };
     // DST ends at 2:00 AM EDT = 6:00 AM UTC
     let dst_end = chrono::NaiveDate::from_ymd_opt(year, 11, first_sunday_nov)
         .and_then(|d| d.and_hms_opt(6, 0, 0))
@@ -102,15 +110,16 @@ fn is_us_eastern_dst(utc: chrono::DateTime<Utc>, year: i32) -> bool {
 /// 2 otherwise.
 pub fn header_height(app: &App) -> u16 {
     let compact = app.terminal_width < COMPACT_WIDTH;
-    let show_market_ticker = !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist);
+    let show_market_ticker =
+        !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist);
     let has_news = !app.news_entries.is_empty();
-    
+
     if show_market_ticker && has_news {
-        4  // line1 + market_ticker + news_ticker + border
+        4 // line1 + market_ticker + news_ticker + border
     } else if show_market_ticker {
-        3  // line1 + market_ticker + border
+        3 // line1 + market_ticker + border
     } else {
-        2  // line1 + border
+        2 // line1 + border
     }
 }
 
@@ -217,7 +226,7 @@ fn build_ticker_spans(app: &App, width: usize) -> Vec<Span<'static>> {
             color: t.text_secondary,
             bold: true,
         });
-        
+
         // Handle F&G indices specially
         if e.symbol.contains("F&G") {
             let value = e.change_pct as u8; // value is 0-100
@@ -255,7 +264,7 @@ fn build_ticker_spans(app: &App, width: usize) -> Vec<Span<'static>> {
                 bold: false,
             });
         }
-        
+
         // Separator (always, for seamless wrapping)
         if i < entries.len() - 1 {
             segments.push(Segment {
@@ -327,37 +336,41 @@ fn build_news_ticker_line<'a>(app: &App, width: usize) -> Option<Line<'a>> {
     }
 
     let t = &app.theme;
-    
+
     // Cycle through latest 3 headlines every 10 seconds (600 ticks at 60fps)
     const CYCLE_TICKS: u64 = 600;
     let num_headlines = app.news_entries.len().min(3);
     let current_index = ((app.tick_count / CYCLE_TICKS) % num_headlines as u64) as usize;
-    
+
     let entry = &app.news_entries[current_index];
-    
+
     // Format: 📰 [Source] Headline title (truncated to fit)
     let prefix = " 📰 ";
     let source_part = format!("[{}] ", entry.source);
     let prefix_len = prefix.chars().count() + source_part.chars().count();
-    
+
     if width <= prefix_len {
         return None;
     }
-    
+
     let available = width.saturating_sub(prefix_len);
     let title = if entry.title.chars().count() > available {
-        let truncated: String = entry.title.chars().take(available.saturating_sub(1)).collect();
+        let truncated: String = entry
+            .title
+            .chars()
+            .take(available.saturating_sub(1))
+            .collect();
         format!("{}…", truncated)
     } else {
         entry.title.clone()
     };
-    
+
     let spans = vec![
         Span::styled(prefix, Style::default().fg(t.text_muted)),
         Span::styled(source_part, Style::default().fg(t.text_accent)),
         Span::styled(title, Style::default().fg(t.text_secondary)),
     ];
-    
+
     Some(Line::from(spans))
 }
 
@@ -366,20 +379,20 @@ fn build_news_ticker_line<'a>(app: &App, width: usize) -> Option<Line<'a>> {
 fn get_next_event_countdown(app: &App) -> Option<(String, String)> {
     let backend = app.open_backend()?;
     let today = Utc::now().format("%Y-%m-%d").to_string();
-    
+
     // Get next 10 events to find the first high-impact one
     let events = calendar_cache::get_upcoming_events_backend(&backend, &today, 10).ok()?;
-    
+
     // Find first high-impact event
     let next_event = events.iter().find(|e| e.impact == "high")?;
-    
+
     // Parse event date
     let event_date = NaiveDate::parse_from_str(&next_event.date, "%Y-%m-%d").ok()?;
     let today_date = Utc::now().date_naive();
-    
+
     // Calculate days until event
     let days_until = (event_date - today_date).num_days();
-    
+
     // Format countdown based on proximity
     let countdown = if days_until == 0 {
         "today".to_string()
@@ -391,7 +404,7 @@ fn get_next_event_countdown(app: &App) -> Option<(String, String)> {
         // For >7 days, show date (e.g., "Mar 12")
         event_date.format("%b %d").to_string()
     };
-    
+
     Some((next_event.name.clone(), countdown))
 }
 
@@ -402,8 +415,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = &app.theme;
     let compact = app.terminal_width < COMPACT_WIDTH;
 
-    let home_sub_label = if matches!(app.view_mode, ViewMode::Watchlist) { "W" } else { "P" };
-    let pos_style = if matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist) {
+    let pos_style = if matches!(app.view_mode, ViewMode::Positions) {
         Style::default().fg(t.text_primary).bold().underlined()
     } else {
         Style::default().fg(t.text_muted)
@@ -414,14 +426,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled("tui", Style::default().fg(t.text_primary).bold()),
         Span::raw("  "),
         Span::styled("[1]", Style::default().fg(t.key_hint)),
-        Span::styled(
-            if compact {
-                format!("H:{home_sub_label}")
-            } else {
-                format!("Home({home_sub_label})")
-            },
-            pos_style,
-        ),
+        Span::styled(if compact { "Port" } else { "Portfolio" }, pos_style),
     ];
 
     if !pct_mode {
@@ -453,7 +458,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     };
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[4]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(if compact { "Ec" } else { "Econ" }, econ_style));
+    spans.push(Span::styled(
+        if compact { "Ec" } else { "Econ" },
+        econ_style,
+    ));
 
     // Watchlist tab — always visible
     let watch_style = if matches!(app.view_mode, ViewMode::Watchlist) {
@@ -463,7 +471,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     };
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[5]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(if compact { "W" } else { "Watch" }, watch_style));
+    spans.push(Span::styled(
+        if compact { "W" } else { "Watch" },
+        watch_style,
+    ));
 
     // Analytics tab — always visible
     let analytics_style = if matches!(app.view_mode, ViewMode::Analytics) {
@@ -473,7 +484,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     };
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[6]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(if compact { "An" } else { "Analytics" }, analytics_style));
+    spans.push(Span::styled(
+        if compact { "An" } else { "Analytics" },
+        analytics_style,
+    ));
 
     // News tab — always visible
     let news_style = if matches!(app.view_mode, ViewMode::News) {
@@ -503,7 +517,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     };
     spans.push(Span::raw(" "));
     spans.push(Span::styled("[9]", Style::default().fg(t.key_hint)));
-    spans.push(Span::styled(if compact { "J" } else { "Journal" }, journal_style));
+    spans.push(Span::styled(
+        if compact { "J" } else { "Journal" },
+        journal_style,
+    ));
 
     if !compact {
         spans.push(Span::styled("  │  ", Style::default().fg(t.text_muted)));
@@ -559,10 +576,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             && app.last_value_update_tick > 0;
 
         let value_style = if is_flashing {
-            Style::default()
-                .fg(t.surface_0)
-                .bg(t.text_accent)
-                .bold()
+            Style::default().fg(t.surface_0).bg(t.text_accent).bold()
         } else {
             Style::default().fg(t.text_primary).bold()
         };
@@ -593,7 +607,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 Style::default().fg(day_color),
             ));
         }
-        
+
         // FX exposure summary
         let mut fx_exposure = std::collections::HashMap::new();
         for pos in &app.positions {
@@ -614,7 +628,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             }
             if !fx_parts.is_empty() {
                 spans.push(Span::styled("  FX: ", Style::default().fg(t.text_muted)));
-                spans.push(Span::styled(fx_parts.join(", "), Style::default().fg(t.text_accent)));
+                spans.push(Span::styled(
+                    fx_parts.join(", "),
+                    Style::default().fg(t.text_accent),
+                ));
             }
         }
     } else {
@@ -674,14 +691,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let line1 = Line::from(spans);
 
     // Build lines for the paragraph
-    let show_ticker = !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist);
+    let show_ticker =
+        !compact && matches!(app.view_mode, ViewMode::Positions | ViewMode::Watchlist);
     let mut lines = if show_ticker {
         // Ticker tape line: scrolling market data marquee
         // Available width is the full area width minus 3 for the leading " ▸ " prefix
         let ticker_width = area.width.saturating_sub(3) as usize;
-        let mut ticker_spans: Vec<Span<'static>> = vec![
-            Span::styled(" ▸ ", Style::default().fg(t.text_muted)),
-        ];
+        let mut ticker_spans: Vec<Span<'static>> =
+            vec![Span::styled(" ▸ ", Style::default().fg(t.text_muted))];
         let scrolling = build_ticker_spans(app, ticker_width);
         if scrolling.is_empty() {
             // No market data yet — show placeholder
@@ -697,7 +714,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         vec![line1]
     };
-    
+
     // Add news ticker line if we have news and are showing tickers
     if show_ticker {
         if let Some(news_line) = build_news_ticker_line(app, area.width as usize) {

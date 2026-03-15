@@ -562,6 +562,8 @@ fn main() -> Result<()> {
             }
         }
 
+        Some(Command::Journal { command }) => run_agent_journal(&backend, command),
+
         Some(Command::Data { command }) => match command {
             cli::DataCommand::Refresh { notify } => {
                 if cached_only {
@@ -1256,7 +1258,6 @@ fn main() -> Result<()> {
                     json,
                 ),
             },
-            crate::cli::AgentCommand::Journal { command } => run_agent_journal(&backend, command),
         },
         Some(Command::Analytics { command }) => match command {
             cli::AnalyticsCommand::Signals {

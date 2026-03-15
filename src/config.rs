@@ -23,8 +23,8 @@ pub enum DatabaseBackend {
 #[serde(rename_all = "lowercase")]
 pub enum WorkspaceLayout {
     Compact,
-    #[default]
     Split,
+    #[default]
     Analyst,
 }
 
@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
-        assert_eq!(config.layout, WorkspaceLayout::Split);
+        assert_eq!(config.layout, WorkspaceLayout::Analyst);
     }
 
     #[test]
@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
-        assert_eq!(config.layout, WorkspaceLayout::Split);
+        assert_eq!(config.layout, WorkspaceLayout::Analyst);
         assert_eq!(config.keybindings.quit, "q");
         assert_eq!(config.keybindings.search, "/");
     }
@@ -551,7 +551,7 @@ mod tests {
         assert_eq!(config.portfolio_mode, PortfolioMode::Full);
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
-        assert_eq!(config.layout, WorkspaceLayout::Split);
+        assert_eq!(config.layout, WorkspaceLayout::Analyst);
         assert_eq!(config.keybindings.help, "?");
     }
 

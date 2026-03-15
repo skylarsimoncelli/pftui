@@ -1,6 +1,6 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
 use crate::app::App;
@@ -12,7 +12,7 @@ const STEPS: [(&str, &str); 5] = [
     ),
     (
         "Core Views",
-        "1 Positions, 5 Watchlist, 8 Chart Grid, 3 Markets, 4 Economy. Press ? for full keybindings.",
+        "1 Portfolio, 5 Watchlist, 8 Chart Grid, 3 Markets, 4 Economy. Press ? for full keybindings.",
     ),
     (
         "Command Palette",
@@ -30,8 +30,8 @@ const STEPS: [(&str, &str); 5] = [
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
-    let width = 78u16.min(area.width.saturating_sub(4));
-    let height = 14u16.min(area.height.saturating_sub(2));
+    let width = 84u16.min(area.width.saturating_sub(4)).max(56);
+    let height = 16u16.min(area.height.saturating_sub(2)).max(12);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect::new(x, y, width, height);
@@ -48,10 +48,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(t.text_accent).bold(),
         )),
         Line::from(""),
-        Line::from(Span::styled(
-            body,
-            Style::default().fg(t.text_primary),
-        )),
+        Line::from(Span::styled(body, Style::default().fg(t.text_primary))),
         Line::from(""),
         Line::from(Span::styled(
             "←/Backspace previous  Enter/Right next  Esc finish",
@@ -68,7 +65,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 " Onboarding Tour ",
                 Style::default().fg(t.text_accent).bold(),
             ))
-            .title(Line::from(Span::styled(progress, Style::default().fg(t.text_muted))).alignment(Alignment::Right)),
-    );
+            .title(
+                Line::from(Span::styled(progress, Style::default().fg(t.text_muted)))
+                    .alignment(Alignment::Right),
+            ),
+    )
+    .wrap(Wrap { trim: true });
     frame.render_widget(paragraph, popup_area);
 }

@@ -154,11 +154,6 @@ pub enum AgentCommand {
         #[command(subcommand)]
         command: AgentMessageCommand,
     },
-    /// Shared knowledge layer: entries, predictions, convictions, notes, scenarios
-    Journal {
-        #[command(subcommand)]
-        command: Option<JournalCommand>,
-    },
 }
 
 #[derive(Subcommand)]
@@ -1642,6 +1637,12 @@ pub struct Cli {
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
+    /// Personal research journal: entries, predictions, convictions, notes, scenarios
+    Journal {
+        #[command(subcommand)]
+        command: Option<JournalCommand>,
+    },
+
     /// Agentic operations and inter-agent workflows
     Agent {
         #[command(subcommand)]
@@ -1767,13 +1768,13 @@ mod tests {
     #[test]
     fn top_level_help_lists_only_f42_domains() -> Result<()> {
         let help = help_text()?;
-        for command in ["agent", "analytics", "data", "portfolio", "system"] {
+        for command in ["agent", "analytics", "data", "journal", "portfolio", "system"] {
             assert!(
                 help.contains(command),
                 "missing top-level command: {command}"
             );
         }
-        for removed in ["dashboard", "journal", "market", "portfolios", "watchlist"] {
+        for removed in ["dashboard", "market", "portfolios", "watchlist"] {
             assert!(
                 !help.contains(removed),
                 "stale top-level command present: {removed}"
@@ -1864,7 +1865,6 @@ mod tests {
             ["pftui", "watchlist", "list"].as_slice(),
             ["pftui", "market", "news"].as_slice(),
             ["pftui", "portfolios", "list"].as_slice(),
-            ["pftui", "journal", "entry", "list"].as_slice(),
             ["pftui", "dashboard", "macro"].as_slice(),
         ] {
             assert!(
@@ -1903,7 +1903,12 @@ mod tests {
 
         let agent_help = subcommand_help(&["agent"])?;
         assert!(agent_help.contains("message"));
-        assert!(agent_help.contains("journal"));
+        assert!(!agent_help.contains("journal"));
+
+        let journal_help = subcommand_help(&["journal"])?;
+        for command in ["entry", "prediction", "conviction", "notes", "scenario"] {
+            assert!(journal_help.contains(command));
+        }
 
         let message_help = subcommand_help(&["agent", "message"])?;
         for command in ["send", "list", "reply", "flag", "ack", "ack-all", "purge"] {
@@ -1919,7 +1924,6 @@ mod tests {
     fn parse_prediction_score_positional_syntax() {
         let cli = Cli::try_parse_from([
             "pftui",
-            "agent",
             "journal",
             "prediction",
             "score",
@@ -1929,26 +1933,23 @@ mod tests {
         ])
         .expect("cli should parse");
 
-        let Some(Command::Agent {
+        let Some(Command::Journal {
             command:
-                AgentCommand::Journal {
+                Some(JournalCommand::Prediction {
                     command:
-                        Some(JournalCommand::Prediction {
-                            command:
-                                JournalPredictionCommand::Score {
-                                    id,
-                                    id_pos,
-                                    outcome,
-                                    outcome_pos,
-                                    notes,
-                                    notes_pos,
-                                    ..
-                                },
-                        }),
-                },
+                        JournalPredictionCommand::Score {
+                            id,
+                            id_pos,
+                            outcome,
+                            outcome_pos,
+                            notes,
+                            notes_pos,
+                            ..
+                        },
+                }),
         }) = cli.command
         else {
-            panic!("expected agent journal prediction score command");
+            panic!("expected journal prediction score command");
         };
 
         assert_eq!(id, None);
@@ -1963,7 +1964,6 @@ mod tests {
     fn parse_prediction_add_timeframe_positional_syntax() {
         let cli = Cli::try_parse_from([
             "pftui",
-            "agent",
             "journal",
             "prediction",
             "add",
@@ -1973,23 +1973,20 @@ mod tests {
         ])
         .expect("cli should parse");
 
-        let Some(Command::Agent {
+        let Some(Command::Journal {
             command:
-                AgentCommand::Journal {
+                Some(JournalCommand::Prediction {
                     command:
-                        Some(JournalCommand::Prediction {
-                            command:
-                                JournalPredictionCommand::Add {
-                                    value,
-                                    timeframe_pos,
-                                    confidence_pos,
-                                    ..
-                                },
-                        }),
-                },
+                        JournalPredictionCommand::Add {
+                            value,
+                            timeframe_pos,
+                            confidence_pos,
+                            ..
+                        },
+                }),
         }) = cli.command
         else {
-            panic!("expected agent journal prediction add command");
+            panic!("expected journal prediction add command");
         };
 
         assert_eq!(value, "btc breakout");
@@ -2001,7 +1998,6 @@ mod tests {
     fn parse_conviction_set_negative_score_positional_syntax() {
         let cli = Cli::try_parse_from([
             "pftui",
-            "agent",
             "journal",
             "conviction",
             "set",
@@ -2011,23 +2007,20 @@ mod tests {
         ])
         .expect("cli should parse");
 
-        let Some(Command::Agent {
+        let Some(Command::Journal {
             command:
-                AgentCommand::Journal {
+                Some(JournalCommand::Conviction {
                     command:
-                        Some(JournalCommand::Conviction {
-                            command:
-                                JournalConvictionCommand::Set {
-                                    symbol,
-                                    score_pos,
-                                    notes_pos,
-                                    ..
-                                },
-                        }),
-                },
+                        JournalConvictionCommand::Set {
+                            symbol,
+                            score_pos,
+                            notes_pos,
+                            ..
+                        },
+                }),
         }) = cli.command
         else {
-            panic!("expected agent journal conviction set command");
+            panic!("expected journal conviction set command");
         };
 
         assert_eq!(symbol, "BTC");
@@ -2039,7 +2032,6 @@ mod tests {
     fn parse_scenario_update_notes_positional_syntax() {
         let cli = Cli::try_parse_from([
             "pftui",
-            "agent",
             "journal",
             "scenario",
             "update",
@@ -2050,23 +2042,20 @@ mod tests {
         ])
         .expect("cli should parse");
 
-        let Some(Command::Agent {
+        let Some(Command::Journal {
             command:
-                AgentCommand::Journal {
+                Some(JournalCommand::Scenario {
                     command:
-                        Some(JournalCommand::Scenario {
-                            command:
-                                JournalScenarioCommand::Update {
-                                    value,
-                                    note_pos,
-                                    probability,
-                                    ..
-                                },
-                        }),
-                },
+                        JournalScenarioCommand::Update {
+                            value,
+                            note_pos,
+                            probability,
+                            ..
+                        },
+                }),
         }) = cli.command
         else {
-            panic!("expected agent journal scenario update command");
+            panic!("expected journal scenario update command");
         };
 
         assert_eq!(value, "Hard Landing");

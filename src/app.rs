@@ -8,9 +8,10 @@ use rust_decimal_macros::dec;
 
 use crate::config::{self, Config, PortfolioMode, WatchlistColumn, WorkspaceLayout};
 use crate::data::brave;
-use crate::db::{allocations, price_cache, price_history};
 use crate::db::scan_queries;
 use crate::db::transactions::{self};
+use crate::db::watchlist as db_watchlist;
+use crate::db::{allocations, price_cache, price_history};
 use crate::models::allocation::Allocation;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
@@ -18,9 +19,8 @@ use crate::models::price::{HistoryRecord, PriceQuote};
 use crate::models::transaction::{NewTransaction, Transaction, TxType};
 use crate::price::{PriceCommand, PriceService, PriceUpdate};
 use crate::tui::theme::{self, Theme};
-use crate::tui::views::markets;
-use crate::db::watchlist as db_watchlist;
 use crate::tui::views::economy;
+use crate::tui::views::markets;
 use crate::tui::views::watchlist as watchlist_view;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -515,9 +515,9 @@ pub struct App {
     pub chart_index: usize, // which chart variant to show for current position
     pub chart_timeframe: ChartTimeframe,
     pub chart_render_mode: ChartRenderMode, // Line or Candlestick rendering
-    pub change_timeframe: ChangeTimeframe, // timeframe for % change column in positions table
-    pub benchmark_overlay: bool, // toggle SPY benchmark overlay on charts
-    pub volume_overlay: bool, // toggle volume sub-chart (3-row braille bars)
+    pub change_timeframe: ChangeTimeframe,  // timeframe for % change column in positions table
+    pub benchmark_overlay: bool,            // toggle SPY benchmark overlay on charts
+    pub volume_overlay: bool,               // toggle volume sub-chart (3-row braille bars)
 
     // History fetch tracking: max days fetched per symbol (to avoid re-fetching)
     fetched_history_days: HashMap<String, u32>,
@@ -607,6 +607,8 @@ pub struct App {
     // Allocation bar click targets (set during render)
     /// Absolute Rect of the allocation bars widget (for hit-testing mouse clicks).
     pub alloc_bar_area: Option<Rect>,
+    /// Absolute Rect of the positions table widget (for precise mouse hit-testing).
+    pub positions_table_area: Option<Rect>,
     /// Ordered list of categories as rendered in the allocation bars (top to bottom).
     /// Index 0 = first bar line inside the block border.
     pub alloc_bar_categories: Vec<AssetCategory>,
@@ -726,11 +728,7 @@ impl App {
     }
 
     pub fn new(config: &Config, db_path: std::path::PathBuf) -> Self {
-        let initial_view = if config.home_tab == "watchlist" {
-            ViewMode::Watchlist
-        } else {
-            ViewMode::Positions
-        };
+        let initial_view = ViewMode::Positions;
         App {
             should_quit: false,
             view_mode: initial_view,
@@ -789,7 +787,11 @@ impl App {
             command_palette_open: false,
             command_palette_input: String::new(),
             command_palette_selected: 0,
-            onboarding_open: if cfg!(test) { false } else { !has_seen_onboarding() },
+            onboarding_open: if cfg!(test) {
+                false
+            } else {
+                !has_seen_onboarding()
+            },
             onboarding_step: 0,
             scan_builder_open: false,
             scan_builder_mode: ScanBuilderMode::Edit,
@@ -847,6 +849,7 @@ impl App {
             header_theme_col_range: None,
             header_privacy_col_range: None,
             alloc_bar_area: None,
+            positions_table_area: None,
             alloc_bar_categories: Vec::new(),
             timeframe_selector_buttons: Vec::new(),
             timeframe_selector_row: None,
@@ -880,6 +883,7 @@ impl App {
         self.load_fx_rates();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_news();
         self.load_journal();
         self.load_predictions();
         self.load_allocation_targets();
@@ -899,6 +903,7 @@ impl App {
         self.load_fx_rates();
         self.load_cached_history();
         self.load_watchlist();
+        self.load_news();
         self.load_journal();
         self.load_predictions();
         self.load_allocation_targets();
@@ -994,8 +999,8 @@ impl App {
 
         std::thread::spawn(move || {
             if let Ok(backend) = crate::db::backend::open_from_config(&config, &db_path) {
-                // Run refresh silently (notify=false to avoid desktop notifications)
-                let _ = crate::commands::refresh::run(&backend, &config, false);
+                // Run refresh silently so background sync does not corrupt the TUI screen.
+                let _ = crate::commands::refresh::run_quiet(&backend, &config, false);
             }
             // Signal completion (ignore if receiver was dropped)
             let _ = tx.send(());
@@ -1006,11 +1011,13 @@ impl App {
         if let Some(backend) = self.open_backend() {
             match self.portfolio_mode {
                 PortfolioMode::Full => {
-                    self.transactions = crate::db::transactions::list_transactions_backend(&backend)
-                        .unwrap_or_default();
+                    self.transactions =
+                        crate::db::transactions::list_transactions_backend(&backend)
+                            .unwrap_or_default();
                 }
                 PortfolioMode::Percentage => {
-                    self.allocations = allocations::list_allocations_backend(&backend).unwrap_or_default();
+                    self.allocations =
+                        allocations::list_allocations_backend(&backend).unwrap_or_default();
                 }
             }
         }
@@ -1052,9 +1059,11 @@ impl App {
 
     fn load_watchlist(&mut self) {
         if let Some(backend) = self.open_backend() {
-            self.watchlist_entries =
-                db_watchlist::list_watchlist_by_group_backend(&backend, self.watchlist_active_group)
-                    .unwrap_or_default();
+            self.watchlist_entries = db_watchlist::list_watchlist_by_group_backend(
+                &backend,
+                self.watchlist_active_group,
+            )
+            .unwrap_or_default();
         }
     }
 
@@ -1084,9 +1093,12 @@ impl App {
                 } else {
                     Some(&self.news_search_query)
                 },
-                Some(48), // last 48 hours
+                Some(168), // last 7 days
             )
             .unwrap_or_default();
+            self.news_selected_index = self
+                .news_selected_index
+                .min(self.news_entries.len().saturating_sub(1));
         }
     }
 
@@ -1100,7 +1112,10 @@ impl App {
             _ => return,
         };
 
-        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
             Ok(rt) => rt,
             Err(_) => return,
         };
@@ -1141,10 +1156,8 @@ impl App {
     fn load_allocation_targets(&mut self) {
         if let Some(backend) = self.open_backend() {
             if let Ok(targets) = crate::db::allocation_targets::list_targets_backend(&backend) {
-                self.allocation_targets = targets
-                    .into_iter()
-                    .map(|t| (t.symbol.clone(), t))
-                    .collect();
+                self.allocation_targets =
+                    targets.into_iter().map(|t| (t.symbol.clone(), t)).collect();
             }
         }
     }
@@ -1154,7 +1167,9 @@ impl App {
             if let Ok(results) = crate::alerts::engine::check_alerts_backend_only(&backend) {
                 self.triggered_alert_count = results
                     .iter()
-                    .filter(|r| r.newly_triggered || r.rule.status == crate::alerts::AlertStatus::Triggered)
+                    .filter(|r| {
+                        r.newly_triggered || r.rule.status == crate::alerts::AlertStatus::Triggered
+                    })
                     .count();
             }
         }
@@ -1162,7 +1177,9 @@ impl App {
 
     fn load_sentiment(&mut self) {
         if let Some(backend) = self.open_backend() {
-            if let Ok(Some(reading)) = crate::db::sentiment_cache::get_latest_backend(&backend, "crypto") {
+            if let Ok(Some(reading)) =
+                crate::db::sentiment_cache::get_latest_backend(&backend, "crypto")
+            {
                 self.crypto_fng = Some((reading.value, reading.classification));
             }
             if let Ok(Some(reading)) =
@@ -1189,7 +1206,7 @@ impl App {
                 crate::data::bls::SERIES_NFP,
                 crate::data::bls::SERIES_HOURLY_EARNINGS,
             ];
-            
+
             for series_id in &series_ids {
                 if let Ok(Some(data)) =
                     crate::db::bls_cache::get_latest_bls_data_backend(&backend, series_id)
@@ -1218,7 +1235,8 @@ impl App {
                 (String, String),
                 crate::data::worldbank::WorldBankDataPoint,
             >| {
-                if let Ok(points) = crate::db::worldbank_cache::get_latest_indicators_backend(&backend)
+                if let Ok(points) =
+                    crate::db::worldbank_cache::get_latest_indicators_backend(&backend)
                 {
                     for p in points {
                         store.insert((p.country_code.clone(), p.indicator_code.clone()), p);
@@ -1232,11 +1250,11 @@ impl App {
             // panel doesn't stay empty between scheduled refresh runs.
             if self.worldbank_data.is_empty() {
                 if let Ok(rt) = tokio::runtime::Runtime::new() {
-                    if let Ok(points) = rt.block_on(crate::data::worldbank::fetch_all_indicators()) {
+                    if let Ok(points) = rt.block_on(crate::data::worldbank::fetch_all_indicators())
+                    {
                         if !points.is_empty() {
                             let _ = crate::db::worldbank_cache::upsert_worldbank_data_backend(
-                                &backend,
-                                &points,
+                                &backend, &points,
                             );
                             load_from_cache(&mut self.worldbank_data);
                         }
@@ -1250,7 +1268,8 @@ impl App {
         if let Some(backend) = self.open_backend() {
             match self.portfolio_mode {
                 PortfolioMode::Full => {
-                    crate::db::transactions::get_unique_symbols_backend(&backend).unwrap_or_default()
+                    crate::db::transactions::get_unique_symbols_backend(&backend)
+                        .unwrap_or_default()
                 }
                 PortfolioMode::Percentage => {
                     allocations::get_unique_allocation_symbols_backend(&backend).unwrap_or_default()
@@ -1321,13 +1340,19 @@ impl App {
     }
 
     /// Fetch history for a symbol only if the cached fetch is shorter than needed.
-    fn request_history_if_needed(&mut self, symbol: &str, category: AssetCategory, needed_days: u32) {
+    fn request_history_if_needed(
+        &mut self,
+        symbol: &str,
+        category: AssetCategory,
+        needed_days: u32,
+    ) {
         let already_fetched = self.fetched_history_days.get(symbol).copied().unwrap_or(0);
         if already_fetched >= needed_days {
             return; // already have enough data
         }
         // Track that we're fetching this range
-        self.fetched_history_days.insert(symbol.to_string(), needed_days);
+        self.fetched_history_days
+            .insert(symbol.to_string(), needed_days);
         self.history_attempted.insert(symbol.to_string());
         // Extract service ref and send command (avoid borrow conflict)
         if let Some(ref service) = self.price_service {
@@ -1364,7 +1389,12 @@ impl App {
             let items = economy::economy_symbols();
             let symbols: Vec<(String, AssetCategory)> = items
                 .iter()
-                .map(|item| (item.yahoo_symbol.clone(), economy::category_for_group(item.group)))
+                .map(|item| {
+                    (
+                        item.yahoo_symbol.clone(),
+                        economy::category_for_group(item.group),
+                    )
+                })
                 .collect();
             if !symbols.is_empty() {
                 service.send_command(PriceCommand::FetchAll(symbols.clone()));
@@ -1385,7 +1415,7 @@ impl App {
         let database_backend = self.database_backend;
         let database_url = self.database_url.clone();
         let db_path = self.db_path.clone();
-        
+
         // Spawn thread to fetch sentiment without blocking
         thread::spawn(move || {
             let cfg = Config {
@@ -1408,7 +1438,7 @@ impl App {
                     let _ = crate::db::sentiment_cache::upsert_reading_backend(backend, &reading);
                 }
             }
-            
+
             // Fetch traditional F&G
             thread::sleep(Duration::from_millis(500)); // rate limiting
             if let Ok(index) = crate::data::sentiment::fetch_traditional_fng() {
@@ -1479,7 +1509,10 @@ impl App {
             self.crosshair_x = 0;
             self.last_selection_change_tick = self.tick_count;
             // Update selected_symbol to propagate selection across views
-            self.selected_symbol = self.display_positions.get(self.selected_index).map(|p| p.symbol.clone());
+            self.selected_symbol = self
+                .display_positions
+                .get(self.selected_index)
+                .map(|p| p.symbol.clone());
             // Load saved chart timeframe for this symbol
             self.load_chart_timeframe();
             self.refetch_chart_history();
@@ -1517,11 +1550,15 @@ impl App {
     pub fn recompute(&mut self) {
         match self.portfolio_mode {
             PortfolioMode::Full => {
-                self.positions = compute_positions(&self.transactions, &self.prices, &self.fx_rates);
+                self.positions =
+                    compute_positions(&self.transactions, &self.prices, &self.fx_rates);
             }
             PortfolioMode::Percentage => {
-                self.positions =
-                    compute_positions_from_allocations(&self.allocations, &self.prices, &self.fx_rates);
+                self.positions = compute_positions_from_allocations(
+                    &self.allocations,
+                    &self.prices,
+                    &self.fx_rates,
+                );
             }
         }
         self.apply_filter_and_sort();
@@ -1550,9 +1587,9 @@ impl App {
         // Sort positions
         match self.sort_field {
             SortField::Name => positions.sort_by(|a, b| a.symbol.cmp(&b.symbol)),
-            SortField::Category => positions.sort_by(|a, b| {
-                a.category.to_string().cmp(&b.category.to_string())
-            }),
+            SortField::Category => {
+                positions.sort_by(|a, b| a.category.to_string().cmp(&b.category.to_string()))
+            }
             SortField::GainPct => positions.sort_by(|a, b| {
                 let ga = a.gain_pct.unwrap_or(dec!(0));
                 let gb = b.gain_pct.unwrap_or(dec!(0));
@@ -1612,11 +1649,7 @@ impl App {
             self.total_cost = dec!(0);
             return;
         }
-        self.total_value = self
-            .positions
-            .iter()
-            .filter_map(|p| p.current_value)
-            .sum();
+        self.total_value = self.positions.iter().filter_map(|p| p.current_value).sum();
         self.total_cost = self.positions.iter().map(|p| p.total_cost).sum();
     }
 
@@ -1678,10 +1711,8 @@ impl App {
 
         let mut price_by_date: HashMap<&str, HashMap<&str, Decimal>> = HashMap::new();
         for (symbol, records) in &self.price_history {
-            let map: HashMap<&str, Decimal> = records
-                .iter()
-                .map(|r| (r.date.as_str(), r.close))
-                .collect();
+            let map: HashMap<&str, Decimal> =
+                records.iter().map(|r| (r.date.as_str(), r.close)).collect();
             price_by_date.insert(symbol.as_str(), map);
         }
 
@@ -1751,7 +1782,9 @@ impl App {
                 // Records are sorted by date. The last record is the most recent.
                 // If the last record IS today's price, use the second-to-last.
                 let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-                let prev_close = if records.len() >= 2 && records.last().map(|r| r.date.as_str()) == Some(today.as_str()) {
+                let prev_close = if records.len() >= 2
+                    && records.last().map(|r| r.date.as_str()) == Some(today.as_str())
+                {
                     // Last record is today — use the one before it
                     records[records.len() - 2].close
                 } else if let Some(last) = records.last() {
@@ -1781,34 +1814,23 @@ impl App {
     /// Update selected_index and sync selected_symbol to the position at that index.
     pub fn set_selected_index(&mut self, new_index: usize) {
         self.selected_index = new_index;
-        self.selected_symbol = self.display_positions.get(new_index).map(|p| p.symbol.clone());
-    }
-
-    fn home_views(&self) -> (ViewMode, ViewMode) {
-        if self.last_saved_home_tab == ViewMode::Watchlist {
-            (ViewMode::Watchlist, ViewMode::Positions)
-        } else {
-            (ViewMode::Positions, ViewMode::Watchlist)
-        }
+        self.selected_symbol = self
+            .display_positions
+            .get(new_index)
+            .map(|p| p.symbol.clone());
     }
 
     fn switch_to_home_default(&mut self) {
-        let (default_view, _) = self.home_views();
-        self.view_mode = default_view;
+        self.view_mode = ViewMode::Positions;
         self.detail_open = false;
         self.detail_popup_open = false;
-        if matches!(self.view_mode, ViewMode::Watchlist) {
-            self.load_watchlist();
-            self.request_watchlist_data();
-        }
     }
 
     fn toggle_home_subtab(&mut self) {
-        let (default_view, secondary_view) = self.home_views();
-        self.view_mode = if self.view_mode == default_view {
-            secondary_view
+        self.view_mode = if self.view_mode == ViewMode::Positions {
+            ViewMode::Watchlist
         } else {
-            default_view
+            ViewMode::Positions
         };
         self.detail_open = false;
         self.detail_popup_open = false;
@@ -1837,16 +1859,11 @@ impl App {
                 svc.send_command(PriceCommand::FetchAll(vec![(symbol.clone(), category)]));
             }
             if !self.price_history.contains_key(&symbol) {
-                svc.send_command(PriceCommand::FetchHistory(
-                    symbol.clone(),
-                    category,
-                    370,
-                ));
+                svc.send_command(PriceCommand::FetchHistory(symbol.clone(), category, 370));
             }
         }
-        self.search_chart_popup = Some(
-            crate::tui::views::search_chart_popup::SearchChartPopupState { symbol },
-        );
+        self.search_chart_popup =
+            Some(crate::tui::views::search_chart_popup::SearchChartPopupState { symbol });
     }
 
     fn watchlist_inline_remove(&mut self) {
@@ -1857,7 +1874,9 @@ impl App {
             let _ = db_watchlist::remove_from_watchlist_backend(&backend, &entry.symbol);
         }
         self.load_watchlist();
-        if self.watchlist_selected_index >= self.watchlist_entries.len() && self.watchlist_selected_index > 0 {
+        if self.watchlist_selected_index >= self.watchlist_entries.len()
+            && self.watchlist_selected_index > 0
+        {
             self.watchlist_selected_index -= 1;
         }
     }
@@ -1869,7 +1888,9 @@ impl App {
         let category: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
         let alert_symbol = watchlist_view::yahoo_symbol_for(&entry.symbol, category);
 
-        let (direction, threshold) = if let (Some(tp), Some(dir)) = (entry.target_price.clone(), entry.target_direction.clone()) {
+        let (direction, threshold) = if let (Some(tp), Some(dir)) =
+            (entry.target_price.clone(), entry.target_direction.clone())
+        {
             (dir, tp)
         } else {
             let Some(price) = self.prices.get(&alert_symbol).copied() else {
@@ -1958,32 +1979,106 @@ impl App {
         let individuals: Vec<ChartVariant> = if is_btc || (is_crypto && sym.contains("BTC")) {
             vec![
                 ChartVariant::single("BTC-USD", "BTC/USD", AssetCategory::Equity),
-                ChartVariant::ratio("BTC/SPX", "BTC-USD", AssetCategory::Equity, "^GSPC", AssetCategory::Equity),
-                ChartVariant::ratio("BTC/Gold", "BTC-USD", AssetCategory::Equity, "GC=F", AssetCategory::Commodity),
-                ChartVariant::ratio("BTC/QQQ", "BTC-USD", AssetCategory::Equity, "QQQ", AssetCategory::Equity),
+                ChartVariant::ratio(
+                    "BTC/SPX",
+                    "BTC-USD",
+                    AssetCategory::Equity,
+                    "^GSPC",
+                    AssetCategory::Equity,
+                ),
+                ChartVariant::ratio(
+                    "BTC/Gold",
+                    "BTC-USD",
+                    AssetCategory::Equity,
+                    "GC=F",
+                    AssetCategory::Commodity,
+                ),
+                ChartVariant::ratio(
+                    "BTC/QQQ",
+                    "BTC-USD",
+                    AssetCategory::Equity,
+                    "QQQ",
+                    AssetCategory::Equity,
+                ),
             ]
-        } else if is_gold || (is_commodity && (sym.contains("GC") || sym.contains("GOLD") || sym.contains("XAU"))) {
+        } else if is_gold
+            || (is_commodity && (sym.contains("GC") || sym.contains("GOLD") || sym.contains("XAU")))
+        {
             vec![
                 ChartVariant::single("GC=F", "Gold/USD", AssetCategory::Commodity),
-                ChartVariant::ratio("Gold/BTC", "GC=F", AssetCategory::Commodity, "BTC-USD", AssetCategory::Equity),
-                ChartVariant::ratio("Gold/SPX", "GC=F", AssetCategory::Commodity, "^GSPC", AssetCategory::Equity),
-                ChartVariant::ratio("Gold/QQQ", "GC=F", AssetCategory::Commodity, "QQQ", AssetCategory::Equity),
+                ChartVariant::ratio(
+                    "Gold/BTC",
+                    "GC=F",
+                    AssetCategory::Commodity,
+                    "BTC-USD",
+                    AssetCategory::Equity,
+                ),
+                ChartVariant::ratio(
+                    "Gold/SPX",
+                    "GC=F",
+                    AssetCategory::Commodity,
+                    "^GSPC",
+                    AssetCategory::Equity,
+                ),
+                ChartVariant::ratio(
+                    "Gold/QQQ",
+                    "GC=F",
+                    AssetCategory::Commodity,
+                    "QQQ",
+                    AssetCategory::Equity,
+                ),
             ]
         } else if is_cash && sym == "USD" {
             vec![
                 ChartVariant::single("DX-Y.NYB", "Dollar Index (DXY)", AssetCategory::Forex),
-                ChartVariant::ratio("DXY/Gold", "DX-Y.NYB", AssetCategory::Forex, "GC=F", AssetCategory::Commodity),
-                ChartVariant::ratio("DXY/SPX", "DX-Y.NYB", AssetCategory::Forex, "^GSPC", AssetCategory::Equity),
-                ChartVariant::ratio("DXY/BTC", "DX-Y.NYB", AssetCategory::Forex, "BTC-USD", AssetCategory::Equity),
+                ChartVariant::ratio(
+                    "DXY/Gold",
+                    "DX-Y.NYB",
+                    AssetCategory::Forex,
+                    "GC=F",
+                    AssetCategory::Commodity,
+                ),
+                ChartVariant::ratio(
+                    "DXY/SPX",
+                    "DX-Y.NYB",
+                    AssetCategory::Forex,
+                    "^GSPC",
+                    AssetCategory::Equity,
+                ),
+                ChartVariant::ratio(
+                    "DXY/BTC",
+                    "DX-Y.NYB",
+                    AssetCategory::Forex,
+                    "BTC-USD",
+                    AssetCategory::Equity,
+                ),
             ]
         } else if is_cash {
             let pair = format!("{}USD=X", sym);
             let pair_label = format!("{}/USD", sym);
             vec![
                 ChartVariant::single(&pair, &pair_label, AssetCategory::Forex),
-                ChartVariant::ratio(&format!("{}/DXY", sym), &pair, AssetCategory::Forex, "DX-Y.NYB", AssetCategory::Forex),
-                ChartVariant::ratio(&format!("{}/Gold", sym), &pair, AssetCategory::Forex, "GC=F", AssetCategory::Commodity),
-                ChartVariant::ratio(&format!("{}/BTC", sym), &pair, AssetCategory::Forex, "BTC-USD", AssetCategory::Equity),
+                ChartVariant::ratio(
+                    &format!("{}/DXY", sym),
+                    &pair,
+                    AssetCategory::Forex,
+                    "DX-Y.NYB",
+                    AssetCategory::Forex,
+                ),
+                ChartVariant::ratio(
+                    &format!("{}/Gold", sym),
+                    &pair,
+                    AssetCategory::Forex,
+                    "GC=F",
+                    AssetCategory::Commodity,
+                ),
+                ChartVariant::ratio(
+                    &format!("{}/BTC", sym),
+                    &pair,
+                    AssetCategory::Forex,
+                    "BTC-USD",
+                    AssetCategory::Equity,
+                ),
             ]
         } else {
             // Equity, Fund, non-BTC Crypto, non-Gold Commodity, Forex
@@ -2007,15 +2102,13 @@ impl App {
             let is_fund = pos.category == AssetCategory::Fund;
 
             if is_equity || is_fund || is_crypto || is_commodity {
-                let mut variants = vec![
-                    ChartVariant {
-                        label: label.clone(),
-                        kind: ChartKind::Single {
-                            symbol: yahoo_sym.clone(),
-                            category: cat,
-                        },
+                let mut variants = vec![ChartVariant {
+                    label: label.clone(),
+                    kind: ChartKind::Single {
+                        symbol: yahoo_sym.clone(),
+                        category: cat,
                     },
-                ];
+                }];
 
                 // Don't add ratio against yourself (e.g., ^GSPC/SPX or QQQ/QQQ)
                 let is_spx = matches!(sym.as_str(), "^GSPC" | "SPY" | "VOO" | "IVV" | "SPX");
@@ -2153,7 +2246,9 @@ impl App {
                     Some(PriceUpdate::Quote(quote)) => {
                         let direction = match self.prices.get(&quote.symbol) {
                             Some(&old_price) if quote.price > old_price => PriceFlashDirection::Up,
-                            Some(&old_price) if quote.price < old_price => PriceFlashDirection::Down,
+                            Some(&old_price) if quote.price < old_price => {
+                                PriceFlashDirection::Down
+                            }
                             _ => PriceFlashDirection::Same,
                         };
                         self.price_flash_ticks
@@ -2183,6 +2278,7 @@ impl App {
                 if updated {
                     self.recompute();
                     self.load_alerts(); // re-check alerts after price update
+                    self.load_news();
                 }
                 if history_updated && self.portfolio_mode == PortfolioMode::Full {
                     self.compute_portfolio_value_history();
@@ -2201,25 +2297,7 @@ impl App {
     }
 
     fn persist_home_tab_preference_if_needed(&mut self) {
-        let desired = match self.view_mode {
-            ViewMode::Positions => Some(ViewMode::Positions),
-            ViewMode::Watchlist => Some(ViewMode::Watchlist),
-            _ => None,
-        };
-        let Some(desired) = desired else { return; };
-        if desired == self.last_saved_home_tab {
-            return;
-        }
-
-        if let Ok(mut cfg) = config::load_config() {
-            cfg.home_tab = if desired == ViewMode::Watchlist {
-                "watchlist".to_string()
-            } else {
-                "positions".to_string()
-            };
-            let _ = config::save_config(&cfg);
-            self.last_saved_home_tab = desired;
-        }
+        self.last_saved_home_tab = ViewMode::Positions;
     }
 
     fn cache_price(&self, quote: &PriceQuote) {
@@ -2265,10 +2343,7 @@ impl App {
             return key.code == KeyCode::Tab;
         }
 
-        if let Some(rest) = b
-            .strip_prefix("ctrl+")
-            .or_else(|| b.strip_prefix("Ctrl+"))
-        {
+        if let Some(rest) = b.strip_prefix("ctrl+").or_else(|| b.strip_prefix("Ctrl+")) {
             if !key.modifiers.contains(KeyModifiers::CONTROL) {
                 return false;
             }
@@ -2294,9 +2369,7 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Char(c) => {
-                c == expected
-            }
+            KeyCode::Char(c) => c == expected,
             _ => false,
         }
     }
@@ -2622,9 +2695,9 @@ impl App {
                 self.sparkline_timeframe = match self.change_timeframe {
                     ChangeTimeframe::OneHour => ChartTimeframe::OneWeek, // 1h fits in 1W context
                     ChangeTimeframe::TwentyFourHour => ChartTimeframe::OneWeek, // 24h = 1D fits in 1W
-                    ChangeTimeframe::SevenDay => ChartTimeframe::OneMonth, // 7d fits in 1M
-                    ChangeTimeframe::ThirtyDay => ChartTimeframe::ThreeMonths, // 30d fits in 3M
-                    ChangeTimeframe::YearToDate => ChartTimeframe::OneYear, // YTD uses 1Y view
+                    ChangeTimeframe::SevenDay => ChartTimeframe::OneMonth,      // 7d fits in 1M
+                    ChangeTimeframe::ThirtyDay => ChartTimeframe::ThreeMonths,  // 30d fits in 3M
+                    ChangeTimeframe::YearToDate => ChartTimeframe::OneYear,     // YTD uses 1Y view
                 };
             }
             // Markets correlation window (7d/30d/90d)
@@ -2721,7 +2794,9 @@ impl App {
             }
 
             // Analytics scenario scaling
-            KeyCode::Char('+') | KeyCode::Char('=') if matches!(self.view_mode, ViewMode::Analytics) => {
+            KeyCode::Char('+') | KeyCode::Char('=')
+                if matches!(self.view_mode, ViewMode::Analytics) =>
+            {
                 self.analytics_shock_scale_pct = (self.analytics_shock_scale_pct + 5).min(200);
             }
             KeyCode::Char('-') if matches!(self.view_mode, ViewMode::Analytics) => {
@@ -2730,7 +2805,6 @@ impl App {
             KeyCode::Char('0') if matches!(self.view_mode, ViewMode::Analytics) => {
                 self.analytics_shock_scale_pct = 100;
             }
-
 
             // Navigation
             KeyCode::Char('j') | KeyCode::Down => self.move_down(),
@@ -2998,6 +3072,12 @@ impl App {
                     return;
                 }
 
+                if matches!(self.view_mode, ViewMode::Positions)
+                    && self.handle_positions_table_click(col, row)
+                {
+                    return;
+                }
+
                 // Click in main content area → row selection
                 let content_y = row.saturating_sub(header_h);
                 self.handle_content_click(col, content_y);
@@ -3035,6 +3115,39 @@ impl App {
                     return;
                 }
 
+                if let Some(area) = self.positions_table_area {
+                    if col < area.x
+                        || col >= area.x + area.width
+                        || row < area.y.saturating_add(2)
+                        || row >= area.y + area.height
+                    {
+                        return;
+                    }
+
+                    let clicked_row = row.saturating_sub(area.y + 2) as usize;
+                    if clicked_row >= self.display_positions.len() {
+                        return;
+                    }
+
+                    let old_idx = self.selected_index;
+                    self.selected_index = clicked_row;
+                    if self.selected_index != old_idx {
+                        self.on_position_selection_changed();
+                    }
+
+                    let symbol = self.display_positions[clicked_row].symbol.clone();
+                    let is_pct = self.portfolio_mode == PortfolioMode::Percentage;
+                    let actions = ContextMenuAction::for_positions(is_pct);
+                    self.context_menu = Some(ContextMenuState {
+                        col,
+                        row,
+                        selected: 0,
+                        actions,
+                        symbol,
+                    });
+                    return;
+                }
+
                 let content_y = row.saturating_sub(header_h);
                 let wide = self.terminal_width >= crate::tui::ui::COMPACT_WIDTH;
                 let data_start: u16 = if wide { 3 } else { 2 };
@@ -3047,14 +3160,12 @@ impl App {
                     return;
                 }
 
-                // Select the clicked row first
                 let old_idx = self.selected_index;
                 self.selected_index = clicked_row;
                 if self.selected_index != old_idx {
                     self.on_position_selection_changed();
                 }
 
-                // Open context menu at click position
                 let symbol = self.display_positions[clicked_row].symbol.clone();
                 let is_pct = self.portfolio_mode == PortfolioMode::Percentage;
                 let actions = ContextMenuAction::for_positions(is_pct);
@@ -3243,10 +3354,8 @@ impl App {
                 self.category_filter = Some(clicked_cat);
                 // Sync filter_cycle_index with the category position in AssetCategory::all()
                 let all_cats = AssetCategory::all();
-                self.filter_cycle_index = all_cats
-                    .iter()
-                    .position(|c| *c == clicked_cat)
-                    .unwrap_or(0);
+                self.filter_cycle_index =
+                    all_cats.iter().position(|c| *c == clicked_cat).unwrap_or(0);
             }
             self.recompute();
             return true;
@@ -3381,10 +3490,44 @@ impl App {
         }
     }
 
+    fn handle_positions_table_click(&mut self, col: u16, row: u16) -> bool {
+        let Some(area) = self.positions_table_area else {
+            return false;
+        };
+
+        if col < area.x || col >= area.x + area.width || row < area.y || row >= area.y + area.height {
+            return false;
+        }
+
+        let relative_row = row.saturating_sub(area.y);
+        if relative_row == 1 {
+            self.handle_positions_column_header_click(col);
+            return true;
+        }
+
+        if relative_row < 2 {
+            return true;
+        }
+
+        let clicked_row = (relative_row - 2) as usize;
+        if clicked_row < self.display_positions.len() {
+            let old_pos_idx = self.selected_index;
+            self.selected_index = clicked_row;
+            if self.selected_index != old_pos_idx {
+                self.on_position_selection_changed();
+            }
+        }
+        true
+    }
+
     /// Handle a click on the column header row in the Positions view.
     /// Maps the clicked column to a SortField and toggles sort direction
     /// if clicking the already-active sort column.
     fn handle_column_header_click(&mut self, col: u16) {
+        if matches!(self.view_mode, ViewMode::Positions) && self.handle_positions_column_header_click(col) {
+            return;
+        }
+
         let wide = self.terminal_width >= crate::tui::ui::COMPACT_WIDTH;
         let privacy = is_privacy_view(self);
 
@@ -3412,11 +3555,11 @@ impl App {
                 vec![asset_w, 12, 7, 8, 6, 8],
                 vec![
                     Some(SortField::Name),       // Asset
-                    None,                         // Price (no sort field)
-                    None,                         // Day% (no sort field)
-                    Some(SortField::Allocation),  // Alloc%
-                    None,                         // RSI
-                    None,                         // Trend
+                    None,                        // Price (no sort field)
+                    None,                        // Day% (no sort field)
+                    Some(SortField::Allocation), // Alloc%
+                    None,                        // RSI
+                    None,                        // Trend
                 ],
             )
         } else {
@@ -3428,14 +3571,14 @@ impl App {
                 vec![asset_w, 16, 7, 9, 8, 10, 7, 6, 8],
                 vec![
                     Some(SortField::Name),       // Asset
-                    None,                         // Price (no sort field)
-                    None,                         // Day% (no sort field)
-                    None,                         // Day$ (no sort field)
-                    Some(SortField::GainPct),     // P&L
-                    None,                         // Value
-                    Some(SortField::Allocation),  // Alloc%
-                    None,                         // RSI
-                    None,                         // Trend
+                    None,                        // Price (no sort field)
+                    None,                        // Day% (no sort field)
+                    None,                        // Day$ (no sort field)
+                    Some(SortField::GainPct),    // P&L
+                    None,                        // Value
+                    Some(SortField::Allocation), // Alloc%
+                    None,                        // RSI
+                    None,                        // Trend
                 ],
             )
         };
@@ -3453,7 +3596,8 @@ impl App {
                     } else {
                         self.sort_field = *field;
                         // Default direction: Name/Category ascending, others descending
-                        self.sort_ascending = matches!(field, SortField::Name | SortField::Category);
+                        self.sort_ascending =
+                            matches!(field, SortField::Name | SortField::Category);
                     }
                     self.last_sort_change_tick = self.tick_count;
                     self.recompute();
@@ -3462,6 +3606,73 @@ impl App {
             }
             cumulative = col_end + 1; // +1 for column spacing
         }
+    }
+
+    fn handle_positions_column_header_click(&mut self, col: u16) -> bool {
+        let Some(area) = self.positions_table_area else {
+            return false;
+        };
+
+        let privacy = is_privacy_view(self);
+        let content_start_x = area.x.saturating_add(1);
+        let content_width = area.width.saturating_sub(2);
+
+        let (col_widths, sort_fields): (Vec<u16>, Vec<Option<SortField>>) = if privacy {
+            let fixed: u16 = 12 + 7 + 8 + 6 + 8;
+            let gaps: u16 = 5;
+            let asset_w = content_width.saturating_sub(fixed + gaps).max(18);
+            (
+                vec![asset_w, 12, 7, 8, 6, 8],
+                vec![
+                    Some(SortField::Name),
+                    None,
+                    None,
+                    Some(SortField::Allocation),
+                    None,
+                    None,
+                ],
+            )
+        } else {
+            let fixed: u16 = 16 + 7 + 9 + 8 + 10 + 7 + 6 + 8;
+            let gaps: u16 = 8;
+            let asset_w = content_width.saturating_sub(fixed + gaps).max(14);
+            (
+                vec![asset_w, 16, 7, 9, 8, 10, 7, 6, 8],
+                vec![
+                    Some(SortField::Name),
+                    None,
+                    None,
+                    None,
+                    Some(SortField::GainPct),
+                    None,
+                    Some(SortField::Allocation),
+                    None,
+                    None,
+                ],
+            )
+        };
+
+        let rel_col = col.saturating_sub(content_start_x);
+        let mut cumulative: u16 = 0;
+        for (i, &w) in col_widths.iter().enumerate() {
+            let col_end = cumulative + w;
+            if rel_col < col_end {
+                if let Some(field) = &sort_fields[i] {
+                    if self.sort_field == *field {
+                        self.sort_ascending = !self.sort_ascending;
+                    } else {
+                        self.sort_field = *field;
+                        self.sort_ascending = matches!(field, SortField::Name | SortField::Category);
+                    }
+                    self.last_sort_change_tick = self.tick_count;
+                    self.recompute();
+                }
+                return true;
+            }
+            cumulative = col_end + 1;
+        }
+
+        true
     }
 
     fn move_down(&mut self) {
@@ -3488,15 +3699,13 @@ impl App {
             ViewMode::Markets => {
                 let count = markets::market_symbols().len();
                 if count > 0 {
-                    self.markets_selected_index =
-                        (self.markets_selected_index + 1).min(count - 1);
+                    self.markets_selected_index = (self.markets_selected_index + 1).min(count - 1);
                 }
             }
             ViewMode::Economy => {
                 let count = economy::economy_symbols().len();
                 if count > 0 {
-                    self.economy_selected_index =
-                        (self.economy_selected_index + 1).min(count - 1);
+                    self.economy_selected_index = (self.economy_selected_index + 1).min(count - 1);
                 }
             }
             ViewMode::Analytics => {
@@ -3520,9 +3729,7 @@ impl App {
                 }
             }
         }
-        if matches!(self.view_mode, ViewMode::Positions)
-            && self.selected_index != old_pos_idx
-        {
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
             self.on_position_selection_changed();
         }
     }
@@ -3556,9 +3763,7 @@ impl App {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(1);
             }
         }
-        if matches!(self.view_mode, ViewMode::Positions)
-            && self.selected_index != old_pos_idx
-        {
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
             self.on_position_selection_changed();
         }
     }
@@ -3592,9 +3797,7 @@ impl App {
                 self.journal_selected_index = 0;
             }
         }
-        if matches!(self.view_mode, ViewMode::Positions)
-            && self.selected_index != old_pos_idx
-        {
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
             self.on_position_selection_changed();
         }
     }
@@ -3647,9 +3850,7 @@ impl App {
                 }
             }
         }
-        if matches!(self.view_mode, ViewMode::Positions)
-            && self.selected_index != old_pos_idx
-        {
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
             self.on_position_selection_changed();
         }
     }
@@ -3681,8 +3882,8 @@ impl App {
             }
             ViewMode::Watchlist => {
                 if !self.watchlist_entries.is_empty() {
-                    self.watchlist_selected_index =
-                        (self.watchlist_selected_index + step).min(self.watchlist_entries.len() - 1);
+                    self.watchlist_selected_index = (self.watchlist_selected_index + step)
+                        .min(self.watchlist_entries.len() - 1);
                 }
             }
             ViewMode::Transactions => {
@@ -3726,9 +3927,7 @@ impl App {
                 }
             }
         }
-        if matches!(self.view_mode, ViewMode::Positions)
-            && self.selected_index != old_pos_idx
-        {
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
             self.on_position_selection_changed();
         }
     }
@@ -3763,9 +3962,7 @@ impl App {
                 self.journal_selected_index = self.journal_selected_index.saturating_sub(step);
             }
         }
-        if matches!(self.view_mode, ViewMode::Positions)
-            && self.selected_index != old_pos_idx
-        {
+        if matches!(self.view_mode, ViewMode::Positions) && self.selected_index != old_pos_idx {
             self.on_position_selection_changed();
         }
     }
@@ -3812,7 +4009,6 @@ impl App {
             SortField::Date => "date",
         }
     }
-
 
     /// Record a keystroke for the status bar echo display.
     /// Handles g-prefix sequences (gg, G) and modifier keys (Ctrl+d, etc.).
@@ -3941,9 +4137,8 @@ impl App {
     }
 
     fn handle_command_palette_key(&mut self, key: KeyEvent) {
-        let matches = crate::tui::views::command_palette::matching_commands(
-            &self.command_palette_input,
-        );
+        let matches =
+            crate::tui::views::command_palette::matching_commands(&self.command_palette_input);
         match key.code {
             KeyCode::Esc => {
                 self.command_palette_open = false;
@@ -3960,8 +4155,7 @@ impl App {
                 }
             }
             KeyCode::Up => {
-                self.command_palette_selected =
-                    self.command_palette_selected.saturating_sub(1);
+                self.command_palette_selected = self.command_palette_selected.saturating_sub(1);
             }
             KeyCode::Tab => {
                 if let Some(entry) = matches.get(self.command_palette_selected) {
@@ -4005,7 +4199,7 @@ impl App {
             "layout compact" => self.set_workspace_layout(WorkspaceLayout::Compact),
             "layout split" => self.set_workspace_layout(WorkspaceLayout::Split),
             "layout analyst" => self.set_workspace_layout(WorkspaceLayout::Analyst),
-            "view positions" => self.view_mode = ViewMode::Positions,
+            "view positions" => self.switch_to_home_default(),
             "view transactions" => {
                 if self.portfolio_mode == PortfolioMode::Full {
                     self.view_mode = ViewMode::Transactions;
@@ -4019,7 +4213,10 @@ impl App {
                 self.request_watchlist_data();
             }
             "view analytics" => self.view_mode = ViewMode::Analytics,
-            "view news" => self.view_mode = ViewMode::News,
+            "view news" => {
+                self.view_mode = ViewMode::News;
+                self.load_news();
+            }
             "view chartgrid" | "view charts" | "view chart-grid" => {
                 self.view_mode = ViewMode::ChartGrid
             }
@@ -4075,9 +4272,9 @@ impl App {
             return;
         }
         let expr = self.current_scan_filter_expr();
-        let res = self
-            .open_backend()
-            .and_then(|backend| scan_queries::upsert_scan_query_backend(&backend, name, &expr).ok());
+        let res = self.open_backend().and_then(|backend| {
+            scan_queries::upsert_scan_query_backend(&backend, name, &expr).ok()
+        });
         if res.is_some() {
             self.scan_builder_message = Some(format!("Saved '{}' ({})", name, expr));
         } else {
@@ -4101,7 +4298,8 @@ impl App {
                     if !clause.is_empty() {
                         self.scan_builder_clauses.push(clause.to_string());
                         self.scan_builder_clause_input.clear();
-                        self.scan_builder_selected = self.scan_builder_clauses.len().saturating_sub(1);
+                        self.scan_builder_selected =
+                            self.scan_builder_clauses.len().saturating_sub(1);
                         self.scan_builder_message = Some("Clause added".to_string());
                     }
                 }
@@ -4109,7 +4307,8 @@ impl App {
                     if self.scan_builder_selected < self.scan_builder_clauses.len() {
                         self.scan_builder_clauses.remove(self.scan_builder_selected);
                         if self.scan_builder_selected >= self.scan_builder_clauses.len() {
-                            self.scan_builder_selected = self.scan_builder_clauses.len().saturating_sub(1);
+                            self.scan_builder_selected =
+                                self.scan_builder_clauses.len().saturating_sub(1);
                         }
                         self.scan_builder_message = Some("Clause removed".to_string());
                     }
@@ -4122,12 +4321,14 @@ impl App {
                 KeyCode::Char('s') => {
                     self.scan_builder_mode = ScanBuilderMode::SaveName;
                     self.scan_builder_name_input.clear();
-                    self.scan_builder_message = Some("Enter name, then press Enter to save".to_string());
+                    self.scan_builder_message =
+                        Some("Enter name, then press Enter to save".to_string());
                 }
                 KeyCode::Char('l') => {
                     self.scan_builder_mode = ScanBuilderMode::LoadName;
                     self.scan_builder_name_input.clear();
-                    self.scan_builder_message = Some("Enter name, then press Enter to load".to_string());
+                    self.scan_builder_message =
+                        Some("Enter name, then press Enter to load".to_string());
                 }
                 KeyCode::Down => {
                     if self.scan_builder_selected + 1 < self.scan_builder_clauses.len() {
@@ -4325,7 +4526,9 @@ impl App {
         if self.search_overlay_query.trim().is_empty() {
             return;
         }
-        let Some(svc) = &self.price_service else { return };
+        let Some(svc) = &self.price_service else {
+            return;
+        };
 
         let mut quote_batch: Vec<(String, AssetCategory)> = Vec::new();
         let mut history_batch: Vec<(String, AssetCategory, u32)> = Vec::new();
@@ -4335,7 +4538,10 @@ impl App {
             if result.in_portfolio || result.in_watchlist {
                 continue;
             }
-            if self.search_overlay_requested_symbols.contains(&result.symbol) {
+            if self
+                .search_overlay_requested_symbols
+                .contains(&result.symbol)
+            {
                 continue;
             }
 
@@ -4443,9 +4649,15 @@ impl App {
             KeyCode::Backspace => {
                 match form.active_field {
                     TxFormField::TxType => {} // toggle, no backspace
-                    TxFormField::Quantity => { form.quantity_input.pop(); }
-                    TxFormField::PricePer => { form.price_input.pop(); }
-                    TxFormField::Date => { form.date_input.pop(); }
+                    TxFormField::Quantity => {
+                        form.quantity_input.pop();
+                    }
+                    TxFormField::PricePer => {
+                        form.price_input.pop();
+                    }
+                    TxFormField::Date => {
+                        form.date_input.pop();
+                    }
                 }
             }
             KeyCode::Char(c) => {
@@ -4512,7 +4724,8 @@ impl App {
         };
 
         // Validate date format (basic: YYYY-MM-DD length check)
-        if form.date_input.len() != 10 || form.date_input.chars().filter(|c| *c == '-').count() != 2 {
+        if form.date_input.len() != 10 || form.date_input.chars().filter(|c| *c == '-').count() != 2
+        {
             if let Some(f) = self.tx_form.as_mut() {
                 f.error = Some("Date must be YYYY-MM-DD".to_string());
                 f.active_field = TxFormField::Date;
@@ -4662,7 +4875,11 @@ mod tests {
 
         // DXY/SPX should be a ratio (DXY / ^GSPC)
         match &variants[3].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "DX-Y.NYB");
                 assert_eq!(den_symbol, "^GSPC");
             }
@@ -4671,7 +4888,11 @@ mod tests {
 
         // DXY/BTC should be a ratio (DXY / BTC-USD)
         match &variants[4].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "DX-Y.NYB");
                 assert_eq!(den_symbol, "BTC-USD");
             }
@@ -4732,8 +4953,10 @@ mod tests {
 
         // Should NOT contain DXY as a standalone single chart
         let singles = variant_symbols(&variants);
-        assert!(!singles.contains(&"DX-Y.NYB".to_string()),
-            "Non-USD cash should not have DXY as a standalone chart");
+        assert!(
+            !singles.contains(&"DX-Y.NYB".to_string()),
+            "Non-USD cash should not have DXY as a standalone chart"
+        );
     }
 
     #[test]
@@ -4756,7 +4979,11 @@ mod tests {
 
         // GBP/BTC should be a ratio (GBPUSD=X / BTC-USD)
         match &variants[4].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "GBPUSD=X");
                 assert_eq!(den_symbol, "BTC-USD");
             }
@@ -4783,7 +5010,11 @@ mod tests {
         // {SYM}/SPX ratio
         assert_eq!(variants[2].label, "AAPL/SPX");
         match &variants[2].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "AAPL");
                 assert_eq!(den_symbol, "^GSPC");
             }
@@ -4793,7 +5024,11 @@ mod tests {
         // {SYM}/QQQ ratio
         assert_eq!(variants[3].label, "AAPL/QQQ");
         match &variants[3].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "AAPL");
                 assert_eq!(den_symbol, "QQQ");
             }
@@ -4803,7 +5038,11 @@ mod tests {
         // {SYM}/BTC ratio
         assert_eq!(variants[4].label, "AAPL/BTC");
         match &variants[4].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "AAPL");
                 assert_eq!(den_symbol, "BTC-USD");
             }
@@ -4818,8 +5057,14 @@ mod tests {
         let variants = App::chart_variants_for_position(&pos);
 
         let labels = variant_labels(&variants);
-        assert!(!labels.contains(&"SPY/SPX".to_string()), "SPY should not have SPY/SPX ratio");
-        assert!(labels.contains(&"SPY/QQQ".to_string()), "SPY should have SPY/QQQ ratio");
+        assert!(
+            !labels.contains(&"SPY/SPX".to_string()),
+            "SPY should not have SPY/SPX ratio"
+        );
+        assert!(
+            labels.contains(&"SPY/QQQ".to_string()),
+            "SPY should have SPY/QQQ ratio"
+        );
     }
 
     #[test]
@@ -4829,8 +5074,14 @@ mod tests {
         let variants = App::chart_variants_for_position(&pos);
 
         let labels = variant_labels(&variants);
-        assert!(labels.contains(&"QQQ/SPX".to_string()), "QQQ should have QQQ/SPX ratio");
-        assert!(!labels.contains(&"QQQ/QQQ".to_string()), "QQQ should not have QQQ/QQQ ratio");
+        assert!(
+            labels.contains(&"QQQ/SPX".to_string()),
+            "QQQ should have QQQ/SPX ratio"
+        );
+        assert!(
+            !labels.contains(&"QQQ/QQQ".to_string()),
+            "QQQ should not have QQQ/QQQ ratio"
+        );
     }
 
     #[test]
@@ -4866,7 +5117,11 @@ mod tests {
         // {SYM}/BTC ratio
         assert_eq!(variants[2].label, "ETH/BTC");
         match &variants[2].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "ETH-USD");
                 assert_eq!(den_symbol, "BTC-USD");
             }
@@ -4876,7 +5131,11 @@ mod tests {
         // {SYM}/SPX ratio
         assert_eq!(variants[3].label, "ETH/SPX");
         match &variants[3].kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "ETH-USD");
                 assert_eq!(den_symbol, "^GSPC");
             }
@@ -4891,14 +5150,27 @@ mod tests {
         let variants = App::chart_variants_for_position(&pos);
 
         let labels = variant_labels(&variants);
-        assert!(labels.contains(&"SLV/SPX".to_string()), "Silver should have SLV/SPX ratio");
-        assert!(labels.contains(&"SLV/QQQ".to_string()), "Silver should have SLV/QQQ ratio");
-        assert!(labels.contains(&"SLV/BTC".to_string()), "Silver should have SLV/BTC ratio");
+        assert!(
+            labels.contains(&"SLV/SPX".to_string()),
+            "Silver should have SLV/SPX ratio"
+        );
+        assert!(
+            labels.contains(&"SLV/QQQ".to_string()),
+            "Silver should have SLV/QQQ ratio"
+        );
+        assert!(
+            labels.contains(&"SLV/BTC".to_string()),
+            "Silver should have SLV/BTC ratio"
+        );
 
         // Verify SLV/BTC is actually a ratio with correct symbols
         let btc_variant = variants.iter().find(|v| v.label == "SLV/BTC").unwrap();
         match &btc_variant.kind {
-            ChartKind::Ratio { num_symbol, den_symbol, .. } => {
+            ChartKind::Ratio {
+                num_symbol,
+                den_symbol,
+                ..
+            } => {
                 assert_eq!(num_symbol, "SLV");
                 assert_eq!(den_symbol, "BTC-USD");
             }
@@ -4913,7 +5185,10 @@ mod tests {
         let variants = App::chart_variants_for_position(&pos);
 
         let labels = variant_labels(&variants);
-        assert!(labels.contains(&"AAPL/BTC".to_string()), "Equities should have /BTC ratio");
+        assert!(
+            labels.contains(&"AAPL/BTC".to_string()),
+            "Equities should have /BTC ratio"
+        );
     }
 
     #[test]
@@ -4932,10 +5207,14 @@ mod tests {
         let syms = App::chart_fetch_symbols(&pos);
 
         // Should include DX-Y.NYB for the ratio chart denominator
-        assert!(syms.iter().any(|(s, _)| s == "DX-Y.NYB"),
-            "Non-USD cash chart fetch should include DX-Y.NYB for ratio");
-        assert!(syms.iter().any(|(s, _)| s == "EURUSD=X"),
-            "Non-USD cash chart fetch should include the forex pair");
+        assert!(
+            syms.iter().any(|(s, _)| s == "DX-Y.NYB"),
+            "Non-USD cash chart fetch should include DX-Y.NYB for ratio"
+        );
+        assert!(
+            syms.iter().any(|(s, _)| s == "EURUSD=X"),
+            "Non-USD cash chart fetch should include the forex pair"
+        );
     }
 
     #[test]
@@ -4943,8 +5222,22 @@ mod tests {
         use crate::models::price::HistoryRecord;
         let mut history = HashMap::new();
         let records = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         merge_history_into(&mut history, "AAPL".to_string(), records);
         assert_eq!(history.get("AAPL").unwrap().len(), 2);
@@ -4955,15 +5248,44 @@ mod tests {
         use crate::models::price::HistoryRecord;
         let mut history = HashMap::new();
         // Existing: 3 months of data
-        history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-02-01".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-03-01".into(), close: dec!(120), volume: None, open: None, high: None, low: None },
-        ]);
+        history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2025-01-01".into(),
+                    close: dec!(100),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2025-02-01".into(),
+                    close: dec!(110),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2025-03-01".into(),
+                    close: dec!(120),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         // New fetch returns only last month (shorter range)
-        let new_records = vec![
-            HistoryRecord { date: "2025-03-01".into(), close: dec!(125), volume: None, open: None, high: None, low: None },
-        ];
+        let new_records = vec![HistoryRecord {
+            date: "2025-03-01".into(),
+            close: dec!(125),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
         merge_history_into(&mut history, "AAPL".to_string(), new_records);
         let merged = history.get("AAPL").unwrap();
         // Should have all 3 dates (Jan, Feb preserved; Mar updated)
@@ -4978,12 +5300,34 @@ mod tests {
     fn test_merge_history_into_adds_new_dates() {
         use crate::models::price::HistoryRecord;
         let mut history = HashMap::new();
-        history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-        ]);
+        history.insert(
+            "AAPL".to_string(),
+            vec![HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
         let new_records = vec![
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(105),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         merge_history_into(&mut history, "AAPL".to_string(), new_records);
         let merged = history.get("AAPL").unwrap();
@@ -4999,9 +5343,14 @@ mod tests {
         use crate::models::price::HistoryRecord;
         let mut history = HashMap::new();
         history.insert("AAPL".to_string(), Vec::new());
-        let new_records = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-        ];
+        let new_records = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(100),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
         merge_history_into(&mut history, "AAPL".to_string(), new_records);
         assert_eq!(history.get("AAPL").unwrap().len(), 1);
     }
@@ -5064,7 +5413,6 @@ mod vim_motion_tests {
     fn key(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
     }
-
 
     #[test]
     fn test_gg_jumps_to_top() {
@@ -6058,7 +6406,12 @@ mod daily_change_tests {
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
     }
 
-    fn make_position(symbol: &str, qty: Decimal, price: Option<Decimal>, category: AssetCategory) -> Position {
+    fn make_position(
+        symbol: &str,
+        qty: Decimal,
+        price: Option<Decimal>,
+        category: AssetCategory,
+    ) -> Position {
         Position {
             symbol: symbol.to_string(),
             name: symbol.to_string(),
@@ -6080,7 +6433,12 @@ mod daily_change_tests {
     #[test]
     fn test_daily_change_no_history() {
         let mut app = make_app();
-        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity)];
+        app.positions = vec![make_position(
+            "AAPL",
+            dec!(10),
+            Some(dec!(150)),
+            AssetCategory::Equity,
+        )];
         app.compute_daily_change();
         assert_eq!(app.daily_portfolio_change, None);
     }
@@ -6088,12 +6446,34 @@ mod daily_change_tests {
     #[test]
     fn test_daily_change_with_prev_close() {
         let mut app = make_app();
-        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity)];
+        app.positions = vec![make_position(
+            "AAPL",
+            dec!(10),
+            Some(dec!(155)),
+            AssetCategory::Equity,
+        )];
         // Add history with a previous day close of 150
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(148), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-27".to_string(),
+                    close: dec!(148),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(150),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         app.compute_daily_change();
         // (155 - 150) * 10 = 50
         assert_eq!(app.daily_portfolio_change, Some(dec!(50)));
@@ -6102,10 +6482,23 @@ mod daily_change_tests {
     #[test]
     fn test_daily_change_negative() {
         let mut app = make_app();
-        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(145)), AssetCategory::Equity)];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
+        app.positions = vec![make_position(
+            "AAPL",
+            dec!(10),
+            Some(dec!(145)),
+            AssetCategory::Equity,
+        )];
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![HistoryRecord {
+                date: "2026-02-28".to_string(),
+                close: dec!(150),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
         app.compute_daily_change();
         // (145 - 150) * 10 = -50
         assert_eq!(app.daily_portfolio_change, Some(dec!(-50)));
@@ -6118,12 +6511,28 @@ mod daily_change_tests {
             make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity),
             make_position("GOOG", dec!(5), Some(dec!(2800)), AssetCategory::Equity),
         ];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
-        app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(2750), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![HistoryRecord {
+                date: "2026-02-28".to_string(),
+                close: dec!(150),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
+        app.price_history.insert(
+            "GOOG".to_string(),
+            vec![HistoryRecord {
+                date: "2026-02-28".to_string(),
+                close: dec!(2750),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
         app.compute_daily_change();
         // AAPL: (155-150)*10 = 50, GOOG: (2800-2750)*5 = 250. Total = 300
         assert_eq!(app.daily_portfolio_change, Some(dec!(300)));
@@ -6136,9 +6545,17 @@ mod daily_change_tests {
             make_position("USD", dec!(10000), Some(dec!(1)), AssetCategory::Cash),
             make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity),
         ];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![HistoryRecord {
+                date: "2026-02-28".to_string(),
+                close: dec!(150),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
         app.compute_daily_change();
         // Only AAPL: (155-150)*10 = 50 (cash excluded)
         assert_eq!(app.daily_portfolio_change, Some(dec!(50)));
@@ -6148,10 +6565,23 @@ mod daily_change_tests {
     fn test_daily_change_percentage_mode_returns_none() {
         let mut app = make_app();
         app.portfolio_mode = PortfolioMode::Percentage;
-        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(155)), AssetCategory::Equity)];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
+        app.positions = vec![make_position(
+            "AAPL",
+            dec!(10),
+            Some(dec!(155)),
+            AssetCategory::Equity,
+        )];
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![HistoryRecord {
+                date: "2026-02-28".to_string(),
+                close: dec!(150),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
         app.compute_daily_change();
         assert_eq!(app.daily_portfolio_change, None);
     }
@@ -6159,12 +6589,34 @@ mod daily_change_tests {
     #[test]
     fn test_daily_change_today_record_uses_prev() {
         let mut app = make_app();
-        app.positions = vec![make_position("AAPL", dec!(10), Some(dec!(160)), AssetCategory::Equity)];
+        app.positions = vec![make_position(
+            "AAPL",
+            dec!(10),
+            Some(dec!(160)),
+            AssetCategory::Equity,
+        )];
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: today, close: dec!(158), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(150),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: today,
+                    close: dec!(158),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         app.compute_daily_change();
         // Should use 2026-02-28 close (150), not today's record
         // (160 - 150) * 10 = 100
@@ -6228,26 +6680,70 @@ mod portfolio_value_history_tests {
         // day 2 should use AAPL's day-1 price (not contribute $0).
         let mut app = make_app();
         app.positions = vec![make_position("AAPL", dec!(10), AssetCategory::Equity)];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-            // No record for 2026-01-02
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(155), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-01-01".to_string(),
+                    close: dec!(150),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                // No record for 2026-01-02
+                HistoryRecord {
+                    date: "2026-01-03".to_string(),
+                    close: dec!(155),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         // Add a second symbol that has data on day 2 to create the date
-        app.positions.push(make_position("GOOG", dec!(5), AssetCategory::Equity));
-        app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(2800), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(2850), volume: None, open: None, high: None, low: None },
-        ]);
+        app.positions
+            .push(make_position("GOOG", dec!(5), AssetCategory::Equity));
+        app.price_history.insert(
+            "GOOG".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-01-02".to_string(),
+                    close: dec!(2800),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-01-03".to_string(),
+                    close: dec!(2850),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         app.compute_portfolio_value_history();
 
         // Day 1: AAPL=10*150=1500, GOOG has no data yet = not included
         // Day 2: AAPL LOCF=10*150=1500, GOOG=5*2800=14000 → 15500
         // Day 3: AAPL=10*155=1550, GOOG=5*2850=14250 → 15800
         assert_eq!(app.portfolio_value_history.len(), 3);
-        assert_eq!(app.portfolio_value_history[0], ("2026-01-01".to_string(), dec!(1500)));
-        assert_eq!(app.portfolio_value_history[1], ("2026-01-02".to_string(), dec!(15500)));
-        assert_eq!(app.portfolio_value_history[2], ("2026-01-03".to_string(), dec!(15800)));
+        assert_eq!(
+            app.portfolio_value_history[0],
+            ("2026-01-01".to_string(), dec!(1500))
+        );
+        assert_eq!(
+            app.portfolio_value_history[1],
+            ("2026-01-02".to_string(), dec!(15500))
+        );
+        assert_eq!(
+            app.portfolio_value_history[2],
+            ("2026-01-03".to_string(), dec!(15800))
+        );
     }
 
     #[test]
@@ -6260,15 +6756,56 @@ mod portfolio_value_history_tests {
             make_position("GOOG", dec!(5), AssetCategory::Equity),
         ];
         // AAPL has prices on odd days, GOOG on even days
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-05".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
-        ]);
-        app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(200), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-04".to_string(), close: dec!(200), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-01-01".to_string(),
+                    close: dec!(100),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-01-03".to_string(),
+                    close: dec!(100),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-01-05".to_string(),
+                    close: dec!(100),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
+        app.price_history.insert(
+            "GOOG".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-01-02".to_string(),
+                    close: dec!(200),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-01-04".to_string(),
+                    close: dec!(200),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         app.compute_portfolio_value_history();
 
         // With LOCF, once both assets have appeared, the total stays consistent:
@@ -6283,8 +6820,13 @@ mod portfolio_value_history_tests {
         assert_eq!(app.portfolio_value_history[0].1, dec!(1000));
         // Days 2-5 should all be 2000 (no sine wave)
         for i in 1..5 {
-            assert_eq!(app.portfolio_value_history[i].1, dec!(2000),
-                "Day {} should be 2000 but was {}", i + 1, app.portfolio_value_history[i].1);
+            assert_eq!(
+                app.portfolio_value_history[i].1,
+                dec!(2000),
+                "Day {} should be 2000 but was {}",
+                i + 1,
+                app.portfolio_value_history[i].1
+            );
         }
     }
 
@@ -6295,15 +6837,38 @@ mod portfolio_value_history_tests {
             make_position("USD", dec!(5000), AssetCategory::Cash),
             make_position("AAPL", dec!(10), AssetCategory::Equity),
         ];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(155), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-01-01".to_string(),
+                    close: dec!(150),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-01-02".to_string(),
+                    close: dec!(155),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         app.compute_portfolio_value_history();
 
         // Cash always priced at quantity (1.0 * qty)
-        assert_eq!(app.portfolio_value_history[0].1, dec!(5000) + dec!(10) * dec!(150));
-        assert_eq!(app.portfolio_value_history[1].1, dec!(5000) + dec!(10) * dec!(155));
+        assert_eq!(
+            app.portfolio_value_history[0].1,
+            dec!(5000) + dec!(10) * dec!(150)
+        );
+        assert_eq!(
+            app.portfolio_value_history[1].1,
+            dec!(5000) + dec!(10) * dec!(155)
+        );
     }
 
     #[test]
@@ -6314,15 +6879,47 @@ mod portfolio_value_history_tests {
             make_position("AAPL", dec!(10), AssetCategory::Equity),
             make_position("NEW", dec!(20), AssetCategory::Equity),
         ];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(105), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(110), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-01-01".to_string(),
+                    close: dec!(100),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-01-02".to_string(),
+                    close: dec!(105),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-01-03".to_string(),
+                    close: dec!(110),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         // NEW only gets a price on day 3
-        app.price_history.insert("NEW".to_string(), vec![
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(50), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "NEW".to_string(),
+            vec![HistoryRecord {
+                date: "2026-01-03".to_string(),
+                close: dec!(50),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
         app.compute_portfolio_value_history();
 
         // Day 1: AAPL=10*100=1000, NEW not yet priced
@@ -6578,7 +7175,10 @@ mod breadcrumb_tests {
         app.chart_timeframe = ChartTimeframe::ThreeMonths;
         let crumb = app.breadcrumb();
         // Should contain view, symbol, timeframe, and variant label
-        assert!(crumb.starts_with("Positions › AAPL › 3M › "), "got: {crumb}");
+        assert!(
+            crumb.starts_with("Positions › AAPL › 3M › "),
+            "got: {crumb}"
+        );
     }
 
     #[test]
@@ -6636,6 +7236,7 @@ mod breadcrumb_tests {
 mod watchlist_tab_tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::path::PathBuf;
 
     fn make_app() -> App {
         let config = Config::default();
@@ -6649,6 +7250,14 @@ mod watchlist_tab_tests {
     #[test]
     fn test_default_view_is_positions() {
         let app = make_app();
+        assert_eq!(app.view_mode, ViewMode::Positions);
+    }
+
+    #[test]
+    fn test_default_view_ignores_watchlist_home_tab_preference() {
+        let mut config = Config::default();
+        config.home_tab = "watchlist".to_string();
+        let app = App::new(&config, PathBuf::from(":memory:"));
         assert_eq!(app.view_mode, ViewMode::Positions);
     }
 
@@ -6787,13 +7396,22 @@ mod tx_form_tests {
         app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
 
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Quantity);
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().active_field,
+            TxFormField::Quantity
+        );
 
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::PricePer);
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().active_field,
+            TxFormField::PricePer
+        );
 
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Date);
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().active_field,
+            TxFormField::Date
+        );
     }
 
     #[test]
@@ -6816,7 +7434,10 @@ mod tx_form_tests {
         app.tx_form = Some(TxFormState::new("BTC".to_string(), AssetCategory::Crypto));
         // Move to quantity field
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Quantity);
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().active_field,
+            TxFormField::Quantity
+        );
 
         app.handle_key(key('1'));
         app.handle_key(key('0'));
@@ -6860,15 +7481,24 @@ mod tx_form_tests {
 
         // Enter on TxType → Quantity
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Quantity);
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().active_field,
+            TxFormField::Quantity
+        );
 
         // Enter on Quantity → PricePer
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::PricePer);
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().active_field,
+            TxFormField::PricePer
+        );
 
         // Enter on PricePer → Date
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.tx_form.as_ref().unwrap().active_field, TxFormField::Date);
+        assert_eq!(
+            app.tx_form.as_ref().unwrap().active_field,
+            TxFormField::Date
+        );
     }
 
     #[test]
@@ -7009,13 +7639,19 @@ mod tx_form_tests {
     #[test]
     fn test_sparkline_timeframe_default() {
         let app = make_app();
-        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::ThreeMonths));
+        assert!(matches!(
+            app.sparkline_timeframe,
+            ChartTimeframe::ThreeMonths
+        ));
     }
 
     #[test]
     fn test_sparkline_timeframe_cycle_forward() {
         let mut app = make_app();
-        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::ThreeMonths));
+        assert!(matches!(
+            app.sparkline_timeframe,
+            ChartTimeframe::ThreeMonths
+        ));
         app.handle_key(key(']'));
         assert!(matches!(app.sparkline_timeframe, ChartTimeframe::SixMonths));
         app.handle_key(key(']'));
@@ -7029,7 +7665,10 @@ mod tx_form_tests {
     #[test]
     fn test_sparkline_timeframe_cycle_backward() {
         let mut app = make_app();
-        assert!(matches!(app.sparkline_timeframe, ChartTimeframe::ThreeMonths));
+        assert!(matches!(
+            app.sparkline_timeframe,
+            ChartTimeframe::ThreeMonths
+        ));
         app.handle_key(key('['));
         assert!(matches!(app.sparkline_timeframe, ChartTimeframe::OneMonth));
         app.handle_key(key('['));
@@ -7071,22 +7710,23 @@ mod sort_flash_tests {
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
         for i in 0..3 {
-            app.display_positions.push(crate::models::position::Position {
-                symbol: format!("SYM{}", i),
-                name: format!("Symbol {}", i),
-                category: crate::models::asset::AssetCategory::Equity,
-                quantity: dec!(1),
-                avg_cost: dec!(100),
-                total_cost: dec!(100),
-                currency: "USD".to_string(),
-                current_price: Some(dec!(110)),
-                current_value: Some(dec!(110)),
-                gain: Some(dec!(10)),
-                gain_pct: Some(dec!(10)),
-                allocation_pct: Some(dec!(33)),
-                native_currency: None,
-                fx_rate: None,
-            });
+            app.display_positions
+                .push(crate::models::position::Position {
+                    symbol: format!("SYM{}", i),
+                    name: format!("Symbol {}", i),
+                    category: crate::models::asset::AssetCategory::Equity,
+                    quantity: dec!(1),
+                    avg_cost: dec!(100),
+                    total_cost: dec!(100),
+                    currency: "USD".to_string(),
+                    current_price: Some(dec!(110)),
+                    current_value: Some(dec!(110)),
+                    gain: Some(dec!(10)),
+                    gain_pct: Some(dec!(10)),
+                    allocation_pct: Some(dec!(33)),
+                    native_currency: None,
+                    fx_rate: None,
+                });
         }
         app
     }
@@ -7176,7 +7816,12 @@ mod prev_day_alloc_tests {
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
     }
 
-    fn make_position(symbol: &str, qty: Decimal, price: Option<Decimal>, category: AssetCategory) -> Position {
+    fn make_position(
+        symbol: &str,
+        qty: Decimal,
+        price: Option<Decimal>,
+        category: AssetCategory,
+    ) -> Position {
         Position {
             symbol: symbol.to_string(),
             name: symbol.to_string(),
@@ -7198,9 +7843,12 @@ mod prev_day_alloc_tests {
     #[test]
     fn test_prev_day_empty_without_history() {
         let mut app = make_app();
-        app.positions = vec![
-            make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity),
-        ];
+        app.positions = vec![make_position(
+            "AAPL",
+            dec!(10),
+            Some(dec!(150)),
+            AssetCategory::Equity,
+        )];
         app.compute_prev_day_cat_allocations();
         assert!(app.prev_day_cat_allocations.is_empty());
     }
@@ -7213,21 +7861,61 @@ mod prev_day_alloc_tests {
             make_position("BTC", dec!(1), Some(dec!(60000)), AssetCategory::Crypto),
         ];
         // AAPL: prev close 140, BTC: prev close 50000
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
-        app.price_history.insert("BTC".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(50000), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(60000), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-27".to_string(),
+                    close: dec!(140),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(150),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
+        app.price_history.insert(
+            "BTC".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-27".to_string(),
+                    close: dec!(50000),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(60000),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         app.compute_prev_day_cat_allocations();
 
         // Prev day: AAPL = 10*140 = 1400, BTC = 1*50000 = 50000, total = 51400
         // Equity: 1400/51400 * 100 ≈ 2.72%
         // Crypto: 50000/51400 * 100 ≈ 97.28%
-        let equity_alloc = app.prev_day_cat_allocations.get(&AssetCategory::Equity).unwrap();
-        let crypto_alloc = app.prev_day_cat_allocations.get(&AssetCategory::Crypto).unwrap();
+        let equity_alloc = app
+            .prev_day_cat_allocations
+            .get(&AssetCategory::Equity)
+            .unwrap();
+        let crypto_alloc = app
+            .prev_day_cat_allocations
+            .get(&AssetCategory::Crypto)
+            .unwrap();
         assert!(*equity_alloc > dec!(2) && *equity_alloc < dec!(3));
         assert!(*crypto_alloc > dec!(97) && *crypto_alloc < dec!(98));
     }
@@ -7235,13 +7923,24 @@ mod prev_day_alloc_tests {
     #[test]
     fn test_prev_day_single_record_insufficient() {
         let mut app = make_app();
-        app.positions = vec![
-            make_position("AAPL", dec!(10), Some(dec!(150)), AssetCategory::Equity),
-        ];
+        app.positions = vec![make_position(
+            "AAPL",
+            dec!(10),
+            Some(dec!(150)),
+            AssetCategory::Equity,
+        )];
         // Only 1 record — no "previous" day
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![HistoryRecord {
+                date: "2026-02-28".to_string(),
+                close: dec!(150),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        );
         app.compute_prev_day_cat_allocations();
         assert!(app.prev_day_cat_allocations.is_empty());
     }
@@ -7253,17 +7952,40 @@ mod prev_day_alloc_tests {
             make_position("AAPL", dec!(10), Some(dec!(100)), AssetCategory::Equity),
             make_position("USD", dec!(1000), Some(dec!(1)), AssetCategory::Cash),
         ];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-27".to_string(),
+                    close: dec!(100),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(100),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         // No price_history for USD/Cash — should still use price 1.0
         app.compute_prev_day_cat_allocations();
 
         // Prev day: AAPL = 10*100 = 1000, USD = 1000*1 = 1000, total = 2000
         // Each should be 50%
-        let equity = app.prev_day_cat_allocations.get(&AssetCategory::Equity).unwrap();
-        let cash = app.prev_day_cat_allocations.get(&AssetCategory::Cash).unwrap();
+        let equity = app
+            .prev_day_cat_allocations
+            .get(&AssetCategory::Equity)
+            .unwrap();
+        let cash = app
+            .prev_day_cat_allocations
+            .get(&AssetCategory::Cash)
+            .unwrap();
         assert_eq!(*equity, dec!(50));
         assert_eq!(*cash, dec!(50));
     }
@@ -7276,25 +7998,82 @@ mod prev_day_alloc_tests {
             make_position("GOOG", dec!(5), Some(dec!(200)), AssetCategory::Equity),
             make_position("BTC", dec!(1), Some(dec!(50000)), AssetCategory::Crypto),
         ];
-        app.price_history.insert("AAPL".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(140), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]);
-        app.price_history.insert("GOOG".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(190), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(200), volume: None, open: None, high: None, low: None },
-        ]);
-        app.price_history.insert("BTC".to_string(), vec![
-            HistoryRecord { date: "2026-02-27".to_string(), close: dec!(48000), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-02-28".to_string(), close: dec!(50000), volume: None, open: None, high: None, low: None },
-        ]);
+        app.price_history.insert(
+            "AAPL".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-27".to_string(),
+                    close: dec!(140),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(150),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
+        app.price_history.insert(
+            "GOOG".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-27".to_string(),
+                    close: dec!(190),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(200),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
+        app.price_history.insert(
+            "BTC".to_string(),
+            vec![
+                HistoryRecord {
+                    date: "2026-02-27".to_string(),
+                    close: dec!(48000),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2026-02-28".to_string(),
+                    close: dec!(50000),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        );
         app.compute_prev_day_cat_allocations();
 
         // Prev day: AAPL = 10*140 = 1400, GOOG = 5*190 = 950, BTC = 1*48000 = 48000
         // Equity total = 2350, total = 50350
         // Equity: 2350/50350 ≈ 4.67%, Crypto: 48000/50350 ≈ 95.33%
-        let equity = app.prev_day_cat_allocations.get(&AssetCategory::Equity).unwrap();
-        let crypto = app.prev_day_cat_allocations.get(&AssetCategory::Crypto).unwrap();
+        let equity = app
+            .prev_day_cat_allocations
+            .get(&AssetCategory::Equity)
+            .unwrap();
+        let crypto = app
+            .prev_day_cat_allocations
+            .get(&AssetCategory::Crypto)
+            .unwrap();
         assert!(*equity > dec!(4) && *equity < dec!(5));
         assert!(*crypto > dec!(95) && *crypto < dec!(96));
     }
@@ -7386,7 +8165,11 @@ mod mouse_tests {
     #[test]
     fn scroll_down_moves_selection_down() {
         let mut app = make_app();
-        app.display_positions = vec![make_position("AAPL"), make_position("GOOG"), make_position("MSFT")];
+        app.display_positions = vec![
+            make_position("AAPL"),
+            make_position("GOOG"),
+            make_position("MSFT"),
+        ];
         assert_eq!(app.selected_index, 0);
 
         app.handle_mouse(mouse_event(MouseEventKind::ScrollDown, 10, 10));
@@ -7399,7 +8182,11 @@ mod mouse_tests {
     #[test]
     fn scroll_up_moves_selection_up() {
         let mut app = make_app();
-        app.display_positions = vec![make_position("AAPL"), make_position("GOOG"), make_position("MSFT")];
+        app.display_positions = vec![
+            make_position("AAPL"),
+            make_position("GOOG"),
+            make_position("MSFT"),
+        ];
         app.selected_index = 2;
 
         app.handle_mouse(mouse_event(MouseEventKind::ScrollUp, 10, 10));
@@ -7553,7 +8340,11 @@ mod mouse_tests {
         app.selected_index = 0;
 
         // Right click on a row beyond positions count — no context menu
-        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Right), 10, 10));
+        app.handle_mouse(mouse_event(
+            MouseEventKind::Down(MouseButton::Right),
+            10,
+            10,
+        ));
         assert_eq!(app.selected_index, 0);
         assert!(app.context_menu.is_none());
     }
@@ -7950,10 +8741,14 @@ mod mouse_tests {
         let mut app = make_app();
         assert!(!app.show_drift_columns);
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('D')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('D'),
+        ));
         assert!(app.show_drift_columns);
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('D')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('D'),
+        ));
         assert!(!app.show_drift_columns);
     }
 
@@ -7965,12 +8760,16 @@ mod mouse_tests {
         app.sort_ascending = false;
         assert!(!app.show_sector_grouping);
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('Z')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('Z'),
+        ));
         assert!(app.show_sector_grouping);
         assert_eq!(app.sort_field, SortField::Category);
         assert!(app.sort_ascending);
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('Z')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('Z'),
+        ));
         assert!(!app.show_sector_grouping);
     }
 
@@ -7982,7 +8781,9 @@ mod mouse_tests {
         app.sort_field = SortField::Name;
         app.sort_ascending = false;
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('G')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('G'),
+        ));
         assert!(app.show_sector_grouping);
         assert_eq!(app.sort_field, SortField::Category);
         assert!(app.sort_ascending);
@@ -7996,7 +8797,9 @@ mod mouse_tests {
         app.sort_field = SortField::Name;
         app.sort_ascending = true;
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('A')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('A'),
+        ));
         assert!(!app.show_sector_grouping);
         assert_eq!(app.sort_field, SortField::Allocation);
         assert!(!app.sort_ascending);
@@ -8010,7 +8813,9 @@ mod mouse_tests {
         app.sort_field = SortField::Name;
         app.sort_ascending = true;
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('P')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('P'),
+        ));
         assert!(!app.show_sector_grouping);
         assert_eq!(app.sort_field, SortField::GainPct);
         assert!(!app.sort_ascending);
@@ -8024,14 +8829,19 @@ mod mouse_tests {
         app.display_positions = vec![make_position("AAPL"), make_position("GOOG")];
         app.selected_index = 0;
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('i')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('i'),
+        ));
         assert!(app.tx_form.is_some());
     }
 
     #[test]
     fn watchlist_inline_chart_opens_popup() {
         let mut app = make_app();
-        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_chart_{}.db", std::process::id()));
+        app.db_path = PathBuf::from(format!(
+            "/tmp/pftui_test_watchlist_chart_{}.db",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&app.db_path);
         app.view_mode = ViewMode::Watchlist;
         app.watchlist_entries = vec![crate::db::watchlist::WatchlistEntry {
@@ -8045,7 +8855,9 @@ mod mouse_tests {
         }];
         app.watchlist_selected_index = 0;
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('c')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('c'),
+        ));
         assert!(app.search_chart_popup.is_some());
         assert_eq!(app.search_chart_popup.as_ref().unwrap().symbol, "BTC-USD");
     }
@@ -8053,7 +8865,10 @@ mod mouse_tests {
     #[test]
     fn watchlist_inline_remove_deletes_selected_symbol() {
         let mut app = make_app();
-        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_remove_{}.db", std::process::id()));
+        app.db_path = PathBuf::from(format!(
+            "/tmp/pftui_test_watchlist_remove_{}.db",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&app.db_path);
         app.view_mode = ViewMode::Watchlist;
         let conn = rusqlite::Connection::open(&app.db_path).unwrap();
@@ -8063,25 +8878,33 @@ mod mouse_tests {
         app.load_watchlist();
         assert_eq!(app.watchlist_entries.len(), 1);
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('r')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('r'),
+        ));
         assert!(app.watchlist_entries.is_empty());
     }
 
     #[test]
     fn watchlist_inline_alert_creates_price_alert() {
         let mut app = make_app();
-        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_alert_{}.db", std::process::id()));
+        app.db_path = PathBuf::from(format!(
+            "/tmp/pftui_test_watchlist_alert_{}.db",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&app.db_path);
         app.view_mode = ViewMode::Watchlist;
         let conn = rusqlite::Connection::open(&app.db_path).unwrap();
         crate::db::schema::run_migrations(&conn).unwrap();
         crate::db::watchlist::add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
-        crate::db::watchlist::set_watchlist_target(&conn, "AAPL", Some("190"), Some("above")).unwrap();
+        crate::db::watchlist::set_watchlist_target(&conn, "AAPL", Some("190"), Some("above"))
+            .unwrap();
         drop(conn);
         app.load_watchlist();
         app.watchlist_selected_index = 0;
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('a')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('a'),
+        ));
         let conn = rusqlite::Connection::open(&app.db_path).unwrap();
         let alerts = crate::db::alerts::list_alerts(&conn).unwrap();
         assert_eq!(alerts.len(), 1);
@@ -8092,13 +8915,18 @@ mod mouse_tests {
     #[test]
     fn watchlist_group_switch_w_then_number() {
         let mut app = make_app();
-        app.db_path = PathBuf::from(format!("/tmp/pftui_test_watchlist_groups_{}.db", std::process::id()));
+        app.db_path = PathBuf::from(format!(
+            "/tmp/pftui_test_watchlist_groups_{}.db",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&app.db_path);
         app.view_mode = ViewMode::Watchlist;
         let conn = rusqlite::Connection::open(&app.db_path).unwrap();
         crate::db::schema::run_migrations(&conn).unwrap();
-        crate::db::watchlist::add_to_watchlist_in_group(&conn, "AAPL", AssetCategory::Equity, 1).unwrap();
-        crate::db::watchlist::add_to_watchlist_in_group(&conn, "BTC", AssetCategory::Crypto, 2).unwrap();
+        crate::db::watchlist::add_to_watchlist_in_group(&conn, "AAPL", AssetCategory::Equity, 1)
+            .unwrap();
+        crate::db::watchlist::add_to_watchlist_in_group(&conn, "BTC", AssetCategory::Crypto, 2)
+            .unwrap();
         drop(conn);
 
         app.load_watchlist();
@@ -8106,8 +8934,12 @@ mod mouse_tests {
         assert_eq!(app.watchlist_entries.len(), 1);
         assert_eq!(app.watchlist_entries[0].symbol, "AAPL");
 
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('W')));
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('2')));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('W'),
+        ));
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('2'),
+        ));
         assert_eq!(app.watchlist_active_group, 2);
         assert_eq!(app.watchlist_entries.len(), 1);
         assert_eq!(app.watchlist_entries[0].symbol, "BTC");
@@ -8123,6 +8955,14 @@ mod mouse_tests {
 
     fn palette_enter_key() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    fn temp_db_path(prefix: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}_{}_{}.db", std::process::id(), nanos))
     }
 
     #[test]
@@ -8158,6 +8998,38 @@ mod mouse_tests {
     }
 
     #[test]
+    fn command_palette_view_news_loads_cached_entries() {
+        let mut app = make_app();
+        app.db_path = temp_db_path("pftui_test_news_palette");
+        let _ = std::fs::remove_file(&app.db_path);
+
+        let conn = rusqlite::Connection::open(&app.db_path).unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        crate::db::news_cache::insert_news(
+            &conn,
+            "Macro headline",
+            "https://example.com/macro-headline",
+            "Reuters",
+            "macro",
+            chrono::Utc::now().timestamp(),
+        )
+        .unwrap();
+        drop(conn);
+
+        app.handle_key(palette_key(':'));
+        for c in "view news".chars() {
+            app.handle_key(palette_key(c));
+        }
+        app.handle_key(palette_enter_key());
+
+        assert_eq!(app.view_mode, ViewMode::News);
+        assert_eq!(app.news_entries.len(), 1);
+        assert_eq!(app.news_entries[0].title, "Macro headline");
+
+        let _ = std::fs::remove_file(&app.db_path);
+    }
+
+    #[test]
     fn command_palette_executes_layout_command() {
         let mut app = make_app();
         assert_eq!(app.workspace_layout, WorkspaceLayout::Split);
@@ -8186,13 +9058,13 @@ mod mouse_tests {
     fn allocation_targets_loaded_on_init() {
         use std::path::PathBuf;
         let db_path = PathBuf::from("/tmp/pftui_test_drift.db");
-        
+
         // Clean up any existing test db
         let _ = std::fs::remove_file(&db_path);
-        
+
         let conn = rusqlite::Connection::open(&db_path).unwrap();
         crate::db::schema::run_migrations(&conn).unwrap();
-        
+
         // Add a target
         crate::db::allocation_targets::set_target(&conn, "BTC", dec!(15), dec!(2)).unwrap();
         drop(conn);
@@ -8223,7 +9095,13 @@ mod mouse_tests {
         app.init_offline();
 
         assert!(app.allocation_targets.contains_key("BTC"));
-        assert_eq!(app.allocation_targets.get("BTC").unwrap().target_pct, dec!(15));
-        assert_eq!(app.allocation_targets.get("BTC").unwrap().drift_band_pct, dec!(2));
+        assert_eq!(
+            app.allocation_targets.get("BTC").unwrap().target_pct,
+            dec!(15)
+        );
+        assert_eq!(
+            app.allocation_targets.get("BTC").unwrap().drift_band_pct,
+            dec!(2)
+        );
     }
 }

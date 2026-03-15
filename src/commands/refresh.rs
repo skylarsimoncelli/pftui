@@ -484,10 +484,39 @@ impl Drop for RefreshLock {
     }
 }
 
+macro_rules! info_ln {
+    ($verbose:expr, $($arg:tt)*) => {
+        if $verbose {
+            println!($($arg)*);
+        }
+    };
+}
+
+macro_rules! warn_ln {
+    ($verbose:expr, $($arg:tt)*) => {
+        if $verbose {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
+    run_with_output(backend, config, notify, true)
+}
+
+pub fn run_quiet(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
+    run_with_output(backend, config, notify, false)
+}
+
+fn run_with_output(
+    backend: &BackendConnection,
+    config: &Config,
+    notify: bool,
+    verbose: bool,
+) -> Result<()> {
     let _lock = RefreshLock::acquire()?;
 
-    println!("Refreshing all data sources...\n");
+    info_ln!(verbose, "Refreshing all data sources...\n");
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -498,13 +527,13 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
         Ok(rates) => {
             for (currency, rate) in &rates {
                 if let Err(e) = fx_cache::upsert_fx_rate_backend(backend, currency, *rate) {
-                    eprintln!("Failed to cache FX rate for {}: {}", currency, e);
+                    warn_ln!(verbose, "Failed to cache FX rate for {}: {}", currency, e);
                 }
             }
-            println!("✓ FX rates ({} currencies)", rates.len());
+            info_ln!(verbose, "✓ FX rates ({} currencies)", rates.len());
         }
         Err(e) => {
-            println!("✗ FX rates (failed: {})", e);
+            info_ln!(verbose, "✗ FX rates (failed: {})", e);
         }
     }
 
@@ -520,7 +549,7 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
 
         for quote in &quotes {
             if let Err(e) = upsert_price_backend(backend, quote) {
-                eprintln!("Failed to cache {}: {}", quote.symbol, e);
+                warn_ln!(verbose, "Failed to cache {}: {}", quote.symbol, e);
             }
         }
         // Always stamp today's close into price_history so 1D consumers
@@ -587,7 +616,8 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
             }
         }
         if history_stamp_err > 0 {
-            println!(
+            info_ln!(
+                verbose,
                 "⚠ Price history stamp issues: {} writes failed ({} ok). Sample: {}",
                 history_stamp_err,
                 history_stamp_ok,
@@ -597,9 +627,9 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
 
         let fetched_count = quotes.iter().filter(|q| q.source != "static").count();
         if fetched_count > 0 {
-            println!("✓ Prices ({} symbols)", fetched_count);
+            info_ln!(verbose, "✓ Prices ({} symbols)", fetched_count);
         } else {
-            println!("✗ Prices (no live quotes fetched)");
+            info_ln!(verbose, "✗ Prices (no live quotes fetched)");
         }
         if !errors.is_empty() {
             let sample = errors
@@ -608,7 +638,8 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(" | ");
-            println!(
+            info_ln!(
+                verbose,
                 "⚠ Prices fallback: {} symbol fetches failed; using cached values where available. {}",
                 errors.len(),
                 sample
@@ -617,7 +648,8 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
         if fetched_count == 0 {
             let cached_count = get_all_cached_prices_backend(backend)?.len();
             if cached_count > 0 {
-                println!(
+                info_ln!(
+                    verbose,
                     "⚠ Prices fallback: no live quotes fetched, continuing with {} cached prices.",
                     cached_count
                 );
@@ -654,45 +686,46 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
             }
         }
         if history_attempted > 0 {
-            println!("✓ Price history ({} symbol backfills)", history_updated);
+            info_ln!(verbose, "✓ Price history ({} symbol backfills)", history_updated);
         }
     } else {
-        println!("⊘ Prices (no symbols)");
+        info_ln!(verbose, "⊘ Prices (no symbols)");
     }
 
     // 3. Predictions (Polymarket)
     // 3a. Correlation snapshots + regime classification
     match crate::commands::correlations::compute_and_store_default_snapshots_backend(backend) {
-        Ok(n) if n > 0 => println!("✓ Correlation snapshots ({} rows)", n),
-        Ok(_) => println!("⊘ Correlation snapshots (insufficient history)"),
-        Err(e) => println!("✗ Correlation snapshots (failed: {})", e),
+        Ok(n) if n > 0 => info_ln!(verbose, "✓ Correlation snapshots ({} rows)", n),
+        Ok(_) => info_ln!(verbose, "⊘ Correlation snapshots (insufficient history)"),
+        Err(e) => info_ln!(verbose, "✗ Correlation snapshots (failed: {})", e),
     }
 
     match crate::commands::regime::classify_and_store_if_needed(backend) {
-        Ok(true) => println!("✓ Regime classification (stored)"),
-        Ok(false) => println!("⊘ Regime classification (unchanged today)"),
-        Err(e) => println!("✗ Regime classification (failed: {})", e),
+        Ok(true) => info_ln!(verbose, "✓ Regime classification (stored)"),
+        Ok(false) => info_ln!(verbose, "⊘ Regime classification (unchanged today)"),
+        Err(e) => info_ln!(verbose, "✗ Regime classification (failed: {})", e),
     }
 
     // 3. Predictions (Polymarket)
     if predictions_need_refresh(backend)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => match predictions_cache::upsert_predictions_backend(backend, &markets) {
-                Ok(_) => println!("✓ Predictions ({} markets)", markets.len()),
-                Err(e) => println!(
+                Ok(_) => info_ln!(verbose, "✓ Predictions ({} markets)", markets.len()),
+                Err(e) => info_ln!(
+                    verbose,
                     "⚠ Predictions fetched ({} markets) but cache write failed: {}",
                     markets.len(),
                     e
                 ),
             },
             Err(e) => {
-                println!("✗ Predictions (failed: {})", e);
+                info_ln!(verbose, "✗ Predictions (failed: {})", e);
             }
         }
     } else {
-        println!("⊘ Predictions (fresh, skipping)");
+        info_ln!(verbose, "⊘ Predictions (fresh, skipping)");
     }
-    maybe_report_fedwatch_conflict(backend);
+    maybe_report_fedwatch_conflict(backend, verbose);
 
     // 4. News (Brave primary when configured, RSS supplements)
     if news_needs_refresh(backend)? {
@@ -732,7 +765,7 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
                         }
                     }
                     Err(e) => {
-                        eprintln!("Brave news query failed ({}): {}", query, e);
+                        warn_ln!(verbose, "Brave news query failed ({}): {}", query, e);
                     }
                 }
             }
@@ -767,12 +800,12 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
             }
         }
         if brave_inserted > 0 {
-            println!("✓ News ({} articles via Brave + RSS)", inserted);
+            info_ln!(verbose, "✓ News ({} articles via Brave + RSS)", inserted);
         } else {
-            println!("✓ News ({} articles via RSS)", inserted);
+            info_ln!(verbose, "✓ News ({} articles via RSS)", inserted);
         }
     } else {
-        println!("⊘ News (fresh, skipping)");
+        info_ln!(verbose, "⊘ News (fresh, skipping)");
     }
 
     // 5. COT (CFTC)
@@ -804,12 +837,12 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
         }
 
         if total > 0 {
-            println!("✓ COT ({} reports)", total);
+            info_ln!(verbose, "✓ COT ({} reports)", total);
         } else {
-            println!("✗ COT (all failed)");
+            info_ln!(verbose, "✗ COT (all failed)");
         }
     } else {
-        println!("⊘ COT (fresh, skipping)");
+        info_ln!(verbose, "⊘ COT (fresh, skipping)");
     }
 
     // 6. Sentiment (Fear & Greed)
@@ -840,9 +873,9 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
             count += 1;
         }
 
-        println!("✓ Sentiment ({} indices)", count);
+        info_ln!(verbose, "✓ Sentiment ({} indices)", count);
     } else {
-        println!("⊘ Sentiment (fresh, skipping)");
+        info_ln!(verbose, "⊘ Sentiment (fresh, skipping)");
     }
 
     // 7. Calendar (TradingEconomics)
@@ -870,14 +903,14 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
                         event.symbol.as_deref(),
                     );
                 }
-                println!("✓ Calendar ({} events)", events.len());
+                info_ln!(verbose, "✓ Calendar ({} events)", events.len());
             }
             Err(e) => {
-                println!("✗ Calendar (failed: {})", e);
+                info_ln!(verbose, "✗ Calendar (failed: {})", e);
             }
         }
     } else {
-        println!("⊘ Calendar (fresh, skipping)");
+        info_ln!(verbose, "⊘ Calendar (fresh, skipping)");
     }
 
     // 9. Economy indicators (Brave primary, BLS fallback)
@@ -917,12 +950,12 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
                     let _ = economic_data_db::upsert_entry_backend(backend, &entry);
                 }
                 if used_brave {
-                    println!("✓ Economy ({} indicators via Brave)", items.len());
+                    info_ln!(verbose, "✓ Economy ({} indicators via Brave)", items.len());
                 } else {
-                    println!("✓ Economy ({} indicators via BLS fallback)", items.len());
+                    info_ln!(verbose, "✓ Economy ({} indicators via BLS fallback)", items.len());
                 }
             }
-            Err(e) => println!("✗ Economy (failed: {})", e),
+            Err(e) => info_ln!(verbose, "✗ Economy (failed: {})", e),
         }
     }
 
@@ -931,14 +964,14 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
                 bls_cache::upsert_bls_data_backend(backend, &data)?;
-                println!("✓ BLS ({} series)", data.len());
+                info_ln!(verbose, "✓ BLS ({} series)", data.len());
             }
             Err(e) => {
-                println!("✗ BLS (failed: {})", e);
+                info_ln!(verbose, "✗ BLS (failed: {})", e);
             }
         }
     } else {
-        println!("⊘ BLS (fresh, skipping)");
+        info_ln!(verbose, "⊘ BLS (fresh, skipping)");
     }
 
     // 10. World Bank
@@ -946,14 +979,14 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
                 worldbank_cache::upsert_worldbank_data_backend(backend, &data)?;
-                println!("✓ World Bank ({} indicators)", data.len());
+                info_ln!(verbose, "✓ World Bank ({} indicators)", data.len());
             }
             Err(e) => {
-                println!("✗ World Bank (failed: {})", e);
+                info_ln!(verbose, "✗ World Bank (failed: {})", e);
             }
         }
     } else {
-        println!("⊘ World Bank (fresh, skipping)");
+        info_ln!(verbose, "⊘ World Bank (fresh, skipping)");
     }
 
     // 11. COMEX
@@ -979,12 +1012,12 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
         }
 
         if count > 0 {
-            println!("✓ COMEX ({} metals)", count);
+            info_ln!(verbose, "✓ COMEX ({} metals)", count);
         } else {
-            println!("✗ COMEX (all failed)");
+            info_ln!(verbose, "✗ COMEX (all failed)");
         }
     } else {
-        println!("⊘ COMEX (fresh, skipping)");
+        info_ln!(verbose, "⊘ COMEX (fresh, skipping)");
     }
 
     // 13. On-chain (network + ETF flows)
@@ -1040,17 +1073,18 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
     }
 
     if !onchain_ok_parts.is_empty() {
-        println!("✓ On-chain ({})", onchain_ok_parts.join(" + "));
+        info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
     } else {
-        println!("✗ On-chain (failed: {})", onchain_errors.join("; "));
+        info_ln!(verbose, "✗ On-chain (failed: {})", onchain_errors.join("; "));
     }
 
     // Store daily portfolio snapshot
-    if let Err(e) = store_portfolio_snapshot(backend, config) {
-        eprintln!("\nWarning: failed to store portfolio snapshot: {}", e);
+    if let Err(e) = store_portfolio_snapshot(backend, config, verbose) {
+        warn_ln!(verbose, "\nWarning: failed to store portfolio snapshot: {}", e);
     }
     if let Err(e) = detect_timeframe_signals(backend) {
-        eprintln!(
+        warn_ln!(
+            verbose,
             "\nWarning: failed to compute cross-timeframe signals: {}",
             e
         );
@@ -1061,7 +1095,7 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
         Ok(results) => {
             let newly_triggered = engine::get_newly_triggered(&results);
             if !newly_triggered.is_empty() {
-                println!("\n🔔 Alerts Triggered:");
+                info_ln!(verbose, "\n🔔 Alerts Triggered:");
                 for result in &newly_triggered {
                     let dir_emoji = match result.rule.direction {
                         crate::alerts::AlertDirection::Above => "↑",
@@ -1071,7 +1105,8 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
                         .current_value
                         .map(|v| format!("{:.2}", v))
                         .unwrap_or_else(|| "N/A".to_string());
-                    println!(
+                    info_ln!(
+                        verbose,
                         "  {} {} {} {} (current: {})",
                         dir_emoji,
                         result.rule.symbol,
@@ -1088,22 +1123,22 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
                             result.rule.kind, dir_emoji, result.rule.threshold, current_str
                         );
                         if let Err(e) = notify::send_notification(&title, &body) {
-                            eprintln!("  Warning: failed to send notification: {}", e);
+                            warn_ln!(verbose, "  Warning: failed to send notification: {}", e);
                         }
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("\nWarning: failed to check alerts: {}", e);
+            warn_ln!(verbose, "\nWarning: failed to check alerts: {}", e);
         }
     }
 
-    println!("\nRefresh complete.");
+    info_ln!(verbose, "\nRefresh complete.");
     Ok(())
 }
 
-fn maybe_report_fedwatch_conflict(backend: &BackendConnection) {
+fn maybe_report_fedwatch_conflict(backend: &BackendConnection, verbose: bool) {
     let markets = match predictions_cache::get_cached_predictions_backend(backend, 200) {
         Ok(rows) if !rows.is_empty() => rows,
         _ => return,
@@ -1117,7 +1152,8 @@ fn maybe_report_fedwatch_conflict(backend: &BackendConnection) {
         &markets,
         FEDWATCH_CONFLICT_THRESHOLD_PCT_POINTS,
     ) {
-        println!(
+        info_ln!(
+            verbose,
             "⚠ Source conflict: {} | CME {:.1}% vs alt {:.1}% (Δ {:.1}pp) | use {}",
             conflict.metric,
             conflict.cme_value_pct,
@@ -1125,7 +1161,7 @@ fn maybe_report_fedwatch_conflict(backend: &BackendConnection) {
             conflict.delta_pct_points,
             conflict.recommended_source
         );
-        println!("  Alt source: {}", conflict.alt_source_label);
+        info_ln!(verbose, "  Alt source: {}", conflict.alt_source_label);
     }
 }
 
@@ -1384,7 +1420,11 @@ fn detect_timeframe_signals(backend: &BackendConnection) -> Result<()> {
 }
 
 /// Compute current positions and store a daily portfolio snapshot.
-fn store_portfolio_snapshot(backend: &BackendConnection, config: &Config) -> Result<()> {
+fn store_portfolio_snapshot(
+    backend: &BackendConnection,
+    config: &Config,
+    verbose: bool,
+) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
     let prices: HashMap<String, Decimal> =
         cached.into_iter().map(|q| (q.symbol, q.price)).collect();
@@ -1438,7 +1478,8 @@ fn store_portfolio_snapshot(backend: &BackendConnection, config: &Config) -> Res
     }
 
     let snap_count = positions.len();
-    println!(
+    info_ln!(
+        verbose,
         "Snapshot stored: {} ({} position{}).",
         today,
         snap_count,

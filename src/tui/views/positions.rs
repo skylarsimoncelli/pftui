@@ -408,7 +408,7 @@ fn overdue_review_symbols(app: &App) -> HashSet<String> {
     overdue
 }
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     if is_privacy_view(app) {
         render_privacy_table(frame, area, app);
     } else {
@@ -416,7 +416,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
+fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
+    app.positions_table_area = Some(area);
     let positions = &app.display_positions;
     let t = &app.theme;
     let overdue_symbols = overdue_review_symbols(app);
@@ -716,7 +717,8 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &App) {
     render_table(frame, area, app, header, rows, &widths);
 }
 
-fn render_privacy_table(frame: &mut Frame, area: Rect, app: &App) {
+fn render_privacy_table(frame: &mut Frame, area: Rect, app: &mut App) {
+    app.positions_table_area = Some(area);
     let positions = &app.display_positions;
     let t = &app.theme;
     let overdue_symbols = overdue_review_symbols(app);

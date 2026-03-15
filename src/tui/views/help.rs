@@ -7,10 +7,7 @@ use crate::app::App;
 
 /// Build a separator line styled with the theme's subtle border color.
 fn sep_line(color: Color, width: usize) -> Line<'static> {
-    Line::from(Span::styled(
-        "─".repeat(width),
-        Style::default().fg(color),
-    ))
+    Line::from(Span::styled("─".repeat(width), Style::default().fg(color)))
 }
 
 /// Build a section header line.
@@ -67,7 +64,7 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     // ── Views ──
     lines.push(section_header("  Views", ac));
     lines.push(sep_line(bc, sep_w));
-    lines.push(key_line("1", "Home view (default sub-tab)", kc, tc));
+    lines.push(key_line("1", "Portfolio", kc, tc));
     lines.push(key_line("2", "Transactions view", kc, tc));
     lines.push(key_line("3", "Markets overview", kc, tc));
     lines.push(key_line("4", "Economy dashboard", kc, tc));
@@ -77,7 +74,12 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(key_line("7", "News feed", kc, tc));
     lines.push(key_line("8", "Chart grid", kc, tc));
     lines.push(key_line("9", "Journal", kc, tc));
-    lines.push(key_line("Tab / ← / →", "Toggle home sub-tab (P/W)", kc, tc));
+    lines.push(key_line(
+        "Tab / ← / →",
+        "Toggle Portfolio/Watchlist",
+        kc,
+        tc,
+    ));
     lines.push(key_line("Enter", "Position detail / chart", kc, tc));
     lines.push(key_line("Esc", "Close chart / help", kc, tc));
     lines.push(key_line("?", "Toggle this help", kc, tc));
@@ -90,8 +92,18 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("J / K", "Cycle chart variant", kc, tc));
     lines.push(key_line("h / l", "Cycle chart timeframe (1W–5Y)", kc, tc));
-    lines.push(key_line("C", "Toggle chart mode (Line / Candlestick)", kc, tc));
-    lines.push(key_line("[ / ]", "Cycle sparkline timeframe (1W–5Y)", kc, tc));
+    lines.push(key_line(
+        "C",
+        "Toggle chart mode (Line / Candlestick)",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        "[ / ]",
+        "Cycle sparkline timeframe (1W–5Y)",
+        kc,
+        tc,
+    ));
     lines.push(key_line("x", "Toggle crosshair cursor on chart", kc, tc));
     lines.push(Line::from(Span::styled(
         "  Crosshair: h/l move cursor, shows date + price",
@@ -135,12 +147,32 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("f", "Cycle category filter", kc, tc));
     lines.push(key_line("r", "Force refresh prices", kc, tc));
-    lines.push(key_line("Watchlist: a", "Add alert for selected symbol", kc, tc));
-    lines.push(key_line("Watchlist: c", "Open chart popup for selected symbol", kc, tc));
+    lines.push(key_line(
+        "Watchlist: a",
+        "Add alert for selected symbol",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        "Watchlist: c",
+        "Open chart popup for selected symbol",
+        kc,
+        tc,
+    ));
     lines.push(key_line("Watchlist: r", "Remove selected symbol", kc, tc));
-    lines.push(key_line("M (Shift+m)", "Markets: correlation window 7d/30d/90d", kc, tc));
+    lines.push(key_line(
+        "M (Shift+m)",
+        "Markets: correlation window 7d/30d/90d",
+        kc,
+        tc,
+    ));
     lines.push(key_line("p", "Toggle privacy view", kc, tc));
-    lines.push(key_line("T (Shift+t)", "Cycle timeframe (table % & chart)", kc, tc));
+    lines.push(key_line(
+        "T (Shift+t)",
+        "Cycle timeframe (table % & chart)",
+        kc,
+        tc,
+    ));
     lines.push(Line::from(Span::styled(
         "  Changes both positions table % and portfolio chart",
         Style::default().fg(sc),
@@ -150,19 +182,44 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
         Style::default().fg(sc),
     )));
     lines.push(key_line("D (Shift+d)", "Toggle drift columns", kc, tc));
-    lines.push(key_line("Z (Shift+z)", "Toggle category group summaries", kc, tc));
-    lines.push(key_line("S (Shift+s)", "Toggle split-pane detail view", kc, tc));
-    lines.push(key_line(": scan", "Open interactive scan builder modal", kc, tc));
+    lines.push(key_line(
+        "Z (Shift+z)",
+        "Toggle category group summaries",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        "S (Shift+s)",
+        "Toggle split-pane detail view",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        ": scan",
+        "Open interactive scan builder modal",
+        kc,
+        tc,
+    ));
     lines.push(key_line("t", "Cycle color theme", kc, tc));
     lines.push(key_line("i", "Add transaction for position", kc, tc));
-    lines.push(key_line("X (Shift+x)", "Delete all txns for position", kc, tc));
+    lines.push(key_line(
+        "X (Shift+x)",
+        "Delete all txns for position",
+        kc,
+        tc,
+    ));
     lines.push(key_line("q / Ctrl+C", "Quit", kc, tc));
     lines.push(Line::from(""));
 
     // ── Configuration ──
     lines.push(section_header("  Configuration", ac));
     lines.push(sep_line(bc, sep_w));
-    lines.push(key_line("pftui config list", "Show current config values", kc, tc));
+    lines.push(key_line(
+        "pftui config list",
+        "Show current config values",
+        kc,
+        tc,
+    ));
     lines.push(key_line(
         "pftui config set brave_api_key <key>",
         "Enable Brave-powered news/research",
@@ -176,13 +233,43 @@ pub fn build_help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(sep_line(bc, sep_w));
     lines.push(key_line("Scroll ↑↓", "Navigate up/down", kc, tc));
     lines.push(key_line("Click tab", "Switch view (header tabs)", kc, tc));
-    lines.push(key_line("Click header", "Sort by column (positions)", kc, tc));
+    lines.push(key_line(
+        "Click header",
+        "Sort by column (positions)",
+        kc,
+        tc,
+    ));
     lines.push(key_line("Click row", "Select position/item", kc, tc));
-    lines.push(key_line("Click theme", "Cycle color theme (header)", kc, tc));
-    lines.push(key_line("Click [% view]", "Toggle privacy mode (header)", kc, tc));
-    lines.push(key_line("Click alloc bar", "Filter by category (toggle)", kc, tc));
-    lines.push(key_line("Right-click row", "Context menu (positions)", kc, tc));
-    lines.push(key_line("Click", "Dismiss help/search/detail popup", kc, tc));
+    lines.push(key_line(
+        "Click theme",
+        "Cycle color theme (header)",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        "Click [% view]",
+        "Toggle privacy mode (header)",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        "Click alloc bar",
+        "Filter by category (toggle)",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        "Right-click row",
+        "Context menu (positions)",
+        kc,
+        tc,
+    ));
+    lines.push(key_line(
+        "Click",
+        "Dismiss help/search/detail popup",
+        kc,
+        tc,
+    ));
     lines.push(Line::from(""));
 
     // ── Footer ──
@@ -286,7 +373,10 @@ mod tests {
         assert!(text.contains("Charts"), "missing Charts section");
         assert!(text.contains("Sorting"), "missing Sorting section");
         assert!(text.contains("Actions"), "missing Actions section");
-        assert!(text.contains("Configuration"), "missing Configuration section");
+        assert!(
+            text.contains("Configuration"),
+            "missing Configuration section"
+        );
     }
 
     #[test]

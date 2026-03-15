@@ -9,7 +9,7 @@ use crate::tui::widgets;
 pub const COMPACT_WIDTH: u16 = 100;
 
 /// Width threshold at or above which the ultra-wide 3-column layout is enabled.
-pub const ULTRA_WIDE_WIDTH: u16 = 160;
+pub const ULTRA_WIDE_WIDTH: u16 = 130;
 
 /// Minimum height for the portfolio overview panel (allocation bars + sparkline).
 const MIN_OVERVIEW_HEIGHT: u16 = 14;
@@ -369,13 +369,13 @@ mod tests {
     }
 
     #[test]
-    fn layout_mode_analyst_only_on_ultra_wide() {
+    fn layout_mode_analyst_uses_distinct_wide_threshold() {
         assert_eq!(
-            choose_positions_layout_mode(170, WorkspaceLayout::Analyst),
+            choose_positions_layout_mode(140, WorkspaceLayout::Analyst),
             PositionsLayoutMode::Analyst
         );
         assert_eq!(
-            choose_positions_layout_mode(140, WorkspaceLayout::Analyst),
+            choose_positions_layout_mode(120, WorkspaceLayout::Analyst),
             PositionsLayoutMode::Split
         );
     }
