@@ -78,6 +78,8 @@ For each major asset (BTC, gold, silver, oil, equities, DXY, cash):
 
 When layers disagree: explain WHY. LOW might say risk-on because VIX dropped, but HIGH says structural headwinds. That tension IS the intelligence.
 
+**Rank assets by alignment strength.** Lead with whichever asset has the strongest cross-timeframe consensus, including confidence levels. Even 2/4 layers agreeing at high confidence is more actionable than a blended score. If no asset has strong alignment, say so and name which is closest. The user needs to know: where is conviction forming across the system?
+
 ### 3. Expectations vs Reality
 
 Not "what happened today" but "what happened vs what we expected and what that teaches us":

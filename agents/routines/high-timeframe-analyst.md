@@ -88,6 +88,8 @@ pftui journal notes add "HIGH WRONG CALL: [prediction]. Structural thesis: [X]. 
 
 ## High Predictions
 
+Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.
+
 Make 1-3 structural cause-and-effect predictions (3-12 month horizon):
 
 ```bash

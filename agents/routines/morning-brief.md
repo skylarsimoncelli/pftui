@@ -45,7 +45,7 @@ Keep it tight. Designed for mobile reading.
 One-liner per major asset: BTC, Gold, Silver, DXY, S&P, VIX, 10Y, GBP/USD, Oil, Uranium
 
 ### ALIGNMENT (always)
-2-3 sentences: where are the timeframe layers converging? Any deployment signals? Any held asset with all layers aligned?
+Rank held and watched assets by cross-timeframe consensus. For each, state which layers agree and at what confidence. Even partial alignment is useful: "Gold: LOW neutral, MEDIUM bull (high confidence), HIGH bull (high confidence), MACRO bull. 3/4 layers bullish." If no asset has strong alignment, say so explicitly and name which asset is closest. This section should tell the user where conviction is forming and where it isn't.
 
 ### OVERNIGHT NEWS (2-4 bullets)
 What happened since yesterday's close. One sentence per item: WHAT happened and WHY it matters. Not every headline, just things that move scenarios or positioning.

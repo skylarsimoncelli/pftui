@@ -89,6 +89,8 @@ pftui journal notes add "MEDIUM WRONG CALL: [prediction]. Expected [X] because [
 
 ## Medium Predictions
 
+Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.
+
 Make 3-5 cause-and-effect predictions for the next 1-4 weeks:
 
 ```bash

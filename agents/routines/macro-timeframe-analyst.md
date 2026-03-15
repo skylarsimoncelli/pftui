@@ -132,6 +132,8 @@ pftui analytics macro log add --date $(date +%Y-%m-%d) \
 
 ## Predictions
 
+Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how this cycle's predictions account for it.
+
 Make 1-2 MACRO predictions (6-24 month horizon) grounded in the frameworks:
 
 ```bash

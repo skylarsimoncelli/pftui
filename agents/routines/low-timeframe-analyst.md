@@ -72,6 +72,8 @@ pftui journal notes list --limit 5 --json
 pftui journal scenario list --json
 ```
 
+Before making new predictions, review some of your recent inaccurate predictions and their lessons. Look for recurring patterns in what you get wrong. If you see a pattern, state it explicitly and explain how today's predictions account for it.
+
 Example prediction format:
 - "[Event/data] causes [effect on asset] today" (confidence: 0.7)
 - "[Technical level hold/break] leads to [momentum outcome]" (confidence: 0.5)
