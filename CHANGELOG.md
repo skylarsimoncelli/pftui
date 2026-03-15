@@ -3,6 +3,17 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-14 — Close remaining feedback backlog: journal CLI ergonomics, trackline scan alerts, grouped agent message packages
+
+- What:
+  - added positional shorthand to `agent journal prediction add` for timeframe and confidence, improved invalid-timeframe guidance, and added regression coverage for the reported parser path.
+  - added inline shorthand for `agent journal conviction set` negative scores and notes plus inline shorthand for `agent journal scenario update` history notes, making the two workflows consistent and script-friendly.
+  - extended `analytics scan` with technical trackline fields (`sma50`, `sma200`, gap percentages, breach state) plus a `--trackline-breaches` shortcut, so saved scan queries can now drive scan-change alerts for SMA support/resistance breaks.
+  - added logical message package metadata (`--package-id`, `--package-title`) to `agent message send` batches and carried package context into list/reply/flag flows.
+- Why: closes the remaining open feedback items in TODO without relaxing the canonical CLI tree or adding compatibility aliases.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/predict.rs`, `src/commands/scan.rs`, `src/commands/agent_msg.rs`, `src/commands/analytics.rs`, `src/db/agent_messages.rs`, `src/db/schema.rs`, `src/alerts/engine.rs`, `AGENTS.md`, `TODO.md`
+- Tests: `cargo test` (1223 passed), `cargo clippy --all-targets -- -D warnings`, plus targeted regression runs for `parse_`, `trackline`, and `send_and_filter_message_packages`.
+
 ### 2026-03-14 — Feedback fixes: predict score ergonomics, correlations latest, alerts today, reliability + source-conflict checks
 
 - What:

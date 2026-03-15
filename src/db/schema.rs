@@ -444,6 +444,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             from_agent TEXT NOT NULL,
             to_agent TEXT,
+            package_id TEXT,
+            package_title TEXT,
             priority TEXT NOT NULL DEFAULT 'normal',
             content TEXT NOT NULL,
             category TEXT,
@@ -454,6 +456,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_agent_messages_to ON agent_messages(to_agent);
         CREATE INDEX IF NOT EXISTS idx_agent_messages_ack ON agent_messages(acknowledged);
+        CREATE INDEX IF NOT EXISTS idx_agent_messages_package ON agent_messages(package_id);
 
         CREATE TABLE IF NOT EXISTS daily_notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -732,6 +735,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     if !has_news_snippets {
         conn.execute_batch(
             "ALTER TABLE news_cache ADD COLUMN extra_snippets TEXT NOT NULL DEFAULT '[]'",
+        )?;
+    }
+
+    let has_agent_package_id: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('agent_messages') WHERE name = 'package_id'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_agent_package_id {
+        conn.execute_batch(
+            "ALTER TABLE agent_messages ADD COLUMN package_id TEXT;
+             ALTER TABLE agent_messages ADD COLUMN package_title TEXT;
+             CREATE INDEX IF NOT EXISTS idx_agent_messages_package ON agent_messages(package_id);",
         )?;
     }
 

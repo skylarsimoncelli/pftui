@@ -5,13 +5,12 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::alerts::AlertStatus;
 use crate::db::backend::BackendConnection;
-use crate::db::{
-    agent_messages,
-    alerts, price_cache,
-    convictions, correlation_snapshots, regime_snapshots, research_questions, scenarios, structural,
-    thesis, timeframe_signals, transactions, trends, user_predictions, watchlist,
-};
 use crate::db::query;
+use crate::db::{
+    agent_messages, alerts, convictions, correlation_snapshots, price_cache, regime_snapshots,
+    research_questions, scenarios, structural, thesis, timeframe_signals, transactions, trends,
+    user_predictions, watchlist,
+};
 use crate::models::asset::AssetCategory;
 
 #[allow(clippy::too_many_arguments)]
@@ -109,8 +108,12 @@ fn parse_day_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
     if normalized == "yesterday" {
         return Ok(Some(today - Duration::days(1)));
     }
-    let parsed = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
-        .map_err(|_| anyhow::anyhow!("invalid date '{}'. Use YYYY-MM-DD, today, or yesterday", raw))?;
+    let parsed = NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| {
+        anyhow::anyhow!(
+            "invalid date '{}'. Use YYYY-MM-DD, today, or yesterday",
+            raw
+        )
+    })?;
     Ok(Some(parsed))
 }
 
@@ -135,7 +138,9 @@ fn run_digest(
     let role = from.unwrap_or("evening-analyst");
     let lim = limit.unwrap_or(10);
 
-    let regime = regime_snapshots::get_current_backend(backend).ok().flatten();
+    let regime = regime_snapshots::get_current_backend(backend)
+        .ok()
+        .flatten();
     let top_signals =
         timeframe_signals::list_signals_backend(backend, None, None, Some(lim)).unwrap_or_default();
     let divergences = build_alignment_rows(backend, None)
@@ -147,14 +152,9 @@ fn run_digest(
     let scenarios_list =
         scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
-    let pending_predictions = user_predictions::list_predictions_backend(
-        backend,
-        Some("pending"),
-        None,
-        None,
-        Some(lim),
-    )
-    .unwrap_or_default();
+    let pending_predictions =
+        user_predictions::list_predictions_backend(backend, Some("pending"), None, None, Some(lim))
+            .unwrap_or_default();
     let scorecard = user_predictions::get_stats_backend(backend).ok();
     let recent_messages = agent_messages::list_messages_backend(
         backend,
@@ -162,6 +162,7 @@ fn run_digest(
         Some(role),
         None,
         true,
+        None,
         None,
         Some(lim),
     )
@@ -225,7 +226,10 @@ fn run_recap(
             events.push(RecapEvent {
                 at: p.created_at.clone(),
                 event_type: "prediction_added".to_string(),
-                source: p.source_agent.clone().unwrap_or_else(|| "predict".to_string()),
+                source: p
+                    .source_agent
+                    .clone()
+                    .unwrap_or_else(|| "predict".to_string()),
                 summary: format!("#{} {}", p.id, p.claim),
             });
         }
@@ -234,7 +238,10 @@ fn run_recap(
                 events.push(RecapEvent {
                     at: scored_at.clone(),
                     event_type: "prediction_scored".to_string(),
-                    source: p.source_agent.clone().unwrap_or_else(|| "predict".to_string()),
+                    source: p
+                        .source_agent
+                        .clone()
+                        .unwrap_or_else(|| "predict".to_string()),
                     summary: format!("#{} -> {}", p.id, p.outcome),
                 });
             }
@@ -265,8 +272,8 @@ fn run_recap(
         }
     }
 
-    let signal_rows = timeframe_signals::list_signals_backend(backend, None, None, None)
-        .unwrap_or_default();
+    let signal_rows =
+        timeframe_signals::list_signals_backend(backend, None, None, None).unwrap_or_default();
     for s in signal_rows {
         if ts_matches_day(&s.detected_at, day) {
             events.push(RecapEvent {
@@ -292,7 +299,7 @@ fn run_recap(
     }
 
     let msg_rows =
-        agent_messages::list_messages_backend(backend, None, None, None, false, None, None)
+        agent_messages::list_messages_backend(backend, None, None, None, false, None, None, None)
             .unwrap_or_default();
     for m in msg_rows {
         if ts_matches_day(&m.created_at, day) {
@@ -361,11 +368,17 @@ fn table_stats(
     epoch_seconds: bool,
 ) -> Result<(i64, Option<String>)> {
     let sqlite_sql = if epoch_seconds {
-        format!("SELECT COUNT(*), CAST(MAX({}) AS TEXT) FROM {}", ts_col, table)
+        format!(
+            "SELECT COUNT(*), CAST(MAX({}) AS TEXT) FROM {}",
+            ts_col, table
+        )
     } else {
         format!("SELECT COUNT(*), MAX({}) FROM {}", ts_col, table)
     };
-    let pg_sql = format!("SELECT COUNT(*)::BIGINT, MAX({})::text FROM {}", ts_col, table);
+    let pg_sql = format!(
+        "SELECT COUNT(*)::BIGINT, MAX({})::text FROM {}",
+        ts_col, table
+    );
 
     query::dispatch(
         backend,
@@ -484,7 +497,10 @@ fn run_gaps(backend: &BackendConnection, json_output: bool) -> Result<()> {
         );
     } else {
         println!("Analytics Data Gaps");
-        println!("{:<7} {:<20} {:>8} {:<8} {:>8}", "Layer", "Table", "Records", "Status", "Age(h)");
+        println!(
+            "{:<7} {:<20} {:>8} {:<8} {:>8}",
+            "Layer", "Table", "Records", "Status", "Age(h)"
+        );
         println!("{}", "─".repeat(62));
         for row in &rows {
             let age = row
@@ -516,8 +532,12 @@ fn run_signals(
     limit: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    let mut rows =
-        timeframe_signals::list_signals_backend(backend, signal_type, severity, limit.or(Some(25)))?;
+    let mut rows = timeframe_signals::list_signals_backend(
+        backend,
+        signal_type,
+        severity,
+        limit.or(Some(25)),
+    )?;
     if let Some(sym) = symbol {
         let needle = format!("\"{}\"", sym.to_uppercase());
         rows.retain(|r| r.assets.to_uppercase().contains(&needle));
@@ -538,7 +558,12 @@ fn run_signals(
         for sig in rows {
             println!(
                 "  [{}|{}] {}\n    assets={} layers={} at={}",
-                sig.severity, sig.signal_type, sig.description, sig.assets, sig.layers, sig.detected_at
+                sig.severity,
+                sig.signal_type,
+                sig.description,
+                sig.assets,
+                sig.layers,
+                sig.detected_at
             );
         }
     }
@@ -551,13 +576,15 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let scenarios_list =
         scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let top_scenario = scenarios_list.first().cloned();
-    let trends_list = trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default();
+    let trends_list =
+        trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default();
     let top_trend = trends_list.first().cloned();
     let cycles = structural::list_cycles_backend(backend).unwrap_or_default();
     let top_cycle = cycles.first().cloned();
     let signal = timeframe_signals::latest_signal_backend(backend)?;
-    let signal_count =
-        timeframe_signals::list_signals_backend(backend, None, None, None).unwrap_or_default().len();
+    let signal_count = timeframe_signals::list_signals_backend(backend, None, None, None)
+        .unwrap_or_default()
+        .len();
     let price_count = price_cache::get_all_cached_prices_backend(backend)
         .unwrap_or_default()
         .len();
@@ -615,7 +642,11 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
             println!("DIVERGENCES: {}", divergence_notes.join(" | "));
         }
         if let Some(r) = regime {
-            println!("LOW: {} ({:.2})", r.regime.to_uppercase(), r.confidence.unwrap_or(0.0));
+            println!(
+                "LOW: {} ({:.2})",
+                r.regime.to_uppercase(),
+                r.confidence.unwrap_or(0.0)
+            );
         } else {
             println!("LOW: no regime snapshot");
         }
@@ -643,7 +674,8 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
 
 fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let regime = regime_snapshots::get_current_backend(backend)?;
-    let corr = correlation_snapshots::list_current_backend(backend, Some("30d")).unwrap_or_default();
+    let corr =
+        correlation_snapshots::list_current_backend(backend, Some("30d")).unwrap_or_default();
     let signals =
         timeframe_signals::list_signals_backend(backend, None, None, Some(10)).unwrap_or_default();
 
@@ -659,7 +691,11 @@ fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
     } else {
         println!("LOW Layer");
         if let Some(r) = regime {
-            println!("  Regime: {} ({:.2})", r.regime, r.confidence.unwrap_or(0.0));
+            println!(
+                "  Regime: {} ({:.2})",
+                r.regime,
+                r.confidence.unwrap_or(0.0)
+            );
         }
         println!("  Correlations tracked: {}", corr.len());
         println!("  Signals: {}", signals.len());
@@ -669,18 +705,15 @@ fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
 }
 
 fn run_medium(backend: &BackendConnection, json_output: bool) -> Result<()> {
-    let scenarios_list = scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    let scenarios_list =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let thesis_sections = thesis::list_thesis_backend(backend).unwrap_or_default();
     let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
-    let questions = research_questions::list_questions_backend(backend, Some("open")).unwrap_or_default();
-    let predictions = user_predictions::list_predictions_backend(
-        backend,
-        Some("pending"),
-        None,
-        None,
-        Some(20),
-    )
-    .unwrap_or_default();
+    let questions =
+        research_questions::list_questions_backend(backend, Some("open")).unwrap_or_default();
+    let predictions =
+        user_predictions::list_predictions_backend(backend, Some("pending"), None, None, Some(20))
+            .unwrap_or_default();
 
     if json_output {
         println!(
@@ -706,7 +739,8 @@ fn run_medium(backend: &BackendConnection, json_output: bool) -> Result<()> {
 }
 
 fn run_high(backend: &BackendConnection, json_output: bool) -> Result<()> {
-    let trends_list = trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default();
+    let trends_list =
+        trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default();
     let mut evidence = Vec::new();
     let mut impacts = Vec::new();
     for t in &trends_list {
@@ -770,9 +804,15 @@ fn run_macro(
                     .ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro metrics set <country> --metric <name> [--score N] [--rank N] [--trend rising|stable|declining]"))?;
                 let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
                 let tr = trend.unwrap_or("stable");
-                let id = structural::set_metric_backend(backend, c, m, score, rank, tr, notes, source)?;
+                let id =
+                    structural::set_metric_backend(backend, c, m, score, rank, tr, notes, source)?;
                 if json_output {
-                    println!("{}", serde_json::to_string_pretty(&json!({"id": id, "country": c, "metric": m}))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &json!({"id": id, "country": c, "metric": m})
+                        )?
+                    );
                 } else {
                     println!("Set macro metric: {} {} = {:?}", c, m, score);
                 }
@@ -788,15 +828,22 @@ fn run_macro(
             let tr = trend.unwrap_or("stable");
             let id = structural::set_metric_backend(backend, c, m, score, rank, tr, notes, source)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({"id": id, "country": c, "metric": m}))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({"id": id, "country": c, "metric": m}))?
+                );
             } else {
                 println!("Set macro metric: {} {} = {:?}", c, m, score);
             }
             return Ok(());
         }
         "compare" => {
-            let left = arg1.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>"))?;
-            let right = arg2.ok_or_else(|| anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>"))?;
+            let left = arg1.ok_or_else(|| {
+                anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>")
+            })?;
+            let right = arg2.ok_or_else(|| {
+                anyhow::anyhow!("usage: pftui analytics macro compare <country-a> <country-b>")
+            })?;
             return run_macro_compare(backend, left, right, json_output);
         }
         "cycles" => {
@@ -806,16 +853,24 @@ fn run_macro(
                     let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
                     let d = decade.ok_or_else(|| anyhow::anyhow!("--decade required"))?;
                     let sc = score.ok_or_else(|| anyhow::anyhow!("--score required"))?;
-                    let id = structural::add_metric_history_backend(backend, c, m, d, sc, notes, source)?;
+                    let id = structural::add_metric_history_backend(
+                        backend, c, m, d, sc, notes, source,
+                    )?;
                     if json_output {
-                        println!("{}", serde_json::to_string_pretty(&json!({"id": id, "country": c, "metric": m, "decade": d, "score": sc}))?);
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(
+                                &json!({"id": id, "country": c, "metric": m, "decade": d, "score": sc})
+                            )?
+                        );
                     } else {
                         println!("Added history row: {} {} {} = {:.2}", c, m, d, sc);
                     }
                     return Ok(());
                 }
                 if arg2 == Some("add-batch") {
-                    let path = file.ok_or_else(|| anyhow::anyhow!("--file required for add-batch"))?;
+                    let path =
+                        file.ok_or_else(|| anyhow::anyhow!("--file required for add-batch"))?;
                     let mut rdr = csv::Reader::from_path(path)?;
                     let mut inserted = 0usize;
                     for rec in rdr.records() {
@@ -833,7 +888,12 @@ fn run_macro(
                         inserted += 1;
                     }
                     if json_output {
-                        println!("{}", serde_json::to_string_pretty(&json!({"inserted": inserted, "file": path}))?);
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(
+                                &json!({"inserted": inserted, "file": path})
+                            )?
+                        );
                     } else {
                         println!("Imported {} history rows from {}", inserted, path);
                     }
@@ -853,7 +913,10 @@ fn run_macro(
                 let stage = phase.ok_or_else(|| anyhow::anyhow!("--phase required"))?;
                 structural::set_cycle_backend(backend, name, stage, None, notes, evidence)?;
                 if json_output {
-                    println!("{}", serde_json::to_string_pretty(&json!({"name": name, "phase": stage}))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json!({"name": name, "phase": stage}))?
+                    );
                 } else {
                     println!("Updated cycle: {} -> {}", name, stage);
                 }
@@ -866,7 +929,10 @@ fn run_macro(
             let stage = phase.ok_or_else(|| anyhow::anyhow!("--phase required"))?;
             structural::set_cycle_backend(backend, name, stage, None, notes, evidence)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({"name": name, "phase": stage}))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({"name": name, "phase": stage}))?
+                );
             } else {
                 println!("Updated cycle: {} -> {}", name, stage);
             }
@@ -878,7 +944,12 @@ fn run_macro(
                 let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
                 structural::update_outcome_probability_backend(backend, name, prob, driver)?;
                 if json_output {
-                    println!("{}", serde_json::to_string_pretty(&json!({"name": name, "probability": prob, "driver": driver}))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &json!({"name": name, "probability": prob, "driver": driver})
+                        )?
+                    );
                 } else {
                     println!("Updated outcome: {} -> {:.1}%", name, prob);
                 }
@@ -891,7 +962,12 @@ fn run_macro(
             let prob = probability.ok_or_else(|| anyhow::anyhow!("--probability required"))?;
             structural::update_outcome_probability_backend(backend, name, prob, driver)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({"name": name, "probability": prob, "driver": driver}))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &json!({"name": name, "probability": prob, "driver": driver})
+                    )?
+                );
             } else {
                 println!("Updated outcome: {} -> {:.1}%", name, prob);
             }
@@ -904,7 +980,10 @@ fn run_macro(
                 let d = date.ok_or_else(|| anyhow::anyhow!("--date required"))?;
                 let id = structural::add_log_backend(backend, d, development, impact, outcome)?;
                 if json_output {
-                    println!("{}", serde_json::to_string_pretty(&json!({"id": id, "date": d}))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json!({"id": id, "date": d}))?
+                    );
                 } else {
                     println!("Added macro log entry for {}", d);
                 }
@@ -917,7 +996,10 @@ fn run_macro(
             let d = date.ok_or_else(|| anyhow::anyhow!("--date required"))?;
             let id = structural::add_log_backend(backend, d, development, impact, outcome)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({"id": id, "date": d}))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({"id": id, "date": d}))?
+                );
             } else {
                 println!("Added macro log entry for {}", d);
             }
@@ -1059,8 +1141,10 @@ fn run_macro_compare(
     country_b: &str,
     json_output: bool,
 ) -> Result<()> {
-    let a_rows = structural::list_metrics_backend(backend, Some(country_a), None).unwrap_or_default();
-    let b_rows = structural::list_metrics_backend(backend, Some(country_b), None).unwrap_or_default();
+    let a_rows =
+        structural::list_metrics_backend(backend, Some(country_a), None).unwrap_or_default();
+    let b_rows =
+        structural::list_metrics_backend(backend, Some(country_b), None).unwrap_or_default();
     let a_view = build_country_metric_view(&a_rows);
     let b_view = build_country_metric_view(&b_rows);
 
@@ -1344,7 +1428,8 @@ fn run_macro_cycles_history(
     composite: bool,
     json_output: bool,
 ) -> Result<()> {
-    let rows = structural::list_metric_history_backend(backend, countries, metric, decade).unwrap_or_default();
+    let rows = structural::list_metric_history_backend(backend, countries, metric, decade)
+        .unwrap_or_default();
     let show_composite = composite || metric.is_none();
 
     if show_composite {
@@ -1358,7 +1443,8 @@ fn run_macro_cycles_history(
                 .push(r.score);
         }
 
-        let live_metrics = structural::list_metrics_backend(backend, None, None).unwrap_or_default();
+        let live_metrics =
+            structural::list_metrics_backend(backend, None, None).unwrap_or_default();
         let live_views = build_country_metric_views(&live_metrics);
         let mut decades: BTreeSet<i32> = BTreeSet::new();
         for dmap in country_decade_scores.values() {
@@ -1429,15 +1515,15 @@ fn run_macro_cycles_history(
     }
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({"rows": rows, "count": rows.len()}))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({"rows": rows, "count": rows.len()}))?
+        );
     } else if rows.is_empty() {
         println!("No power metric history rows found.");
     } else {
         for r in rows {
-            println!(
-                "{} {} {} = {:.2}",
-                r.country, r.metric, r.decade, r.score
-            );
+            println!("{} {} {} = {:.2}", r.country, r.metric, r.decade, r.score);
         }
     }
     Ok(())
@@ -1467,8 +1553,13 @@ fn run_macro_parallels(backend: &BackendConnection, json_output: bool) -> Result
     Ok(())
 }
 
-fn run_macro_log(backend: &BackendConnection, limit: Option<usize>, json_output: bool) -> Result<()> {
-    let rows = structural::list_log_backend(backend, None, Some(limit.unwrap_or(20))).unwrap_or_default();
+fn run_macro_log(
+    backend: &BackendConnection,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let rows =
+        structural::list_log_backend(backend, None, Some(limit.unwrap_or(20))).unwrap_or_default();
     if json_output {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {
@@ -1569,7 +1660,11 @@ fn run_divergence(
         })
         .collect();
 
-    rows.sort_by(|a, b| b.disagreement_pct.partial_cmp(&a.disagreement_pct).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.disagreement_pct
+            .partial_cmp(&a.disagreement_pct)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if json_output {
         println!(
@@ -1652,7 +1747,10 @@ fn consensus_from_counts(bull: usize, bear: usize) -> String {
     }
 }
 
-fn discover_alignment_symbols(backend: &BackendConnection, filter_symbol: Option<&str>) -> Vec<String> {
+fn discover_alignment_symbols(
+    backend: &BackendConnection,
+    filter_symbol: Option<&str>,
+) -> Vec<String> {
     if let Some(sym) = filter_symbol {
         return vec![sym.to_uppercase()];
     }
@@ -1698,10 +1796,16 @@ fn build_alignment_rows(
         .collect();
     let conviction_score_map: HashMap<String, f64> = conviction_rows
         .iter()
-        .map(|c| (c.symbol.to_uppercase(), (c.score as f64 / 5.0).clamp(-1.0, 1.0)))
+        .map(|c| {
+            (
+                c.symbol.to_uppercase(),
+                (c.score as f64 / 5.0).clamp(-1.0, 1.0),
+            )
+        })
         .collect();
 
-    let scenarios_list = scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    let scenarios_list =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let mut rows = Vec::new();
     for sym in symbols {
         let medium = conviction_bias_map
@@ -1710,7 +1814,8 @@ fn build_alignment_rows(
             .unwrap_or_else(|| "neutral".to_string());
         let medium_signal = conviction_score_map.get(&sym).copied().unwrap_or(0.0);
 
-        let high_impacts = trends::get_impacts_for_symbol_backend(backend, &sym).unwrap_or_default();
+        let high_impacts =
+            trends::get_impacts_for_symbol_backend(backend, &sym).unwrap_or_default();
         let bull_high = high_impacts
             .iter()
             .filter(|(_, i)| i.impact.eq_ignore_ascii_case("bullish"))
@@ -1769,7 +1874,10 @@ fn build_alignment_rows(
             .filter(|v| **v < -0.05)
             .count();
         let consensus = consensus_from_counts(bull, bear);
-        let weighted = (0.20 * low_signal) + (0.30 * medium_signal) + (0.25 * high_signal) + (0.25 * macro_signal);
+        let weighted = (0.20 * low_signal)
+            + (0.30 * medium_signal)
+            + (0.25 * high_signal)
+            + (0.25 * macro_signal);
         let score_pct = (weighted.abs() * 100.0).clamp(0.0, 100.0);
 
         rows.push(AlignmentRow {

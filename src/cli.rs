@@ -11,6 +11,14 @@ pub enum AgentMessageCommand {
         #[arg(long = "batch")]
         batch: Vec<String>,
 
+        /// Optional logical package id shared across all messages in the batch
+        #[arg(long = "package-id")]
+        package_id: Option<String>,
+
+        /// Optional logical package title shared across all messages in the batch
+        #[arg(long = "package-title")]
+        package_title: Option<String>,
+
         /// Sender (required)
         #[arg(long)]
         from: Option<String>,
@@ -53,6 +61,9 @@ pub enum AgentMessageCommand {
         /// Time filter
         #[arg(long)]
         since: Option<String>,
+
+        #[arg(long = "package-id")]
+        package_id: Option<String>,
 
         #[arg(long)]
         limit: Option<usize>,
@@ -931,6 +942,10 @@ pub enum JournalEntryCommand {
 pub enum JournalPredictionCommand {
     Add {
         value: String,
+        /// Timeframe (positional shorthand): low|medium|high|macro
+        timeframe_pos: Option<String>,
+        /// Confidence (positional shorthand): 0.0..=1.0
+        confidence_pos: Option<f64>,
         #[arg(long)]
         symbol: Option<String>,
         #[arg(long)]
@@ -997,10 +1012,15 @@ pub enum JournalPredictionCommand {
 pub enum JournalConvictionCommand {
     Set {
         symbol: String,
+        /// Score (positional shorthand): -5..+5
+        #[arg(allow_hyphen_values = true)]
+        score_pos: Option<i32>,
         #[arg(long)]
         score: Option<i32>,
         #[arg(long)]
         notes: Option<String>,
+        /// Notes (positional shorthand)
+        notes_pos: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -1128,6 +1148,8 @@ pub enum JournalScenarioCommand {
     },
     Update {
         value: String,
+        /// History note / driver (positional shorthand)
+        note_pos: Option<String>,
         #[arg(long)]
         probability: Option<f64>,
         #[arg(long)]
@@ -1568,6 +1590,8 @@ pub enum AnalyticsCommand {
         list: bool,
         #[arg(long = "news-keyword")]
         news_keyword: Option<String>,
+        #[arg(long = "trackline-breaches")]
+        trackline_breaches: bool,
         #[arg(long)]
         json: bool,
     },
@@ -1717,8 +1741,8 @@ impl SummaryPeriod {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use clap::Parser;
     use clap::CommandFactory;
+    use clap::Parser;
 
     fn help_text() -> Result<String> {
         let mut cmd = Cli::command();
@@ -1933,5 +1957,120 @@ mod tests {
         assert_eq!(outcome_pos.as_deref(), Some("correct"));
         assert_eq!(notes, None);
         assert_eq!(notes_pos.as_deref(), Some("quick note"));
+    }
+
+    #[test]
+    fn parse_prediction_add_timeframe_positional_syntax() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "agent",
+            "journal",
+            "prediction",
+            "add",
+            "btc breakout",
+            "macro",
+            "0.8",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Agent {
+            command:
+                AgentCommand::Journal {
+                    command:
+                        Some(JournalCommand::Prediction {
+                            command:
+                                JournalPredictionCommand::Add {
+                                    value,
+                                    timeframe_pos,
+                                    confidence_pos,
+                                    ..
+                                },
+                        }),
+                },
+        }) = cli.command
+        else {
+            panic!("expected agent journal prediction add command");
+        };
+
+        assert_eq!(value, "btc breakout");
+        assert_eq!(timeframe_pos.as_deref(), Some("macro"));
+        assert_eq!(confidence_pos, Some(0.8));
+    }
+
+    #[test]
+    fn parse_conviction_set_negative_score_positional_syntax() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "agent",
+            "journal",
+            "conviction",
+            "set",
+            "BTC",
+            "-2",
+            "setup weakening",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Agent {
+            command:
+                AgentCommand::Journal {
+                    command:
+                        Some(JournalCommand::Conviction {
+                            command:
+                                JournalConvictionCommand::Set {
+                                    symbol,
+                                    score_pos,
+                                    notes_pos,
+                                    ..
+                                },
+                        }),
+                },
+        }) = cli.command
+        else {
+            panic!("expected agent journal conviction set command");
+        };
+
+        assert_eq!(symbol, "BTC");
+        assert_eq!(score_pos, Some(-2));
+        assert_eq!(notes_pos.as_deref(), Some("setup weakening"));
+    }
+
+    #[test]
+    fn parse_scenario_update_notes_positional_syntax() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "agent",
+            "journal",
+            "scenario",
+            "update",
+            "Hard Landing",
+            "labor rolling over",
+            "--probability",
+            "65",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Agent {
+            command:
+                AgentCommand::Journal {
+                    command:
+                        Some(JournalCommand::Scenario {
+                            command:
+                                JournalScenarioCommand::Update {
+                                    value,
+                                    note_pos,
+                                    probability,
+                                    ..
+                                },
+                        }),
+                },
+        }) = cli.command
+        else {
+            panic!("expected agent journal scenario update command");
+        };
+
+        assert_eq!(value, "Hard Landing");
+        assert_eq!(note_pos.as_deref(), Some("labor rolling over"));
+        assert_eq!(probability, Some(65.0));
     }
 }
