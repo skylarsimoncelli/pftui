@@ -274,6 +274,19 @@ python3 /root/pftui/agents/deep-analysis/gen-report.py \
 message action=send target=<user_id> message="📊 PFTUI Intelligence Report: <title>" filePath=/root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf
 ```
 
+4. Upload the PDF to the repo:
+```bash
+cp /root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf \
+  /root/pftui/newsletter/DD-Month-YYYY.pdf
+cd /root/pftui
+git add newsletter/
+git -c user.name="skylarsimoncelli" -c user.email="skylar.simoncelli@icloud.com" \
+  commit -m "Newsletter: <title> — <date>"
+git push
+```
+
+File naming: `DD-Month-YYYY.pdf` (e.g. `15-March-2026.pdf`, `12-April-2026.pdf`). All newsletters live in `newsletter/` at the repo root.
+
 The generator produces dark-themed PDFs matching pftui.com branding:
 - Fonts: Inter (body) + JetBrains Mono (code, headers, metadata)
 - Colors: #0d1117 background, #c9d1d9 text, #89dceb cyan accent, #a6e3a1 green accent, #89b4fa blue accent, #f38ba8 red accent
