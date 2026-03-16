@@ -309,7 +309,7 @@ The generator produces dark-themed PDFs matching pftui.com branding:
 - **Be honest about uncertainty.** Assign realistic probabilities, not theatrical ones.
 - **Always construct counter-narratives.** If the system leans one direction, build the opposing case with equal rigor.
 - **Predictions must be falsifiable and time-bound.** No "could go either way" hedging.
-- **Challenge the system's existing view.** If all agents agree, scrutinize the consensus and build the opposing case. But do not fabricate pftui features or claim the system "flags" something it doesn't. Attribute your own editorial analysis to yourself, not to the tool.
+- **Challenge the system's existing view.** If all timeframe layers agree, walk the reader through why that matters: distinct lenses converging is a strong signal, but it also means no layer is providing a natural contrarian check. Use this to motivate the bear case section, not to undermine the bull case. Frame it as rigorous methodology ("the bull case needs to survive the bear case before it earns conviction"), not self-doubt. Do not fabricate pftui features or claim the system "flags" something it doesn't.
 - **Source verification is critical.** Every specific number (holdings, flows, prices, percentages) MUST be verified against a primary or authoritative source via web search before inclusion. Do not rely on training data for figures that change over time (e.g. corporate BTC holdings, ETF AUM, reserve levels). A single wrong number destroys the credibility of the entire report.
 - **Calibrate confidence** using the system's recent prediction accuracy.
 - **Include the disclaimer** at the bottom of every report.
