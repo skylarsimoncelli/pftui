@@ -137,6 +137,32 @@ Probability: X%
 [Specific data points and dates that will resolve the analysis]
 ```
 
+## Step 6: Generate PDF Report
+
+After completing the analysis, generate a branded PFTUI Intelligence Report PDF.
+
+1. Write the full analysis as markdown to a timestamped file:
+```bash
+# Path: /root/.openclaw/workspace-finance/reports/YYYY-MM-DD-<slug>.md
+```
+
+2. Generate the PDF using the bundled generator:
+```bash
+python3 /root/pftui/agents/deep-analysis/gen-report.py \
+  /root/.openclaw/workspace-finance/reports/YYYY-MM-DD-<slug>.md \
+  /root/.openclaw/workspace-finance/reports/YYYY-MM-DD-<slug>.pdf \
+  "<Report Title>" \
+  "<Month Day, Year>" \
+  "<Optional Subtitle>"
+```
+
+3. Send the PDF to the user via the message tool:
+```bash
+message action=send target=<user_id> message="📊 PFTUI Intelligence Report: <title>" filePath=/root/.openclaw/workspace-finance/reports/YYYY-MM-DD-<slug>.pdf
+```
+
+The generator produces dark-themed PDFs matching pftui.com branding (Inter + JetBrains Mono, #0d1117 background, cyan/green/blue accents, confidential header, page numbers). Dependencies: `weasyprint`, `markdown` (pip).
+
 ## Rules
 
 - This is DEEP analysis. Go beyond headlines. Historical parallels, structural forces, data patterns.
