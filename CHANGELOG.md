@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F44.1 evaluate text-style indicator alerts from cached history
+
+- What:
+  - extended the natural-language alert parser to recognize `below SMA50` / `above SMA200`, `MACD cross bullish|bearish`, and daily `% change` rules alongside the existing `RSI above|below` syntax.
+  - taught the alert engine to compute RSI, SMA, MACD, and daily percentage-change values from cached `price_history` for `kind=indicator` alerts instead of returning `current_value: null`.
+  - added regression coverage for the new parser paths and for RSI/SMA/change alert evaluation against synthetic cached histories.
+- Why: closes the remaining gap where agents could store text-style technical alerts but pftui could not actually evaluate them from local data.
+- Files: `src/alerts/rules.rs`, `src/alerts/engine.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test alerts::rules:: -- --nocapture`, `cargo test alerts::engine:: -- --nocapture`
+
 ### 2026-03-16 — F45.6 cached COT interpretation metrics and `data cot`
 
 - What:

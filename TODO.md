@@ -34,19 +34,6 @@ The Rust backend dispatch already supports Postgres fully. This is purely a setu
 Also update `pftui system setup` (if it exists) or the first-run wizard to offer the same options.
 
 Files: `src/setup.rs` (or wherever the wizard lives), `src/config.rs`.
-### F44.1: Technical Alert Evaluation Engine
-
-`analytics alerts add` accepts RSI/SMA rules as text (e.g. "BTC RSI below 30") and parses them into `kind=indicator`, but `alerts check` returns `current_value: null` for these. The evaluation engine does not actually compute RSI, SMA, MACD, or Bollinger values against price_history data. It only evaluates price threshold alerts.
-
-Needed: when `alerts check` runs, evaluate technical indicator alerts by computing the indicator from `price_history` and comparing against the threshold. This is the core of F44.
-
-Supported conditions to implement:
-- `[SYMBOL] RSI below/above [threshold]` — compute 14-period RSI from price_history
-- `[SYMBOL] below/above SMA50` / `SMA200` — compute SMA from price_history
-- `[SYMBOL] MACD cross bullish/bearish` — compute MACD(12,26,9)
-- `[SYMBOL] change above/below [X]%` — daily percentage change
-
-Files: `src/commands/alerts.rs`, `src/db/alerts.rs`. Needs access to `price_history` for computation.
 
 ### F44.4: Alert Watchdog Cron
 
