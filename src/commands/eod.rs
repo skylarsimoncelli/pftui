@@ -53,12 +53,14 @@ fn run_json(backend: &BackendConnection, config: &Config) -> Result<()> {
     use serde_json::json;
 
     // Fetch all components
-    let brief_output =
-        capture_json_output(|| super::summary::run(backend, config, None, None, None, false, true))?;
+    let brief_output = capture_json_output(|| {
+        super::summary::run(backend, config, None, None, None, false, true)
+    })?;
     let movers_output =
         capture_json_output(|| super::movers::run(backend, config, Some("3"), false, true))?;
     let macro_output = capture_json_output(|| super::macro_cmd::run(backend, config, true, false))?;
-    let sentiment_output = capture_json_output(|| super::sentiment::run(None, None, true))?;
+    let sentiment_output =
+        capture_json_output(|| super::sentiment::run(backend, None, None, true))?;
 
     let eod = json!({
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -91,13 +93,19 @@ fn print_sentiment_summary() -> Result<()> {
 
     // Print F&G
     if let Some(idx) = crypto_fng {
-        println!("│ Crypto F&G:        {:>3}/100  {}", idx.value, idx.classification);
+        println!(
+            "│ Crypto F&G:        {:>3}/100  {}",
+            idx.value, idx.classification
+        );
     } else {
         println!("│ Crypto F&G:        ---");
     }
 
     if let Some(idx) = trad_fng {
-        println!("│ Traditional F&G:   {:>3}/100  {}", idx.value, idx.classification);
+        println!(
+            "│ Traditional F&G:   {:>3}/100  {}",
+            idx.value, idx.classification
+        );
     } else {
         println!("│ Traditional F&G:   ---");
     }

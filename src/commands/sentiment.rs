@@ -15,30 +15,35 @@ use anyhow::Result;
 use serde_json::json;
 
 use crate::data::cot::{
-    fetch_historical_reports, fetch_latest_report, symbol_to_cftc_code, CotContract,
-    CotReport, COT_CONTRACTS,
+    fetch_historical_reports, fetch_latest_report, symbol_to_cftc_code, CotContract, CotReport,
+    COT_CONTRACTS,
 };
 use crate::data::sentiment::{fetch_crypto_fng, fetch_traditional_fng, SentimentIndex};
+use crate::db::backend::BackendConnection;
+use crate::db::sentiment_cache;
 
 /// Run the `pftui sentiment` command.
-pub fn run(symbol: Option<&str>, history: Option<usize>, json: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    history: Option<usize>,
+    json: bool,
+) -> Result<()> {
     if let Some(sym) = symbol {
         // Detailed view for a specific symbol (COT positioning only)
         run_symbol_detail(sym, history.unwrap_or(1), json)
     } else if let Some(days) = history {
         // Historical trend view for F&G indices
-        run_history(days, json)
+        run_history(backend, days, json)
     } else {
         // Overview: F&G + COT positioning for all tracked assets
-        run_overview(json)
+        run_overview(backend, json)
     }
 }
 
 /// Overview mode: show F&G indices + COT positioning summary.
-fn run_overview(json: bool) -> Result<()> {
-    // Fetch Fear & Greed indices
-    let crypto_fng = fetch_crypto_fng().ok();
-    let trad_fng = fetch_traditional_fng().ok();
+fn run_overview(backend: &BackendConnection, json: bool) -> Result<()> {
+    let (crypto_fng, trad_fng) = load_sentiment_indices(backend);
 
     // Fetch COT positioning for all tracked contracts
     let mut cot_results = Vec::new();
@@ -70,14 +75,12 @@ fn print_overview(
 
     // Fear & Greed Indices
     println!("┌─ FEAR & GREED INDICES ─────────────────────────────────────┐");
-    
+
     if let Some(idx) = crypto_fng {
         let emoji = sentiment_emoji(idx.value);
         println!(
             "│ Crypto:       {} {:>3}/100  {}",
-            emoji,
-            idx.value,
-            idx.classification
+            emoji, idx.value, idx.classification
         );
     } else {
         println!("│ Crypto:       ⚠️  unavailable");
@@ -87,14 +90,12 @@ fn print_overview(
         let emoji = sentiment_emoji(idx.value);
         println!(
             "│ Traditional:  {} {:>3}/100  {}",
-            emoji,
-            idx.value,
-            idx.classification
+            emoji, idx.value, idx.classification
         );
     } else {
         println!("│ Traditional:  ⚠️  unavailable");
     }
-    
+
     println!("└────────────────────────────────────────────────────────────┘\n");
 
     // COT Positioning
@@ -107,7 +108,7 @@ fn print_overview(
         if let Some(report) = report_opt {
             let mm_signal = cot_signal(report.managed_money_net, report.open_interest);
             let comm_signal = cot_signal(report.commercial_net, report.open_interest);
-            
+
             println!(
                 "│ {:12}  {:>8}  {}       {:>8}  {}      │",
                 shorten_name(contract.name),
@@ -231,21 +232,38 @@ fn print_symbol_detail(report: &CotReport, contract: &CotContract) {
 
     println!("Symbol:        {}", contract.symbol);
     println!("Report Date:   {}", report.report_date);
-    println!("Open Interest: {}\n", format_with_commas(report.open_interest));
+    println!(
+        "Open Interest: {}\n",
+        format_with_commas(report.open_interest)
+    );
 
     println!("┌─ MANAGED MONEY (Speculators) ──────────────────────────────┐");
-    println!("│ Long:   {:>12}                                      │", format_with_commas(report.managed_money_long));
-    println!("│ Short:  {:>12}                                      │", format_with_commas(report.managed_money_short));
-    println!("│ Net:    {:>12}  {}                              │", 
+    println!(
+        "│ Long:   {:>12}                                      │",
+        format_with_commas(report.managed_money_long)
+    );
+    println!(
+        "│ Short:  {:>12}                                      │",
+        format_with_commas(report.managed_money_short)
+    );
+    println!(
+        "│ Net:    {:>12}  {}                              │",
         format_cot_net(report.managed_money_net),
         cot_signal(report.managed_money_net, report.open_interest)
     );
     println!("└────────────────────────────────────────────────────────────┘\n");
 
     println!("┌─ COMMERCIALS (Producers/Hedgers) ──────────────────────────┐");
-    println!("│ Long:   {:>12}                                      │", format_with_commas(report.commercial_long));
-    println!("│ Short:  {:>12}                                      │", format_with_commas(report.commercial_short));
-    println!("│ Net:    {:>12}  {}                              │", 
+    println!(
+        "│ Long:   {:>12}                                      │",
+        format_with_commas(report.commercial_long)
+    );
+    println!(
+        "│ Short:  {:>12}                                      │",
+        format_with_commas(report.commercial_short)
+    );
+    println!(
+        "│ Net:    {:>12}  {}                              │",
         format_cot_net(report.commercial_net),
         cot_signal(report.commercial_net, report.open_interest)
     );
@@ -364,11 +382,8 @@ fn print_symbol_history_json(reports: &[CotReport], contract: &CotContract) -> R
 }
 
 /// Historical trend mode: show F&G index trend over N days.
-fn run_history(days: usize, json: bool) -> Result<()> {
-    // For now, just show the current F&G values
-    // Future: fetch historical F&G data from Alternative.me API (?limit=N)
-    let crypto_fng = fetch_crypto_fng().ok();
-    let trad_fng = fetch_traditional_fng().ok();
+fn run_history(backend: &BackendConnection, days: usize, json: bool) -> Result<()> {
+    let (crypto_fng, trad_fng) = load_sentiment_indices(backend);
 
     if json {
         let output = json!({
@@ -409,10 +424,42 @@ fn run_history(days: usize, json: bool) -> Result<()> {
             );
         }
 
-        println!("\n💡 Historical trend will show {}-day F&G sparklines + trend arrows", days);
+        println!(
+            "\n💡 Historical trend will show {}-day F&G sparklines + trend arrows",
+            days
+        );
     }
 
     Ok(())
+}
+
+fn load_sentiment_indices(
+    backend: &BackendConnection,
+) -> (Option<SentimentIndex>, Option<SentimentIndex>) {
+    let crypto_fng = sentiment_cache::get_latest_backend(backend, "crypto_fng")
+        .ok()
+        .flatten()
+        .map(sentiment_from_cache)
+        .or_else(|| fetch_crypto_fng().ok());
+    let trad_fng = sentiment_cache::get_latest_backend(backend, "traditional_fng")
+        .ok()
+        .flatten()
+        .map(sentiment_from_cache)
+        .or_else(|| fetch_traditional_fng().ok());
+    (crypto_fng, trad_fng)
+}
+
+fn sentiment_from_cache(reading: sentiment_cache::SentimentReading) -> SentimentIndex {
+    SentimentIndex {
+        index_type: if reading.index_type.contains("traditional") {
+            "traditional".to_string()
+        } else {
+            "crypto".to_string()
+        },
+        value: reading.value,
+        classification: reading.classification,
+        timestamp: reading.timestamp,
+    }
 }
 
 // ============================================================================
@@ -422,7 +469,7 @@ fn run_history(days: usize, json: bool) -> Result<()> {
 /// Sentiment emoji based on F&G index value.
 fn sentiment_emoji(value: u8) -> &'static str {
     match value {
-        0..=24 => "🔴", // Extreme Fear
+        0..=24 => "🔴",  // Extreme Fear
         25..=44 => "🟠", // Fear
         45..=55 => "🟡", // Neutral
         56..=74 => "🟢", // Greed
@@ -433,7 +480,7 @@ fn sentiment_emoji(value: u8) -> &'static str {
 /// COT positioning signal emoji.
 fn cot_signal(net: i64, open_interest: i64) -> &'static str {
     let pct = (net as f64 / open_interest as f64) * 100.0;
-    
+
     if pct.abs() < 10.0 {
         "🟡" // Neutral
     } else if pct > 25.0 {
@@ -474,10 +521,7 @@ fn format_with_commas(n: i64) -> String {
 
 /// Shorten contract name for table display.
 fn shorten_name(name: &str) -> String {
-    name.replace(" Futures", "")
-        .chars()
-        .take(12)
-        .collect()
+    name.replace(" Futures", "").chars().take(12).collect()
 }
 
 #[cfg(test)]
@@ -514,5 +558,21 @@ mod tests {
         assert_eq!(format_cot_net(5000), "+5,000");
         assert_eq!(format_cot_net(-5000), "-5,000");
         assert_eq!(format_cot_net(0), "+0");
+    }
+
+    #[test]
+    fn sentiment_from_cache_normalizes_index_type() {
+        let reading = sentiment_cache::SentimentReading {
+            index_type: "crypto_fng".to_string(),
+            value: 22,
+            classification: "Extreme Fear".to_string(),
+            timestamp: 1_710_000_000,
+            fetched_at: "2026-03-16T00:00:00Z".to_string(),
+        };
+
+        let mapped = sentiment_from_cache(reading);
+        assert_eq!(mapped.index_type, "crypto");
+        assert_eq!(mapped.value, 22);
+        assert_eq!(mapped.classification, "Extreme Fear");
     }
 }
