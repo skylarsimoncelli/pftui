@@ -137,22 +137,6 @@ Files: `src/commands/alerts.rs`.
 
 Agents currently use web_search for ~45% of their data needs. These items target data that has structured API sources and can be computed/cached by `data refresh`, eliminating agent guesswork and improving data quality.
 
-#### F45.5: Analyst Consensus Tracker
-
-Agents web_search for "Goldman Sachs rate forecast" and "JP Morgan gold target" repeatedly. These change slowly (weekly/monthly). Add a `consensus` table where agents can log analyst calls via CLI:
-
-```
-pftui data consensus add --source "Goldman Sachs" --topic "rate_cuts" \
-  --call "50bp cuts in Sep+Dec 2026" --date 2026-03-12
-pftui data consensus add --source "JP Morgan" --topic "gold_target" \
-  --call "$6,300 by year-end 2026" --date 2026-02-25
-pftui data consensus list --topic rate_cuts --json
-```
-
-Agents log consensus calls when they find them, then all agents can read them from the DB instead of re-searching. MEDIUM agent maintains this during its research phase.
-
-Files: `src/commands/data.rs`, `src/db/consensus.rs`. Schema: new `consensus_tracker` table.
-
 #### F45.6: COT Positioning Interpretation
 
 CFTC COT data is already fetched but agents still web_search to interpret it ("is gold COT positioning extreme?"). Add computed fields:

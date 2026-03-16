@@ -7,6 +7,7 @@ pub mod brief;
 pub mod calendar;
 pub mod config_cmd;
 pub mod console;
+pub mod consensus;
 pub mod conviction;
 pub mod correlations;
 pub mod cot;

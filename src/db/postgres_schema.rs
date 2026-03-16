@@ -437,6 +437,18 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS consensus_tracker (
+                id BIGSERIAL PRIMARY KEY,
+                source TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                call_text TEXT NOT NULL,
+                call_date TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS bls_cache (
                 series_id TEXT NOT NULL,
                 year INTEGER NOT NULL,
@@ -524,6 +536,16 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .await?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_fedwatch_cache_fetched_at ON fedwatch_cache(fetched_at DESC)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_consensus_tracker_topic ON consensus_tracker(topic)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_consensus_tracker_date ON consensus_tracker(call_date)",
         )
         .execute(pool)
         .await?;

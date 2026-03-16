@@ -88,6 +88,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_fedwatch_cache_fetched_at ON fedwatch_cache(fetched_at DESC);
 
+        CREATE TABLE IF NOT EXISTS consensus_tracker (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            call_text TEXT NOT NULL,
+            call_date TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_consensus_tracker_topic ON consensus_tracker(topic);
+        CREATE INDEX IF NOT EXISTS idx_consensus_tracker_date ON consensus_tracker(call_date);
+
         CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kind TEXT NOT NULL DEFAULT 'price',

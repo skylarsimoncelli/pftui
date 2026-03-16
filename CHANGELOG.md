@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F45.5 analyst consensus tracker CLI and cache
+
+- What:
+  - added a new append-only `consensus_tracker` table plus backend helpers for storing dated analyst calls by source and topic.
+  - introduced `pftui data consensus add` and `pftui data consensus list` so agents can persist slower-moving analyst forecasts like rate-cut paths or commodity targets instead of re-searching them every session.
+  - wired the new command into the F42 `data` subtree and covered the parser/help surface with CLI regression tests.
+- Why: centralizes long-lived analyst consensus notes inside pftui so medium-timeframe research can build shared context without depending on repeated web search.
+- Files: `src/db/consensus.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/consensus.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1254 passed), `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-16 — F45.4 FedWatch cache, fallback, and reading validation
 
 - What:

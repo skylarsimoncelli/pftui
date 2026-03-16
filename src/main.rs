@@ -629,6 +629,39 @@ fn main() -> Result<()> {
             cli::DataCommand::Economy { indicator, json } => {
                 commands::economy::run(&backend, indicator.as_deref(), json)
             }
+            cli::DataCommand::Consensus { command } => match command {
+                cli::ConsensusCommand::Add {
+                    source,
+                    topic,
+                    call_text,
+                    date,
+                    json,
+                } => commands::consensus::run(
+                    &backend,
+                    "add",
+                    Some(&source),
+                    Some(&topic),
+                    Some(&call_text),
+                    Some(&date),
+                    20,
+                    json,
+                ),
+                cli::ConsensusCommand::List {
+                    topic,
+                    source,
+                    limit,
+                    json,
+                } => commands::consensus::run(
+                    &backend,
+                    "list",
+                    source.as_deref(),
+                    topic.as_deref(),
+                    None,
+                    None,
+                    limit,
+                    json,
+                ),
+            },
             cli::DataCommand::Predictions {
                 category,
                 search,

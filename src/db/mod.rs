@@ -15,6 +15,7 @@ pub mod comex_cache;
 pub mod correlation_snapshots;
 #[allow(dead_code)] // Infrastructure for F31.3 (conviction CLI)
 pub mod convictions;
+pub mod consensus;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot_cache;
 pub mod daily_notes;
