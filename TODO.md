@@ -227,6 +227,35 @@ pftui data cot --json
 
 Files: `src/data/cot.rs`, `src/commands/data.rs`.
 
+### F46: Remote PostgreSQL Backend Support
+
+The setup wizard currently offers SQLite only. Add full backend selection:
+
+```
+? Select database backend:
+  ❯ Local SQLite (default, zero config)
+    Local PostgreSQL (localhost)
+    Remote PostgreSQL (custom host)
+```
+
+**Local SQLite:** Current default. No changes needed.
+
+**Local PostgreSQL:** Prompt for database name, user, password. Host defaults to `127.0.0.1:5432`. Test connection before proceeding.
+
+**Remote PostgreSQL:** Prompt for host, port, database name, user, password. Optionally accept a full connection string (`postgres://user:pass@host:port/db`). Test connection before proceeding. Support SSL/TLS option for cloud-hosted databases (Supabase, Neon, RDS, etc.).
+
+Config output (`config.toml`):
+```toml
+database_backend = "postgres"
+database_url = "postgres://user:pass@remote-host:5432/pftui?sslmode=require"
+```
+
+The Rust backend dispatch already supports Postgres fully. This is purely a setup wizard and config UX change.
+
+Also update `pftui system setup` (if it exists) or the first-run wizard to offer the same options.
+
+Files: `src/setup.rs` (or wherever the wizard lives), `src/config.rs`.
+
 ### [Feedback] Weekend-Aware Movers Command
 
 `pftui analytics movers` shows 0 movers on weekends because it compares to Friday close. Should compare Friday close to weekend crypto/futures prices (Hyperliquid, Binance perpetuals) so agents running Saturday/Sunday routines still see meaningful movements.
