@@ -12,10 +12,11 @@ KEEP=7
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/pftui_${TIMESTAMP}.sql.gz"
 
-export PGPASSWORD="pftui_sentinel_2026"
+DB_PORT="50498"
+export PGPASSWORD="Rd9H0B66q8zDf8r0aHBe14HdvY6Kj7oD0GgueEBQ"
 
 # Dump and compress
-pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" | gzip > "$BACKUP_FILE"
+pg_dump -U "$DB_USER" -h "$DB_HOST" -p "$DB_PORT" "$DB_NAME" | gzip > "$BACKUP_FILE"
 
 # Verify
 if [ -s "$BACKUP_FILE" ]; then
