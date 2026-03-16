@@ -27,15 +27,18 @@ Read the user profile and portfolio files for conviction state and allocation co
 
 Pull structured data from pftui first. This replaces most of what you used to web_search for:
 ```bash
-pftui data fedwatch --json                # CME FedWatch — rate path probabilities
-pftui data economy --json                 # CPI, NFP, fed funds, initial claims, PPI
-pftui data sentiment --json               # COT positioning (gold, silver, oil, BTC)
+pftui data fedwatch --json                # CME FedWatch — rate path probabilities (with verification warnings)
+pftui data economy --json                 # CPI, NFP, GDP, PMI, JOLTS (with surprise detection + delta from previous)
+pftui data sentiment --json               # Fear & Greed indices (crypto + traditional)
+pftui data cot --json                     # COT positioning with percentile ranks, z-scores, extreme flags
 pftui data calendar --json                # upcoming economic events and catalysts
 pftui data sovereign --json               # CB gold reserves, govt BTC holdings
 pftui data supply --json                  # COMEX warehouse inventory (gold, silver)
 pftui data news --hours 24 --json         # last 24h news from RSS + Brave
 pftui data predictions --json             # Polymarket/Manifold odds
 pftui data etf-flows --days 7 --json      # BTC ETF flow trend
+pftui data consensus list --json          # analyst calls (Goldman, JPM, etc.) — read before searching
+pftui analytics scenario list --json      # active scenarios with probabilities
 ```
 
 ## Web Research (for what pftui cannot provide)
@@ -46,7 +49,12 @@ Do 3-5 DEEP targeted searches for analysis and context that structured data cann
 - **Scenario-specific:** Whatever your active scenarios need investigated this cycle
 - **Context behind data:** When pftui flags a data point (COT extreme, FedWatch shift), search for the WHY
 
-Do NOT web_search for: rate probabilities (use fedwatch), economic data (use economy), COT positioning (use sentiment), upcoming events (use calendar). pftui has these.
+Do NOT web_search for: rate probabilities (use fedwatch), economic data (use economy), COT positioning (use cot), Fear & Greed (use sentiment), upcoming events (use calendar), analyst targets (use consensus). pftui has these.
+
+When you find a new analyst call or target via web_search, persist it:
+```bash
+pftui data consensus add --source "[firm]" --topic [topic] --call "[forecast]" --date $(date +%Y-%m-%d)
+```
 
 ## Scenario Management (your core responsibility)
 
@@ -81,7 +89,7 @@ Update thesis sections when evidence warrants:
 
 For assets affected by medium-term developments:
 ```bash
-pftui journal conviction set <SYMBOL> --score <n> --notes "MEDIUM [date]: [What medium-term force changed]. Evidence: [specific]. Changed from [old] because [reason]."
+pftui analytics conviction set <SYMBOL> --score <n> --notes "MEDIUM [date]: [What medium-term force changed]. Evidence: [specific]. Changed from [old] because [reason]."
 ```
 
 ## Prediction Self-Reflection

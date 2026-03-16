@@ -20,11 +20,15 @@ pftui analytics macro metrics US --json
 pftui analytics macro metrics China --json
 pftui analytics macro compare US China --json
 pftui analytics macro cycles --json
+pftui analytics macro cycles history list --json   # historical power metrics (Dalio scale)
 pftui analytics macro outcomes --json
 pftui analytics macro parallels --json
 pftui analytics macro log --limit 10 --json
 pftui analytics high --json
 pftui journal prediction list --json
+pftui data sovereign --json                        # CB gold reserves, govt BTC holdings
+pftui data economy --json                          # macro indicators with surprise detection
+pftui data cot --json                              # COT positioning extremes (structural signal)
 ```
 
 Read STRUCTURAL.md for qualitative framework context.

@@ -12,13 +12,14 @@ Acknowledge after reading.
 
 2. Gather context on the triggered alert(s):
 ```bash
-pftui data refresh
 pftui portfolio brief --json
 pftui analytics movers --json
 pftui data news --hours 4 --json
 pftui data sentiment --json
-pftui journal scenario list --json
-pftui journal conviction list --json
+pftui data cot --json
+pftui data onchain --json
+pftui data economy --json
+pftui analytics scenario list --json
 pftui analytics alerts list --json
 pftui analytics macro regime current --json
 ```
@@ -36,7 +37,7 @@ pftui journal notes add "ALERT INVESTIGATION [date]: [symbol] hit [threshold]. C
   --date $(date +%Y-%m-%d) --section alert
 
 # Update conviction if the alert changes your read
-pftui journal conviction set <SYMBOL> --score <n> --notes "ALERT [date]: [reason for change]"
+pftui analytics conviction set <SYMBOL> --score <n> --notes "ALERT [date]: [reason for change]"
 
 # Signal to evening analyst if significant
 pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened] — [significance]" \

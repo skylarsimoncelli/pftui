@@ -54,12 +54,15 @@ pftui agent message send "NEWS: [headline] — scenario impact: [which scenario,
 ```bash
 pftui data news --hours 4 --json          # breaking news from RSS + Brave
 pftui data sentiment --json               # Fear & Greed indices + COT positioning
+pftui data cot --json                     # COT percentile ranks + z-scores + extremes
+pftui data onchain --json                 # BTC exchange reserves, whale activity, MVRV
 pftui data predictions --json             # Polymarket, Manifold odds
-pftui data fedwatch --json                # CME FedWatch rate probabilities
-pftui data economy --json                 # CPI, NFP, initial claims, fed funds
+pftui data fedwatch --json                # CME FedWatch rate probabilities (with verification)
+pftui data economy --json                 # CPI, NFP, GDP, PMI, JOLTS (with surprise detection)
 pftui data etf-flows --json               # BTC ETF inflows/outflows by fund
 pftui data calendar --json                # upcoming economic events today
-pftui analytics alerts check --json       # any newly triggered alerts
+pftui analytics alerts check --json       # any newly triggered alerts (RSI/SMA/MACD evaluated)
+pftui analytics scenario list --json      # active scenarios for news filtering
 ```
 
 Only use web_search for what pftui cannot provide:
