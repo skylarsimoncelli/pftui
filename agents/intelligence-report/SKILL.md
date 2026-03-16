@@ -309,7 +309,7 @@ The generator produces dark-themed PDFs matching pftui.com branding:
 - **Be honest about uncertainty.** Assign realistic probabilities, not theatrical ones.
 - **Always construct counter-narratives.** If the system leans one direction, build the opposing case with equal rigor.
 - **Predictions must be falsifiable and time-bound.** No "could go either way" hedging.
-- **Challenge the system's existing view.** If all agents agree, that's suspicious, not comforting.
+- **Challenge the system's existing view.** If all agents agree, scrutinize the consensus and build the opposing case. But do not fabricate pftui features or claim the system "flags" something it doesn't. Attribute your own editorial analysis to yourself, not to the tool.
 - **Source verification is critical.** Every specific number (holdings, flows, prices, percentages) MUST be verified against a primary or authoritative source via web search before inclusion. Do not rely on training data for figures that change over time (e.g. corporate BTC holdings, ETF AUM, reserve levels). A single wrong number destroys the credibility of the entire report.
 - **Calibrate confidence** using the system's recent prediction accuracy.
 - **Include the disclaimer** at the bottom of every report.
