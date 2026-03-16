@@ -13,6 +13,16 @@
 - Files: `src/data/fred.rs`, `src/db/macro_events.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `src/commands/economy.rs`, `CHANGELOG.md`
 - Tests: `cargo test` (1246 passed), `cargo clippy --all-targets -- -D warnings`
 
+### 2026-03-16 — F45.2 on-chain exchange reserve and whale activity cache
+
+- What:
+  - replaced the placeholder on-chain exchange/whale stubs with BitInfoCharts-backed parsers for exchange-labeled rich-list wallets, wealth concentration, active addresses, and 24h large-transaction aggregates.
+  - added refresh-time storage for exchange reserve proxy, 7d/30d reserve drift, whale activity, and concentration metrics in the existing on-chain cache.
+  - kept ETF flows and network metrics intact while broadening the on-chain dataset agents can read from one refresh.
+- Why: agents can now read structured BTC reserve/whale context from local cache instead of re-searching for exchange balances or daily whale activity every run.
+- Files: `src/data/onchain.rs`, `src/commands/refresh.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1248 passed), `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-14 — Add `pftui console` interactive shell
 
 - What:

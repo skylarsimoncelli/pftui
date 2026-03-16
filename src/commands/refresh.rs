@@ -1138,6 +1138,40 @@ fn run_with_output(
         Err(e) => onchain_errors.push(format!("network: {}", e)),
     }
 
+    match onchain::fetch_exchange_reserve_snapshot() {
+        Ok(snapshot) => {
+            let metric = crate::db::onchain_cache::OnchainMetric {
+                metric: "exchange_reserve_proxy_btc".to_string(),
+                date: snapshot.date.clone(),
+                value: snapshot.reserve_btc.to_string(),
+                metadata: Some(
+                    serde_json::json!({
+                        "reserve_usd": snapshot.reserve_usd,
+                        "tracked_wallets": snapshot.tracked_wallets,
+                        "exchange_labels": snapshot.exchange_labels,
+                        "flow_7d_btc": snapshot.net_flow_7d_btc,
+                        "flow_30d_btc": snapshot.net_flow_30d_btc,
+                        "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
+                            serde_json::json!({
+                                "label": entry.label,
+                                "balance_btc": entry.balance_btc,
+                                "balance_usd": entry.balance_usd,
+                                "wallets": entry.wallets,
+                                "flow_7d_btc": entry.flow_7d_btc,
+                                "flow_30d_btc": entry.flow_30d_btc,
+                            })
+                        }).collect::<Vec<_>>(),
+                    })
+                    .to_string(),
+                ),
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            };
+            let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+            onchain_ok_parts.push("exchange reserves");
+        }
+        Err(e) => onchain_errors.push(format!("exchange reserves: {}", e)),
+    }
+
     match onchain::fetch_etf_flows() {
         Ok(flows) => {
             let fetched_at = chrono::Utc::now().to_rfc3339();
@@ -1160,6 +1194,50 @@ fn run_with_output(
             onchain_ok_parts.push("etf flows");
         }
         Err(e) => onchain_errors.push(format!("etf flows: {}", e)),
+    }
+
+    match onchain::fetch_market_stats() {
+        Ok(stats) => {
+            let fetched_at = chrono::Utc::now().to_rfc3339();
+            let metrics = [
+                (
+                    "largest_transactions_24h_btc",
+                    stats.largest_transactions_24h_btc.to_string(),
+                    serde_json::json!({
+                        "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
+                        "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
+                    }),
+                ),
+                (
+                    "active_addresses_24h",
+                    stats.active_addresses_24h.to_string(),
+                    serde_json::json!({}),
+                ),
+                (
+                    "wealth_distribution_top10_pct",
+                    stats.top_10_share_pct.to_string(),
+                    serde_json::json!({
+                        "top_100_share_pct": stats.top_100_share_pct,
+                        "top_1000_share_pct": stats.top_1000_share_pct,
+                        "top_10000_share_pct": stats.top_10000_share_pct,
+                        "top_100_richest_btc": stats.top_100_richest_btc,
+                    }),
+                ),
+            ];
+
+            for (name, value, metadata) in metrics {
+                let metric = crate::db::onchain_cache::OnchainMetric {
+                    metric: name.to_string(),
+                    date: stats.date.clone(),
+                    value,
+                    metadata: Some(metadata.to_string()),
+                    fetched_at: fetched_at.clone(),
+                };
+                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+            }
+            onchain_ok_parts.push("whales");
+        }
+        Err(e) => onchain_errors.push(format!("whales: {}", e)),
     }
 
     if !onchain_ok_parts.is_empty() {

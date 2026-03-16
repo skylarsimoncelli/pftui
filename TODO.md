@@ -137,20 +137,6 @@ Files: `src/commands/alerts.rs`.
 
 Agents currently use web_search for ~45% of their data needs. These items target data that has structured API sources and can be computed/cached by `data refresh`, eliminating agent guesswork and improving data quality.
 
-#### F45.2: On-Chain Depth — Exchange Reserves & Whale Activity
-
-`onchain.rs` fetches network metrics + ETF flows but notes exchange flows are "NOT IMPLEMENTED." Agents web_search for exchange reserves, whale accumulation, MVRV ratio, and STH/LTH supply every run.
-
-Sources (free, no key):
-- Blockchain.com API: exchange balances, wallet distribution
-- Bitinfocharts: top holders, whale transactions
-- CoinGlass: futures open interest, funding rates, liquidations
-- Glassnode public charts: MVRV, SOPR (limited free tier)
-
-Add to `data refresh` output and cache in `onchain_metrics` table.
-
-Files: `src/data/onchain.rs`, `src/db/onchain.rs`. Schema: new `onchain_metrics` table.
-
 #### F45.3: Brave News as Structured Feed
 
 Brave client exists (`src/data/brave.rs`) but is only used for research queries. Extend `data refresh` to run a configurable set of news queries automatically:
