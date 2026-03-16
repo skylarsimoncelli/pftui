@@ -34,39 +34,12 @@ The Rust backend dispatch already supports Postgres fully. This is purely a setu
 Also update `pftui system setup` (if it exists) or the first-run wizard to offer the same options.
 
 Files: `src/setup.rs` (or wherever the wizard lives), `src/config.rs`.
-### F44.1: Technical Alert Evaluation Engine
-
-`analytics alerts add` accepts RSI/SMA rules as text (e.g. "BTC RSI below 30") and parses them into `kind=indicator`, but `alerts check` returns `current_value: null` for these. The evaluation engine does not actually compute RSI, SMA, MACD, or Bollinger values against price_history data. It only evaluates price threshold alerts.
-
-Needed: when `alerts check` runs, evaluate technical indicator alerts by computing the indicator from `price_history` and comparing against the threshold. This is the core of F44.
-
-Supported conditions to implement:
-- `[SYMBOL] RSI below/above [threshold]` — compute 14-period RSI from price_history
-- `[SYMBOL] below/above SMA50` / `SMA200` — compute SMA from price_history
-- `[SYMBOL] MACD cross bullish/bearish` — compute MACD(12,26,9)
-- `[SYMBOL] change above/below [X]%` — daily percentage change
-
-Files: `src/commands/alerts.rs`, `src/db/alerts.rs`. Needs access to `price_history` for computation.
 
 ### F44.4: Alert Watchdog Cron
 
 Hourly Haiku agent that runs `pftui data refresh` + `pftui analytics alerts check --json`, sends triggered alerts to Telegram, otherwise `NO_REPLY`. ~$0.50/day. Catches threshold breaks within the hour instead of waiting for the next scheduled agent run.
 
 **This is a Sentinel task (cron creation), not a dev task.** Will create after F44.1 ships so there are meaningful technical alerts to evaluate.
-
-### F45.2: On-Chain Metrics CLI
-
-`data etf-flows` covers BTC ETF flow data, but there is no CLI command for exchange reserves, whale activity, MVRV ratio, or funding rates. These are currently web_search territory for every agent run.
-
-`data onchain` should expose cached on-chain metrics:
-```
-pftui data onchain --json
-{"exchange_reserves_btc": 2750000, "exchange_pct": 5.88, "mvrv": 1.2, ...}
-```
-
-The `onchain_cache` table exists (96 rows). The `onchain.rs` data source exists. Missing: a CLI subcommand to read the cached data.
-
-Files: `src/cli.rs`, `src/commands/data.rs`.
 
 ### F45.5: Analyst Consensus Tracker CLI
 

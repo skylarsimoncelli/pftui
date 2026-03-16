@@ -647,6 +647,7 @@ fn main() -> Result<()> {
                 commands::cot::run(&backend, symbol.as_deref(), json)
             }
             cli::DataCommand::Fedwatch { json } => commands::fedwatch::run(&backend, &config, json),
+            cli::DataCommand::Onchain { json } => commands::onchain::run(&backend, json),
             cli::DataCommand::Economy { indicator, json } => {
                 commands::economy::run(&backend, indicator.as_deref(), json)
             }

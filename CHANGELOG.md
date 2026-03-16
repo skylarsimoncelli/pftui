@@ -3,6 +3,26 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F45.2 add `data onchain` cached metrics CLI
+
+- What:
+  - added `pftui data onchain` under the canonical `data` tree so agents can read the latest cached BTC on-chain metrics without scraping them again.
+  - surfaced the existing refresh-cached exchange reserve proxy, network health, whale-activity, and wealth-distribution metrics as a single structured payload with both JSON and terminal output.
+  - added command and CLI regression coverage so the new subtree remains discoverable and scriptable.
+- Why: removes another repeated web-search path by exposing the on-chain data pftui is already collecting during `data refresh`.
+- Files: `src/commands/onchain.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test commands::onchain:: -- --nocapture`, `cargo test parses_data_onchain_command -- --nocapture`
+
+### 2026-03-16 — F44.1 evaluate text-style indicator alerts from cached history
+
+- What:
+  - extended the natural-language alert parser to recognize `below SMA50` / `above SMA200`, `MACD cross bullish|bearish`, and daily `% change` rules alongside the existing `RSI above|below` syntax.
+  - taught the alert engine to compute RSI, SMA, MACD, and daily percentage-change values from cached `price_history` for `kind=indicator` alerts instead of returning `current_value: null`.
+  - added regression coverage for the new parser paths and for RSI/SMA/change alert evaluation against synthetic cached histories.
+- Why: closes the remaining gap where agents could store text-style technical alerts but pftui could not actually evaluate them from local data.
+- Files: `src/alerts/rules.rs`, `src/alerts/engine.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test alerts::rules:: -- --nocapture`, `cargo test alerts::engine:: -- --nocapture`
+
 ### 2026-03-16 — F45.6 cached COT interpretation metrics and `data cot`
 
 - What:

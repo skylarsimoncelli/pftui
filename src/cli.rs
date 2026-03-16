@@ -321,6 +321,12 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show cached BTC on-chain metrics from the latest refresh
+    Onchain {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Show cached economic indicators (Brave/BLS)
     Economy {
         /// Filter to a specific indicator (e.g. cpi, nfp, fed_funds_rate)
@@ -2012,6 +2018,19 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_onchain_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "onchain", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Onchain { json },
+            }) => {
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_agent_message_subcommands() {
         let cli = Cli::try_parse_from([
             "pftui", "agent", "message", "ack-all", "--to", "agent-b", "--json",
@@ -2061,6 +2080,7 @@ mod tests {
             "calendar",
             "cot",
             "fedwatch",
+            "onchain",
             "economy",
             "consensus",
             "predictions",
