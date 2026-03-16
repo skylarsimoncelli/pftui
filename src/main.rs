@@ -625,6 +625,9 @@ fn main() -> Result<()> {
             cli::DataCommand::Calendar { days, impact, json } => {
                 commands::calendar::run(days, impact.as_deref(), json)
             }
+            cli::DataCommand::Cot { symbol, json } => {
+                commands::cot::run(&backend, symbol.as_deref(), json)
+            }
             cli::DataCommand::Fedwatch { json } => commands::fedwatch::run(&backend, &config, json),
             cli::DataCommand::Economy { indicator, json } => {
                 commands::economy::run(&backend, indicator.as_deref(), json)

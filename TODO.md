@@ -137,21 +137,6 @@ Files: `src/commands/alerts.rs`.
 
 Agents currently use web_search for ~45% of their data needs. These items target data that has structured API sources and can be computed/cached by `data refresh`, eliminating agent guesswork and improving data quality.
 
-#### F45.6: COT Positioning Interpretation
-
-CFTC COT data is already fetched but agents still web_search to interpret it ("is gold COT positioning extreme?"). Add computed fields:
-
-- Percentile rank of net positioning (vs 1yr and 3yr history)
-- Z-score of current position vs rolling mean
-- Extreme flag when positioning hits 90th+ or 10th- percentile
-
-```
-pftui data cot --json
-{"gold": {"net_long": 142000, "percentile_1y": 85, "z_score": 1.4, "extreme": false}, ...}
-```
-
-Files: `src/data/cot.rs`, `src/commands/data.rs`.
-
 ### F46: Remote PostgreSQL Backend Support
 
 The setup wizard currently offers SQLite only. Add full backend selection:

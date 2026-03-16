@@ -306,6 +306,15 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Interpret cached COT positioning using percentile and z-score context
+    Cot {
+        /// Optional tracked symbol (GC=F, SI=F, CL=F, BTC)
+        symbol: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// CME FedWatch probabilities from Fed funds futures implied pricing
     Fedwatch {
         /// Output as JSON for agent/script consumption
@@ -1934,6 +1943,20 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_cot_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "cot", "GC=F", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Cot { symbol, json },
+            }) => {
+                assert_eq!(symbol.as_deref(), Some("GC=F"));
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_agent_message_subcommands() {
         let cli = Cli::try_parse_from([
             "pftui", "agent", "message", "ack-all", "--to", "agent-b", "--json",
@@ -1981,6 +2004,7 @@ mod tests {
             "news",
             "sentiment",
             "calendar",
+            "cot",
             "fedwatch",
             "economy",
             "consensus",

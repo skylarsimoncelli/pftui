@@ -54,6 +54,7 @@ const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
 const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 const FEDWATCH_CONFLICT_THRESHOLD_PCT_POINTS: f64 = 5.0;
 const FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS: f64 = 10.0;
+const COT_HISTORY_WEEKS: usize = 156;
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -926,34 +927,46 @@ fn run_with_output(
 
     // 5. COT (CFTC)
     if cot_needs_refresh(backend)? {
-        let mut total = 0;
+        let mut contracts_updated = 0;
+        let mut reports_upserted = 0;
 
         for contract in cot::COT_CONTRACTS {
-            match cot::fetch_latest_report(contract.cftc_code) {
-                Ok(report) => {
-                    let entry = crate::db::cot_cache::CotCacheEntry {
-                        cftc_code: report.cftc_code.clone(),
-                        report_date: report.report_date.clone(),
-                        open_interest: report.open_interest,
-                        managed_money_long: report.managed_money_long,
-                        managed_money_short: report.managed_money_short,
-                        managed_money_net: report.managed_money_net,
-                        commercial_long: report.commercial_long,
-                        commercial_short: report.commercial_short,
-                        commercial_net: report.commercial_net,
-                        fetched_at: chrono::Utc::now().to_rfc3339(),
-                    };
-                    cot_cache::upsert_report_backend(backend, &entry)?;
-                    total += 1;
+            match cot::fetch_historical_reports(contract.cftc_code, COT_HISTORY_WEEKS) {
+                Ok(reports) if !reports.is_empty() => {
+                    let fetched_at = chrono::Utc::now().to_rfc3339();
+                    let entries: Vec<_> = reports
+                        .into_iter()
+                        .map(|report| crate::db::cot_cache::CotCacheEntry {
+                            cftc_code: report.cftc_code,
+                            report_date: report.report_date,
+                            open_interest: report.open_interest,
+                            managed_money_long: report.managed_money_long,
+                            managed_money_short: report.managed_money_short,
+                            managed_money_net: report.managed_money_net,
+                            commercial_long: report.commercial_long,
+                            commercial_short: report.commercial_short,
+                            commercial_net: report.commercial_net,
+                            fetched_at: fetched_at.clone(),
+                        })
+                        .collect();
+                    cot_cache::upsert_reports_backend(backend, &entries)?;
+                    contracts_updated += 1;
+                    reports_upserted += entries.len();
                 }
+                Ok(_) => {}
                 Err(_) => {
                     // Continue on error
                 }
             }
         }
 
-        if total > 0 {
-            info_ln!(verbose, "✓ COT ({} reports)", total);
+        if contracts_updated > 0 {
+            info_ln!(
+                verbose,
+                "✓ COT ({} contracts, {} reports cached)",
+                contracts_updated,
+                reports_upserted
+            );
         } else {
             info_ln!(verbose, "✗ COT (all failed)");
         }

@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F45.6 cached COT interpretation metrics and `data cot`
+
+- What:
+  - extended COT refresh to cache up to three years of weekly CFTC history per tracked contract instead of only the latest row.
+  - added percentile-rank, z-score, and extreme-flag interpretation helpers for managed-money net positioning in `src/data/cot.rs`.
+  - repurposed `pftui data cot` to read cached history and return interpreted positioning metrics in both terminal and JSON form, so agents can answer “is positioning extreme?” from local data.
+- Why: removes another repeated research/web-search path by turning raw weekly COT rows into directly usable positioning context inside pftui itself.
+- Files: `src/data/cot.rs`, `src/commands/cot.rs`, `src/commands/refresh.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1257 passed), `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-16 — F45.5 analyst consensus tracker CLI and cache
 
 - What:
