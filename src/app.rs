@@ -8116,16 +8116,14 @@ mod watchlist_tab_tests {
 
     #[test]
     fn test_default_view_uses_saved_watchlist_page() {
-        let mut config = Config::default();
-        config.home_tab = "watchlist".to_string();
+        let config = Config { home_tab: "watchlist".to_string(), ..Config::default() };
         let app = App::new(&config, PathBuf::from(":memory:"));
         assert_eq!(app.view_mode, ViewMode::Watchlist);
     }
 
     #[test]
     fn test_default_view_uses_saved_analytics_page() {
-        let mut config = Config::default();
-        config.home_tab = "analytics".to_string();
+        let config = Config { home_tab: "analytics".to_string(), ..Config::default() };
         let app = App::new(&config, PathBuf::from(":memory:"));
         assert_eq!(app.view_mode, ViewMode::Analytics);
     }

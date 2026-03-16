@@ -318,7 +318,7 @@ fn render_impact_panel(frame: &mut Frame, area: Rect, app: &App) {
     for (symbol, delta_pct) in impacts.into_iter().take(6) {
         lines.push(Line::from(format!("{:<8} {:+.2}%", symbol, delta_pct)));
     }
-    if app.calendar_events.first().is_some() {
+    if !app.calendar_events.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "Next calendar event",
