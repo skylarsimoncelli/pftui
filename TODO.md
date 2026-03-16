@@ -4,16 +4,6 @@
 
 ---
 
-## P0 — Critical
-
-### Fix clippy `-D warnings` failure
-
-`cargo clippy --all-targets -- -D warnings` fails with `unnecessary_first_then_check` in `src/tui/views/analytics.rs:321` and `field_reassign_with_default` in `src/app.rs:8127`. Must be clean before any release.
-
-Files: `src/tui/views/analytics.rs`, `src/app.rs`.
-
----
-
 ## P1 — Feature Requests
 
 ### F45: Reduce Agent web_search Dependency
