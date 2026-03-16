@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F39.7a add canonical `analytics macro cycles history` CLI
+
+- What:
+  - added explicit `pftui analytics macro cycles history add` and `pftui analytics macro cycles history list` subcommands under the canonical analytics hierarchy.
+  - aligned the command surface with the TODO spec by exposing `--country`, `--determinant`, and `--year` flags while reusing the existing structural history storage backend.
+  - added parser and persistence coverage so the new macro history path stays scriptable for future population work.
+- Why: closes the missing command path for historical power-metric entry and retrieval, which is the prerequisite for `F39.7b` data population.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test cli::tests::parse_analytics_macro_cycles_history_add_command -- --nocapture`, `cargo test cli::tests::parse_analytics_macro_cycles_history_list_command -- --nocapture`, `cargo test commands::analytics::tests::macro_cycles_history_add_persists_row -- --nocapture`, `cargo test`, `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-16 — Close remaining P1/P2 agent workflow feedback
 
 - What:

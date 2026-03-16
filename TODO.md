@@ -6,36 +6,6 @@
 
 ## P3 — Long Term
 
-### F39.7a: `analytics macro cycles history` CLI
-
-Add `history` subcommand under `analytics macro cycles` for reading and writing historical power metrics.
-
-```
-# Add a historical data point
-pftui analytics macro cycles history add --country US --determinant education \
-  --year 1950 --score 9 --notes "Post-GI Bill expansion, best university system globally"
-
-# List history for a country
-pftui analytics macro cycles history list --country US --json
-
-# List history for a country + determinant
-pftui analytics macro cycles history list --country US --determinant military --json
-
-# List history for a specific decade across all countries
-pftui analytics macro cycles history list --year 1940 --json
-```
-
-Flags:
-- `--country` (required for add): country name
-- `--determinant` (required for add): determinant name (education, innovation, competitiveness, military, trade, economic_output, financial, reserve_currency, governance, or any new ones added later)
-- `--year` (required for add): year (integer, e.g. 1950, not decade)
-- `--score` (required for add): 1-10 Dalio scale
-- `--notes` (optional): free text for context, sources, justification
-- `--json`: structured output for list
-
-Table: `power_metrics_history` (already exists, verify schema matches).
-Files: `src/commands/analytics.rs`, `src/cli.rs`, `src/db/structural.rs`.
-
 ### F39.7b: Historical Power Metrics Data Population (Sentinel)
 
 > After dev cron ships F39.7 CLI + schema, spawn a research sub-agent to populate
@@ -43,7 +13,7 @@ Files: `src/commands/analytics.rs`, `src/cli.rs`, `src/db/structural.rs`.
 >
 > 1. Research each determinant for each power at each decade using web_search
 > 2. Score on Dalio's 1-10 scale with brief justification and source
-> 3. Populate via `pftui analytics macro history add` CLI commands
+> 3. Populate via `pftui analytics macro cycles history add` CLI commands
 > 4. Cross-reference Dalio's own charts from "Principles for Dealing with
 >    the Changing World Order" as a baseline, then refine with primary sources
 >

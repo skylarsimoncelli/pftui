@@ -795,7 +795,9 @@ pub fn is_privacy_view(app: &App) -> bool {
 }
 
 impl App {
-    pub(crate) fn open_backend(&self) -> Option<std::sync::Arc<crate::db::backend::BackendConnection>> {
+    pub(crate) fn open_backend(
+        &self,
+    ) -> Option<std::sync::Arc<crate::db::backend::BackendConnection>> {
         self.backend.clone()
     }
 
@@ -9075,6 +9077,14 @@ mod mouse_tests {
         app
     }
 
+    #[allow(clippy::arc_with_non_send_sync)]
+    fn reload_test_backend(app: &mut App) {
+        let conn = crate::db::open_db(&app.db_path).unwrap();
+        app.backend = Some(std::sync::Arc::new(
+            crate::db::backend::BackendConnection::Sqlite { conn },
+        ));
+    }
+
     fn make_position(symbol: &str) -> Position {
         Position {
             symbol: symbol.to_string(),
@@ -9909,6 +9919,7 @@ mod mouse_tests {
         crate::db::schema::run_migrations(&conn).unwrap();
         crate::db::watchlist::add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
         drop(conn);
+        reload_test_backend(&mut app);
         app.load_watchlist();
         assert_eq!(app.watchlist_entries.len(), 1);
 
@@ -9933,6 +9944,7 @@ mod mouse_tests {
         crate::db::watchlist::set_watchlist_target(&conn, "AAPL", Some("190"), Some("above"))
             .unwrap();
         drop(conn);
+        reload_test_backend(&mut app);
         app.load_watchlist();
         app.watchlist_selected_index = 0;
 
@@ -9963,6 +9975,7 @@ mod mouse_tests {
             .unwrap();
         drop(conn);
 
+        reload_test_backend(&mut app);
         app.load_watchlist();
         assert_eq!(app.watchlist_active_group, 1);
         assert_eq!(app.watchlist_entries.len(), 1);
@@ -10049,6 +10062,7 @@ mod mouse_tests {
         )
         .unwrap();
         drop(conn);
+        reload_test_backend(&mut app);
 
         app.handle_key(palette_key(':'));
         for c in "view news".chars() {

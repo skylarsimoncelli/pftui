@@ -1554,6 +1554,57 @@ pub enum AnalyticsTrendsCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsMacroCyclesHistoryCommand {
+    Add {
+        #[arg(long)]
+        country: String,
+        #[arg(long, visible_alias = "metric")]
+        determinant: String,
+        #[arg(long, visible_alias = "decade")]
+        year: i32,
+        #[arg(long)]
+        score: f64,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    List {
+        #[arg(long = "country")]
+        countries: Vec<String>,
+        #[arg(long, visible_alias = "metric")]
+        determinant: Option<String>,
+        #[arg(long, visible_alias = "decade")]
+        year: Option<i32>,
+        #[arg(long)]
+        composite: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsMacroCyclesCommand {
+    History {
+        #[command(subcommand)]
+        command: AnalyticsMacroCyclesHistoryCommand,
+    },
+    Update {
+        name: String,
+        #[arg(long)]
+        phase: String,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        evidence: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsMacroRegimeCommand {
     Current {
         #[arg(long)]
@@ -1596,6 +1647,8 @@ pub enum AnalyticsMacroCommand {
         json: bool,
     },
     Cycles {
+        #[command(subcommand)]
+        command: Option<AnalyticsMacroCyclesCommand>,
         #[arg(long)]
         json: bool,
     },
@@ -2449,6 +2502,114 @@ mod tests {
         assert_eq!(regime, "risk-off");
         assert_eq!(confidence, Some(0.8));
         assert_eq!(drivers.as_deref(), Some("manual override"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_cycles_history_add_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "cycles",
+            "history",
+            "add",
+            "--country",
+            "US",
+            "--determinant",
+            "education",
+            "--year",
+            "1950",
+            "--score",
+            "9",
+            "--notes",
+            "GI Bill boom",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Cycles {
+                            command:
+                                Some(AnalyticsMacroCyclesCommand::History {
+                                    command:
+                                        AnalyticsMacroCyclesHistoryCommand::Add {
+                                            country,
+                                            determinant,
+                                            year,
+                                            score,
+                                            notes,
+                                            json,
+                                            ..
+                                        },
+                                }),
+                            ..
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro cycles history add command");
+        };
+
+        assert_eq!(country, "US");
+        assert_eq!(determinant, "education");
+        assert_eq!(year, 1950);
+        assert_eq!(score, 9.0);
+        assert_eq!(notes.as_deref(), Some("GI Bill boom"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_cycles_history_list_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "cycles",
+            "history",
+            "list",
+            "--country",
+            "US",
+            "--determinant",
+            "military",
+            "--year",
+            "1940",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Cycles {
+                            command:
+                                Some(AnalyticsMacroCyclesCommand::History {
+                                    command:
+                                        AnalyticsMacroCyclesHistoryCommand::List {
+                                            countries,
+                                            determinant,
+                                            year,
+                                            json,
+                                            ..
+                                        },
+                                }),
+                            ..
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro cycles history list command");
+        };
+
+        assert_eq!(countries, vec!["US".to_string()]);
+        assert_eq!(determinant.as_deref(), Some("military"));
+        assert_eq!(year, Some(1940));
         assert!(json);
     }
 }
