@@ -3,6 +3,17 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — Add local/remote PostgreSQL selection to setup wizard
+
+- What:
+  - expanded `pftui system setup` database selection from a SQLite-vs-URL toggle into three explicit paths: local SQLite, local PostgreSQL, and remote PostgreSQL.
+  - added guided local Postgres prompts for host, port, database, user, and password, plus guided remote Postgres prompts with SSL/TLS mode selection and an optional full connection-string entry path.
+  - infer the default wizard choice from the current config, build validated Postgres URLs with proper credential escaping, and test the selected PostgreSQL connection before continuing setup.
+  - added regression coverage for backend-choice parsing, local-vs-remote inference, SSL prompt parsing, and generated Postgres URL handling.
+- Why: closes F46 by making the existing PostgreSQL backend usable from the setup UX instead of requiring users to hand-edit `config.toml`.
+- Files: `src/commands/setup.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test setup:: -- --nocapture`
+
 ### 2026-03-14 — Add `pftui console` interactive shell
 
 - What:
