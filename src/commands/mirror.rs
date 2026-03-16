@@ -15,21 +15,11 @@ const FULL_SYNC_TABLES: &[&str] = &[
     "transactions",
     "watchlist",
     "alerts",
-    "allocation_targets",
     "portfolio_allocations",
-    "scenarios",
-    "scenario_signals",
-    "thesis",
-    "scan_queries",
-    "scan_alert_state",
-    "annotations",
     "groups",
     "group_members",
-    "chart_state",
     "dividends",
-    "trend_tracker",
     "trend_evidence",
-    "trend_asset_impact",
 ];
 
 #[derive(Debug, Clone)]
@@ -327,15 +317,15 @@ fn sync_tables(
 
     for plan in &plans {
         if !plan.use_full_sync {
-            if let (Some(state), Some(Some(remote_watermark))) =
+            if let (Some(state), Some(remote_watermark)) =
                 (plan.state.as_ref(), remote_watermarks.get(&plan.name))
             {
-                if state.watermark.as_deref() == Some(remote_watermark.as_str()) {
+                if state.watermark.as_deref() == remote_watermark.as_deref() {
                     save_sync_state(
                         local,
                         &plan.name,
                         strategy_name(&plan.strategy),
-                        Some(remote_watermark.clone()),
+                        remote_watermark.clone(),
                     )?;
                     stats.skipped += 1;
                     continue;
