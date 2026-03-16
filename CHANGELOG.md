@@ -63,6 +63,28 @@
 - Files: `src/commands/refresh.rs`, `src/db/news_cache.rs`, `TODO.md`, `CHANGELOG.md`
 - Tests: `cargo test` (1249 passed), `cargo clippy --all-targets -- -D warnings`
 
+### 2026-03-16 — Add local/remote PostgreSQL selection to setup wizard
+
+- What:
+  - expanded `pftui system setup` database selection from a SQLite-vs-URL toggle into three explicit paths: local SQLite, local PostgreSQL, and remote PostgreSQL.
+  - added guided local Postgres prompts for host, port, database, user, and password, plus guided remote Postgres prompts with SSL/TLS mode selection and an optional full connection-string entry path.
+  - infer the default wizard choice from the current config, build validated Postgres URLs with proper credential escaping, and test the selected PostgreSQL connection before continuing setup.
+  - added regression coverage for backend-choice parsing, local-vs-remote inference, SSL prompt parsing, and generated Postgres URL handling.
+- Why: closes F46 by making the existing PostgreSQL backend usable from the setup UX instead of requiring users to hand-edit `config.toml`.
+- Files: `src/commands/setup.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test setup:: -- --nocapture`
+
+### 2026-03-16 — Add smart technical and macro alerts with triggered-alert log
+
+- What:
+  - extended alerts with structured `technical` and `macro` kinds, condition metadata, recurring mode, and cooldown support.
+  - added technical condition evaluation for SMA, RSI, MACD, Bollinger, daily percent move, and correlation-break style alerts plus macro condition evaluation for regime, VIX, Fear & Greed, yield-curve, DXY, and correlation regime shifts.
+  - added persistent `triggered_alerts` logging with acknowledgment support and `analytics alerts list --triggered --since ... --json` output for watchdog/cron consumption.
+  - added `analytics alerts seed-defaults`, wired smart-alert evaluation into refresh output, and updated existing alert creation paths in the TUI, CLI, and web API to the expanded schema.
+- Why: moves alerting beyond static price thresholds so pftui can surface technical and macro state changes directly from cached market data instead of relying on agents to rediscover them manually.
+- Files: `src/alerts/mod.rs`, `src/alerts/engine.rs`, `src/commands/alerts.rs`, `src/commands/refresh.rs`, `src/data/macro_alerts.rs`, `src/db/alerts.rs`, `src/db/triggered_alerts.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/cli.rs`, `src/main.rs`, `src/app.rs`, `src/web/api.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1245 passed), `cargo clippy --all-targets -- -D warnings`, `cargo check`
+
 ### 2026-03-14 — Add `pftui console` interactive shell
 
 - What:

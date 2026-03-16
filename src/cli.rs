@@ -1325,12 +1325,39 @@ pub enum AnalyticsCorrelationsCommand {
 #[derive(Subcommand)]
 pub enum AnalyticsAlertsCommand {
     /// Add an alert rule
-    Add { rule: String },
+    Add {
+        /// Legacy natural-language rule form: "BTC below 55000"
+        rule: Option<String>,
+        /// Structured alert kind: price, allocation, indicator, technical, macro
+        #[arg(long)]
+        kind: Option<String>,
+        /// Symbol or symbol pair (for structured alerts)
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Structured smart-alert condition name
+        #[arg(long)]
+        condition: Option<String>,
+        /// Human label for the alert
+        #[arg(long)]
+        label: Option<String>,
+        /// Store as recurring instead of one-shot
+        #[arg(long)]
+        recurring: bool,
+        /// Cooldown in minutes before a recurring alert can fire again
+        #[arg(long, default_value_t = 0)]
+        cooldown_minutes: i64,
+    },
     /// List alerts
     List {
         /// Filter by status: armed, triggered, acknowledged
         #[arg(long)]
         status: Option<String>,
+        /// Return triggered alert log rows instead of alert definitions
+        #[arg(long)]
+        triggered: bool,
+        /// Only include triggered alerts from the last N hours
+        #[arg(long)]
+        since: Option<i64>,
         /// Only include alerts triggered since local midnight
         #[arg(long)]
         today: bool,
@@ -1353,6 +1380,8 @@ pub enum AnalyticsAlertsCommand {
     Ack { id: i64 },
     /// Rearm alert by ID
     Rearm { id: i64 },
+    /// Seed a default smart-alert set for current holdings + core macro conditions
+    SeedDefaults,
 }
 
 #[derive(Subcommand)]
@@ -1829,7 +1858,14 @@ mod tests {
     #[test]
     fn top_level_help_lists_only_f42_domains() -> Result<()> {
         let help = help_text()?;
-        for command in ["agent", "analytics", "data", "journal", "portfolio", "system"] {
+        for command in [
+            "agent",
+            "analytics",
+            "data",
+            "journal",
+            "portfolio",
+            "system",
+        ] {
             assert!(
                 help.contains(command),
                 "missing top-level command: {command}"

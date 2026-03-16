@@ -104,12 +104,24 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             kind TEXT NOT NULL DEFAULT 'price',
             symbol TEXT NOT NULL,
             direction TEXT NOT NULL,
+            condition TEXT,
             threshold TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'armed',
             rule_text TEXT NOT NULL,
+            recurring INTEGER NOT NULL DEFAULT 0,
+            cooldown_minutes INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             triggered_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS triggered_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_id INTEGER NOT NULL,
+            triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
+            trigger_data TEXT NOT NULL DEFAULT '{}',
+            acknowledged INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_triggered_alerts_triggered_at ON triggered_alerts(triggered_at);
 
         CREATE TABLE IF NOT EXISTS portfolio_snapshots (
             date TEXT PRIMARY KEY,
@@ -796,6 +808,49 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     if !has_news_symbol_tag {
         conn.execute_batch("ALTER TABLE news_cache ADD COLUMN symbol_tag TEXT")?;
     }
+
+    let has_alert_condition: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('alerts') WHERE name = 'condition'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_alert_condition {
+        conn.execute_batch("ALTER TABLE alerts ADD COLUMN condition TEXT")?;
+    }
+
+    let has_alert_recurring: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('alerts') WHERE name = 'recurring'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_alert_recurring {
+        conn.execute_batch("ALTER TABLE alerts ADD COLUMN recurring INTEGER NOT NULL DEFAULT 0")?;
+    }
+
+    let has_alert_cooldown: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('alerts') WHERE name = 'cooldown_minutes'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_alert_cooldown {
+        conn.execute_batch(
+            "ALTER TABLE alerts ADD COLUMN cooldown_minutes INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS triggered_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_id INTEGER NOT NULL,
+            triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
+            trigger_data TEXT NOT NULL DEFAULT '{}',
+            acknowledged INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE INDEX IF NOT EXISTS idx_triggered_alerts_triggered_at
+           ON triggered_alerts(triggered_at);",
+    )?;
 
     // Migration guard: ensure thesis tables exist on upgraded databases.
     let has_thesis: bool = conn

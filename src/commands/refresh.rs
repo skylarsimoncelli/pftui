@@ -1375,6 +1375,18 @@ fn run_with_output(
     match engine::check_alerts_backend_only(backend) {
         Ok(results) => {
             let newly_triggered = engine::get_newly_triggered(&results);
+            let armed_count = results
+                .iter()
+                .filter(|r| {
+                    r.rule.status == crate::alerts::AlertStatus::Armed && !r.newly_triggered
+                })
+                .count();
+            info_ln!(
+                verbose,
+                "\n✓ Smart alerts evaluated ({} triggered, {} armed)",
+                newly_triggered.len(),
+                armed_count
+            );
             if !newly_triggered.is_empty() {
                 info_ln!(verbose, "\n🔔 Alerts Triggered:");
                 for result in &newly_triggered {

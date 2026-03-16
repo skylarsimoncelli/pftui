@@ -69,12 +69,32 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 kind TEXT NOT NULL DEFAULT 'price',
                 symbol TEXT NOT NULL,
                 direction TEXT NOT NULL,
+                condition TEXT,
                 threshold TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'armed',
                 rule_text TEXT NOT NULL,
+                recurring BOOLEAN NOT NULL DEFAULT FALSE,
+                cooldown_minutes BIGINT NOT NULL DEFAULT 0,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 triggered_at TIMESTAMPTZ
             )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS triggered_alerts (
+                id BIGSERIAL PRIMARY KEY,
+                alert_id BIGINT NOT NULL,
+                triggered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                trigger_data TEXT NOT NULL DEFAULT '{}',
+                acknowledged BOOLEAN NOT NULL DEFAULT FALSE
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_triggered_alerts_triggered_at
+             ON triggered_alerts(triggered_at)",
         )
         .execute(pool)
         .await?;
@@ -627,6 +647,19 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("INSERT INTO pftui_migrations (version) VALUES (3) ON CONFLICT DO NOTHING")
             .execute(pool)
             .await?;
+        sqlx::query("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS condition TEXT")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS recurring BOOLEAN NOT NULL DEFAULT FALSE",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS cooldown_minutes BIGINT NOT NULL DEFAULT 0",
+        )
+        .execute(pool)
+        .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

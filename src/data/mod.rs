@@ -15,6 +15,8 @@ pub mod fedwatch;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)
 pub mod fred;
 pub mod fx;
+#[allow(dead_code)] // Infrastructure for F44 smart macro alerts
+pub mod macro_alerts;
 #[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)
 pub mod onchain;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)

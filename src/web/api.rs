@@ -1,10 +1,4 @@
-use axum::{
-    extract::Path,
-    extract::Query,
-    extract::State,
-    http::StatusCode,
-    response::Json,
-};
+use axum::{extract::Path, extract::Query, extract::State, http::StatusCode, response::Json};
 use chrono::{Duration, NaiveDate, Utc};
 use serde::Deserialize;
 use serde::Serialize;
@@ -13,9 +7,9 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use crate::alerts::AlertStatus;
 use crate::config::Config;
 use crate::db;
-use crate::alerts::AlertStatus;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::models::transaction::Transaction;
@@ -646,7 +640,11 @@ pub async fn get_portfolio(
         compute_positions(&transactions, &prices, &fx_rates)
     };
 
-    let total_value: Option<Decimal> = positions.iter().filter_map(|p| p.current_value).sum::<Decimal>().into();
+    let total_value: Option<Decimal> = positions
+        .iter()
+        .filter_map(|p| p.current_value)
+        .sum::<Decimal>()
+        .into();
     let total_cost: Decimal = positions.iter().map(|p| p.total_cost).sum();
     let total_gain = total_value.map(|v| v - total_cost);
     let total_gain_pct = if total_cost > dec!(0) {
@@ -925,12 +923,12 @@ pub async fn get_asset_detail(
     }
     let category = crate::models::asset_names::infer_category(&symbol);
     let qsym = quote_symbol(&symbol, category);
-    let mut history = db::price_history::get_history_backend(&backend, &symbol, 365)
-        .unwrap_or_default();
+    let mut history =
+        db::price_history::get_history_backend(&backend, &symbol, 365).unwrap_or_default();
     let mut history_symbol = symbol.clone();
     if history.is_empty() && qsym != symbol {
-        let fallback = db::price_history::get_history_backend(&backend, &qsym, 365)
-            .unwrap_or_default();
+        let fallback =
+            db::price_history::get_history_backend(&backend, &qsym, 365).unwrap_or_default();
         if !fallback.is_empty() {
             history = fallback;
             history_symbol = qsym.clone();
@@ -1052,12 +1050,8 @@ pub async fn get_transactions(
         )
     })?;
 
-    let sort_by = view_model::TxSortField::from_str(
-        query.sort_by.as_deref().unwrap_or("date"),
-    );
-    let sort_order = view_model::SortOrder::from_str(
-        query.sort_order.as_deref().unwrap_or("desc"),
-    );
+    let sort_by = view_model::TxSortField::from_str(query.sort_by.as_deref().unwrap_or("date"));
+    let sort_order = view_model::SortOrder::from_str(query.sort_order.as_deref().unwrap_or("desc"));
     let mut transactions = view_model::apply_transaction_filters(
         transactions,
         query.symbol.as_deref(),
@@ -1086,18 +1080,22 @@ fn parse_transaction_request(
     if symbol.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "symbol is required".to_string()));
     }
-    let category = body.category.parse::<AssetCategory>().map_err(|e| {
-        (StatusCode::BAD_REQUEST, format!("invalid category: {}", e))
-    })?;
-    let tx_type = body.tx_type.parse::<crate::models::transaction::TxType>().map_err(|e| {
-        (StatusCode::BAD_REQUEST, format!("invalid tx_type: {}", e))
-    })?;
-    let quantity = body.quantity.parse::<Decimal>().map_err(|e| {
-        (StatusCode::BAD_REQUEST, format!("invalid quantity: {}", e))
-    })?;
-    let price_per = body.price_per.parse::<Decimal>().map_err(|e| {
-        (StatusCode::BAD_REQUEST, format!("invalid price_per: {}", e))
-    })?;
+    let category = body
+        .category
+        .parse::<AssetCategory>()
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid category: {}", e)))?;
+    let tx_type = body
+        .tx_type
+        .parse::<crate::models::transaction::TxType>()
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid tx_type: {}", e)))?;
+    let quantity = body
+        .quantity
+        .parse::<Decimal>()
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid quantity: {}", e)))?;
+    let price_per = body
+        .price_per
+        .parse::<Decimal>()
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid price_per: {}", e)))?;
     let date = body.date.trim().to_string();
     if date.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "date is required".to_string()));
@@ -1108,12 +1106,13 @@ fn parse_transaction_request(
         tx_type,
         quantity,
         price_per,
-        currency: body
-            .currency
-            .clone()
-            .unwrap_or_else(|| "USD".to_string()),
+        currency: body.currency.clone().unwrap_or_else(|| "USD".to_string()),
         date,
-        notes: body.notes.clone().map(|n| n.trim().to_string()).filter(|n| !n.is_empty()),
+        notes: body
+            .notes
+            .clone()
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty()),
     })
 }
 
@@ -1174,7 +1173,11 @@ pub async fn patch_transaction(
     Ok(Json(TransactionMutationResponse {
         ok,
         id: Some(id),
-        action: if ok { "updated".to_string() } else { "noop".to_string() },
+        action: if ok {
+            "updated".to_string()
+        } else {
+            "noop".to_string()
+        },
     }))
 }
 
@@ -1203,7 +1206,11 @@ pub async fn delete_transaction(
     Ok(Json(TransactionMutationResponse {
         ok,
         id: Some(id),
-        action: if ok { "removed".to_string() } else { "noop".to_string() },
+        action: if ok {
+            "removed".to_string()
+        } else {
+            "noop".to_string()
+        },
     }))
 }
 
@@ -1339,7 +1346,11 @@ pub async fn get_macro(
 
     let sentiment: Vec<SentimentSnapshot> = ["crypto", "traditional"]
         .iter()
-        .filter_map(|kind| db::sentiment_cache::get_latest_backend(&backend, kind).ok().flatten())
+        .filter_map(|kind| {
+            db::sentiment_cache::get_latest_backend(&backend, kind)
+                .ok()
+                .flatten()
+        })
         .map(|row| SentimentSnapshot {
             index_type: row.index_type,
             value: row.value,
@@ -1349,27 +1360,29 @@ pub async fn get_macro(
         .collect();
 
     let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
-    let upcoming_events: Vec<CalendarSnapshot> = db::calendar_cache::get_upcoming_events_backend(&backend, &today, 6)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|e| CalendarSnapshot {
-            date: e.date,
-            name: e.name,
-            impact: e.impact,
-            forecast: e.forecast,
-        })
-        .collect();
+    let upcoming_events: Vec<CalendarSnapshot> =
+        db::calendar_cache::get_upcoming_events_backend(&backend, &today, 6)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| CalendarSnapshot {
+                date: e.date,
+                name: e.name,
+                impact: e.impact,
+                forecast: e.forecast,
+            })
+            .collect();
 
-    let predictions: Vec<PredictionSnapshot> = db::predictions_cache::get_cached_predictions_backend(&backend, 5)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|p| PredictionSnapshot {
-            question: p.question,
-            probability_pct: Decimal::from_f64_retain(p.probability * 100.0).unwrap_or(dec!(0)),
-            volume_24h: Decimal::from_f64_retain(p.volume_24h).unwrap_or(dec!(0)),
-            category: p.category.to_string(),
-        })
-        .collect();
+    let predictions: Vec<PredictionSnapshot> =
+        db::predictions_cache::get_cached_predictions_backend(&backend, 5)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| PredictionSnapshot {
+                question: p.question,
+                probability_pct: Decimal::from_f64_retain(p.probability * 100.0).unwrap_or(dec!(0)),
+                volume_24h: Decimal::from_f64_retain(p.volume_24h).unwrap_or(dec!(0)),
+                category: p.category.to_string(),
+            })
+            .collect();
 
     Ok(Json(MacroResponse {
         indicators,
@@ -1442,17 +1455,19 @@ pub async fn post_alert(
     })?;
 
     let parsed = if let Some(rule_text) = body.rule_text.as_deref() {
-        let parsed = crate::alerts::rules::parse_rule(rule_text).map_err(|e| {
-            (StatusCode::BAD_REQUEST, format!("Invalid rule_text: {}", e))
-        })?;
+        let parsed = crate::alerts::rules::parse_rule(rule_text)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid rule_text: {}", e)))?;
         if let Some(kind) = body.kind.as_deref() {
-            let expected = kind.parse::<crate::alerts::AlertKind>().map_err(|e| {
-                (StatusCode::BAD_REQUEST, format!("Invalid kind: {}", e))
-            })?;
+            let expected = kind
+                .parse::<crate::alerts::AlertKind>()
+                .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid kind: {}", e)))?;
             if parsed.kind != expected {
                 return Err((
                     StatusCode::BAD_REQUEST,
-                    format!("rule_text kind '{}' does not match requested kind '{}'", parsed.kind, expected),
+                    format!(
+                        "rule_text kind '{}' does not match requested kind '{}'",
+                        parsed.kind, expected
+                    ),
                 ));
             }
         }
@@ -1469,17 +1484,28 @@ pub async fn post_alert(
         }
         let rule_text = format!("{} {} {}", symbol, direction, threshold);
         crate::alerts::rules::parse_rule(&rule_text).map_err(|e| {
-            (StatusCode::BAD_REQUEST, format!("Invalid alert fields: {}", e))
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid alert fields: {}", e),
+            )
         })?
     };
 
+    let kind = parsed.kind.to_string();
+    let direction = parsed.direction.to_string();
+    let threshold = parsed.threshold.to_string();
     let id = db::alerts::add_alert_backend(
         &backend,
-        &parsed.kind.to_string(),
-        &parsed.symbol,
-        &parsed.direction.to_string(),
-        &parsed.threshold.to_string(),
-        &parsed.rule_text,
+        db::alerts::NewAlert {
+            kind: &kind,
+            symbol: &parsed.symbol,
+            direction: &direction,
+            condition: None,
+            threshold: &threshold,
+            rule_text: &parsed.rule_text,
+            recurring: false,
+            cooldown_minutes: 0,
+        },
     )
     .map_err(|e| {
         (
@@ -1631,12 +1657,13 @@ pub async fn get_performance(
         )
     })?;
 
-    let mut snapshots = db::snapshots::get_all_portfolio_snapshots_backend(&backend).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load portfolio snapshots: {}", e),
-        )
-    })?;
+    let mut snapshots =
+        db::snapshots::get_all_portfolio_snapshots_backend(&backend).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load portfolio snapshots: {}", e),
+            )
+        })?;
 
     let days = match query.timeframe.as_deref().unwrap_or("3m") {
         "1w" => 7,
@@ -1690,12 +1717,13 @@ pub async fn get_performance(
             })?;
             compute_positions_from_allocations(&allocations, &prices, &fx_rates)
         } else {
-            let transactions = db::transactions::list_transactions_backend(&backend).map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to load transactions: {}", e),
-                )
-            })?;
+            let transactions =
+                db::transactions::list_transactions_backend(&backend).map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to load transactions: {}", e),
+                    )
+                })?;
             let prices = get_price_map_backend(&backend).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -1707,13 +1735,17 @@ pub async fn get_performance(
 
         let mut by_date: BTreeMap<String, Decimal> = BTreeMap::new();
         for pos in positions.into_iter().filter(|p| p.quantity > dec!(0)) {
-            let history = db::price_history::get_history_backend(&backend, &pos.symbol, days as u32 + 14)
-                .unwrap_or_default();
+            let history =
+                db::price_history::get_history_backend(&backend, &pos.symbol, days as u32 + 14)
+                    .unwrap_or_default();
             for rec in history {
                 if let Ok(d) = NaiveDate::parse_from_str(&rec.date, "%Y-%m-%d") {
                     if d >= cutoff {
                         let v = pos.quantity * rec.close;
-                        by_date.entry(rec.date).and_modify(|acc| *acc += v).or_insert(v);
+                        by_date
+                            .entry(rec.date)
+                            .and_modify(|acc| *acc += v)
+                            .or_insert(v);
                     }
                 }
             }
@@ -1764,9 +1796,11 @@ pub async fn get_performance(
         Decimal::from(pct.clamp(0, 100))
     };
 
-    let benchmark_values = if query.benchmark.as_deref() == Some("spx") && !daily_values.is_empty() {
+    let benchmark_values = if query.benchmark.as_deref() == Some("spx") && !daily_values.is_empty()
+    {
         let bench_history =
-            db::price_history::get_history_backend(&backend, "^GSPC", days as u32 + 14).unwrap_or_default();
+            db::price_history::get_history_backend(&backend, "^GSPC", days as u32 + 14)
+                .unwrap_or_default();
         let base_portfolio = daily_values[0].value;
         let mut base_bench: Option<Decimal> = None;
         let mut series = Vec::new();
@@ -1865,12 +1899,7 @@ pub async fn get_journal(
     })?;
 
     let entries = if let Some(search) = query.search.as_deref() {
-        db::journal::search_entries_backend(
-            &backend,
-            search,
-            query.since.as_deref(),
-            query.limit,
-        )
+        db::journal::search_entries_backend(&backend, search, query.since.as_deref(), query.limit)
     } else {
         db::journal::list_entries_backend(
             &backend,
@@ -1909,11 +1938,12 @@ pub async fn post_journal(
         return Err((StatusCode::BAD_REQUEST, "content is required".to_string()));
     }
     let entry = crate::db::journal::NewJournalEntry {
-        timestamp: body
-            .timestamp
-            .unwrap_or_else(|| Utc::now().to_rfc3339()),
+        timestamp: body.timestamp.unwrap_or_else(|| Utc::now().to_rfc3339()),
         content: content.to_string(),
-        tag: body.tag.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        tag: body
+            .tag
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
         symbol: body
             .symbol
             .map(|v| normalized_symbol(&v))
@@ -1965,8 +1995,16 @@ pub async fn patch_journal(
             action: "noop".to_string(),
         }));
     }
-    let content = body.content.as_deref().map(str::trim).filter(|v| !v.is_empty());
-    let status = body.status.as_deref().map(str::trim).filter(|v| !v.is_empty());
+    let content = body
+        .content
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    let status = body
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
     if content.is_none() && status.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -2146,14 +2184,20 @@ pub async fn get_summary(
         compute_positions(&transactions, &prices, &fx_rates)
     };
 
-    let total_value: Option<Decimal> = positions.iter().filter_map(|p| p.current_value).sum::<Decimal>().into();
-    
+    let total_value: Option<Decimal> = positions
+        .iter()
+        .filter_map(|p| p.current_value)
+        .sum::<Decimal>()
+        .into();
+
     // Get top 5 movers by absolute gain_pct
     let mut movers = positions.clone();
     movers.sort_by(|a, b| {
         let a_abs = a.gain_pct.unwrap_or(dec!(0)).abs();
         let b_abs = b.gain_pct.unwrap_or(dec!(0)).abs();
-        b_abs.partial_cmp(&a_abs).unwrap_or(std::cmp::Ordering::Equal)
+        b_abs
+            .partial_cmp(&a_abs)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     movers.truncate(5);
 
@@ -2225,19 +2269,20 @@ mod tests {
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use axum::extract::Path;
-    use axum::extract::State;
-    use axum::http::StatusCode;
-    use axum::Json;
-    use crate::models::price::HistoryRecord;
     use super::{
         bounded_limit, delete_alert, delete_journal, delete_transaction, delete_watchlist,
         history_change_pct, normalized_symbol, patch_journal, patch_transaction, post_alert,
         post_alert_ack, post_alert_rearm, post_journal, post_transaction, post_watchlist,
         range_from_history, volume_stats, AlertCreateRequest, AlertMutationResponse, AppState,
-        JournalCreateRequest, JournalMutationResponse, JournalUpdateRequest, TransactionMutationRequest,
-        TransactionMutationResponse, WatchlistMutationRequest, WatchlistMutationResponse,
+        JournalCreateRequest, JournalMutationResponse, JournalUpdateRequest,
+        TransactionMutationRequest, TransactionMutationResponse, WatchlistMutationRequest,
+        WatchlistMutationResponse,
     };
+    use crate::models::price::HistoryRecord;
+    use axum::extract::Path;
+    use axum::extract::State;
+    use axum::http::StatusCode;
+    use axum::Json;
     use rust_decimal_macros::dec;
 
     struct TestCtx {
@@ -2333,15 +2378,21 @@ mod tests {
             )
             .unwrap();
 
-            let acked = post_alert_ack(State(ctx.state.clone()), Path(id)).await.unwrap();
+            let acked = post_alert_ack(State(ctx.state.clone()), Path(id))
+                .await
+                .unwrap();
             assert!(acked.0.ok);
             assert_eq!(acked.0.action, "acknowledged");
 
-            let rearmed = post_alert_rearm(State(ctx.state.clone()), Path(id)).await.unwrap();
+            let rearmed = post_alert_rearm(State(ctx.state.clone()), Path(id))
+                .await
+                .unwrap();
             assert!(rearmed.0.ok);
             assert_eq!(rearmed.0.action, "rearmed");
 
-            let removed = delete_alert(State(ctx.state.clone()), Path(id)).await.unwrap();
+            let removed = delete_alert(State(ctx.state.clone()), Path(id))
+                .await
+                .unwrap();
             assert!(removed.0.ok);
             assert_eq!(removed.0.action, "removed");
         });
@@ -2381,11 +2432,15 @@ mod tests {
             assert!(updated.0.ok);
             assert_eq!(updated.0.action, "updated");
 
-            let removed = delete_journal(State(ctx.state.clone()), Path(id)).await.unwrap();
+            let removed = delete_journal(State(ctx.state.clone()), Path(id))
+                .await
+                .unwrap();
             assert!(removed.0.ok);
             assert_eq!(removed.0.action, "removed");
 
-            let noop = delete_journal(State(ctx.state.clone()), Path(id)).await.unwrap();
+            let noop = delete_journal(State(ctx.state.clone()), Path(id))
+                .await
+                .unwrap();
             assert!(!noop.0.ok);
             assert_eq!(noop.0.action, "noop");
         });
@@ -2433,7 +2488,9 @@ mod tests {
             assert!(patched.0.ok);
             assert_eq!(patched.0.action, "updated");
 
-            let removed = delete_transaction(State(ctx.state.clone()), Path(id)).await.unwrap();
+            let removed = delete_transaction(State(ctx.state.clone()), Path(id))
+                .await
+                .unwrap();
             assert!(removed.0.ok);
             assert_eq!(removed.0.action, "removed");
 
@@ -2473,9 +2530,30 @@ mod tests {
     #[test]
     fn history_change_pct_uses_lookback_point() {
         let h = vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(110), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(120), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2026-01-01".to_string(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-02".to_string(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-03".to_string(),
+                close: dec!(120),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let day = history_change_pct(&h, 1).unwrap();
         assert!(day > dec!(9));
@@ -2487,9 +2565,30 @@ mod tests {
     #[test]
     fn range_and_volume_stats_read_recent_data() {
         let h = vec![
-            HistoryRecord { date: "2026-01-01".to_string(), close: dec!(100), volume: Some(10), open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-02".to_string(), close: dec!(90), volume: Some(20), open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-03".to_string(), close: dec!(130), volume: Some(30), open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2026-01-01".to_string(),
+                close: dec!(100),
+                volume: Some(10),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-02".to_string(),
+                close: dec!(90),
+                volume: Some(20),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-03".to_string(),
+                close: dec!(130),
+                volume: Some(30),
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let (lo, hi) = range_from_history(&h, 252);
         assert_eq!(lo, Some(dec!(90)));
