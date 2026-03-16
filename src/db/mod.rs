@@ -14,6 +14,7 @@ pub mod chart_state;
 pub mod comex_cache;
 #[allow(dead_code)] // Infrastructure for F31.3 (conviction CLI)
 pub mod convictions;
+pub mod consensus;
 pub mod correlation_snapshots;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot_cache;
@@ -23,9 +24,11 @@ pub mod dividends;
 pub mod economic_cache;
 #[allow(dead_code)] // Infrastructure for F28.1+ consumers (Brave economy fetcher)
 pub mod economic_data;
+pub mod fedwatch_cache;
 pub mod fx_cache;
 pub mod groups;
 pub mod journal;
+pub mod macro_events;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod news_cache;
 #[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)

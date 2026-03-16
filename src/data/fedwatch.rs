@@ -1,15 +1,17 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use scraper::{Html, Selector};
 use std::sync::OnceLock;
 
+use crate::data::brave;
 use crate::data::predictions::{MarketCategory, PredictionMarket};
 
 const FEDWATCH_URL: &str =
     "https://cmegroup-tools.quikstrike.net/User/QuikStrikeView.aspx?viewitemid=IntegratedFedWatchTool&userId=lwolf";
 const FEDWATCH_REFERER: &str =
     "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html";
+pub const FEDWATCH_FRESHNESS_SECS: i64 = 6 * 60 * 60;
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct FedWatchSnapshot {
     pub source_url: String,
     pub fetched_at: String,
@@ -19,7 +21,7 @@ pub struct FedWatchSnapshot {
     pub target_probabilities: Vec<TargetProbability>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct MeetingInfo {
     pub meeting_date: String,
     pub contract: String,
@@ -29,14 +31,14 @@ pub struct MeetingInfo {
     pub prior_open_interest: u64,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct SummaryProbabilities {
     pub ease_pct: f64,
     pub no_change_pct: f64,
     pub hike_pct: f64,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct TargetProbability {
     pub target_rate_bps: String,
     pub now_pct: f64,
@@ -54,6 +56,14 @@ pub struct ProbabilityConflict {
     pub recommended_source: String,
     pub rationale: String,
     pub alt_source_label: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValidatedFedWatchReading {
+    pub snapshot: FedWatchSnapshot,
+    pub source_label: String,
+    pub verified: bool,
+    pub warning: Option<String>,
 }
 
 pub fn fetch_snapshot() -> Result<FedWatchSnapshot> {
@@ -74,6 +84,69 @@ pub fn fetch_snapshot() -> Result<FedWatchSnapshot> {
         .context("failed to read CME FedWatch response")?;
 
     parse_snapshot(&html)
+}
+
+pub fn fetch_snapshot_with_fallback(brave_key: Option<&str>) -> Result<(FedWatchSnapshot, String)> {
+    match fetch_snapshot() {
+        Ok(snapshot) => Ok((snapshot, "CME FedWatch".to_string())),
+        Err(cme_err) => {
+            let Some(key) = brave_key.map(str::trim).filter(|key| !key.is_empty()) else {
+                return Err(cme_err);
+            };
+
+            let rt = tokio::runtime::Runtime::new().context("failed to build FedWatch runtime")?;
+            match rt.block_on(brave::brave_news_search(
+                key,
+                "CME FedWatch fed funds probability",
+                Some("pm"),
+                10,
+            )) {
+                Ok(results) => parse_brave_news_fallback(&results)
+                    .map(|snapshot| (snapshot, "Brave News fallback".to_string()))
+                    .with_context(|| format!("CME scrape failed: {cme_err}")),
+                Err(brave_err) => Err(anyhow!(
+                    "CME scrape failed: {cme_err}; Brave fallback failed: {brave_err}"
+                )),
+            }
+        }
+    }
+}
+
+pub fn validate_reading(
+    snapshot: FedWatchSnapshot,
+    source_label: String,
+    previous_no_change_pct: Option<f64>,
+    threshold_pct_points: f64,
+) -> ValidatedFedWatchReading {
+    let warning = previous_no_change_pct.and_then(|previous| {
+        let delta = (snapshot.summary.no_change_pct - previous).abs();
+        if delta > threshold_pct_points {
+            Some(format!(
+                "FedWatch no-change probability moved from {:.1}% to {:.1}% (Δ {:.1}pp) vs previous cached reading; marked unverified",
+                previous,
+                snapshot.summary.no_change_pct,
+                delta
+            ))
+        } else {
+            None
+        }
+    });
+
+    ValidatedFedWatchReading {
+        snapshot,
+        source_label,
+        verified: warning.is_none(),
+        warning,
+    }
+}
+
+pub fn is_fresh(fetched_at: &str, freshness_secs: i64) -> bool {
+    chrono::DateTime::parse_from_rfc3339(fetched_at)
+        .map(|ts| {
+            let age = chrono::Utc::now().signed_duration_since(ts.with_timezone(&chrono::Utc));
+            age.num_seconds() <= freshness_secs
+        })
+        .unwrap_or(false)
 }
 
 fn parse_snapshot(html: &str) -> Result<FedWatchSnapshot> {
@@ -247,6 +320,195 @@ fn parse_target_probabilities(doc: &Html) -> Result<Vec<TargetProbability>> {
     Err(anyhow!("missing target probability table"))
 }
 
+fn parse_brave_news_fallback(results: &[brave::BraveNewsResult]) -> Result<FedWatchSnapshot> {
+    let mut best: Option<(usize, f64, SummaryProbabilities, String)> = None;
+
+    for item in results {
+        let combined = combined_result_text(item);
+        let Some((summary, rationale)) = infer_summary_from_text(&combined) else {
+            continue;
+        };
+
+        let score = item.title.len() + item.description.len() + item.extra_snippets.len() * 25;
+        match &best {
+            Some((best_score, _, _, _)) if *best_score >= score => {}
+            _ => {
+                best = Some((score, summary.no_change_pct, summary, rationale));
+            }
+        }
+    }
+
+    let Some((_, no_change_pct, summary, rationale)) = best else {
+        bail!("Brave fallback could not infer a FedWatch probability from search results");
+    };
+
+    let primary = results
+        .iter()
+        .find(|item| {
+            infer_summary_from_text(&combined_result_text(item))
+                .map(|(candidate, _)| (candidate.no_change_pct - no_change_pct).abs() < 0.01)
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| anyhow!("missing Brave fallback source result"))?;
+
+    let meeting_label = extract_meeting_label(&combined_result_text(primary))
+        .unwrap_or_else(|| "Unknown meeting (Brave fallback)".to_string());
+
+    Ok(FedWatchSnapshot {
+        source_url: primary.url.clone(),
+        fetched_at: chrono::Utc::now().to_rfc3339(),
+        meetings: vec![meeting_label.clone()],
+        meeting_info: MeetingInfo {
+            meeting_date: meeting_label.clone(),
+            contract: "fallback".to_string(),
+            expires: rationale,
+            mid_price: 0.0,
+            prior_volume: 0,
+            prior_open_interest: 0,
+        },
+        summary,
+        target_probabilities: Vec::new(),
+    })
+}
+
+fn combined_result_text(item: &brave::BraveNewsResult) -> String {
+    let mut text = format!("{} {}", item.title, item.description);
+    if !item.extra_snippets.is_empty() {
+        text.push(' ');
+        text.push_str(&item.extra_snippets.join(" "));
+    }
+    text
+}
+
+fn infer_summary_from_text(text: &str) -> Option<(SummaryProbabilities, String)> {
+    let normalized = text.to_lowercase();
+
+    if let Some(pct) = find_percent_near_phrases(
+        &normalized,
+        &[
+            "no change",
+            "unchanged",
+            "hold rates",
+            "hold steady",
+            "keep rates unchanged",
+            "leave rates unchanged",
+        ],
+    ) {
+        return Some((
+            SummaryProbabilities {
+                ease_pct: 0.0,
+                no_change_pct: pct,
+                hike_pct: 0.0,
+            },
+            "Brave fallback parsed explicit no-change odds".to_string(),
+        ));
+    }
+
+    if let Some(pct) = find_percent_near_phrases(
+        &normalized,
+        &[
+            "rate cut",
+            "cut probability",
+            "chance of a cut",
+            "odds of a cut",
+            "cuts by",
+        ],
+    ) {
+        let no_change_pct = (100.0 - pct).clamp(0.0, 100.0);
+        return Some((
+            SummaryProbabilities {
+                ease_pct: pct,
+                no_change_pct,
+                hike_pct: 0.0,
+            },
+            "Brave fallback inferred no-change odds from cut probability".to_string(),
+        ));
+    }
+
+    if let Some(pct) = find_percent_near_phrases(
+        &normalized,
+        &[
+            "rate hike",
+            "hike probability",
+            "chance of a hike",
+            "odds of a hike",
+        ],
+    ) {
+        let no_change_pct = (100.0 - pct).clamp(0.0, 100.0);
+        return Some((
+            SummaryProbabilities {
+                ease_pct: 0.0,
+                no_change_pct,
+                hike_pct: pct,
+            },
+            "Brave fallback inferred no-change odds from hike probability".to_string(),
+        ));
+    }
+
+    None
+}
+
+fn find_percent_near_phrases(text: &str, phrases: &[&str]) -> Option<f64> {
+    for phrase in phrases {
+        let mut offset = 0usize;
+        while let Some(pos) = text[offset..].find(phrase) {
+            let absolute = offset + pos;
+            let start = absolute.saturating_sub(48);
+            let end = (absolute + phrase.len() + 48).min(text.len());
+            if let Some(pct) = extract_percent_token(&text[start..end]) {
+                return Some(pct);
+            }
+            offset = absolute + phrase.len();
+        }
+    }
+    None
+}
+
+fn extract_percent_token(text: &str) -> Option<f64> {
+    for token in text.split(|c: char| c.is_whitespace()) {
+        let cleaned = token.trim_matches(|c: char| matches!(c, ',' | '.' | ';' | ':' | ')' | '('));
+        let Some(stripped) = cleaned
+            .strip_suffix('%')
+            .or_else(|| cleaned.strip_suffix("percent"))
+        else {
+            continue;
+        };
+        if let Ok(value) = stripped.trim().parse::<f64>() {
+            return Some(value.clamp(0.0, 100.0));
+        }
+    }
+    None
+}
+
+fn extract_meeting_label(text: &str) -> Option<String> {
+    let months = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    for window in tokens.windows(3) {
+        let month = window[1]
+            .trim_matches(|c: char| !c.is_ascii_alphabetic())
+            .to_lowercase();
+        let year = window[2].trim_matches(|c: char| !c.is_ascii_digit());
+        if !months.contains(&month.as_str()) || year.len() != 4 {
+            continue;
+        }
+        let day = window[0].trim_matches(|c: char| !c.is_ascii_digit());
+        if !day.is_empty() && day.len() <= 2 {
+            return Some(format!("{} {} {}", day, capitalize_month(&month), year));
+        }
+    }
+    None
+}
+
+fn capitalize_month(month: &str) -> String {
+    let mut chars = month.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    format!("{}{}", first.to_ascii_uppercase(), chars.as_str())
+}
+
 fn text_of(node: &scraper::ElementRef<'_>) -> String {
     node.text()
         .collect::<String>()
@@ -352,6 +614,7 @@ fn infer_alt_no_change_probability(markets: &[PredictionMarket]) -> Option<(f64,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::brave::BraveNewsResult;
     use crate::data::predictions::MarketCategory;
 
     #[test]
@@ -422,5 +685,55 @@ mod tests {
             detect_no_change_conflict(&snapshot, &markets, 5.0).expect("should detect conflict");
         assert!(conflict.delta_pct_points > 5.0);
         assert_eq!(conflict.metric, "next_fomc_no_change_probability");
+    }
+
+    #[test]
+    fn parses_brave_fallback_no_change_probability() {
+        let results = vec![BraveNewsResult {
+            title: "CME FedWatch shows 94.0% no change odds for the June meeting".to_string(),
+            url: "https://example.com/fedwatch".to_string(),
+            description: "Traders expect the Fed to keep rates unchanged.".to_string(),
+            source: Some("Example".to_string()),
+            age: None,
+            page_age: None,
+            extra_snippets: vec!["The next FOMC meeting is 18 Jun 2026.".to_string()],
+        }];
+
+        let parsed = parse_brave_news_fallback(&results).expect("fallback should parse");
+        assert_eq!(parsed.summary.no_change_pct, 94.0);
+        assert_eq!(parsed.summary.ease_pct, 0.0);
+        assert_eq!(parsed.meeting_info.meeting_date, "18 Jun 2026");
+        assert_eq!(parsed.meeting_info.contract, "fallback");
+    }
+
+    #[test]
+    fn validates_large_jump_as_unverified() {
+        let snapshot = FedWatchSnapshot {
+            source_url: "cme".to_string(),
+            fetched_at: "2026-03-13T00:00:00Z".to_string(),
+            meetings: vec![],
+            meeting_info: MeetingInfo {
+                meeting_date: "18 Mar 2026".to_string(),
+                contract: "ZQH6".to_string(),
+                expires: "31 Mar 2026".to_string(),
+                mid_price: 0.0,
+                prior_volume: 0,
+                prior_open_interest: 0,
+            },
+            summary: SummaryProbabilities {
+                ease_pct: 0.0,
+                no_change_pct: 76.0,
+                hike_pct: 0.0,
+            },
+            target_probabilities: vec![],
+        };
+
+        let validated = validate_reading(snapshot, "CME FedWatch".to_string(), Some(92.0), 10.0);
+        assert!(!validated.verified);
+        assert!(validated
+            .warning
+            .as_deref()
+            .unwrap_or_default()
+            .contains("marked unverified"));
     }
 }

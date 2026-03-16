@@ -3,6 +3,66 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F45.6 cached COT interpretation metrics and `data cot`
+
+- What:
+  - extended COT refresh to cache up to three years of weekly CFTC history per tracked contract instead of only the latest row.
+  - added percentile-rank, z-score, and extreme-flag interpretation helpers for managed-money net positioning in `src/data/cot.rs`.
+  - repurposed `pftui data cot` to read cached history and return interpreted positioning metrics in both terminal and JSON form, so agents can answer “is positioning extreme?” from local data.
+- Why: removes another repeated research/web-search path by turning raw weekly COT rows into directly usable positioning context inside pftui itself.
+- Files: `src/data/cot.rs`, `src/commands/cot.rs`, `src/commands/refresh.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1257 passed), `cargo clippy --all-targets -- -D warnings`
+
+### 2026-03-16 — F45.5 analyst consensus tracker CLI and cache
+
+- What:
+  - added a new append-only `consensus_tracker` table plus backend helpers for storing dated analyst calls by source and topic.
+  - introduced `pftui data consensus add` and `pftui data consensus list` so agents can persist slower-moving analyst forecasts like rate-cut paths or commodity targets instead of re-searching them every session.
+  - wired the new command into the F42 `data` subtree and covered the parser/help surface with CLI regression tests.
+- Why: centralizes long-lived analyst consensus notes inside pftui so medium-timeframe research can build shared context without depending on repeated web search.
+- Files: `src/db/consensus.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/consensus.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1254 passed), `cargo clippy --all-targets -- -D warnings`
+
+### 2026-03-16 — F45.4 FedWatch cache, fallback, and reading validation
+
+- What:
+  - added a persistent `fedwatch_cache` table for cached CME FedWatch snapshots, verification state, and warning text so agents can read the latest policy-path reading from local data instead of re-searching it.
+  - hardened FedWatch acquisition with a Brave News fallback that parses no-change/cut/hike probabilities from structured search snippets when the CME widget scrape fails.
+  - added a >10 percentage-point change check versus the previous cached reading, marking outlier jumps as unverified and surfacing warnings in both `data refresh` and `data fedwatch`.
+- Why: removes a recurring agent web-search path for FOMC rate probabilities and makes bad single-source readings easier to detect before they propagate into briefs.
+- Files: `src/data/fedwatch.rs`, `src/db/fedwatch_cache.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/fedwatch.rs`, `src/commands/refresh.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1252 passed), `cargo clippy --all-targets -- -D warnings`
+
+### 2026-03-16 — F45.1 FRED surprise detection and macro event cache
+
+- What:
+  - expanded tracked FRED coverage with GDP, PCE, ISM manufacturing PMI, JOLTS, initial claims, and nonfarm payrolls.
+  - added statistical surprise detection over recent FRED history and persisted structured macro release events in a new `macro_events` table.
+  - wired FRED ingestion into `pftui data refresh` and exposed recent macro surprise events through `pftui data economy --json`.
+- Why: agents can now read structured economic releases and surprise signals directly from pftui instead of re-searching for the latest CPI, payroll, or claims prints.
+- Files: `src/data/fred.rs`, `src/db/macro_events.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `src/commands/economy.rs`, `CHANGELOG.md`
+- Tests: `cargo test` (1246 passed), `cargo clippy --all-targets -- -D warnings`
+
+### 2026-03-16 — F45.2 on-chain exchange reserve and whale activity cache
+
+- What:
+  - replaced the placeholder on-chain exchange/whale stubs with BitInfoCharts-backed parsers for exchange-labeled rich-list wallets, wealth concentration, active addresses, and 24h large-transaction aggregates.
+  - added refresh-time storage for exchange reserve proxy, 7d/30d reserve drift, whale activity, and concentration metrics in the existing on-chain cache.
+  - kept ETF flows and network metrics intact while broadening the on-chain dataset agents can read from one refresh.
+- Why: agents can now read structured BTC reserve/whale context from local cache instead of re-searching for exchange balances or daily whale activity every run.
+- Files: `src/data/onchain.rs`, `src/commands/refresh.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1248 passed), `cargo clippy --all-targets -- -D warnings`
+
+### 2026-03-16 — F45.3 Brave news freshness split and structured refresh reporting
+
+- What:
+  - separated Brave news freshness from RSS freshness so `data refresh` only reruns Brave news queries every four hours while RSS continues on the shorter news cadence.
+  - added source-type-specific fetched-at lookup in the news cache to support Brave refresh decisions without guessing from mixed RSS rows.
+  - updated refresh logging to report actual Brave query counts when Brave news is refreshed.
+- Why: reduces unnecessary Brave API usage while keeping the structured news feed current enough for agent workflows.
+- Files: `src/commands/refresh.rs`, `src/db/news_cache.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1249 passed), `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-16 — Add local/remote PostgreSQL selection to setup wizard
 
 - What:

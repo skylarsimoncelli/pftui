@@ -306,6 +306,15 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Interpret cached COT positioning using percentile and z-score context
+    Cot {
+        /// Optional tracked symbol (GC=F, SI=F, CL=F, BTC)
+        symbol: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// CME FedWatch probabilities from Fed funds futures implied pricing
     Fedwatch {
         /// Output as JSON for agent/script consumption
@@ -321,6 +330,11 @@ pub enum DataCommand {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
+    },
+    /// Store and query slower-moving analyst consensus calls
+    Consensus {
+        #[command(subcommand)]
+        command: ConsensusCommand,
     },
     /// Show prediction market odds from Polymarket and Manifold
     Predictions {
@@ -384,6 +398,50 @@ pub enum DataCommand {
     /// Sovereign holdings tracker: CB gold (WGC), government BTC, COMEX silver
     Sovereign {
         /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ConsensusCommand {
+    /// Add a new analyst consensus call
+    Add {
+        /// Research source or institution
+        #[arg(long)]
+        source: String,
+
+        /// Topic key, e.g. rate_cuts or gold_target
+        #[arg(long)]
+        topic: String,
+
+        /// The actual analyst call text
+        #[arg(long = "call")]
+        call_text: String,
+
+        /// Date of the call in YYYY-MM-DD
+        #[arg(long)]
+        date: String,
+
+        /// Output inserted row as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List stored analyst consensus calls
+    List {
+        /// Filter by topic key
+        #[arg(long)]
+        topic: Option<String>,
+
+        /// Filter by research source
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Maximum rows to return
+        #[arg(long, default_value = "20")]
+        limit: usize,
+
+        /// Output as JSON
         #[arg(long)]
         json: bool,
     },
@@ -1879,6 +1937,62 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_consensus_subcommands() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "consensus",
+            "add",
+            "--source",
+            "Goldman Sachs",
+            "--topic",
+            "rate_cuts",
+            "--call",
+            "50bp cuts in Sep+Dec 2026",
+            "--date",
+            "2026-03-12",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command:
+                    DataCommand::Consensus {
+                        command:
+                            ConsensusCommand::Add {
+                                source,
+                                topic,
+                                call_text,
+                                date,
+                                json,
+                            },
+                    },
+            }) => {
+                assert_eq!(source, "Goldman Sachs");
+                assert_eq!(topic, "rate_cuts");
+                assert_eq!(call_text, "50bp cuts in Sep+Dec 2026");
+                assert_eq!(date, "2026-03-12");
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_cot_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "cot", "GC=F", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Cot { symbol, json },
+            }) => {
+                assert_eq!(symbol.as_deref(), Some("GC=F"));
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_agent_message_subcommands() {
         let cli = Cli::try_parse_from([
             "pftui", "agent", "message", "ack-all", "--to", "agent-b", "--json",
@@ -1926,8 +2040,10 @@ mod tests {
             "news",
             "sentiment",
             "calendar",
+            "cot",
             "fedwatch",
             "economy",
+            "consensus",
             "predictions",
             "options",
             "etf-flows",

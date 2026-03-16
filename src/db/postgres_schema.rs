@@ -430,6 +430,45 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS macro_events (
+                series_id TEXT NOT NULL,
+                event_date TEXT NOT NULL,
+                expected TEXT NOT NULL,
+                actual TEXT NOT NULL,
+                surprise_pct TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (series_id, event_date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS fedwatch_cache (
+                id BIGSERIAL PRIMARY KEY,
+                source_label TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                no_change_pct DOUBLE PRECISION NOT NULL,
+                verified BOOLEAN NOT NULL DEFAULT TRUE,
+                warning TEXT,
+                snapshot_json TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS consensus_tracker (
+                id BIGSERIAL PRIMARY KEY,
+                source TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                call_text TEXT NOT NULL,
+                call_date TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS bls_cache (
                 series_id TEXT NOT NULL,
                 year INTEGER NOT NULL,
@@ -510,6 +549,26 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_metric ON onchain_cache(metric)")
             .execute(pool)
             .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_macro_events_event_date ON macro_events(event_date)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_fedwatch_cache_fetched_at ON fedwatch_cache(fetched_at DESC)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_consensus_tracker_topic ON consensus_tracker(topic)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_consensus_tracker_date ON consensus_tracker(call_date)",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_corr_snap_pair ON correlation_snapshots(symbol_a, symbol_b)")
             .execute(pool)
             .await?;

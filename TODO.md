@@ -6,100 +6,34 @@
 
 ## P1 — Feature Requests
 
-### F45: Reduce Agent web_search Dependency
+### F46: Remote PostgreSQL Backend Support
 
-Agents currently use web_search for ~45% of their data needs. These items target data that has structured API sources and can be computed/cached by `data refresh`, eliminating agent guesswork and improving data quality.
-
-#### F45.1: FRED Auto-Detect Economic Surprises
-
-FRED client already fetches 6 series (10Y, Fed Funds, CPI, PPI, unemployment, yield curve). Extend to:
-- Auto-detect when a new data point differs significantly from the previous value (>1 std dev)
-- Log economic "surprises" to a `macro_events` table: series, expected, actual, surprise_pct, date
-- Agents currently web_search "latest CPI data" and "NFP report". pftui should have this structured.
-
-Add series: GDP (quarterly), PCE (monthly), ISM PMI, JOLTS, initial claims (weekly), NFP.
-No new API key needed (FRED is free with key already configured).
-
-Files: `src/data/fred.rs`, `src/db/macro_events.rs`. Schema: new `macro_events` table.
-
-#### F45.2: On-Chain Depth — Exchange Reserves & Whale Activity
-
-`onchain.rs` fetches network metrics + ETF flows but notes exchange flows are "NOT IMPLEMENTED." Agents web_search for exchange reserves, whale accumulation, MVRV ratio, and STH/LTH supply every run.
-
-Sources (free, no key):
-- Blockchain.com API: exchange balances, wallet distribution
-- Bitinfocharts: top holders, whale transactions
-- CoinGlass: futures open interest, funding rates, liquidations
-- Glassnode public charts: MVRV, SOPR (limited free tier)
-
-Add to `data refresh` output and cache in `onchain_metrics` table.
-
-Files: `src/data/onchain.rs`, `src/db/onchain.rs`. Schema: new `onchain_metrics` table.
-
-#### F45.3: Brave News as Structured Feed
-
-Brave client exists (`src/data/brave.rs`) but is only used for research queries. Extend `data refresh` to run a configurable set of news queries automatically:
+The setup wizard currently offers SQLite only. Add full backend selection:
 
 ```
-pftui data refresh
-  ...
-  ✓ News (47 articles from 6 Brave queries + RSS)
+? Select database backend:
+  ❯ Local SQLite (default, zero config)
+    Local PostgreSQL (localhost)
+    Remote PostgreSQL (custom host)
 ```
 
-Config in `config.toml`:
+**Local SQLite:** Current default. No changes needed.
+
+**Local PostgreSQL:** Prompt for database name, user, password. Host defaults to `127.0.0.1:5432`. Test connection before proceeding.
+
+**Remote PostgreSQL:** Prompt for host, port, database name, user, password. Optionally accept a full connection string (`postgres://user:pass@host:port/db`). Test connection before proceeding. Support SSL/TLS option for cloud-hosted databases (Supabase, Neon, RDS, etc.).
+
+Config output (`config.toml`):
 ```toml
-[brave]
-api_key = "..."
-news_queries = ["bitcoin market", "gold price", "federal reserve", "Iran conflict", "oil supply"]
-refresh_interval_hours = 4
+database_backend = "postgres"
+database_url = "postgres://user:pass@remote-host:5432/pftui?sslmode=require"
 ```
 
-Results cached in `news_cache` table with dedup. Agents read structured news via `pftui data news --since 4h --json` instead of running 2-3 web_searches per run.
+The Rust backend dispatch already supports Postgres fully. This is purely a setup wizard and config UX change.
 
-Files: `src/data/brave.rs`, `src/data/refresh.rs`, `src/db/news_cache.rs`.
+Also update `pftui system setup` (if it exists) or the first-run wizard to offer the same options.
 
-#### F45.4: CME FedWatch Reliability
-
-`fedwatch.rs` exists but scrapes CME's widget page, which is brittle (caused the bad data incident on Mar 12 where an agent got 98.9% cut probability from a blog instead). Harden this:
-
-- Primary: CME FedWatch scrape (existing)
-- Fallback: Parse from Brave News search "CME FedWatch fed funds probability"
-- Validation: If result differs >10% from previous reading, flag as unverified and log warning
-- Cache with freshness tracking so agents never need to web_search "FOMC rate probability"
-
-Files: `src/data/fedwatch.rs`, `src/data/refresh.rs`.
-
-#### F45.5: Analyst Consensus Tracker
-
-Agents web_search for "Goldman Sachs rate forecast" and "JP Morgan gold target" repeatedly. These change slowly (weekly/monthly). Add a `consensus` table where agents can log analyst calls via CLI:
-
-```
-pftui data consensus add --source "Goldman Sachs" --topic "rate_cuts" \
-  --call "50bp cuts in Sep+Dec 2026" --date 2026-03-12
-pftui data consensus add --source "JP Morgan" --topic "gold_target" \
-  --call "$6,300 by year-end 2026" --date 2026-02-25
-pftui data consensus list --topic rate_cuts --json
-```
-
-Agents log consensus calls when they find them, then all agents can read them from the DB instead of re-searching. MEDIUM agent maintains this during its research phase.
-
-Files: `src/commands/data.rs`, `src/db/consensus.rs`. Schema: new `consensus_tracker` table.
-
-#### F45.6: COT Positioning Interpretation
-
-CFTC COT data is already fetched but agents still web_search to interpret it ("is gold COT positioning extreme?"). Add computed fields:
-
-- Percentile rank of net positioning (vs 1yr and 3yr history)
-- Z-score of current position vs rolling mean
-- Extreme flag when positioning hits 90th+ or 10th- percentile
-
-```
-pftui data cot --json
-{"gold": {"net_long": 142000, "percentile_1y": 85, "z_score": 1.4, "extreme": false}, ...}
-```
-
-Files: `src/data/cot.rs`, `src/commands/data.rs`.
-
+Files: `src/setup.rs` (or wherever the wizard lives), `src/config.rs`.
 ### [Feedback] Weekend-Aware Movers Command
 
 `pftui analytics movers` shows 0 movers on weekends because it compares to Friday close. Should compare Friday close to weekend crypto/futures prices (Hyperliquid, Binance perpetuals) so agents running Saturday/Sunday routines still see meaningful movements.

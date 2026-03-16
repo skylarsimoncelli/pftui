@@ -225,7 +225,16 @@ pub fn get_latest_news_backend(
 ) -> Result<Vec<NewsEntry>> {
     query::dispatch(
         backend,
-        |conn| get_latest_news(conn, limit, source_filter, category_filter, search_term, hours_back),
+        |conn| {
+            get_latest_news(
+                conn,
+                limit,
+                source_filter,
+                category_filter,
+                search_term,
+                hours_back,
+            )
+        },
         |pool| {
             get_latest_news_postgres(
                 pool,
@@ -268,6 +277,38 @@ pub fn get_sources(conn: &Connection) -> Result<Vec<String>> {
 
 pub fn get_sources_backend(backend: &BackendConnection) -> Result<Vec<String>> {
     query::dispatch(backend, get_sources, get_sources_postgres)
+}
+
+pub fn latest_fetched_at_by_source_type(
+    conn: &Connection,
+    source_type: &str,
+) -> Result<Option<String>> {
+    let value = conn.query_row(
+        "SELECT fetched_at
+         FROM news_cache
+         WHERE source_type = ?1
+         ORDER BY datetime(fetched_at) DESC
+         LIMIT 1",
+        params![source_type],
+        |row| row.get(0),
+    );
+
+    match value {
+        Ok(timestamp) => Ok(Some(timestamp)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+pub fn latest_fetched_at_by_source_type_backend(
+    backend: &BackendConnection,
+    source_type: &str,
+) -> Result<Option<String>> {
+    query::dispatch(
+        backend,
+        |conn| latest_fetched_at_by_source_type(conn, source_type),
+        |pool| latest_fetched_at_by_source_type_postgres(pool, source_type),
+    )
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
@@ -377,14 +418,16 @@ fn get_latest_news_postgres(
             qb.push(" AND category = ").push_bind(category);
         }
         if let Some(term) = search_term {
-            qb.push(" AND title ILIKE ").push_bind(format!("%{}%", term));
+            qb.push(" AND title ILIKE ")
+                .push_bind(format!("%{}%", term));
         }
         if let Some(hours) = hours_back {
             let cutoff = chrono::Utc::now().timestamp() - (hours * 3600);
             qb.push(" AND published_at > ").push_bind(cutoff);
         }
 
-        qb.push(" ORDER BY published_at DESC LIMIT ").push_bind(limit as i64);
+        qb.push(" ORDER BY published_at DESC LIMIT ")
+            .push_bind(limit as i64);
         qb.build().fetch_all(pool).await
     })?;
 
@@ -399,7 +442,8 @@ fn get_latest_news_postgres(
                 source_type: row.try_get(4)?,
                 symbol_tag: row.try_get(5)?,
                 description: row.try_get(6)?,
-                extra_snippets: serde_json::from_str::<Vec<String>>(&snippets_json).unwrap_or_default(),
+                extra_snippets: serde_json::from_str::<Vec<String>>(&snippets_json)
+                    .unwrap_or_default(),
                 category: row.try_get(8)?,
                 published_at: row.try_get(9)?,
                 fetched_at: row.try_get(10)?,
@@ -432,6 +476,26 @@ fn get_sources_postgres(pool: &PgPool) -> Result<Vec<String>> {
         .await
     })?;
     Ok(values)
+}
+
+fn latest_fetched_at_by_source_type_postgres(
+    pool: &PgPool,
+    source_type: &str,
+) -> Result<Option<String>> {
+    ensure_tables_postgres(pool)?;
+    let value = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT fetched_at::text
+             FROM news_cache
+             WHERE source_type = $1
+             ORDER BY fetched_at DESC
+             LIMIT 1",
+        )
+        .bind(source_type)
+        .fetch_optional(pool)
+        .await
+    })?;
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -582,5 +646,44 @@ mod tests {
         let items = get_latest_news(&conn, 10, None, None, None, None).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Fresh news");
+    }
+
+    #[test]
+    fn test_latest_fetched_at_by_source_type() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        insert_news_with_source_type(
+            &conn,
+            "Brave headline",
+            "https://example.com/brave",
+            "Brave",
+            "brave",
+            None,
+            "markets",
+            1709610000,
+            None,
+            &[],
+        )
+        .unwrap();
+        insert_news(
+            &conn,
+            "RSS headline",
+            "https://example.com/rss",
+            "Reuters",
+            "markets",
+            1709610000,
+        )
+        .unwrap();
+
+        assert!(latest_fetched_at_by_source_type(&conn, "brave")
+            .unwrap()
+            .is_some());
+        assert!(latest_fetched_at_by_source_type(&conn, "rss")
+            .unwrap()
+            .is_some());
+        assert!(latest_fetched_at_by_source_type(&conn, "missing")
+            .unwrap()
+            .is_none());
     }
 }
