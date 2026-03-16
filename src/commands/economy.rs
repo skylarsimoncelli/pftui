@@ -1,17 +1,20 @@
 use anyhow::Result;
 
+use crate::data::fred;
 use crate::db::backend::BackendConnection;
 use crate::db::economic_data;
+use crate::db::macro_events;
 
 pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> Result<()> {
     let mut rows = economic_data::get_all_backend(backend)?;
+    let macro_events = macro_events::list_recent_backend(backend, 10)?;
     if let Some(ind) = indicator {
         let needle = ind.to_lowercase();
         rows.retain(|r| r.indicator.to_lowercase() == needle);
     }
 
     if json {
-        let payload: Vec<_> = rows
+        let indicators: Vec<_> = rows
             .iter()
             .map(|r| {
                 serde_json::json!({
@@ -24,7 +27,30 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&payload)?);
+        let surprises: Vec<_> = macro_events
+            .iter()
+            .map(|event| {
+                let name = fred::series_by_id(&event.series_id)
+                    .map(|series| series.name)
+                    .unwrap_or(event.series_id.as_str());
+                serde_json::json!({
+                    "series_id": event.series_id,
+                    "series_name": name,
+                    "event_date": event.event_date,
+                    "expected": event.expected.to_string(),
+                    "actual": event.actual.to_string(),
+                    "surprise_pct": event.surprise_pct.to_string(),
+                    "created_at": event.created_at,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "indicators": indicators,
+                "macro_events": surprises,
+            }))?
+        );
         return Ok(());
     }
 
@@ -56,6 +82,20 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
             change,
             truncate_url(&r.source_url, 18),
         );
+    }
+
+    if !macro_events.is_empty() {
+        println!();
+        println!("Recent macro surprises:");
+        for event in macro_events.iter().take(5) {
+            let name = fred::series_by_id(&event.series_id)
+                .map(|series| series.name)
+                .unwrap_or(event.series_id.as_str());
+            println!(
+                "  {} ({}) expected {} actual {} surprise {:+}%",
+                name, event.event_date, event.expected, event.actual, event.surprise_pct
+            );
+        }
     }
 
     Ok(())

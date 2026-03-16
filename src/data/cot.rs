@@ -67,6 +67,14 @@ pub struct CotReport {
     pub commercial_net: i64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct CotInterpretation {
+    pub percentile_1y: f64,
+    pub percentile_3y: f64,
+    pub z_score: f64,
+    pub extreme: bool,
+}
+
 impl CotReport {
     /// Net change in managed money positioning vs previous week.
     pub fn managed_money_change(&self, prev: &CotReport) -> i64 {
@@ -196,4 +204,84 @@ pub fn symbol_to_cftc_code(symbol: &str) -> Option<&'static str> {
         .iter()
         .find(|c| c.symbol == symbol)
         .map(|c| c.cftc_code)
+}
+
+pub fn interpret_managed_money(history_desc: &[i64]) -> Option<CotInterpretation> {
+    let (&current, rest) = history_desc.split_first()?;
+    if rest.is_empty() {
+        return None;
+    }
+
+    let history_1y = &history_desc[..history_desc.len().min(52)];
+    let history_3y = &history_desc[..history_desc.len().min(156)];
+
+    let percentile_1y = percentile_rank(current, history_1y)?;
+    let percentile_3y = percentile_rank(current, history_3y)?;
+    let z_score = z_score(current, history_3y).or_else(|| z_score(current, history_1y))?;
+    let extreme = percentile_1y >= 90.0
+        || percentile_1y <= 10.0
+        || percentile_3y >= 90.0
+        || percentile_3y <= 10.0;
+
+    Some(CotInterpretation {
+        percentile_1y,
+        percentile_3y,
+        z_score,
+        extreme,
+    })
+}
+
+fn percentile_rank(current: i64, history: &[i64]) -> Option<f64> {
+    if history.is_empty() {
+        return None;
+    }
+
+    let below_or_equal = history.iter().filter(|&&value| value <= current).count() as f64;
+    Some((below_or_equal / history.len() as f64) * 100.0)
+}
+
+fn z_score(current: i64, history: &[i64]) -> Option<f64> {
+    if history.len() < 2 {
+        return None;
+    }
+
+    let mean = history.iter().map(|&value| value as f64).sum::<f64>() / history.len() as f64;
+    let variance = history
+        .iter()
+        .map(|&value| {
+            let diff = value as f64 - mean;
+            diff * diff
+        })
+        .sum::<f64>()
+        / history.len() as f64;
+    let std_dev = variance.sqrt();
+    if std_dev == 0.0 {
+        return Some(0.0);
+    }
+    Some((current as f64 - mean) / std_dev)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn computes_interpretation_metrics() {
+        let mut history = vec![120_000];
+        history.extend((0..60).map(|idx| 60_000 + idx * 1_000));
+
+        let stats = interpret_managed_money(&history).expect("stats should compute");
+        assert!(stats.percentile_1y > 90.0);
+        assert!(stats.percentile_3y > 90.0);
+        assert!(stats.z_score > 1.0);
+        assert!(stats.extreme);
+    }
+
+    #[test]
+    fn flat_series_has_zero_z_score() {
+        let history = vec![10_000; 60];
+        let stats = interpret_managed_money(&history).expect("stats should compute");
+        assert_eq!(stats.z_score, 0.0);
+        assert!(stats.extreme);
+    }
 }

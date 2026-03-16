@@ -14,6 +14,7 @@
 
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, Utc};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::str::FromStr;
@@ -56,6 +57,42 @@ pub const FRED_SERIES: &[FredSeries] = &[
         unit: "%",
         frequency: Frequency::Daily,
     },
+    FredSeries {
+        id: "GDP",
+        name: "Gross Domestic Product",
+        unit: "billions_usd",
+        frequency: Frequency::Quarterly,
+    },
+    FredSeries {
+        id: "PCE",
+        name: "Personal Consumption Expenditures",
+        unit: "billions_usd",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "NAPM",
+        name: "ISM Manufacturing PMI",
+        unit: "index",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "JTSJOL",
+        name: "JOLTS Job Openings",
+        unit: "thousands",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "ICSA",
+        name: "Initial Jobless Claims",
+        unit: "claims",
+        frequency: Frequency::Weekly,
+    },
+    FredSeries {
+        id: "PAYEMS",
+        name: "Nonfarm Payrolls",
+        unit: "thousands",
+        frequency: Frequency::Monthly,
+    },
 ];
 
 /// Metadata for a FRED series.
@@ -70,7 +107,9 @@ pub struct FredSeries {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Frequency {
     Daily,
+    Weekly,
     Monthly,
+    Quarterly,
 }
 
 /// A single observation from FRED.
@@ -79,6 +118,15 @@ pub struct FredObservation {
     pub series_id: String,
     pub date: String,
     pub value: Decimal,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EconomicSurprise {
+    pub series_id: String,
+    pub event_date: String,
+    pub expected: Decimal,
+    pub actual: Decimal,
+    pub surprise_pct: Decimal,
 }
 
 /// Raw JSON response from FRED API.
@@ -155,10 +203,7 @@ pub async fn fetch_series(
 /// Fetch the latest observation for a single FRED series.
 ///
 /// Returns the most recent non-missing value, or None if unavailable.
-pub async fn fetch_latest(
-    api_key: &str,
-    series_id: &str,
-) -> Result<Option<FredObservation>> {
+pub async fn fetch_latest(api_key: &str, series_id: &str) -> Result<Option<FredObservation>> {
     let observations = fetch_series(api_key, series_id, 5).await?;
     Ok(observations.into_iter().next())
 }
@@ -248,7 +293,9 @@ pub fn is_stale(date_str: &str, frequency: Frequency) -> bool {
 
     match frequency {
         Frequency::Daily => age_days > 3,
+        Frequency::Weekly => age_days > 10,
         Frequency::Monthly => age_days > 45,
+        Frequency::Quarterly => age_days > 120,
     }
 }
 
@@ -257,9 +304,67 @@ pub fn series_by_id(id: &str) -> Option<&'static FredSeries> {
     FRED_SERIES.iter().find(|s| s.id == id)
 }
 
+pub fn detect_surprise(observations: &[FredObservation]) -> Option<EconomicSurprise> {
+    if observations.len() < 6 {
+        return None;
+    }
+
+    let latest = &observations[0];
+    let previous = &observations[1];
+    let latest_value = latest.value.to_f64()?;
+    let previous_value = previous.value.to_f64()?;
+    let latest_change = latest_value - previous_value;
+
+    let mut historical_changes = Vec::new();
+    for pair in observations.windows(2).skip(1) {
+        let newer = pair[0].value.to_f64()?;
+        let older = pair[1].value.to_f64()?;
+        historical_changes.push(newer - older);
+    }
+
+    if historical_changes.len() < 4 {
+        return None;
+    }
+
+    let mean = historical_changes.iter().sum::<f64>() / historical_changes.len() as f64;
+    let variance = historical_changes
+        .iter()
+        .map(|change| {
+            let delta = change - mean;
+            delta * delta
+        })
+        .sum::<f64>()
+        / historical_changes.len() as f64;
+    let std_dev = variance.sqrt();
+
+    if std_dev <= f64::EPSILON {
+        if latest_change.abs() <= f64::EPSILON {
+            return None;
+        }
+    } else if latest_change.abs() <= std_dev {
+        return None;
+    }
+
+    let denominator = previous_value.abs();
+    let surprise_pct = if denominator <= f64::EPSILON {
+        Decimal::ZERO
+    } else {
+        Decimal::from_f64_retain((latest_change / denominator) * 100.0)?
+    };
+
+    Some(EconomicSurprise {
+        series_id: latest.series_id.clone(),
+        event_date: latest.date.clone(),
+        expected: previous.value,
+        actual: latest.value,
+        surprise_pct: surprise_pct.round_dp(2),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_series_lookup() {
@@ -270,6 +375,9 @@ mod tests {
         let s = series_by_id("CPIAUCSL").unwrap();
         assert_eq!(s.unit, "index");
         assert_eq!(s.frequency, Frequency::Monthly);
+
+        let s = series_by_id("GDP").unwrap();
+        assert_eq!(s.frequency, Frequency::Quarterly);
 
         assert!(series_by_id("BOGUS").is_none());
     }
@@ -295,6 +403,13 @@ mod tests {
     }
 
     #[test]
+    fn test_is_stale_weekly_and_quarterly() {
+        let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        assert!(!is_stale(&today, Frequency::Weekly));
+        assert!(!is_stale(&today, Frequency::Quarterly));
+    }
+
+    #[test]
     fn test_is_stale_bad_date() {
         assert!(is_stale("not-a-date", Frequency::Daily));
         assert!(is_stale("", Frequency::Monthly));
@@ -302,7 +417,7 @@ mod tests {
 
     #[test]
     fn test_fred_series_count() {
-        assert_eq!(FRED_SERIES.len(), 6);
+        assert_eq!(FRED_SERIES.len(), 12);
     }
 
     #[test]
@@ -312,5 +427,84 @@ mod tests {
             assert!(!s.name.is_empty());
             assert!(!s.unit.is_empty());
         }
+    }
+
+    #[test]
+    fn detects_large_surprise_from_history() {
+        let observations = vec![
+            FredObservation {
+                series_id: "CPIAUCSL".to_string(),
+                date: "2026-03-01".to_string(),
+                value: dec!(115),
+            },
+            FredObservation {
+                series_id: "CPIAUCSL".to_string(),
+                date: "2026-02-01".to_string(),
+                value: dec!(108),
+            },
+            FredObservation {
+                series_id: "CPIAUCSL".to_string(),
+                date: "2026-01-01".to_string(),
+                value: dec!(107),
+            },
+            FredObservation {
+                series_id: "CPIAUCSL".to_string(),
+                date: "2025-12-01".to_string(),
+                value: dec!(106),
+            },
+            FredObservation {
+                series_id: "CPIAUCSL".to_string(),
+                date: "2025-11-01".to_string(),
+                value: dec!(105),
+            },
+            FredObservation {
+                series_id: "CPIAUCSL".to_string(),
+                date: "2025-10-01".to_string(),
+                value: dec!(104),
+            },
+        ];
+
+        let surprise = detect_surprise(&observations).unwrap();
+        assert_eq!(surprise.expected, dec!(108));
+        assert_eq!(surprise.actual, dec!(115));
+        assert_eq!(surprise.event_date, "2026-03-01");
+    }
+
+    #[test]
+    fn ignores_normal_move_from_history() {
+        let observations = vec![
+            FredObservation {
+                series_id: "UNRATE".to_string(),
+                date: "2026-03-01".to_string(),
+                value: dec!(4.18),
+            },
+            FredObservation {
+                series_id: "UNRATE".to_string(),
+                date: "2026-02-01".to_string(),
+                value: dec!(4.1),
+            },
+            FredObservation {
+                series_id: "UNRATE".to_string(),
+                date: "2026-01-01".to_string(),
+                value: dec!(4.22),
+            },
+            FredObservation {
+                series_id: "UNRATE".to_string(),
+                date: "2025-12-01".to_string(),
+                value: dec!(4.05),
+            },
+            FredObservation {
+                series_id: "UNRATE".to_string(),
+                date: "2025-11-01".to_string(),
+                value: dec!(4.17),
+            },
+            FredObservation {
+                series_id: "UNRATE".to_string(),
+                date: "2025-10-01".to_string(),
+                value: dec!(4.02),
+            },
+        ];
+
+        assert!(detect_surprise(&observations).is_none());
     }
 }

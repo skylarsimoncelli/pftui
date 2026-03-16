@@ -625,10 +625,46 @@ fn main() -> Result<()> {
             cli::DataCommand::Calendar { days, impact, json } => {
                 commands::calendar::run(days, impact.as_deref(), json)
             }
-            cli::DataCommand::Fedwatch { json } => commands::fedwatch::run(&backend, json),
+            cli::DataCommand::Cot { symbol, json } => {
+                commands::cot::run(&backend, symbol.as_deref(), json)
+            }
+            cli::DataCommand::Fedwatch { json } => commands::fedwatch::run(&backend, &config, json),
             cli::DataCommand::Economy { indicator, json } => {
                 commands::economy::run(&backend, indicator.as_deref(), json)
             }
+            cli::DataCommand::Consensus { command } => match command {
+                cli::ConsensusCommand::Add {
+                    source,
+                    topic,
+                    call_text,
+                    date,
+                    json,
+                } => commands::consensus::run(
+                    &backend,
+                    "add",
+                    Some(&source),
+                    Some(&topic),
+                    Some(&call_text),
+                    Some(&date),
+                    20,
+                    json,
+                ),
+                cli::ConsensusCommand::List {
+                    topic,
+                    source,
+                    limit,
+                    json,
+                } => commands::consensus::run(
+                    &backend,
+                    "list",
+                    source.as_deref(),
+                    topic.as_deref(),
+                    None,
+                    None,
+                    limit,
+                    json,
+                ),
+            },
             cli::DataCommand::Predictions {
                 category,
                 search,
@@ -1020,7 +1056,17 @@ fn main() -> Result<()> {
                             println!("  Target: {} {} {}", upper, direction, cleaned);
                             let rule_text = format!("{} {} {}", upper, direction, cleaned);
                             db::alerts::add_alert_backend(
-                                &backend, "price", upper, &direction, &cleaned, &rule_text,
+                                &backend,
+                                db::alerts::NewAlert {
+                                    kind: "price",
+                                    symbol: upper,
+                                    direction: &direction,
+                                    condition: None,
+                                    threshold: &cleaned,
+                                    rule_text: &rule_text,
+                                    recurring: false,
+                                    cooldown_minutes: 0,
+                                },
                             )?;
                             println!("  Alert created: {}", rule_text);
                         }
@@ -2178,18 +2224,36 @@ fn main() -> Result<()> {
             },
             cli::AnalyticsCommand::Alerts { command } => {
                 let (action, args) = match command {
-                    cli::AnalyticsAlertsCommand::Add { rule } => (
+                    cli::AnalyticsAlertsCommand::Add {
+                        rule,
+                        kind,
+                        symbol,
+                        condition,
+                        label,
+                        recurring,
+                        cooldown_minutes,
+                    } => (
                         "add",
                         commands::alerts::AlertsArgs {
-                            rule: Some(rule),
+                            rule,
                             id: None,
                             json: false,
                             status_filter: None,
                             today: false,
+                            kind,
+                            symbol,
+                            condition,
+                            label,
+                            triggered: false,
+                            since_hours: None,
+                            recurring,
+                            cooldown_minutes,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::List {
                         status,
+                        triggered,
+                        since,
                         today,
                         json,
                     } => (
@@ -2200,6 +2264,14 @@ fn main() -> Result<()> {
                             json,
                             status_filter: status,
                             today,
+                            kind: None,
+                            symbol: None,
+                            condition: None,
+                            label: None,
+                            triggered,
+                            since_hours: since,
+                            recurring: false,
+                            cooldown_minutes: 0,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Remove { id } => (
@@ -2210,6 +2282,14 @@ fn main() -> Result<()> {
                             json: false,
                             status_filter: None,
                             today: false,
+                            kind: None,
+                            symbol: None,
+                            condition: None,
+                            label: None,
+                            triggered: false,
+                            since_hours: None,
+                            recurring: false,
+                            cooldown_minutes: 0,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Check { today, json } => (
@@ -2220,6 +2300,14 @@ fn main() -> Result<()> {
                             json,
                             status_filter: None,
                             today,
+                            kind: None,
+                            symbol: None,
+                            condition: None,
+                            label: None,
+                            triggered: false,
+                            since_hours: None,
+                            recurring: false,
+                            cooldown_minutes: 0,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Ack { id } => (
@@ -2230,6 +2318,14 @@ fn main() -> Result<()> {
                             json: false,
                             status_filter: None,
                             today: false,
+                            kind: None,
+                            symbol: None,
+                            condition: None,
+                            label: None,
+                            triggered: false,
+                            since_hours: None,
+                            recurring: false,
+                            cooldown_minutes: 0,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Rearm { id } => (
@@ -2240,6 +2336,32 @@ fn main() -> Result<()> {
                             json: false,
                             status_filter: None,
                             today: false,
+                            kind: None,
+                            symbol: None,
+                            condition: None,
+                            label: None,
+                            triggered: false,
+                            since_hours: None,
+                            recurring: false,
+                            cooldown_minutes: 0,
+                        },
+                    ),
+                    cli::AnalyticsAlertsCommand::SeedDefaults => (
+                        "seed-defaults",
+                        commands::alerts::AlertsArgs {
+                            rule: None,
+                            id: None,
+                            json: false,
+                            status_filter: None,
+                            today: false,
+                            kind: None,
+                            symbol: None,
+                            condition: None,
+                            label: None,
+                            triggered: false,
+                            since_hours: None,
+                            recurring: false,
+                            cooldown_minutes: 0,
                         },
                     ),
                 };

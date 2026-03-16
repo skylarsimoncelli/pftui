@@ -1,6 +1,6 @@
+pub mod agent_messages;
 #[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
 pub mod alerts;
-pub mod agent_messages;
 pub mod allocation_targets;
 pub mod allocations;
 pub mod annotations;
@@ -12,9 +12,10 @@ pub mod calendar_cache;
 pub mod chart_state;
 #[allow(dead_code)] // Infrastructure for F22.1+ consumers (COMEX supply panel, CLI)
 pub mod comex_cache;
-pub mod correlation_snapshots;
 #[allow(dead_code)] // Infrastructure for F31.3 (conviction CLI)
 pub mod convictions;
+pub mod consensus;
+pub mod correlation_snapshots;
 #[allow(dead_code)] // Infrastructure for F18.1+ consumers (COT section, CLI)
 pub mod cot_cache;
 pub mod daily_notes;
@@ -23,15 +24,17 @@ pub mod dividends;
 pub mod economic_cache;
 #[allow(dead_code)] // Infrastructure for F28.1+ consumers (Brave economy fetcher)
 pub mod economic_data;
+pub mod fedwatch_cache;
 pub mod fx_cache;
 pub mod groups;
 pub mod journal;
+pub mod macro_events;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod news_cache;
 #[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)
 pub mod onchain_cache;
-pub mod pg_runtime;
 pub mod opportunity_cost;
+pub mod pg_runtime;
 pub mod postgres_schema;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
@@ -40,8 +43,8 @@ pub mod predictions_history;
 pub mod price_cache;
 pub mod price_history;
 pub mod query;
-pub mod research_questions;
 pub mod regime_snapshots;
+pub mod research_questions;
 pub mod scan_queries;
 pub mod scenarios;
 pub mod schema;
@@ -51,8 +54,9 @@ pub mod snapshots;
 pub mod structural;
 pub mod thesis;
 pub mod timeframe_signals;
-pub mod trends;
 pub mod transactions;
+pub mod trends;
+pub mod triggered_alerts;
 pub mod user_predictions;
 pub mod watchlist;
 pub mod watchlist_groups;

@@ -9,12 +9,13 @@ use rust_decimal_macros::dec;
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
-    bls, brave, calendar, comex, cot, economic, fedwatch, fx, onchain, predictions, rss, sentiment,
-    worldbank,
+    bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, onchain, predictions, rss,
+    sentiment, worldbank,
 };
 use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
 use crate::db::backend::BackendConnection;
 use crate::db::economic_data as economic_data_db;
+use crate::db::fedwatch_cache;
 use crate::db::price_cache::{
     get_all_cached_prices_backend, get_cached_price_backend, upsert_price_backend,
 };
@@ -26,7 +27,10 @@ use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
 use crate::db::watchlist::get_watchlist_symbols_backend;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
-use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
+use crate::db::{
+    economic_cache, macro_events, onchain_cache, predictions_cache, sentiment_cache,
+    worldbank_cache,
+};
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 use crate::models::price::{HistoryRecord, PriceQuote};
@@ -41,6 +45,7 @@ const PRICE_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Freshness thresholds in seconds
 const NEWS_FRESHNESS_SECS: i64 = 10 * 60; // 10 minutes
+const BRAVE_NEWS_FRESHNESS_SECS: i64 = 4 * 60 * 60; // 4 hours
 const PREDICTIONS_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const SENTIMENT_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
@@ -48,6 +53,8 @@ const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
 const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
 const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 const FEDWATCH_CONFLICT_THRESHOLD_PCT_POINTS: f64 = 5.0;
+const FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS: f64 = 10.0;
+const COT_HISTORY_WEEKS: usize = 156;
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -100,6 +107,28 @@ fn news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
         return Ok(age.num_seconds() > NEWS_FRESHNESS_SECS);
     }
     Ok(true)
+}
+
+fn brave_news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let latest = news_cache::latest_fetched_at_by_source_type_backend(backend, "brave")?;
+    let Some(timestamp) = latest else {
+        return Ok(true);
+    };
+
+    let now = chrono::Utc::now();
+    if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&timestamp) {
+        let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
+        return Ok(age.num_seconds() > BRAVE_NEWS_FRESHNESS_SECS);
+    }
+    Ok(true)
+}
+
+fn fedwatch_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let latest = fedwatch_cache::get_latest_snapshot_backend(backend)?;
+    Ok(match latest {
+        Some(entry) => !fedwatch::is_fresh(&entry.fetched_at, fedwatch::FEDWATCH_FRESHNESS_SECS),
+        None => true,
+    })
 }
 
 fn compute_daily_change_pct(
@@ -165,6 +194,23 @@ fn build_brave_news_queries(backend: &BackendConnection, config: &Config) -> Res
 
     queries.truncate(BRAVE_NEWS_QUERY_LIMIT);
     Ok(queries)
+}
+
+fn fred_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let observations = economic_cache::get_all_latest_backend(backend)?;
+    if observations.is_empty() {
+        return Ok(true);
+    }
+
+    for series in fred::FRED_SERIES {
+        let latest = observations.iter().find(|obs| obs.series_id == series.id);
+        match latest {
+            Some(obs) if !fred::is_stale(&obs.date, series.frequency) => {}
+            _ => return Ok(true),
+        }
+    }
+
+    Ok(false)
 }
 
 /// Check if predictions need refreshing
@@ -686,7 +732,11 @@ fn run_with_output(
             }
         }
         if history_attempted > 0 {
-            info_ln!(verbose, "✓ Price history ({} symbol backfills)", history_updated);
+            info_ln!(
+                verbose,
+                "✓ Price history ({} symbol backfills)",
+                history_updated
+            );
         }
     } else {
         info_ln!(verbose, "⊘ Prices (no symbols)");
@@ -725,21 +775,71 @@ fn run_with_output(
     } else {
         info_ln!(verbose, "⊘ Predictions (fresh, skipping)");
     }
+    if fedwatch_needs_refresh(backend)? {
+        let previous = fedwatch_cache::get_latest_snapshot_backend(backend)?;
+        match fedwatch::fetch_snapshot_with_fallback(config.brave_api_key.as_deref()) {
+            Ok((snapshot, source_label)) => {
+                let validated = fedwatch::validate_reading(
+                    snapshot,
+                    source_label,
+                    previous.as_ref().map(|entry| entry.no_change_pct),
+                    FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS,
+                );
+                if let Some(warning) = &validated.warning {
+                    warn_ln!(verbose, "FedWatch validation warning: {}", warning);
+                }
+                let entry = fedwatch_cache::FedWatchCacheEntry::from_snapshot(
+                    validated.snapshot,
+                    validated.source_label,
+                    validated.verified,
+                    validated.warning,
+                );
+                match fedwatch_cache::insert_snapshot_backend(backend, &entry) {
+                    Ok(_) => info_ln!(
+                        verbose,
+                        "✓ FedWatch ({}{}, {:.1}% no-change)",
+                        entry.source_label,
+                        if entry.verified { "" } else { ", unverified" },
+                        entry.no_change_pct
+                    ),
+                    Err(e) => info_ln!(
+                        verbose,
+                        "⚠ FedWatch fetched ({}, {:.1}% no-change) but cache write failed: {}",
+                        entry.source_label,
+                        entry.no_change_pct,
+                        e
+                    ),
+                }
+            }
+            Err(e) => info_ln!(verbose, "✗ FedWatch (failed: {})", e),
+        }
+    } else {
+        info_ln!(verbose, "⊘ FedWatch (fresh, skipping)");
+    }
     maybe_report_fedwatch_conflict(backend, verbose);
 
     // 4. News (Brave primary when configured, RSS supplements)
-    if news_needs_refresh(backend)? {
+    let rss_refresh = news_needs_refresh(backend)?;
+    let brave_key = config
+        .brave_api_key
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let brave_refresh = if brave_key.is_empty() {
+        false
+    } else {
+        brave_news_needs_refresh(backend)?
+    };
+
+    if rss_refresh || brave_refresh {
         let mut inserted = 0usize;
         let mut brave_inserted = 0usize;
-        let brave_key = config
-            .brave_api_key
-            .as_deref()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let mut brave_query_count = 0usize;
 
-        if !brave_key.is_empty() {
+        if brave_refresh {
             let queries = build_brave_news_queries(backend, config)?;
+            brave_query_count = queries.len();
             for query in &queries {
                 match rt.block_on(brave::brave_news_search(&brave_key, query, Some("pd"), 5)) {
                     Ok(results) => {
@@ -771,38 +871,55 @@ fn run_with_output(
             }
         }
 
-        let feeds = rss::default_feeds();
-        let items = rt.block_on(rss::fetch_all_feeds(&feeds));
-        for item in &items {
-            let category_str = match item.category {
-                rss::NewsCategory::Macro => "macro",
-                rss::NewsCategory::Crypto => "crypto",
-                rss::NewsCategory::Commodities => "commodities",
-                rss::NewsCategory::Geopolitics => "geopolitics",
-                rss::NewsCategory::Markets => "markets",
-            };
+        if rss_refresh {
+            let feeds = rss::default_feeds();
+            let items = rt.block_on(rss::fetch_all_feeds(&feeds));
+            for item in &items {
+                let category_str = match item.category {
+                    rss::NewsCategory::Macro => "macro",
+                    rss::NewsCategory::Crypto => "crypto",
+                    rss::NewsCategory::Commodities => "commodities",
+                    rss::NewsCategory::Geopolitics => "geopolitics",
+                    rss::NewsCategory::Markets => "markets",
+                };
 
-            if news_cache::insert_news_with_source_type_backend(
-                backend,
-                &item.title,
-                &item.url,
-                &item.source,
-                "rss",
-                None,
-                category_str,
-                item.published_at,
-                None,
-                &[],
-            )
-            .is_ok()
-            {
-                inserted += 1;
+                if news_cache::insert_news_with_source_type_backend(
+                    backend,
+                    &item.title,
+                    &item.url,
+                    &item.source,
+                    "rss",
+                    None,
+                    category_str,
+                    item.published_at,
+                    None,
+                    &[],
+                )
+                .is_ok()
+                {
+                    inserted += 1;
+                }
             }
         }
-        if brave_inserted > 0 {
-            info_ln!(verbose, "✓ News ({} articles via Brave + RSS)", inserted);
-        } else {
+
+        if brave_refresh && rss_refresh {
+            info_ln!(
+                verbose,
+                "✓ News ({} articles from {} Brave queries + RSS)",
+                inserted,
+                brave_query_count
+            );
+        } else if brave_refresh {
+            info_ln!(
+                verbose,
+                "✓ News ({} articles from {} Brave queries)",
+                brave_inserted,
+                brave_query_count
+            );
+        } else if rss_refresh {
             info_ln!(verbose, "✓ News ({} articles via RSS)", inserted);
+        } else {
+            info_ln!(verbose, "⊘ News (fresh, skipping)");
         }
     } else {
         info_ln!(verbose, "⊘ News (fresh, skipping)");
@@ -810,34 +927,46 @@ fn run_with_output(
 
     // 5. COT (CFTC)
     if cot_needs_refresh(backend)? {
-        let mut total = 0;
+        let mut contracts_updated = 0;
+        let mut reports_upserted = 0;
 
         for contract in cot::COT_CONTRACTS {
-            match cot::fetch_latest_report(contract.cftc_code) {
-                Ok(report) => {
-                    let entry = crate::db::cot_cache::CotCacheEntry {
-                        cftc_code: report.cftc_code.clone(),
-                        report_date: report.report_date.clone(),
-                        open_interest: report.open_interest,
-                        managed_money_long: report.managed_money_long,
-                        managed_money_short: report.managed_money_short,
-                        managed_money_net: report.managed_money_net,
-                        commercial_long: report.commercial_long,
-                        commercial_short: report.commercial_short,
-                        commercial_net: report.commercial_net,
-                        fetched_at: chrono::Utc::now().to_rfc3339(),
-                    };
-                    cot_cache::upsert_report_backend(backend, &entry)?;
-                    total += 1;
+            match cot::fetch_historical_reports(contract.cftc_code, COT_HISTORY_WEEKS) {
+                Ok(reports) if !reports.is_empty() => {
+                    let fetched_at = chrono::Utc::now().to_rfc3339();
+                    let entries: Vec<_> = reports
+                        .into_iter()
+                        .map(|report| crate::db::cot_cache::CotCacheEntry {
+                            cftc_code: report.cftc_code,
+                            report_date: report.report_date,
+                            open_interest: report.open_interest,
+                            managed_money_long: report.managed_money_long,
+                            managed_money_short: report.managed_money_short,
+                            managed_money_net: report.managed_money_net,
+                            commercial_long: report.commercial_long,
+                            commercial_short: report.commercial_short,
+                            commercial_net: report.commercial_net,
+                            fetched_at: fetched_at.clone(),
+                        })
+                        .collect();
+                    cot_cache::upsert_reports_backend(backend, &entries)?;
+                    contracts_updated += 1;
+                    reports_upserted += entries.len();
                 }
+                Ok(_) => {}
                 Err(_) => {
                     // Continue on error
                 }
             }
         }
 
-        if total > 0 {
-            info_ln!(verbose, "✓ COT ({} reports)", total);
+        if contracts_updated > 0 {
+            info_ln!(
+                verbose,
+                "✓ COT ({} contracts, {} reports cached)",
+                contracts_updated,
+                reports_upserted
+            );
         } else {
             info_ln!(verbose, "✗ COT (all failed)");
         }
@@ -952,11 +1081,77 @@ fn run_with_output(
                 if used_brave {
                     info_ln!(verbose, "✓ Economy ({} indicators via Brave)", items.len());
                 } else {
-                    info_ln!(verbose, "✓ Economy ({} indicators via BLS fallback)", items.len());
+                    info_ln!(
+                        verbose,
+                        "✓ Economy ({} indicators via BLS fallback)",
+                        items.len()
+                    );
                 }
             }
             Err(e) => info_ln!(verbose, "✗ Economy (failed: {})", e),
         }
+    }
+
+    // 9a. FRED macro cache + surprise detection
+    if let Some(api_key) = config
+        .fred_api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if fred_needs_refresh(backend)? {
+            let mut updated = 0usize;
+            let mut surprise_count = 0usize;
+            let fetched_at = chrono::Utc::now().to_rfc3339();
+
+            for series in fred::FRED_SERIES {
+                match rt.block_on(fred::fetch_series(api_key, series.id, 24)) {
+                    Ok(observations) if !observations.is_empty() => {
+                        let cached: Vec<_> = observations
+                            .iter()
+                            .cloned()
+                            .map(|obs| economic_cache::EconomicObservation {
+                                series_id: obs.series_id,
+                                date: obs.date,
+                                value: obs.value,
+                                fetched_at: fetched_at.clone(),
+                            })
+                            .collect();
+
+                        if economic_cache::upsert_observations_backend(backend, &cached).is_ok() {
+                            updated += 1;
+                        }
+
+                        if let Some(surprise) = fred::detect_surprise(&observations) {
+                            let event = macro_events::MacroEvent {
+                                series_id: surprise.series_id,
+                                event_date: surprise.event_date,
+                                expected: surprise.expected,
+                                actual: surprise.actual,
+                                surprise_pct: surprise.surprise_pct,
+                                created_at: fetched_at.clone(),
+                            };
+                            if macro_events::insert_event_backend(backend, &event).is_ok() {
+                                surprise_count += 1;
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => warn_ln!(verbose, "FRED series fetch failed ({}): {}", series.id, e),
+                }
+            }
+
+            info_ln!(
+                verbose,
+                "✓ FRED ({} series, {} surprise events)",
+                updated,
+                surprise_count
+            );
+        } else {
+            info_ln!(verbose, "⊘ FRED (fresh, skipping)");
+        }
+    } else {
+        info_ln!(verbose, "⊘ FRED (no API key configured)");
     }
 
     // 9. BLS
@@ -1048,6 +1243,40 @@ fn run_with_output(
         Err(e) => onchain_errors.push(format!("network: {}", e)),
     }
 
+    match onchain::fetch_exchange_reserve_snapshot() {
+        Ok(snapshot) => {
+            let metric = crate::db::onchain_cache::OnchainMetric {
+                metric: "exchange_reserve_proxy_btc".to_string(),
+                date: snapshot.date.clone(),
+                value: snapshot.reserve_btc.to_string(),
+                metadata: Some(
+                    serde_json::json!({
+                        "reserve_usd": snapshot.reserve_usd,
+                        "tracked_wallets": snapshot.tracked_wallets,
+                        "exchange_labels": snapshot.exchange_labels,
+                        "flow_7d_btc": snapshot.net_flow_7d_btc,
+                        "flow_30d_btc": snapshot.net_flow_30d_btc,
+                        "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
+                            serde_json::json!({
+                                "label": entry.label,
+                                "balance_btc": entry.balance_btc,
+                                "balance_usd": entry.balance_usd,
+                                "wallets": entry.wallets,
+                                "flow_7d_btc": entry.flow_7d_btc,
+                                "flow_30d_btc": entry.flow_30d_btc,
+                            })
+                        }).collect::<Vec<_>>(),
+                    })
+                    .to_string(),
+                ),
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            };
+            let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+            onchain_ok_parts.push("exchange reserves");
+        }
+        Err(e) => onchain_errors.push(format!("exchange reserves: {}", e)),
+    }
+
     match onchain::fetch_etf_flows() {
         Ok(flows) => {
             let fetched_at = chrono::Utc::now().to_rfc3339();
@@ -1072,15 +1301,67 @@ fn run_with_output(
         Err(e) => onchain_errors.push(format!("etf flows: {}", e)),
     }
 
+    match onchain::fetch_market_stats() {
+        Ok(stats) => {
+            let fetched_at = chrono::Utc::now().to_rfc3339();
+            let metrics = [
+                (
+                    "largest_transactions_24h_btc",
+                    stats.largest_transactions_24h_btc.to_string(),
+                    serde_json::json!({
+                        "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
+                        "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
+                    }),
+                ),
+                (
+                    "active_addresses_24h",
+                    stats.active_addresses_24h.to_string(),
+                    serde_json::json!({}),
+                ),
+                (
+                    "wealth_distribution_top10_pct",
+                    stats.top_10_share_pct.to_string(),
+                    serde_json::json!({
+                        "top_100_share_pct": stats.top_100_share_pct,
+                        "top_1000_share_pct": stats.top_1000_share_pct,
+                        "top_10000_share_pct": stats.top_10000_share_pct,
+                        "top_100_richest_btc": stats.top_100_richest_btc,
+                    }),
+                ),
+            ];
+
+            for (name, value, metadata) in metrics {
+                let metric = crate::db::onchain_cache::OnchainMetric {
+                    metric: name.to_string(),
+                    date: stats.date.clone(),
+                    value,
+                    metadata: Some(metadata.to_string()),
+                    fetched_at: fetched_at.clone(),
+                };
+                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+            }
+            onchain_ok_parts.push("whales");
+        }
+        Err(e) => onchain_errors.push(format!("whales: {}", e)),
+    }
+
     if !onchain_ok_parts.is_empty() {
         info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
     } else {
-        info_ln!(verbose, "✗ On-chain (failed: {})", onchain_errors.join("; "));
+        info_ln!(
+            verbose,
+            "✗ On-chain (failed: {})",
+            onchain_errors.join("; ")
+        );
     }
 
     // Store daily portfolio snapshot
     if let Err(e) = store_portfolio_snapshot(backend, config, verbose) {
-        warn_ln!(verbose, "\nWarning: failed to store portfolio snapshot: {}", e);
+        warn_ln!(
+            verbose,
+            "\nWarning: failed to store portfolio snapshot: {}",
+            e
+        );
     }
     if let Err(e) = detect_timeframe_signals(backend) {
         warn_ln!(
@@ -1094,6 +1375,18 @@ fn run_with_output(
     match engine::check_alerts_backend_only(backend) {
         Ok(results) => {
             let newly_triggered = engine::get_newly_triggered(&results);
+            let armed_count = results
+                .iter()
+                .filter(|r| {
+                    r.rule.status == crate::alerts::AlertStatus::Armed && !r.newly_triggered
+                })
+                .count();
+            info_ln!(
+                verbose,
+                "\n✓ Smart alerts evaluated ({} triggered, {} armed)",
+                newly_triggered.len(),
+                armed_count
+            );
             if !newly_triggered.is_empty() {
                 info_ln!(verbose, "\n🔔 Alerts Triggered:");
                 for result in &newly_triggered {
@@ -1143,9 +1436,10 @@ fn maybe_report_fedwatch_conflict(backend: &BackendConnection, verbose: bool) {
         Ok(rows) if !rows.is_empty() => rows,
         _ => return,
     };
-    let snapshot = match fedwatch::fetch_snapshot() {
-        Ok(snapshot) => snapshot,
+    let snapshot = match fedwatch_cache::get_latest_snapshot_backend(backend) {
+        Ok(Some(entry)) => entry.snapshot,
         Err(_) => return,
+        Ok(None) => return,
     };
     if let Some(conflict) = fedwatch::detect_no_change_conflict(
         &snapshot,

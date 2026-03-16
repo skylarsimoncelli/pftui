@@ -306,6 +306,15 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Interpret cached COT positioning using percentile and z-score context
+    Cot {
+        /// Optional tracked symbol (GC=F, SI=F, CL=F, BTC)
+        symbol: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// CME FedWatch probabilities from Fed funds futures implied pricing
     Fedwatch {
         /// Output as JSON for agent/script consumption
@@ -321,6 +330,11 @@ pub enum DataCommand {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
+    },
+    /// Store and query slower-moving analyst consensus calls
+    Consensus {
+        #[command(subcommand)]
+        command: ConsensusCommand,
     },
     /// Show prediction market odds from Polymarket and Manifold
     Predictions {
@@ -384,6 +398,50 @@ pub enum DataCommand {
     /// Sovereign holdings tracker: CB gold (WGC), government BTC, COMEX silver
     Sovereign {
         /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ConsensusCommand {
+    /// Add a new analyst consensus call
+    Add {
+        /// Research source or institution
+        #[arg(long)]
+        source: String,
+
+        /// Topic key, e.g. rate_cuts or gold_target
+        #[arg(long)]
+        topic: String,
+
+        /// The actual analyst call text
+        #[arg(long = "call")]
+        call_text: String,
+
+        /// Date of the call in YYYY-MM-DD
+        #[arg(long)]
+        date: String,
+
+        /// Output inserted row as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List stored analyst consensus calls
+    List {
+        /// Filter by topic key
+        #[arg(long)]
+        topic: Option<String>,
+
+        /// Filter by research source
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Maximum rows to return
+        #[arg(long, default_value = "20")]
+        limit: usize,
+
+        /// Output as JSON
         #[arg(long)]
         json: bool,
     },
@@ -1267,12 +1325,39 @@ pub enum AnalyticsCorrelationsCommand {
 #[derive(Subcommand)]
 pub enum AnalyticsAlertsCommand {
     /// Add an alert rule
-    Add { rule: String },
+    Add {
+        /// Legacy natural-language rule form: "BTC below 55000"
+        rule: Option<String>,
+        /// Structured alert kind: price, allocation, indicator, technical, macro
+        #[arg(long)]
+        kind: Option<String>,
+        /// Symbol or symbol pair (for structured alerts)
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Structured smart-alert condition name
+        #[arg(long)]
+        condition: Option<String>,
+        /// Human label for the alert
+        #[arg(long)]
+        label: Option<String>,
+        /// Store as recurring instead of one-shot
+        #[arg(long)]
+        recurring: bool,
+        /// Cooldown in minutes before a recurring alert can fire again
+        #[arg(long, default_value_t = 0)]
+        cooldown_minutes: i64,
+    },
     /// List alerts
     List {
         /// Filter by status: armed, triggered, acknowledged
         #[arg(long)]
         status: Option<String>,
+        /// Return triggered alert log rows instead of alert definitions
+        #[arg(long)]
+        triggered: bool,
+        /// Only include triggered alerts from the last N hours
+        #[arg(long)]
+        since: Option<i64>,
         /// Only include alerts triggered since local midnight
         #[arg(long)]
         today: bool,
@@ -1295,6 +1380,8 @@ pub enum AnalyticsAlertsCommand {
     Ack { id: i64 },
     /// Rearm alert by ID
     Rearm { id: i64 },
+    /// Seed a default smart-alert set for current holdings + core macro conditions
+    SeedDefaults,
 }
 
 #[derive(Subcommand)]
@@ -1771,7 +1858,14 @@ mod tests {
     #[test]
     fn top_level_help_lists_only_f42_domains() -> Result<()> {
         let help = help_text()?;
-        for command in ["agent", "analytics", "data", "journal", "portfolio", "system"] {
+        for command in [
+            "agent",
+            "analytics",
+            "data",
+            "journal",
+            "portfolio",
+            "system",
+        ] {
             assert!(
                 help.contains(command),
                 "missing top-level command: {command}"
@@ -1843,6 +1937,62 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_consensus_subcommands() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "consensus",
+            "add",
+            "--source",
+            "Goldman Sachs",
+            "--topic",
+            "rate_cuts",
+            "--call",
+            "50bp cuts in Sep+Dec 2026",
+            "--date",
+            "2026-03-12",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command:
+                    DataCommand::Consensus {
+                        command:
+                            ConsensusCommand::Add {
+                                source,
+                                topic,
+                                call_text,
+                                date,
+                                json,
+                            },
+                    },
+            }) => {
+                assert_eq!(source, "Goldman Sachs");
+                assert_eq!(topic, "rate_cuts");
+                assert_eq!(call_text, "50bp cuts in Sep+Dec 2026");
+                assert_eq!(date, "2026-03-12");
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_cot_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "cot", "GC=F", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Cot { symbol, json },
+            }) => {
+                assert_eq!(symbol.as_deref(), Some("GC=F"));
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_agent_message_subcommands() {
         let cli = Cli::try_parse_from([
             "pftui", "agent", "message", "ack-all", "--to", "agent-b", "--json",
@@ -1890,8 +2040,10 @@ mod tests {
             "news",
             "sentiment",
             "calendar",
+            "cot",
             "fedwatch",
             "economy",
+            "consensus",
             "predictions",
             "options",
             "etf-flows",

@@ -65,17 +65,63 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (series_id, date)
         );
 
+        CREATE TABLE IF NOT EXISTS macro_events (
+            series_id TEXT NOT NULL,
+            event_date TEXT NOT NULL,
+            expected TEXT NOT NULL,
+            actual TEXT NOT NULL,
+            surprise_pct TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (series_id, event_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_macro_events_event_date ON macro_events(event_date);
+
+        CREATE TABLE IF NOT EXISTS fedwatch_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_label TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            no_change_pct REAL NOT NULL,
+            verified INTEGER NOT NULL DEFAULT 1,
+            warning TEXT,
+            snapshot_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_fedwatch_cache_fetched_at ON fedwatch_cache(fetched_at DESC);
+
+        CREATE TABLE IF NOT EXISTS consensus_tracker (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            call_text TEXT NOT NULL,
+            call_date TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_consensus_tracker_topic ON consensus_tracker(topic);
+        CREATE INDEX IF NOT EXISTS idx_consensus_tracker_date ON consensus_tracker(call_date);
+
         CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kind TEXT NOT NULL DEFAULT 'price',
             symbol TEXT NOT NULL,
             direction TEXT NOT NULL,
+            condition TEXT,
             threshold TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'armed',
             rule_text TEXT NOT NULL,
+            recurring INTEGER NOT NULL DEFAULT 0,
+            cooldown_minutes INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             triggered_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS triggered_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_id INTEGER NOT NULL,
+            triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
+            trigger_data TEXT NOT NULL DEFAULT '{}',
+            acknowledged INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_triggered_alerts_triggered_at ON triggered_alerts(triggered_at);
 
         CREATE TABLE IF NOT EXISTS portfolio_snapshots (
             date TEXT PRIMARY KEY,
@@ -762,6 +808,49 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     if !has_news_symbol_tag {
         conn.execute_batch("ALTER TABLE news_cache ADD COLUMN symbol_tag TEXT")?;
     }
+
+    let has_alert_condition: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('alerts') WHERE name = 'condition'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_alert_condition {
+        conn.execute_batch("ALTER TABLE alerts ADD COLUMN condition TEXT")?;
+    }
+
+    let has_alert_recurring: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('alerts') WHERE name = 'recurring'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_alert_recurring {
+        conn.execute_batch("ALTER TABLE alerts ADD COLUMN recurring INTEGER NOT NULL DEFAULT 0")?;
+    }
+
+    let has_alert_cooldown: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('alerts') WHERE name = 'cooldown_minutes'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_alert_cooldown {
+        conn.execute_batch(
+            "ALTER TABLE alerts ADD COLUMN cooldown_minutes INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS triggered_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_id INTEGER NOT NULL,
+            triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
+            trigger_data TEXT NOT NULL DEFAULT '{}',
+            acknowledged INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE INDEX IF NOT EXISTS idx_triggered_alerts_triggered_at
+           ON triggered_alerts(triggered_at);",
+    )?;
 
     // Migration guard: ensure thesis tables exist on upgraded databases.
     let has_thesis: bool = conn
