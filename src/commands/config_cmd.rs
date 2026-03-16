@@ -20,6 +20,8 @@ fn list_config(json: bool) -> Result<()> {
         let output = json!({
             "database_backend": format_database_backend(config.database_backend),
             "database_url": format_secret(config.database_url.as_deref()),
+            "mirror_source_url": format_secret(config.mirror_source_url.as_deref()),
+            "postgres_read_only": config.postgres_read_only,
             "postgres_max_connections": config.postgres_max_connections,
             "postgres_connect_timeout_secs": config.postgres_connect_timeout_secs,
             "base_currency": config.base_currency,
@@ -44,6 +46,11 @@ fn list_config(json: bool) -> Result<()> {
     } else {
         println!("database_backend = {}", format_database_backend(config.database_backend));
         println!("database_url = {}", format_secret(config.database_url.as_deref()));
+        println!(
+            "mirror_source_url = {}",
+            format_secret(config.mirror_source_url.as_deref())
+        );
+        println!("postgres_read_only = {}", config.postgres_read_only);
         println!("postgres_max_connections = {}", config.postgres_max_connections);
         println!(
             "postgres_connect_timeout_secs = {}",
@@ -81,6 +88,8 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
         let value = match field {
             "database_backend" => json!(format_database_backend(config.database_backend)),
             "database_url" => json!(format_secret(config.database_url.as_deref())),
+            "mirror_source_url" => json!(format_secret(config.mirror_source_url.as_deref())),
+            "postgres_read_only" => json!(config.postgres_read_only),
             "postgres_max_connections" => json!(config.postgres_max_connections),
             "postgres_connect_timeout_secs" => json!(config.postgres_connect_timeout_secs),
             "base_currency" => json!(config.base_currency),
@@ -114,6 +123,8 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
         match field {
             "database_backend" => println!("{}", format_database_backend(config.database_backend)),
             "database_url" => println!("{}", format_secret(config.database_url.as_deref())),
+            "mirror_source_url" => println!("{}", format_secret(config.mirror_source_url.as_deref())),
+            "postgres_read_only" => println!("{}", config.postgres_read_only),
             "postgres_max_connections" => println!("{}", config.postgres_max_connections),
             "postgres_connect_timeout_secs" => println!("{}", config.postgres_connect_timeout_secs),
             "base_currency" => println!("{}", config.base_currency),
@@ -163,6 +174,26 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             };
             save_config(&config)?;
             println!("Updated database_url");
+        }
+        "mirror_source_url" => {
+            let trimmed = value.trim();
+            config.mirror_source_url = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            };
+            save_config(&config)?;
+            println!("Updated mirror_source_url");
+        }
+        "postgres_read_only" => {
+            let parsed = match value.trim().to_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => true,
+                "false" | "0" | "no" | "off" => false,
+                _ => bail!("Invalid postgres_read_only '{}'. Use: true|false", value),
+            };
+            config.postgres_read_only = parsed;
+            save_config(&config)?;
+            println!("Updated postgres_read_only = {}", config.postgres_read_only);
         }
         "postgres_max_connections" => {
             let parsed = value
@@ -253,7 +284,7 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             );
         }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: database_backend, database_url, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
+            "Unsupported set field '{}'. Currently supported: database_backend, database_url, mirror_source_url, postgres_read_only, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
             field
         ),
     }

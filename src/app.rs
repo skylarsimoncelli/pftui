@@ -698,8 +698,10 @@ pub struct App {
 
     // DB
     pub db_path: std::path::PathBuf,
+    backend: Option<std::sync::Arc<crate::db::backend::BackendConnection>>,
     pub database_backend: crate::config::DatabaseBackend,
     pub database_url: Option<String>,
+    pub postgres_read_only: bool,
     pub postgres_max_connections: u32,
     pub postgres_connect_timeout_secs: u64,
     last_saved_home_tab: ViewMode,
@@ -793,15 +795,8 @@ pub fn is_privacy_view(app: &App) -> bool {
 }
 
 impl App {
-    pub(crate) fn open_backend(&self) -> Option<crate::db::backend::BackendConnection> {
-        let cfg = Config {
-            database_backend: self.database_backend,
-            database_url: self.database_url.clone(),
-            postgres_max_connections: self.postgres_max_connections,
-            postgres_connect_timeout_secs: self.postgres_connect_timeout_secs,
-            ..Config::default()
-        };
-        crate::db::backend::open_from_config(&cfg, &self.db_path).ok()
+    pub(crate) fn open_backend(&self) -> Option<std::sync::Arc<crate::db::backend::BackendConnection>> {
+        self.backend.clone()
     }
 
     fn view_mode_from_config_value(value: &str) -> ViewMode {
@@ -832,6 +827,10 @@ impl App {
 
     pub fn new(config: &Config, db_path: std::path::PathBuf) -> Self {
         let initial_view = Self::view_mode_from_config_value(&config.home_tab);
+        let backend = crate::db::backend::open_from_config(config, &db_path)
+            .ok()
+            .map(std::sync::Arc::new);
+        let postgres_read_only = config.effective_postgres_read_only();
         App {
             should_quit: false,
             view_mode: initial_view,
@@ -974,8 +973,10 @@ impl App {
             economic_data: HashMap::new(),
             worldbank_data: HashMap::new(),
             db_path,
+            backend,
             database_backend: config.database_backend,
             database_url: config.database_url.clone(),
+            postgres_read_only,
             postgres_max_connections: config.postgres_max_connections,
             postgres_connect_timeout_secs: config.postgres_connect_timeout_secs,
             last_saved_home_tab: initial_view,
@@ -1029,6 +1030,8 @@ impl App {
         let config = Config {
             database_backend: self.database_backend,
             database_url: self.database_url.clone(),
+            mirror_source_url: None,
+            postgres_read_only: self.postgres_read_only,
             postgres_max_connections: self.postgres_max_connections,
             postgres_connect_timeout_secs: self.postgres_connect_timeout_secs,
             base_currency: self.base_currency.clone(),
@@ -1052,23 +1055,31 @@ impl App {
             watchlist: config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
         };
-        match PriceService::start(config) {
-            Ok(service) => {
-                self.request_price_fetch(&service);
-                self.request_all_history(&service);
-                self.price_service = Some(service);
-            }
-            Err(e) => {
-                eprintln!("Failed to start price service: {}", e);
-                self.price_service = None;
+        if self.postgres_read_only {
+            self.price_service = None;
+        } else {
+            match PriceService::start(config) {
+                Ok(service) => {
+                    self.request_price_fetch(&service);
+                    self.request_all_history(&service);
+                    self.price_service = Some(service);
+                }
+                Err(e) => {
+                    eprintln!("Failed to start price service: {}", e);
+                    self.price_service = None;
+                }
             }
         }
         self.request_market_data();
         self.request_economy_data();
-        self.request_sentiment_data();
+        if !self.postgres_read_only {
+            self.request_sentiment_data();
+        }
 
         // Start background refresh
-        self.start_background_refresh();
+        if !self.postgres_read_only {
+            self.start_background_refresh();
+        }
     }
 
     /// Spawns a background thread to run `pftui refresh` on TUI startup.
@@ -1078,6 +1089,8 @@ impl App {
         let config = Config {
             database_backend: self.database_backend,
             database_url: self.database_url.clone(),
+            mirror_source_url: None,
+            postgres_read_only: self.postgres_read_only,
             postgres_max_connections: self.postgres_max_connections,
             postgres_connect_timeout_secs: self.postgres_connect_timeout_secs,
             base_currency: self.base_currency.clone(),
@@ -1535,6 +1548,7 @@ impl App {
             let cfg = Config {
                 database_backend,
                 database_url,
+                postgres_read_only: false,
                 ..Config::default()
             };
             let backend = crate::db::backend::open_from_config(&cfg, &db_path).ok();
@@ -6095,6 +6109,8 @@ mod vim_motion_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -6344,6 +6360,8 @@ mod search_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -6706,6 +6724,8 @@ mod timeframe_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -6733,6 +6753,8 @@ mod timeframe_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -6828,6 +6850,8 @@ mod crosshair_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -6994,6 +7018,8 @@ mod responsive_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -7062,6 +7088,8 @@ mod on_demand_history_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -7191,6 +7219,8 @@ mod daily_change_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -7440,6 +7470,8 @@ mod portfolio_value_history_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -8048,6 +8080,8 @@ mod tui_add_popup_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -8589,6 +8623,8 @@ mod sort_flash_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -8694,6 +8730,8 @@ mod prev_day_alloc_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -9010,6 +9048,8 @@ mod mouse_tests {
         let config = crate::config::Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),
@@ -10066,6 +10106,8 @@ mod mouse_tests {
         let config = Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "USD".to_string(),

@@ -643,6 +643,45 @@ pub fn get_impacts_for_symbol(conn: &Connection, symbol: &str) -> Result<Vec<(Tr
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
+fn list_all_impacts(conn: &Connection) -> Result<Vec<(Trend, TrendAssetImpact)>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.name, t.timeframe, t.direction, t.conviction, t.category, t.description, t.asset_impact, t.key_signal, t.status, t.created_at, t.updated_at,
+                i.id, i.trend_id, i.symbol, i.impact, i.mechanism, i.timeframe, i.updated_at
+         FROM trend_tracker t
+         JOIN trend_asset_impact i ON t.id = i.trend_id
+         ORDER BY t.updated_at DESC",
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        let trend = Trend {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            timeframe: row.get(2)?,
+            direction: row.get(3)?,
+            conviction: row.get(4)?,
+            category: row.get(5)?,
+            description: row.get(6)?,
+            asset_impact: row.get(7)?,
+            key_signal: row.get(8)?,
+            status: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
+        };
+        let impact = TrendAssetImpact {
+            id: row.get(12)?,
+            trend_id: row.get(13)?,
+            symbol: row.get(14)?,
+            impact: row.get(15)?,
+            mechanism: row.get(16)?,
+            timeframe: row.get(17)?,
+            updated_at: row.get(18)?,
+        };
+        Ok((trend, impact))
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 fn get_impacts_for_symbol_postgres(pool: &PgPool, symbol: &str) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     crate::db::pg_runtime::block_on(async {
         let rows = sqlx::query(
@@ -691,10 +730,60 @@ fn get_impacts_for_symbol_postgres(pool: &PgPool, symbol: &str) -> Result<Vec<(T
     .map_err(Into::into)
 }
 
+fn list_all_impacts_postgres(pool: &PgPool) -> Result<Vec<(Trend, TrendAssetImpact)>> {
+    crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(
+            "SELECT t.id, t.name, t.timeframe, t.direction, t.conviction, t.category, t.description, t.asset_impact, t.key_signal, t.status, t.created_at::text, t.updated_at::text,
+                    i.id, i.trend_id, i.symbol, i.impact, i.mechanism, i.timeframe, i.updated_at::text
+             FROM trend_tracker t
+             JOIN trend_asset_impact i ON t.id = i.trend_id
+             ORDER BY t.updated_at DESC",
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok::<Vec<(Trend, TrendAssetImpact)>, sqlx::Error>(
+            rows.iter()
+                .map(|r| {
+                    let trend = Trend {
+                        id: r.get(0),
+                        name: r.get(1),
+                        timeframe: r.get(2),
+                        direction: r.get(3),
+                        conviction: r.get(4),
+                        category: r.get(5),
+                        description: r.get(6),
+                        asset_impact: r.get(7),
+                        key_signal: r.get(8),
+                        status: r.get(9),
+                        created_at: r.get(10),
+                        updated_at: r.get(11),
+                    };
+                    let impact = TrendAssetImpact {
+                        id: r.get(12),
+                        trend_id: r.get(13),
+                        symbol: r.get(14),
+                        impact: r.get(15),
+                        mechanism: r.get(16),
+                        timeframe: r.get(17),
+                        updated_at: r.get(18),
+                    };
+                    (trend, impact)
+                })
+                .collect(),
+        )
+    })
+    .map_err(Into::into)
+}
+
 pub fn get_impacts_for_symbol_backend(backend: &BackendConnection, symbol: &str) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     query::dispatch(
         backend,
         |conn| get_impacts_for_symbol(conn, symbol),
         |pool| get_impacts_for_symbol_postgres(pool, symbol),
     )
+}
+
+pub fn list_all_impacts_backend(backend: &BackendConnection) -> Result<Vec<(Trend, TrendAssetImpact)>> {
+    query::dispatch(backend, list_all_impacts, list_all_impacts_postgres)
 }

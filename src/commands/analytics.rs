@@ -1806,6 +1806,20 @@ fn build_alignment_rows(
 
     let scenarios_list =
         scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    let impact_rows = if let Some(sym) = filter_symbol {
+        trends::get_impacts_for_symbol_backend(backend, &sym.to_uppercase()).unwrap_or_default()
+    } else {
+        trends::list_all_impacts_backend(backend).unwrap_or_default()
+    };
+    let mut impacts_by_symbol: HashMap<String, Vec<(trends::Trend, trends::TrendAssetImpact)>> =
+        HashMap::new();
+    for (trend, impact) in impact_rows {
+        impacts_by_symbol
+            .entry(impact.symbol.to_uppercase())
+            .or_default()
+            .push((trend, impact));
+    }
+
     let mut rows = Vec::new();
     for sym in symbols {
         let medium = conviction_bias_map
@@ -1814,8 +1828,7 @@ fn build_alignment_rows(
             .unwrap_or_else(|| "neutral".to_string());
         let medium_signal = conviction_score_map.get(&sym).copied().unwrap_or(0.0);
 
-        let high_impacts =
-            trends::get_impacts_for_symbol_backend(backend, &sym).unwrap_or_default();
+        let high_impacts = impacts_by_symbol.get(&sym).cloned().unwrap_or_default();
         let bull_high = high_impacts
             .iter()
             .filter(|(_, i)| i.impact.eq_ignore_ascii_case("bullish"))

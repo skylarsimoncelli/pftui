@@ -96,6 +96,12 @@ pub struct Config {
     /// Database connection URL used when `database_backend = "postgres"`.
     #[serde(default)]
     pub database_url: Option<String>,
+    /// Optional remote Postgres source used to mirror into a local SQLite database.
+    #[serde(default)]
+    pub mirror_source_url: Option<String>,
+    /// When true, PostgreSQL sessions are opened in read-only mode and startup skips migrations.
+    #[serde(default)]
+    pub postgres_read_only: bool,
     /// PostgreSQL max pool connections.
     #[serde(default = "default_postgres_max_connections")]
     pub postgres_max_connections: u32,
@@ -260,6 +266,8 @@ impl Default for Config {
         Config {
             database_backend: DatabaseBackend::default(),
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: default_postgres_max_connections(),
             postgres_connect_timeout_secs: default_postgres_connect_timeout_secs(),
             base_currency: default_base_currency(),
@@ -285,6 +293,65 @@ impl Default for Config {
 impl Config {
     pub fn is_percentage_mode(&self) -> bool {
         self.portfolio_mode == PortfolioMode::Percentage
+    }
+
+    fn postgres_host(&self) -> Option<String> {
+        let url = self.database_url.as_deref()?.trim();
+        let (_, rest) = url.split_once("://")?;
+        let authority = rest.split('/').next().unwrap_or(rest);
+        let host_port = authority.rsplit('@').next().unwrap_or(authority);
+
+        if let Some(stripped) = host_port.strip_prefix('[') {
+            let end = stripped.find(']')?;
+            return Some(stripped[..end].to_string());
+        }
+
+        Some(host_port.split(':').next().unwrap_or(host_port).to_string())
+    }
+
+    pub fn uses_remote_postgres_profile(&self) -> bool {
+        if self.database_backend != DatabaseBackend::Postgres {
+            return false;
+        }
+
+        match self.postgres_host() {
+            Some(host) => {
+                let normalized = host.trim().to_ascii_lowercase();
+                if normalized == "localhost" {
+                    return false;
+                }
+                normalized
+                    .parse::<std::net::IpAddr>()
+                    .map(|ip| !ip.is_loopback())
+                    .unwrap_or(true)
+            }
+            None => false,
+        }
+    }
+
+    pub fn is_remote_postgres_read_only(&self) -> bool {
+        self.database_backend == DatabaseBackend::Postgres
+            && (self.postgres_read_only || self.uses_remote_postgres_profile())
+    }
+
+    pub fn effective_postgres_read_only(&self) -> bool {
+        self.is_remote_postgres_read_only()
+    }
+
+    pub fn effective_postgres_max_connections(&self) -> u32 {
+        if self.is_remote_postgres_read_only() {
+            1
+        } else {
+            self.postgres_max_connections.max(1)
+        }
+    }
+
+    pub fn effective_postgres_connect_timeout_secs(&self) -> u64 {
+        if self.is_remote_postgres_read_only() {
+            self.postgres_connect_timeout_secs.max(30)
+        } else {
+            self.postgres_connect_timeout_secs.max(1)
+        }
     }
 
     /// Return the currency symbol for the configured base currency.
@@ -450,6 +517,8 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
         assert_eq!(config.database_url, None);
+        assert_eq!(config.mirror_source_url, None);
+        assert!(!config.postgres_read_only);
         assert_eq!(config.postgres_max_connections, 5);
         assert_eq!(config.postgres_connect_timeout_secs, 10);
         assert_eq!(config.base_currency, "USD");
@@ -479,6 +548,8 @@ mod tests {
         let config = Config {
             database_backend: DatabaseBackend::Postgres,
             database_url: Some("postgres://localhost:5432/pftui".to_string()),
+            mirror_source_url: Some("postgres://mirror.example/pftui".to_string()),
+            postgres_read_only: true,
             postgres_max_connections: 12,
             postgres_connect_timeout_secs: 20,
             base_currency: "EUR".to_string(),
@@ -505,6 +576,11 @@ mod tests {
             loaded.database_url,
             Some("postgres://localhost:5432/pftui".to_string())
         );
+        assert_eq!(
+            loaded.mirror_source_url,
+            Some("postgres://mirror.example/pftui".to_string())
+        );
+        assert!(loaded.postgres_read_only);
         assert_eq!(loaded.postgres_max_connections, 12);
         assert_eq!(loaded.postgres_connect_timeout_secs, 20);
         assert_eq!(loaded.base_currency, "EUR");
@@ -523,6 +599,8 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
         assert_eq!(config.database_url, None);
+        assert_eq!(config.mirror_source_url, None);
+        assert!(!config.postgres_read_only);
         assert_eq!(config.postgres_max_connections, 5);
         assert_eq!(config.postgres_connect_timeout_secs, 10);
         assert_eq!(config.base_currency, "GBP");
@@ -542,6 +620,8 @@ mod tests {
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.database_backend, DatabaseBackend::Sqlite);
         assert_eq!(config.database_url, None);
+        assert_eq!(config.mirror_source_url, None);
+        assert!(!config.postgres_read_only);
         assert_eq!(config.postgres_max_connections, 5);
         assert_eq!(config.postgres_connect_timeout_secs, 10);
         assert_eq!(config.base_currency, "USD");
@@ -632,6 +712,52 @@ privacy_toggle = "P"
         assert_eq!(config.currency_symbol(), "$");
         let eur_config = Config { base_currency: "EUR".to_string(), ..Default::default() };
         assert_eq!(eur_config.currency_symbol(), "€");
+    }
+
+    #[test]
+    fn remote_postgres_read_only_uses_remote_runtime_profile() {
+        let config = Config {
+            database_backend: DatabaseBackend::Postgres,
+            database_url: Some("postgres://example".to_string()),
+            postgres_read_only: true,
+            postgres_max_connections: 9,
+            postgres_connect_timeout_secs: 5,
+            ..Default::default()
+        };
+
+        assert!(config.is_remote_postgres_read_only());
+        assert_eq!(config.effective_postgres_max_connections(), 1);
+        assert_eq!(config.effective_postgres_connect_timeout_secs(), 30);
+    }
+
+    #[test]
+    fn local_postgres_keeps_configured_runtime_profile() {
+        let config = Config {
+            database_backend: DatabaseBackend::Postgres,
+            database_url: Some("postgres://localhost/pftui".to_string()),
+            postgres_read_only: false,
+            postgres_max_connections: 9,
+            postgres_connect_timeout_secs: 5,
+            ..Default::default()
+        };
+
+        assert!(!config.is_remote_postgres_read_only());
+        assert_eq!(config.effective_postgres_max_connections(), 9);
+        assert_eq!(config.effective_postgres_connect_timeout_secs(), 5);
+    }
+
+    #[test]
+    fn remote_postgres_url_implies_remote_profile() {
+        let config = Config {
+            database_backend: DatabaseBackend::Postgres,
+            database_url: Some("postgres://user:pass@37.27.248.245:50498/pftui".to_string()),
+            postgres_read_only: false,
+            ..Default::default()
+        };
+
+        assert!(config.uses_remote_postgres_profile());
+        assert!(config.effective_postgres_read_only());
+        assert_eq!(config.effective_postgres_max_connections(), 1);
     }
 
     #[test]

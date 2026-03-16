@@ -65,8 +65,9 @@ pub fn open_from_config(config: &Config, sqlite_path: &Path) -> Result<BackendCo
                         "database_backend is set to postgres but database_url is not set"
                     )
                 })?;
-            let max_connections = config.postgres_max_connections.max(1);
-            let connect_timeout = Duration::from_secs(config.postgres_connect_timeout_secs.max(1));
+            let max_connections = config.effective_postgres_max_connections();
+            let connect_timeout =
+                Duration::from_secs(config.effective_postgres_connect_timeout_secs());
             let pool = crate::db::pg_runtime::block_on(async {
                     PgPoolOptions::new()
                         .max_connections(max_connections)
@@ -75,8 +76,10 @@ pub fn open_from_config(config: &Config, sqlite_path: &Path) -> Result<BackendCo
                         .await
                 })
                 .context("Failed to connect to PostgreSQL using database_url")?;
-            crate::db::postgres_schema::run_migrations(&pool)
-                .context("Failed to run PostgreSQL schema migrations")?;
+            if !config.effective_postgres_read_only() {
+                crate::db::postgres_schema::run_migrations(&pool)
+                    .context("Failed to run PostgreSQL schema migrations")?;
+            }
             let _ = sqlite_path; // retained for signature parity/callsites
             Ok(BackendConnection::Postgres { pool })
         }

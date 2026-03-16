@@ -543,6 +543,24 @@ fn main() -> Result<()> {
     let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
 
+    if let Some(Command::System {
+        command: cli::SystemCommand::Mirror { ref command },
+    }) = cli.command
+    {
+        return commands::mirror::run(&config, &db_path, command);
+    }
+
+    let should_sync_mirror_on_startup = matches!(cli.command, None)
+        || matches!(
+            cli.command,
+            Some(Command::System {
+                command: cli::SystemCommand::Web { .. }
+            })
+        );
+    if should_sync_mirror_on_startup {
+        commands::mirror::spawn_startup_sync_if_needed(&config, &db_path);
+    }
+
     let backend = open_from_config(&config, &db_path)?;
 
     let result = match cli.command {
@@ -714,6 +732,9 @@ fn main() -> Result<()> {
                     cli::ImportModeArg::Merge => commands::import::ImportMode::Merge,
                 };
                 commands::import::run(&backend, &config, &path, import_mode)
+            }
+            cli::SystemCommand::Mirror { .. } => {
+                unreachable!("mirror handled before backend initialization")
             }
             cli::SystemCommand::Snapshot {
                 width,

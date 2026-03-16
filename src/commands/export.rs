@@ -241,6 +241,8 @@ mod tests {
         let config = Config {
             database_backend: crate::config::DatabaseBackend::Sqlite,
             database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
             postgres_max_connections: 5,
             postgres_connect_timeout_secs: 10,
             base_currency: "EUR".to_string(),

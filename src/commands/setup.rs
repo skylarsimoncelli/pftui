@@ -58,6 +58,15 @@ struct PostgresPromptDefaults {
     ssl_mode: PostgresSslPromptChoice,
 }
 
+#[derive(Debug, Clone)]
+struct DatabaseSetupSelection {
+    database_backend: DatabaseBackend,
+    database_url: Option<String>,
+    mirror_source_url: Option<String>,
+    postgres_read_only: bool,
+    run_initial_mirror_sync: bool,
+}
+
 fn prompt(label: &str) -> Result<String> {
     print!("{}", label);
     io::stdout().flush()?;
@@ -152,9 +161,11 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
     new_config.base_currency = chosen_currency;
     new_config.portfolio_mode = mode;
     let db_path = crate::db::default_db_path();
-    let (database_backend, database_url) = prompt_database_backend(config, &db_path)?;
-    new_config.database_backend = database_backend;
-    new_config.database_url = database_url;
+    let db_selection = prompt_database_backend(config, &db_path)?;
+    new_config.database_backend = db_selection.database_backend;
+    new_config.database_url = db_selection.database_url.clone();
+    new_config.mirror_source_url = db_selection.mirror_source_url.clone();
+    new_config.postgres_read_only = db_selection.postgres_read_only;
 
     let selected_backend = open_from_config(&new_config, &db_path)?;
 
@@ -182,9 +193,31 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
         }
     }
 
-    match mode {
-        PortfolioMode::Full => full_mode_setup(&selected_backend, &new_config)?,
-        PortfolioMode::Percentage => percentage_mode_setup(&selected_backend)?,
+    if db_selection.run_initial_mirror_sync {
+        let source_url = db_selection
+            .mirror_source_url
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing mirror source URL"))?;
+        crate::commands::mirror::sync_and_activate(&new_config, &db_path, source_url)?;
+        let reloaded = open_from_config(&Config {
+            database_backend: DatabaseBackend::Sqlite,
+            database_url: None,
+            mirror_source_url: db_selection.mirror_source_url.clone(),
+            postgres_read_only: false,
+            ..new_config.clone()
+        }, &db_path)?;
+        let tx_count = transactions::count_transactions_backend(&reloaded).unwrap_or(0);
+        let alloc_count = allocations::count_allocations_backend(&reloaded).unwrap_or(0);
+        if tx_count > 0 {
+            new_config.portfolio_mode = PortfolioMode::Full;
+        } else if alloc_count > 0 {
+            new_config.portfolio_mode = PortfolioMode::Percentage;
+        }
+    } else {
+        match mode {
+            PortfolioMode::Full => full_mode_setup(&selected_backend, &new_config)?,
+            PortfolioMode::Percentage => percentage_mode_setup(&selected_backend)?,
+        }
     }
 
     // Optional Brave API key for richer research/news/economic data.
@@ -242,7 +275,7 @@ fn reset_setup_tables(backend: &BackendConnection) -> Result<()> {
 fn prompt_database_backend(
     config: &Config,
     sqlite_path: &Path,
-) -> Result<(DatabaseBackend, Option<String>)> {
+) -> Result<DatabaseSetupSelection> {
     println!("  Database backend:");
     println!("    \x1b[1m[1]\x1b[0m Local SQLite \x1b[90m(default, zero config)\x1b[0m");
     println!("    \x1b[1m[2]\x1b[0m Local PostgreSQL \x1b[90m(localhost / 127.0.0.1)\x1b[0m");
@@ -263,16 +296,34 @@ fn prompt_database_backend(
     };
 
     let selection = match selected {
-        DatabaseSetupChoice::Sqlite => (DatabaseBackend::Sqlite, None),
+        DatabaseSetupChoice::Sqlite => DatabaseSetupSelection {
+            database_backend: DatabaseBackend::Sqlite,
+            database_url: None,
+            mirror_source_url: None,
+            postgres_read_only: false,
+            run_initial_mirror_sync: false,
+        },
         DatabaseSetupChoice::LocalPostgres => {
             let defaults = postgres_prompt_defaults(config, true);
             let url = prompt_local_postgres_url(config, sqlite_path, &defaults)?;
-            (DatabaseBackend::Postgres, Some(url))
+            DatabaseSetupSelection {
+                database_backend: DatabaseBackend::Postgres,
+                database_url: Some(url),
+                mirror_source_url: None,
+                postgres_read_only: false,
+                run_initial_mirror_sync: false,
+            }
         }
         DatabaseSetupChoice::RemotePostgres => {
             let defaults = postgres_prompt_defaults(config, false);
             let url = prompt_remote_postgres_url(config, sqlite_path, &defaults)?;
-            (DatabaseBackend::Postgres, Some(url))
+            DatabaseSetupSelection {
+                database_backend: DatabaseBackend::Sqlite,
+                database_url: None,
+                mirror_source_url: Some(url),
+                postgres_read_only: false,
+                run_initial_mirror_sync: true,
+            }
         }
     };
 
@@ -304,17 +355,21 @@ fn database_setup_choice_label(choice: DatabaseSetupChoice) -> &'static str {
 }
 
 fn infer_database_setup_choice(config: &Config) -> DatabaseSetupChoice {
-    match config.database_backend {
-        DatabaseBackend::Sqlite => DatabaseSetupChoice::Sqlite,
-        DatabaseBackend::Postgres => {
-            if let Some(url) = config.database_url.as_deref() {
-                if let Ok(options) = PgConnectOptions::from_str(url.trim()) {
-                    if is_local_postgres_host(options.get_host()) {
-                        return DatabaseSetupChoice::LocalPostgres;
+    if config.mirror_source_url.is_some() {
+        DatabaseSetupChoice::RemotePostgres
+    } else {
+        match config.database_backend {
+            DatabaseBackend::Sqlite => DatabaseSetupChoice::Sqlite,
+            DatabaseBackend::Postgres => {
+                if let Some(url) = config.database_url.as_deref() {
+                    if let Ok(options) = PgConnectOptions::from_str(url.trim()) {
+                        if is_local_postgres_host(options.get_host()) {
+                            return DatabaseSetupChoice::LocalPostgres;
+                        }
                     }
                 }
+                DatabaseSetupChoice::RemotePostgres
             }
-            DatabaseSetupChoice::RemotePostgres
         }
     }
 }
@@ -338,15 +393,22 @@ fn postgres_prompt_defaults(config: &Config, local: bool) -> PostgresPromptDefau
         }
     };
 
-    if config.database_backend == DatabaseBackend::Postgres {
-        if let Some(url) = config.database_url.as_deref() {
-            if let Ok(options) = PgConnectOptions::from_str(url.trim()) {
-                defaults.host = options.get_host().to_string();
-                defaults.port = options.get_port();
-                defaults.database = options.get_database().unwrap_or("pftui").to_string();
-                defaults.username = options.get_username().to_string();
-                defaults.ssl_mode = ssl_choice_from_pg_mode(options.get_ssl_mode());
-            }
+    let source_url = if local {
+        config.database_url.as_deref()
+    } else {
+        config
+            .mirror_source_url
+            .as_deref()
+            .or(config.database_url.as_deref())
+    };
+
+    if let Some(url) = source_url {
+        if let Ok(options) = PgConnectOptions::from_str(url.trim()) {
+            defaults.host = options.get_host().to_string();
+            defaults.port = options.get_port();
+            defaults.database = options.get_database().unwrap_or("pftui").to_string();
+            defaults.username = options.get_username().to_string();
+            defaults.ssl_mode = ssl_choice_from_pg_mode(options.get_ssl_mode());
         }
     }
 
@@ -375,6 +437,7 @@ fn prompt_local_postgres_url(
         &username,
         &password,
         PostgresSslPromptChoice::Disable,
+        false,
     );
     test_postgres_connection(config, sqlite_path, &url)?;
     Ok(url)
@@ -385,7 +448,10 @@ fn prompt_remote_postgres_url(
     sqlite_path: &Path,
     defaults: &PostgresPromptDefaults,
 ) -> Result<String> {
-    println!("  Remote PostgreSQL setup:");
+    println!("  Remote PostgreSQL mirror setup:");
+    println!("  \x1b[33mpftui will create a local SQLite mirror from this remote source.\x1b[0m");
+    println!("  \x1b[90mThe laptop will read from local SQLite after the initial sync.\x1b[0m");
+    println!("  \x1b[90mThe remote database must already have the pftui schema.\x1b[0m");
     println!(
         "    \x1b[1m[1]\x1b[0m Guided fields \x1b[90m(host, port, db, user, password, SSL)\x1b[0m"
     );
@@ -415,13 +481,21 @@ fn prompt_remote_postgres_url(
             let username = prompt_required_with_default("  User", &defaults.username)?;
             let password = prompt("  Password: ")?;
             let ssl_mode = prompt_postgres_ssl_mode(defaults.ssl_mode)?;
-            build_postgres_url(&host, port, &database, &username, &password, ssl_mode)
+            build_postgres_url(
+                &host,
+                port,
+                &database,
+                &username,
+                &password,
+                ssl_mode,
+                true,
+            )
         }
         PostgresConnectionInputMode::ConnectionString => loop {
             let raw = prompt("  PostgreSQL URL (postgres://...): ")?;
             let trimmed = raw.trim();
             if is_valid_postgres_url(trimmed) {
-                break trimmed.to_string();
+                break enforce_postgres_read_only(trimmed)?;
             }
             println!("  Enter a valid PostgreSQL URL starting with postgres:// or postgresql://");
         },
@@ -536,6 +610,7 @@ fn build_postgres_url(
     username: &str,
     password: &str,
     ssl_mode: PostgresSslPromptChoice,
+    read_only: bool,
 ) -> String {
     let mut options = PgConnectOptions::new()
         .host(host)
@@ -550,6 +625,9 @@ fn build_postgres_url(
 
     let mut url = options.to_url_lossy().to_string();
     url = remove_query_param(&url, "statement-cache-capacity");
+    if read_only {
+        url = add_or_replace_query_param(&url, "options", "-c default_transaction_read_only=on");
+    }
     url
 }
 
@@ -570,10 +648,41 @@ fn remove_query_param(url: &str, param: &str) -> String {
     }
 }
 
+fn add_or_replace_query_param(url: &str, param: &str, value: &str) -> String {
+    let mut parts = url.splitn(2, '?');
+    let base = parts.next().unwrap_or(url);
+    let existing_query = parts.next().unwrap_or("");
+    let mut kept: Vec<String> = existing_query
+        .split('&')
+        .filter(|entry| !entry.is_empty() && !entry.starts_with(&format!("{param}=")))
+        .map(|entry| entry.to_string())
+        .collect();
+
+    let encoded_value = if value == "-c default_transaction_read_only=on" {
+        "-c+default_transaction_read_only%3Don".to_string()
+    } else {
+        value.replace(' ', "+").replace('=', "%3D")
+    };
+    kept.push(format!("{param}={encoded_value}"));
+    format!("{base}?{}", kept.join("&"))
+}
+
+fn enforce_postgres_read_only(url: &str) -> Result<String> {
+    if !is_valid_postgres_url(url) {
+        bail!("invalid postgres url");
+    }
+    Ok(add_or_replace_query_param(
+        url.trim(),
+        "options",
+        "-c default_transaction_read_only=on",
+    ))
+}
+
 fn test_postgres_connection(config: &Config, sqlite_path: &Path, url: &str) -> Result<()> {
     let mut test_config = config.clone();
     test_config.database_backend = DatabaseBackend::Postgres;
     test_config.database_url = Some(url.to_string());
+    test_config.postgres_read_only = url.contains("default_transaction_read_only");
 
     println!("  Testing PostgreSQL connection...");
     open_from_config(&test_config, sqlite_path)?;
@@ -1247,6 +1356,7 @@ mod tests {
             "skylar",
             "p@ss word",
             PostgresSslPromptChoice::Require,
+            false,
         );
         assert!(url.starts_with("postgres://skylar:p%40ss%20word@db.example.com:5432/pftui"));
         assert!(url.contains("sslmode=require"));
@@ -1260,5 +1370,24 @@ mod tests {
             remove_query_param(url, "statement-cache-capacity"),
             "postgres://user@host:5432/pftui?sslmode=require"
         );
+    }
+
+    #[test]
+    fn add_or_replace_query_param_replaces_existing_value() {
+        let url = add_or_replace_query_param(
+            "postgres://user@host:5432/pftui?sslmode=require&options=old",
+            "options",
+            "-c default_transaction_read_only=on",
+        );
+        assert!(url.contains("sslmode=require"));
+        assert!(url.contains("options=-c+default_transaction_read_only%3Don"));
+        assert!(!url.contains("options=old"));
+    }
+
+    #[test]
+    fn enforce_postgres_read_only_adds_read_only_option() {
+        let url = enforce_postgres_read_only("postgres://user:pass@db.example.com:5432/pftui")
+            .unwrap();
+        assert!(url.contains("options=-c+default_transaction_read_only%3Don"));
     }
 }

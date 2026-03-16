@@ -32,6 +32,7 @@ pub mod journal;
 pub mod list_tx;
 pub mod macro_cmd;
 pub mod migrate_journal;
+pub mod mirror;
 pub mod movers;
 pub mod news;
 pub mod oil;

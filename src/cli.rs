@@ -870,6 +870,11 @@ pub enum SystemCommand {
         #[arg(long, value_enum, default_value = "replace")]
         mode: ImportModeArg,
     },
+    /// Sync a remote Postgres source into the local SQLite mirror
+    Mirror {
+        #[command(subcommand)]
+        command: MirrorCommand,
+    },
     /// Render the TUI as ANSI text to stdout (no interactive terminal required)
     Snapshot {
         /// Terminal width in columns (default: 120)
@@ -924,6 +929,20 @@ pub enum SystemCommand {
         /// Output summary as JSON
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum MirrorCommand {
+    /// Pull all public tables from a remote Postgres source into the local SQLite database
+    Sync {
+        /// Remote Postgres URL to mirror from. Defaults to mirror_source_url or current database_url.
+        #[arg(long)]
+        source_url: Option<String>,
+
+        /// After syncing, switch the active backend to local SQLite and persist mirror_source_url.
+        #[arg(long)]
+        activate: bool,
     },
 }
 
