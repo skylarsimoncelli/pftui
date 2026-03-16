@@ -2050,13 +2050,19 @@ impl App {
     fn create_price_alert(&mut self, symbol: &str, threshold: Decimal, direction: &str) {
         let rule_text = format!("{} {} {}", symbol, direction, threshold);
         if let Some(backend) = self.open_backend() {
+            let threshold_text = threshold.to_string();
             let _ = crate::db::alerts::add_alert_backend(
                 &backend,
-                "price",
-                symbol,
-                direction,
-                &threshold.to_string(),
-                &rule_text,
+                crate::db::alerts::NewAlert {
+                    kind: "price",
+                    symbol,
+                    direction,
+                    condition: None,
+                    threshold: &threshold_text,
+                    rule_text: &rule_text,
+                    recurring: false,
+                    cooldown_minutes: 0,
+                },
             );
             self.load_alerts();
         }
@@ -3164,7 +3170,11 @@ impl App {
                 self.clear_transaction_symbol_filter();
             }
             KeyCode::Char('c') if matches!(self.view_mode, ViewMode::Journal) => {
-                if let Some(entry) = self.journal_entries.get(self.journal_selected_index).cloned() {
+                if let Some(entry) = self
+                    .journal_entries
+                    .get(self.journal_selected_index)
+                    .cloned()
+                {
                     if let Some(backend) = self.open_backend() {
                         let _ = crate::db::journal::update_entry_backend(
                             &backend,
@@ -3177,7 +3187,11 @@ impl App {
                 }
             }
             KeyCode::Char('x') if matches!(self.view_mode, ViewMode::Journal) => {
-                if let Some(entry) = self.journal_entries.get(self.journal_selected_index).cloned() {
+                if let Some(entry) = self
+                    .journal_entries
+                    .get(self.journal_selected_index)
+                    .cloned()
+                {
                     if let Some(backend) = self.open_backend() {
                         let _ = crate::db::journal::update_entry_backend(
                             &backend,
@@ -3567,14 +3581,20 @@ impl App {
                 fallback_hitboxes.push((start, end, view_mode));
                 cursor = end + 1;
             };
-            push(if compact { "Port" } else { "Portfolio" }, ViewMode::Positions);
+            push(
+                if compact { "Port" } else { "Portfolio" },
+                ViewMode::Positions,
+            );
             if !pct_mode {
                 push("Tx", ViewMode::Transactions);
             }
             push("Mkt", ViewMode::Markets);
             push(if compact { "Ec" } else { "Econ" }, ViewMode::Economy);
             push(if compact { "W" } else { "Watch" }, ViewMode::Watchlist);
-            push(if compact { "An" } else { "Analytics" }, ViewMode::Analytics);
+            push(
+                if compact { "An" } else { "Analytics" },
+                ViewMode::Analytics,
+            );
             push(if compact { "N" } else { "News" }, ViewMode::News);
             push(if compact { "J" } else { "Journal" }, ViewMode::Journal);
         }
@@ -3863,7 +3883,8 @@ impl App {
             return false;
         };
 
-        if col < area.x || col >= area.x + area.width || row < area.y || row >= area.y + area.height {
+        if col < area.x || col >= area.x + area.width || row < area.y || row >= area.y + area.height
+        {
             return false;
         }
 
@@ -3892,7 +3913,9 @@ impl App {
     /// Maps the clicked column to a SortField and toggles sort direction
     /// if clicking the already-active sort column.
     fn handle_column_header_click(&mut self, col: u16) {
-        if matches!(self.view_mode, ViewMode::Positions) && self.handle_positions_column_header_click(col) {
+        if matches!(self.view_mode, ViewMode::Positions)
+            && self.handle_positions_column_header_click(col)
+        {
             return;
         }
 
@@ -4030,7 +4053,8 @@ impl App {
                         self.sort_ascending = !self.sort_ascending;
                     } else {
                         self.sort_field = *field;
-                        self.sort_ascending = matches!(field, SortField::Name | SortField::Category);
+                        self.sort_ascending =
+                            matches!(field, SortField::Name | SortField::Category);
                     }
                     self.last_sort_change_tick = self.tick_count;
                     self.recompute();
@@ -4524,7 +4548,9 @@ impl App {
     fn handle_watchlist_target_popup_key(&mut self, key: KeyEvent) {
         enum TargetAction {
             None,
-            Clear { symbol: String },
+            Clear {
+                symbol: String,
+            },
             Save {
                 symbol: String,
                 price: String,
@@ -4584,7 +4610,8 @@ impl App {
             TargetAction::None => {}
             TargetAction::Clear { symbol } => {
                 if let Some(backend) = self.open_backend() {
-                    let _ = db_watchlist::set_watchlist_target_backend(&backend, &symbol, None, None);
+                    let _ =
+                        db_watchlist::set_watchlist_target_backend(&backend, &symbol, None, None);
                     self.load_watchlist();
                 }
                 self.watchlist_target_popup = None;
@@ -4663,7 +4690,11 @@ impl App {
         let Some(price) = self.prices.get(&item.yahoo_symbol).copied() else {
             return;
         };
-        self.create_price_alert(&item.yahoo_symbol, (price * dec!(1.05)).round_dp(2), "above");
+        self.create_price_alert(
+            &item.yahoo_symbol,
+            (price * dec!(1.05)).round_dp(2),
+            "above",
+        );
     }
 
     fn add_watchlist_for_selected_news_symbol(&mut self) {
@@ -4693,11 +4724,7 @@ impl App {
             content.push_str(" — ");
             content.push_str(entry.description.trim());
         }
-        self.open_journal_entry_popup_prefilled(
-            content,
-            Some("news".to_string()),
-            symbol,
-        );
+        self.open_journal_entry_popup_prefilled(content, Some("news".to_string()), symbol);
     }
 
     fn handle_journal_entry_popup_key(&mut self, key: KeyEvent) {
@@ -8116,14 +8143,20 @@ mod watchlist_tab_tests {
 
     #[test]
     fn test_default_view_uses_saved_watchlist_page() {
-        let config = Config { home_tab: "watchlist".to_string(), ..Config::default() };
+        let config = Config {
+            home_tab: "watchlist".to_string(),
+            ..Config::default()
+        };
         let app = App::new(&config, PathBuf::from(":memory:"));
         assert_eq!(app.view_mode, ViewMode::Watchlist);
     }
 
     #[test]
     fn test_default_view_uses_saved_analytics_page() {
-        let config = Config { home_tab: "analytics".to_string(), ..Config::default() };
+        let config = Config {
+            home_tab: "analytics".to_string(),
+            ..Config::default()
+        };
         let app = App::new(&config, PathBuf::from(":memory:"));
         assert_eq!(app.view_mode, ViewMode::Analytics);
     }
@@ -9024,7 +9057,9 @@ mod mouse_tests {
     fn render_app(app: &mut App) {
         let backend = TestBackend::new(app.terminal_width, app.terminal_height);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| crate::tui::ui::render(frame, app)).unwrap();
+        terminal
+            .draw(|frame| crate::tui::ui::render(frame, app))
+            .unwrap();
     }
 
     fn header_tab_center(app: &App, view_mode: ViewMode) -> u16 {
@@ -9467,10 +9502,16 @@ mod mouse_tests {
         ];
         render_app(&mut app);
 
-        let area = app.page_table_area.expect("missing transactions table area");
+        let area = app
+            .page_table_area
+            .expect("missing transactions table area");
         let row = area.y + 2 + 1;
         let col = area.x + 2;
-        app.handle_mouse(mouse_event(MouseEventKind::Down(MouseButton::Left), col, row));
+        app.handle_mouse(mouse_event(
+            MouseEventKind::Down(MouseButton::Left),
+            col,
+            row,
+        ));
         assert_eq!(app.tx_selected_index, 1);
     }
 
@@ -9533,7 +9574,9 @@ mod mouse_tests {
         app.theme_name = "midnight".to_string();
         render_app(&mut app);
         let old_theme = app.theme_name.clone();
-        let (start, end) = app.header_theme_col_range.expect("missing theme click target");
+        let (start, end) = app
+            .header_theme_col_range
+            .expect("missing theme click target");
 
         app.handle_header_click(start + ((end - start) / 2));
         assert_ne!(app.theme_name, old_theme, "Theme should have cycled");

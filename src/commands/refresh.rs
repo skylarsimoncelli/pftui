@@ -686,7 +686,11 @@ fn run_with_output(
             }
         }
         if history_attempted > 0 {
-            info_ln!(verbose, "✓ Price history ({} symbol backfills)", history_updated);
+            info_ln!(
+                verbose,
+                "✓ Price history ({} symbol backfills)",
+                history_updated
+            );
         }
     } else {
         info_ln!(verbose, "⊘ Prices (no symbols)");
@@ -952,7 +956,11 @@ fn run_with_output(
                 if used_brave {
                     info_ln!(verbose, "✓ Economy ({} indicators via Brave)", items.len());
                 } else {
-                    info_ln!(verbose, "✓ Economy ({} indicators via BLS fallback)", items.len());
+                    info_ln!(
+                        verbose,
+                        "✓ Economy ({} indicators via BLS fallback)",
+                        items.len()
+                    );
                 }
             }
             Err(e) => info_ln!(verbose, "✗ Economy (failed: {})", e),
@@ -1075,12 +1083,20 @@ fn run_with_output(
     if !onchain_ok_parts.is_empty() {
         info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
     } else {
-        info_ln!(verbose, "✗ On-chain (failed: {})", onchain_errors.join("; "));
+        info_ln!(
+            verbose,
+            "✗ On-chain (failed: {})",
+            onchain_errors.join("; ")
+        );
     }
 
     // Store daily portfolio snapshot
     if let Err(e) = store_portfolio_snapshot(backend, config, verbose) {
-        warn_ln!(verbose, "\nWarning: failed to store portfolio snapshot: {}", e);
+        warn_ln!(
+            verbose,
+            "\nWarning: failed to store portfolio snapshot: {}",
+            e
+        );
     }
     if let Err(e) = detect_timeframe_signals(backend) {
         warn_ln!(
@@ -1094,6 +1110,18 @@ fn run_with_output(
     match engine::check_alerts_backend_only(backend) {
         Ok(results) => {
             let newly_triggered = engine::get_newly_triggered(&results);
+            let armed_count = results
+                .iter()
+                .filter(|r| {
+                    r.rule.status == crate::alerts::AlertStatus::Armed && !r.newly_triggered
+                })
+                .count();
+            info_ln!(
+                verbose,
+                "\n✓ Smart alerts evaluated ({} triggered, {} armed)",
+                newly_triggered.len(),
+                armed_count
+            );
             if !newly_triggered.is_empty() {
                 info_ln!(verbose, "\n🔔 Alerts Triggered:");
                 for result in &newly_triggered {
