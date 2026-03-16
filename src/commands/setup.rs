@@ -1,11 +1,15 @@
 use std::collections::HashSet;
 use std::io::{self, Write};
+use std::path::Path;
+use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use sqlx::ConnectOptions;
 
 use crate::config::{save_config, Config, DatabaseBackend, PortfolioMode, SUPPORTED_CURRENCIES};
 use crate::db::backend::{open_from_config, BackendConnection};
@@ -21,6 +25,37 @@ struct SetupEntry {
     category: AssetCategory,
     value: Option<Decimal>, // full mode only
     pct: Decimal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabaseSetupChoice {
+    Sqlite,
+    LocalPostgres,
+    RemotePostgres,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PostgresConnectionInputMode {
+    Guided,
+    ConnectionString,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PostgresSslPromptChoice {
+    Disable,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PostgresPromptDefaults {
+    host: String,
+    port: u16,
+    database: String,
+    username: String,
+    ssl_mode: PostgresSslPromptChoice,
 }
 
 fn prompt(label: &str) -> Result<String> {
@@ -116,11 +151,11 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
     let mut new_config = config.clone();
     new_config.base_currency = chosen_currency;
     new_config.portfolio_mode = mode;
-    let (database_backend, database_url) = prompt_database_backend(config)?;
+    let db_path = crate::db::default_db_path();
+    let (database_backend, database_url) = prompt_database_backend(config, &db_path)?;
     new_config.database_backend = database_backend;
     new_config.database_url = database_url;
 
-    let db_path = crate::db::default_db_path();
     let selected_backend = open_from_config(&new_config, &db_path)?;
 
     // If explicit setup with existing data, warn on the selected backend.
@@ -204,61 +239,376 @@ fn reset_setup_tables(backend: &BackendConnection) -> Result<()> {
     )
 }
 
-fn prompt_database_backend(config: &Config) -> Result<(DatabaseBackend, Option<String>)> {
+fn prompt_database_backend(
+    config: &Config,
+    sqlite_path: &Path,
+) -> Result<(DatabaseBackend, Option<String>)> {
     println!("  Database backend:");
-    println!("    \x1b[1m[1]\x1b[0m SQLite \x1b[90m— local file (default)\x1b[0m");
-    println!("    \x1b[1m[2]\x1b[0m PostgreSQL \x1b[90m— external database URL\x1b[0m");
+    println!("    \x1b[1m[1]\x1b[0m Local SQLite \x1b[90m(default, zero config)\x1b[0m");
+    println!("    \x1b[1m[2]\x1b[0m Local PostgreSQL \x1b[90m(localhost / 127.0.0.1)\x1b[0m");
+    println!("    \x1b[1m[3]\x1b[0m Remote PostgreSQL \x1b[90m(custom host or full URL)\x1b[0m");
     println!();
 
-    let default_choice = match config.database_backend {
-        DatabaseBackend::Sqlite => "1",
-        DatabaseBackend::Postgres => "2",
-    };
-
-    let backend = loop {
-        let choice = prompt(&format!("  Select [1/2] (default: {}): ", default_choice))?;
-        match parse_database_backend_choice(&choice, config.database_backend) {
-            Ok(backend) => break backend,
-            Err(_) => {
-                println!("  Please enter 1 or 2.");
-                continue;
-            }
+    let default_choice = infer_database_setup_choice(config);
+    let selected = loop {
+        let prompt_text = format!(
+            "  Select [1/2/3] (default: {}): ",
+            database_setup_choice_label(default_choice)
+        );
+        let choice = prompt(&prompt_text)?;
+        match parse_database_setup_choice(&choice, default_choice) {
+            Ok(selection) => break selection,
+            Err(_) => println!("  Please enter 1, 2, or 3."),
         }
     };
 
-    let url = if backend == DatabaseBackend::Postgres {
-        loop {
-            let raw = prompt("  PostgreSQL URL (postgres://...): ")?;
-            let trimmed = raw.trim();
-            if is_valid_postgres_url(trimmed) {
-                break Some(trimmed.to_string());
-            }
-            println!("  Enter a valid PostgreSQL URL starting with postgres:// or postgresql://");
+    let selection = match selected {
+        DatabaseSetupChoice::Sqlite => (DatabaseBackend::Sqlite, None),
+        DatabaseSetupChoice::LocalPostgres => {
+            let defaults = postgres_prompt_defaults(config, true);
+            let url = prompt_local_postgres_url(config, sqlite_path, &defaults)?;
+            (DatabaseBackend::Postgres, Some(url))
         }
-    } else {
-        None
+        DatabaseSetupChoice::RemotePostgres => {
+            let defaults = postgres_prompt_defaults(config, false);
+            let url = prompt_remote_postgres_url(config, sqlite_path, &defaults)?;
+            (DatabaseBackend::Postgres, Some(url))
+        }
     };
 
     println!();
-    Ok((backend, url))
+    Ok(selection)
 }
 
-fn parse_database_backend_choice(
+fn parse_database_setup_choice(
     choice: &str,
-    default_backend: DatabaseBackend,
-) -> Result<DatabaseBackend> {
+    default_choice: DatabaseSetupChoice,
+) -> Result<DatabaseSetupChoice> {
     if choice.trim().is_empty() {
-        return Ok(default_backend);
+        return Ok(default_choice);
     }
     match choice.trim() {
-        "1" => Ok(DatabaseBackend::Sqlite),
-        "2" => Ok(DatabaseBackend::Postgres),
+        "1" => Ok(DatabaseSetupChoice::Sqlite),
+        "2" => Ok(DatabaseSetupChoice::LocalPostgres),
+        "3" => Ok(DatabaseSetupChoice::RemotePostgres),
         _ => bail!("invalid backend choice"),
     }
 }
 
+fn database_setup_choice_label(choice: DatabaseSetupChoice) -> &'static str {
+    match choice {
+        DatabaseSetupChoice::Sqlite => "1",
+        DatabaseSetupChoice::LocalPostgres => "2",
+        DatabaseSetupChoice::RemotePostgres => "3",
+    }
+}
+
+fn infer_database_setup_choice(config: &Config) -> DatabaseSetupChoice {
+    match config.database_backend {
+        DatabaseBackend::Sqlite => DatabaseSetupChoice::Sqlite,
+        DatabaseBackend::Postgres => {
+            if let Some(url) = config.database_url.as_deref() {
+                if let Ok(options) = PgConnectOptions::from_str(url.trim()) {
+                    if is_local_postgres_host(options.get_host()) {
+                        return DatabaseSetupChoice::LocalPostgres;
+                    }
+                }
+            }
+            DatabaseSetupChoice::RemotePostgres
+        }
+    }
+}
+
+fn postgres_prompt_defaults(config: &Config, local: bool) -> PostgresPromptDefaults {
+    let mut defaults = if local {
+        PostgresPromptDefaults {
+            host: "127.0.0.1".to_string(),
+            port: 5432,
+            database: "pftui".to_string(),
+            username: "postgres".to_string(),
+            ssl_mode: PostgresSslPromptChoice::Disable,
+        }
+    } else {
+        PostgresPromptDefaults {
+            host: String::new(),
+            port: 5432,
+            database: "pftui".to_string(),
+            username: "postgres".to_string(),
+            ssl_mode: PostgresSslPromptChoice::Require,
+        }
+    };
+
+    if config.database_backend == DatabaseBackend::Postgres {
+        if let Some(url) = config.database_url.as_deref() {
+            if let Ok(options) = PgConnectOptions::from_str(url.trim()) {
+                defaults.host = options.get_host().to_string();
+                defaults.port = options.get_port();
+                defaults.database = options.get_database().unwrap_or("pftui").to_string();
+                defaults.username = options.get_username().to_string();
+                defaults.ssl_mode = ssl_choice_from_pg_mode(options.get_ssl_mode());
+            }
+        }
+    }
+
+    if local && defaults.host.is_empty() {
+        defaults.host = "127.0.0.1".to_string();
+    }
+
+    defaults
+}
+
+fn prompt_local_postgres_url(
+    config: &Config,
+    sqlite_path: &Path,
+    defaults: &PostgresPromptDefaults,
+) -> Result<String> {
+    println!("  Local PostgreSQL setup:");
+    let host = prompt_with_default("  Host", &defaults.host)?;
+    let port = prompt_postgres_port("  Port", defaults.port)?;
+    let database = prompt_required_with_default("  Database name", &defaults.database)?;
+    let username = prompt_required_with_default("  User", &defaults.username)?;
+    let password = prompt("  Password: ")?;
+    let url = build_postgres_url(
+        &host,
+        port,
+        &database,
+        &username,
+        &password,
+        PostgresSslPromptChoice::Disable,
+    );
+    test_postgres_connection(config, sqlite_path, &url)?;
+    Ok(url)
+}
+
+fn prompt_remote_postgres_url(
+    config: &Config,
+    sqlite_path: &Path,
+    defaults: &PostgresPromptDefaults,
+) -> Result<String> {
+    println!("  Remote PostgreSQL setup:");
+    println!(
+        "    \x1b[1m[1]\x1b[0m Guided fields \x1b[90m(host, port, db, user, password, SSL)\x1b[0m"
+    );
+    println!("    \x1b[1m[2]\x1b[0m Full connection string \x1b[90m(postgres://...)\x1b[0m");
+    println!();
+
+    let input_mode = loop {
+        let raw = prompt("  Select input mode [1/2] (default: 1): ")?;
+        match parse_postgres_connection_input_mode(&raw) {
+            Ok(mode) => break mode,
+            Err(_) => println!("  Please enter 1 or 2."),
+        }
+    };
+
+    let url = match input_mode {
+        PostgresConnectionInputMode::Guided => {
+            let host = loop {
+                let value = prompt_required_with_default("  Host", &defaults.host)?;
+                if value.trim().is_empty() {
+                    println!("  Host cannot be empty.");
+                    continue;
+                }
+                break value;
+            };
+            let port = prompt_postgres_port("  Port", defaults.port)?;
+            let database = prompt_required_with_default("  Database name", &defaults.database)?;
+            let username = prompt_required_with_default("  User", &defaults.username)?;
+            let password = prompt("  Password: ")?;
+            let ssl_mode = prompt_postgres_ssl_mode(defaults.ssl_mode)?;
+            build_postgres_url(&host, port, &database, &username, &password, ssl_mode)
+        }
+        PostgresConnectionInputMode::ConnectionString => loop {
+            let raw = prompt("  PostgreSQL URL (postgres://...): ")?;
+            let trimmed = raw.trim();
+            if is_valid_postgres_url(trimmed) {
+                break trimmed.to_string();
+            }
+            println!("  Enter a valid PostgreSQL URL starting with postgres:// or postgresql://");
+        },
+    };
+
+    test_postgres_connection(config, sqlite_path, &url)?;
+    Ok(url)
+}
+
+fn parse_postgres_connection_input_mode(choice: &str) -> Result<PostgresConnectionInputMode> {
+    match choice.trim() {
+        "" | "1" => Ok(PostgresConnectionInputMode::Guided),
+        "2" => Ok(PostgresConnectionInputMode::ConnectionString),
+        _ => bail!("invalid postgres input mode"),
+    }
+}
+
+fn prompt_postgres_port(label: &str, default: u16) -> Result<u16> {
+    loop {
+        let raw = prompt(&format!("{label} [{default}]: "))?;
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(default);
+        }
+        match trimmed.parse::<u16>() {
+            Ok(port) if port > 0 => return Ok(port),
+            _ => println!("  Enter a valid port number (1-65535)."),
+        }
+    }
+}
+
+fn prompt_with_default(label: &str, default: &str) -> Result<String> {
+    let suffix = if default.is_empty() {
+        ": ".to_string()
+    } else {
+        format!(" [{default}]: ")
+    };
+    let raw = prompt(&format!("{label}{suffix}"))?;
+    if raw.trim().is_empty() {
+        Ok(default.to_string())
+    } else {
+        Ok(raw.trim().to_string())
+    }
+}
+
+fn prompt_required_with_default(label: &str, default: &str) -> Result<String> {
+    loop {
+        let value = prompt_with_default(label, default)?;
+        if value.trim().is_empty() {
+            println!("  This field cannot be empty.");
+            continue;
+        }
+        return Ok(value);
+    }
+}
+
+fn prompt_postgres_ssl_mode(default: PostgresSslPromptChoice) -> Result<PostgresSslPromptChoice> {
+    println!("  SSL/TLS mode:");
+    println!("    \x1b[1m[1]\x1b[0m disable \x1b[90m(no TLS, typical for localhost)\x1b[0m");
+    println!("    \x1b[1m[2]\x1b[0m prefer \x1b[90m(try TLS, fall back if unavailable)\x1b[0m");
+    println!(
+        "    \x1b[1m[3]\x1b[0m require \x1b[90m(TLS required, common for cloud Postgres)\x1b[0m"
+    );
+    println!("    \x1b[1m[4]\x1b[0m verify-ca \x1b[90m(validate certificate authority\x1b[0m");
+    println!("    \x1b[1m[5]\x1b[0m verify-full \x1b[90m(validate CA and hostname)\x1b[0m");
+    println!();
+
+    loop {
+        let raw = prompt(&format!(
+            "  Select SSL mode [1/2/3/4/5] (default: {}): ",
+            postgres_ssl_choice_label(default)
+        ))?;
+        match parse_postgres_ssl_mode_choice(&raw, default) {
+            Ok(mode) => return Ok(mode),
+            Err(_) => println!("  Please enter 1, 2, 3, 4, or 5."),
+        }
+    }
+}
+
+fn parse_postgres_ssl_mode_choice(
+    choice: &str,
+    default: PostgresSslPromptChoice,
+) -> Result<PostgresSslPromptChoice> {
+    if choice.trim().is_empty() {
+        return Ok(default);
+    }
+
+    match choice.trim() {
+        "1" => Ok(PostgresSslPromptChoice::Disable),
+        "2" => Ok(PostgresSslPromptChoice::Prefer),
+        "3" => Ok(PostgresSslPromptChoice::Require),
+        "4" => Ok(PostgresSslPromptChoice::VerifyCa),
+        "5" => Ok(PostgresSslPromptChoice::VerifyFull),
+        _ => bail!("invalid ssl choice"),
+    }
+}
+
+fn postgres_ssl_choice_label(choice: PostgresSslPromptChoice) -> &'static str {
+    match choice {
+        PostgresSslPromptChoice::Disable => "1",
+        PostgresSslPromptChoice::Prefer => "2",
+        PostgresSslPromptChoice::Require => "3",
+        PostgresSslPromptChoice::VerifyCa => "4",
+        PostgresSslPromptChoice::VerifyFull => "5",
+    }
+}
+
+fn build_postgres_url(
+    host: &str,
+    port: u16,
+    database: &str,
+    username: &str,
+    password: &str,
+    ssl_mode: PostgresSslPromptChoice,
+) -> String {
+    let mut options = PgConnectOptions::new()
+        .host(host)
+        .port(port)
+        .database(database)
+        .username(username)
+        .ssl_mode(pg_ssl_mode_from_choice(ssl_mode));
+
+    if !password.is_empty() {
+        options = options.password(password);
+    }
+
+    let mut url = options.to_url_lossy().to_string();
+    url = remove_query_param(&url, "statement-cache-capacity");
+    url
+}
+
+fn remove_query_param(url: &str, param: &str) -> String {
+    let Some((base, query)) = url.split_once('?') else {
+        return url.to_string();
+    };
+
+    let kept: Vec<&str> = query
+        .split('&')
+        .filter(|entry| !entry.starts_with(&format!("{param}=")))
+        .collect();
+
+    if kept.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}?{}", kept.join("&"))
+    }
+}
+
+fn test_postgres_connection(config: &Config, sqlite_path: &Path, url: &str) -> Result<()> {
+    let mut test_config = config.clone();
+    test_config.database_backend = DatabaseBackend::Postgres;
+    test_config.database_url = Some(url.to_string());
+
+    println!("  Testing PostgreSQL connection...");
+    open_from_config(&test_config, sqlite_path)?;
+    println!("    \x1b[32m✓\x1b[0m Connection successful");
+    Ok(())
+}
+
 fn is_valid_postgres_url(url: &str) -> bool {
-    url.starts_with("postgres://") || url.starts_with("postgresql://")
+    let trimmed = url.trim();
+    (trimmed.starts_with("postgres://") || trimmed.starts_with("postgresql://"))
+        && PgConnectOptions::from_str(trimmed).is_ok()
+}
+
+fn is_local_postgres_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+fn ssl_choice_from_pg_mode(mode: PgSslMode) -> PostgresSslPromptChoice {
+    match mode {
+        PgSslMode::Disable => PostgresSslPromptChoice::Disable,
+        PgSslMode::Prefer | PgSslMode::Allow => PostgresSslPromptChoice::Prefer,
+        PgSslMode::Require => PostgresSslPromptChoice::Require,
+        PgSslMode::VerifyCa => PostgresSslPromptChoice::VerifyCa,
+        PgSslMode::VerifyFull => PostgresSslPromptChoice::VerifyFull,
+    }
+}
+
+fn pg_ssl_mode_from_choice(choice: PostgresSslPromptChoice) -> PgSslMode {
+    match choice {
+        PostgresSslPromptChoice::Disable => PgSslMode::Disable,
+        PostgresSslPromptChoice::Prefer => PgSslMode::Prefer,
+        PostgresSslPromptChoice::Require => PgSslMode::Require,
+        PostgresSslPromptChoice::VerifyCa => PgSslMode::VerifyCa,
+        PostgresSslPromptChoice::VerifyFull => PgSslMode::VerifyFull,
+    }
 }
 
 fn full_mode_setup(backend: &BackendConnection, config: &Config) -> Result<()> {
@@ -789,26 +1139,31 @@ mod tests {
 
     #[test]
     fn backend_choice_uses_default_when_blank() {
-        let selected = parse_database_backend_choice("", DatabaseBackend::Postgres).unwrap();
-        assert_eq!(selected, DatabaseBackend::Postgres);
+        let selected =
+            parse_database_setup_choice("", DatabaseSetupChoice::RemotePostgres).unwrap();
+        assert_eq!(selected, DatabaseSetupChoice::RemotePostgres);
     }
 
     #[test]
     fn backend_choice_parses_numeric_options() {
         assert_eq!(
-            parse_database_backend_choice("1", DatabaseBackend::Postgres).unwrap(),
-            DatabaseBackend::Sqlite
+            parse_database_setup_choice("1", DatabaseSetupChoice::RemotePostgres).unwrap(),
+            DatabaseSetupChoice::Sqlite
         );
         assert_eq!(
-            parse_database_backend_choice("2", DatabaseBackend::Sqlite).unwrap(),
-            DatabaseBackend::Postgres
+            parse_database_setup_choice("2", DatabaseSetupChoice::Sqlite).unwrap(),
+            DatabaseSetupChoice::LocalPostgres
+        );
+        assert_eq!(
+            parse_database_setup_choice("3", DatabaseSetupChoice::Sqlite).unwrap(),
+            DatabaseSetupChoice::RemotePostgres
         );
     }
 
     #[test]
     fn backend_choice_rejects_invalid_values() {
-        assert!(parse_database_backend_choice("sqlite", DatabaseBackend::Sqlite).is_err());
-        assert!(parse_database_backend_choice("3", DatabaseBackend::Sqlite).is_err());
+        assert!(parse_database_setup_choice("sqlite", DatabaseSetupChoice::Sqlite).is_err());
+        assert!(parse_database_setup_choice("4", DatabaseSetupChoice::Sqlite).is_err());
     }
 
     #[test]
@@ -823,5 +1178,87 @@ mod tests {
     fn postgres_url_validation_rejects_other_schemes() {
         assert!(!is_valid_postgres_url("http://localhost:5432/pftui"));
         assert!(!is_valid_postgres_url("sqlite:///tmp/pftui.db"));
+    }
+
+    #[test]
+    fn infer_database_setup_choice_uses_sqlite_default() {
+        assert_eq!(
+            infer_database_setup_choice(&Config::default()),
+            DatabaseSetupChoice::Sqlite
+        );
+    }
+
+    #[test]
+    fn infer_database_setup_choice_detects_local_postgres() {
+        let config = Config {
+            database_backend: DatabaseBackend::Postgres,
+            database_url: Some("postgres://user:pass@127.0.0.1:5432/pftui".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_database_setup_choice(&config),
+            DatabaseSetupChoice::LocalPostgres
+        );
+    }
+
+    #[test]
+    fn infer_database_setup_choice_detects_remote_postgres() {
+        let config = Config {
+            database_backend: DatabaseBackend::Postgres,
+            database_url: Some("postgres://user:pass@db.example.com:5432/pftui".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_database_setup_choice(&config),
+            DatabaseSetupChoice::RemotePostgres
+        );
+    }
+
+    #[test]
+    fn remote_postgres_input_mode_defaults_to_guided() {
+        assert_eq!(
+            parse_postgres_connection_input_mode("").unwrap(),
+            PostgresConnectionInputMode::Guided
+        );
+        assert_eq!(
+            parse_postgres_connection_input_mode("2").unwrap(),
+            PostgresConnectionInputMode::ConnectionString
+        );
+    }
+
+    #[test]
+    fn postgres_ssl_choice_defaults_and_parses() {
+        assert_eq!(
+            parse_postgres_ssl_mode_choice("", PostgresSslPromptChoice::Require).unwrap(),
+            PostgresSslPromptChoice::Require
+        );
+        assert_eq!(
+            parse_postgres_ssl_mode_choice("5", PostgresSslPromptChoice::Disable).unwrap(),
+            PostgresSslPromptChoice::VerifyFull
+        );
+    }
+
+    #[test]
+    fn build_postgres_url_encodes_password_and_keeps_sslmode() {
+        let url = build_postgres_url(
+            "db.example.com",
+            5432,
+            "pftui",
+            "skylar",
+            "p@ss word",
+            PostgresSslPromptChoice::Require,
+        );
+        assert!(url.starts_with("postgres://skylar:p%40ss%20word@db.example.com:5432/pftui"));
+        assert!(url.contains("sslmode=require"));
+        assert!(!url.contains("statement-cache-capacity"));
+    }
+
+    #[test]
+    fn remove_query_param_drops_matching_entry_only() {
+        let url = "postgres://user@host:5432/pftui?sslmode=require&statement-cache-capacity=100";
+        assert_eq!(
+            remove_query_param(url, "statement-cache-capacity"),
+            "postgres://user@host:5432/pftui?sslmode=require"
+        );
     }
 }
