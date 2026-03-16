@@ -41,20 +41,6 @@ Hourly Haiku agent that runs `pftui data refresh` + `pftui analytics alerts chec
 
 **This is a Sentinel task (cron creation), not a dev task.** Will create after F44.1 ships so there are meaningful technical alerts to evaluate.
 
-### F45.2: On-Chain Metrics CLI
-
-`data etf-flows` covers BTC ETF flow data, but there is no CLI command for exchange reserves, whale activity, MVRV ratio, or funding rates. These are currently web_search territory for every agent run.
-
-`data onchain` should expose cached on-chain metrics:
-```
-pftui data onchain --json
-{"exchange_reserves_btc": 2750000, "exchange_pct": 5.88, "mvrv": 1.2, ...}
-```
-
-The `onchain_cache` table exists (96 rows). The `onchain.rs` data source exists. Missing: a CLI subcommand to read the cached data.
-
-Files: `src/cli.rs`, `src/commands/data.rs`.
-
 ### F45.5: Analyst Consensus Tracker CLI
 
 `data consensus` does not exist. Agents repeatedly web_search for "Goldman Sachs rate forecast" and "JP Morgan gold target." These change slowly. A consensus table lets agents log analyst calls once and all agents read from DB.
