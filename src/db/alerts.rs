@@ -2,23 +2,37 @@ use anyhow::Result;
 use rusqlite::{params, Connection};
 use sqlx::PgPool;
 
-use crate::alerts::{AlertKind, AlertDirection, AlertRule, AlertStatus};
+use crate::alerts::{AlertDirection, AlertKind, AlertRule, AlertStatus};
 use crate::db::backend::BackendConnection;
 use crate::db::query;
 
+#[derive(Clone, Copy)]
+pub struct NewAlert<'a> {
+    pub kind: &'a str,
+    pub symbol: &'a str,
+    pub direction: &'a str,
+    pub condition: Option<&'a str>,
+    pub threshold: &'a str,
+    pub rule_text: &'a str,
+    pub recurring: bool,
+    pub cooldown_minutes: i64,
+}
+
 /// Add a new alert rule. Returns the new row id.
-pub fn add_alert(
-    conn: &Connection,
-    kind: &str,
-    symbol: &str,
-    direction: &str,
-    threshold: &str,
-    rule_text: &str,
-) -> Result<i64> {
+pub fn add_alert(conn: &Connection, new_alert: NewAlert<'_>) -> Result<i64> {
     conn.execute(
-        "INSERT INTO alerts (kind, symbol, direction, threshold, status, rule_text)
-         VALUES (?1, ?2, ?3, ?4, 'armed', ?5)",
-        params![kind, symbol.to_uppercase(), direction, threshold, rule_text],
+        "INSERT INTO alerts (kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'armed', ?6, ?7, ?8)",
+        params![
+            new_alert.kind,
+            new_alert.symbol.to_uppercase(),
+            new_alert.direction,
+            new_alert.condition,
+            new_alert.threshold,
+            new_alert.rule_text,
+            if new_alert.recurring { 1 } else { 0 },
+            new_alert.cooldown_minutes
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -26,23 +40,26 @@ pub fn add_alert(
 /// List all alert rules, ordered by created_at descending.
 pub fn list_alerts(conn: &Connection) -> Result<Vec<AlertRule>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at, triggered_at
+        "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at, triggered_at
          FROM alerts ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map([], |row| {
         let kind_str: String = row.get(1)?;
         let dir_str: String = row.get(3)?;
-        let status_str: String = row.get(5)?;
+        let status_str: String = row.get(6)?;
         Ok(AlertRule {
             id: row.get(0)?,
             kind: kind_str.parse().unwrap_or(AlertKind::Price),
             symbol: row.get(2)?,
             direction: dir_str.parse().unwrap_or(AlertDirection::Above),
-            threshold: row.get(4)?,
+            condition: row.get(4)?,
+            threshold: row.get(5)?,
             status: status_str.parse().unwrap_or(AlertStatus::Armed),
-            rule_text: row.get(6)?,
-            created_at: row.get(7)?,
-            triggered_at: row.get(8)?,
+            rule_text: row.get(7)?,
+            recurring: row.get::<_, i64>(8)? != 0,
+            cooldown_minutes: row.get(9)?,
+            created_at: row.get(10)?,
+            triggered_at: row.get(11)?,
         })
     })?;
     let mut result = Vec::new();
@@ -55,23 +72,26 @@ pub fn list_alerts(conn: &Connection) -> Result<Vec<AlertRule>> {
 /// List alerts filtered by status.
 pub fn list_alerts_by_status(conn: &Connection, status: AlertStatus) -> Result<Vec<AlertRule>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at, triggered_at
+        "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at, triggered_at
          FROM alerts WHERE status = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![status.to_string()], |row| {
         let kind_str: String = row.get(1)?;
         let dir_str: String = row.get(3)?;
-        let status_str: String = row.get(5)?;
+        let status_str: String = row.get(6)?;
         Ok(AlertRule {
             id: row.get(0)?,
             kind: kind_str.parse().unwrap_or(AlertKind::Price),
             symbol: row.get(2)?,
             direction: dir_str.parse().unwrap_or(AlertDirection::Above),
-            threshold: row.get(4)?,
+            condition: row.get(4)?,
+            threshold: row.get(5)?,
             status: status_str.parse().unwrap_or(AlertStatus::Armed),
-            rule_text: row.get(6)?,
-            created_at: row.get(7)?,
-            triggered_at: row.get(8)?,
+            rule_text: row.get(7)?,
+            recurring: row.get::<_, i64>(8)? != 0,
+            cooldown_minutes: row.get(9)?,
+            created_at: row.get(10)?,
+            triggered_at: row.get(11)?,
         })
     })?;
     let mut result = Vec::new();
@@ -104,23 +124,26 @@ pub fn remove_alert(conn: &Connection, id: i64) -> Result<bool> {
 /// Get a single alert by id.
 pub fn get_alert(conn: &Connection, id: i64) -> Result<Option<AlertRule>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at, triggered_at
+        "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at, triggered_at
          FROM alerts WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |row| {
         let kind_str: String = row.get(1)?;
         let dir_str: String = row.get(3)?;
-        let status_str: String = row.get(5)?;
+        let status_str: String = row.get(6)?;
         Ok(AlertRule {
             id: row.get(0)?,
             kind: kind_str.parse().unwrap_or(AlertKind::Price),
             symbol: row.get(2)?,
             direction: dir_str.parse().unwrap_or(AlertDirection::Above),
-            threshold: row.get(4)?,
+            condition: row.get(4)?,
+            threshold: row.get(5)?,
             status: status_str.parse().unwrap_or(AlertStatus::Armed),
-            rule_text: row.get(6)?,
-            created_at: row.get(7)?,
-            triggered_at: row.get(8)?,
+            rule_text: row.get(7)?,
+            recurring: row.get::<_, i64>(8)? != 0,
+            cooldown_minutes: row.get(9)?,
+            created_at: row.get(10)?,
+            triggered_at: row.get(11)?,
         })
     })?;
     match rows.next() {
@@ -157,18 +180,11 @@ pub fn acknowledge_alert(conn: &Connection, id: i64) -> Result<bool> {
     Ok(rows > 0)
 }
 
-pub fn add_alert_backend(
-    backend: &BackendConnection,
-    kind: &str,
-    symbol: &str,
-    direction: &str,
-    threshold: &str,
-    rule_text: &str,
-) -> Result<i64> {
+pub fn add_alert_backend(backend: &BackendConnection, new_alert: NewAlert<'_>) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| add_alert(conn, kind, symbol, direction, threshold, rule_text),
-        |pool| add_alert_postgres(pool, kind, symbol, direction, threshold, rule_text),
+        |conn| add_alert(conn, new_alert),
+        |pool| add_alert_postgres(pool, new_alert),
     )
 }
 
@@ -249,9 +265,12 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 kind TEXT NOT NULL DEFAULT 'price',
                 symbol TEXT NOT NULL,
                 direction TEXT NOT NULL,
+                condition TEXT,
                 threshold TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'armed',
                 rule_text TEXT NOT NULL,
+                recurring BOOLEAN NOT NULL DEFAULT FALSE,
+                cooldown_minutes BIGINT NOT NULL DEFAULT 0,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 triggered_at TIMESTAMPTZ
             )",
@@ -263,26 +282,22 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-fn add_alert_postgres(
-    pool: &PgPool,
-    kind: &str,
-    symbol: &str,
-    direction: &str,
-    threshold: &str,
-    rule_text: &str,
-) -> Result<i64> {
+fn add_alert_postgres(pool: &PgPool, new_alert: NewAlert<'_>) -> Result<i64> {
     ensure_tables_postgres(pool)?;
     let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
-            "INSERT INTO alerts (kind, symbol, direction, threshold, status, rule_text)
-             VALUES ($1, $2, $3, $4, 'armed', $5)
+            "INSERT INTO alerts (kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes)
+             VALUES ($1, $2, $3, $4, $5, 'armed', $6, $7, $8)
              RETURNING id",
         )
-        .bind(kind)
-        .bind(symbol.to_uppercase())
-        .bind(direction)
-        .bind(threshold)
-        .bind(rule_text)
+        .bind(new_alert.kind)
+        .bind(new_alert.symbol.to_uppercase())
+        .bind(new_alert.direction)
+        .bind(new_alert.condition)
+        .bind(new_alert.threshold)
+        .bind(new_alert.rule_text)
+        .bind(new_alert.recurring)
+        .bind(new_alert.cooldown_minutes)
         .fetch_one(pool)
         .await
     })?;
@@ -294,9 +309,12 @@ type AlertRow = (
     String,
     String,
     String,
+    Option<String>,
     String,
     String,
     String,
+    bool,
+    i64,
     String,
     Option<String>,
 );
@@ -307,11 +325,14 @@ fn alert_from_row(row: AlertRow) -> AlertRule {
         kind: row.1.parse().unwrap_or(AlertKind::Price),
         symbol: row.2,
         direction: row.3.parse().unwrap_or(AlertDirection::Above),
-        threshold: row.4,
-        status: row.5.parse().unwrap_or(AlertStatus::Armed),
-        rule_text: row.6,
-        created_at: row.7,
-        triggered_at: row.8,
+        condition: row.4,
+        threshold: row.5,
+        status: row.6.parse().unwrap_or(AlertStatus::Armed),
+        rule_text: row.7,
+        recurring: row.8,
+        cooldown_minutes: row.9,
+        created_at: row.10,
+        triggered_at: row.11,
     }
 }
 
@@ -319,7 +340,7 @@ fn list_alerts_postgres(pool: &PgPool) -> Result<Vec<AlertRule>> {
     ensure_tables_postgres(pool)?;
     let rows: Vec<AlertRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at::text, triggered_at::text
+            "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at::text, triggered_at::text
              FROM alerts
              ORDER BY created_at DESC",
         )
@@ -334,7 +355,7 @@ fn list_alerts_by_status_postgres(pool: &PgPool, status: AlertStatus) -> Result<
     let status_str = status.to_string();
     let rows: Vec<AlertRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at::text, triggered_at::text
+            "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at::text, triggered_at::text
              FROM alerts
              WHERE status = $1
              ORDER BY created_at DESC",
@@ -384,7 +405,7 @@ fn get_alert_postgres(pool: &PgPool, id: i64) -> Result<Option<AlertRule>> {
     ensure_tables_postgres(pool)?;
     let row: Option<AlertRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT id, kind, symbol, direction, threshold, status, rule_text, created_at::text, triggered_at::text
+            "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at::text, triggered_at::text
              FROM alerts
              WHERE id = $1",
         )
@@ -438,11 +459,39 @@ mod tests {
     use super::*;
     use crate::db::open_in_memory;
 
+    fn new_alert<'a>(
+        kind: &'a str,
+        symbol: &'a str,
+        direction: &'a str,
+        condition: Option<&'a str>,
+        threshold: &'a str,
+        rule_text: &'a str,
+    ) -> NewAlert<'a> {
+        NewAlert {
+            kind,
+            symbol,
+            direction,
+            condition,
+            threshold,
+            rule_text,
+            recurring: false,
+            cooldown_minutes: 0,
+        }
+    }
+
     #[test]
     fn test_add_and_list() {
         let conn = open_in_memory();
-        add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
-        add_alert(&conn, "price", "BTC", "below", "55000", "BTC below 55000").unwrap();
+        add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "GC=F above 5500"),
+        )
+        .unwrap();
+        add_alert(
+            &conn,
+            new_alert("price", "BTC", "below", None, "55000", "BTC below 55000"),
+        )
+        .unwrap();
 
         let alerts = list_alerts(&conn).unwrap();
         assert_eq!(alerts.len(), 2);
@@ -455,7 +504,11 @@ mod tests {
     #[test]
     fn test_add_stores_correct_fields() {
         let conn = open_in_memory();
-        let id = add_alert(&conn, "price", "gc=f", "above", "5500", "GC=F above 5500").unwrap();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "gc=f", "above", None, "5500", "GC=F above 5500"),
+        )
+        .unwrap();
 
         let alert = get_alert(&conn, id).unwrap().unwrap();
         assert_eq!(alert.kind, AlertKind::Price);
@@ -470,7 +523,11 @@ mod tests {
     #[test]
     fn test_remove_alert() {
         let conn = open_in_memory();
-        let id = add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "GC=F above 5500"),
+        )
+        .unwrap();
         assert!(remove_alert(&conn, id).unwrap());
         assert!(list_alerts(&conn).unwrap().is_empty());
     }
@@ -484,10 +541,19 @@ mod tests {
     #[test]
     fn test_update_status_to_triggered() {
         let conn = open_in_memory();
-        let id = add_alert(&conn, "price", "GC=F", "above", "5500", "GC=F above 5500").unwrap();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "GC=F above 5500"),
+        )
+        .unwrap();
 
-        update_alert_status(&conn, id, AlertStatus::Triggered, Some("2026-03-04T08:00:00Z"))
-            .unwrap();
+        update_alert_status(
+            &conn,
+            id,
+            AlertStatus::Triggered,
+            Some("2026-03-04T08:00:00Z"),
+        )
+        .unwrap();
 
         let alert = get_alert(&conn, id).unwrap().unwrap();
         assert_eq!(alert.status, AlertStatus::Triggered);
@@ -497,11 +563,18 @@ mod tests {
     #[test]
     fn test_list_by_status() {
         let conn = open_in_memory();
-        let id1 = add_alert(&conn, "price", "GC=F", "above", "5500", "rule1").unwrap();
-        add_alert(&conn, "price", "BTC", "below", "55000", "rule2").unwrap();
+        let id1 = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "rule1"),
+        )
+        .unwrap();
+        add_alert(
+            &conn,
+            new_alert("price", "BTC", "below", None, "55000", "rule2"),
+        )
+        .unwrap();
 
-        update_alert_status(&conn, id1, AlertStatus::Triggered, Some("2026-03-04"))
-            .unwrap();
+        update_alert_status(&conn, id1, AlertStatus::Triggered, Some("2026-03-04")).unwrap();
 
         let armed = list_alerts_by_status(&conn, AlertStatus::Armed).unwrap();
         assert_eq!(armed.len(), 1);
@@ -515,8 +588,8 @@ mod tests {
     #[test]
     fn test_count_by_status() {
         let conn = open_in_memory();
-        add_alert(&conn, "price", "A", "above", "1", "r1").unwrap();
-        add_alert(&conn, "price", "B", "above", "2", "r2").unwrap();
+        add_alert(&conn, new_alert("price", "A", "above", None, "1", "r1")).unwrap();
+        add_alert(&conn, new_alert("price", "B", "above", None, "2", "r2")).unwrap();
 
         assert_eq!(count_by_status(&conn, AlertStatus::Armed).unwrap(), 2);
         assert_eq!(count_by_status(&conn, AlertStatus::Triggered).unwrap(), 0);
@@ -525,7 +598,11 @@ mod tests {
     #[test]
     fn test_rearm_alert() {
         let conn = open_in_memory();
-        let id = add_alert(&conn, "price", "GC=F", "above", "5500", "rule").unwrap();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "rule"),
+        )
+        .unwrap();
         update_alert_status(&conn, id, AlertStatus::Triggered, Some("2026-03-04")).unwrap();
 
         assert!(rearm_alert(&conn, id).unwrap());
@@ -537,7 +614,11 @@ mod tests {
     #[test]
     fn test_acknowledge_alert() {
         let conn = open_in_memory();
-        let id = add_alert(&conn, "price", "GC=F", "above", "5500", "rule").unwrap();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "rule"),
+        )
+        .unwrap();
         update_alert_status(&conn, id, AlertStatus::Triggered, Some("2026-03-04")).unwrap();
 
         assert!(acknowledge_alert(&conn, id).unwrap());
@@ -548,7 +629,11 @@ mod tests {
     #[test]
     fn test_acknowledge_only_triggered() {
         let conn = open_in_memory();
-        let id = add_alert(&conn, "price", "GC=F", "above", "5500", "rule").unwrap();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "rule"),
+        )
+        .unwrap();
         // Try to acknowledge an armed alert — should fail
         assert!(!acknowledge_alert(&conn, id).unwrap());
     }
@@ -558,11 +643,14 @@ mod tests {
         let conn = open_in_memory();
         let id = add_alert(
             &conn,
-            "allocation",
-            "gold",
-            "above",
-            "30",
-            "gold allocation above 30%",
+            new_alert(
+                "allocation",
+                "gold",
+                "above",
+                None,
+                "30",
+                "gold allocation above 30%",
+            ),
         )
         .unwrap();
         let alert = get_alert(&conn, id).unwrap().unwrap();
@@ -575,11 +663,14 @@ mod tests {
         let conn = open_in_memory();
         let id = add_alert(
             &conn,
-            "indicator",
-            "GC=F RSI",
-            "below",
-            "30",
-            "GC=F RSI below 30",
+            new_alert(
+                "indicator",
+                "GC=F RSI",
+                "below",
+                None,
+                "30",
+                "GC=F RSI below 30",
+            ),
         )
         .unwrap();
         let alert = get_alert(&conn, id).unwrap().unwrap();

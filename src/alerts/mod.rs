@@ -14,6 +14,10 @@ pub enum AlertKind {
     Allocation,
     /// Indicator alert: "VIX above 25"
     Indicator,
+    /// Technical alert evaluated from cached price history/indicators.
+    Technical,
+    /// Macro alert evaluated from cached regime/economic/sentiment data.
+    Macro,
 }
 
 impl fmt::Display for AlertKind {
@@ -22,6 +26,8 @@ impl fmt::Display for AlertKind {
             AlertKind::Price => write!(f, "price"),
             AlertKind::Allocation => write!(f, "allocation"),
             AlertKind::Indicator => write!(f, "indicator"),
+            AlertKind::Technical => write!(f, "technical"),
+            AlertKind::Macro => write!(f, "macro"),
         }
     }
 }
@@ -34,6 +40,8 @@ impl std::str::FromStr for AlertKind {
             "price" => Ok(AlertKind::Price),
             "allocation" => Ok(AlertKind::Allocation),
             "indicator" => Ok(AlertKind::Indicator),
+            "technical" => Ok(AlertKind::Technical),
+            "macro" => Ok(AlertKind::Macro),
             _ => Err(anyhow::anyhow!("Unknown alert kind: {}", s)),
         }
     }
@@ -63,7 +71,10 @@ impl std::str::FromStr for AlertDirection {
         match s.to_lowercase().as_str() {
             "above" | ">" | ">=" => Ok(AlertDirection::Above),
             "below" | "<" | "<=" => Ok(AlertDirection::Below),
-            _ => Err(anyhow::anyhow!("Unknown direction: {} (expected 'above' or 'below')", s)),
+            _ => Err(anyhow::anyhow!(
+                "Unknown direction: {} (expected 'above' or 'below')",
+                s
+            )),
         }
     }
 }
@@ -111,11 +122,17 @@ pub struct AlertRule {
     pub kind: AlertKind,
     pub symbol: String,
     pub direction: AlertDirection,
+    #[serde(default)]
+    pub condition: Option<String>,
     /// Threshold value as string (decimal). For allocation alerts, this is a percentage (e.g. "30" = 30%).
     pub threshold: String,
     pub status: AlertStatus,
     /// The original human-readable rule text, e.g. "GC=F above 5500".
     pub rule_text: String,
+    #[serde(default)]
+    pub recurring: bool,
+    #[serde(default)]
+    pub cooldown_minutes: i64,
     pub created_at: String,
     pub triggered_at: Option<String>,
 }

@@ -14,6 +14,17 @@
 - Files: `src/commands/setup.rs`, `TODO.md`, `CHANGELOG.md`
 - Tests: `cargo test setup:: -- --nocapture`
 
+### 2026-03-16 — Add smart technical and macro alerts with triggered-alert log
+
+- What:
+  - extended alerts with structured `technical` and `macro` kinds, condition metadata, recurring mode, and cooldown support.
+  - added technical condition evaluation for SMA, RSI, MACD, Bollinger, daily percent move, and correlation-break style alerts plus macro condition evaluation for regime, VIX, Fear & Greed, yield-curve, DXY, and correlation regime shifts.
+  - added persistent `triggered_alerts` logging with acknowledgment support and `analytics alerts list --triggered --since ... --json` output for watchdog/cron consumption.
+  - added `analytics alerts seed-defaults`, wired smart-alert evaluation into refresh output, and updated existing alert creation paths in the TUI, CLI, and web API to the expanded schema.
+- Why: moves alerting beyond static price thresholds so pftui can surface technical and macro state changes directly from cached market data instead of relying on agents to rediscover them manually.
+- Files: `src/alerts/mod.rs`, `src/alerts/engine.rs`, `src/commands/alerts.rs`, `src/commands/refresh.rs`, `src/data/macro_alerts.rs`, `src/db/alerts.rs`, `src/db/triggered_alerts.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/cli.rs`, `src/main.rs`, `src/app.rs`, `src/web/api.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1245 passed), `cargo clippy --all-targets -- -D warnings`, `cargo check`
+
 ### 2026-03-14 — Add `pftui console` interactive shell
 
 - What:
