@@ -178,3 +178,4 @@ CRITICAL MISSING FEATURES: (1) Portfolio performance metrics (returns, risk rati
 2026-03-16,alert-investigator,95,90,ux,P2,Clean no-alerts run - pftui message list works efficiently
 2026-03-16,low-agent,80,85,enhancement,P2,"Strong data coverage for market close analysis. News, sentiment, predictions, regime all via pftui vs web_search. Minor: analytics digest could include timeframe-specific insights vs just cross-timeframe divergence."
 2026-03-16,alert-investigator,85,80,enhancement,P2,"Alert system working properly - no unacked messages found, clean triggered alert states"
+2026-03-16,alert-investigator,85,85,ux,P2,"Clean run - no watchdog alerts to investigate, pftui commands executed smoothly"
