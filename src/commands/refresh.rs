@@ -15,6 +15,7 @@ use crate::data::{
 use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
 use crate::db::backend::BackendConnection;
 use crate::db::economic_data as economic_data_db;
+use crate::db::fedwatch_cache;
 use crate::db::price_cache::{
     get_all_cached_prices_backend, get_cached_price_backend, upsert_price_backend,
 };
@@ -52,6 +53,7 @@ const COT_FRESHNESS_SECS: i64 = 7 * 24 * 60 * 60; // 1 week
 const BLS_FRESHNESS_DAYS: i64 = 30; // 1 month
 const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 const FEDWATCH_CONFLICT_THRESHOLD_PCT_POINTS: f64 = 5.0;
+const FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS: f64 = 10.0;
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -118,6 +120,14 @@ fn brave_news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
         return Ok(age.num_seconds() > BRAVE_NEWS_FRESHNESS_SECS);
     }
     Ok(true)
+}
+
+fn fedwatch_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let latest = fedwatch_cache::get_latest_snapshot_backend(backend)?;
+    Ok(match latest {
+        Some(entry) => !fedwatch::is_fresh(&entry.fetched_at, fedwatch::FEDWATCH_FRESHNESS_SECS),
+        None => true,
+    })
 }
 
 fn compute_daily_change_pct(
@@ -764,6 +774,47 @@ fn run_with_output(
     } else {
         info_ln!(verbose, "⊘ Predictions (fresh, skipping)");
     }
+    if fedwatch_needs_refresh(backend)? {
+        let previous = fedwatch_cache::get_latest_snapshot_backend(backend)?;
+        match fedwatch::fetch_snapshot_with_fallback(config.brave_api_key.as_deref()) {
+            Ok((snapshot, source_label)) => {
+                let validated = fedwatch::validate_reading(
+                    snapshot,
+                    source_label,
+                    previous.as_ref().map(|entry| entry.no_change_pct),
+                    FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS,
+                );
+                if let Some(warning) = &validated.warning {
+                    warn_ln!(verbose, "FedWatch validation warning: {}", warning);
+                }
+                let entry = fedwatch_cache::FedWatchCacheEntry::from_snapshot(
+                    validated.snapshot,
+                    validated.source_label,
+                    validated.verified,
+                    validated.warning,
+                );
+                match fedwatch_cache::insert_snapshot_backend(backend, &entry) {
+                    Ok(_) => info_ln!(
+                        verbose,
+                        "✓ FedWatch ({}{}, {:.1}% no-change)",
+                        entry.source_label,
+                        if entry.verified { "" } else { ", unverified" },
+                        entry.no_change_pct
+                    ),
+                    Err(e) => info_ln!(
+                        verbose,
+                        "⚠ FedWatch fetched ({}, {:.1}% no-change) but cache write failed: {}",
+                        entry.source_label,
+                        entry.no_change_pct,
+                        e
+                    ),
+                }
+            }
+            Err(e) => info_ln!(verbose, "✗ FedWatch (failed: {})", e),
+        }
+    } else {
+        info_ln!(verbose, "⊘ FedWatch (fresh, skipping)");
+    }
     maybe_report_fedwatch_conflict(backend, verbose);
 
     // 4. News (Brave primary when configured, RSS supplements)
@@ -1360,9 +1411,10 @@ fn maybe_report_fedwatch_conflict(backend: &BackendConnection, verbose: bool) {
         Ok(rows) if !rows.is_empty() => rows,
         _ => return,
     };
-    let snapshot = match fedwatch::fetch_snapshot() {
-        Ok(snapshot) => snapshot,
+    let snapshot = match fedwatch_cache::get_latest_snapshot_backend(backend) {
+        Ok(Some(entry)) => entry.snapshot,
         Err(_) => return,
+        Ok(None) => return,
     };
     if let Some(conflict) = fedwatch::detect_no_change_conflict(
         &snapshot,

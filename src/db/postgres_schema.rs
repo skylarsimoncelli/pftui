@@ -423,6 +423,20 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS fedwatch_cache (
+                id BIGSERIAL PRIMARY KEY,
+                source_label TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                no_change_pct DOUBLE PRECISION NOT NULL,
+                verified BOOLEAN NOT NULL DEFAULT TRUE,
+                warning TEXT,
+                snapshot_json TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS bls_cache (
                 series_id TEXT NOT NULL,
                 year INTEGER NOT NULL,
@@ -505,6 +519,11 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .await?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_macro_events_event_date ON macro_events(event_date)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_fedwatch_cache_fetched_at ON fedwatch_cache(fetched_at DESC)",
         )
         .execute(pool)
         .await?;

@@ -76,6 +76,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_macro_events_event_date ON macro_events(event_date);
 
+        CREATE TABLE IF NOT EXISTS fedwatch_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_label TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            no_change_pct REAL NOT NULL,
+            verified INTEGER NOT NULL DEFAULT 1,
+            warning TEXT,
+            snapshot_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_fedwatch_cache_fetched_at ON fedwatch_cache(fetched_at DESC);
+
         CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kind TEXT NOT NULL DEFAULT 'price',

@@ -1,16 +1,30 @@
 use anyhow::Result;
 
+use crate::config::Config;
 use crate::data::fedwatch;
 use crate::db::backend::BackendConnection;
+use crate::db::fedwatch_cache;
 use crate::db::predictions_cache;
 
 const CONFLICT_THRESHOLD_PCT_POINTS: f64 = 5.0;
+const VALIDATION_THRESHOLD_PCT_POINTS: f64 = 10.0;
 
-pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
-    let snapshot = fedwatch::fetch_snapshot()?;
+pub fn run(backend: &BackendConnection, config: &Config, json: bool) -> Result<()> {
+    let cached = fedwatch_cache::get_latest_snapshot_backend(backend)?;
+    let entry = if let Some(existing) = cached.clone() {
+        if fedwatch::is_fresh(&existing.fetched_at, fedwatch::FEDWATCH_FRESHNESS_SECS) {
+            existing
+        } else {
+            refresh_snapshot(backend, config, cached.as_ref())?
+        }
+    } else {
+        refresh_snapshot(backend, config, None)?
+    };
+
+    let snapshot = &entry.snapshot;
     let prediction_markets = predictions_cache::get_cached_predictions_backend(backend, 200)?;
     let conflict = fedwatch::detect_no_change_conflict(
-        &snapshot,
+        snapshot,
         &prediction_markets,
         CONFLICT_THRESHOLD_PCT_POINTS,
     );
@@ -20,15 +34,29 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "snapshot": snapshot,
+                "source_label": entry.source_label,
+                "verified": entry.verified,
+                "warning": entry.warning,
                 "conflicts": conflict.as_ref().map(|c| vec![c]).unwrap_or_default(),
             }))?
         );
         return Ok(());
     }
 
-    println!("\nFedWatch (CME)\n");
-    println!("  Source: {}", snapshot.source_url);
+    println!("\nFedWatch\n");
+    println!("  Source: {} ({})", entry.source_label, snapshot.source_url);
     println!("  Fetched: {}", snapshot.fetched_at);
+    println!(
+        "  Status: {}",
+        if entry.verified {
+            "verified"
+        } else {
+            "unverified"
+        }
+    );
+    if let Some(warning) = &entry.warning {
+        println!("  Warning: {}", warning);
+    }
     println!();
     println!("  Next meeting: {}", snapshot.meeting_info.meeting_date);
     println!(
@@ -76,4 +104,27 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn refresh_snapshot(
+    backend: &BackendConnection,
+    config: &Config,
+    previous: Option<&fedwatch_cache::FedWatchCacheEntry>,
+) -> Result<fedwatch_cache::FedWatchCacheEntry> {
+    let (snapshot, source_label) =
+        fedwatch::fetch_snapshot_with_fallback(config.brave_api_key.as_deref())?;
+    let validated = fedwatch::validate_reading(
+        snapshot,
+        source_label,
+        previous.map(|entry| entry.no_change_pct),
+        VALIDATION_THRESHOLD_PCT_POINTS,
+    );
+    let entry = fedwatch_cache::FedWatchCacheEntry::from_snapshot(
+        validated.snapshot,
+        validated.source_label,
+        validated.verified,
+        validated.warning,
+    );
+    fedwatch_cache::insert_snapshot_backend(backend, &entry)?;
+    Ok(entry)
 }

@@ -137,17 +137,6 @@ Files: `src/commands/alerts.rs`.
 
 Agents currently use web_search for ~45% of their data needs. These items target data that has structured API sources and can be computed/cached by `data refresh`, eliminating agent guesswork and improving data quality.
 
-#### F45.4: CME FedWatch Reliability
-
-`fedwatch.rs` exists but scrapes CME's widget page, which is brittle (caused the bad data incident on Mar 12 where an agent got 98.9% cut probability from a blog instead). Harden this:
-
-- Primary: CME FedWatch scrape (existing)
-- Fallback: Parse from Brave News search "CME FedWatch fed funds probability"
-- Validation: If result differs >10% from previous reading, flag as unverified and log warning
-- Cache with freshness tracking so agents never need to web_search "FOMC rate probability"
-
-Files: `src/data/fedwatch.rs`, `src/data/refresh.rs`.
-
 #### F45.5: Analyst Consensus Tracker
 
 Agents web_search for "Goldman Sachs rate forecast" and "JP Morgan gold target" repeatedly. These change slowly (weekly/monthly). Add a `consensus` table where agents can log analyst calls via CLI:

@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F45.4 FedWatch cache, fallback, and reading validation
+
+- What:
+  - added a persistent `fedwatch_cache` table for cached CME FedWatch snapshots, verification state, and warning text so agents can read the latest policy-path reading from local data instead of re-searching it.
+  - hardened FedWatch acquisition with a Brave News fallback that parses no-change/cut/hike probabilities from structured search snippets when the CME widget scrape fails.
+  - added a >10 percentage-point change check versus the previous cached reading, marking outlier jumps as unverified and surfacing warnings in both `data refresh` and `data fedwatch`.
+- Why: removes a recurring agent web-search path for FOMC rate probabilities and makes bad single-source readings easier to detect before they propagate into briefs.
+- Files: `src/data/fedwatch.rs`, `src/db/fedwatch_cache.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/fedwatch.rs`, `src/commands/refresh.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1252 passed), `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-16 — F45.1 FRED surprise detection and macro event cache
 
 - What:
