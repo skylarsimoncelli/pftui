@@ -6,65 +6,6 @@
 
 ## P1 — Feature Requests
 
-### F46: Remote PostgreSQL Backend Support
-
-The setup wizard currently offers SQLite only. Add full backend selection:
-
-```
-? Select database backend:
-  ❯ Local SQLite (default, zero config)
-    Local PostgreSQL (localhost)
-    Remote PostgreSQL (custom host)
-```
-
-**Local SQLite:** Current default. No changes needed.
-
-**Local PostgreSQL:** Prompt for database name, user, password. Host defaults to `127.0.0.1:5432`. Test connection before proceeding.
-
-**Remote PostgreSQL:** Prompt for host, port, database name, user, password. Optionally accept a full connection string (`postgres://user:pass@host:port/db`). Test connection before proceeding. Support SSL/TLS option for cloud-hosted databases (Supabase, Neon, RDS, etc.).
-
-Config output (`config.toml`):
-```toml
-database_backend = "postgres"
-database_url = "postgres://user:pass@remote-host:5432/pftui?sslmode=require"
-```
-
-The Rust backend dispatch already supports Postgres fully. This is purely a setup wizard and config UX change.
-
-Also update `pftui system setup` (if it exists) or the first-run wizard to offer the same options.
-
-Files: `src/setup.rs` (or wherever the wizard lives), `src/config.rs`.
-
-### F44.4: Alert Watchdog Cron
-
-Hourly Haiku agent that runs `pftui data refresh` + `pftui analytics alerts check --json`, sends triggered alerts to Telegram, otherwise `NO_REPLY`. ~$0.50/day. Catches threshold breaks within the hour instead of waiting for the next scheduled agent run.
-
-**This is a Sentinel task (cron creation), not a dev task.** Will create after F44.1 ships so there are meaningful technical alerts to evaluate.
-
-### F45.5: Analyst Consensus Tracker CLI
-
-`data consensus` does not exist. Agents repeatedly web_search for "Goldman Sachs rate forecast" and "JP Morgan gold target." These change slowly. A consensus table lets agents log analyst calls once and all agents read from DB.
-
-```
-pftui data consensus add --source "Goldman Sachs" --topic rate_cuts \
-  --call "50bp cuts Sep+Dec 2026" --date 2026-03-12
-pftui data consensus list --json
-```
-
-Files: `src/cli.rs`, `src/commands/data.rs`, `src/db/consensus.rs`. Schema: new `consensus_tracker` table.
-
-### F45.6: COT Percentile Ranks
-
-`data sentiment` returns COT positioning but no `percentile_1y` or `z_score` fields. Agents must interpret raw net positioning manually. Add computed percentile rank (vs 1yr history) and z-score to the COT output.
-
-Files: `src/data/cot.rs`, `src/commands/data.rs`.
-
-### F45.1: FRED Economic Surprise Detection
-
-`data economy` returns raw indicator values but no `change`, `previous`, or surprise detection. The `change` field is always `null`. When a new CPI or NFP print lands, pftui should compute the delta from previous and flag significant moves.
-
-Files: `src/data/economic.rs`, `src/commands/data.rs`.
-
 ### Fear & Greed Index Not Populating
 
 `data sentiment --json` returns `fear_and_greed: {}` (empty). The Alternative.me crypto F&G API should be fetched during `data refresh` and cached. Agents currently web_search for this on every run.
