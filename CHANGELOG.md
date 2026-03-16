@@ -3,6 +3,17 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — Close remaining P1/P2 agent workflow feedback
+
+- What:
+  - changed `pftui data sentiment` to read Fear & Greed from the refresh-populated sentiment cache first, with live fetch only as fallback, so the JSON payload no longer drops the cached indices on normal agent runs.
+  - made `pftui analytics movers` weekend-aware by comparing against the latest available historical close when there is no same-day bar yet, which preserves meaningful crypto/futures moves across Saturday and Sunday routines.
+  - restored the missing F42 analytics aliases: `pftui analytics scenario list --json`, `pftui analytics conviction set`, and `pftui analytics macro regime set`, and added `pftui agent message flag --quality` as a first-class data-quality escalation shortcut.
+  - verified the previously reported `journal scenario update --notes` and prediction shorthand ergonomics are already working end-to-end, then removed the stale P1/P2 TODO entries.
+- Why: closes the remaining high-priority agent workflow regressions that were forcing repeated web searches, weekend blind spots, and manual CLI workarounds.
+- Files: `src/commands/sentiment.rs`, `src/commands/movers.rs`, `src/commands/regime.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/eod.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test commands::movers:: -- --nocapture`, `cargo test commands::sentiment:: -- --nocapture`, `cargo test commands::regime::tests::run_set_stores_manual_regime_snapshot -- --nocapture`, `cargo test cli::tests:: -- --nocapture`, `cargo test`, `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-16 — F45.2 add `data onchain` cached metrics CLI
 
 - What:
