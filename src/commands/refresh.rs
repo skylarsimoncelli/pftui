@@ -44,6 +44,7 @@ const PRICE_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Freshness thresholds in seconds
 const NEWS_FRESHNESS_SECS: i64 = 10 * 60; // 10 minutes
+const BRAVE_NEWS_FRESHNESS_SECS: i64 = 4 * 60 * 60; // 4 hours
 const PREDICTIONS_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const SENTIMENT_FRESHNESS_SECS: i64 = 60 * 60; // 1 hour
 const CALENDAR_FRESHNESS_SECS: i64 = 24 * 60 * 60; // 24 hours
@@ -101,6 +102,20 @@ fn news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&news[0].fetched_at) {
         let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
         return Ok(age.num_seconds() > NEWS_FRESHNESS_SECS);
+    }
+    Ok(true)
+}
+
+fn brave_news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let latest = news_cache::latest_fetched_at_by_source_type_backend(backend, "brave")?;
+    let Some(timestamp) = latest else {
+        return Ok(true);
+    };
+
+    let now = chrono::Utc::now();
+    if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&timestamp) {
+        let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
+        return Ok(age.num_seconds() > BRAVE_NEWS_FRESHNESS_SECS);
     }
     Ok(true)
 }
@@ -752,18 +767,27 @@ fn run_with_output(
     maybe_report_fedwatch_conflict(backend, verbose);
 
     // 4. News (Brave primary when configured, RSS supplements)
-    if news_needs_refresh(backend)? {
+    let rss_refresh = news_needs_refresh(backend)?;
+    let brave_key = config
+        .brave_api_key
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let brave_refresh = if brave_key.is_empty() {
+        false
+    } else {
+        brave_news_needs_refresh(backend)?
+    };
+
+    if rss_refresh || brave_refresh {
         let mut inserted = 0usize;
         let mut brave_inserted = 0usize;
-        let brave_key = config
-            .brave_api_key
-            .as_deref()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let mut brave_query_count = 0usize;
 
-        if !brave_key.is_empty() {
+        if brave_refresh {
             let queries = build_brave_news_queries(backend, config)?;
+            brave_query_count = queries.len();
             for query in &queries {
                 match rt.block_on(brave::brave_news_search(&brave_key, query, Some("pd"), 5)) {
                     Ok(results) => {
@@ -795,38 +819,55 @@ fn run_with_output(
             }
         }
 
-        let feeds = rss::default_feeds();
-        let items = rt.block_on(rss::fetch_all_feeds(&feeds));
-        for item in &items {
-            let category_str = match item.category {
-                rss::NewsCategory::Macro => "macro",
-                rss::NewsCategory::Crypto => "crypto",
-                rss::NewsCategory::Commodities => "commodities",
-                rss::NewsCategory::Geopolitics => "geopolitics",
-                rss::NewsCategory::Markets => "markets",
-            };
+        if rss_refresh {
+            let feeds = rss::default_feeds();
+            let items = rt.block_on(rss::fetch_all_feeds(&feeds));
+            for item in &items {
+                let category_str = match item.category {
+                    rss::NewsCategory::Macro => "macro",
+                    rss::NewsCategory::Crypto => "crypto",
+                    rss::NewsCategory::Commodities => "commodities",
+                    rss::NewsCategory::Geopolitics => "geopolitics",
+                    rss::NewsCategory::Markets => "markets",
+                };
 
-            if news_cache::insert_news_with_source_type_backend(
-                backend,
-                &item.title,
-                &item.url,
-                &item.source,
-                "rss",
-                None,
-                category_str,
-                item.published_at,
-                None,
-                &[],
-            )
-            .is_ok()
-            {
-                inserted += 1;
+                if news_cache::insert_news_with_source_type_backend(
+                    backend,
+                    &item.title,
+                    &item.url,
+                    &item.source,
+                    "rss",
+                    None,
+                    category_str,
+                    item.published_at,
+                    None,
+                    &[],
+                )
+                .is_ok()
+                {
+                    inserted += 1;
+                }
             }
         }
-        if brave_inserted > 0 {
-            info_ln!(verbose, "✓ News ({} articles via Brave + RSS)", inserted);
-        } else {
+
+        if brave_refresh && rss_refresh {
+            info_ln!(
+                verbose,
+                "✓ News ({} articles from {} Brave queries + RSS)",
+                inserted,
+                brave_query_count
+            );
+        } else if brave_refresh {
+            info_ln!(
+                verbose,
+                "✓ News ({} articles from {} Brave queries)",
+                brave_inserted,
+                brave_query_count
+            );
+        } else if rss_refresh {
             info_ln!(verbose, "✓ News ({} articles via RSS)", inserted);
+        } else {
+            info_ln!(verbose, "⊘ News (fresh, skipping)");
         }
     } else {
         info_ln!(verbose, "⊘ News (fresh, skipping)");

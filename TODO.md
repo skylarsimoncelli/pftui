@@ -137,28 +137,6 @@ Files: `src/commands/alerts.rs`.
 
 Agents currently use web_search for ~45% of their data needs. These items target data that has structured API sources and can be computed/cached by `data refresh`, eliminating agent guesswork and improving data quality.
 
-#### F45.3: Brave News as Structured Feed
-
-Brave client exists (`src/data/brave.rs`) but is only used for research queries. Extend `data refresh` to run a configurable set of news queries automatically:
-
-```
-pftui data refresh
-  ...
-  ✓ News (47 articles from 6 Brave queries + RSS)
-```
-
-Config in `config.toml`:
-```toml
-[brave]
-api_key = "..."
-news_queries = ["bitcoin market", "gold price", "federal reserve", "Iran conflict", "oil supply"]
-refresh_interval_hours = 4
-```
-
-Results cached in `news_cache` table with dedup. Agents read structured news via `pftui data news --since 4h --json` instead of running 2-3 web_searches per run.
-
-Files: `src/data/brave.rs`, `src/data/refresh.rs`, `src/db/news_cache.rs`.
-
 #### F45.4: CME FedWatch Reliability
 
 `fedwatch.rs` exists but scrapes CME's widget page, which is brittle (caused the bad data incident on Mar 12 where an agent got 98.9% cut probability from a blog instead). Harden this:

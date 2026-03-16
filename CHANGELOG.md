@@ -23,6 +23,16 @@
 - Files: `src/data/onchain.rs`, `src/commands/refresh.rs`, `TODO.md`, `CHANGELOG.md`
 - Tests: `cargo test` (1248 passed), `cargo clippy --all-targets -- -D warnings`
 
+### 2026-03-16 — F45.3 Brave news freshness split and structured refresh reporting
+
+- What:
+  - separated Brave news freshness from RSS freshness so `data refresh` only reruns Brave news queries every four hours while RSS continues on the shorter news cadence.
+  - added source-type-specific fetched-at lookup in the news cache to support Brave refresh decisions without guessing from mixed RSS rows.
+  - updated refresh logging to report actual Brave query counts when Brave news is refreshed.
+- Why: reduces unnecessary Brave API usage while keeping the structured news feed current enough for agent workflows.
+- Files: `src/commands/refresh.rs`, `src/db/news_cache.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1249 passed), `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-14 — Add `pftui console` interactive shell
 
 - What:
