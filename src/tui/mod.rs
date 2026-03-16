@@ -4,6 +4,7 @@ pub mod ui;
 pub mod views;
 pub mod widgets;
 
+use std::env;
 use std::io;
 
 use anyhow::Result;
@@ -17,6 +18,10 @@ use ratatui::prelude::*;
 use crate::app::App;
 use crate::tui::event::EventHandler;
 
+const LOCAL_TICK_RATE_MS: u64 = 16;
+const REMOTE_TICK_RATE_MS: u64 = 100;
+const TICK_RATE_ENV: &str = "PFTUI_TICK_RATE_MS";
+
 pub fn run(app: &mut App) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
@@ -25,7 +30,7 @@ pub fn run(app: &mut App) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let events = EventHandler::new(16); // ~60fps
+    let events = EventHandler::new(detect_tick_rate_ms());
 
     // Set initial terminal height for half-page scroll
     if let Ok(size) = crossterm::terminal::size() {
@@ -44,6 +49,26 @@ pub fn run(app: &mut App) -> Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+fn detect_tick_rate_ms() -> u64 {
+    if let Ok(raw) = env::var(TICK_RATE_ENV) {
+        if let Ok(parsed) = raw.parse::<u64>() {
+            return parsed.max(1);
+        }
+    }
+
+    if is_remote_terminal_session() {
+        REMOTE_TICK_RATE_MS
+    } else {
+        LOCAL_TICK_RATE_MS
+    }
+}
+
+fn is_remote_terminal_session() -> bool {
+    ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]
+        .iter()
+        .any(|key| env::var_os(key).is_some())
 }
 
 fn run_loop(
@@ -82,5 +107,80 @@ fn run_loop(
         if app.should_quit {
             return Ok(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{detect_tick_rate_ms, is_remote_terminal_session, LOCAL_TICK_RATE_MS, REMOTE_TICK_RATE_MS, TICK_RATE_ENV};
+
+    fn with_env_vars<F: FnOnce()>(vars: &[(&str, Option<&str>)], f: F) {
+        let saved: Vec<(String, Option<std::ffi::OsString>)> = vars
+            .iter()
+            .map(|(key, _)| ((*key).to_string(), std::env::var_os(key)))
+            .collect();
+
+        for (key, value) in vars {
+            match value {
+                Some(v) => unsafe { std::env::set_var(key, v) },
+                None => unsafe { std::env::remove_var(key) },
+            }
+        }
+
+        f();
+
+        for (key, value) in saved {
+            match value {
+                Some(v) => unsafe { std::env::set_var(&key, v) },
+                None => unsafe { std::env::remove_var(&key) },
+            }
+        }
+    }
+
+    #[test]
+    fn detects_remote_session_from_ssh_env() {
+        with_env_vars(
+            &[
+                ("SSH_CONNECTION", Some("1 2 3 4")),
+                ("SSH_CLIENT", None),
+                ("SSH_TTY", None),
+                (TICK_RATE_ENV, None),
+            ],
+            || {
+                assert!(is_remote_terminal_session());
+                assert_eq!(detect_tick_rate_ms(), REMOTE_TICK_RATE_MS);
+            },
+        );
+    }
+
+    #[test]
+    fn uses_local_rate_without_ssh_env() {
+        with_env_vars(
+            &[
+                ("SSH_CONNECTION", None),
+                ("SSH_CLIENT", None),
+                ("SSH_TTY", None),
+                (TICK_RATE_ENV, None),
+            ],
+            || {
+                assert!(!is_remote_terminal_session());
+                assert_eq!(detect_tick_rate_ms(), LOCAL_TICK_RATE_MS);
+            },
+        );
+    }
+
+    #[test]
+    fn env_override_wins() {
+        with_env_vars(
+            &[
+                ("SSH_CONNECTION", Some("1 2 3 4")),
+                ("SSH_CLIENT", None),
+                ("SSH_TTY", None),
+                (TICK_RATE_ENV, Some("42")),
+            ],
+            || {
+                assert_eq!(detect_tick_rate_ms(), 42);
+            },
+        );
     }
 }

@@ -20,7 +20,9 @@ pub struct EventHandler {
 
 impl EventHandler {
     pub fn new(tick_rate_ms: u64) -> Self {
-        let (tx, rx) = mpsc::channel();
+        // Keep the queue bounded so periodic ticks cannot run far ahead of
+        // input handling on slower terminals such as remote SSH sessions.
+        let (tx, rx) = mpsc::sync_channel(8);
         let tick_rate = Duration::from_millis(tick_rate_ms);
 
         let handle = thread::spawn(move || loop {
@@ -43,8 +45,14 @@ impl EventHandler {
                     }
                     _ => {}
                 }
-            } else if tx.send(Event::Tick).is_err() {
-                return;
+            } else {
+                // Dropping an occasional tick is fine; dropping key or mouse
+                // input is not. This prevents lag from compounding when draw
+                // speed falls behind the requested tick rate.
+                match tx.try_send(Event::Tick) {
+                    Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
+                    Err(mpsc::TrySendError::Disconnected(_)) => return,
+                }
             }
         });
 
