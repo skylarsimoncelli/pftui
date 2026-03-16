@@ -177,3 +177,4 @@ CRITICAL MISSING FEATURES: (1) Portfolio performance metrics (returns, risk rati
 2026-03-16,high-timeframe-analyst,75,85,enhancement,P2,"pftui excellent for trend evidence management and prediction tracking. Web research provided raw data, pftui organized it into actionable intelligence. Would benefit from direct trend scoring/conviction updates and batch evidence import for efficiency."
 2026-03-16,alert-investigator,95,90,ux,P2,Clean no-alerts run - pftui message list works efficiently
 2026-03-16,low-agent,80,85,enhancement,P2,"Strong data coverage for market close analysis. News, sentiment, predictions, regime all via pftui vs web_search. Minor: analytics digest could include timeframe-specific insights vs just cross-timeframe divergence."
+2026-03-16,alert-investigator,85,80,enhancement,P2,"Alert system working properly - no unacked messages found, clean triggered alert states"
