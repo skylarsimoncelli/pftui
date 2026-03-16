@@ -40,9 +40,22 @@ pftui journal notes list --json
 
 4. Read user profile and portfolio for conviction state and allocation context.
 
-5. DEEP web research on the 2-3 most important signals from today. Go beyond headlines:
+5. Read pftui data sources for the full day's picture:
+```bash
+pftui data news --hours 24 --json         # full day's news
+pftui data fedwatch --json                # rate path probabilities
+pftui data economy --json                 # any new economic data today
+pftui data sentiment --json               # F&G + COT positioning
+pftui data etf-flows --json               # today's ETF flows
+pftui data sovereign --json               # CB gold, govt BTC
+pftui data calendar --json                # what events hit today, what's tomorrow
+pftui analytics alerts check --json       # any alerts triggered today
+```
+
+6. DEEP web research on the 2-3 most important signals from today. Go beyond headlines:
 - Historical parallels, expert analysis, data patterns
-- 5-8 targeted searches for genuine analytical depth
+- 3-5 targeted searches for genuine analytical depth
+- Only search for what pftui data doesn't cover: interpretation, context, analysis
 
 ## Analysis Structure
 

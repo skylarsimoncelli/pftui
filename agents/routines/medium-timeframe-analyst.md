@@ -23,14 +23,30 @@ pftui portfolio brief --json
 
 Read the user profile and portfolio files for conviction state and allocation context.
 
-## Web Research (your primary analytical tool)
+## pftui Data (read BEFORE web research)
 
-Do 5-8 DEEP targeted searches. NOT headlines. Analysis and data:
-- **Central banks:** Rate path projections, forward guidance analysis, speaker transcripts
-- **Geopolitics:** Situation reports, diplomatic channels, sanctions enforcement data, trade disruption quantification
-- **Economy:** FRED data (yield curve, leading indicators, credit spreads), BLS releases analysis, earnings revision trends
-- **Commodities:** CFTC COT positioning, inventory data, supply decisions
+Pull structured data from pftui first. This replaces most of what you used to web_search for:
+```bash
+pftui data fedwatch --json                # CME FedWatch — rate path probabilities
+pftui data economy --json                 # CPI, NFP, fed funds, initial claims, PPI
+pftui data sentiment --json               # COT positioning (gold, silver, oil, BTC)
+pftui data calendar --json                # upcoming economic events and catalysts
+pftui data sovereign --json               # CB gold reserves, govt BTC holdings
+pftui data supply --json                  # COMEX warehouse inventory (gold, silver)
+pftui data news --hours 24 --json         # last 24h news from RSS + Brave
+pftui data predictions --json             # Polymarket/Manifold odds
+pftui data etf-flows --days 7 --json      # BTC ETF flow trend
+```
+
+## Web Research (for what pftui cannot provide)
+
+Do 3-5 DEEP targeted searches for analysis and context that structured data cannot capture:
+- **Central banks:** Speaker transcripts, forward guidance interpretation, policy analysis
+- **Geopolitics:** Situation reports, diplomatic channels, expert analysis
 - **Scenario-specific:** Whatever your active scenarios need investigated this cycle
+- **Context behind data:** When pftui flags a data point (COT extreme, FedWatch shift), search for the WHY
+
+Do NOT web_search for: rate probabilities (use fedwatch), economic data (use economy), COT positioning (use sentiment), upcoming events (use calendar). pftui has these.
 
 ## Scenario Management (your core responsibility)
 

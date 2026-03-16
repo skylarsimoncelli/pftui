@@ -24,15 +24,26 @@ pftui agent message list --to high-agent --unacked
 
 Read the user profile for structural views. Read STRUCTURAL.md for the macro framework context.
 
+## pftui Data (read BEFORE web research)
+
+Pull structured data from pftui for your domain:
+```bash
+pftui data sovereign --json               # CB gold reserves, govt BTC holdings, COMEX silver
+pftui data supply --json                  # COMEX warehouse inventory trends
+pftui data etf-flows --days 30 --json     # BTC ETF flow trends (monthly view)
+pftui data sentiment --json               # COT positioning extremes
+pftui data economy --json                 # macro indicators for structural context
+```
+
 ## Web Research (your primary tool: go DEEP)
 
-Do 5-8 deep research queries. You're looking for RESEARCH REPORTS, DATA, and EXPERT ANALYSIS, not headlines:
-- **Technology disruption:** Enterprise adoption rates, workforce displacement data by sector, automation metrics, capex trends, infrastructure demand
-- **De-dollarisation:** Central bank reserve allocation changes (IMF COFER data), alternative settlement mechanisms, gold purchasing data (WGC), trade settlement volumes outside USD
-- **Commodity supercycle:** Underinvestment data (capex vs depletion), electrification demand curves, supply constraints, inventory trends
-- **Sovereign money:** Institutional adoption metrics, ETF flow trends, corporate treasury allocation, regulatory developments
-- **Energy transition:** Supply gap analysis, construction pipelines, power demand projections, grid capacity constraints
-- **Geopolitical decoupling:** Export control impacts, domestic capability development, supply chain restructuring, dual-technology ecosystems
+Do 5-8 deep research queries. pftui provides the data foundation; web research provides the analysis, reports, and structural interpretation:
+- **Technology disruption:** Enterprise adoption rates, workforce displacement data by sector, automation metrics, capex trends
+- **De-dollarisation:** IMF COFER reserve data, alternative settlement mechanisms, trade settlement volumes outside USD (pftui sovereign gives CB gold data)
+- **Commodity supercycle:** Underinvestment data, electrification demand curves, supply constraints (pftui supply gives COMEX inventory)
+- **Sovereign money:** Corporate treasury allocation, regulatory developments (pftui etf-flows gives institutional flow trends)
+- **Energy transition:** Supply gap analysis, construction pipelines, power demand projections
+- **Geopolitical decoupling:** Export control impacts, supply chain restructuring, dual-technology ecosystems
 
 ## Trend Management (your core responsibility)
 

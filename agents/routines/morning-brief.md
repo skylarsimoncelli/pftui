@@ -32,10 +32,17 @@ pftui journal conviction list --json
 
 3. Read user profile and portfolio for conviction state and allocation context.
 
-4. Quick overnight news check (2-3 targeted searches only, for context behind movers):
+4. Read pftui data sources for overnight context:
 ```bash
-web_search "[specific overnight developments based on active scenarios]"
+pftui data news --hours 12 --json         # overnight news from RSS + Brave
+pftui data fedwatch --json                # any overnight rate path changes
+pftui data calendar --json                # today's economic events
+pftui analytics alerts check --json       # any alerts triggered overnight
+pftui data etf-flows --json               # yesterday's ETF flows
+pftui data sentiment --json               # F&G + COT positioning
 ```
+
+5. Only use web_search (1-2 searches max) for context behind specific overnight developments that pftui news flagged but didn't explain.
 
 ## Brief Format
 

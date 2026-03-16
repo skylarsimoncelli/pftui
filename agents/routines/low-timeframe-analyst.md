@@ -50,13 +50,25 @@ pftui agent message send "NEWS: [headline] — scenario impact: [which scenario,
   --from low-agent --to evening-analyst --priority high --category signal --layer low
 ```
 
-5. Use web_search for BREAKING NEWS and SHORT-TERM intelligence:
-- Prediction market odds (Polymarket, Kalshi) on near-term events
-- Intraday sentiment shifts (crypto Fear & Greed, CNN Fear & Greed)
-- Breaking geopolitical news that moves markets TODAY
-- Fed speaker comments, economic data surprises
+5. Read pftui data sources before resorting to web_search:
+```bash
+pftui data news --hours 4 --json          # breaking news from RSS + Brave
+pftui data sentiment --json               # Fear & Greed indices + COT positioning
+pftui data predictions --json             # Polymarket, Manifold odds
+pftui data fedwatch --json                # CME FedWatch rate probabilities
+pftui data economy --json                 # CPI, NFP, initial claims, fed funds
+pftui data etf-flows --json               # BTC ETF inflows/outflows by fund
+pftui data calendar --json                # upcoming economic events today
+pftui analytics alerts check --json       # any newly triggered alerts
+```
 
-Do 2-3 targeted searches per run, not broad sweeps.
+Only use web_search for what pftui cannot provide:
+- Breaking geopolitical news not yet in RSS feeds
+- Intraday social sentiment shifts
+- Fed speaker live comments or press conference highlights
+- Context or analysis behind a data point pftui flagged
+
+Do 1-2 targeted searches per run, not broad sweeps. If pftui data already covers it, don't search for it.
 
 6. Conviction mismatch detection. For each asset where move >2% contradicts conviction direction:
 ```bash
