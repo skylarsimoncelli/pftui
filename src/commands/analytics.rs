@@ -850,23 +850,19 @@ fn run_macro(
             if arg1 == Some("history") {
                 if arg2 == Some("add") {
                     let c = country.ok_or_else(|| anyhow::anyhow!("--country required"))?;
-                    let m = metric.ok_or_else(|| anyhow::anyhow!("--metric required"))?;
-                    let d = decade.ok_or_else(|| anyhow::anyhow!("--decade required"))?;
+                    let m = metric.ok_or_else(|| anyhow::anyhow!("--determinant required"))?;
+                    let d = decade.ok_or_else(|| anyhow::anyhow!("--year required"))?;
                     let sc = score.ok_or_else(|| anyhow::anyhow!("--score required"))?;
-                    let id = structural::add_metric_history_backend(
-                        backend, c, m, d, sc, notes, source,
-                    )?;
-                    if json_output {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(
-                                &json!({"id": id, "country": c, "metric": m, "decade": d, "score": sc})
-                            )?
-                        );
-                    } else {
-                        println!("Added history row: {} {} {} = {:.2}", c, m, d, sc);
-                    }
-                    return Ok(());
+                    return run_macro_cycles_history_add(
+                        backend,
+                        c,
+                        m,
+                        d,
+                        sc,
+                        notes,
+                        source,
+                        json_output,
+                    );
                 }
                 if arg2 == Some("add-batch") {
                     let path =
@@ -1036,6 +1032,50 @@ fn run_macro(
         println!("  Cycles: {}", cycles.len());
         println!("  Outcomes: {}", outcomes.len());
         println!("  Parallels: {}", parallels.len());
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_macro_cycles_history_add(
+    backend: &BackendConnection,
+    country: &str,
+    determinant: &str,
+    year: i32,
+    score: f64,
+    notes: Option<&str>,
+    source: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let id = structural::add_metric_history_backend(
+        backend,
+        country,
+        determinant,
+        year,
+        score,
+        notes,
+        source,
+    )?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "id": id,
+                "country": country,
+                "determinant": determinant,
+                "year": year,
+                "score": score,
+                "notes": notes,
+                "source": source,
+            }))?
+        );
+    } else {
+        println!(
+            "Added history row: {} {} {} = {:.2}",
+            country, determinant, year, score
+        );
     }
 
     Ok(())
@@ -1922,5 +1962,44 @@ fn bias_to_signal(bias: &str) -> f64 {
         "bull" => 1.0,
         "bear" => -1.0,
         _ => 0.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::backend::BackendConnection;
+
+    fn to_backend(conn: rusqlite::Connection) -> BackendConnection {
+        BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn macro_cycles_history_add_persists_row() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        run_macro_cycles_history_add(
+            &backend,
+            "US",
+            "education",
+            1950,
+            9.0,
+            Some("GI Bill expansion"),
+            Some("test-source"),
+            true,
+        )
+        .unwrap();
+
+        let rows =
+            structural::list_metric_history_backend(&backend, &["US".to_string()], None, None)
+                .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].country, "US");
+        assert_eq!(rows[0].metric, "education");
+        assert_eq!(rows[0].decade, 1950);
+        assert_eq!(rows[0].score, 9.0);
+        assert_eq!(rows[0].notes.as_deref(), Some("GI Bill expansion"));
+        assert_eq!(rows[0].source.as_deref(), Some("test-source"));
     }
 }
