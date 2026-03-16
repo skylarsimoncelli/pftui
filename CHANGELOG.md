@@ -3,6 +3,16 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — F45.1 FRED surprise detection and macro event cache
+
+- What:
+  - expanded tracked FRED coverage with GDP, PCE, ISM manufacturing PMI, JOLTS, initial claims, and nonfarm payrolls.
+  - added statistical surprise detection over recent FRED history and persisted structured macro release events in a new `macro_events` table.
+  - wired FRED ingestion into `pftui data refresh` and exposed recent macro surprise events through `pftui data economy --json`.
+- Why: agents can now read structured economic releases and surprise signals directly from pftui instead of re-searching for the latest CPI, payroll, or claims prints.
+- Files: `src/data/fred.rs`, `src/db/macro_events.rs`, `src/db/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/refresh.rs`, `src/commands/economy.rs`, `CHANGELOG.md`
+- Tests: `cargo test` (1246 passed), `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-14 — Add `pftui console` interactive shell
 
 - What:

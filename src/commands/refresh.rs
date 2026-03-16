@@ -9,8 +9,8 @@ use rust_decimal_macros::dec;
 use crate::alerts::engine;
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
-    bls, brave, calendar, comex, cot, economic, fedwatch, fx, onchain, predictions, rss, sentiment,
-    worldbank,
+    bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, onchain, predictions, rss,
+    sentiment, worldbank,
 };
 use crate::db::allocations::{get_unique_allocation_symbols_backend, list_allocations_backend};
 use crate::db::backend::BackendConnection;
@@ -26,7 +26,10 @@ use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
 use crate::db::watchlist::get_watchlist_symbols_backend;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
-use crate::db::{onchain_cache, predictions_cache, sentiment_cache, worldbank_cache};
+use crate::db::{
+    economic_cache, macro_events, onchain_cache, predictions_cache, sentiment_cache,
+    worldbank_cache,
+};
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 use crate::models::price::{HistoryRecord, PriceQuote};
@@ -165,6 +168,23 @@ fn build_brave_news_queries(backend: &BackendConnection, config: &Config) -> Res
 
     queries.truncate(BRAVE_NEWS_QUERY_LIMIT);
     Ok(queries)
+}
+
+fn fred_needs_refresh(backend: &BackendConnection) -> Result<bool> {
+    let observations = economic_cache::get_all_latest_backend(backend)?;
+    if observations.is_empty() {
+        return Ok(true);
+    }
+
+    for series in fred::FRED_SERIES {
+        let latest = observations.iter().find(|obs| obs.series_id == series.id);
+        match latest {
+            Some(obs) if !fred::is_stale(&obs.date, series.frequency) => {}
+            _ => return Ok(true),
+        }
+    }
+
+    Ok(false)
 }
 
 /// Check if predictions need refreshing
@@ -686,7 +706,11 @@ fn run_with_output(
             }
         }
         if history_attempted > 0 {
-            info_ln!(verbose, "✓ Price history ({} symbol backfills)", history_updated);
+            info_ln!(
+                verbose,
+                "✓ Price history ({} symbol backfills)",
+                history_updated
+            );
         }
     } else {
         info_ln!(verbose, "⊘ Prices (no symbols)");
@@ -952,11 +976,77 @@ fn run_with_output(
                 if used_brave {
                     info_ln!(verbose, "✓ Economy ({} indicators via Brave)", items.len());
                 } else {
-                    info_ln!(verbose, "✓ Economy ({} indicators via BLS fallback)", items.len());
+                    info_ln!(
+                        verbose,
+                        "✓ Economy ({} indicators via BLS fallback)",
+                        items.len()
+                    );
                 }
             }
             Err(e) => info_ln!(verbose, "✗ Economy (failed: {})", e),
         }
+    }
+
+    // 9a. FRED macro cache + surprise detection
+    if let Some(api_key) = config
+        .fred_api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if fred_needs_refresh(backend)? {
+            let mut updated = 0usize;
+            let mut surprise_count = 0usize;
+            let fetched_at = chrono::Utc::now().to_rfc3339();
+
+            for series in fred::FRED_SERIES {
+                match rt.block_on(fred::fetch_series(api_key, series.id, 24)) {
+                    Ok(observations) if !observations.is_empty() => {
+                        let cached: Vec<_> = observations
+                            .iter()
+                            .cloned()
+                            .map(|obs| economic_cache::EconomicObservation {
+                                series_id: obs.series_id,
+                                date: obs.date,
+                                value: obs.value,
+                                fetched_at: fetched_at.clone(),
+                            })
+                            .collect();
+
+                        if economic_cache::upsert_observations_backend(backend, &cached).is_ok() {
+                            updated += 1;
+                        }
+
+                        if let Some(surprise) = fred::detect_surprise(&observations) {
+                            let event = macro_events::MacroEvent {
+                                series_id: surprise.series_id,
+                                event_date: surprise.event_date,
+                                expected: surprise.expected,
+                                actual: surprise.actual,
+                                surprise_pct: surprise.surprise_pct,
+                                created_at: fetched_at.clone(),
+                            };
+                            if macro_events::insert_event_backend(backend, &event).is_ok() {
+                                surprise_count += 1;
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => warn_ln!(verbose, "FRED series fetch failed ({}): {}", series.id, e),
+                }
+            }
+
+            info_ln!(
+                verbose,
+                "✓ FRED ({} series, {} surprise events)",
+                updated,
+                surprise_count
+            );
+        } else {
+            info_ln!(verbose, "⊘ FRED (fresh, skipping)");
+        }
+    } else {
+        info_ln!(verbose, "⊘ FRED (no API key configured)");
     }
 
     // 9. BLS
@@ -1075,12 +1165,20 @@ fn run_with_output(
     if !onchain_ok_parts.is_empty() {
         info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
     } else {
-        info_ln!(verbose, "✗ On-chain (failed: {})", onchain_errors.join("; "));
+        info_ln!(
+            verbose,
+            "✗ On-chain (failed: {})",
+            onchain_errors.join("; ")
+        );
     }
 
     // Store daily portfolio snapshot
     if let Err(e) = store_portfolio_snapshot(backend, config, verbose) {
-        warn_ln!(verbose, "\nWarning: failed to store portfolio snapshot: {}", e);
+        warn_ln!(
+            verbose,
+            "\nWarning: failed to store portfolio snapshot: {}",
+            e
+        );
     }
     if let Err(e) = detect_timeframe_signals(backend) {
         warn_ln!(

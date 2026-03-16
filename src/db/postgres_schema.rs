@@ -231,9 +231,11 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_power_metrics_country ON power_metrics(country)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_power_metrics_country ON power_metrics(country)",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_power_metrics_metric ON power_metrics(metric)")
             .execute(pool)
             .await?;
@@ -408,6 +410,19 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS macro_events (
+                series_id TEXT NOT NULL,
+                event_date TEXT NOT NULL,
+                expected TEXT NOT NULL,
+                actual TEXT NOT NULL,
+                surprise_pct TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (series_id, event_date)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS bls_cache (
                 series_id TEXT NOT NULL,
                 year INTEGER NOT NULL,
@@ -457,18 +472,22 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_history_scenario ON scenario_history(scenario_id)")
             .execute(pool)
             .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_thesis_history_section ON thesis_history(section)",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_worldbank_country_indicator ON worldbank_cache(country_code, indicator_code, year)")
             .execute(pool)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_cot_report_date ON cot_cache(report_date)")
             .execute(pool)
             .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sentiment_history_date ON sentiment_history(date)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_sentiment_history_date ON sentiment_history(date)",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_bls_series_date ON bls_cache(series_id, date)")
             .execute(pool)
             .await?;
@@ -484,12 +503,19 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_onchain_metric ON onchain_cache(metric)")
             .execute(pool)
             .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_macro_events_event_date ON macro_events(event_date)",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_corr_snap_pair ON correlation_snapshots(symbol_a, symbol_b)")
             .execute(pool)
             .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_corr_snap_date ON correlation_snapshots(recorded_at)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_corr_snap_date ON correlation_snapshots(recorded_at)",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query("INSERT INTO pftui_migrations (version) VALUES (1) ON CONFLICT DO NOTHING")
             .execute(pool)

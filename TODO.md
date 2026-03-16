@@ -137,18 +137,6 @@ Files: `src/commands/alerts.rs`.
 
 Agents currently use web_search for ~45% of their data needs. These items target data that has structured API sources and can be computed/cached by `data refresh`, eliminating agent guesswork and improving data quality.
 
-#### F45.1: FRED Auto-Detect Economic Surprises
-
-FRED client already fetches 6 series (10Y, Fed Funds, CPI, PPI, unemployment, yield curve). Extend to:
-- Auto-detect when a new data point differs significantly from the previous value (>1 std dev)
-- Log economic "surprises" to a `macro_events` table: series, expected, actual, surprise_pct, date
-- Agents currently web_search "latest CPI data" and "NFP report". pftui should have this structured.
-
-Add series: GDP (quarterly), PCE (monthly), ISM PMI, JOLTS, initial claims (weekly), NFP.
-No new API key needed (FRED is free with key already configured).
-
-Files: `src/data/fred.rs`, `src/db/macro_events.rs`. Schema: new `macro_events` table.
-
 #### F45.2: On-Chain Depth — Exchange Reserves & Whale Activity
 
 `onchain.rs` fetches network metrics + ETF flows but notes exchange flows are "NOT IMPLEMENTED." Agents web_search for exchange reserves, whale accumulation, MVRV ratio, and STH/LTH supply every run.

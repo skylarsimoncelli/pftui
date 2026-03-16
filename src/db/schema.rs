@@ -65,6 +65,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (series_id, date)
         );
 
+        CREATE TABLE IF NOT EXISTS macro_events (
+            series_id TEXT NOT NULL,
+            event_date TEXT NOT NULL,
+            expected TEXT NOT NULL,
+            actual TEXT NOT NULL,
+            surprise_pct TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (series_id, event_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_macro_events_event_date ON macro_events(event_date);
+
         CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kind TEXT NOT NULL DEFAULT 'price',
