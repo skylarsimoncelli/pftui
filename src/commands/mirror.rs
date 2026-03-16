@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
-use rusqlite::{params, types::Value as SqlValue, Connection};
+use rusqlite::{params, types::Value as SqlValue, Connection, OptionalExtension};
 use serde_json::{Map, Value};
 use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
@@ -8,6 +8,8 @@ use std::time::Instant;
 
 use crate::cli::MirrorCommand;
 use crate::config::{save_config, Config, DatabaseBackend};
+
+const STARTUP_SYNC_MIN_INTERVAL_SECS: i64 = 300;
 
 const FULL_SYNC_TABLES: &[&str] = &[
     "transactions",
@@ -55,9 +57,10 @@ enum TableSyncStrategy {
 
 pub fn run(config: &Config, sqlite_path: &Path, command: &MirrorCommand) -> Result<()> {
     match command {
-        MirrorCommand::Sync { source_url, activate } => {
-            run_sync(config, sqlite_path, source_url.as_deref(), *activate)
-        }
+        MirrorCommand::Sync {
+            source_url,
+            activate,
+        } => run_sync(config, sqlite_path, source_url.as_deref(), *activate),
     }
 }
 
@@ -84,7 +87,10 @@ pub fn sync_on_startup_if_needed(config: &Config, sqlite_path: &Path) -> Result<
     eprintln!("Syncing local mirror from remote source...");
     match run_sync(config, sqlite_path, None, false) {
         Ok(()) => {
-            eprintln!("Local mirror updated in {:.2}s.", started.elapsed().as_secs_f64());
+            eprintln!(
+                "Local mirror updated in {:.2}s.",
+                started.elapsed().as_secs_f64()
+            );
             Ok(())
         }
         Err(err) => {
@@ -108,6 +114,9 @@ pub fn spawn_startup_sync_if_needed(config: &Config, sqlite_path: &Path) {
         .filter(|v| !v.is_empty())
         .is_none()
     {
+        return;
+    }
+    if !should_run_startup_sync(sqlite_path) {
         return;
     }
 
@@ -172,7 +181,11 @@ fn run_sync(
         stats.skipped,
         stats.rows,
         sqlite_path.display(),
-        if activate { " (activated local SQLite mirror)" } else { "" }
+        if activate {
+            " (activated local SQLite mirror)"
+        } else {
+            ""
+        }
     );
     Ok(())
 }
@@ -188,6 +201,15 @@ struct SyncStats {
 struct TableSyncResult {
     rows: usize,
     watermark: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TableSyncPlan {
+    name: String,
+    pk_columns: Vec<String>,
+    strategy: TableSyncStrategy,
+    state: Option<SyncState>,
+    use_full_sync: bool,
 }
 
 fn resolve_source_url(config: &Config, source_url: Option<&str>) -> Result<String> {
@@ -249,7 +271,9 @@ fn list_remote_columns(pool: &PgPool) -> Result<HashMap<String, TableMeta>> {
                 data_type: row.get(2),
             };
             out.entry(table_name)
-                .or_insert_with(|| TableMeta { columns: Vec::new() })
+                .or_insert_with(|| TableMeta {
+                    columns: Vec::new(),
+                })
                 .columns
                 .push(column);
         }
@@ -268,6 +292,7 @@ fn sync_tables(
     let local_tables = list_local_tables(local)?;
     let states = load_sync_states(local)?;
     let mut stats = SyncStats::default();
+    let mut plans = Vec::new();
 
     for table in tables {
         if !local_tables.contains(table.as_str()) {
@@ -283,27 +308,64 @@ fn sync_tables(
             || state
                 .map(|s| s.strategy.as_str() != strategy_name(&strategy))
                 .unwrap_or(true);
+        plans.push(TableSyncPlan {
+            name: table.clone(),
+            pk_columns,
+            strategy,
+            state: state.cloned(),
+            use_full_sync,
+        });
+    }
 
-        if !use_full_sync {
-            if let (Some(state), Some(remote_watermark)) = (
-                state,
-                fetch_remote_max_watermark(pool, table, &strategy)?,
-            ) {
+    let watermark_plans = plans
+        .iter()
+        .filter(|plan| {
+            !plan.use_full_sync && matches!(plan.strategy, TableSyncStrategy::Watermark { .. })
+        })
+        .collect::<Vec<_>>();
+    let remote_watermarks = fetch_remote_max_watermarks(pool, &watermark_plans)?;
+
+    for plan in &plans {
+        if !plan.use_full_sync {
+            if let (Some(state), Some(Some(remote_watermark))) =
+                (plan.state.as_ref(), remote_watermarks.get(&plan.name))
+            {
                 if state.watermark.as_deref() == Some(remote_watermark.as_str()) {
-                    save_sync_state(local, table, strategy_name(&strategy), Some(remote_watermark))?;
+                    save_sync_state(
+                        local,
+                        &plan.name,
+                        strategy_name(&plan.strategy),
+                        Some(remote_watermark.clone()),
+                    )?;
                     stats.skipped += 1;
                     continue;
                 }
             }
         }
 
-        let result = if use_full_sync {
-            full_sync_table(local, pool, table, meta, &strategy)?
+        let meta = remote_meta
+            .get(&plan.name)
+            .ok_or_else(|| anyhow!("Missing metadata for mirrored table {}", plan.name))?;
+        let result = if plan.use_full_sync {
+            full_sync_table(local, pool, &plan.name, meta, &plan.strategy)?
         } else {
-            incremental_sync_table(local, pool, table, meta, &pk_columns, &strategy, state)?
+            incremental_sync_table(
+                local,
+                pool,
+                &plan.name,
+                meta,
+                &plan.pk_columns,
+                &plan.strategy,
+                plan.state.as_ref(),
+            )?
         };
 
-        save_sync_state(local, table, strategy_name(&strategy), result.watermark)?;
+        save_sync_state(
+            local,
+            &plan.name,
+            strategy_name(&plan.strategy),
+            result.watermark,
+        )?;
         stats.tables += 1;
         stats.rows += result.rows;
     }
@@ -378,10 +440,7 @@ fn list_local_pk_columns(conn: &Connection, table: &str) -> Result<Vec<String>> 
     let mut stmt = conn.prepare(&pragma)?;
     let mut rows = stmt
         .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(5)?,
-            ))
+            Ok((row.get::<_, String>(1)?, row.get::<_, i64>(5)?))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     rows.sort_by_key(|(_, order)| *order);
@@ -443,7 +502,10 @@ fn full_sync_table(
     let watermark = watermark_for_rows_data(&rows, strategy);
     let tx = local.unchecked_transaction()?;
     tx.execute(&format!("DELETE FROM {}", quote_ident(table)), [])?;
-    let _ = tx.execute("DELETE FROM sqlite_sequence WHERE name = ?1", params![table]);
+    let _ = tx.execute(
+        "DELETE FROM sqlite_sequence WHERE name = ?1",
+        params![table],
+    );
     insert_rows(&tx, table, &meta.columns, &[], rows.as_slice())?;
     tx.commit()?;
     Ok(TableSyncResult {
@@ -517,35 +579,59 @@ fn fetch_incremental_rows(
         quote_ident(column),
     );
     let bind = if is_integer_type(data_type) {
-        Some(BindValue::I64(
-            watermark
-                .parse::<i64>()
-                .with_context(|| format!("Invalid integer watermark '{}' for {}", watermark, table))?,
-        ))
+        Some(BindValue::I64(watermark.parse::<i64>().with_context(
+            || format!("Invalid integer watermark '{}' for {}", watermark, table),
+        )?))
     } else {
         Some(BindValue::Text(watermark.to_string()))
     };
     fetch_json_rows(pool, &sql, bind)
 }
 
-fn fetch_remote_max_watermark(
+fn fetch_remote_max_watermarks(
     pool: &PgPool,
-    table: &str,
-    strategy: &TableSyncStrategy,
-) -> Result<Option<String>> {
-    let TableSyncStrategy::Watermark { column, data_type } = strategy else {
-        return Ok(None);
-    };
+    plans: &[&TableSyncPlan],
+) -> Result<HashMap<String, Option<String>>> {
+    if plans.is_empty() {
+        return Ok(HashMap::new());
+    }
 
-    let sql = format!(
-        "SELECT MAX({})::text FROM {}",
-        quote_ident(column),
-        quote_ident(table),
-    );
-    let value: Option<String> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_scalar(&sql).fetch_one(pool).await
+    let mut sql_parts = Vec::with_capacity(plans.len());
+    let mut data_types = HashMap::with_capacity(plans.len());
+    for plan in plans {
+        let TableSyncStrategy::Watermark { column, data_type } = &plan.strategy else {
+            continue;
+        };
+        data_types.insert(plan.name.clone(), data_type.clone());
+        sql_parts.push(format!(
+            "SELECT {} AS table_name, MAX({})::text AS watermark FROM {}",
+            quote_literal(&plan.name),
+            quote_ident(column),
+            quote_ident(&plan.name),
+        ));
+    }
+
+    let sql = sql_parts.join(" UNION ALL ");
+    let rows: Vec<(String, Option<String>)> = crate::db::pg_runtime::block_on(async {
+        let rows = sqlx::query(&sql).fetch_all(pool).await?;
+        Ok::<_, sqlx::Error>(
+            rows.into_iter()
+                .map(|row| (row.get(0), row.get(1)))
+                .collect::<Vec<(String, Option<String>)>>(),
+        )
     })?;
-    Ok(value.map(|v| normalize_watermark(v, data_type)))
+
+    let mut watermarks = HashMap::with_capacity(rows.len());
+    for (table, watermark) in rows {
+        let data_type = data_types
+            .get(&table)
+            .ok_or_else(|| anyhow!("Missing watermark data type for table {}", table))?;
+        watermarks.insert(
+            table,
+            watermark.map(|value| normalize_watermark(value, data_type)),
+        );
+    }
+    Ok(watermarks)
 }
 
 enum BindValue {
@@ -553,11 +639,19 @@ enum BindValue {
     I64(i64),
 }
 
-fn fetch_json_rows(pool: &PgPool, sql: &str, bind: Option<BindValue>) -> Result<Vec<Map<String, Value>>> {
+fn fetch_json_rows(
+    pool: &PgPool,
+    sql: &str,
+    bind: Option<BindValue>,
+) -> Result<Vec<Map<String, Value>>> {
     let raw: Vec<String> = crate::db::pg_runtime::block_on(async {
         match bind {
-            Some(BindValue::Text(value)) => sqlx::query_scalar(sql).bind(value).fetch_all(pool).await,
-            Some(BindValue::I64(value)) => sqlx::query_scalar(sql).bind(value).fetch_all(pool).await,
+            Some(BindValue::Text(value)) => {
+                sqlx::query_scalar(sql).bind(value).fetch_all(pool).await
+            }
+            Some(BindValue::I64(value)) => {
+                sqlx::query_scalar(sql).bind(value).fetch_all(pool).await
+            }
             None => sqlx::query_scalar(sql).fetch_all(pool).await,
         }
     })?;
@@ -598,7 +692,13 @@ fn insert_rows(
         let update_cols = columns
             .iter()
             .filter(|c| !pk_columns.iter().any(|pk| pk == &c.name))
-            .map(|c| format!("{} = excluded.{}", quote_ident(&c.name), quote_ident(&c.name)))
+            .map(|c| {
+                format!(
+                    "{} = excluded.{}",
+                    quote_ident(&c.name),
+                    quote_ident(&c.name)
+                )
+            })
             .collect::<Vec<_>>();
         if !update_cols.is_empty() {
             insert_sql.push_str(&format!(
@@ -713,4 +813,99 @@ fn json_to_sql_value(value: Option<&Value>, data_type: &str) -> SqlValue {
 
 fn quote_ident(ident: &str) -> String {
     format!("\"{}\"", ident.replace('"', "\"\""))
+}
+
+fn quote_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn should_run_startup_sync(sqlite_path: &Path) -> bool {
+    if !sqlite_path.exists() {
+        return true;
+    }
+
+    match crate::db::open_db(sqlite_path).and_then(|conn| mirror_last_sync_age_secs(&conn)) {
+        Ok(Some(age_secs)) => age_secs >= STARTUP_SYNC_MIN_INTERVAL_SECS,
+        Ok(None) => true,
+        Err(err) => {
+            eprintln!(
+                "Unable to inspect mirror sync freshness; syncing anyway: {}",
+                err
+            );
+            true
+        }
+    }
+}
+
+fn mirror_last_sync_age_secs(conn: &Connection) -> Result<Option<i64>> {
+    let table_exists = conn
+        .query_row(
+            "SELECT 1
+             FROM sqlite_master
+             WHERE type = 'table'
+               AND name = 'mirror_sync_state'
+             LIMIT 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if table_exists.is_none() {
+        return Ok(None);
+    }
+
+    conn.query_row(
+        "SELECT CAST(strftime('%s', 'now') AS INTEGER) - CAST(strftime('%s', MAX(last_synced_at)) AS INTEGER)
+         FROM mirror_sync_state",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn mirror_last_sync_age_is_none_without_state_table() {
+        let conn = Connection::open_in_memory().expect("open sqlite");
+        assert_eq!(mirror_last_sync_age_secs(&conn).expect("query age"), None);
+    }
+
+    #[test]
+    fn mirror_last_sync_age_reads_recent_timestamp() {
+        let conn = Connection::open_in_memory().expect("open sqlite");
+        ensure_sync_state_table(&conn).expect("create state table");
+        save_sync_state(&conn, "price_cache", "watermark", Some("123".to_string()))
+            .expect("save sync state");
+
+        let age = mirror_last_sync_age_secs(&conn)
+            .expect("query age")
+            .expect("age present");
+        assert!((0..=5).contains(&age), "unexpected age: {age}");
+    }
+
+    #[test]
+    fn startup_sync_is_skipped_when_recently_synced() {
+        let path = unique_temp_sqlite_path();
+        let conn = Connection::open(&path).expect("open sqlite");
+        ensure_sync_state_table(&conn).expect("create state table");
+        save_sync_state(&conn, "price_cache", "watermark", Some("123".to_string()))
+            .expect("save sync state");
+        drop(conn);
+
+        assert!(!should_run_startup_sync(&path));
+
+        let _ = fs::remove_file(path);
+    }
+
+    fn unique_temp_sqlite_path() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("pftui-mirror-test-{nanos}.db"))
+    }
 }
