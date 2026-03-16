@@ -269,12 +269,9 @@ python3 /root/pftui/agents/deep-analysis/gen-report.py \
   "<Optional Subtitle>"
 ```
 
-3. Send the PDF to the user via the message tool:
-```bash
-message action=send target=<user_id> message="📊 PFTUI Intelligence Report: <title>" filePath=/root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf
-```
+3. **DO NOT send the PDF or upload to the repo automatically.** The report requires manual review and fact-checking before publication. After generating the PDF, notify the user that the draft is ready for review at the file path. The user will review, request corrections if needed, and explicitly approve publication.
 
-4. Upload the PDF to the repo:
+4. Only after the user approves, upload the PDF to the repo:
 ```bash
 cp /root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf \
   /root/pftui/newsletter/DD-Month-YYYY.pdf
@@ -283,6 +280,11 @@ git add newsletter/
 git -c user.name="skylarsimoncelli" -c user.email="skylar.simoncelli@icloud.com" \
   commit -m "Newsletter: <title> — <date>"
 git push
+```
+
+And send to the user:
+```bash
+message action=send target=<user_id> message="📊 PFTUI Intelligence Report: <title>" filePath=/root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf
 ```
 
 File naming: `DD-Month-YYYY.pdf` (e.g. `15-March-2026.pdf`, `12-April-2026.pdf`). All newsletters live in `newsletter/` at the repo root.
