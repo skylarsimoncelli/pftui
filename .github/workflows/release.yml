@@ -108,7 +108,7 @@ jobs:
         run: |
           xcodebuild \
             -project mobile/app/PftuiMobile.xcodeproj \
-            -target PftuiMobile \
+            -scheme PftuiMobile \
             -configuration Release \
             -sdk iphonesimulator \
             -derivedDataPath build/mobile-ios \

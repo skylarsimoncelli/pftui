@@ -133,7 +133,7 @@ jobs:
           cargo test -q postgres_export_import_into_sqlite_when_env_set
 
       - name: Run setup backend selection tests
-        run: cargo test -q commands::setup::tests::
+        run: "cargo test -q commands::setup::tests::"
 
       - name: Build pftui binary for parity script
         run: cargo build -q
