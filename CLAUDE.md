@@ -49,7 +49,7 @@ This repo is improved by automated hourly cron runs. Each run should:
 
 ## Git
 
-- **Author:** skylarsimoncelli <skylar.simoncelli@icloud.com>
+- **Author:** pftui-bot <pftui-bot@users.noreply.github.com>
 - Always set both `--author` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars
 - No Co-Authored-By lines — repo doesn't allow co-authors
 - **Never commit directly to master** — use git worktrees + branches + PRs:
@@ -140,7 +140,7 @@ src/
 
 ## Never
 
-- Modify `README.md` or anything in `website/` — Skylar owns these; changes only on his explicit request
+- Modify `README.md` or anything in `website/` only with explicit approval from the maintainers
 - Break existing keybindings
 - Use floats (f32/f64) for financial data
 - Skip theme support on new widgets (use `app.theme.*`)

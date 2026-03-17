@@ -1191,7 +1191,7 @@ User registers their fingerprint/face via WebAuthn. Token is stored in browser's
 │                                        │
 │  Push Alerts:   [ON]   (toggle)        │
 │  Email Alerts:  [OFF]  (toggle)        │
-│  Email:         [skylar@...]           │
+│  Email:         [contact@pftui.com]    │
 │                                        │
 │ Advanced ────────────────────────     │
 │                                        │
@@ -1215,7 +1215,7 @@ User registers their fingerprint/face via WebAuthn. Token is stored in browser's
 
 ## 7. Open Questions
 
-These are decisions that need Skylar's input before implementation:
+These are decisions that need product-owner input before implementation:
 
 ### 1. Sync Strategy: Local-Only vs Cloud-Synced Database?
 
@@ -1379,7 +1379,7 @@ The mobile webapp is **NOT** a TUI port. It's a purpose-built mobile experience 
 
 **Total effort estimate:** 140 hours to full-featured PWA (Phases 1-5). Native wrapper adds 60 more hours.
 
-**Next step:** Get Skylar's input on Open Questions, then start with Phase 1 (40 hours, 2 weeks).
+**Next step:** Get product-owner input on Open Questions, then start with Phase 1 (40 hours, 2 weeks).
 
 ---
 

@@ -277,7 +277,7 @@ cp /root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf \
   /root/pftui/newsletter/DD-Month-YYYY.pdf
 cd /root/pftui
 git add newsletter/
-git -c user.name="skylarsimoncelli" -c user.email="skylar.simoncelli@icloud.com" \
+git -c user.name="pftui-bot" -c user.email="pftui-bot@users.noreply.github.com" \
   commit -m "Newsletter: <title> — <date>"
 git push
 ```
