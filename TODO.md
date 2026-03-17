@@ -8,6 +8,26 @@
 
 ## P1 — Always-On Analytics Engine
 
+### F45: Persistent Technical Snapshot Engine
+
+> Vision fit: AI should consume precomputed technical state, not recompute RSI/MACD/SMA
+> ad hoc in `brief`, `summary`, watchlist, or web handlers.
+>
+> Current gap:
+> - Technical indicators are computed on demand in multiple command/UI paths
+> - There is no dedicated persisted technical snapshot table
+> - Refresh stores prices/history, correlations, regime, and snapshots, but not a normalized
+>   per-symbol technical state
+>
+> Actionable scope:
+> 1. Add `technical_snapshots` table keyed by `symbol + timeframe + computed_at`
+> 2. Persist RSI(14), MACD(12,26,9), SMA(20/50/200), Bollinger bands, 52W range position,
+>    price-vs-moving-average state, and volume regime
+> 3. Compute snapshots during `pftui data refresh`
+> 4. Add `pftui analytics technicals [--symbol SYM] [--json]`
+> 5. Make `brief`, `summary`, watchlist, and web APIs read cached technicals first
+> 6. Add freshness/staleness reporting for technical snapshots in `analytics gaps`
+
 ### F46: Stored Market Structure And Key Levels
 
 > Vision fit: pftui should map key levels mechanically so AI reasons on top of them.
