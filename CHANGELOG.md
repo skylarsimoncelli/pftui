@@ -3,6 +3,18 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-16 — Native iOS mobile app scaffold and TLS mobile API
+
+- What:
+  - added a token-gated, TLS-only mobile API to the main Rust binary under `pftui system mobile ...`, with config-gated enable/disable/status/serve flows, scoped read/write token generation, and self-signed certificate generation.
+  - kept the mobile server disabled by default via new `config.toml` fields under `mobile.*`, so the main binary does not expose a phone-facing endpoint until explicitly enabled.
+  - created a native SwiftUI iPhone app in `mobile/app/` with an initial connection wizard, certificate fingerprint pinning, API token entry, `hostname[:port]` support, and two tabs: Portfolio and Analytics.
+  - styled the iOS app with the same dark palette and card treatment as the existing web dashboard.
+  - added iOS simulator app packaging to the tagged release workflow so release builds upload a mobile artifact next to the Rust binaries.
+- Why: gives pftui a local-first iPhone companion for quick portfolio and analytics checks without publishing anything to the App Store or exposing data over plaintext HTTP.
+- Files: `Cargo.toml`, `src/config.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/config_cmd.rs`, `src/app.rs`, `src/mobile/mod.rs`, `src/mobile/auth.rs`, `src/mobile/commands.rs`, `src/mobile/server.rs`, `src/web/mod.rs`, `mobile/README.md`, `mobile/app/PftuiMobile.xcodeproj/project.pbxproj`, `mobile/app/PftuiMobile/PftuiMobileApp.swift`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/MobileAPI.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `mobile/app/PftuiMobile/Support/Info.plist`, `CHANGELOG.md`
+- Tests: `cargo check`; `cargo clippy --all-targets -- -D warnings`; `cargo build --release`; `plutil -lint mobile/app/PftuiMobile.xcodeproj/project.pbxproj`; `plutil -lint mobile/app/PftuiMobile/Support/Info.plist`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`; `cargo test` currently fails on four pre-existing `app::mouse_tests` unrelated to the mobile feature.
+
 ### 2026-03-16 — F45.6 cached COT interpretation metrics and `data cot`
 
 - What:

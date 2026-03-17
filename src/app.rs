@@ -795,7 +795,9 @@ pub fn is_privacy_view(app: &App) -> bool {
 }
 
 impl App {
-    pub(crate) fn open_backend(&self) -> Option<std::sync::Arc<crate::db::backend::BackendConnection>> {
+    pub(crate) fn open_backend(
+        &self,
+    ) -> Option<std::sync::Arc<crate::db::backend::BackendConnection>> {
         self.backend.clone()
     }
 
@@ -1054,6 +1056,7 @@ impl App {
             chart_sma: self.chart_sma_periods.clone(),
             watchlist: config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         if self.postgres_read_only {
             self.price_service = None;
@@ -1113,6 +1116,7 @@ impl App {
             chart_sma: self.chart_sma_periods.clone(),
             watchlist: config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -6129,6 +6133,7 @@ mod vim_motion_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
 
@@ -6380,6 +6385,7 @@ mod search_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
 
@@ -6744,6 +6750,7 @@ mod timeframe_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
@@ -6773,6 +6780,7 @@ mod timeframe_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
         app.display_positions.push(Position {
@@ -6870,6 +6878,7 @@ mod crosshair_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from(":memory:"));
         app.view_mode = ViewMode::Positions;
@@ -7038,6 +7047,7 @@ mod responsive_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
     }
@@ -7108,6 +7118,7 @@ mod on_demand_history_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
     }
@@ -7239,6 +7250,7 @@ mod daily_change_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
     }
@@ -7490,6 +7502,7 @@ mod portfolio_value_history_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
     }
@@ -8100,6 +8113,7 @@ mod tui_add_popup_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         App::new(&config, PathBuf::from(db_path))
     }
@@ -8643,6 +8657,7 @@ mod sort_flash_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
         for i in 0..3 {
@@ -8750,6 +8765,7 @@ mod prev_day_alloc_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
     }
@@ -9068,6 +9084,7 @@ mod mouse_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
         app.terminal_width = 120;
@@ -10126,6 +10143,7 @@ mod mouse_tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let mut app = App::new(&config, db_path);
         app.init_offline();

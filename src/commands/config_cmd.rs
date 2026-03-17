@@ -13,10 +13,10 @@ pub fn run(action: &str, field: Option<&str>, value: Option<&str>, json: bool) -
 
 fn list_config(json: bool) -> Result<()> {
     let config = load_config()?;
-    
+
     if json {
         use serde_json::json;
-        
+
         let output = json!({
             "database_backend": format_database_backend(config.database_backend),
             "database_url": format_secret(config.database_url.as_deref()),
@@ -37,21 +37,37 @@ fn list_config(json: bool) -> Result<()> {
             "news_poll_interval": config.news_poll_interval,
             "custom_news_feeds": config.custom_news_feeds.len(),
             "chart_sma": config.chart_sma,
+            "mobile.enabled": config.mobile.enabled,
+            "mobile.bind": config.mobile.bind,
+            "mobile.port": config.mobile.port,
+            "mobile.api_tokens": config.mobile.api_tokens.len(),
+            "mobile.cert_path": config.mobile.cert_path,
+            "mobile.key_path": config.mobile.key_path,
+            "mobile.session_ttl_hours": config.mobile.session_ttl_hours,
             "watchlist_columns": config.watchlist.columns.iter()
                 .map(|c| format_watchlist_column(*c))
                 .collect::<Vec<_>>(),
         });
-        
+
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
-        println!("database_backend = {}", format_database_backend(config.database_backend));
-        println!("database_url = {}", format_secret(config.database_url.as_deref()));
+        println!(
+            "database_backend = {}",
+            format_database_backend(config.database_backend)
+        );
+        println!(
+            "database_url = {}",
+            format_secret(config.database_url.as_deref())
+        );
         println!(
             "mirror_source_url = {}",
             format_secret(config.mirror_source_url.as_deref())
         );
         println!("postgres_read_only = {}", config.postgres_read_only);
-        println!("postgres_max_connections = {}", config.postgres_max_connections);
+        println!(
+            "postgres_max_connections = {}",
+            config.postgres_max_connections
+        );
         println!(
             "postgres_connect_timeout_secs = {}",
             config.postgres_connect_timeout_secs
@@ -60,31 +76,65 @@ fn list_config(json: bool) -> Result<()> {
         println!("refresh_interval = {}", config.refresh_interval);
         println!("auto_refresh = {}", config.auto_refresh);
         println!("refresh_interval_secs = {}", config.refresh_interval_secs);
-        println!("portfolio_mode = {}", format!("{:?}", config.portfolio_mode).to_lowercase());
+        println!(
+            "portfolio_mode = {}",
+            format!("{:?}", config.portfolio_mode).to_lowercase()
+        );
         println!("theme = {}", config.theme);
         println!("home_tab = {}", config.home_tab);
         println!("layout = {}", format_layout(config.layout));
-        println!("fred_api_key = {}", format_secret(config.fred_api_key.as_deref()));
-        println!("brave_api_key = {}", format_secret(config.brave_api_key.as_deref()));
+        println!(
+            "fred_api_key = {}",
+            format_secret(config.fred_api_key.as_deref())
+        );
+        println!(
+            "brave_api_key = {}",
+            format_secret(config.brave_api_key.as_deref())
+        );
         println!("news_poll_interval = {}", config.news_poll_interval);
-        println!("custom_news_feeds = {} entries", config.custom_news_feeds.len());
+        println!(
+            "custom_news_feeds = {} entries",
+            config.custom_news_feeds.len()
+        );
         println!("chart_sma = {:?}", config.chart_sma);
+        println!("mobile.enabled = {}", config.mobile.enabled);
+        println!("mobile.bind = {}", config.mobile.bind);
+        println!("mobile.port = {}", config.mobile.port);
+        println!("mobile.api_tokens = {}", config.mobile.api_tokens.len());
+        println!(
+            "mobile.cert_path = {}",
+            config.mobile.cert_path.as_deref().unwrap_or("")
+        );
+        println!(
+            "mobile.key_path = {}",
+            config.mobile.key_path.as_deref().unwrap_or("")
+        );
+        println!(
+            "mobile.session_ttl_hours = {}",
+            config.mobile.session_ttl_hours
+        );
         println!(
             "watchlist.columns = [{}]",
-            config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
+            config
+                .watchlist
+                .columns
+                .iter()
+                .map(|c| format!("\"{}\"", format_watchlist_column(*c)))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
-    
+
     Ok(())
 }
 
 fn get_field(field: Option<&str>, json: bool) -> Result<()> {
     let field = field.ok_or_else(|| anyhow!("Missing field. Usage: pftui config get <field>"))?;
     let config = load_config()?;
-    
+
     if json {
         use serde_json::json;
-        
+
         let value = match field {
             "database_backend" => json!(format_database_backend(config.database_backend)),
             "database_url" => json!(format_secret(config.database_url.as_deref())),
@@ -105,25 +155,35 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
             "news_poll_interval" => json!(config.news_poll_interval),
             "custom_news_feeds" => json!(config.custom_news_feeds.len()),
             "chart_sma" => json!(config.chart_sma),
-            "watchlist.columns" | "watchlist_columns" => json!(
-                config.watchlist.columns.iter()
-                    .map(|c| format_watchlist_column(*c))
-                    .collect::<Vec<_>>()
-            ),
+            "mobile.enabled" => json!(config.mobile.enabled),
+            "mobile.bind" => json!(config.mobile.bind),
+            "mobile.port" => json!(config.mobile.port),
+            "mobile.api_tokens" => json!(config.mobile.api_tokens.len()),
+            "mobile.cert_path" => json!(config.mobile.cert_path),
+            "mobile.key_path" => json!(config.mobile.key_path),
+            "mobile.session_ttl_hours" => json!(config.mobile.session_ttl_hours),
+            "watchlist.columns" | "watchlist_columns" => json!(config
+                .watchlist
+                .columns
+                .iter()
+                .map(|c| format_watchlist_column(*c))
+                .collect::<Vec<_>>()),
             _ => bail!("Unknown field '{}'", field),
         };
-        
+
         let output = json!({
             "field": field,
             "value": value,
         });
-        
+
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         match field {
             "database_backend" => println!("{}", format_database_backend(config.database_backend)),
             "database_url" => println!("{}", format_secret(config.database_url.as_deref())),
-            "mirror_source_url" => println!("{}", format_secret(config.mirror_source_url.as_deref())),
+            "mirror_source_url" => {
+                println!("{}", format_secret(config.mirror_source_url.as_deref()))
+            }
             "postgres_read_only" => println!("{}", config.postgres_read_only),
             "postgres_max_connections" => println!("{}", config.postgres_max_connections),
             "postgres_connect_timeout_secs" => println!("{}", config.postgres_connect_timeout_secs),
@@ -131,7 +191,9 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
             "refresh_interval" => println!("{}", config.refresh_interval),
             "auto_refresh" => println!("{}", config.auto_refresh),
             "refresh_interval_secs" => println!("{}", config.refresh_interval_secs),
-            "portfolio_mode" => println!("{}", format!("{:?}", config.portfolio_mode).to_lowercase()),
+            "portfolio_mode" => {
+                println!("{}", format!("{:?}", config.portfolio_mode).to_lowercase())
+            }
             "theme" => println!("{}", config.theme),
             "home_tab" => println!("{}", config.home_tab),
             "layout" | "workspace_layout" => println!("{}", format_layout(config.layout)),
@@ -140,20 +202,35 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
             "news_poll_interval" => println!("{}", config.news_poll_interval),
             "custom_news_feeds" => println!("{}", config.custom_news_feeds.len()),
             "chart_sma" => println!("{:?}", config.chart_sma),
+            "mobile.enabled" => println!("{}", config.mobile.enabled),
+            "mobile.bind" => println!("{}", config.mobile.bind),
+            "mobile.port" => println!("{}", config.mobile.port),
+            "mobile.api_tokens" => println!("{}", config.mobile.api_tokens.len()),
+            "mobile.cert_path" => println!("{}", config.mobile.cert_path.as_deref().unwrap_or("")),
+            "mobile.key_path" => println!("{}", config.mobile.key_path.as_deref().unwrap_or("")),
+            "mobile.session_ttl_hours" => println!("{}", config.mobile.session_ttl_hours),
             "watchlist.columns" | "watchlist_columns" => println!(
                 "[{}]",
-                config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
+                config
+                    .watchlist
+                    .columns
+                    .iter()
+                    .map(|c| format!("\"{}\"", format_watchlist_column(*c)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             _ => bail!("Unknown field '{}'", field),
         }
     }
-    
+
     Ok(())
 }
 
 fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
-    let field = field.ok_or_else(|| anyhow!("Missing field. Usage: pftui config set <field> <value>"))?;
-    let value = value.ok_or_else(|| anyhow!("Missing value. Usage: pftui config set <field> <value>"))?;
+    let field =
+        field.ok_or_else(|| anyhow!("Missing field. Usage: pftui config set <field> <value>"))?;
+    let value =
+        value.ok_or_else(|| anyhow!("Missing value. Usage: pftui config set <field> <value>"))?;
 
     let mut config = load_config()?;
     match field {
@@ -274,6 +351,47 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             save_config(&config)?;
             println!("Updated refresh_interval_secs = {}", config.refresh_interval_secs);
         }
+        "mobile.enabled" => {
+            config.mobile.enabled = parse_bool(value, "mobile.enabled")?;
+            save_config(&config)?;
+            println!("Updated mobile.enabled = {}", config.mobile.enabled);
+        }
+        "mobile.bind" => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                bail!("mobile.bind cannot be empty");
+            }
+            config.mobile.bind = trimmed.to_string();
+            save_config(&config)?;
+            println!("Updated mobile.bind = {}", config.mobile.bind);
+        }
+        "mobile.port" => {
+            let parsed = value
+                .trim()
+                .parse::<u16>()
+                .map_err(|_| anyhow!("Invalid mobile.port '{}'", value))?;
+            if parsed == 0 {
+                bail!("mobile.port must be > 0");
+            }
+            config.mobile.port = parsed;
+            save_config(&config)?;
+            println!("Updated mobile.port = {}", config.mobile.port);
+        }
+        "mobile.session_ttl_hours" => {
+            let parsed = value
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| anyhow!("Invalid mobile.session_ttl_hours '{}'", value))?;
+            if parsed == 0 {
+                bail!("mobile.session_ttl_hours must be > 0");
+            }
+            config.mobile.session_ttl_hours = parsed;
+            save_config(&config)?;
+            println!(
+                "Updated mobile.session_ttl_hours = {}",
+                config.mobile.session_ttl_hours
+            );
+        }
         "watchlist.columns" | "watchlist_columns" => {
             let parsed = parse_watchlist_columns(value)?;
             config.watchlist.columns = parsed;
@@ -284,11 +402,19 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             );
         }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: database_backend, database_url, mirror_source_url, postgres_read_only, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, layout, auto_refresh, refresh_interval_secs, watchlist.columns",
+            "Unsupported set field '{}'. Currently supported: database_backend, database_url, mirror_source_url, postgres_read_only, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, layout, auto_refresh, refresh_interval_secs, mobile.enabled, mobile.bind, mobile.port, mobile.session_ttl_hours, watchlist.columns",
             field
         ),
     }
     Ok(())
+}
+
+fn parse_bool(value: &str, field: &str) -> Result<bool> {
+    match value.trim().to_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Ok(true),
+        "false" | "0" | "no" | "off" => Ok(false),
+        _ => bail!("Invalid {} '{}'. Use: true|false", field, value),
+    }
 }
 
 fn parse_database_backend(value: &str) -> Result<DatabaseBackend> {
@@ -410,7 +536,10 @@ mod tests {
     #[test]
     fn formats_database_backend() {
         assert_eq!(format_database_backend(DatabaseBackend::Sqlite), "sqlite");
-        assert_eq!(format_database_backend(DatabaseBackend::Postgres), "postgres");
+        assert_eq!(
+            format_database_backend(DatabaseBackend::Postgres),
+            "postgres"
+        );
     }
 
     #[test]

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::io::Write;
 
 use anyhow::Result;
-use rust_decimal::Decimal;
 #[cfg(test)]
 use rusqlite::Connection;
+use rust_decimal::Decimal;
 use serde::Serialize;
 
 use crate::cli::ExportFormat;
@@ -83,10 +83,8 @@ pub fn run(
     output: Option<&str>,
 ) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
 
@@ -158,8 +156,18 @@ fn export_csv_positions(
         PortfolioMode::Full => {
             let mut wtr = csv::Writer::from_writer(writer);
             wtr.write_record([
-                "symbol", "name", "category", "quantity", "avg_cost", "total_cost",
-                "currency", "current_price", "current_value", "gain", "gain_pct", "allocation_pct",
+                "symbol",
+                "name",
+                "category",
+                "quantity",
+                "avg_cost",
+                "total_cost",
+                "currency",
+                "current_price",
+                "current_value",
+                "gain",
+                "gain_pct",
+                "allocation_pct",
             ])?;
             for pos in positions {
                 wtr.write_record([
@@ -181,7 +189,13 @@ fn export_csv_positions(
         }
         PortfolioMode::Percentage => {
             let mut wtr = csv::Writer::from_writer(writer);
-            wtr.write_record(["symbol", "name", "category", "current_price", "allocation_pct"])?;
+            wtr.write_record([
+                "symbol",
+                "name",
+                "category",
+                "current_price",
+                "allocation_pct",
+            ])?;
             for pos in positions {
                 wtr.write_record([
                     &pos.symbol,
@@ -261,6 +275,7 @@ mod tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig::default(),
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");
@@ -274,9 +289,9 @@ mod tests {
             config: ConfigExport {
                 base_currency: "USD".to_string(),
                 refresh_interval: 60,
-            auto_refresh: true,
-            refresh_interval_secs: 300,
-            portfolio_mode: PortfolioMode::Full,
+                auto_refresh: true,
+                refresh_interval_secs: 300,
+                portfolio_mode: PortfolioMode::Full,
                 theme: "midnight".to_string(),
             },
             transactions: vec![],
@@ -298,9 +313,9 @@ mod tests {
             config: ConfigExport {
                 base_currency: "USD".to_string(),
                 refresh_interval: 60,
-            auto_refresh: true,
-            refresh_interval_secs: 300,
-            portfolio_mode: PortfolioMode::Full,
+                auto_refresh: true,
+                refresh_interval_secs: 300,
+                portfolio_mode: PortfolioMode::Full,
                 theme: "midnight".to_string(),
             },
             transactions: vec![],
@@ -340,9 +355,20 @@ mod tests {
         {
             let mut wtr = csv::Writer::from_writer(&mut buf);
             wtr.write_record([
-                "symbol", "name", "category", "quantity", "avg_cost", "total_cost",
-                "currency", "current_price", "current_value", "gain", "gain_pct", "allocation_pct",
-            ]).unwrap();
+                "symbol",
+                "name",
+                "category",
+                "quantity",
+                "avg_cost",
+                "total_cost",
+                "currency",
+                "current_price",
+                "current_value",
+                "gain",
+                "gain_pct",
+                "allocation_pct",
+            ])
+            .unwrap();
             for pos in &positions {
                 wtr.write_record([
                     &pos.symbol,
@@ -357,7 +383,8 @@ mod tests {
                     &pos.gain.map(round2).unwrap_or_default(),
                     &pos.gain_pct.map(round2).unwrap_or_default(),
                     &pos.allocation_pct.map(round2).unwrap_or_default(),
-                ]).unwrap();
+                ])
+                .unwrap();
             }
             wtr.flush().unwrap();
         }
@@ -385,16 +412,20 @@ mod tests {
         let config = Config::default();
 
         // Add a transaction
-        insert_transaction(&conn, &NewTransaction {
-            symbol: "AAPL".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(10),
-            price_per: dec!(150),
-            currency: "USD".to_string(),
-            date: "2025-06-01".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-06-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
         // Add a watchlist entry
         add_to_watchlist(&conn, "BTC", AssetCategory::Crypto).unwrap();
@@ -434,16 +465,20 @@ mod tests {
         let conn = open_in_memory();
         let config = Config::default();
 
-        insert_transaction(&conn, &NewTransaction {
-            symbol: "SPY".to_string(),
-            category: AssetCategory::Fund,
-            tx_type: TxType::Buy,
-            quantity: dec!(5),
-            price_per: dec!(420),
-            currency: "USD".to_string(),
-            date: "2025-01-01".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "SPY".to_string(),
+                category: AssetCategory::Fund,
+                tx_type: TxType::Buy,
+                quantity: dec!(5),
+                price_per: dec!(420),
+                currency: "USD".to_string(),
+                date: "2025-01-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
         let dir = std::env::temp_dir();
         let path = dir.join("pftui_test_export.csv");

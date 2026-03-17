@@ -97,6 +97,36 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/
 
+  mobile-ios:
+    name: Build iOS app
+    runs-on: macos-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build iOS simulator app
+        run: |
+          xcodebuild \
+            -project mobile/app/PftuiMobile.xcodeproj \
+            -target PftuiMobile \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -derivedDataPath build/mobile-ios \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package iOS app artifact
+        run: |
+          mkdir -p dist
+          APP_PATH="build/mobile-ios/Build/Products/Release-iphonesimulator/PftuiMobile.app"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" dist/pftui-ios-mobile-simulator.zip
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pftui-ios-mobile-simulator
+          path: dist/pftui-ios-mobile-simulator.zip
+
   # ── Build .deb ──
   deb:
     name: Build .deb
@@ -136,7 +166,7 @@ jobs:
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, deb, rpm]
+    needs: [build, mobile-ios, deb, rpm]
     if: always() && needs.build.result != 'cancelled'
     steps:
       - uses: actions/checkout@v4

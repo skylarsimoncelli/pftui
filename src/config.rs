@@ -89,6 +89,54 @@ impl Default for KeybindingsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MobileServerConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_mobile_bind")]
+    pub bind: String,
+    #[serde(default = "default_mobile_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub api_tokens: Vec<MobileApiToken>,
+    #[serde(default)]
+    pub cert_path: Option<String>,
+    #[serde(default)]
+    pub key_path: Option<String>,
+    #[serde(default = "default_mobile_session_ttl_hours")]
+    pub session_ttl_hours: u64,
+}
+
+impl Default for MobileServerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind: default_mobile_bind(),
+            port: default_mobile_port(),
+            api_tokens: Vec::new(),
+            cert_path: None,
+            key_path: None,
+            session_ttl_hours: default_mobile_session_ttl_hours(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MobileTokenPermission {
+    Read,
+    Write,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MobileApiToken {
+    pub name: String,
+    pub prefix: String,
+    pub token_hash: String,
+    pub permission: MobileTokenPermission,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Database backend selector.
     #[serde(default)]
@@ -159,6 +207,9 @@ pub struct Config {
     /// User-configurable global keybindings.
     #[serde(default)]
     pub keybindings: KeybindingsConfig,
+    /// Native mobile API server configuration.
+    #[serde(default)]
+    pub mobile: MobileServerConfig,
 }
 
 fn default_brave_news_queries() -> Vec<String> {
@@ -254,6 +305,18 @@ fn default_postgres_connect_timeout_secs() -> u64 {
     10
 }
 
+fn default_mobile_bind() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_mobile_port() -> u16 {
+    9443
+}
+
+fn default_mobile_session_ttl_hours() -> u64 {
+    12
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomNewsFeed {
     pub name: String,
@@ -286,6 +349,7 @@ impl Default for Config {
             chart_sma: default_chart_sma(),
             watchlist: WatchlistConfig::default(),
             keybindings: KeybindingsConfig::default(),
+            mobile: MobileServerConfig::default(),
         }
     }
 }
@@ -447,11 +511,11 @@ pub fn load_config_with_first_run_prompt() -> Result<Config> {
     }
 
     let config = Config {
-            home_tab: prompt_first_run_home_tab()?,
-            layout: WorkspaceLayout::default(),
-            brave_api_key: prompt_optional_brave_api_key()?,
-            ..Config::default()
-        };
+        home_tab: prompt_first_run_home_tab()?,
+        layout: WorkspaceLayout::default(),
+        brave_api_key: prompt_optional_brave_api_key()?,
+        ..Config::default()
+    };
     save_config(&config)?;
     Ok(config)
 }
@@ -529,6 +593,10 @@ mod tests {
         assert_eq!(config.theme, "midnight");
         assert_eq!(config.home_tab, "positions");
         assert_eq!(config.layout, WorkspaceLayout::Analyst);
+        assert!(!config.mobile.enabled);
+        assert_eq!(config.mobile.bind, "127.0.0.1");
+        assert_eq!(config.mobile.port, 9443);
+        assert!(config.mobile.api_tokens.is_empty());
     }
 
     #[test]
@@ -539,7 +607,10 @@ mod tests {
 
     #[test]
     fn is_percentage_mode_percentage() {
-        let config = Config { portfolio_mode: PortfolioMode::Percentage, ..Default::default() };
+        let config = Config {
+            portfolio_mode: PortfolioMode::Percentage,
+            ..Default::default()
+        };
         assert!(config.is_percentage_mode());
     }
 
@@ -568,6 +639,21 @@ mod tests {
             chart_sma: vec![20, 50],
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
+            mobile: crate::config::MobileServerConfig {
+                enabled: true,
+                bind: "0.0.0.0".to_string(),
+                port: 10443,
+                api_tokens: vec![crate::config::MobileApiToken {
+                    name: "iphone".to_string(),
+                    prefix: "pftm_read_1234".to_string(),
+                    token_hash: "hash".to_string(),
+                    permission: crate::config::MobileTokenPermission::Read,
+                    created_at: "2026-03-16T00:00:00Z".to_string(),
+                }],
+                cert_path: Some("/tmp/cert.pem".to_string()),
+                key_path: Some("/tmp/key.pem".to_string()),
+                session_ttl_hours: 24,
+            },
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();
@@ -591,6 +677,11 @@ mod tests {
         assert_eq!(loaded.theme, "nord");
         assert_eq!(loaded.home_tab, "watchlist");
         assert_eq!(loaded.layout, WorkspaceLayout::Analyst);
+        assert!(loaded.mobile.enabled);
+        assert_eq!(loaded.mobile.bind, "0.0.0.0");
+        assert_eq!(loaded.mobile.port, 10443);
+        assert_eq!(loaded.mobile.session_ttl_hours, 24);
+        assert_eq!(loaded.mobile.api_tokens.len(), 1);
     }
 
     #[test]
@@ -613,6 +704,10 @@ mod tests {
         assert_eq!(config.layout, WorkspaceLayout::Analyst);
         assert_eq!(config.keybindings.quit, "q");
         assert_eq!(config.keybindings.search, "/");
+        assert!(!config.mobile.enabled);
+        assert_eq!(config.mobile.bind, "127.0.0.1");
+        assert_eq!(config.mobile.port, 9443);
+        assert!(config.mobile.api_tokens.is_empty());
     }
 
     #[test]
@@ -633,6 +728,9 @@ mod tests {
         assert_eq!(config.home_tab, "positions");
         assert_eq!(config.layout, WorkspaceLayout::Analyst);
         assert_eq!(config.keybindings.help, "?");
+        assert!(!config.mobile.enabled);
+        assert_eq!(config.mobile.bind, "127.0.0.1");
+        assert!(config.mobile.api_tokens.is_empty());
     }
 
     #[test]
@@ -710,7 +808,10 @@ privacy_toggle = "P"
     fn config_currency_symbol_method() {
         let config = Config::default();
         assert_eq!(config.currency_symbol(), "$");
-        let eur_config = Config { base_currency: "EUR".to_string(), ..Default::default() };
+        let eur_config = Config {
+            base_currency: "EUR".to_string(),
+            ..Default::default()
+        };
         assert_eq!(eur_config.currency_symbol(), "€");
     }
 
