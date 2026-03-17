@@ -397,6 +397,7 @@ mod tests {
         let cfg = Config {
             database_backend: crate::config::DatabaseBackend::Postgres,
             database_url: Some(url),
+            postgres_connect_timeout_secs: 30,
             ..Config::default()
         };
         let db_path = crate::db::default_db_path();

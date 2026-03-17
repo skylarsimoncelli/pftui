@@ -233,6 +233,7 @@ mod tests {
         let cfg = Config {
             database_backend: DatabaseBackend::Postgres,
             database_url: Some(url),
+            postgres_connect_timeout_secs: 30,
             ..Default::default()
         };
         let backend = open_from_config(&cfg, Path::new("/tmp/unused.db")).unwrap();
