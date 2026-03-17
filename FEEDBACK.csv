@@ -186,3 +186,4 @@ CRITICAL MISSING FEATURES: (1) Portfolio performance metrics (returns, risk rati
 2026-03-17,alert-investigator,75,85,ux,P2,No active alerts to investigate. Alert system functioning normally with clear historical tracking.
 2026-03-17,alert-investigator,85,90,ux,P2,Clean run with no alerts to investigate - pftui agent message list returned expected empty result
 2026-03-17,alert-investigator,90,85,ux,P2,No alerts to investigate - tool worked as expected
+2026-03-17,alert-investigator,95,88,bug,P1,No alerts to investigate due to watchdog cron model error (claude-haiku-3-5-20241022 not found). System working correctly when watchdog is functional.
