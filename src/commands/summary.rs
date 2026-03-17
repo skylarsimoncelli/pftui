@@ -2,23 +2,22 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use chrono::Utc;
+#[cfg(test)]
+use rusqlite::Connection;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::str::FromStr;
-#[cfg(test)]
-use rusqlite::Connection;
 
+use crate::analytics::scenarios::{apply_preset, apply_selector_pct_shock, parse_preset};
+use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
 use crate::cli::{SummaryGroupBy, SummaryPeriod};
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations_backend;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
-use crate::db::price_history::{get_history_backend, get_prices_at_date_backend};
+use crate::db::price_history::get_prices_at_date_backend;
+use crate::db::technical_snapshots::TechnicalSnapshotRecord;
 use crate::db::transactions::list_transactions_backend;
-use crate::indicators::macd::{compute_macd, MacdResult};
-use crate::indicators::rsi::compute_rsi;
-use crate::indicators::sma::compute_sma;
-use crate::analytics::scenarios::{apply_preset, apply_selector_pct_shock, parse_preset};
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
@@ -28,7 +27,10 @@ use crate::models::position::{compute_positions, compute_positions_from_allocati
 /// - absolute prices: `GC=F:5500,BTC:55000`
 /// - percent shocks: `gold:-10%,btc:-20%,equity:-5%`
 /// - named presets: `Oil $100`, `BTC 40k`, `Gold $6000`, `2008 GFC`, `1973 Oil Crisis`
-fn parse_what_if(input: &str, prices: &HashMap<String, Decimal>) -> Result<HashMap<String, Decimal>> {
+fn parse_what_if(
+    input: &str,
+    prices: &HashMap<String, Decimal>,
+) -> Result<HashMap<String, Decimal>> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         anyhow::bail!("--what-if requires a scenario/preset or SYMBOL:VALUE pairs");
@@ -77,10 +79,18 @@ fn parse_what_if(input: &str, prices: &HashMap<String, Decimal>) -> Result<HashM
         }
 
         let price = Decimal::from_str(value_str).map_err(|_| {
-            anyhow::anyhow!("Invalid price '{}' for symbol '{}' in --what-if", value_str, key)
+            anyhow::anyhow!(
+                "Invalid price '{}' for symbol '{}' in --what-if",
+                value_str,
+                key
+            )
         })?;
         if price < dec!(0) {
-            anyhow::bail!("Negative price '{}' for symbol '{}' in --what-if", price, key);
+            anyhow::bail!(
+                "Negative price '{}' for symbol '{}' in --what-if",
+                price,
+                key
+            );
         }
         overrides.insert(key, price);
     }
@@ -100,10 +110,8 @@ pub fn run(
     json: bool,
 ) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
-    let mut prices: HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
+    let mut prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     // Apply hypothetical price overrides
     let overrides = match what_if {
@@ -138,8 +146,8 @@ pub fn run(
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
     let all_symbols: Vec<String> = prices.keys().cloned().collect();
-    let hist_1d = get_prices_at_date_backend(backend, &all_symbols, &yesterday_str)
-        .unwrap_or_default();
+    let hist_1d =
+        get_prices_at_date_backend(backend, &all_symbols, &yesterday_str).unwrap_or_default();
 
     if let Some(ref ov) = overrides {
         print_what_if_banner(ov);
@@ -367,25 +375,22 @@ fn print_full_table(positions: &[Position], config: &Config) -> Result<()> {
     let mut total_cost = dec!(0);
 
     for pos in positions {
-        let price_str = pos.current_price
+        let price_str = pos
+            .current_price
             .map(|p| format!("{:.2}", p))
             .unwrap_or_else(|| "N/A".to_string());
-        let gain_str = pos.gain_pct
+        let gain_str = pos
+            .gain_pct
             .map(|g| format!("{:+.1}%", g))
             .unwrap_or_else(|| "N/A".to_string());
-        let alloc_str = pos.allocation_pct
+        let alloc_str = pos
+            .allocation_pct
             .map(|a| format!("{:.1}%", a))
             .unwrap_or_else(|| "N/A".to_string());
 
         println!(
             "{:<8} {:<10} {:>8} {:>10.2} {:>10} {:>8} {:>8}",
-            pos.symbol,
-            pos.category,
-            pos.quantity,
-            pos.avg_cost,
-            price_str,
-            gain_str,
-            alloc_str,
+            pos.symbol, pos.category, pos.quantity, pos.avg_cost, price_str, gain_str, alloc_str,
         );
 
         if let Some(v) = pos.current_value {
@@ -407,7 +412,10 @@ fn print_full_table(positions: &[Position], config: &Config) -> Result<()> {
         total_value, config.base_currency, total_cost, total_gain, total_gain_pct
     );
 
-    if positions.iter().all(|p| p.current_price.is_none() || p.category == AssetCategory::Cash) {
+    if positions
+        .iter()
+        .all(|p| p.current_price.is_none() || p.category == AssetCategory::Cash)
+    {
         println!("\nNote: No cached prices. Run `pftui refresh` to fetch live prices.");
     }
 
@@ -424,7 +432,13 @@ fn print_full_table_with_period(
     let label = period.label();
     println!(
         "{:<8} {:<10} {:>8} {:>10} {:>10} {:>10} {:>8}",
-        "Symbol", "Category", "Qty", "Price", format!("{} ago", label), format!("Chg {}", label), "Alloc%"
+        "Symbol",
+        "Category",
+        "Qty",
+        "Price",
+        format!("{} ago", label),
+        format!("Chg {}", label),
+        "Alloc%"
     );
     println!("{}", "-".repeat(74));
 
@@ -434,7 +448,8 @@ fn print_full_table_with_period(
     let mut has_period_data = false;
 
     for pos in positions {
-        let price_str = pos.current_price
+        let price_str = pos
+            .current_price
             .map(|p| format!("{:.2}", p))
             .unwrap_or_else(|| "N/A".to_string());
 
@@ -457,19 +472,14 @@ fn print_full_table_with_period(
             _ => "N/A".to_string(),
         };
 
-        let alloc_str = pos.allocation_pct
+        let alloc_str = pos
+            .allocation_pct
             .map(|a| format!("{:.1}%", a))
             .unwrap_or_else(|| "N/A".to_string());
 
         println!(
             "{:<8} {:<10} {:>8} {:>10} {:>10} {:>10} {:>8}",
-            pos.symbol,
-            pos.category,
-            pos.quantity,
-            price_str,
-            prev_str,
-            change_str,
-            alloc_str,
+            pos.symbol, pos.category, pos.quantity, price_str, prev_str, change_str, alloc_str,
         );
 
         if let Some(v) = pos.current_value {
@@ -511,15 +521,9 @@ fn print_full_table_with_period(
 fn print_grouped_by_category(positions: &[Position], config: &Config) -> Result<()> {
     let groups = group_by_category(positions);
 
-    let total_value: Decimal = positions
-        .iter()
-        .filter_map(|p| p.current_value)
-        .sum();
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
 
-    let total_cost: Decimal = positions
-        .iter()
-        .map(|p| p.total_cost)
-        .sum();
+    let total_cost: Decimal = positions.iter().map(|p| p.total_cost).sum();
 
     let mut sorted_groups: Vec<_> = groups.into_iter().collect();
     sorted_groups.sort_by(|a, b| b.1.value.cmp(&a.1.value));
@@ -570,7 +574,10 @@ fn print_grouped_by_category(positions: &[Position], config: &Config) -> Result<
         total_value, config.base_currency, total_cost, total_gain, total_gain_pct
     );
 
-    let priced = positions.iter().filter(|p| p.current_price.is_some()).count();
+    let priced = positions
+        .iter()
+        .filter(|p| p.current_price.is_some())
+        .count();
     let total = positions.len();
     if priced < total {
         println!(
@@ -592,20 +599,19 @@ fn print_grouped_by_category_with_period(
     let hist = historical_prices.as_ref();
     let label = period.label();
 
-    let total_value: Decimal = positions
-        .iter()
-        .filter_map(|p| p.current_value)
-        .sum();
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
 
     // Build category groups with period data
     let mut groups: HashMap<AssetCategory, CategoryPeriodGroup> = HashMap::new();
 
     for pos in positions {
-        let group = groups.entry(pos.category).or_insert_with(|| CategoryPeriodGroup {
-            value: dec!(0),
-            prev_value: dec!(0),
-            symbols: Vec::new(),
-        });
+        let group = groups
+            .entry(pos.category)
+            .or_insert_with(|| CategoryPeriodGroup {
+                value: dec!(0),
+                prev_value: dec!(0),
+                symbols: Vec::new(),
+            });
 
         if let Some(v) = pos.current_value {
             group.value += v;
@@ -628,7 +634,11 @@ fn print_grouped_by_category_with_period(
 
     println!(
         "{:<12} {:>12} {:>12} {:>10} {:>8}",
-        "Category", "Value", format!("{} ago", label), format!("Chg {}", label), "Alloc%"
+        "Category",
+        "Value",
+        format!("{} ago", label),
+        format!("Chg {}", label),
+        "Alloc%"
     );
     println!("{}", "─".repeat(58));
 
@@ -688,10 +698,12 @@ fn print_percentage_table(positions: &[Position]) -> Result<()> {
     println!("{}", "-".repeat(40));
 
     for pos in positions {
-        let price_str = pos.current_price
+        let price_str = pos
+            .current_price
             .map(|p| format!("{:.2}", p))
             .unwrap_or_else(|| "N/A".to_string());
-        let alloc_str = pos.allocation_pct
+        let alloc_str = pos
+            .allocation_pct
             .map(|a| format!("{:.1}%", a))
             .unwrap_or_else(|| "N/A".to_string());
 
@@ -715,12 +727,18 @@ fn print_percentage_table_with_period(
 
     println!(
         "{:<8} {:<10} {:>10} {:>10} {:>10} {:>8}",
-        "Symbol", "Category", "Price", format!("{} ago", label), format!("Chg {}", label), "Alloc%"
+        "Symbol",
+        "Category",
+        "Price",
+        format!("{} ago", label),
+        format!("Chg {}", label),
+        "Alloc%"
     );
     println!("{}", "-".repeat(60));
 
     for pos in positions {
-        let price_str = pos.current_price
+        let price_str = pos
+            .current_price
             .map(|p| format!("{:.2}", p))
             .unwrap_or_else(|| "N/A".to_string());
 
@@ -742,7 +760,8 @@ fn print_percentage_table_with_period(
             _ => "N/A".to_string(),
         };
 
-        let alloc_str = pos.allocation_pct
+        let alloc_str = pos
+            .allocation_pct
             .map(|a| format!("{:.1}%", a))
             .unwrap_or_else(|| "N/A".to_string());
 
@@ -798,7 +817,10 @@ fn print_grouped_by_category_pct_with_period(
     for pos in positions {
         let entry = category_data
             .entry(pos.category)
-            .or_insert_with(|| CategoryPctPeriodGroup { alloc: dec!(0), symbols: Vec::new() });
+            .or_insert_with(|| CategoryPctPeriodGroup {
+                alloc: dec!(0),
+                symbols: Vec::new(),
+            });
         if let Some(alloc) = pos.allocation_pct {
             entry.alloc += alloc;
         }
@@ -819,18 +841,22 @@ fn print_grouped_by_category_pct_with_period(
     let mut sorted: Vec<_> = category_data.into_iter().collect();
     sorted.sort_by(|a, b| b.1.alloc.cmp(&a.1.alloc));
 
-    println!("{:<12} {:>8} {:>10}", "Category", "Alloc%", format!("Chg {}", label));
+    println!(
+        "{:<12} {:>8} {:>10}",
+        "Category",
+        "Alloc%",
+        format!("Chg {}", label)
+    );
     println!("{}", "─".repeat(34));
 
     for (category, group) in &sorted {
         // Compute average change for the category (simple mean of % changes)
-        let changes: Vec<Decimal> = group.symbols
+        let changes: Vec<Decimal> = group
+            .symbols
             .iter()
-            .filter_map(|spd| {
-                match (spd.current_price, spd.prev_price) {
-                    (Some(c), Some(p)) if p > dec!(0) => Some(((c - p) / p) * dec!(100)),
-                    _ => None,
-                }
+            .filter_map(|spd| match (spd.current_price, spd.prev_price) {
+                (Some(c), Some(p)) if p > dec!(0) => Some(((c - p) / p) * dec!(100)),
+                _ => None,
             })
             .collect();
 
@@ -842,10 +868,16 @@ fn print_grouped_by_category_pct_with_period(
             format!("{:+.1}%", avg)
         };
 
-        let symbol_names: Vec<String> = group.symbols.iter().map(|spd| spd.symbol.clone()).collect();
+        let symbol_names: Vec<String> =
+            group.symbols.iter().map(|spd| spd.symbol.clone()).collect();
         let symbols_str = symbol_names.join(", ");
 
-        println!("{:<12} {:>6.1}% {:>10}", format_category(category), group.alloc, avg_change);
+        println!(
+            "{:<12} {:>6.1}% {:>10}",
+            format_category(category),
+            group.alloc,
+            avg_change
+        );
         println!("  {}", symbols_str);
     }
 
@@ -857,57 +889,14 @@ fn print_grouped_by_category_pct_with_period(
 // ──────────────────────────────────────────────────────────────
 
 /// Snapshot of technical indicator values for a single symbol.
-#[derive(Debug)]
-struct TechnicalSnapshot {
-    rsi_14: Option<f64>,
-    macd: Option<MacdResult>,
-    sma_50: Option<f64>,
-    sma_200: Option<f64>,
-}
+type TechnicalSnapshot = TechnicalSnapshotRecord;
 
 /// Compute technical indicators for a list of symbols from cached price history.
 fn compute_technicals_for_symbols(
     backend: &BackendConnection,
     symbols: &[String],
 ) -> HashMap<String, TechnicalSnapshot> {
-    let mut result = HashMap::new();
-
-    for symbol in symbols {
-        // Need at least 14 days for RSI; fetch 250 for SMA-200
-        let history = match get_history_backend(backend, symbol, 250) {
-            Ok(h) if h.len() >= 14 => h,
-            _ => continue,
-        };
-
-        let closes: Vec<f64> = history
-            .iter()
-            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
-            .collect();
-
-        let rsi_values = compute_rsi(&closes, 14);
-        let rsi_14 = rsi_values.iter().rev().find_map(|v| *v);
-
-        let macd_values = compute_macd(&closes, 12, 26, 9);
-        let macd = macd_values.iter().rev().find_map(|v| *v);
-
-        let sma_50_values = compute_sma(&closes, 50);
-        let sma_50 = sma_50_values.iter().rev().find_map(|v| *v);
-
-        let sma_200_values = compute_sma(&closes, 200);
-        let sma_200 = sma_200_values.iter().rev().find_map(|v| *v);
-
-        result.insert(
-            symbol.clone(),
-            TechnicalSnapshot {
-                rsi_14,
-                macd,
-                sma_50,
-                sma_200,
-            },
-        );
-    }
-
-    result
+    load_or_compute_snapshots_backend(backend, symbols, DEFAULT_TIMEFRAME)
 }
 
 /// Print a technicals table for all positions that have indicator data.
@@ -917,9 +906,7 @@ fn print_technicals_table(
 ) {
     let relevant: Vec<&Position> = positions
         .iter()
-        .filter(|p| {
-            p.category != AssetCategory::Cash && technicals_data.contains_key(&p.symbol)
-        })
+        .filter(|p| p.category != AssetCategory::Cash && technicals_data.contains_key(&p.symbol))
         .collect();
 
     if relevant.is_empty() {
@@ -959,20 +946,20 @@ fn print_technicals_table(
 
         let macd_str = snap
             .macd
-            .map(|m| format!("{:.2}", m.macd))
+            .map(|m| format!("{:.2}", m))
             .unwrap_or_else(|| "N/A".to_string());
 
         let hist_str = snap
-            .macd
+            .macd_histogram
             .map(|m| {
-                let label = if m.histogram > 0.0 {
+                let label = if m > 0.0 {
                     "bull"
-                } else if m.histogram < 0.0 {
+                } else if m < 0.0 {
                     "bear"
                 } else {
                     "flat"
                 };
-                format!("{:+.2} {}", m.histogram, label)
+                format!("{:+.2} {}", m, label)
             })
             .unwrap_or_else(|| "N/A".to_string());
 
@@ -1088,22 +1075,25 @@ fn run_full_json(
         return Ok(());
     }
 
-    let data: Vec<_> = positions.iter().map(|p| {
-        serde_json::json!({
-            "symbol": p.symbol,
-            "category": format_category(&p.category),
-            "quantity": format_decimal_4(p.quantity),
-            "avg_cost": format_decimal_4(p.avg_cost),
-            "current_price": p.current_price.map(format_decimal_4),
-            "current_value": p.current_value.map(format_decimal_4),
-            "gain": p.gain.map(format_decimal_4),
-            "gain_pct": p.gain_pct.map(format_percent_2),
-            "allocation_pct": p.allocation_pct.map(format_percent_2),
-            "currency": &p.currency,
-            "native_currency": p.native_currency.as_ref(),
-            "fx_rate": p.fx_rate.map(format_decimal_4),
+    let data: Vec<_> = positions
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "symbol": p.symbol,
+                "category": format_category(&p.category),
+                "quantity": format_decimal_4(p.quantity),
+                "avg_cost": format_decimal_4(p.avg_cost),
+                "current_price": p.current_price.map(format_decimal_4),
+                "current_value": p.current_value.map(format_decimal_4),
+                "gain": p.gain.map(format_decimal_4),
+                "gain_pct": p.gain_pct.map(format_percent_2),
+                "allocation_pct": p.allocation_pct.map(format_percent_2),
+                "currency": &p.currency,
+                "native_currency": p.native_currency.as_ref(),
+                "fx_rate": p.fx_rate.map(format_decimal_4),
+            })
         })
-    }).collect();
+        .collect();
 
     println!("{}", serde_json::to_string_pretty(&data)?);
     Ok(())
@@ -1126,17 +1116,20 @@ fn run_percentage_json(
     let fx_rates = load_fx_rates(backend);
     let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
 
-    let data: Vec<_> = positions.iter().map(|p| {
-        serde_json::json!({
-            "symbol": p.symbol,
-            "category": format_category(&p.category),
-            "allocation_pct": p.allocation_pct.map(format_percent_2),
-            "current_price": p.current_price.map(format_decimal_4),
-            "currency": &p.currency,
-            "native_currency": p.native_currency.as_ref(),
-            "fx_rate": p.fx_rate.map(format_decimal_4),
+    let data: Vec<_> = positions
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "symbol": p.symbol,
+                "category": format_category(&p.category),
+                "allocation_pct": p.allocation_pct.map(format_percent_2),
+                "current_price": p.current_price.map(format_decimal_4),
+                "currency": &p.currency,
+                "native_currency": p.native_currency.as_ref(),
+                "fx_rate": p.fx_rate.map(format_decimal_4),
+            })
         })
-    }).collect();
+        .collect();
 
     println!("{}", serde_json::to_string_pretty(&data)?);
     Ok(())
@@ -1186,9 +1179,13 @@ mod tests {
 
     #[test]
     fn test_group_by_category_single() {
-        let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(150), Some(dec!(200))),
-        ];
+        let positions = vec![make_position(
+            "AAPL",
+            AssetCategory::Equity,
+            dec!(10),
+            dec!(150),
+            Some(dec!(200)),
+        )];
         let groups = group_by_category(&positions);
         assert_eq!(groups.len(), 1);
         let eq = groups.get(&AssetCategory::Equity).unwrap();
@@ -1200,8 +1197,20 @@ mod tests {
     #[test]
     fn test_group_by_category_multiple_same() {
         let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(150), Some(dec!(200))),
-            make_position("GOOG", AssetCategory::Equity, dec!(5), dec!(100), Some(dec!(120))),
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(150),
+                Some(dec!(200)),
+            ),
+            make_position(
+                "GOOG",
+                AssetCategory::Equity,
+                dec!(5),
+                dec!(100),
+                Some(dec!(120)),
+            ),
         ];
         let groups = group_by_category(&positions);
         assert_eq!(groups.len(), 1);
@@ -1214,9 +1223,27 @@ mod tests {
     #[test]
     fn test_group_by_category_mixed() {
         let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(100), Some(dec!(150))),
-            make_position("BTC", AssetCategory::Crypto, dec!(1), dec!(30000), Some(dec!(85000))),
-            make_position("USD", AssetCategory::Cash, dec!(50000), dec!(1), Some(dec!(1))),
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(100),
+                Some(dec!(150)),
+            ),
+            make_position(
+                "BTC",
+                AssetCategory::Crypto,
+                dec!(1),
+                dec!(30000),
+                Some(dec!(85000)),
+            ),
+            make_position(
+                "USD",
+                AssetCategory::Cash,
+                dec!(50000),
+                dec!(1),
+                Some(dec!(1)),
+            ),
         ];
         let groups = group_by_category(&positions);
         assert_eq!(groups.len(), 3);
@@ -1233,9 +1260,13 @@ mod tests {
 
     #[test]
     fn test_group_by_category_no_price() {
-        let positions = vec![
-            make_position("AAPL", AssetCategory::Equity, dec!(10), dec!(100), None),
-        ];
+        let positions = vec![make_position(
+            "AAPL",
+            AssetCategory::Equity,
+            dec!(10),
+            dec!(100),
+            None,
+        )];
         let groups = group_by_category(&positions);
         let eq = groups.get(&AssetCategory::Equity).unwrap();
         assert_eq!(eq.value, dec!(0));
@@ -1283,37 +1314,53 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
 
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
         use crate::db::price_cache::upsert_price;
+        use crate::db::transactions::insert_transaction;
         use crate::models::price::PriceQuote;
+        use crate::models::transaction::{NewTransaction, TxType};
 
-        insert_transaction(&conn, &NewTransaction {
-            symbol: "AAPL".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(10),
-            price_per: dec!(150),
-            currency: "USD".to_string(),
-            date: "2025-01-15".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        upsert_price(&conn, &PriceQuote {
-            symbol: "AAPL".to_string(),
-            price: dec!(200),
-            currency: "USD".to_string(),
-            source: "test".to_string(),
-            fetched_at: "2025-01-15T00:00:00Z".to_string(),
-        
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        }).unwrap();
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(200),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2025-01-15T00:00:00Z".to_string(),
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
 
         // Should succeed even with no history data
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
+        let result = run(
+            &backend,
+            &config,
+            None,
+            Some(&SummaryPeriod::OneMonth),
+            None,
+            false,
+            false,
+        );
         assert!(result.is_ok());
     }
 
@@ -1322,43 +1369,79 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
 
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
         use crate::db::price_cache::upsert_price;
         use crate::db::price_history::upsert_history;
+        use crate::db::transactions::insert_transaction;
         use crate::models::price::{HistoryRecord, PriceQuote};
+        use crate::models::transaction::{NewTransaction, TxType};
 
-        insert_transaction(&conn, &NewTransaction {
-            symbol: "AAPL".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(10),
-            price_per: dec!(150),
-            currency: "USD".to_string(),
-            date: "2025-01-15".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        upsert_price(&conn, &PriceQuote {
-            symbol: "AAPL".to_string(),
-            price: dec!(200),
-            currency: "USD".to_string(),
-            source: "test".to_string(),
-            fetched_at: "2025-06-15T00:00:00Z".to_string(),
-        
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        }).unwrap();
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(200),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2025-06-15T00:00:00Z".to_string(),
 
-        upsert_history(&conn, "AAPL", "yahoo", &[
-            HistoryRecord { date: "2025-05-15".into(), close: dec!(180), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-06-01".into(), close: dec!(190), volume: None, open: None, high: None, low: None },
-        ]).unwrap();
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[
+                HistoryRecord {
+                    date: "2025-05-15".into(),
+                    close: dec!(180),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+                HistoryRecord {
+                    date: "2025-06-01".into(),
+                    close: dec!(190),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                },
+            ],
+        )
+        .unwrap();
 
         // Should succeed with historical data available
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, Some(&SummaryPeriod::OneMonth), None, false, false);
+        let result = run(
+            &backend,
+            &config,
+            None,
+            Some(&SummaryPeriod::OneMonth),
+            None,
+            false,
+            false,
+        );
         assert!(result.is_ok());
     }
 
@@ -1367,37 +1450,53 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
 
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
         use crate::db::price_cache::upsert_price;
+        use crate::db::transactions::insert_transaction;
         use crate::models::price::PriceQuote;
+        use crate::models::transaction::{NewTransaction, TxType};
 
-        insert_transaction(&conn, &NewTransaction {
-            symbol: "AAPL".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(10),
-            price_per: dec!(150),
-            currency: "USD".to_string(),
-            date: "2025-01-15".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        upsert_price(&conn, &PriceQuote {
-            symbol: "AAPL".to_string(),
-            price: dec!(200),
-            currency: "USD".to_string(),
-            source: "test".to_string(),
-            fetched_at: "2025-01-15T00:00:00Z".to_string(),
-        
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        }).unwrap();
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(200),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2025-01-15T00:00:00Z".to_string(),
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
 
         // Both --group-by category and --period together
         let backend = to_backend(conn);
-        let result = run(&backend, &config, Some(&SummaryGroupBy::Category), Some(&SummaryPeriod::OneWeek), None, false, false);
+        let result = run(
+            &backend,
+            &config,
+            Some(&SummaryGroupBy::Category),
+            Some(&SummaryPeriod::OneWeek),
+            None,
+            false,
+            false,
+        );
         assert!(result.is_ok());
     }
 
@@ -1497,37 +1596,53 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
 
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
         use crate::db::price_cache::upsert_price;
+        use crate::db::transactions::insert_transaction;
         use crate::models::price::PriceQuote;
+        use crate::models::transaction::{NewTransaction, TxType};
 
-        insert_transaction(&conn, &NewTransaction {
-            symbol: "AAPL".to_string(),
-            category: AssetCategory::Equity,
-            tx_type: TxType::Buy,
-            quantity: dec!(10),
-            price_per: dec!(150),
-            currency: "USD".to_string(),
-            date: "2025-01-15".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: AssetCategory::Equity,
+                tx_type: TxType::Buy,
+                quantity: dec!(10),
+                price_per: dec!(150),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        upsert_price(&conn, &PriceQuote {
-            symbol: "AAPL".to_string(),
-            price: dec!(200),
-            currency: "USD".to_string(),
-            source: "test".to_string(),
-            fetched_at: "2025-01-15T00:00:00Z".to_string(),
-        
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        }).unwrap();
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(200),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2025-01-15T00:00:00Z".to_string(),
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
 
         // With what-if override, should succeed and use hypothetical price
         let backend = to_backend(conn);
-        let result = run(&backend, &config, None, None, Some("AAPL:300"), false, false);
+        let result = run(
+            &backend,
+            &config,
+            None,
+            None,
+            Some("AAPL:300"),
+            false,
+            false,
+        );
         assert!(result.is_ok());
     }
 
@@ -1536,37 +1651,53 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let config = Config::default();
 
-        use crate::db::transactions::insert_transaction;
-        use crate::models::transaction::{NewTransaction, TxType};
         use crate::db::price_cache::upsert_price;
+        use crate::db::transactions::insert_transaction;
         use crate::models::price::PriceQuote;
+        use crate::models::transaction::{NewTransaction, TxType};
 
-        insert_transaction(&conn, &NewTransaction {
-            symbol: "BTC".to_string(),
-            category: AssetCategory::Crypto,
-            tx_type: TxType::Buy,
-            quantity: dec!(1),
-            price_per: dec!(30000),
-            currency: "USD".to_string(),
-            date: "2025-01-15".to_string(),
-            notes: None,
-        }).unwrap();
+        insert_transaction(
+            &conn,
+            &NewTransaction {
+                symbol: "BTC".to_string(),
+                category: AssetCategory::Crypto,
+                tx_type: TxType::Buy,
+                quantity: dec!(1),
+                price_per: dec!(30000),
+                currency: "USD".to_string(),
+                date: "2025-01-15".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        upsert_price(&conn, &PriceQuote {
-            symbol: "BTC".to_string(),
-            price: dec!(85000),
-            currency: "USD".to_string(),
-            source: "test".to_string(),
-            fetched_at: "2025-01-15T00:00:00Z".to_string(),
-        
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        }).unwrap();
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "BTC".to_string(),
+                price: dec!(85000),
+                currency: "USD".to_string(),
+                source: "test".to_string(),
+                fetched_at: "2025-01-15T00:00:00Z".to_string(),
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
 
         // What-if + group-by should work together
         let backend = to_backend(conn);
-        let result = run(&backend, &config, Some(&SummaryGroupBy::Category), None, Some("BTC:100000"), false, false);
+        let result = run(
+            &backend,
+            &config,
+            Some(&SummaryGroupBy::Category),
+            None,
+            Some("BTC:100000"),
+            false,
+            false,
+        );
         assert!(result.is_ok());
     }
 }

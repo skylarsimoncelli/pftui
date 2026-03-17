@@ -1756,6 +1756,16 @@ pub enum AnalyticsConvictionCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsCommand {
+    Technicals {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long, default_value = "1d")]
+        timeframe: String,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
     Signals {
         #[arg(long)]
         symbol: Option<String>,
@@ -2664,6 +2674,38 @@ mod tests {
         assert_eq!(countries, vec!["US".to_string()]);
         assert_eq!(determinant.as_deref(), Some("military"));
         assert_eq!(year, Some(1940));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_technicals_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "technicals",
+            "--symbol",
+            "AAPL",
+            "--timeframe",
+            "1d",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Technicals {
+                    symbol,
+                    timeframe,
+                    json,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics technicals command");
+        };
+
+        assert_eq!(symbol.as_deref(), Some("AAPL"));
+        assert_eq!(timeframe, "1d");
         assert!(json);
     }
 }

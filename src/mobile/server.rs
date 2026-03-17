@@ -6,9 +6,9 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Result};
 use axum::{extract::State, middleware, routing::get, Json, Router};
 use axum_server::tls_rustls::RustlsConfig;
-use rustls::crypto::CryptoProvider;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use rustls::crypto::CryptoProvider;
 use serde::Serialize;
 
 use crate::config::Config;
@@ -280,9 +280,7 @@ fn portfolio_day_change_pct(
     positions: &[Position],
     total_value: Option<Decimal>,
 ) -> Option<Decimal> {
-    let Some(current_total) = total_value else {
-        return None;
-    };
+    let current_total = total_value?;
 
     let mut previous_total = dec!(0);
     let mut has_non_cash = false;

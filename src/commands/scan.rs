@@ -4,18 +4,20 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
+use crate::analytics::technicals::{
+    load_or_compute_snapshots, load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME,
+};
 use crate::config::{currency_symbol, Config, PortfolioMode};
 use crate::db::allocations::{list_allocations, list_allocations_backend};
 use crate::db::backend::BackendConnection;
 use crate::db::fx_cache::get_all_fx_rates;
 use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 use crate::db::price_cache::{get_all_cached_prices, get_all_cached_prices_backend};
-use crate::db::price_history::{get_history, get_history_backend};
 use crate::db::scan_queries::{
     get_scan_query_backend, list_scan_queries_backend, upsert_scan_query_backend,
 };
+use crate::db::technical_snapshots::TechnicalSnapshotRecord;
 use crate::db::transactions::{list_transactions, list_transactions_backend};
-use crate::indicators::compute_sma;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,11 +55,7 @@ struct ScanRow {
     trackline_breach_count: Decimal,
 }
 
-#[derive(Debug, Clone, Default)]
-struct TechnicalSnapshot {
-    sma50: Option<Decimal>,
-    sma200: Option<Decimal>,
-}
+type TechnicalSnapshot = TechnicalSnapshotRecord;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
@@ -257,8 +255,8 @@ fn load_rows(conn: &Connection, mode_hint: Option<PortfolioMode>) -> Result<Vec<
         .map(|p| {
             let current_price = p.current_price;
             let technical = technicals.get(&p.symbol);
-            let sma50 = technical.and_then(|t| t.sma50);
-            let sma200 = technical.and_then(|t| t.sma200);
+            let sma50 = technical.and_then(|t| f64_to_decimal(t.sma_50));
+            let sma200 = technical.and_then(|t| f64_to_decimal(t.sma_200));
             let sma50_gap_pct = compute_gap_pct(current_price, sma50);
             let sma200_gap_pct = compute_gap_pct(current_price, sma200);
             let trackline_breach = build_trackline_breach(sma50_gap_pct, sma200_gap_pct);
@@ -328,8 +326,8 @@ fn load_rows_backend(
         .map(|p| {
             let current_price = p.current_price;
             let technical = technicals.get(&p.symbol);
-            let sma50 = technical.and_then(|t| t.sma50);
-            let sma200 = technical.and_then(|t| t.sma200);
+            let sma50 = technical.and_then(|t| f64_to_decimal(t.sma_50));
+            let sma200 = technical.and_then(|t| f64_to_decimal(t.sma_200));
             let sma50_gap_pct = compute_gap_pct(current_price, sma50);
             let sma200_gap_pct = compute_gap_pct(current_price, sma200);
             let trackline_breach = build_trackline_breach(sma50_gap_pct, sma200_gap_pct);
@@ -366,56 +364,14 @@ fn load_technical_snapshots(
     conn: &Connection,
     symbols: &[String],
 ) -> HashMap<String, TechnicalSnapshot> {
-    symbols
-        .iter()
-        .map(|symbol| {
-            (
-                symbol.clone(),
-                compute_technical_snapshot(get_history(conn, symbol, 250).ok()),
-            )
-        })
-        .collect()
+    load_or_compute_snapshots(conn, symbols, DEFAULT_TIMEFRAME)
 }
 
 fn load_technical_snapshots_backend(
     backend: &BackendConnection,
     symbols: &[String],
 ) -> HashMap<String, TechnicalSnapshot> {
-    symbols
-        .iter()
-        .map(|symbol| {
-            (
-                symbol.clone(),
-                compute_technical_snapshot(get_history_backend(backend, symbol, 250).ok()),
-            )
-        })
-        .collect()
-}
-
-fn compute_technical_snapshot(
-    history: Option<Vec<crate::models::price::HistoryRecord>>,
-) -> TechnicalSnapshot {
-    let Some(history) = history else {
-        return TechnicalSnapshot::default();
-    };
-    if history.is_empty() {
-        return TechnicalSnapshot::default();
-    }
-
-    let closes: Vec<f64> = history
-        .iter()
-        .filter_map(|row| row.close.to_string().parse::<f64>().ok())
-        .collect();
-
-    TechnicalSnapshot {
-        sma50: compute_latest_sma(&closes, 50),
-        sma200: compute_latest_sma(&closes, 200),
-    }
-}
-
-fn compute_latest_sma(closes: &[f64], period: usize) -> Option<Decimal> {
-    let value = compute_sma(closes, period).iter().rev().find_map(|v| *v)?;
-    Decimal::from_str_exact(&format!("{value:.6}")).ok()
+    load_or_compute_snapshots_backend(backend, symbols, DEFAULT_TIMEFRAME)
 }
 
 fn compute_gap_pct(current_price: Option<Decimal>, reference: Option<Decimal>) -> Option<Decimal> {
@@ -425,6 +381,10 @@ fn compute_gap_pct(current_price: Option<Decimal>, reference: Option<Decimal>) -
         return None;
     }
     Some((current - reference) / reference * Decimal::from(100))
+}
+
+fn f64_to_decimal(value: Option<f64>) -> Option<Decimal> {
+    value.and_then(|v| Decimal::from_str_exact(&format!("{v:.6}")).ok())
 }
 
 fn build_trackline_breach(

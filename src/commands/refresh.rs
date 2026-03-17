@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::alerts::engine;
+use crate::analytics::technicals;
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
     bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, onchain, predictions, rss,
@@ -23,6 +24,7 @@ use crate::db::price_history::{
     get_history_backend, get_price_at_date_backend, upsert_history_backend,
 };
 use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
+use crate::db::technical_snapshots;
 use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
 use crate::db::watchlist::get_watchlist_symbols_backend;
@@ -737,6 +739,17 @@ fn run_with_output(
                 "✓ Price history ({} symbol backfills)",
                 history_updated
             );
+        }
+
+        let technical_count = store_technical_snapshots(backend, &symbols)?;
+        if technical_count > 0 {
+            info_ln!(
+                verbose,
+                "✓ Technical snapshots ({} symbols)",
+                technical_count
+            );
+        } else {
+            info_ln!(verbose, "⊘ Technical snapshots (insufficient history)");
         }
     } else {
         info_ln!(verbose, "⊘ Prices (no symbols)");
@@ -1711,6 +1724,30 @@ fn detect_timeframe_signals(backend: &BackendConnection) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn store_technical_snapshots(
+    backend: &BackendConnection,
+    symbols: &[(String, AssetCategory)],
+) -> Result<usize> {
+    let mut stored = 0usize;
+    for (symbol, category) in symbols {
+        if *category == AssetCategory::Cash {
+            continue;
+        }
+        let history = match get_history_backend(backend, symbol, 370) {
+            Ok(rows) if !rows.is_empty() => rows,
+            _ => continue,
+        };
+        let Some(snapshot) =
+            technicals::compute_snapshot(symbol, technicals::DEFAULT_TIMEFRAME, &history)
+        else {
+            continue;
+        };
+        technical_snapshots::insert_snapshot_backend(backend, &snapshot)?;
+        stored += 1;
+    }
+    Ok(stored)
 }
 
 /// Compute current positions and store a daily portfolio snapshot.
