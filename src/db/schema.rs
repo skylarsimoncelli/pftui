@@ -686,6 +686,34 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_timeframe_signals_detected ON timeframe_signals(detected_at);
         CREATE INDEX IF NOT EXISTS idx_timeframe_signals_type ON timeframe_signals(signal_type);
+
+        CREATE TABLE IF NOT EXISTS technical_snapshots (
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            rsi_14 REAL,
+            macd REAL,
+            macd_signal REAL,
+            macd_histogram REAL,
+            sma_20 REAL,
+            sma_50 REAL,
+            sma_200 REAL,
+            bollinger_upper REAL,
+            bollinger_middle REAL,
+            bollinger_lower REAL,
+            range_52w_low REAL,
+            range_52w_high REAL,
+            range_52w_position REAL,
+            volume_avg_20 REAL,
+            volume_ratio_20 REAL,
+            volume_regime TEXT,
+            above_sma_20 INTEGER,
+            above_sma_50 INTEGER,
+            above_sma_200 INTEGER,
+            computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (symbol, timeframe, computed_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_technical_snapshots_symbol_tf
+            ON technical_snapshots(symbol, timeframe, computed_at DESC);
         ",
     )?;
 

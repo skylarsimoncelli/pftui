@@ -3,6 +3,18 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-17 — F45 persistent technical snapshot engine
+
+- What:
+  - added a persisted `technical_snapshots` store in both SQLite and PostgreSQL, plus a shared analytics helper for computing RSI, MACD, SMA, Bollinger bands, 52-week position, and volume-regime state from cached history.
+  - wired `pftui data refresh` to compute and store technical snapshots for tracked non-cash symbols after price-history refresh/backfill.
+  - added `pftui analytics technicals` with `--symbol`, `--timeframe`, and `--json`, and extended `analytics gaps` to report snapshot freshness.
+  - switched `brief`, `summary`, `watchlist`, `scan`, and web asset/watchlist responses to read cached technical snapshots first, falling back to local history-derived computation only when needed.
+  - updated operator/developer docs and removed completed `F45` backlog scope from `TODO.md`.
+- Why: moves mechanical technical analysis into the always-on data layer so agents can consume precomputed market state instead of repeatedly recalculating indicators in each command/UI path.
+- Files: `src/analytics/mod.rs`, `src/analytics/technicals.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `src/commands/brief.rs`, `src/commands/refresh.rs`, `src/commands/scan.rs`, `src/commands/summary.rs`, `src/commands/watchlist_cli.rs`, `src/db/mod.rs`, `src/db/postgres_schema.rs`, `src/db/schema.rs`, `src/db/technical_snapshots.rs`, `src/web/api.rs`, `AGENTS.md`, `docs/ARCHITECTURE.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test technical_snapshots -- --nocapture`; `cargo test analytics::technicals:: -- --nocapture`; `cargo test parse_analytics_technicals_command -- --nocapture`; `cargo test`; `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-16 — Native iOS mobile app scaffold and TLS mobile API
 
 - What:
