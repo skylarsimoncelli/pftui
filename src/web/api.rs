@@ -75,6 +75,7 @@ pub struct WatchlistItem {
     pub category: AssetCategory,
     pub current_price: Option<Decimal>,
     pub day_change_pct: Option<Decimal>,
+    pub technicals: Option<AssetTechnicalsResponse>,
     pub target_price: Option<Decimal>,
     pub target_direction: Option<String>,
     pub distance_pct: Option<Decimal>,
@@ -448,9 +449,32 @@ pub struct AssetDetailResponse {
     pub range_52w_high: Option<Decimal>,
     pub latest_volume: Option<u64>,
     pub avg_volume_30d: Option<u64>,
+    pub technicals: Option<AssetTechnicalsResponse>,
     pub position: Option<AssetPositionSummary>,
     pub history: Vec<ChartPoint>,
     pub meta: view_model::ResponseMeta,
+}
+
+#[derive(Serialize, Clone)]
+pub struct AssetTechnicalsResponse {
+    pub timeframe: String,
+    pub rsi_14: Option<f64>,
+    pub macd: Option<f64>,
+    pub macd_signal: Option<f64>,
+    pub macd_histogram: Option<f64>,
+    pub sma_20: Option<f64>,
+    pub sma_50: Option<f64>,
+    pub sma_200: Option<f64>,
+    pub bollinger_upper: Option<f64>,
+    pub bollinger_middle: Option<f64>,
+    pub bollinger_lower: Option<f64>,
+    pub range_52w_position: Option<f64>,
+    pub volume_ratio_20: Option<f64>,
+    pub volume_regime: Option<String>,
+    pub above_sma_20: Option<bool>,
+    pub above_sma_50: Option<bool>,
+    pub above_sma_200: Option<bool>,
+    pub computed_at: String,
 }
 
 #[derive(Serialize)]
@@ -468,6 +492,31 @@ fn normalized_symbol(raw: &str) -> String {
 
 fn quote_symbol(symbol: &str, category: AssetCategory) -> String {
     view_model::watchlist_quote_symbol(symbol, category)
+}
+
+fn map_technical_snapshot(
+    row: Option<crate::db::technical_snapshots::TechnicalSnapshotRecord>,
+) -> Option<AssetTechnicalsResponse> {
+    row.map(|row| AssetTechnicalsResponse {
+        timeframe: row.timeframe,
+        rsi_14: row.rsi_14,
+        macd: row.macd,
+        macd_signal: row.macd_signal,
+        macd_histogram: row.macd_histogram,
+        sma_20: row.sma_20,
+        sma_50: row.sma_50,
+        sma_200: row.sma_200,
+        bollinger_upper: row.bollinger_upper,
+        bollinger_middle: row.bollinger_middle,
+        bollinger_lower: row.bollinger_lower,
+        range_52w_position: row.range_52w_position,
+        volume_ratio_20: row.volume_ratio_20,
+        volume_regime: row.volume_regime,
+        above_sma_20: row.above_sma_20,
+        above_sma_50: row.above_sma_50,
+        above_sma_200: row.above_sma_200,
+        computed_at: row.computed_at,
+    })
 }
 
 fn bounded_limit(limit: Option<usize>, default: usize, max: usize) -> usize {
@@ -751,6 +800,13 @@ pub async fn get_watchlist(
                 .or_else(|| prices.get(&quote_symbol).copied());
             let day_change_pct = day_change_pct_backend(&backend, &quote_symbol)
                 .or_else(|| day_change_pct_backend(&backend, &w.symbol));
+            let technicals = map_technical_snapshot(
+                crate::db::technical_snapshots::get_latest_snapshot_backend(
+                    &backend, &w.symbol, "1d",
+                )
+                .ok()
+                .flatten(),
+            );
             let target_price = w.target_price.and_then(|t| t.parse::<Decimal>().ok());
             let (distance_pct, target_hit) = view_model::compute_watchlist_proximity(
                 current_price,
@@ -763,6 +819,7 @@ pub async fn get_watchlist(
                 category,
                 current_price,
                 day_change_pct,
+                technicals,
                 target_price,
                 target_direction: w.target_direction,
                 distance_pct,
@@ -1002,6 +1059,16 @@ pub async fn get_asset_detail(
             volume: h.volume,
         })
         .collect();
+    let technicals = map_technical_snapshot(
+        crate::db::technical_snapshots::get_latest_snapshot_backend(&backend, &symbol, "1d")
+            .ok()
+            .flatten()
+            .or_else(|| {
+                crate::db::technical_snapshots::get_latest_snapshot_backend(&backend, &qsym, "1d")
+                    .ok()
+                    .flatten()
+            }),
+    );
 
     Ok(Json(AssetDetailResponse {
         symbol: symbol.clone(),
@@ -1019,6 +1086,7 @@ pub async fn get_asset_detail(
         range_52w_high,
         latest_volume,
         avg_volume_30d,
+        technicals,
         position,
         history: history_points,
         meta: view_model::fresh_meta(60),

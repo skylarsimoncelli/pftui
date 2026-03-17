@@ -8,8 +8,8 @@ use crate::db::backend::BackendConnection;
 use crate::db::query;
 use crate::db::{
     agent_messages, alerts, convictions, correlation_snapshots, price_cache, regime_snapshots,
-    research_questions, scenarios, structural, thesis, timeframe_signals, transactions, trends,
-    user_predictions, watchlist,
+    research_questions, scenarios, structural, technical_snapshots, thesis, timeframe_signals,
+    transactions, trends, user_predictions, watchlist,
 };
 use crate::models::asset::AssetCategory;
 
@@ -45,6 +45,13 @@ pub fn run(
     json_output: bool,
 ) -> Result<()> {
     match action {
+        "technicals" => run_technicals(
+            backend,
+            symbol,
+            value.unwrap_or("1d"),
+            limit,
+            json_output,
+        ),
         "signals" => run_signals(backend, symbol, signal_type, severity, limit, json_output),
         "summary" => run_summary(backend, json_output),
         "low" => run_low(backend, json_output),
@@ -82,7 +89,7 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
@@ -448,9 +455,10 @@ fn classify_gap(
 }
 
 fn run_gaps(backend: &BackendConnection, json_output: bool) -> Result<()> {
-    let specs: [(&str, &str, &str, i64, bool); 13] = [
+    let specs: [(&str, &str, &str, i64, bool); 14] = [
         ("low", "price_cache", "fetched_at", 1, false),
         ("low", "price_history", "date", 48, false),
+        ("low", "technical_snapshots", "computed_at", 24, false),
         ("low", "regime_snapshots", "recorded_at", 24, false),
         ("low", "timeframe_signals", "detected_at", 24, false),
         ("medium", "scenarios", "updated_at", 24 * 7, false),
@@ -522,6 +530,70 @@ fn run_gaps(backend: &BackendConnection, json_output: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn run_technicals(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    timeframe: &str,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let mut rows = if let Some(sym) = symbol {
+        technical_snapshots::get_latest_snapshot_backend(backend, &sym.to_uppercase(), timeframe)?
+            .into_iter()
+            .collect::<Vec<_>>()
+    } else {
+        technical_snapshots::list_latest_snapshots_backend(backend, timeframe, limit)?
+    };
+    if let Some(limit) = limit {
+        rows.truncate(limit);
+    }
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "timeframe": timeframe,
+                "technicals": rows,
+                "count": rows.len(),
+            }))?
+        );
+    } else if rows.is_empty() {
+        println!(
+            "No technical snapshots found for timeframe '{}'.",
+            timeframe
+        );
+    } else {
+        println!("Technical Snapshots ({})", timeframe);
+        println!(
+            "{:<10} {:>7} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7} {:<8}",
+            "Symbol", "RSI", "MACD", "Hist", "SMA20", "SMA50", "SMA200", "52W%", "Volume"
+        );
+        println!("{}", "─".repeat(90));
+        for row in rows.drain(..) {
+            println!(
+                "{:<10} {:>7} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7} {:<8}",
+                row.symbol,
+                fmt_opt(row.rsi_14, 1),
+                fmt_opt(row.macd, 2),
+                fmt_opt(row.macd_histogram, 2),
+                fmt_opt(row.sma_20, 2),
+                fmt_opt(row.sma_50, 2),
+                fmt_opt(row.sma_200, 2),
+                fmt_opt(row.range_52w_position, 0),
+                row.volume_regime.unwrap_or_else(|| "n/a".to_string()),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn fmt_opt(value: Option<f64>, precision: usize) -> String {
+    value
+        .map(|v| format!("{:.*}", precision, v))
+        .unwrap_or_else(|| "N/A".to_string())
 }
 
 fn run_signals(

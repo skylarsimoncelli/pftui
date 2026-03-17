@@ -702,6 +702,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
 | `pftui analytics signals --json` | Show cross-timeframe alignment/divergence/transition signals |
+| `pftui analytics technicals [--symbol SYM] --json` | Latest persisted technical snapshot(s) — RSI, MACD, SMA, Bollinger, 52W position, volume regime |
 
 ### Utility
 
@@ -730,6 +731,7 @@ The active backend database is the single source of truth. All interfaces (TUI, 
 ├── transactions                   # Buy/sell records with cost basis
 ├── price_cache                    # Latest spot prices (updated on refresh)
 ├── price_history                  # Daily OHLCV history
+├── technical_snapshots            # Persisted per-symbol technical state from refresh
 ├── watchlist                      # Tracked symbols with optional targets
 ├── alerts                         # Price/allocation alerts
 ├── targets                        # Target allocation percentages

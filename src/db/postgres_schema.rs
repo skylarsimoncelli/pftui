@@ -511,6 +511,41 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS technical_snapshots (
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                rsi_14 DOUBLE PRECISION,
+                macd DOUBLE PRECISION,
+                macd_signal DOUBLE PRECISION,
+                macd_histogram DOUBLE PRECISION,
+                sma_20 DOUBLE PRECISION,
+                sma_50 DOUBLE PRECISION,
+                sma_200 DOUBLE PRECISION,
+                bollinger_upper DOUBLE PRECISION,
+                bollinger_middle DOUBLE PRECISION,
+                bollinger_lower DOUBLE PRECISION,
+                range_52w_low DOUBLE PRECISION,
+                range_52w_high DOUBLE PRECISION,
+                range_52w_position DOUBLE PRECISION,
+                volume_avg_20 DOUBLE PRECISION,
+                volume_ratio_20 DOUBLE PRECISION,
+                volume_regime TEXT,
+                above_sma_20 BOOLEAN,
+                above_sma_50 BOOLEAN,
+                above_sma_200 BOOLEAN,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (symbol, timeframe, computed_at)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_technical_snapshots_symbol_tf
+             ON technical_snapshots(symbol, timeframe, computed_at DESC)",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_signals_scenario ON scenario_signals(scenario_id)")
             .execute(pool)

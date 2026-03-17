@@ -5,11 +5,11 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
+use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::price_history::{get_history_backend, get_price_at_date_backend};
 use crate::db::watchlist::list_watchlist_backend;
-use crate::indicators;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 
@@ -141,6 +141,11 @@ pub fn run(
         .into_iter()
         .map(|q| (q.symbol, (q.price, q.fetched_at)))
         .collect();
+    let technicals = load_or_compute_snapshots_backend(
+        backend,
+        &entries.iter().map(|e| e.symbol.clone()).collect::<Vec<_>>(),
+        DEFAULT_TIMEFRAME,
+    );
 
     // Row: symbol, name, category, price, change, rsi, sma50, macd, target, proximity, fetched
     #[derive(Serialize)]
@@ -169,10 +174,7 @@ pub fn run(
             name
         };
 
-        let cat: AssetCategory = entry
-            .category
-            .parse()
-            .unwrap_or(AssetCategory::Equity);
+        let cat: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
 
         let csym = crate::config::currency_symbol(&config.base_currency);
         let current_price = prices.get(&entry.symbol).map(|(p, _)| *p);
@@ -186,7 +188,6 @@ pub fn run(
         };
 
         // Compute daily change %
-        let yahoo_sym = yahoo_symbol_for(&entry.symbol, cat);
         let change_str = match compute_change_pct(backend, &entry.symbol, cat, current_price) {
             Some(pct) => {
                 let f: f64 = pct.to_string().parse().unwrap_or(0.0);
@@ -196,96 +197,61 @@ pub fn run(
         };
 
         // Target and proximity
-        let (target_str, proximity_str, proximity_pct) = match (
-            &entry.target_price,
-            &entry.target_direction,
-            current_price,
-        ) {
-            (Some(tp), Some(dir), Some(cur)) => {
-                if let Ok(target_dec) = Decimal::from_str_exact(tp) {
-                    if target_dec.is_zero() {
-                        ("---".to_string(), "---".to_string(), None)
-                    } else {
-                        let dist_pct = match dir.as_str() {
-                            "below" => (cur - target_dec) / target_dec * dec!(100),
-                            "above" => (target_dec - cur) / cur * dec!(100),
-                            _ => dec!(0),
-                        };
-                        let dist_f: f64 = dist_pct.to_string().parse().unwrap_or(0.0);
-                        let prox = if dist_f <= 0.0 {
-                            "🎯 HIT".to_string()
+        let (target_str, proximity_str, proximity_pct) =
+            match (&entry.target_price, &entry.target_direction, current_price) {
+                (Some(tp), Some(dir), Some(cur)) => {
+                    if let Ok(target_dec) = Decimal::from_str_exact(tp) {
+                        if target_dec.is_zero() {
+                            ("---".to_string(), "---".to_string(), None)
                         } else {
-                            format!("{:.1}% away", dist_f)
-                        };
-                        let tgt_str = format!("{} {}{}", dir, csym, format_price(target_dec));
-                        (tgt_str, prox, Some(dist_pct))
+                            let dist_pct = match dir.as_str() {
+                                "below" => (cur - target_dec) / target_dec * dec!(100),
+                                "above" => (target_dec - cur) / cur * dec!(100),
+                                _ => dec!(0),
+                            };
+                            let dist_f: f64 = dist_pct.to_string().parse().unwrap_or(0.0);
+                            let prox = if dist_f <= 0.0 {
+                                "🎯 HIT".to_string()
+                            } else {
+                                format!("{:.1}% away", dist_f)
+                            };
+                            let tgt_str = format!("{} {}{}", dir, csym, format_price(target_dec));
+                            (tgt_str, prox, Some(dist_pct))
+                        }
+                    } else {
+                        ("---".to_string(), "---".to_string(), None)
                     }
-                } else {
-                    ("---".to_string(), "---".to_string(), None)
                 }
-            }
-            (Some(tp), Some(dir), None) => {
-                if let Ok(target_dec) = Decimal::from_str_exact(tp) {
-                    let tgt_str = format!("{} {}{}", dir, csym, format_price(target_dec));
-                    (tgt_str, "N/A".to_string(), None)
-                } else {
-                    ("---".to_string(), "---".to_string(), None)
+                (Some(tp), Some(dir), None) => {
+                    if let Ok(target_dec) = Decimal::from_str_exact(tp) {
+                        let tgt_str = format!("{} {}{}", dir, csym, format_price(target_dec));
+                        (tgt_str, "N/A".to_string(), None)
+                    } else {
+                        ("---".to_string(), "---".to_string(), None)
+                    }
                 }
-            }
-            _ => ("---".to_string(), "---".to_string(), None),
-        };
+                _ => ("---".to_string(), "---".to_string(), None),
+            };
 
-        // Compute technical indicators from price history
-        let (rsi_str, sma50_str, macd_str) = {
-            let history = get_history_backend(backend, &entry.symbol, 90)
-                .ok()
-                .filter(|h| !h.is_empty())
-                .or_else(|| get_history_backend(backend, &yahoo_sym, 90).ok());
-            match history {
-                Some(records) if !records.is_empty() => {
-                    let closes: Vec<f64> = records
-                        .iter()
-                        .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
-                        .collect();
-                    
-                    // RSI(14)
-                    let rsi_str = if closes.len() >= 15 {
-                        let rsi_series = indicators::compute_rsi(&closes, 14);
-                        match rsi_series.last().copied().flatten() {
-                            Some(rsi_val) => format!("{:.1}", rsi_val),
-                            None => "---".to_string(),
-                        }
-                    } else {
-                        "---".to_string()
-                    };
-
-                    // SMA(50)
-                    let sma50_str = if closes.len() >= 50 {
-                        let sma50_series = indicators::compute_sma(&closes, 50);
-                        match sma50_series.last().copied().flatten() {
-                            Some(sma50_val) => format!("{:.2}", sma50_val),
-                            None => "---".to_string(),
-                        }
-                    } else {
-                        "---".to_string()
-                    };
-
-                    // MACD (12, 26, 9) — show histogram value
-                    let macd_str = if closes.len() >= 35 {
-                        let macd_series = indicators::compute_macd(&closes, 12, 26, 9);
-                        match macd_series.last() {
-                            Some(Some(macd_result)) => format!("{:.3}", macd_result.histogram),
-                            _ => "---".to_string(),
-                        }
-                    } else {
-                        "---".to_string()
-                    };
-
-                    (rsi_str, sma50_str, macd_str)
-                }
-                _ => ("---".to_string(), "---".to_string(), "---".to_string()),
-            }
-        };
+        let (rsi_str, sma50_str, macd_str) = technicals
+            .get(&entry.symbol)
+            .map(|snapshot| {
+                (
+                    snapshot
+                        .rsi_14
+                        .map(|v| format!("{:.1}", v))
+                        .unwrap_or_else(|| "---".to_string()),
+                    snapshot
+                        .sma_50
+                        .map(|v| format!("{:.2}", v))
+                        .unwrap_or_else(|| "---".to_string()),
+                    snapshot
+                        .macd_histogram
+                        .map(|v| format!("{:.3}", v))
+                        .unwrap_or_else(|| "---".to_string()),
+                )
+            })
+            .unwrap_or_else(|| ("---".to_string(), "---".to_string(), "---".to_string()));
 
         rows.push(WatchRow {
             symbol: entry.symbol.clone(),
@@ -313,7 +279,10 @@ pub fn run(
             if json {
                 println!("[]");
             } else {
-                println!("No watchlist symbols within {}% of their target.", threshold);
+                println!(
+                    "No watchlist symbols within {}% of their target.",
+                    threshold
+                );
             }
             return Ok(());
         }
@@ -333,7 +302,12 @@ pub fn run(
     let has_targets = rows.iter().any(|r| r.target != "---");
 
     // Compute column widths
-    let sym_w = rows.iter().map(|r| r.symbol.len()).max().unwrap_or(6).max(6);
+    let sym_w = rows
+        .iter()
+        .map(|r| r.symbol.len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
     let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
     let cat_w = rows
         .iter()
@@ -341,47 +315,47 @@ pub fn run(
         .max()
         .unwrap_or(8)
         .max(8);
-    let price_w = rows
-        .iter()
-        .map(|r| r.price.len())
-        .max()
-        .unwrap_or(5)
-        .max(5);
+    let price_w = rows.iter().map(|r| r.price.len()).max().unwrap_or(5).max(5);
     let chg_w = rows
         .iter()
         .map(|r| r.change.len())
         .max()
         .unwrap_or(8)
         .max(8);
-    let rsi_w = rows
-        .iter()
-        .map(|r| r.rsi.len())
-        .max()
-        .unwrap_or(3)
-        .max(3);
-    let sma50_w = rows
-        .iter()
-        .map(|r| r.sma50.len())
-        .max()
-        .unwrap_or(5)
-        .max(5);
-    let macd_w = rows
-        .iter()
-        .map(|r| r.macd.len())
-        .max()
-        .unwrap_or(4)
-        .max(4);
+    let rsi_w = rows.iter().map(|r| r.rsi.len()).max().unwrap_or(3).max(3);
+    let sma50_w = rows.iter().map(|r| r.sma50.len()).max().unwrap_or(5).max(5);
+    let macd_w = rows.iter().map(|r| r.macd.len()).max().unwrap_or(4).max(4);
 
     if has_targets {
-        let tgt_w = rows.iter().map(|r| r.target.len()).max().unwrap_or(6).max(6);
-        let prox_w = rows.iter().map(|r| r.proximity.len()).max().unwrap_or(9).max(9);
+        let tgt_w = rows
+            .iter()
+            .map(|r| r.target.len())
+            .max()
+            .unwrap_or(6)
+            .max(6);
+        let prox_w = rows
+            .iter()
+            .map(|r| r.proximity.len())
+            .max()
+            .unwrap_or(9)
+            .max(9);
 
         // Header
         println!(
             "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {:>rsi_w$}  {:>sma50_w$}  {:>macd_w$}  {:>tgt_w$}  {:>prox_w$}  Updated",
             "Symbol", "Name", "Category", "Price", "1D Chg %", "RSI", "SMA50", "MACD", "Target", "Proximity",
         );
-        let total_w = sym_w + name_w + cat_w + price_w + chg_w + rsi_w + sma50_w + macd_w + tgt_w + prox_w + 44;
+        let total_w = sym_w
+            + name_w
+            + cat_w
+            + price_w
+            + chg_w
+            + rsi_w
+            + sma50_w
+            + macd_w
+            + tgt_w
+            + prox_w
+            + 44;
         println!("  {}", "─".repeat(total_w));
 
         for r in &rows {
@@ -570,11 +544,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "yahoo".to_string(),
                 fetched_at: "2026-03-02T20:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
 
@@ -585,10 +559,7 @@ mod tests {
 
     #[test]
     fn yahoo_symbol_crypto() {
-        assert_eq!(
-            yahoo_symbol_for("BTC", AssetCategory::Crypto),
-            "BTC-USD"
-        );
+        assert_eq!(yahoo_symbol_for("BTC", AssetCategory::Crypto), "BTC-USD");
     }
 
     #[test]
@@ -601,25 +572,21 @@ mod tests {
 
     #[test]
     fn yahoo_symbol_equity() {
-        assert_eq!(
-            yahoo_symbol_for("AAPL", AssetCategory::Equity),
-            "AAPL"
-        );
+        assert_eq!(yahoo_symbol_for("AAPL", AssetCategory::Equity), "AAPL");
     }
 
     #[test]
     fn yahoo_symbol_commodity() {
-        assert_eq!(
-            yahoo_symbol_for("GC=F", AssetCategory::Commodity),
-            "GC=F"
-        );
+        assert_eq!(yahoo_symbol_for("GC=F", AssetCategory::Commodity), "GC=F");
     }
 
     #[test]
     fn change_pct_no_history() {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(210))).is_none());
+        assert!(
+            compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(210))).is_none()
+        );
     }
 
     #[test]
@@ -657,22 +624,21 @@ mod tests {
             &conn,
             "AAPL",
             "yahoo",
-            &[
-                HistoryRecord {
-                    date: "2026-03-03".to_string(),
-                    close: dec!(200),
-                    volume: None,
+            &[HistoryRecord {
+                date: "2026-03-03".to_string(),
+                close: dec!(200),
+                volume: None,
                 open: None,
                 high: None,
                 low: None,
-            },
-            ],
+            }],
         )
         .unwrap();
 
         // Current price $210, yesterday close $200 → +5%
         let backend = to_backend(conn);
-        let pct = compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(210))).unwrap();
+        let pct =
+            compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(210))).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -686,22 +652,21 @@ mod tests {
             &conn,
             "AAPL",
             "yahoo",
-            &[
-                HistoryRecord {
-                    date: "2026-03-03".to_string(),
-                    close: dec!(200),
-                    volume: None,
+            &[HistoryRecord {
+                date: "2026-03-03".to_string(),
+                close: dec!(200),
+                volume: None,
                 open: None,
                 high: None,
                 low: None,
-            },
-            ],
+            }],
         )
         .unwrap();
 
         // Current price $190, yesterday close $200 → -5%
         let backend = to_backend(conn);
-        let pct = compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(190))).unwrap();
+        let pct =
+            compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(190))).unwrap();
         assert_eq!(pct, dec!(-5));
     }
 
@@ -715,22 +680,22 @@ mod tests {
             &conn,
             "AAPL",
             "yahoo",
-            &[
-                HistoryRecord {
-                    date: "2026-03-03".to_string(),
-                    close: dec!(0),
-                    volume: None,
+            &[HistoryRecord {
+                date: "2026-03-03".to_string(),
+                close: dec!(0),
+                volume: None,
                 open: None,
                 high: None,
                 low: None,
-            },
-            ],
+            }],
         )
         .unwrap();
 
         // Yesterday close was 0 → should return None (can't compute % change)
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(100))).is_none());
+        assert!(
+            compute_change_pct(&backend, "AAPL", AssetCategory::Equity, Some(dec!(100))).is_none()
+        );
     }
 
     #[test]
@@ -753,11 +718,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "yahoo".to_string(),
                 fetched_at: "2026-03-03T20:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
 
@@ -770,18 +735,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(210),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();

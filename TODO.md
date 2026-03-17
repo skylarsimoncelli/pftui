@@ -6,6 +6,121 @@
 
 ## P3 — Long Term
 
+## P1 — Always-On Analytics Engine
+
+### F46: Stored Market Structure And Key Levels
+
+> Vision fit: pftui should map key levels mechanically so AI reasons on top of them.
+>
+> Current gap:
+> - No persisted support/resistance/trigger levels engine
+> - AI still has to infer structure from raw history and indicator output
+> - Alerts can use indicators, but the system does not expose normalized market structure
+>
+> Actionable scope:
+> 1. Add `technical_levels` table for support, resistance, breakout, breakdown, gap-fill,
+>    20D/50D/200D MA levels, recent swing highs/lows, and 52W extremes
+> 2. Compute levels from cached history during refresh for held + watchlist + configured universe symbols
+> 3. Assign strength/confidence and source method to each level
+> 4. Add `pftui analytics levels --symbol SYM --json`
+> 5. Surface nearest actionable levels in `portfolio brief`, asset detail, and web asset endpoints
+> 6. Allow alert creation directly from stored levels
+
+### F47: Dedicated Background Daemon
+
+> Vision fit: pftui should be always running even when the TUI/web UI is closed.
+>
+> Current gap:
+> - Background refresh exists inside TUI/web sessions
+> - There is no first-class long-running daemon/service mode for ingestion + analytics
+> - “Always-on” currently depends on a UI process or external cron
+>
+> Actionable scope:
+> 1. Add `pftui system daemon` with refresh scheduler, lock coordination, structured logs,
+>    and health heartbeat
+> 2. Support per-source cadence config instead of one global interval
+> 3. Run refresh, technical snapshot generation, level generation, alert evaluation, and cleanup in one loop
+> 4. Expose daemon status via `pftui data status --json`
+> 5. Add systemd launch docs for the daemon path as the recommended always-on deployment
+
+### F48: Rich OHLCV History And Data-Quality Layer
+
+> Vision fit: technical analysis quality depends on data quality and richer candles than close-only series.
+>
+> Current gap:
+> - `price_history` logic mostly relies on close and partial volume
+> - open/high/low are optional in models but not treated as first-class stored inputs
+> - this limits robust breakout, wick, range, ATR, and volatility analysis
+>
+> Actionable scope:
+> 1. Upgrade historical storage so open/high/low/close/volume are fully persisted and queryable
+> 2. Backfill OHLCV where providers support it
+> 3. Add data-quality metadata per symbol: coverage, stale bars, source, gaps, split-adjust ambiguity
+> 4. Add `pftui analytics gaps --symbol SYM` or equivalent asset-level data-quality output
+> 5. Use OHLCV-aware calculations for Bollinger, ATR, range expansion, and breakout detection
+
+### F49: Precomputed Signal Engine
+
+> Vision fit: AI should receive mechanical signal state, not derive it from raw indicator values.
+>
+> Current gap:
+> - Cross-timeframe signals exist, but symbol-level technical signals are still mostly implicit
+> - No normalized store for events like RSI overbought, MACD bull cross, MA reclaim, BB squeeze, volume expansion
+>
+> Actionable scope:
+> 1. Add `technical_signals` table for per-symbol, per-timeframe signal events
+> 2. Generate signals during refresh from stored technical snapshots and levels
+> 3. Include severity, direction, trigger price, expiry/staleness, and explanation
+> 4. Add `pftui analytics signals technical [--symbol SYM] [--json]`
+> 5. Reuse the same store for alerts, movers context, and agent brief generation
+
+## P2 — Coverage And Agent Consumption
+
+### F50: Configurable Universe Expansion
+
+> Vision fit: the system should analyze more than just current holdings and watchlist when running always-on.
+>
+> Current gap:
+> - Refresh symbol discovery is driven by portfolio, watchlist, economy symbols, and sector ETFs
+> - There is no first-class tracked-universe config for sectors, indices, macro proxies, or custom symbol packs
+>
+> Actionable scope:
+> 1. Add `tracked_universe` config groups for indices, sectors, commodities, FX, rates, crypto majors, and custom symbols
+> 2. Feed the universe into refresh, technical snapshots, levels, and signals
+> 3. Add CLI commands to inspect and mutate tracked universes
+> 4. Ensure per-source rate limits and refresh cadences remain safe
+
+### F51: Asset Intelligence Blob
+
+> Vision fit: the agent should be able to ask for one symbol and receive the full synthesized state.
+>
+> Current gap:
+> - Analytics are available across several commands, but there is no canonical per-asset intelligence payload
+> - Web/API handlers also compute and assemble slices independently
+>
+> Actionable scope:
+> 1. Add `pftui analytics asset <SYMBOL> --json`
+> 2. Return spot price, OHLCV stats, technical snapshot, key levels, technical signals,
+>    correlations, regime context, scenario/trend/structural impacts, alerts, and freshness
+> 3. Reuse the same view model in CLI, web, and future agent integrations
+> 4. Treat this as the default AI consumption surface for market analysis
+
+### F52: Refresh DAG, Parallelism, And Source Policies
+
+> Vision fit: an always-on aggregator needs a scheduler and dependency graph, not just a long sequential refresh pass.
+>
+> Current gap:
+> - `data refresh` is centralized, but much of it is still sequential and monolithic
+> - freshness windows are hardcoded in command logic
+> - source priorities and retry/backoff policies are not explicit
+>
+> Actionable scope:
+> 1. Refactor refresh into a dependency-aware job graph
+> 2. Parallelize safe source fetches with bounded concurrency and per-provider backoff
+> 3. Move freshness thresholds and cadence policies into config/runtime policy structs
+> 4. Emit structured refresh metrics: duration, failures, fallbacks, cached reuse, symbols updated
+> 5. Add `pftui data refresh --json` summary output for agents and observability
+
 ### F39.7b: Historical Power Metrics Data Population (Sentinel)
 
 > After dev cron ships F39.7 CLI + schema, spawn a research sub-agent to populate

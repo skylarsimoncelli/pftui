@@ -70,7 +70,7 @@ Use `read --offset N --limit M` to read specific line ranges instead of full fil
 ## Module Index
 
 ### Data Layer
-`db/schema.rs` (migrations) · `db/transactions.rs` (CRUD) · `db/price_cache.rs` (spot cache) · `db/price_history.rs` (daily history, merge) · `db/allocations.rs` (% mode) · `db/watchlist.rs`
+`db/schema.rs` (migrations) · `db/transactions.rs` (CRUD) · `db/price_cache.rs` (spot cache) · `db/price_history.rs` (daily history, merge) · `db/technical_snapshots.rs` (persisted technical state) · `db/allocations.rs` (% mode) · `db/watchlist.rs`
 
 ### Models
 `models/position.rs` (Position, compute_positions) · `models/transaction.rs` (Transaction, TxType) · `models/asset.rs` (AssetCategory, PriceProvider) · `models/asset_names.rs` (130+ symbols, infer_category, search) · `models/price.rs` (PriceQuote, HistoryRecord)

@@ -9,18 +9,19 @@ use serde::Serialize;
 
 use crate::alerts::AlertStatus;
 use crate::analytics::risk;
+use crate::analytics::technicals::{
+    load_or_compute_snapshots, load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME,
+};
 use crate::config::{Config, PortfolioMode};
-use crate::db::backend::BackendConnection;
 use crate::db::allocations::list_allocations;
+use crate::db::backend::BackendConnection;
 use crate::db::economic_cache;
 use crate::db::price_cache::{get_all_cached_prices, get_cached_price};
 use crate::db::price_history::{get_history, get_prices_at_date};
 use crate::db::snapshots::get_all_portfolio_snapshots;
+use crate::db::technical_snapshots::TechnicalSnapshotRecord;
 use crate::db::transactions::list_transactions;
 use crate::indicators::correlation::compute_rolling_correlation;
-use crate::indicators::macd::{compute_macd, MacdResult};
-use crate::indicators::rsi::compute_rsi;
-use crate::indicators::sma::compute_sma;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
@@ -262,9 +263,9 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
                             "neutral".to_string()
                         }
                     }),
-                    macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
-                    macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
-                    macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                    macd: t.macd.map(|v| format!("{:.4}", v)),
+                    macd_signal: t.macd_signal.map(|v| format!("{:.4}", v)),
+                    macd_histogram: t.macd_histogram.map(|v| format!("{:.4}", v)),
                     sma_20: None, // Not available in current TechnicalSnapshot
                     sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
                 });
@@ -341,7 +342,8 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
 
 fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Result<()> {
     let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> = cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
@@ -397,7 +399,11 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         total_cost: total_cost.to_string(),
         total_gain: total_gain.to_string(),
         total_gain_pct: total_gain_pct.round_dp(2).to_string(),
-        daily_pnl: if has_daily { Some(daily_pnl.to_string()) } else { None },
+        daily_pnl: if has_daily {
+            Some(daily_pnl.to_string())
+        } else {
+            None
+        },
         daily_pnl_pct: daily_pnl_pct.map(|p| p.round_dp(2).to_string()),
         base_currency: base.to_string(),
     };
@@ -405,34 +411,49 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
     let positions_json: Vec<PositionJson> = positions
         .iter()
         .map(|pos| {
-            let daily_change = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
-                if prev > dec!(0) { Some((current - prev) * pos.quantity) } else { None }
+            let daily_change = if let (Some(current), Some(&prev)) =
+                (pos.current_price, hist_1d.get(&pos.symbol))
+            {
+                if prev > dec!(0) {
+                    Some((current - prev) * pos.quantity)
+                } else {
+                    None
+                }
             } else {
                 None
             };
-            let daily_change_pct = if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+            let daily_change_pct = if let (Some(current), Some(&prev)) =
+                (pos.current_price, hist_1d.get(&pos.symbol))
+            {
                 pct_change(current, prev)
             } else {
                 None
             };
             let allocation_pct = if total_value > dec!(0) {
-                pos.current_value.map(|v| ((v / total_value) * dec!(100)).round_dp(2))
+                pos.current_value
+                    .map(|v| ((v / total_value) * dec!(100)).round_dp(2))
             } else {
                 None
             };
-            let technicals_json = technicals_data.get(&pos.symbol).map(|t| TechnicalSnapshotJson {
-                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
-                rsi_signal: t.rsi_14.map(|v| {
-                    if v > 70.0 { "overbought".to_string() }
-                    else if v < 30.0 { "oversold".to_string() }
-                    else { "neutral".to_string() }
-                }),
-                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
-                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
-                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
-                sma_20: None,
-                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
-            });
+            let technicals_json = technicals_data
+                .get(&pos.symbol)
+                .map(|t| TechnicalSnapshotJson {
+                    rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                    rsi_signal: t.rsi_14.map(|v| {
+                        if v > 70.0 {
+                            "overbought".to_string()
+                        } else if v < 30.0 {
+                            "oversold".to_string()
+                        } else {
+                            "neutral".to_string()
+                        }
+                    }),
+                    macd: t.macd.map(|v| format!("{:.4}", v)),
+                    macd_signal: t.macd_signal.map(|v| format!("{:.4}", v)),
+                    macd_histogram: t.macd_histogram.map(|v| format!("{:.4}", v)),
+                    sma_20: None,
+                    sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+                });
 
             PositionJson {
                 symbol: pos.symbol.clone(),
@@ -502,24 +523,31 @@ fn get_watchlist_json_backend(
         .iter()
         .map(|w| {
             let current_price = prices.get(&w.symbol).copied();
-            let daily_change_pct = if let (Some(current), Some(&prev)) = (current_price, hist_1d.get(&w.symbol)) {
-                pct_change(current, prev)
-            } else {
-                None
-            };
-            let technicals_json = technicals_data.get(&w.symbol).map(|t| TechnicalSnapshotJson {
-                rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
-                rsi_signal: t.rsi_14.map(|v| {
-                    if v > 70.0 { "overbought".to_string() }
-                    else if v < 30.0 { "oversold".to_string() }
-                    else { "neutral".to_string() }
-                }),
-                macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
-                macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
-                macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
-                sma_20: None,
-                sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
-            });
+            let daily_change_pct =
+                if let (Some(current), Some(&prev)) = (current_price, hist_1d.get(&w.symbol)) {
+                    pct_change(current, prev)
+                } else {
+                    None
+                };
+            let technicals_json = technicals_data
+                .get(&w.symbol)
+                .map(|t| TechnicalSnapshotJson {
+                    rsi: t.rsi_14.map(|v| format!("{:.1}", v)),
+                    rsi_signal: t.rsi_14.map(|v| {
+                        if v > 70.0 {
+                            "overbought".to_string()
+                        } else if v < 30.0 {
+                            "oversold".to_string()
+                        } else {
+                            "neutral".to_string()
+                        }
+                    }),
+                    macd: t.macd.map(|v| format!("{:.4}", v)),
+                    macd_signal: t.macd_signal.map(|v| format!("{:.4}", v)),
+                    macd_histogram: t.macd_histogram.map(|v| format!("{:.4}", v)),
+                    sma_20: None,
+                    sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
+                });
             WatchlistItemJson {
                 symbol: w.symbol.clone(),
                 name: resolve_name(&w.symbol),
@@ -544,11 +572,22 @@ fn get_macro_json_backend(backend: &BackendConnection) -> Result<serde_json::Val
         ("HG=F", "Copper"),
     ];
     for (symbol, name) in macro_symbols {
-        if let Ok(Some(quote)) = crate::db::price_cache::get_cached_price_backend(backend, symbol, "USD") {
+        if let Ok(Some(quote)) =
+            crate::db::price_cache::get_cached_price_backend(backend, symbol, "USD")
+        {
             let mut item = serde_json::Map::new();
-            item.insert("name".to_string(), serde_json::Value::String(name.to_string()));
-            item.insert("price".to_string(), serde_json::Value::String(quote.price.to_string()));
-            item.insert("fetched_at".to_string(), serde_json::Value::String(quote.fetched_at));
+            item.insert(
+                "name".to_string(),
+                serde_json::Value::String(name.to_string()),
+            );
+            item.insert(
+                "price".to_string(),
+                serde_json::Value::String(quote.price.to_string()),
+            );
+            item.insert(
+                "fetched_at".to_string(),
+                serde_json::Value::String(quote.fetched_at),
+            );
             macro_map.insert(symbol.to_string(), serde_json::Value::Object(item));
         }
     }
@@ -586,7 +625,8 @@ fn get_drift_json_backend(backend: &BackendConnection) -> Result<serde_json::Val
         anyhow::bail!("No allocations (not in percentage mode)");
     }
     let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> = cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
     let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let positions = compute_positions_from_allocations(&allocs, &prices, &fx_rates);
     let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
@@ -635,7 +675,8 @@ fn get_regime_json_backend(backend: &BackendConnection) -> Result<serde_json::Va
 }
 
 fn get_news_summary_json_backend(backend: &BackendConnection) -> Result<Vec<serde_json::Value>> {
-    let items = crate::db::news_cache::get_latest_news_backend(backend, 10, None, None, None, None)?;
+    let items =
+        crate::db::news_cache::get_latest_news_backend(backend, 10, None, None, None, None)?;
     Ok(items
         .into_iter()
         .map(|n| serde_json::json!({
@@ -649,14 +690,16 @@ fn get_economic_data_json_backend(backend: &BackendConnection) -> Result<Vec<ser
     let rows = crate::db::economic_data::get_all_backend(backend)?;
     Ok(rows
         .into_iter()
-        .map(|r| serde_json::json!({
-            "indicator": r.indicator,
-            "value": r.value.to_string(),
-            "previous": r.previous.map(|v| v.to_string()),
-            "change": r.change.map(|v| v.to_string()),
-            "source_url": r.source_url,
-            "fetched_at": r.fetched_at,
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "indicator": r.indicator,
+                "value": r.value.to_string(),
+                "previous": r.previous.map(|v| v.to_string()),
+                "change": r.change.map(|v| v.to_string()),
+                "source_url": r.source_url,
+                "fetched_at": r.fetched_at,
+            })
+        })
         .collect())
 }
 
@@ -728,9 +771,9 @@ fn get_watchlist_json(
                             "neutral".to_string()
                         }
                     }),
-                    macd: t.macd.as_ref().map(|m| format!("{:.4}", m.macd)),
-                    macd_signal: t.macd.as_ref().map(|m| format!("{:.4}", m.signal)),
-                    macd_histogram: t.macd.as_ref().map(|m| format!("{:.4}", m.histogram)),
+                    macd: t.macd.map(|v| format!("{:.4}", v)),
+                    macd_signal: t.macd_signal.map(|v| format!("{:.4}", v)),
+                    macd_histogram: t.macd_histogram.map(|v| format!("{:.4}", v)),
                     sma_20: None,
                     sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
                 });
@@ -1241,7 +1284,9 @@ pub fn run_backend(
     cached_only: bool,
 ) -> Result<()> {
     match backend {
-        BackendConnection::Sqlite { conn } => run_internal(conn, config, technicals, agent, cached_only),
+        BackendConnection::Sqlite { conn } => {
+            run_internal(conn, config, technicals, agent, cached_only)
+        }
         BackendConnection::Postgres { .. } => {
             run_backend_native(backend, config, technicals, agent, cached_only)
         }
@@ -1263,7 +1308,8 @@ fn run_backend_native(
     }
 
     let cached = crate::db::price_cache::get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> = cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
     let today = Utc::now().date_naive();
     let yesterday = today - chrono::Duration::days(1);
     let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
@@ -1279,7 +1325,9 @@ fn run_backend_native(
     };
 
     match config.portfolio_mode {
-        PortfolioMode::Full => run_full_backend(backend, config, &prices, &hist_1d, &technicals_data),
+        PortfolioMode::Full => {
+            run_full_backend(backend, config, &prices, &hist_1d, &technicals_data)
+        }
         PortfolioMode::Percentage => {
             run_percentage_backend(backend, config, &prices, &hist_1d, &technicals_data)
         }
@@ -1525,7 +1573,10 @@ fn run_full_backend(
     let total_gain = total_value - total_cost;
     let total_gain_pct = pct_change(total_value, total_cost).unwrap_or(dec!(0));
     let base = &config.base_currency;
-    let priced_count = positions.iter().filter(|p| p.current_price.is_some()).count();
+    let priced_count = positions
+        .iter()
+        .filter(|p| p.current_price.is_some())
+        .count();
     let total_count = positions.len();
 
     let mut daily_pnl = dec!(0);
@@ -1590,7 +1641,10 @@ fn run_full_backend(
     }
     if priced_count < total_count {
         let missing = total_count - priced_count;
-        println!("\n> ⚠️ {}/{} positions missing prices. Run `pftui refresh`.", missing, total_count);
+        println!(
+            "\n> ⚠️ {}/{} positions missing prices. Run `pftui refresh`.",
+            missing, total_count
+        );
     }
     Ok(())
 }
@@ -1611,7 +1665,10 @@ fn run_percentage_backend(
     let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
     let base = &config.base_currency;
 
-    let priced: Vec<_> = positions.iter().filter(|p| p.current_price.is_some()).collect();
+    let priced: Vec<_> = positions
+        .iter()
+        .filter(|p| p.current_price.is_some())
+        .collect();
     if priced.is_empty() {
         println!("# Portfolio Brief\n\nNo prices cached. Run `pftui refresh` first.");
         return Ok(());
@@ -1633,10 +1690,20 @@ fn run_percentage_backend(
     println!("| Symbol | Category | Price | 1D | Alloc |");
     println!("|--------|----------|------:|---:|------:|");
     for pos in &positions {
-        let price_str = pos.current_price.map(|p| fmt_currency(p, 2, base)).unwrap_or_else(|| "N/A".to_string());
-        let alloc_str = pos.allocation_pct.map(|a| format!("{:.1}%", a)).unwrap_or_else(|| "—".to_string());
+        let price_str = pos
+            .current_price
+            .map(|p| fmt_currency(p, 2, base))
+            .unwrap_or_else(|| "N/A".to_string());
+        let alloc_str = pos
+            .allocation_pct
+            .map(|a| format!("{:.1}%", a))
+            .unwrap_or_else(|| "—".to_string());
         let name = resolve_name(&pos.symbol);
-        let symbol_display = if name.is_empty() { pos.symbol.clone() } else { format!("{} ({})", pos.symbol, name) };
+        let symbol_display = if name.is_empty() {
+            pos.symbol.clone()
+        } else {
+            format!("{} ({})", pos.symbol, name)
+        };
         let day_str = if pos.category == AssetCategory::Cash {
             "—".to_string()
         } else {
@@ -1648,7 +1715,10 @@ fn run_percentage_backend(
                 _ => "—".to_string(),
             }
         };
-        println!("| {} | {} | {} | {} | {} |", symbol_display, pos.category, price_str, day_str, alloc_str);
+        println!(
+            "| {} | {} | {} | {} | {} |",
+            symbol_display, pos.category, price_str, day_str, alloc_str
+        );
     }
 
     if !technicals_data.is_empty() {
@@ -1656,7 +1726,11 @@ fn run_percentage_backend(
     }
     let missing = positions.len() - priced.len();
     if missing > 0 {
-        println!("\n> ⚠️ {}/{} positions missing prices. Run `pftui refresh`.", missing, positions.len());
+        println!(
+            "\n> ⚠️ {}/{} positions missing prices. Run `pftui refresh`.",
+            missing,
+            positions.len()
+        );
     }
     Ok(())
 }
@@ -1700,7 +1774,8 @@ fn print_risk_summary(conn: &Connection, positions: &[Position]) {
 }
 
 fn print_risk_summary_backend(backend: &BackendConnection, positions: &[Position]) {
-    let snapshots = crate::db::snapshots::get_all_portfolio_snapshots_backend(backend).unwrap_or_default();
+    let snapshots =
+        crate::db::snapshots::get_all_portfolio_snapshots_backend(backend).unwrap_or_default();
     let portfolio_values: Vec<Decimal> = snapshots.iter().map(|s| s.total_value).collect();
 
     let live_values: Vec<Decimal> = positions.iter().filter_map(|p| p.current_value).collect();
@@ -1742,13 +1817,7 @@ fn print_risk_summary_backend(backend: &BackendConnection, positions: &[Position
 // ──────────────────────────────────────────────────────────────
 
 /// Snapshot of technical indicator values for a single symbol.
-#[derive(Debug)]
-struct TechnicalSnapshot {
-    rsi_14: Option<f64>,
-    macd: Option<MacdResult>,
-    sma_50: Option<f64>,
-    sma_200: Option<f64>,
-}
+type TechnicalSnapshot = TechnicalSnapshotRecord;
 
 /// Label the RSI value for quick reading.
 fn rsi_label(rsi: f64) -> &'static str {
@@ -1762,10 +1831,10 @@ fn rsi_label(rsi: f64) -> &'static str {
 }
 
 /// Label the MACD signal.
-fn macd_label(m: &MacdResult) -> &'static str {
-    if m.histogram > 0.0 {
+fn macd_label(histogram: f64) -> &'static str {
+    if histogram > 0.0 {
         "bullish"
-    } else if m.histogram < 0.0 {
+    } else if histogram < 0.0 {
         "bearish"
     } else {
         "neutral"
@@ -1777,87 +1846,14 @@ fn compute_technicals_for_symbols(
     conn: &Connection,
     symbols: &[String],
 ) -> HashMap<String, TechnicalSnapshot> {
-    let mut result = HashMap::new();
-
-    for symbol in symbols {
-        // Need at least 200 days for SMA-200; fetch 250 to be safe
-        let history = match get_history(conn, symbol, 250) {
-            Ok(h) if h.len() >= 14 => h,
-            _ => continue,
-        };
-
-        let closes: Vec<f64> = history
-            .iter()
-            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
-            .collect();
-
-        let rsi_values = compute_rsi(&closes, 14);
-        let rsi_14 = rsi_values.iter().rev().find_map(|v| *v);
-
-        let macd_values = compute_macd(&closes, 12, 26, 9);
-        let macd = macd_values.iter().rev().find_map(|v| *v);
-
-        let sma_50_values = compute_sma(&closes, 50);
-        let sma_50 = sma_50_values.iter().rev().find_map(|v| *v);
-
-        let sma_200_values = compute_sma(&closes, 200);
-        let sma_200 = sma_200_values.iter().rev().find_map(|v| *v);
-
-        result.insert(
-            symbol.clone(),
-            TechnicalSnapshot {
-                rsi_14,
-                macd,
-                sma_50,
-                sma_200,
-            },
-        );
-    }
-
-    result
+    load_or_compute_snapshots(conn, symbols, DEFAULT_TIMEFRAME)
 }
 
 fn compute_technicals_for_symbols_backend(
     backend: &BackendConnection,
     symbols: &[String],
 ) -> HashMap<String, TechnicalSnapshot> {
-    let mut result = HashMap::new();
-
-    for symbol in symbols {
-        let history = match crate::db::price_history::get_history_backend(backend, symbol, 250) {
-            Ok(h) if h.len() >= 14 => h,
-            _ => continue,
-        };
-
-        let closes: Vec<f64> = history
-            .iter()
-            .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
-            .collect();
-
-        let rsi_values = compute_rsi(&closes, 14);
-        let rsi_14 = rsi_values.iter().rev().find_map(|v| *v);
-
-        let macd_values = compute_macd(&closes, 12, 26, 9);
-        let macd = macd_values.iter().rev().find_map(|v| *v);
-
-        let sma_50_values = compute_sma(&closes, 50);
-        let sma_50 = sma_50_values.iter().rev().find_map(|v| *v);
-
-        let sma_200_values = compute_sma(&closes, 200);
-        let sma_200 = sma_200_values.iter().rev().find_map(|v| *v);
-
-        result.insert(
-            symbol.clone(),
-            TechnicalSnapshot {
-                rsi_14,
-                macd,
-                sma_50,
-                sma_200,
-            },
-        );
-    }
-
-    result
+    load_or_compute_snapshots_backend(backend, symbols, DEFAULT_TIMEFRAME)
 }
 
 /// Print a technicals section for all positions that have indicator data.
@@ -1897,14 +1893,14 @@ fn print_technicals_section(
 
         let macd_str = snap
             .macd
-            .map(|m| format!("{:.2}", m.macd))
+            .map(|m| format!("{:.2}", m))
             .unwrap_or_else(|| "—".to_string());
 
         let hist_str = snap
-            .macd
-            .map(|m| {
-                let sign = if m.histogram >= 0.0 { "+" } else { "" };
-                format!("{}{:.2} ({})", sign, m.histogram, macd_label(&m))
+            .macd_histogram
+            .map(|hist| {
+                let sign = if hist >= 0.0 { "+" } else { "" };
+                format!("{}{:.2} ({})", sign, hist, macd_label(hist))
             })
             .unwrap_or_else(|| "—".to_string());
 
@@ -2106,7 +2102,10 @@ fn print_correlation_summary_backend(backend: &BackendConnection, positions: &[P
     if !summary.top_pairs.is_empty() {
         println!("**Top Pairs (30d):**");
         for pair in summary.top_pairs.iter().take(5) {
-            println!("- {}-{}: {:+.2}", pair.symbol_a, pair.symbol_b, pair.corr_30d);
+            println!(
+                "- {}-{}: {:+.2}",
+                pair.symbol_a, pair.symbol_b, pair.corr_30d
+            );
         }
     }
 
@@ -2278,7 +2277,9 @@ fn compute_correlation_summary_backend(
 
     let mut price_map: HashMap<String, Vec<f64>> = HashMap::new();
     for symbol in &symbols {
-        if let Ok(history) = crate::db::price_history::get_history_backend(backend, symbol, WINDOW_LONG as u32 + 40) {
+        if let Ok(history) =
+            crate::db::price_history::get_history_backend(backend, symbol, WINDOW_LONG as u32 + 40)
+        {
             let closes: Vec<f64> = history
                 .into_iter()
                 .map(|r| r.close.to_string().parse::<f64>().unwrap_or(0.0))
@@ -2466,7 +2467,10 @@ fn print_alerts_backend(backend: &BackendConnection) {
                 .current_value
                 .map(|v| v.round_dp(2).to_string())
                 .unwrap_or_else(|| "N/A".to_string());
-            println!("🔴 **TRIGGERED** — {} (current: {})", result.rule.rule_text, current);
+            println!(
+                "🔴 **TRIGGERED** — {} (current: {})",
+                result.rule.rule_text, current
+            );
         }
     }
     if !armed_near.is_empty() {
@@ -3067,14 +3071,28 @@ mod tests {
         technicals.insert(
             "AAPL".to_string(),
             TechnicalSnapshot {
+                symbol: "AAPL".to_string(),
+                timeframe: DEFAULT_TIMEFRAME.to_string(),
                 rsi_14: Some(55.0),
-                macd: Some(MacdResult {
-                    macd: 1.5,
-                    signal: 1.0,
-                    histogram: 0.5,
-                }),
+                macd: Some(1.5),
+                macd_signal: Some(1.0),
+                macd_histogram: Some(0.5),
+                sma_20: Some(195.0),
                 sma_50: Some(190.0),
                 sma_200: Some(175.0),
+                bollinger_upper: None,
+                bollinger_middle: None,
+                bollinger_lower: None,
+                range_52w_low: None,
+                range_52w_high: None,
+                range_52w_position: None,
+                volume_avg_20: None,
+                volume_ratio_20: None,
+                volume_regime: None,
+                above_sma_20: None,
+                above_sma_50: None,
+                above_sma_200: None,
+                computed_at: "2026-03-17T00:00:00Z".to_string(),
             },
         );
 
@@ -3110,24 +3128,9 @@ mod tests {
 
     #[test]
     fn macd_label_categories() {
-        let bullish = MacdResult {
-            macd: 1.0,
-            signal: 0.5,
-            histogram: 0.5,
-        };
-        assert_eq!(macd_label(&bullish), "bullish");
-        let bearish = MacdResult {
-            macd: -1.0,
-            signal: -0.5,
-            histogram: -0.5,
-        };
-        assert_eq!(macd_label(&bearish), "bearish");
-        let neutral = MacdResult {
-            macd: 0.0,
-            signal: 0.0,
-            histogram: 0.0,
-        };
-        assert_eq!(macd_label(&neutral), "neutral");
+        assert_eq!(macd_label(0.5), "bullish");
+        assert_eq!(macd_label(-0.5), "bearish");
+        assert_eq!(macd_label(0.0), "neutral");
     }
 
     #[test]
