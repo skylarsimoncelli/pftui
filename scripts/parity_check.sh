@@ -101,14 +101,14 @@ normalize_json() {
   ' "$in_file" >"$out_file"
 }
 
-run_in_env "$sqlite_cfg_home" "$sqlite_data_home" "$PFTUI_BIN" import "$snapshot_json" --mode replace >/dev/null
-run_in_env "$pg_cfg_home" "$pg_data_home" "$PFTUI_BIN" import "$snapshot_json" --mode replace >/dev/null
+run_in_env "$sqlite_cfg_home" "$sqlite_data_home" "$PFTUI_BIN" system import "$snapshot_json" --mode replace >/dev/null
+run_in_env "$pg_cfg_home" "$pg_data_home" "$PFTUI_BIN" system import "$snapshot_json" --mode replace >/dev/null
 
 commands=(
-  "value --json"
-  "summary --json"
-  "watchlist --json"
-  "drift --json"
+  "portfolio value --json"
+  "portfolio summary --json"
+  "portfolio watchlist --json"
+  "portfolio drift --json"
 )
 
 failures=0
