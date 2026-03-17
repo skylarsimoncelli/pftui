@@ -220,8 +220,7 @@ fn import_replace(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()
             Ok(())
         },
         |pool| {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(async {
+            crate::db::pg_runtime::block_on(async {
                 sqlx::query("DELETE FROM transactions")
                     .execute(pool)
                     .await?;
@@ -373,19 +372,17 @@ mod tests {
                 Ok(())
             },
             |pool| {
-                let runtime = tokio::runtime::Runtime::new().expect("runtime");
-                runtime
-                    .block_on(async {
-                        sqlx::query("DELETE FROM transactions")
-                            .execute(pool)
-                            .await?;
-                        sqlx::query("DELETE FROM portfolio_allocations")
-                            .execute(pool)
-                            .await?;
-                        sqlx::query("DELETE FROM watchlist").execute(pool).await?;
-                        Ok::<(), sqlx::Error>(())
-                    })
-                    .expect("clear tables");
+                crate::db::pg_runtime::block_on(async {
+                    sqlx::query("DELETE FROM transactions")
+                        .execute(pool)
+                        .await?;
+                    sqlx::query("DELETE FROM portfolio_allocations")
+                        .execute(pool)
+                        .await?;
+                    sqlx::query("DELETE FROM watchlist").execute(pool).await?;
+                    Ok::<(), sqlx::Error>(())
+                })
+                .expect("clear tables");
                 Ok(())
             },
         )

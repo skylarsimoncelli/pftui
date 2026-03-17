@@ -86,8 +86,7 @@ fn entry_exists(backend: &BackendConnection, timestamp: &str, content: &str) -> 
             Ok(count)
         },
         |pool| {
-            let runtime = tokio::runtime::Runtime::new()?;
-            let count = runtime.block_on(async {
+            let count = crate::db::pg_runtime::block_on(async {
                 sqlx::query_scalar::<_, i64>(
                     "SELECT COUNT(*) FROM journal WHERE timestamp = $1 AND content = $2",
                 )
