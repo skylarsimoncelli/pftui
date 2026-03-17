@@ -126,22 +126,30 @@ struct DashboardView: View {
 
 struct PortfolioView: View {
     @EnvironmentObject private var store: MobileStore
+    @AppStorage("pftui.mobile.maskValues") private var maskValues = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
+                    Button {
+                        maskValues.toggle()
+                    } label: {
+                        Image(systemName: maskValues ? "eye.slash.fill" : "eye.fill")
+                    }
+                    .buttonStyle(SecondaryIconButtonStyle())
+
                     Spacer()
-                    Button(store.isBusy ? "Refreshing…" : "Refresh") {
+                    Button(store.isBusy ? "Reloading…" : "Reload") {
                         Task { await store.refresh() }
                     }
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(width: 140)
                 }
-                headerCard(title: store.portfolio?.totalValue?.raw ?? "—",
+                headerCard(title: masked(store.portfolio?.totalValue?.raw),
                            subtitle: "Total Value",
                            delta: store.portfolio?.dailyChangePct?.raw,
-                           deltaPrefix: "1D")
+                           deltaPrefix: "24H")
 
                 if let positions = store.portfolio?.positions {
                     ForEach(positions) { position in
@@ -157,10 +165,10 @@ struct PortfolioView: View {
                                             .foregroundStyle(MobilePalette.textSecondary)
                                     }
                                     Spacer()
-                                    Badge(text: position.gainPct?.raw ?? "—")
+                                    Badge(text: position.dayChangePct?.raw ?? "—")
                                 }
-                                metricRow("Price", position.currentPrice?.raw ?? "—")
-                                metricRow("Value", position.currentValue?.raw ?? "—")
+                                metricRow("Price", masked(position.currentPrice?.raw))
+                                metricRow("Value", masked(position.currentValue?.raw))
                                 metricRow("Allocation", position.allocationPct?.raw ?? "—")
                             }
                         }
@@ -172,6 +180,11 @@ struct PortfolioView: View {
         .background(MobilePalette.bgPrimary)
         .navigationTitle("Portfolio")
     }
+
+    private func masked(_ value: String?) -> String {
+        guard maskValues else { return value ?? "—" }
+        return "••••"
+    }
 }
 
 struct AnalyticsView: View {
@@ -180,63 +193,79 @@ struct AnalyticsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                headerCard(title: store.analytics?.summary.totalValue?.raw ?? "—",
-                           subtitle: "Tracked Value",
-                           delta: store.analytics?.performance.metrics.totalReturnPct?.raw,
-                           deltaPrefix: "Return")
-
-                card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Top Movers")
-                            .font(.headline)
-                            .foregroundStyle(MobilePalette.textPrimary)
-                        ForEach(store.analytics?.summary.topMovers ?? []) { mover in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(mover.symbol)
-                                        .foregroundStyle(MobilePalette.textPrimary)
-                                    Text(mover.name)
-                                        .font(.caption)
-                                        .foregroundStyle(MobilePalette.textSecondary)
-                                }
-                                Spacer()
-                                Badge(text: mover.gainPct?.raw ?? "—")
-                            }
-                        }
-                    }
-                }
-
-                card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Macro Pulse")
-                            .font(.headline)
-                            .foregroundStyle(MobilePalette.textPrimary)
-                        ForEach(store.analytics?.macroView.topMovers ?? []) { item in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(item.name)
-                                        .foregroundStyle(MobilePalette.textPrimary)
-                                    Text(item.symbol)
-                                        .font(.caption)
-                                        .foregroundStyle(MobilePalette.textSecondary)
-                                }
-                                Spacer()
-                                VStack(alignment: .trailing) {
-                                    Text(item.value?.raw ?? "—")
-                                        .foregroundStyle(MobilePalette.textPrimary)
-                                    Text(item.changePct?.raw ?? "—")
-                                        .font(.caption)
-                                        .foregroundStyle(MobilePalette.textSecondary)
-                                }
-                            }
-                        }
-                    }
+                ForEach(store.analytics?.timeframes ?? []) { timeframe in
+                    TimeframeScoreCard(timeframe: timeframe)
                 }
             }
             .padding(16)
         }
         .background(MobilePalette.bgPrimary)
         .navigationTitle("Analytics")
+    }
+}
+
+struct TimeframeScoreCard: View {
+    let timeframe: TimeframePayload
+
+    var body: some View {
+        card {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(timeframe.label)
+                        .font(.headline)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                    Spacer()
+                    Text(String(format: "%.0f", timeframe.score))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(scoreColor)
+                }
+
+                ScoreBar(score: timeframe.score)
+
+                Text(timeframe.summary ?? "No score set yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(MobilePalette.textSecondary)
+            }
+        }
+    }
+
+    private var scoreColor: Color {
+        if timeframe.score > 15 {
+            return MobilePalette.green
+        }
+        if timeframe.score < -15 {
+            return MobilePalette.red
+        }
+        return MobilePalette.textSecondary
+    }
+}
+
+struct ScoreBar: View {
+    let score: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let normalized = CGFloat((score + 100.0) / 200.0).clamped(to: 0...1)
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(
+                        LinearGradient(
+                            colors: [MobilePalette.red, Color.yellow, MobilePalette.green],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 14)
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.95))
+                    .frame(width: 2, height: 22)
+                    .offset(x: width * normalized - 1)
+            }
+        }
+        .frame(height: 22)
     }
 }
 
@@ -284,6 +313,18 @@ struct PrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Color.black)
             .font(.headline)
             .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+struct SecondaryIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(MobilePalette.textPrimary)
+            .padding(10)
+            .background(MobilePalette.bgSecondary)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(MobilePalette.border))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
     }
 }
 
@@ -343,4 +384,10 @@ private func metricRow(_ title: String, _ value: String) -> some View {
             .foregroundStyle(MobilePalette.textPrimary)
     }
     .font(.subheadline)
+}
+
+private extension CGFloat {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+    }
 }
