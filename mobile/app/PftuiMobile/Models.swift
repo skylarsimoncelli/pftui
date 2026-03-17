@@ -32,11 +32,8 @@ struct ConnectionSettings: Codable, Equatable {
 
 struct PortfolioPayload: Decodable {
     let totalValue: FlexValue?
-    let totalCost: FlexValue
-    let totalGain: FlexValue?
-    let totalGainPct: FlexValue?
-    let dailyChange: FlexValue?
     let dailyChangePct: FlexValue?
+    let positionCount: Int
     let positions: [PositionPayload]
 }
 
@@ -45,56 +42,21 @@ struct PositionPayload: Decodable, Identifiable {
     let symbol: String
     let name: String
     let category: String
-    let quantity: FlexValue
-    let avgCost: FlexValue
-    let totalCost: FlexValue
-    let currency: String
     let currentPrice: FlexValue?
     let currentValue: FlexValue?
-    let gain: FlexValue?
-    let gainPct: FlexValue?
     let allocationPct: FlexValue?
+    let dayChangePct: FlexValue?
 }
 
 struct AnalyticsPayload: Decodable {
-    let summary: SummaryPayload
-    let macroView: MacroPayload
-    let performance: PerformancePayload
+    let timeframes: [TimeframePayload]
 }
 
-struct SummaryPayload: Decodable {
-    let totalValue: FlexValue?
-    let positionCount: Int
-    let topMovers: [PositionPayload]
-}
-
-struct MacroPayload: Decodable {
-    let indicators: [MacroIndicatorPayload]
-    let topMovers: [MacroIndicatorPayload]
-}
-
-struct MacroIndicatorPayload: Decodable, Identifiable {
-    var id: String { symbol }
-    let symbol: String
-    let name: String
-    let value: FlexValue?
-    let changePct: FlexValue?
-}
-
-struct PerformancePayload: Decodable {
-    let dailyValues: [PortfolioValuePoint]
-    let metrics: PerformanceMetricsPayload
-    let estimated: Bool
-    let source: String
-}
-
-struct PortfolioValuePoint: Decodable, Identifiable {
-    var id: String { date }
-    let date: String
-    let value: FlexValue
-}
-
-struct PerformanceMetricsPayload: Decodable {
-    let totalReturnPct: FlexValue?
-    let maxDrawdownPct: FlexValue?
+struct TimeframePayload: Decodable, Identifiable {
+    var id: String { timeframe }
+    let timeframe: String
+    let label: String
+    let score: Double
+    let summary: String?
+    let updatedAt: String?
 }
