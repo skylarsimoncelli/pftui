@@ -205,19 +205,14 @@ A quick look at pftui across the terminal UI, web dashboard, analytics views, an
 
 <table>
   <tr>
-    <td align="center"><img width="400" alt="pftui portfolio overview" src="https://github.com/user-attachments/assets/8d3e2c8d-09aa-4fdf-9ef8-bed770a6ee12" /><br><sub>portfolio overview</sub></td>
-    <td align="center"><img width="400" alt="pftui tx overview" src="https://github.com/user-attachments/assets/d77a5792-afbc-49c1-a76c-33c2a9d74965" /><br><sub>transactions</sub></td>
-    <td align="center"><img width="400" alt="pftui market economy overview" src="https://github.com/user-attachments/assets/97b9816c-4dd3-4660-b728-f194f56204a3" /><br><sub>economy</sub></td>
+    <td align="center"><img width="400" alt="pftui portfolio overview" src="https://github.com/user-attachments/assets/7cc1b734-d570-4309-ba0f-1c2554775245" /><br><sub>portfolio overview</sub></td>
+    <td align="center"><img width="400" alt="pftui tx overview" src="https://github.com/user-attachments/assets/a5a6ebdc-8f7d-4585-a081-d16a64926593" /><br><sub>transactions</sub></td>
+    <td align="center"><img width="400" alt="pftui market economy overview" src="https://github.com/user-attachments/assets/3c201a5f-44d2-46a7-aa87-a29af37bcb4d" /><br><sub>economy</sub></td>
   </tr>
   <tr>
-    <td align="center"><img width="400" alt="pftui analytics" src="https://github.com/user-attachments/assets/061b9ead-2f73-4e74-bf0b-682720ddafaa" /><br><sub>analytics</sub></td>
+    <td align="center"><img width="400" alt="pftui analytics" src="https://github.com/user-attachments/assets/2a2fb8d9-baad-4f29-8613-6ddcc2786c85" /><br><sub>analytics</sub></td>
     <td align="center"><img width="400" alt="pftui system web" src="https://github.com/user-attachments/assets/78043f32-c9a2-4ab4-b5fc-b01c7b9c23bd" /><br><sub>web dashboard</sub></td>
     <td align="center"><img width="400" alt="pftui system web search" src="https://github.com/user-attachments/assets/314e4898-3514-4293-80f2-e4606d92f05e" /><br><sub>web search</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img width="400" alt="pftui system web economy" src="https://github.com/user-attachments/assets/cea4e33c-f60e-4286-ab66-c4c8b2e2eb5f" /><br><sub>web economy</sub></td>
-    <td align="center"><img width="400" alt="pftui system web asset detail" src="https://github.com/user-attachments/assets/cafe8ce9-7c5b-4876-8599-d8377058a5a6" /><br><sub>web asset detail</sub></td>
-    <td align="center"><img width="400" alt="pftui cli" src="https://github.com/user-attachments/assets/ca929ee4-c999-4dd6-a796-d3442bf03048" /><br><sub>cli</sub></td>
   </tr>
 </table>
 
