@@ -42,6 +42,7 @@ csv = "1"
 anyhow = "1"
 time = "0.3"
 axum = "0.8"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 tokio-util = "0.7"
@@ -50,6 +51,12 @@ scraper = "0.22"
 calamine = "0.33"
 rustyline = "14"
 shlex = "1"
+argon2 = "0.5"
+base64 = "0.22"
+rand = "0.8"
+rcgen = "0.13"
+rustls-pemfile = "2"
+sha2 = "0.10"
 
 [package.metadata.generate-rpm]
 assets = [

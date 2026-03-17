@@ -917,6 +917,11 @@ pub enum SystemCommand {
         #[arg(long)]
         no_auth: bool,
     },
+    /// Native iOS mobile API server controls
+    Mobile {
+        #[command(subcommand)]
+        command: MobileCommand,
+    },
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     #[command(name = "migrate-journal")]
     MigrateJournal {
@@ -939,6 +944,55 @@ pub enum SystemCommand {
         /// Output summary as JSON
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum MobileCommand {
+    /// Enable the mobile API and generate TLS credentials
+    Enable {
+        /// Host to bind to (use 0.0.0.0 for same-WiFi phone access)
+        #[arg(long, default_value = "0.0.0.0")]
+        bind: String,
+
+        /// Port to bind to (default: 9443)
+        #[arg(long, short, default_value = "9443")]
+        port: u16,
+    },
+    /// Disable the mobile API
+    Disable,
+    /// Show mobile API configuration and certificate fingerprint
+    Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage long-lived mobile API tokens
+    Token {
+        #[command(subcommand)]
+        command: MobileTokenCommand,
+    },
+    /// Start the TLS mobile API server
+    Serve,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum MobileTokenPermissionArg {
+    Read,
+    Write,
+}
+
+#[derive(Subcommand)]
+pub enum MobileTokenCommand {
+    /// Generate a new mobile API token and print it once
+    Generate {
+        /// Human-readable token label
+        #[arg(long, default_value = "ios")]
+        name: String,
+
+        /// Token permission scope
+        #[arg(long, value_enum, default_value = "read")]
+        permission: MobileTokenPermissionArg,
     },
 }
 

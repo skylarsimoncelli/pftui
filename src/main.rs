@@ -7,6 +7,7 @@ mod config;
 mod data;
 mod db;
 mod indicators;
+mod mobile;
 mod models;
 mod notify;
 mod price;
@@ -556,6 +557,14 @@ fn main() -> Result<()> {
             Some(Command::System {
                 command: cli::SystemCommand::Web { .. }
             })
+        )
+        || matches!(
+            cli.command,
+            Some(Command::System {
+                command: cli::SystemCommand::Mobile {
+                    command: cli::MobileCommand::Serve,
+                }
+            })
         );
     if should_sync_mirror_on_startup {
         commands::mirror::spawn_startup_sync_if_needed(&config, &db_path);
@@ -761,6 +770,25 @@ fn main() -> Result<()> {
                     .await
                 })
             }
+            cli::SystemCommand::Mobile { command } => match command {
+                cli::MobileCommand::Enable { bind, port } => {
+                    mobile::commands::enable(&config, &bind, port)
+                }
+                cli::MobileCommand::Disable => mobile::commands::disable(&config),
+                cli::MobileCommand::Status { json } => mobile::commands::status(&config, json),
+                cli::MobileCommand::Token { command } => match command {
+                    cli::MobileTokenCommand::Generate { name, permission } => {
+                        mobile::commands::generate_token(&config, &name, permission)
+                    }
+                },
+                cli::MobileCommand::Serve => {
+                    let runtime = tokio::runtime::Runtime::new()?;
+                    runtime.block_on(async {
+                        mobile::server::run_server(db_path.to_string_lossy().to_string(), config)
+                            .await
+                    })
+                }
+            },
             cli::SystemCommand::MigrateJournal {
                 path,
                 dry_run,
