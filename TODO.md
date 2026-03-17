@@ -34,22 +34,28 @@
 
 ## Feedback Summary
 
-**Latest scores per tester (most recent review):**
+**Latest scores per tester (most recent scored review):**
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
 | Morning Market Research | 88% | 82% | Mar 7 | ↑ (Mar 8-9 crash/hang since fixed) |
-| Evening Eventuality Planner | 55% | 68% | Mar 16 | ↓ (missing conviction/regime CLI paths) |
-| Sentinel Main TUI Review | 75% | 72% | Mar 10 | ↓ (display corruption noted) |
+| Evening Eventuality Planner | 55% | 62% | Mar 17 | ↓ (missing `analytics scenario update`, nonexistent subcommands) |
+| Sentinel Main TUI Review | 75% | 72% | Mar 10 | ↓ (display corruption, missing day P&L $) |
+| Market Close | 60% | 72% | Mar 9 | ↕ (movers bug + TIMESTAMPTZ crash, both fixed) |
 
-**Notes:** Morning Research hit 0/15 on Mar 8 (DB crash) and 15/30 on Mar 9 (API hang) — both root causes fixed in v0.7.0+. The Mar 7 score of 88/82 reflects post-fix trajectory. Sentinel dropped from 85/88 (Mar 7) to 75/72 (Mar 10) citing TUI display corruption and missing day P&L dollar column.
+**Notes:**
+- Morning Research Mar 7 score (88/82) represents post-fix trajectory after Mar 8-9 crashes were resolved.
+- Evening Planner dropped on Mar 17: tried `analytics scenario update` (doesn't exist — command lives at `journal scenario update`), and guessed nonexistent `data prices`/`portfolio snapshot` subcommands. Root cause is namespace discoverability, not missing functionality.
+- Mar 16 run added `analytics scenario list --json`, `analytics conviction set`, `analytics macro regime set` aliases — but `analytics scenario update` alias was NOT added. This is the specific gap.
+- Sentinel has requested day P&L in dollars in *every single review since Mar 2* — still the most consistently requested feature.
+- Agent feedback (Mar 12-17) is predominantly P2 enhancement requests, not regressions.
 
 **Top 3 priorities based on feedback:**
 
-1. **TUI display reliability + day P&L $ column** — Sentinel has requested daily P&L in dollars in every single review since Mar 2. This is the most consistently requested feature across all testers.
-2. **Historical macro cycles CLI + data population** — The remaining open work is now concentrated in the long-cycle analytics path under P3.
-3. **Keep release quality green** — `cargo clippy --all-targets -- -D warnings` and the feature-feedback regression tests should stay clean before the next release.
+1. **`analytics scenario update` alias** — Evening Planner hit this on Mar 17. The command exists at `journal scenario update` but `analytics scenario` only has `list`. Add `update` (and other CRUD) as analytics aliases to match the list alias that was already added.
+2. **TUI day P&L $ column** — Sentinel requests this in every review. Most consistently requested feature across all testers since Mar 2.
+3. **Keep release quality green** — `cargo clippy --all-targets -- -D warnings` and test suite should stay clean.
 
-**Release status:** Remaining open work is now P3 only. Current branch validation passes with `cargo test` (1283 tests) and `cargo clippy --all-targets -- -D warnings`.
+**Release status:** v0.12.1 shipped Mar 16. Only P3 items remain in backlog. Build green: `cargo test` (1297 tests), `cargo clippy --all-targets -- -D warnings` clean.
 
-**Homebrew Core:** 0 stars — not eligible (requires 50+).
+**GitHub stars:** 1 — Homebrew Core requires 50+.
