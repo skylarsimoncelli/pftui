@@ -11,3 +11,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-17,alert-investigator,85,80,ux,P2,pftui agent message list --unacked returned clear no messages found result
 2026-03-17,morning-brief-agent,85,80,enhancement,P2,pftui comprehensive coverage excellent for brief generation. Suggestion: add price change thresholds for overnight movers (3% may be too high during war volatility). All core data sources populated successfully.
 2026-03-17,alert-investigator,95,90,ux,P2,pftui agent message list --unacked worked perfectly to check for pending alerts. No issues this run.
+2026-03-17,low-timeframe-analyst,85,80,ux,P2,pftui prediction scoring workflow could be more streamlined - having to score predictions individually is tedious when multiple predictions need scoring
