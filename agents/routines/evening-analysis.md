@@ -43,19 +43,29 @@ pftui journal notes list --json
 5. Read pftui data sources for the full day's picture:
 ```bash
 pftui data news --hours 24 --json         # full day's news
-pftui data fedwatch --json                # rate path probabilities
-pftui data economy --json                 # any new economic data today
-pftui data sentiment --json               # F&G + COT positioning
+pftui data fedwatch --json                # rate path probabilities (with verification warnings)
+pftui data economy --json                 # economic data with surprise detection + deltas
+pftui data sentiment --json               # Fear & Greed indices (crypto + traditional)
+pftui data cot --json                     # COT percentile ranks, z-scores, extreme flags
+pftui data onchain --json                 # BTC exchange reserves, whale activity, MVRV
 pftui data etf-flows --json               # today's ETF flows
 pftui data sovereign --json               # CB gold, govt BTC
+pftui data supply --json                  # COMEX inventory
 pftui data calendar --json                # what events hit today, what's tomorrow
-pftui analytics alerts check --json       # any alerts triggered today
+pftui data consensus list --json          # standing analyst calls for cross-reference
+pftui analytics alerts check --json       # alerts triggered today (RSI/SMA/MACD evaluated)
+pftui analytics scenario list --json      # scenario probabilities
 ```
 
 6. DEEP web research on the 2-3 most important signals from today. Go beyond headlines:
 - Historical parallels, expert analysis, data patterns
 - 3-5 targeted searches for genuine analytical depth
 - Only search for what pftui data doesn't cover: interpretation, context, analysis
+
+When you discover analyst calls or targets via research, persist them for the whole system:
+```bash
+pftui data consensus add --source "[firm]" --topic [topic] --call "[forecast]" --date $(date +%Y-%m-%d)
+```
 
 ## Analysis Structure
 
@@ -129,7 +139,7 @@ pftui journal scenario update "<name>" --probability <new> \
 
 Update convictions where today's analysis changed your view:
 ```bash
-pftui journal conviction set <SYMBOL> --score <n> \
+pftui analytics conviction set <SYMBOL> --score <n> \
   --notes "Evening [date]: [Analysis-driven update]. Evidence: [specific]. Changed because [reason]."
 ```
 

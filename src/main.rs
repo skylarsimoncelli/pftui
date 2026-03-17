@@ -648,7 +648,7 @@ fn main() -> Result<()> {
                 symbol,
                 history,
                 json,
-            } => commands::sentiment::run(symbol.as_deref(), history, json),
+            } => commands::sentiment::run(&backend, symbol.as_deref(), history, json),
             cli::DataCommand::Calendar { days, impact, json } => {
                 commands::calendar::run(days, impact.as_deref(), json)
             }
@@ -656,6 +656,7 @@ fn main() -> Result<()> {
                 commands::cot::run(&backend, symbol.as_deref(), json)
             }
             cli::DataCommand::Fedwatch { json } => commands::fedwatch::run(&backend, &config, json),
+            cli::DataCommand::Onchain { json } => commands::onchain::run(&backend, json),
             cli::DataCommand::Economy { indicator, json } => {
                 commands::economy::run(&backend, indicator.as_deref(), json)
             }
@@ -1278,6 +1279,7 @@ fn main() -> Result<()> {
                 cli::AgentMessageCommand::Flag {
                     value,
                     id,
+                    quality,
                     from,
                     priority,
                     category,
@@ -1286,7 +1288,11 @@ fn main() -> Result<()> {
                 } => commands::agent_msg::run(
                     &backend,
                     "flag",
-                    value.as_deref(),
+                    value.as_deref().or(if quality {
+                        Some("Data quality issue detected")
+                    } else {
+                        None
+                    }),
                     &[],
                     id,
                     None,
@@ -1613,36 +1619,150 @@ fn main() -> Result<()> {
                         json,
                     )
                 }
-                Some(cli::AnalyticsMacroCommand::Cycles { json }) => commands::analytics::run(
-                    &backend,
-                    "macro",
-                    Some("cycles"),
-                    None,
-                    None,
-                    None,
-                    &[],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    json,
-                ),
+                Some(cli::AnalyticsMacroCommand::Cycles { command, json }) => match command {
+                    None => commands::analytics::run(
+                        &backend,
+                        "macro",
+                        Some("cycles"),
+                        None,
+                        None,
+                        None,
+                        &[],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        json,
+                    ),
+                    Some(cli::AnalyticsMacroCyclesCommand::History { command }) => match command {
+                        cli::AnalyticsMacroCyclesHistoryCommand::Add {
+                            country,
+                            determinant,
+                            year,
+                            score,
+                            notes,
+                            source,
+                            json,
+                        } => commands::analytics::run(
+                            &backend,
+                            "macro",
+                            Some("cycles"),
+                            Some("history"),
+                            Some("add"),
+                            None,
+                            &[country],
+                            Some(&determinant),
+                            Some(score),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            notes.as_deref(),
+                            source.as_deref(),
+                            None,
+                            None,
+                            None,
+                            Some(year),
+                            false,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            json,
+                        ),
+                        cli::AnalyticsMacroCyclesHistoryCommand::List {
+                            countries,
+                            determinant,
+                            year,
+                            composite,
+                            json,
+                        } => commands::analytics::run(
+                            &backend,
+                            "macro",
+                            Some("cycles"),
+                            Some("history"),
+                            Some("list"),
+                            None,
+                            &countries,
+                            determinant.as_deref(),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            year,
+                            composite,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            json,
+                        ),
+                    },
+                    Some(cli::AnalyticsMacroCyclesCommand::Update {
+                        name,
+                        phase,
+                        notes,
+                        evidence,
+                        json,
+                    }) => commands::analytics::run(
+                        &backend,
+                        "macro",
+                        Some("cycles"),
+                        Some("update"),
+                        Some(&name),
+                        None,
+                        &[],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(&phase),
+                        evidence.as_deref(),
+                        notes.as_deref(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        json,
+                    ),
+                },
                 Some(cli::AnalyticsMacroCommand::Outcomes { json }) => commands::analytics::run(
                     &backend,
                     "macro",
@@ -1737,6 +1857,18 @@ fn main() -> Result<()> {
                     cli::AnalyticsMacroRegimeCommand::Current { json } => {
                         commands::regime::run(&backend, "current", None, json)
                     }
+                    cli::AnalyticsMacroRegimeCommand::Set {
+                        regime,
+                        confidence,
+                        drivers,
+                        json,
+                    } => commands::regime::run_set(
+                        &backend,
+                        &regime,
+                        confidence,
+                        drivers.as_deref(),
+                        json,
+                    ),
                     cli::AnalyticsMacroRegimeCommand::History { limit, json } => {
                         commands::regime::run(&backend, "history", limit, json)
                     }
@@ -2416,6 +2548,56 @@ fn main() -> Result<()> {
                 };
                 commands::alerts::run(&backend, action, &args)
             }
+            cli::AnalyticsCommand::Scenario { command } => match command {
+                cli::AnalyticsScenarioCommand::List {
+                    status,
+                    limit,
+                    json,
+                } => commands::scenario::run(
+                    &backend,
+                    "list",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    status.as_deref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    limit,
+                    json,
+                ),
+            },
+            cli::AnalyticsCommand::Conviction { command } => match command {
+                cli::AnalyticsConvictionCommand::Set {
+                    symbol,
+                    score_pos,
+                    score,
+                    notes,
+                    notes_pos,
+                    json,
+                } => {
+                    let score_val = score.or(score_pos).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Missing score. Usage: pftui analytics conviction set SYMBOL <SCORE> [NOTES] or --score N [--notes ...]"
+                        )
+                    })?;
+                    let merged_notes = notes.or(notes_pos);
+                    commands::conviction::run_set(
+                        &backend,
+                        &symbol,
+                        score_val,
+                        merged_notes.as_deref(),
+                        json,
+                    )
+                }
+            },
         },
     };
 

@@ -31,8 +31,11 @@ Pull structured data from pftui for your domain:
 pftui data sovereign --json               # CB gold reserves, govt BTC holdings, COMEX silver
 pftui data supply --json                  # COMEX warehouse inventory trends
 pftui data etf-flows --days 30 --json     # BTC ETF flow trends (monthly view)
-pftui data sentiment --json               # COT positioning extremes
-pftui data economy --json                 # macro indicators for structural context
+pftui data cot --json                     # COT positioning with percentile ranks + extremes
+pftui data onchain --json                 # BTC exchange reserves, whale activity, MVRV
+pftui data economy --json                 # macro indicators with surprise detection
+pftui data consensus list --json          # analyst calls and targets
+pftui analytics scenario list --json      # active scenarios for structural context
 ```
 
 ## Web Research (your primary tool: go DEEP)
@@ -62,7 +65,7 @@ pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
 
 4. Update conviction on assets affected by this trend:
 ```bash
-pftui journal conviction set <SYMBOL> --score <n> \
+pftui analytics conviction set <SYMBOL> --score <n> \
   --notes "HIGH [date]: Trend '[name]' is [accelerating/stable/weakening]. Evidence: [specific]. Impact on [asset]: [reasoning]."
 ```
 

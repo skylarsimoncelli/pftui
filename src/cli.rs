@@ -103,6 +103,10 @@ pub enum AgentMessageCommand {
         #[arg(long)]
         id: Option<i64>,
 
+        /// Explicitly mark this flag as a data-quality issue
+        #[arg(long)]
+        quality: bool,
+
         /// Sender (required)
         #[arg(long)]
         from: Option<String>,
@@ -317,6 +321,12 @@ pub enum DataCommand {
     },
     /// CME FedWatch probabilities from Fed funds futures implied pricing
     Fedwatch {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show cached BTC on-chain metrics from the latest refresh
+    Onchain {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -1598,8 +1608,68 @@ pub enum AnalyticsTrendsCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsMacroCyclesHistoryCommand {
+    Add {
+        #[arg(long)]
+        country: String,
+        #[arg(long, visible_alias = "metric")]
+        determinant: String,
+        #[arg(long, visible_alias = "decade")]
+        year: i32,
+        #[arg(long)]
+        score: f64,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    List {
+        #[arg(long = "country")]
+        countries: Vec<String>,
+        #[arg(long, visible_alias = "metric")]
+        determinant: Option<String>,
+        #[arg(long, visible_alias = "decade")]
+        year: Option<i32>,
+        #[arg(long)]
+        composite: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsMacroCyclesCommand {
+    History {
+        #[command(subcommand)]
+        command: AnalyticsMacroCyclesHistoryCommand,
+    },
+    Update {
+        name: String,
+        #[arg(long)]
+        phase: String,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        evidence: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsMacroRegimeCommand {
     Current {
+        #[arg(long)]
+        json: bool,
+    },
+    Set {
+        regime: String,
+        #[arg(long)]
+        confidence: Option<f64>,
+        #[arg(long)]
+        drivers: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -1631,6 +1701,8 @@ pub enum AnalyticsMacroCommand {
         json: bool,
     },
     Cycles {
+        #[command(subcommand)]
+        command: Option<AnalyticsMacroCyclesCommand>,
         #[arg(long)]
         json: bool,
     },
@@ -1651,6 +1723,34 @@ pub enum AnalyticsMacroCommand {
     Regime {
         #[command(subcommand)]
         command: AnalyticsMacroRegimeCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsScenarioCommand {
+    List {
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsConvictionCommand {
+    Set {
+        symbol: String,
+        #[arg(allow_hyphen_values = true)]
+        score_pos: Option<i32>,
+        #[arg(long)]
+        score: Option<i32>,
+        #[arg(long)]
+        notes: Option<String>,
+        notes_pos: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1780,6 +1880,14 @@ pub enum AnalyticsCommand {
     Alerts {
         #[command(subcommand)]
         command: AnalyticsAlertsCommand,
+    },
+    Scenario {
+        #[command(subcommand)]
+        command: AnalyticsScenarioCommand,
+    },
+    Conviction {
+        #[command(subcommand)]
+        command: AnalyticsConvictionCommand,
     },
 }
 
@@ -2066,6 +2174,19 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_onchain_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "onchain", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Onchain { json },
+            }) => {
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_agent_message_subcommands() {
         let cli = Cli::try_parse_from([
             "pftui", "agent", "message", "ack-all", "--to", "agent-b", "--json",
@@ -2079,6 +2200,44 @@ mod tests {
                     },
             }) => {
                 assert_eq!(to.as_deref(), Some("agent-b"));
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_agent_message_flag_quality_alias() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "agent",
+            "message",
+            "flag",
+            "--id",
+            "7",
+            "--from",
+            "agent-b",
+            "--quality",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Agent {
+                command:
+                    AgentCommand::Message {
+                        command:
+                            AgentMessageCommand::Flag {
+                                id,
+                                from,
+                                quality,
+                                json,
+                                ..
+                            },
+                    },
+            }) => {
+                assert_eq!(id, Some(7));
+                assert_eq!(from.as_deref(), Some("agent-b"));
+                assert!(quality);
                 assert!(json);
             }
             _ => panic!("unexpected parse result"),
@@ -2115,6 +2274,7 @@ mod tests {
             "calendar",
             "cot",
             "fedwatch",
+            "onchain",
             "economy",
             "consensus",
             "predictions",
@@ -2289,5 +2449,221 @@ mod tests {
         assert_eq!(value, "Hard Landing");
         assert_eq!(note_pos.as_deref(), Some("labor rolling over"));
         assert_eq!(probability, Some(65.0));
+    }
+
+    #[test]
+    fn parse_analytics_scenario_list_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "scenario", "list", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command:
+                        AnalyticsScenarioCommand::List {
+                            status,
+                            limit,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario list command");
+        };
+
+        assert_eq!(status, None);
+        assert_eq!(limit, None);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_conviction_set_positional_syntax() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "conviction",
+            "set",
+            "BTC",
+            "-2",
+            "setup weakening",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Conviction {
+                    command:
+                        AnalyticsConvictionCommand::Set {
+                            symbol,
+                            score_pos,
+                            score,
+                            notes,
+                            notes_pos,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics conviction set command");
+        };
+
+        assert_eq!(symbol, "BTC");
+        assert_eq!(score_pos, Some(-2));
+        assert_eq!(score, None);
+        assert_eq!(notes, None);
+        assert_eq!(notes_pos.as_deref(), Some("setup weakening"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_regime_set_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "regime",
+            "set",
+            "risk-off",
+            "--confidence",
+            "0.8",
+            "--drivers",
+            "manual override",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Regime {
+                            command:
+                                AnalyticsMacroRegimeCommand::Set {
+                                    regime,
+                                    confidence,
+                                    drivers,
+                                    json,
+                                },
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro regime set command");
+        };
+
+        assert_eq!(regime, "risk-off");
+        assert_eq!(confidence, Some(0.8));
+        assert_eq!(drivers.as_deref(), Some("manual override"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_cycles_history_add_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "cycles",
+            "history",
+            "add",
+            "--country",
+            "US",
+            "--determinant",
+            "education",
+            "--year",
+            "1950",
+            "--score",
+            "9",
+            "--notes",
+            "GI Bill boom",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Cycles {
+                            command:
+                                Some(AnalyticsMacroCyclesCommand::History {
+                                    command:
+                                        AnalyticsMacroCyclesHistoryCommand::Add {
+                                            country,
+                                            determinant,
+                                            year,
+                                            score,
+                                            notes,
+                                            json,
+                                            ..
+                                        },
+                                }),
+                            ..
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro cycles history add command");
+        };
+
+        assert_eq!(country, "US");
+        assert_eq!(determinant, "education");
+        assert_eq!(year, 1950);
+        assert_eq!(score, 9.0);
+        assert_eq!(notes.as_deref(), Some("GI Bill boom"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_cycles_history_list_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "cycles",
+            "history",
+            "list",
+            "--country",
+            "US",
+            "--determinant",
+            "military",
+            "--year",
+            "1940",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Cycles {
+                            command:
+                                Some(AnalyticsMacroCyclesCommand::History {
+                                    command:
+                                        AnalyticsMacroCyclesHistoryCommand::List {
+                                            countries,
+                                            determinant,
+                                            year,
+                                            json,
+                                            ..
+                                        },
+                                }),
+                            ..
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro cycles history list command");
+        };
+
+        assert_eq!(countries, vec!["US".to_string()]);
+        assert_eq!(determinant.as_deref(), Some("military"));
+        assert_eq!(year, Some(1940));
+        assert!(json);
     }
 }

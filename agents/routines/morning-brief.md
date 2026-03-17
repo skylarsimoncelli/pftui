@@ -35,11 +35,16 @@ pftui journal conviction list --json
 4. Read pftui data sources for overnight context:
 ```bash
 pftui data news --hours 12 --json         # overnight news from RSS + Brave
-pftui data fedwatch --json                # any overnight rate path changes
+pftui data fedwatch --json                # any overnight rate path changes (with verification)
 pftui data calendar --json                # today's economic events
-pftui analytics alerts check --json       # any alerts triggered overnight
+pftui data economy --json                 # any new data prints (with surprise detection)
+pftui analytics alerts check --json       # any alerts triggered overnight (RSI/SMA/MACD evaluated)
 pftui data etf-flows --json               # yesterday's ETF flows
-pftui data sentiment --json               # F&G + COT positioning
+pftui data sentiment --json               # Fear & Greed indices (crypto + traditional)
+pftui data cot --json                     # COT percentile ranks + extreme flags
+pftui data onchain --json                 # BTC exchange reserves, MVRV
+pftui data consensus list --json          # standing analyst targets for context
+pftui analytics scenario list --json      # scenario probabilities for framing
 ```
 
 5. Only use web_search (1-2 searches max) for context behind specific overnight developments that pftui news flagged but didn't explain.

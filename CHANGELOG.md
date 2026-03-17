@@ -15,6 +15,47 @@
 - Files: `Cargo.toml`, `src/config.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/config_cmd.rs`, `src/app.rs`, `src/mobile/mod.rs`, `src/mobile/auth.rs`, `src/mobile/commands.rs`, `src/mobile/server.rs`, `src/web/mod.rs`, `mobile/README.md`, `mobile/app/PftuiMobile.xcodeproj/project.pbxproj`, `mobile/app/PftuiMobile/PftuiMobileApp.swift`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/MobileAPI.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `mobile/app/PftuiMobile/Support/Info.plist`, `CHANGELOG.md`
 - Tests: `cargo check`; `cargo clippy --all-targets -- -D warnings`; `cargo build --release`; `plutil -lint mobile/app/PftuiMobile.xcodeproj/project.pbxproj`; `plutil -lint mobile/app/PftuiMobile/Support/Info.plist`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`; `cargo test` currently fails on four pre-existing `app::mouse_tests` unrelated to the mobile feature.
 
+### 2026-03-16 — F39.7a add canonical `analytics macro cycles history` CLI
+
+- What:
+  - added explicit `pftui analytics macro cycles history add` and `pftui analytics macro cycles history list` subcommands under the canonical analytics hierarchy.
+  - aligned the command surface with the TODO spec by exposing `--country`, `--determinant`, and `--year` flags while reusing the existing structural history storage backend.
+  - added parser and persistence coverage so the new macro history path stays scriptable for future population work.
+- Why: closes the missing command path for historical power-metric entry and retrieval, which is the prerequisite for `F39.7b` data population.
+- Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test cli::tests::parse_analytics_macro_cycles_history_add_command -- --nocapture`, `cargo test cli::tests::parse_analytics_macro_cycles_history_list_command -- --nocapture`, `cargo test commands::analytics::tests::macro_cycles_history_add_persists_row -- --nocapture`, `cargo test`, `cargo clippy --all-targets -- -D warnings`
+
+### 2026-03-16 — Close remaining P1/P2 agent workflow feedback
+
+- What:
+  - changed `pftui data sentiment` to read Fear & Greed from the refresh-populated sentiment cache first, with live fetch only as fallback, so the JSON payload no longer drops the cached indices on normal agent runs.
+  - made `pftui analytics movers` weekend-aware by comparing against the latest available historical close when there is no same-day bar yet, which preserves meaningful crypto/futures moves across Saturday and Sunday routines.
+  - restored the missing F42 analytics aliases: `pftui analytics scenario list --json`, `pftui analytics conviction set`, and `pftui analytics macro regime set`, and added `pftui agent message flag --quality` as a first-class data-quality escalation shortcut.
+  - verified the previously reported `journal scenario update --notes` and prediction shorthand ergonomics are already working end-to-end, then removed the stale P1/P2 TODO entries.
+- Why: closes the remaining high-priority agent workflow regressions that were forcing repeated web searches, weekend blind spots, and manual CLI workarounds.
+- Files: `src/commands/sentiment.rs`, `src/commands/movers.rs`, `src/commands/regime.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/eod.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test commands::movers:: -- --nocapture`, `cargo test commands::sentiment:: -- --nocapture`, `cargo test commands::regime::tests::run_set_stores_manual_regime_snapshot -- --nocapture`, `cargo test cli::tests:: -- --nocapture`, `cargo test`, `cargo clippy --all-targets -- -D warnings`
+
+### 2026-03-16 — F45.2 add `data onchain` cached metrics CLI
+
+- What:
+  - added `pftui data onchain` under the canonical `data` tree so agents can read the latest cached BTC on-chain metrics without scraping them again.
+  - surfaced the existing refresh-cached exchange reserve proxy, network health, whale-activity, and wealth-distribution metrics as a single structured payload with both JSON and terminal output.
+  - added command and CLI regression coverage so the new subtree remains discoverable and scriptable.
+- Why: removes another repeated web-search path by exposing the on-chain data pftui is already collecting during `data refresh`.
+- Files: `src/commands/onchain.rs`, `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test commands::onchain:: -- --nocapture`, `cargo test parses_data_onchain_command -- --nocapture`
+
+### 2026-03-16 — F44.1 evaluate text-style indicator alerts from cached history
+
+- What:
+  - extended the natural-language alert parser to recognize `below SMA50` / `above SMA200`, `MACD cross bullish|bearish`, and daily `% change` rules alongside the existing `RSI above|below` syntax.
+  - taught the alert engine to compute RSI, SMA, MACD, and daily percentage-change values from cached `price_history` for `kind=indicator` alerts instead of returning `current_value: null`.
+  - added regression coverage for the new parser paths and for RSI/SMA/change alert evaluation against synthetic cached histories.
+- Why: closes the remaining gap where agents could store text-style technical alerts but pftui could not actually evaluate them from local data.
+- Files: `src/alerts/rules.rs`, `src/alerts/engine.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test alerts::rules:: -- --nocapture`, `cargo test alerts::engine:: -- --nocapture`
+
 ### 2026-03-16 — F45.6 cached COT interpretation metrics and `data cot`
 
 - What:

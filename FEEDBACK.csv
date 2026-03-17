@@ -178,3 +178,8 @@ CRITICAL MISSING FEATURES: (1) Portfolio performance metrics (returns, risk rati
 2026-03-16,alert-investigator,95,90,ux,P2,Clean no-alerts run - pftui message list works efficiently
 2026-03-16,low-agent,80,85,enhancement,P2,"Strong data coverage for market close analysis. News, sentiment, predictions, regime all via pftui vs web_search. Minor: analytics digest could include timeframe-specific insights vs just cross-timeframe divergence."
 2026-03-16,alert-investigator,85,80,enhancement,P2,"Alert system working properly - no unacked messages found, clean triggered alert states"
+2026-03-16,alert-investigator,85,85,ux,P2,"Clean run - no watchdog alerts to investigate, pftui commands executed smoothly"
+2026-03-17,medium-timeframe-analyst,85,88,enhancement,P2,Excellent analytics medium command provided comprehensive market overview. Journal scenario/conviction updates worked smoothly. Enhancement: add scenario probability change tracking over time periods (weekly/monthly trends) to better identify regime shifts in medium timeframe analysis.
+2026-03-17,alert-investigator,0,85,ux,P2,Clean run - no unacked watchdog messages found. System functioning normally.
+2026-03-17,evening-analyst,55,62,enhancement,P1,Scenario update command missing - had to attempt raw SQL (which failed due to no local DB). Need pftui analytics scenario update <id> --probability <val> command. Also data prices and portfolio snapshot subcommands returned exit code 2. Agent message ack-all needs --to filter support. Journal prediction scoring workflow works well. Sentiment and ETF-flows data excellent.
+2026-03-17,alert-investigator,95,85,ux,P2,Clean run - no alerts to investigate. pftui message list worked perfectly for detecting no unacked alerts.

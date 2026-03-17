@@ -20,7 +20,8 @@ pub struct ParsedRule {
 /// Supported formats:
 ///   Price:       "GC=F above 5500", "BTC below 55000", "TSLA below 300"
 ///   Allocation:  "gold allocation above 30%", "cash allocation below 30%"
-///   Indicator:   "VIX above 25", "DXY above 100", "GC=F RSI below 30"
+///   Indicator:   "VIX above 25", "DXY above 100", "GC=F RSI below 30",
+///                "BTC below SMA50", "AAPL MACD cross bullish", "ETH change above 5%"
 ///
 /// Indicator detection: if the second token is a known indicator name (RSI, MACD, SMA, etc.),
 /// it's treated as an indicator alert. Otherwise it's a price alert.
@@ -43,6 +44,24 @@ pub fn parse_rule(input: &str) -> Result<ParsedRule> {
         return parse_allocation_rule(&tokens, input);
     }
 
+    // Alternate SMA syntax: "<symbol> above|below SMA50"
+    if tokens.len() == 3 && is_sma_period(tokens[2]) {
+        return parse_sma_cross_rule(&tokens, input);
+    }
+
+    // MACD cross syntax: "<symbol> MACD cross bullish|bearish"
+    if tokens.len() == 4
+        && tokens[1].eq_ignore_ascii_case("MACD")
+        && tokens[2].eq_ignore_ascii_case("cross")
+    {
+        return parse_macd_cross_rule(&tokens, input);
+    }
+
+    // Daily change syntax: "<symbol> change above|below 5%"
+    if tokens.len() == 4 && tokens[1].eq_ignore_ascii_case("change") {
+        return parse_change_rule(&tokens, input);
+    }
+
     // Check for indicator rule: "<symbol> <INDICATOR> above/below <value>"
     if tokens.len() >= 4 && is_indicator_name(tokens[1]) {
         return parse_indicator_rule(&tokens, input);
@@ -54,7 +73,10 @@ pub fn parse_rule(input: &str) -> Result<ParsedRule> {
 
 fn parse_price_rule(tokens: &[&str], original: &str) -> Result<ParsedRule> {
     if tokens.len() < 3 {
-        bail!("Price rule needs at least 3 tokens: '<symbol> <above|below> <value>', got: {}", original);
+        bail!(
+            "Price rule needs at least 3 tokens: '<symbol> <above|below> <value>', got: {}",
+            original
+        );
     }
 
     let symbol = tokens[0].to_uppercase();
@@ -138,10 +160,84 @@ fn parse_indicator_rule(tokens: &[&str], original: &str) -> Result<ParsedRule> {
     })
 }
 
+fn parse_sma_cross_rule(tokens: &[&str], original: &str) -> Result<ParsedRule> {
+    let symbol = tokens[0].to_uppercase();
+    let direction: AlertDirection = tokens[1].parse().map_err(|_| {
+        anyhow::anyhow!(
+            "Expected 'above' or 'below' before SMA period, got '{}' in: {}",
+            tokens[1],
+            original
+        )
+    })?;
+    let period = parse_sma_period(tokens[2])?;
+    let composite_symbol = format!("{} SMA{}", symbol, period);
+    let rule_text = format!("{} {} SMA{}", symbol, direction, period);
+
+    Ok(ParsedRule {
+        kind: AlertKind::Indicator,
+        symbol: composite_symbol,
+        direction,
+        threshold: Decimal::from(period),
+        rule_text,
+    })
+}
+
+fn parse_macd_cross_rule(tokens: &[&str], original: &str) -> Result<ParsedRule> {
+    let symbol = tokens[0].to_uppercase();
+    let direction = match tokens[3].to_ascii_lowercase().as_str() {
+        "bullish" => AlertDirection::Above,
+        "bearish" => AlertDirection::Below,
+        other => {
+            bail!(
+                "Expected 'bullish' or 'bearish' after 'MACD cross', got '{}' in: {}",
+                other,
+                original
+            )
+        }
+    };
+    let rule_text = format!(
+        "{} MACD cross {}",
+        symbol,
+        if direction == AlertDirection::Above {
+            "bullish"
+        } else {
+            "bearish"
+        }
+    );
+
+    Ok(ParsedRule {
+        kind: AlertKind::Indicator,
+        symbol: format!("{} MACD_CROSS", symbol),
+        direction,
+        threshold: Decimal::ZERO,
+        rule_text,
+    })
+}
+
+fn parse_change_rule(tokens: &[&str], original: &str) -> Result<ParsedRule> {
+    let symbol = tokens[0].to_uppercase();
+    let direction: AlertDirection = tokens[2].parse().map_err(|_| {
+        anyhow::anyhow!(
+            "Expected 'above' or 'below' after 'change', got '{}' in: {}",
+            tokens[2],
+            original
+        )
+    })?;
+    let threshold = parse_threshold(tokens[3])?;
+    let rule_text = format!("{} change {} {}%", symbol, direction, threshold);
+
+    Ok(ParsedRule {
+        kind: AlertKind::Indicator,
+        symbol: format!("{} CHANGE_PCT", symbol),
+        direction,
+        threshold,
+        rule_text,
+    })
+}
+
 /// Parse a threshold value, stripping optional trailing '%', '$', or ','.
 fn parse_threshold(s: &str) -> Result<Decimal> {
-    let cleaned = s
-        .replace(['%', '$', ','], "");
+    let cleaned = s.replace(['%', '$', ','], "");
     Decimal::from_str(&cleaned)
         .map_err(|e| anyhow::anyhow!("Invalid threshold value '{}': {}", s, e))
 }
@@ -152,6 +248,25 @@ fn is_indicator_name(s: &str) -> bool {
         s.to_uppercase().as_str(),
         "RSI" | "MACD" | "SMA" | "EMA" | "BB" | "BOLLINGER" | "ATR" | "ADX"
     )
+}
+
+fn is_sma_period(s: &str) -> bool {
+    let upper = s.to_ascii_uppercase();
+    upper.starts_with("SMA") && parse_sma_period(&upper).is_ok()
+}
+
+fn parse_sma_period(s: &str) -> Result<u32> {
+    let upper = s.to_ascii_uppercase();
+    let period = upper
+        .strip_prefix("SMA")
+        .ok_or_else(|| anyhow::anyhow!("Expected SMA period like SMA50, got '{}'", s))?;
+    let parsed: u32 = period
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid SMA period '{}'", s))?;
+    if parsed == 0 {
+        bail!("SMA period must be positive");
+    }
+    Ok(parsed)
 }
 
 #[cfg(test)]
@@ -229,6 +344,33 @@ mod tests {
         assert_eq!(rule.symbol, "AAPL MACD");
         assert_eq!(rule.direction, AlertDirection::Above);
         assert_eq!(rule.threshold, dec!(0));
+    }
+
+    #[test]
+    fn test_parse_sma_cross_rule() {
+        let rule = parse_rule("BTC below SMA50").unwrap();
+        assert_eq!(rule.kind, AlertKind::Indicator);
+        assert_eq!(rule.symbol, "BTC SMA50");
+        assert_eq!(rule.direction, AlertDirection::Below);
+        assert_eq!(rule.threshold, dec!(50));
+    }
+
+    #[test]
+    fn test_parse_macd_cross_rule() {
+        let rule = parse_rule("AAPL MACD cross bullish").unwrap();
+        assert_eq!(rule.kind, AlertKind::Indicator);
+        assert_eq!(rule.symbol, "AAPL MACD_CROSS");
+        assert_eq!(rule.direction, AlertDirection::Above);
+        assert_eq!(rule.threshold, dec!(0));
+    }
+
+    #[test]
+    fn test_parse_change_rule() {
+        let rule = parse_rule("ETH change above 5%").unwrap();
+        assert_eq!(rule.kind, AlertKind::Indicator);
+        assert_eq!(rule.symbol, "ETH CHANGE_PCT");
+        assert_eq!(rule.direction, AlertDirection::Above);
+        assert_eq!(rule.threshold, dec!(5));
     }
 
     #[test]

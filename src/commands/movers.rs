@@ -34,31 +34,40 @@ fn compute_change_pct(
     current_price: Option<Decimal>,
 ) -> Option<Decimal> {
     use chrono::Utc;
-    
+
     let current = current_price?;
-    
-    // Get yesterday's close (same approach as brief.rs)
+
     let today = Utc::now().date_naive();
-    let yesterday = today - chrono::Duration::days(1);
-    let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
-    
-    let prev_close = get_price_at_date_backend(backend, symbol, &yesterday_str)
-        .ok()
-        .flatten()
-        .or_else(|| {
-            // Fallback: if yesterday is missing, use previous available close.
-            let history = get_history_backend(backend, symbol, 3).ok()?;
-            if history.len() >= 2 {
-                Some(history[history.len() - 2].close)
-            } else {
-                None
-            }
-        })?;
+    let history = get_history_backend(backend, symbol, 5).ok()?;
+    let prev_close = previous_close_from_history(&history, today).or_else(|| {
+        let yesterday = today - chrono::Duration::days(1);
+        let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+        get_price_at_date_backend(backend, symbol, &yesterday_str)
+            .ok()
+            .flatten()
+    })?;
     if prev_close == dec!(0) {
         return None;
     }
-    
+
     Some((current - prev_close) / prev_close * dec!(100))
+}
+
+fn previous_close_from_history(
+    history: &[crate::models::price::HistoryRecord],
+    today: chrono::NaiveDate,
+) -> Option<Decimal> {
+    if history.is_empty() {
+        return None;
+    }
+
+    let latest = history.last()?;
+    let latest_date = chrono::NaiveDate::parse_from_str(&latest.date, "%Y-%m-%d").ok();
+    if latest_date == Some(today) {
+        history.iter().rev().nth(1).map(|record| record.close)
+    } else {
+        Some(latest.close)
+    }
 }
 
 /// Format a decimal price with commas.
@@ -141,10 +150,7 @@ pub fn run(
     // Watchlist
     if let Ok(entries) = list_watchlist_backend(backend) {
         for entry in entries {
-            let cat: AssetCategory = entry
-                .category
-                .parse()
-                .unwrap_or(AssetCategory::Equity);
+            let cat: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
             if seen.insert(entry.symbol.clone()) {
                 symbols.push((entry.symbol, cat, "watchlist"));
             }
@@ -158,10 +164,8 @@ pub fn run(
 
     // Build price map for display
     let cached = get_all_cached_prices_backend(backend)?;
-    let price_map: std::collections::HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
+    let price_map: std::collections::HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     let csym = crate::config::currency_symbol(&config.base_currency);
 
@@ -169,7 +173,7 @@ pub fn run(
     let mut movers: Vec<Mover> = Vec::new();
     for (sym, cat, source) in &symbols {
         let current_price = price_map.get(sym).copied();
-        
+
         if let Some(pct) = compute_change_pct(backend, sym, current_price) {
             let abs_pct = if pct < dec!(0) { -pct } else { pct };
             if abs_pct >= threshold_pct {
@@ -197,8 +201,16 @@ pub fn run(
 
     // Sort by absolute change descending (biggest movers first)
     movers.sort_by(|a, b| {
-        let abs_a = if a.change_pct < dec!(0) { -a.change_pct } else { a.change_pct };
-        let abs_b = if b.change_pct < dec!(0) { -b.change_pct } else { b.change_pct };
+        let abs_a = if a.change_pct < dec!(0) {
+            -a.change_pct
+        } else {
+            a.change_pct
+        };
+        let abs_b = if b.change_pct < dec!(0) {
+            -b.change_pct
+        } else {
+            b.change_pct
+        };
         abs_b.cmp(&abs_a)
     });
 
@@ -231,7 +243,8 @@ pub fn run(
     if movers.is_empty() {
         println!(
             "No movers exceeding {}% threshold across {} symbols.",
-            threshold_pct, symbols.len()
+            threshold_pct,
+            symbols.len()
         );
         return Ok(());
     }
@@ -246,8 +259,18 @@ pub fn run(
     println!();
 
     // Compute column widths
-    let sym_w = movers.iter().map(|m| m.symbol.len()).max().unwrap_or(6).max(6);
-    let name_w = movers.iter().map(|m| m.name.len()).max().unwrap_or(4).max(4);
+    let sym_w = movers
+        .iter()
+        .map(|m| m.symbol.len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+    let name_w = movers
+        .iter()
+        .map(|m| m.name.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
     let cat_w = movers
         .iter()
         .map(|m| m.category.len())
@@ -333,18 +356,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(201), // 0.5% change — below 3% default
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();
@@ -372,11 +395,11 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "yahoo".to_string(),
                 fetched_at: "2026-03-03T20:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
         )
         .unwrap();
         upsert_history(
@@ -388,18 +411,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(220), // 10% change — above 3% default
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();
@@ -427,18 +450,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(204), // 2% change
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();
@@ -471,18 +494,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(220),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();
@@ -537,18 +560,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(180), // -10% change
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();
@@ -594,18 +617,18 @@ mod tests {
                     date: "2026-03-02".to_string(),
                     close: dec!(200),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-03".to_string(),
                     close: dec!(220),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();
@@ -626,16 +649,14 @@ mod tests {
             &conn,
             "AAPL",
             "yahoo",
-            &[
-                HistoryRecord {
-                    date: "2026-03-02".to_string(),
-                    close: dec!(200),
-                    volume: None,
+            &[HistoryRecord {
+                date: "2026-03-02".to_string(),
+                close: dec!(200),
+                volume: None,
                 open: None,
                 high: None,
                 low: None,
-            },
-            ],
+            }],
         )
         .unwrap();
 
@@ -655,16 +676,14 @@ mod tests {
             &conn,
             "AAPL",
             "yahoo",
-            &[
-                HistoryRecord {
-                    date: "2026-03-02".to_string(),
-                    close: dec!(0),
-                    volume: None,
+            &[HistoryRecord {
+                date: "2026-03-02".to_string(),
+                close: dec!(0),
+                volume: None,
                 open: None,
                 high: None,
                 low: None,
-            },
-            ],
+            }],
         )
         .unwrap();
 
@@ -672,7 +691,7 @@ mod tests {
         let backend = to_backend(conn);
         assert!(compute_change_pct(&backend, "AAPL", Some(dec!(100))).is_none());
     }
-    
+
     #[test]
     fn change_pct_no_current_price() {
         let conn = crate::db::open_in_memory();
@@ -683,21 +702,79 @@ mod tests {
             &conn,
             "AAPL",
             "yahoo",
-            &[
-                HistoryRecord {
-                    date: "2026-03-02".to_string(),
-                    close: dec!(200),
-                    volume: None,
+            &[HistoryRecord {
+                date: "2026-03-02".to_string(),
+                close: dec!(200),
+                volume: None,
                 open: None,
                 high: None,
                 low: None,
-            },
-            ],
+            }],
         )
         .unwrap();
 
         // No current price provided → should return None
         let backend = to_backend(conn);
         assert!(compute_change_pct(&backend, "AAPL", None).is_none());
+    }
+
+    #[test]
+    fn previous_close_uses_latest_historical_close_on_weekend_gap() {
+        use crate::models::price::HistoryRecord;
+
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 16).unwrap();
+        let history = vec![
+            HistoryRecord {
+                date: "2026-03-12".to_string(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-13".to_string(),
+                close: dec!(105),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        assert_eq!(
+            previous_close_from_history(&history, today),
+            Some(dec!(105))
+        );
+    }
+
+    #[test]
+    fn previous_close_uses_penultimate_when_history_contains_today() {
+        use crate::models::price::HistoryRecord;
+
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 16).unwrap();
+        let history = vec![
+            HistoryRecord {
+                date: "2026-03-13".to_string(),
+                close: dec!(105),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-16".to_string(),
+                close: dec!(109),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        assert_eq!(
+            previous_close_from_history(&history, today),
+            Some(dec!(105))
+        );
     }
 }

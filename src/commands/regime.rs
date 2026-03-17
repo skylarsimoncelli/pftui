@@ -55,7 +55,8 @@ pub fn classify_regime(backend: &BackendConnection) -> RegimeAssessment {
 
     let mut drivers = Vec::new();
 
-    let crisis_match = vix.map(|x| x > 30.0).unwrap_or(false) && oil.map(|x| x > 90.0).unwrap_or(false);
+    let crisis_match =
+        vix.map(|x| x > 30.0).unwrap_or(false) && oil.map(|x| x > 90.0).unwrap_or(false);
     if crisis_match {
         drivers.push("VIX > 30 and oil > 90".to_string());
     }
@@ -70,7 +71,9 @@ pub fn classify_regime(backend: &BackendConnection) -> RegimeAssessment {
 
     let risk_off_match = vix.map(|x| x > 25.0).unwrap_or(false)
         || oil.map(|x| x > 90.0).unwrap_or(false)
-        || (dxy_up.unwrap_or(false) && gold_up.unwrap_or(false) && eq_up.map(|v| !v).unwrap_or(false));
+        || (dxy_up.unwrap_or(false)
+            && gold_up.unwrap_or(false)
+            && eq_up.map(|v| !v).unwrap_or(false));
     if risk_off_match {
         drivers.push("VIX/oil stress or DXY/gold up with equities down".to_string());
     }
@@ -111,11 +114,17 @@ pub fn classify_regime(backend: &BackendConnection) -> RegimeAssessment {
         let mut m = 0.0;
         let mut t = 0.0;
         t += 1.0;
-        if vix.map(|x| x < 20.0).unwrap_or(false) { m += 1.0; }
+        if vix.map(|x| x < 20.0).unwrap_or(false) {
+            m += 1.0;
+        }
         t += 1.0;
-        if eq_up.unwrap_or(false) { m += 1.0; }
+        if eq_up.unwrap_or(false) {
+            m += 1.0;
+        }
         t += 1.0;
-        if !dxy_up.unwrap_or(false) { m += 1.0; }
+        if !dxy_up.unwrap_or(false) {
+            m += 1.0;
+        }
         ("risk-on", m, t)
     } else {
         ("transition", 1.0, 3.0)
@@ -177,7 +186,10 @@ pub fn run(
         "current" => {
             let current = regime_snapshots::get_current_backend(backend)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "current": current }))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({ "current": current }))?
+                );
             } else if let Some(c) = current {
                 println!(
                     "Current Regime: {} (confidence: {:.2})",
@@ -199,20 +211,31 @@ pub fn run(
         "history" => {
             let rows = regime_snapshots::get_history_backend(backend, limit)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "history": rows }))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({ "history": rows }))?
+                );
             } else if rows.is_empty() {
                 println!("No regime history.");
             } else {
                 println!("Regime history ({}):", rows.len());
                 for r in rows {
-                    println!("  {}  {}  conf={:.2}", r.recorded_at, r.regime, r.confidence.unwrap_or(0.0));
+                    println!(
+                        "  {}  {}  conf={:.2}",
+                        r.recorded_at,
+                        r.regime,
+                        r.confidence.unwrap_or(0.0)
+                    );
                 }
             }
         }
         "transitions" => {
             let rows = regime_snapshots::get_transitions_backend(backend, limit)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "transitions": rows }))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({ "transitions": rows }))?
+                );
             } else if rows.is_empty() {
                 println!("No regime transitions.");
             } else {
@@ -222,8 +245,103 @@ pub fn run(
                 }
             }
         }
-        other => anyhow::bail!("unknown regime action '{}'. Valid: current, history, transitions", other),
+        other => anyhow::bail!(
+            "unknown regime action '{}'. Valid: current, history, transitions",
+            other
+        ),
     }
 
     Ok(())
+}
+
+pub fn run_set(
+    backend: &BackendConnection,
+    regime: &str,
+    confidence: Option<f64>,
+    drivers: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let regime = regime.trim().to_lowercase();
+    if regime.is_empty() {
+        anyhow::bail!("regime name required");
+    }
+
+    let assessment = classify_regime(backend);
+    let confidence = confidence.or_else(|| {
+        if assessment.regime == regime {
+            Some(assessment.confidence)
+        } else {
+            None
+        }
+    });
+    let drivers_json = if let Some(reason) = drivers {
+        Some(serde_json::to_string(&vec![reason])?)
+    } else if assessment.regime == regime && !assessment.drivers.is_empty() {
+        Some(serde_json::to_string(&assessment.drivers)?)
+    } else {
+        None
+    };
+
+    regime_snapshots::store_regime_backend(
+        backend,
+        &regime,
+        confidence,
+        drivers_json.as_deref(),
+        assessment.vix,
+        assessment.dxy,
+        assessment.yield_10y,
+        assessment.oil,
+        assessment.gold,
+        assessment.btc,
+    )?;
+
+    let current = regime_snapshots::get_current_backend(backend)?
+        .ok_or_else(|| anyhow::anyhow!("failed to load stored regime snapshot"))?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&current)?);
+    } else {
+        println!(
+            "Set macro regime to {} ({})",
+            current.regime,
+            current
+                .confidence
+                .map(|value| format!("confidence: {:.2}", value))
+                .unwrap_or_else(|| "confidence: n/a".to_string())
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::backend::BackendConnection;
+
+    fn to_backend(conn: rusqlite::Connection) -> BackendConnection {
+        BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn run_set_stores_manual_regime_snapshot() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        run_set(
+            &backend,
+            "risk-off",
+            Some(0.8),
+            Some("manual override"),
+            true,
+        )
+        .unwrap();
+
+        let current = regime_snapshots::get_current_backend(&backend)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.regime, "risk-off");
+        assert_eq!(current.confidence, Some(0.8));
+        assert_eq!(current.drivers.as_deref(), Some("[\"manual override\"]"));
+    }
 }

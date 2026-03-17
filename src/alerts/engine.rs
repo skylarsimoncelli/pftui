@@ -259,7 +259,7 @@ fn evaluate_alert_sqlite(
             distance_pct: None,
             trigger_data: json!({ "kind": "allocation", "reason": "not_implemented" }),
         }),
-        AlertKind::Indicator => Ok(evaluate_indicator_alert(alert)),
+        AlertKind::Indicator => evaluate_indicator_alert_sqlite(conn, alert, price_map),
         AlertKind::Technical => evaluate_technical_alert_sqlite(conn, alert, price_map),
         AlertKind::Macro => evaluate_macro_alert_sqlite(conn, alert, price_map),
     }
@@ -278,7 +278,7 @@ fn evaluate_alert_backend(
             distance_pct: None,
             trigger_data: json!({ "kind": "allocation", "reason": "not_implemented" }),
         }),
-        AlertKind::Indicator => Ok(evaluate_indicator_alert(alert)),
+        AlertKind::Indicator => evaluate_indicator_alert_backend(backend, alert, price_map),
         AlertKind::Technical => evaluate_technical_alert_backend(backend, alert, price_map),
         AlertKind::Macro => evaluate_macro_alert_backend(backend, alert),
     }
@@ -333,6 +333,44 @@ fn evaluate_indicator_alert(alert: &AlertRule) -> AlertEvaluation {
         distance_pct: None,
         trigger_data: json!({ "symbol": alert.symbol, "reason": "unsupported_indicator_alert" }),
     }
+}
+
+fn evaluate_indicator_alert_sqlite(
+    conn: &Connection,
+    alert: &AlertRule,
+    price_map: &HashMap<String, Decimal>,
+) -> Result<AlertEvaluation> {
+    if alert.symbol.starts_with("REVIEW:") {
+        return Ok(evaluate_indicator_alert(alert));
+    }
+    let (symbol, indicator) = split_indicator_symbol(&alert.symbol);
+    let history = price_history::get_history(conn, &symbol, 240)?;
+    Ok(evaluate_indicator_from_history(
+        alert,
+        &symbol,
+        &indicator,
+        price_map.get(&symbol).copied(),
+        &history,
+    ))
+}
+
+fn evaluate_indicator_alert_backend(
+    backend: &BackendConnection,
+    alert: &AlertRule,
+    price_map: &HashMap<String, Decimal>,
+) -> Result<AlertEvaluation> {
+    if alert.symbol.starts_with("REVIEW:") {
+        return Ok(evaluate_indicator_alert(alert));
+    }
+    let (symbol, indicator) = split_indicator_symbol(&alert.symbol);
+    let history = price_history::get_history_backend(backend, &symbol, 240)?;
+    Ok(evaluate_indicator_from_history(
+        alert,
+        &symbol,
+        &indicator,
+        price_map.get(&symbol).copied(),
+        &history,
+    ))
 }
 
 fn evaluate_technical_alert_sqlite(
@@ -534,6 +572,107 @@ fn evaluate_technical_from_history(
             is_triggered: false,
             distance_pct: None,
             trigger_data: json!({ "condition": condition, "reason": "unsupported_technical_condition" }),
+        },
+    }
+}
+
+fn evaluate_indicator_from_history(
+    alert: &AlertRule,
+    symbol: &str,
+    indicator: &str,
+    current_price: Option<Decimal>,
+    history: &[crate::models::price::HistoryRecord],
+) -> AlertEvaluation {
+    let closes = closes_as_f64(history);
+    let current_price = current_price.or_else(|| history.last().map(|row| row.close));
+    let threshold = Decimal::from_str(&alert.threshold).unwrap_or(Decimal::ZERO);
+
+    match indicator {
+        "RSI" => {
+            let rsi = compute_rsi(&closes, 14).iter().rev().find_map(|v| *v);
+            let current_value = rsi.and_then(decimal_from_f64);
+            let threshold_f64 = threshold
+                .to_string()
+                .parse::<f64>()
+                .ok()
+                .unwrap_or_default();
+            let triggered = rsi
+                .map(|value| match alert.direction {
+                    AlertDirection::Above => value >= threshold_f64,
+                    AlertDirection::Below => value <= threshold_f64,
+                })
+                .unwrap_or(false);
+            AlertEvaluation {
+                current_value,
+                is_triggered: triggered,
+                distance_pct: None,
+                trigger_data: json!({
+                    "symbol": symbol,
+                    "indicator": "RSI",
+                    "rsi_14": current_value.map(|v| v.to_string()),
+                    "threshold": threshold.to_string()
+                }),
+            }
+        }
+        indicator if indicator.starts_with("SMA") || indicator == "SMA" => {
+            let period = indicator
+                .strip_prefix("SMA")
+                .and_then(|value| value.parse::<usize>().ok())
+                .or_else(|| threshold.to_string().parse::<usize>().ok())
+                .unwrap_or(50);
+            evaluate_price_vs_sma(
+                alert,
+                current_price,
+                &closes,
+                period,
+                matches!(alert.direction, AlertDirection::Above),
+            )
+        }
+        "MACD" => {
+            let macd_series: Vec<_> = compute_macd(&closes, 12, 26, 9)
+                .into_iter()
+                .flatten()
+                .collect();
+            let latest = macd_series.last();
+            let current_value = latest.and_then(|row| decimal_from_f64(row.macd));
+            let triggered = current_value
+                .map(|value| match alert.direction {
+                    AlertDirection::Above => value >= threshold,
+                    AlertDirection::Below => value <= threshold,
+                })
+                .unwrap_or(false);
+            AlertEvaluation {
+                current_value,
+                is_triggered: triggered,
+                distance_pct: None,
+                trigger_data: json!({
+                    "symbol": symbol,
+                    "indicator": "MACD",
+                    "macd": latest.map(|row| row.macd),
+                    "signal": latest.map(|row| row.signal),
+                    "histogram": latest.map(|row| row.histogram),
+                    "threshold": threshold.to_string()
+                }),
+            }
+        }
+        "MACD_CROSS" => {
+            evaluate_macd_cross(matches!(alert.direction, AlertDirection::Above), &closes)
+        }
+        "CHANGE_PCT" => evaluate_price_change(
+            alert,
+            current_price,
+            history,
+            matches!(alert.direction, AlertDirection::Above),
+        ),
+        _ => AlertEvaluation {
+            current_value: None,
+            is_triggered: false,
+            distance_pct: None,
+            trigger_data: json!({
+                "symbol": symbol,
+                "indicator": indicator,
+                "reason": "unsupported_indicator_alert"
+            }),
         },
     }
 }
@@ -844,6 +983,13 @@ fn closes_as_f64(history: &[crate::models::price::HistoryRecord]) -> Vec<f64> {
         .iter()
         .filter_map(|row| row.close.to_string().parse::<f64>().ok())
         .collect()
+}
+
+fn split_indicator_symbol(symbol: &str) -> (String, String) {
+    match symbol.rsplit_once(' ') {
+        Some((asset, indicator)) => (asset.to_uppercase(), indicator.to_uppercase()),
+        None => (symbol.to_uppercase(), String::new()),
+    }
 }
 
 fn decimal_from_f64(value: f64) -> Option<Decimal> {
@@ -1584,5 +1730,161 @@ mod tests {
         assert!(results
             .iter()
             .any(|row| { row.rule.kind == AlertKind::Technical && row.newly_triggered }));
+    }
+
+    #[test]
+    fn test_indicator_rsi_alert_evaluates_current_value() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        let mut history = Vec::new();
+        for day in 0..30 {
+            history.push(crate::models::price::HistoryRecord {
+                date: format!("2026-02-{:02}", day + 1),
+                close: Decimal::from(100 + day),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            });
+        }
+        crate::db::price_history::upsert_history(conn, "RSI", "test", &history).unwrap();
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "indicator",
+                "RSI RSI",
+                "above",
+                None,
+                "70",
+                "RSI RSI above 70",
+            ),
+        )
+        .unwrap();
+
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        let row = results
+            .iter()
+            .find(|row| row.rule.symbol == "RSI RSI")
+            .unwrap();
+        assert!(row.current_value.is_some());
+        assert!(row.newly_triggered);
+    }
+
+    #[test]
+    fn test_indicator_sma_cross_rule_triggers() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        let mut history = Vec::new();
+        for day in 0..60 {
+            let close = if day == 59 {
+                Decimal::from(50)
+            } else {
+                Decimal::from(100)
+            };
+            history.push(crate::models::price::HistoryRecord {
+                date: format!("2026-{:02}-{:02}", 1 + (day / 28), 1 + (day % 28)),
+                close,
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            });
+        }
+        crate::db::price_history::upsert_history(conn, "SMA", "test", &history).unwrap();
+        crate::db::price_cache::upsert_price(
+            conn,
+            &PriceQuote {
+                symbol: "SMA".to_string(),
+                price: Decimal::from(50),
+                currency: "USD".to_string(),
+                fetched_at: "2026-03-04T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
+        let parsed = crate::alerts::rules::parse_rule("SMA below SMA50").unwrap();
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "indicator",
+                &parsed.symbol,
+                &parsed.direction.to_string(),
+                None,
+                &parsed.threshold.to_string(),
+                &parsed.rule_text,
+            ),
+        )
+        .unwrap();
+
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert!(results
+            .iter()
+            .any(|row| row.rule.symbol == "SMA SMA50" && row.newly_triggered));
+    }
+
+    #[test]
+    fn test_indicator_change_pct_rule_triggers() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        let history = vec![
+            crate::models::price::HistoryRecord {
+                date: "2026-03-01".to_string(),
+                close: Decimal::from(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            crate::models::price::HistoryRecord {
+                date: "2026-03-02".to_string(),
+                close: Decimal::from(107),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+        crate::db::price_history::upsert_history(conn, "MOVE", "test", &history).unwrap();
+        crate::db::price_cache::upsert_price(
+            conn,
+            &PriceQuote {
+                symbol: "MOVE".to_string(),
+                price: Decimal::from(107),
+                currency: "USD".to_string(),
+                fetched_at: "2026-03-04T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
+        let parsed = crate::alerts::rules::parse_rule("MOVE change above 5%").unwrap();
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "indicator",
+                &parsed.symbol,
+                &parsed.direction.to_string(),
+                None,
+                &parsed.threshold.to_string(),
+                &parsed.rule_text,
+            ),
+        )
+        .unwrap();
+
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert!(results
+            .iter()
+            .any(|row| row.rule.symbol == "MOVE CHANGE_PCT" && row.newly_triggered));
     }
 }
