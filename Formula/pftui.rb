@@ -1,8 +1,8 @@
 class Pftui < Formula
   desc "A beautiful terminal portfolio tracker with real-time prices, charts, and market data"
   homepage "https://github.com/skylarsimoncelli/pftui"
-  url "https://github.com/skylarsimoncelli/pftui/archive/refs/tags/v0.12.0.tar.gz"
-  sha256 "e4399f00f52860f1b853237d66a537509d0dd9535eecbb11c2fa18bf4d4a8d2b"
+  url "https://github.com/skylarsimoncelli/pftui/archive/refs/tags/v0.12.1.tar.gz"
+  sha256 "2d489e63ec311410e676c5e286d1886cce8f13db17cca7c372fc71743d999ba4"
   license "MIT"
 
   depends_on "rust" => :build
