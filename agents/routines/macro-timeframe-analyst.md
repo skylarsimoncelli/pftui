@@ -33,6 +33,30 @@ pftui data cot --json                              # COT positioning extremes (s
 
 Read STRUCTURAL.md for qualitative framework context.
 
+## Step 0: Historical Context (do first)
+
+You own the `power_metrics_history` table. It contains ~810 rows of Dalio-scale (1-10) scores for 8 powers (US, UK, China, Japan, Russia, EU, India, Saudi) across 9 determinants (education, innovation, competitiveness, military, trade, economic_output, financial, reserve_currency, governance), spanning 1900-2020 by decade.
+
+Start every run by reading this data to ground your analysis in historical trajectory:
+```bash
+pftui analytics macro cycles history list --country US --json
+pftui analytics macro cycles history list --country China --json
+pftui analytics macro cycles history list --country UK --json
+```
+
+Use this data to:
+- **Frame current metrics against historical trajectory.** If US education is 7 today, but was 10 in 1950 and has declined every decade, that trajectory matters more than the snapshot.
+- **Identify inflection points.** When did a power's determinant peak or trough? What caused it? Does the current moment resemble a historical inflection?
+- **Calibrate your scoring.** Before updating a live metric, check what the historical scores were. A score of 8 for China's innovation in 2026 is only valid if 2020 was 7 and there's evidence of improvement.
+- **Spot divergences.** If a power's trajectory breaks from its historical pattern (e.g. Russia's military has been declining since 1990 but suddenly stabilizes), that's a signal worth flagging.
+
+**You own this table.** If during your research you find that a historical score is wrong, a note needs updating, a new determinant deserves tracking, or a decade was scored too generously or harshly, fix it:
+```bash
+pftui analytics macro cycles history add --country "[country]" --determinant "[determinant]" \
+  --year [YYYY] --score [1-10] --notes "[corrected justification with source]"
+```
+The table is reference data for the entire system. Improving its accuracy compounds across every future run.
+
 ## Lens 1: Dalio Big Cycle Analysis
 
 Use web_search for latest data from: IMF (COFER reserve data, GDP rankings), World Bank (education, competitiveness indices), WIPO (patent filings, innovation rankings), SIPRI (military spending), WTO (trade volumes), WGC (central bank gold purchases).
