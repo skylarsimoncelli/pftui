@@ -112,9 +112,9 @@ For each subtask in the feature:
 7. Commit with the required author identity:
 
 ```bash
-GIT_COMMITTER_NAME="skylarsimoncelli" \
-GIT_COMMITTER_EMAIL="skylar.simoncelli@icloud.com" \
-git commit --author="skylarsimoncelli <skylar.simoncelli@icloud.com>" -m "<clear subtask message>"
+GIT_COMMITTER_NAME="pftui-bot" \
+GIT_COMMITTER_EMAIL="pftui-bot@users.noreply.github.com" \
+git commit --author="pftui-bot <pftui-bot@users.noreply.github.com>" -m "<clear subtask message>"
 ```
 
 8. Push immediately after each successful subtask commit.

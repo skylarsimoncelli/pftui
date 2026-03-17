@@ -11,7 +11,7 @@ keywords = ["portfolio", "tui", "terminal", "finance", "stock"]
 categories = ["command-line-utilities"]
 
 [package.metadata.deb]
-maintainer = "Skylar Simoncelli <skylar.simoncelli@icloud.com>"
+maintainer = "pftui Maintainers <support@pftui.com>"
 copyright = "2026, Skylar Simoncelli"
 depends = "$auto"
 section = "utility"
