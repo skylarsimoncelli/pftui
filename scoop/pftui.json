@@ -1,12 +1,12 @@
 {
-    "version": "0.6.0",
+    "version": "0.12.0",
     "description": "A beautiful terminal portfolio tracker with real-time prices, charts, and market data",
     "homepage": "https://github.com/skylarsimoncelli/pftui",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/skylarsimoncelli/pftui/releases/download/v0.6.0/pftui-x86_64-windows.exe",
-            "hash": ""
+            "url": "https://github.com/skylarsimoncelli/pftui/releases/download/v0.12.0/pftui-x86_64-windows.exe",
+            "hash": "4a1c8775c9d0068ffbb897bec94feed3600542b9fc56591663731a1b33541fcb"
         }
     },
     "bin": "pftui",
