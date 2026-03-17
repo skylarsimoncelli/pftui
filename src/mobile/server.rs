@@ -9,6 +9,7 @@ use axum::{
     Json, Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
+use rustls::crypto::CryptoProvider;
 use serde::Serialize;
 
 use crate::config::Config;
@@ -26,6 +27,9 @@ pub struct AnalyticsResponse {
 }
 
 pub async fn run_server(db_path: String, config: Config) -> Result<()> {
+    // Ensure rustls has a crypto provider before any TLS operations
+    let _ = CryptoProvider::install_default(rustls::crypto::ring::default_provider());
+
     if !config.mobile.enabled {
         bail!(
             "Mobile API is disabled. Run `pftui system mobile enable` first or set `mobile.enabled = true`."
