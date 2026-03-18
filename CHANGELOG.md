@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-18 — F46: surface stored key levels in brief, web, TUI, and alerts
+
+- What: surfaced nearest stored support/resistance levels in `portfolio brief` markdown plus agent JSON position payloads, added nearest actionable levels to the web asset detail response, and showed stored support/resistance in the asset detail popup. Added direct alert creation from stored levels via `pftui analytics alerts add --symbol SYM --from-level support|resistance|...` and matching web API support through `POST /api/alerts`.
+- Why: the F46 engine already computed and persisted market structure, but agents and humans still had to query it separately and could not turn stored levels into alerts directly from the main consumption surfaces.
+- Files: `src/analytics/levels.rs`, `src/cli.rs`, `src/commands/alerts.rs`, `src/commands/analytics.rs`, `src/commands/brief.rs`, `src/main.rs`, `src/tui/views/asset_detail_popup.rs`, `src/web/api.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test test_add_alert_from_stored_support_level`; `cargo test build_lines_shows_key_levels_when_stored_levels_exist`; `cargo test alert_mutation_contract_supports_stored_levels`; `cargo test asset_detail_includes_nearest_levels`; `cargo test`; `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-18 — F46: stored market structure and key levels engine
 
 - What: added a persisted `technical_levels` table (SQLite + PostgreSQL) that stores computed market structure levels for every tracked symbol. Levels include support/resistance from swing pivot detection, SMA 20/50/200 as dynamic support/resistance, Bollinger band boundaries, 52-week range extremes, and round-number psychological levels. Each level carries a strength/confidence score (0.0–1.0) and source method. Wired level computation into `pftui data refresh` so levels are recomputed after every price history update. Added `pftui analytics levels --symbol SYM [--level-type TYPE] [--limit N] --json` CLI command with per-symbol nearest-support/resistance context in JSON output. Swing detection uses 5-bar pivot scanning over the most recent 120 bars, with clustering (1.5% tolerance) to merge nearby levels and deduplication (0.3% tolerance) to keep the strongest overlapping level.

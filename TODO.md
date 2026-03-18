@@ -8,14 +8,6 @@
 
 ## P1 — Always-On Analytics Engine
 
-### F46: Stored Market Structure And Key Levels — Surface Integration
-
-> Core engine shipped Mar 18 (schema, compute, refresh integration, CLI).
-> Remaining scope: surface levels in existing consumer paths and alert integration.
->
-> 1. Surface nearest actionable levels in `portfolio brief`, asset detail popup, and web asset endpoints
-> 2. Allow alert creation directly from stored levels
-
 ### F47: Dedicated Background Daemon
 
 > Vision fit: pftui should be always running even when the TUI/web UI is closed.

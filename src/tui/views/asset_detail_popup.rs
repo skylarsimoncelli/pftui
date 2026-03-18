@@ -5,6 +5,7 @@ use ratatui::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+use crate::analytics::levels::nearest_actionable_levels;
 use crate::app::App;
 use crate::indicators;
 use crate::models::asset_names::{infer_category, resolve_name};
@@ -48,11 +49,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let visible_lines = height.saturating_sub(2) as usize;
     let scroll = state.scroll.min(total_lines.saturating_sub(visible_lines));
 
-    let displayed: Vec<Line> = lines
-        .into_iter()
-        .skip(scroll)
-        .take(visible_lines)
-        .collect();
+    let displayed: Vec<Line> = lines.into_iter().skip(scroll).take(visible_lines).collect();
 
     // Title
     let name = lookup_name(symbol);
@@ -63,7 +60,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let scroll_hint = if total_lines > visible_lines {
-        format!(" {}/{} ", scroll + 1, total_lines.saturating_sub(visible_lines) + 1)
+        format!(
+            " {}/{} ",
+            scroll + 1,
+            total_lines.saturating_sub(visible_lines) + 1
+        )
     } else {
         String::new()
     };
@@ -80,14 +81,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             ))
             .title(
                 Line::from(vec![
-                    Span::styled(
-                        scroll_hint,
-                        Style::default().fg(t.text_muted),
-                    ),
-                    Span::styled(
-                        " Esc to close ",
-                        Style::default().fg(t.text_muted),
-                    ),
+                    Span::styled(scroll_hint, Style::default().fg(t.text_muted)),
+                    Span::styled(" Esc to close ", Style::default().fg(t.text_muted)),
                 ])
                 .alignment(Alignment::Right),
             ),
@@ -110,6 +105,18 @@ fn format_price(v: Decimal) -> String {
         format!("{:.2}", f)
     } else {
         format!("{:.4}", f)
+    }
+}
+
+fn format_level_price(v: f64) -> String {
+    if v.abs() >= 10000.0 {
+        format!("{:.0}", v)
+    } else if v.abs() >= 100.0 {
+        format!("{:.1}", v)
+    } else if v.abs() >= 1.0 {
+        format!("{:.2}", v)
+    } else {
+        format!("{:.4}", v)
     }
 }
 
@@ -209,7 +216,14 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 lines.push(Line::from(vec![
                     Span::styled("  24h Change  ", Style::default().fg(t.text_secondary)),
                     Span::styled(
-                        format!("{}{} {} ({}{:.2}%)", sign, format_price(change), currency, sign, change_pct),
+                        format!(
+                            "{}{} {} ({}{:.2}%)",
+                            sign,
+                            format_price(change),
+                            currency,
+                            sign,
+                            change_pct
+                        ),
                         Style::default().fg(color).bold(),
                     ),
                 ]));
@@ -219,7 +233,10 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         // 7-day change
         if hist.len() >= 7 {
             let latest = hist.last().map(|h| h.close).unwrap_or(dec!(0));
-            let prev7 = hist.get(hist.len().saturating_sub(7)).map(|h| h.close).unwrap_or(dec!(0));
+            let prev7 = hist
+                .get(hist.len().saturating_sub(7))
+                .map(|h| h.close)
+                .unwrap_or(dec!(0));
             if prev7 > dec!(0) {
                 let change_pct = ((latest - prev7) / prev7) * dec!(100);
                 let (sign, color) = if change_pct > dec!(0) {
@@ -242,7 +259,10 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         // 30-day change
         if hist.len() >= 30 {
             let latest = hist.last().map(|h| h.close).unwrap_or(dec!(0));
-            let prev30 = hist.get(hist.len().saturating_sub(30)).map(|h| h.close).unwrap_or(dec!(0));
+            let prev30 = hist
+                .get(hist.len().saturating_sub(30))
+                .map(|h| h.close)
+                .unwrap_or(dec!(0));
             if prev30 > dec!(0) {
                 let change_pct = ((latest - prev30) / prev30) * dec!(100);
                 let (sign, color) = if change_pct > dec!(0) {
@@ -264,10 +284,9 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     }
 
     // 52-week range
-    if let Some(range) = compute_52w_range(
-        history.map(|v| v.as_slice()).unwrap_or(&[]),
-        current_price,
-    ) {
+    if let Some(range) =
+        compute_52w_range(history.map(|v| v.as_slice()).unwrap_or(&[]), current_price)
+    {
         let high_str = format_price(range.high);
         let low_str = format_price(range.low);
         lines.push(Line::from(vec![
@@ -296,6 +315,51 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     }
 
     lines.push(Line::from(""));
+
+    if let (Some(backend), Some(price)) = (backend.as_ref(), current_price) {
+        if let Ok(levels) =
+            crate::db::technical_levels::get_levels_for_symbol_backend(backend, symbol)
+        {
+            let pair =
+                nearest_actionable_levels(&levels, price.to_string().parse::<f64>().unwrap_or(0.0));
+            if pair.support.is_some() || pair.resistance.is_some() {
+                lines.push(section_header("  Key Levels", t.text_accent));
+                lines.push(sep_line(t.border_subtle, 80));
+
+                if let Some(level) = pair.support {
+                    lines.push(Line::from(vec![
+                        Span::styled("  Support     ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format!(
+                                "{}  {} ({:.1}%)",
+                                format_level_price(level.price),
+                                level.level_type.replace('_', " "),
+                                level.distance_pct
+                            ),
+                            Style::default().fg(t.gain_green),
+                        ),
+                    ]));
+                }
+
+                if let Some(level) = pair.resistance {
+                    lines.push(Line::from(vec![
+                        Span::styled("  Resistance  ", Style::default().fg(t.text_secondary)),
+                        Span::styled(
+                            format!(
+                                "{}  {} ({:.1}%)",
+                                format_level_price(level.price),
+                                level.level_type.replace('_', " "),
+                                level.distance_pct
+                            ),
+                            Style::default().fg(t.loss_red),
+                        ),
+                    ]));
+                }
+
+                lines.push(Line::from(""));
+            }
+        }
+    }
 
     // ── Chart ──
     if let Some(hist) = history {
@@ -339,11 +403,8 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 .unwrap_or(0.0);
 
             // ── Moving Averages ──
-            let sma_periods: &[(usize, &str)] = &[
-                (20, "SMA(20)  "),
-                (50, "SMA(50)  "),
-                (200, "SMA(200) "),
-            ];
+            let sma_periods: &[(usize, &str)] =
+                &[(20, "SMA(20)  "), (50, "SMA(50)  "), (200, "SMA(200) ")];
             for &(period, label) in sma_periods {
                 if closes.len() >= period {
                     let sma_series = indicators::compute_sma(&closes, period);
@@ -360,10 +421,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                                 format!("{:.2}", sma_val),
                                 Style::default().fg(t.text_primary),
                             ),
-                            Span::styled(
-                                format!(" {}", indicator),
-                                Style::default().fg(ind_color),
-                            ),
+                            Span::styled(format!(" {}", indicator), Style::default().fg(ind_color)),
                         ]));
                     }
                 }
@@ -419,10 +477,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                             format!("{:.1}", rsi_val),
                             Style::default().fg(rsi_color).bold(),
                         ),
-                        Span::styled(
-                            label.to_string(),
-                            Style::default().fg(rsi_color),
-                        ),
+                        Span::styled(label.to_string(), Style::default().fg(rsi_color)),
                     ]));
                     // Visual RSI gauge: 30 chars wide, color-zoned
                     lines.push(rsi_gauge_line(*rsi_val, t));
@@ -453,17 +508,18 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                     } else {
                         t.loss_red
                     };
-                    let trend = if macd.histogram > 0.0 { "Bullish" } else { "Bearish" };
+                    let trend = if macd.histogram > 0.0 {
+                        "Bullish"
+                    } else {
+                        "Bearish"
+                    };
                     lines.push(Line::from(vec![
                         Span::styled("  Histogram     ", Style::default().fg(t.text_secondary)),
                         Span::styled(
                             format!("{:+.4}", macd.histogram),
                             Style::default().fg(hist_color).bold(),
                         ),
-                        Span::styled(
-                            format!(" {}", trend),
-                            Style::default().fg(hist_color),
-                        ),
+                        Span::styled(format!(" {}", trend), Style::default().fg(hist_color)),
                     ]));
 
                     // Visual MACD histogram bar (last 20 values)
@@ -558,7 +614,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 let drift = actual_pct - target.target_pct;
                 let abs_drift = drift.abs();
                 let over_band = abs_drift > target.drift_band_pct;
-                
+
                 let drift_color = if over_band {
                     if drift > Decimal::ZERO {
                         t.gain_green
@@ -568,7 +624,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 } else {
                     t.text_muted
                 };
-                
+
                 let status_text = if over_band {
                     if drift > Decimal::ZERO {
                         format!("OVERWEIGHT (+{:.1}%)", abs_drift)
@@ -578,7 +634,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 } else {
                     "IN RANGE".to_string()
                 };
-                
+
                 lines.push(Line::from(vec![
                     Span::styled("  Target      ", Style::default().fg(t.text_secondary)),
                     Span::styled(
@@ -592,10 +648,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                         format!("{:+.1}%  ", drift),
                         Style::default().fg(drift_color),
                     ),
-                    Span::styled(
-                        status_text,
-                        Style::default().fg(drift_color).bold(),
-                    ),
+                    Span::styled(status_text, Style::default().fg(drift_color).bold()),
                 ]));
             }
 
@@ -606,10 +659,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         lines.push(sep_line(t.border_subtle, 80));
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default().fg(t.text_secondary)),
-            Span::styled(
-                "○ Watching".to_string(),
-                Style::default().fg(t.text_accent),
-            ),
+            Span::styled("○ Watching".to_string(), Style::default().fg(t.text_accent)),
         ]));
         lines.push(Line::from(""));
     }
@@ -666,9 +716,10 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
             }
 
             // Network metrics
-            lines.push(Line::from(vec![
-                Span::styled("  Network       ", Style::default().fg(t.text_secondary)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "  Network       ",
+                Style::default().fg(t.text_secondary),
+            )]));
 
             // Hash rate (convert to EH/s)
             let hash_rate_eh = metrics.hash_rate / 1_000_000_000_000_000_000.0;
@@ -719,22 +770,29 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 }
 
                 // Calculate total daily net flow
-                let total_flow_btc: f64 = etf_flows.iter()
+                let total_flow_btc: f64 = etf_flows
+                    .iter()
                     .filter(|f| f.date == etf_flows[0].date) // Today's flows
                     .map(|f| f.net_flow_btc)
                     .sum();
-                let total_flow_usd: f64 = etf_flows.iter()
+                let total_flow_usd: f64 = etf_flows
+                    .iter()
                     .filter(|f| f.date == etf_flows[0].date)
                     .map(|f| f.net_flow_usd)
                     .sum();
 
-                let flow_color = if total_flow_btc > 0.0 { t.gain_green } else { t.loss_red };
+                let flow_color = if total_flow_btc > 0.0 {
+                    t.gain_green
+                } else {
+                    t.loss_red
+                };
                 let sign = if total_flow_btc > 0.0 { "+" } else { "" };
 
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled("  ETF Flows     ", Style::default().fg(t.text_secondary)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "  ETF Flows     ",
+                    Style::default().fg(t.text_secondary),
+                )]));
                 lines.push(Line::from(vec![
                     Span::styled("    Daily Net   ", Style::default().fg(t.text_muted)),
                     Span::styled(
@@ -748,13 +806,23 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 ]));
 
                 // Show top 3 funds
-                let mut fund_flows: Vec<_> = etf_flows.iter()
+                let mut fund_flows: Vec<_> = etf_flows
+                    .iter()
                     .filter(|f| f.date == etf_flows[0].date)
                     .collect();
-                fund_flows.sort_by(|a, b| b.net_flow_usd.abs().partial_cmp(&a.net_flow_usd.abs()).unwrap());
+                fund_flows.sort_by(|a, b| {
+                    b.net_flow_usd
+                        .abs()
+                        .partial_cmp(&a.net_flow_usd.abs())
+                        .unwrap()
+                });
 
                 for fund in fund_flows.iter().take(3) {
-                    let fund_color = if fund.net_flow_btc > 0.0 { t.gain_green } else { t.loss_red };
+                    let fund_color = if fund.net_flow_btc > 0.0 {
+                        t.gain_green
+                    } else {
+                        t.loss_red
+                    };
                     let sign = if fund.net_flow_btc > 0.0 { "+" } else { "" };
                     lines.push(Line::from(vec![
                         Span::styled(
@@ -790,9 +858,13 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
 
                 // Show top 3 largest transactions
                 for (i, tx) in whale_txs.iter().take(3).enumerate() {
-                    let direction = if tx.from_owner.contains("exchange") && !tx.to_owner.contains("exchange") {
+                    let direction = if tx.from_owner.contains("exchange")
+                        && !tx.to_owner.contains("exchange")
+                    {
                         "⬆ Withdrawal"
-                    } else if !tx.from_owner.contains("exchange") && tx.to_owner.contains("exchange") {
+                    } else if !tx.from_owner.contains("exchange")
+                        && tx.to_owner.contains("exchange")
+                    {
                         "⬇ Deposit"
                     } else {
                         "➜ Transfer"
@@ -807,10 +879,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                             format!("{:.0} BTC ", tx.amount_btc),
                             Style::default().fg(t.text_primary).bold(),
                         ),
-                        Span::styled(
-                            direction,
-                            Style::default().fg(t.text_muted),
-                        ),
+                        Span::styled(direction, Style::default().fg(t.text_muted)),
                     ]));
                 }
             }
@@ -826,7 +895,9 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
         // Check if COT data is available in the cache
         if let Some(ref backend) = backend {
             if let Ok(Some(latest)) = crate::db::cot_cache::get_latest_backend(backend, cftc_code) {
-                if let Ok(history) = crate::db::cot_cache::get_history_backend(backend, cftc_code, 2) {
+                if let Ok(history) =
+                    crate::db::cot_cache::get_history_backend(backend, cftc_code, 2)
+                {
                     lines.push(section_header("  COT Positioning", t.text_accent));
                     lines.push(sep_line(t.border_subtle, 80));
 
@@ -834,7 +905,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                     let mm_net = latest.managed_money_net;
                     let mm_contracts = format_contracts(mm_net);
                     let mm_color = if mm_net > 0 { t.gain_green } else { t.loss_red };
-                    
+
                     lines.push(Line::from(vec![
                         Span::styled("  Managed Money ", Style::default().fg(t.text_secondary)),
                         Span::styled(
@@ -852,7 +923,10 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                             let sign = if change > 0 { "+" } else { "" };
                             let change_color = if change > 0 { t.gain_green } else { t.loss_red };
                             lines.push(Line::from(vec![
-                                Span::styled("                ", Style::default().fg(t.text_secondary)),
+                                Span::styled(
+                                    "                ",
+                                    Style::default().fg(t.text_secondary),
+                                ),
                                 Span::styled(
                                     format!("{}{} WoW", sign, change_str),
                                     Style::default().fg(change_color),
@@ -864,8 +938,12 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                     // Commercials
                     let comm_net = latest.commercial_net;
                     let comm_contracts = format_contracts(comm_net);
-                    let comm_color = if comm_net > 0 { t.gain_green } else { t.loss_red };
-                    
+                    let comm_color = if comm_net > 0 {
+                        t.gain_green
+                    } else {
+                        t.loss_red
+                    };
+
                     lines.push(Line::from(vec![
                         Span::styled("  Commercials   ", Style::default().fg(t.text_secondary)),
                         Span::styled(
@@ -883,7 +961,10 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                             let sign = if change > 0 { "+" } else { "" };
                             let change_color = if change > 0 { t.gain_green } else { t.loss_red };
                             lines.push(Line::from(vec![
-                                Span::styled("                ", Style::default().fg(t.text_secondary)),
+                                Span::styled(
+                                    "                ",
+                                    Style::default().fg(t.text_secondary),
+                                ),
                                 Span::styled(
                                     format!("{}{} WoW", sign, change_str),
                                     Style::default().fg(change_color),
@@ -919,7 +1000,9 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     // ── COMEX Supply Data (metals only) ──
     if symbol == "GC=F" || symbol == "SI=F" {
         if let Some(ref backend) = backend {
-            if let Ok(Some(latest)) = crate::db::comex_cache::get_latest_inventory_backend(backend, symbol) {
+            if let Ok(Some(latest)) =
+                crate::db::comex_cache::get_latest_inventory_backend(backend, symbol)
+            {
                 lines.push(section_header("  COMEX Supply", t.text_accent));
                 lines.push(sep_line(t.border_subtle, 80));
 
@@ -950,7 +1033,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 // Registered/Eligible ratio
                 let reg_ratio = latest.reg_ratio;
                 let ratio_color = if reg_ratio < 30.0 {
-                    t.loss_red  // Low registered = tight supply
+                    t.loss_red // Low registered = tight supply
                 } else if reg_ratio < 50.0 {
                     t.text_accent
                 } else {
@@ -965,7 +1048,11 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                 ]));
 
                 // Trend vs previous day
-                if let Ok(Some(prev)) = crate::db::comex_cache::get_previous_inventory_backend(backend, symbol, &latest.date) {
+                if let Ok(Some(prev)) = crate::db::comex_cache::get_previous_inventory_backend(
+                    backend,
+                    symbol,
+                    &latest.date,
+                ) {
                     let trend = if (latest.registered - prev.registered) / prev.registered < -0.02 {
                         ("drawing down", t.loss_red)
                     } else if (latest.registered - prev.registered) / prev.registered > 0.02 {
@@ -994,8 +1081,9 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
     if !app.news_entries.is_empty() {
         let asset_name = lookup_name(symbol);
         let search_terms = build_search_terms(symbol, &asset_name);
-        
-        let relevant_news: Vec<_> = app.news_entries
+
+        let relevant_news: Vec<_> = app
+            .news_entries
             .iter()
             .filter(|entry| {
                 if let Some(tag) = &entry.symbol_tag {
@@ -1017,34 +1105,27 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
 
             for (idx, news) in relevant_news.iter().enumerate() {
                 let age = format_news_age(news.published_at);
-                
+
                 lines.push(Line::from(vec![
                     Span::styled(
                         format!("  {} ", if idx == 0 { "●" } else { "○" }),
                         Style::default().fg(if idx == 0 { t.chart_line } else { t.text_muted }),
                     ),
-                    Span::styled(
-                        &news.title,
-                        Style::default().fg(t.text_primary),
-                    ),
-                ]));
-                
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("    {} · {}", news.source, age),
-                        Style::default().fg(t.text_muted),
-                    ),
+                    Span::styled(&news.title, Style::default().fg(t.text_primary)),
                 ]));
 
+                lines.push(Line::from(vec![Span::styled(
+                    format!("    {} · {}", news.source, age),
+                    Style::default().fg(t.text_muted),
+                )]));
+
                 if !news.description.trim().is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            format!("    {}", news.description),
-                            Style::default().fg(t.text_secondary),
-                        ),
-                    ]));
+                    lines.push(Line::from(vec![Span::styled(
+                        format!("    {}", news.description),
+                        Style::default().fg(t.text_secondary),
+                    )]));
                 }
-                
+
                 if idx < relevant_news.len() - 1 {
                     lines.push(Line::from(""));
                 }
@@ -1074,7 +1155,7 @@ fn load_annotation(symbol: &str, app: &App) -> Option<crate::db::annotations::An
 /// Build search terms for news filtering based on symbol and asset name.
 fn build_search_terms(symbol: &str, asset_name: &str) -> Vec<String> {
     let mut terms = vec![symbol.to_string()];
-    
+
     // Add common symbol variations
     if symbol.contains('=') {
         // For futures like GC=F, search "gold" instead of just GC
@@ -1082,7 +1163,7 @@ fn build_search_terms(symbol: &str, asset_name: &str) -> Vec<String> {
             terms.push(base.to_string());
         }
     }
-    
+
     // Add asset name if it's meaningful (not empty and not just a symbol variant)
     if !asset_name.is_empty() && asset_name.len() > 2 && asset_name != symbol {
         // Split multi-word names (e.g., "Bitcoin ETF" -> ["Bitcoin", "ETF"])
@@ -1092,7 +1173,7 @@ fn build_search_terms(symbol: &str, asset_name: &str) -> Vec<String> {
             }
         }
     }
-    
+
     // Add specific high-value search terms for common assets
     match symbol {
         "BTC" | "BTC-USD" | "BTCUSD" => {
@@ -1108,11 +1189,15 @@ fn build_search_terms(symbol: &str, asset_name: &str) -> Vec<String> {
             terms.extend(vec!["silver".to_string(), "Silver".to_string()]);
         }
         "CL=F" => {
-            terms.extend(vec!["oil".to_string(), "crude".to_string(), "Oil".to_string()]);
+            terms.extend(vec![
+                "oil".to_string(),
+                "crude".to_string(),
+                "Oil".to_string(),
+            ]);
         }
         _ => {}
     }
-    
+
     terms
 }
 
@@ -1120,15 +1205,15 @@ fn build_search_terms(symbol: &str, asset_name: &str) -> Vec<String> {
 fn format_news_age(published_at: i64) -> String {
     let now = chrono::Utc::now().timestamp();
     let diff = now - published_at;
-    
+
     if diff < 0 {
         return "just now".to_string();
     }
-    
+
     let minutes = diff / 60;
     let hours = minutes / 60;
     let days = hours / 24;
-    
+
     if days > 0 {
         format!("{}d ago", days)
     } else if hours > 0 {
@@ -1174,7 +1259,7 @@ fn format_qty(v: Decimal) -> String {
 fn format_contracts(count: i64) -> String {
     let abs_count = count.abs();
     let sign = if count < 0 { "-" } else { "" };
-    
+
     if abs_count >= 1_000_000 {
         format!("{}{}M", sign, abs_count / 1_000_000)
     } else if abs_count >= 1_000 {
@@ -1260,17 +1345,17 @@ fn macd_histogram_bars<'a>(
         return Line::from("");
     }
 
-    let max_abs = hist_values
-        .iter()
-        .map(|v| v.abs())
-        .fold(0.0_f64, f64::max);
+    let max_abs = hist_values.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
 
     if max_abs < f64::EPSILON {
         return Line::from("");
     }
 
     let mut spans: Vec<Span<'a>> = Vec::with_capacity(hist_values.len() + 2);
-    spans.push(Span::styled("  Hist          ", Style::default().fg(t.text_secondary)));
+    spans.push(Span::styled(
+        "  Hist          ",
+        Style::default().fg(t.text_secondary),
+    ));
 
     for &val in &hist_values {
         let normalized = (val.abs() / max_abs * (bar_chars.len() - 1) as f64).round() as usize;
@@ -1377,18 +1462,18 @@ mod tests {
                     date: "2026-03-01".to_string(),
                     close: dec!(170),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2026-03-02".to_string(),
                     close: dec!(175),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         );
         let lines = build_lines("AAPL", &app);
@@ -1469,9 +1554,54 @@ mod tests {
         app.price_history.insert("AAPL".to_string(), hist);
         let lines = build_lines("AAPL", &app);
         let text = lines_to_string(&lines);
-        assert!(text.contains("MACD"), "Should show MACD with 50+ data points");
+        assert!(
+            text.contains("MACD"),
+            "Should show MACD with 50+ data points"
+        );
         assert!(text.contains("Signal"), "Should show Signal line");
         assert!(text.contains("Histogram"), "Should show Histogram value");
+    }
+
+    #[test]
+    fn build_lines_shows_key_levels_when_stored_levels_exist() {
+        let mut app = test_app();
+        app.prices.insert("AAPL".to_string(), dec!(175));
+        let backend = app.open_backend().unwrap();
+        crate::db::technical_levels::upsert_levels_backend(
+            &backend,
+            "AAPL",
+            &[
+                crate::db::technical_levels::TechnicalLevelRecord {
+                    id: None,
+                    symbol: "AAPL".to_string(),
+                    level_type: "support".to_string(),
+                    price: 170.0,
+                    strength: 0.7,
+                    source_method: "test".to_string(),
+                    timeframe: "1d".to_string(),
+                    notes: Some("support".to_string()),
+                    computed_at: "2026-03-18T12:00:00Z".to_string(),
+                },
+                crate::db::technical_levels::TechnicalLevelRecord {
+                    id: None,
+                    symbol: "AAPL".to_string(),
+                    level_type: "resistance".to_string(),
+                    price: 180.0,
+                    strength: 0.8,
+                    source_method: "test".to_string(),
+                    timeframe: "1d".to_string(),
+                    notes: Some("resistance".to_string()),
+                    computed_at: "2026-03-18T12:00:00Z".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+        let lines = build_lines("AAPL", &app);
+        let text = lines_to_string(&lines);
+        assert!(text.contains("Key Levels"));
+        assert!(text.contains("Support"));
+        assert!(text.contains("Resistance"));
     }
 
     #[test]
@@ -1502,7 +1632,10 @@ mod tests {
         app.price_history.insert("AAPL".to_string(), hist);
         let lines = build_lines("AAPL", &app);
         let text = lines_to_string(&lines);
-        assert!(text.contains("Chart"), "Should contain Chart section header when history is available");
+        assert!(
+            text.contains("Chart"),
+            "Should contain Chart section header when history is available"
+        );
     }
 
     #[test]
@@ -1510,7 +1643,10 @@ mod tests {
         let app = test_app();
         let lines = build_lines("AAPL", &app);
         let text = lines_to_string(&lines);
-        assert!(!text.contains("Chart"), "Should not contain Chart section without history data");
+        assert!(
+            !text.contains("Chart"),
+            "Should not contain Chart section without history data"
+        );
     }
 
     #[test]
@@ -1530,7 +1666,10 @@ mod tests {
         );
         let lines = build_lines("AAPL", &app);
         let text = lines_to_string(&lines);
-        assert!(!text.contains("Chart"), "Should not show Chart section with only 1 record");
+        assert!(
+            !text.contains("Chart"),
+            "Should not show Chart section with only 1 record"
+        );
     }
 
     fn lines_to_string(lines: &[Line]) -> String {
