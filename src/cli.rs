@@ -1130,6 +1130,15 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Score multiple predictions at once. Each entry is id:outcome (e.g. 3:correct 7:wrong 12:partial)
+    #[command(name = "score-batch")]
+    ScoreBatch {
+        /// Pairs of id:outcome (e.g. 3:correct 7:wrong 12:partial)
+        #[arg(required = true, num_args = 1..)]
+        entries: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
     Stats {
         #[arg(long)]
         json: bool,
@@ -2487,6 +2496,59 @@ mod tests {
         assert_eq!(value, "btc breakout");
         assert_eq!(timeframe_pos.as_deref(), Some("macro"));
         assert_eq!(confidence_pos, Some(0.8));
+    }
+
+    #[test]
+    fn parse_prediction_score_batch_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "score-batch",
+            "3:correct",
+            "7:wrong",
+            "12:partial",
+            "--json",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command: JournalPredictionCommand::ScoreBatch { entries, json },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction score-batch command");
+        };
+
+        assert_eq!(entries, vec!["3:correct", "7:wrong", "12:partial"]);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_score_batch_single_entry() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "score-batch",
+            "5:correct",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command: JournalPredictionCommand::ScoreBatch { entries, json },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction score-batch command");
+        };
+
+        assert_eq!(entries, vec!["5:correct"]);
+        assert!(!json);
     }
 
     #[test]
