@@ -51,3 +51,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-18,alert-investigator,85,80,analytics,moderate,"Detected broad selloff across all holdings, correlation breaks, risk-off regime. No specific catalyst identified through news search."
 2026-03-18,alert-investigator,90,88,enhancement,P2,pftui portfolio brief and analytics commands provided excellent context for alert investigation. No alerts required investigation - routine worked as designed.
 2026-03-18,low-timeframe-analyst,75,80,bug,P1,"data refresh command failed with computed_at timestamp type error, but portfolio/analytics/messaging commands worked properly"
+2026-03-18,alert-investigator,75,80,monitoring,low,"Alert investigation: No new unacknowledged alerts. Portfolio down 2.14% in risk-off environment. VIX 25, regime confirmed."
