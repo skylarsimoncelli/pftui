@@ -437,31 +437,38 @@ pftui analytics alerts list
 
 **Tell them:** *"pftui works best when I can check it automatically. If you can set up a scheduled task for me, I'll deliver a morning brief every day, flag significant moves in real-time, and do a weekly portfolio review. Otherwise I can only help when you ask me directly."*
 
-#### OpenClaw Cron Example
+#### What You Need From Your Platform
 
+Any agent platform that supports scheduled/recurring tasks can run the full pftui system. The requirements are:
+
+1. **Scheduled execution** — ability to run an agent on a cron schedule (e.g. daily at 10:30 AM)
+2. **Shell access** — the agent must be able to run `pftui` CLI commands
+3. **Persistent storage** — the pftui database must survive between runs
+4. **Inter-agent messaging** — agents communicate via `pftui agent message`, so all agents must share the same database
+
+Platforms that support this include: OpenClaw, Cline, Claude Code (with external scheduler), custom agent frameworks, or any system that can invoke a shell command on a schedule.
+
+#### Minimal Automation (any platform)
+
+If your platform only supports manual sessions, run this at the start of each session:
 ```bash
-# Morning brief at 10:30 AM
-openclaw cron add --name "Morning Brief" --schedule "30 10 * * *" --tz "America/Chicago" \
-  --prompt "Run pftui data refresh && pftui portfolio brief --json. Analyse the data and send a morning brief to the user covering: prices, key developments, scenario watch, portfolio positioning, and any action items."
-
-# Market close at 4:30 PM
-openclaw cron add --name "Market Close" --schedule "30 16 * * 1-5" --tz "America/Chicago" \
-  --prompt "Run pftui data refresh && pftui portfolio brief --json && pftui analytics movers --json. If anything moved >3%, send a summary to the user."
+pftui data refresh && pftui portfolio brief --json
 ```
 
-#### Generic Cron (crontab)
-
+If it supports even basic cron/scheduling, set up at minimum:
 ```bash
-# Morning data refresh
-30 15 * * * /usr/local/bin/pftui data refresh && /usr/local/bin/pftui portfolio brief --json > /tmp/pftui-brief.json
+# Morning brief — daily
+pftui data refresh && pftui portfolio brief --json
+# Parse output and deliver to user
 
-# Save daily snapshot
-0 22 * * * /usr/local/bin/pftui system export json > ~/pftui-snapshots/$(date +\%Y-\%m-\%d).json
+# Evening snapshot — daily
+pftui data refresh && pftui portfolio brief --json && pftui analytics movers --json
+# Cross-reference movers with scenarios and deliver analysis
 ```
 
-#### Claude Code / Codex
+#### Full Multi-Timeframe Setup
 
-These platforms don't have native cron — instead, begin each session by running `pftui data refresh && pftui portfolio brief --json` to load current state. Recommend the human set up an external scheduler if they want automated briefs.
+See the [Multi-Timeframe Agent Architecture](#multi-timeframe-agent-architecture-advanced) section below for the complete system: 4 specialist analysts, 2 delivery agents, and an alert pipeline.
 
 ### Multi-Timeframe Agent Architecture (Advanced)
 
@@ -516,10 +523,11 @@ Alert watchdog → investigator → low-agent + morning + evening (agent message
 
 #### Setup Steps
 
-1. **Create each agent as a scheduled cron/task** on your platform. Each agent's prompt should:
-   - Include local configuration (database credentials, file paths, delivery instructions)
-   - Fetch its routine from `agents/routines/[name].md` (either from the repo or inline)
-   - The routine files are generic and contain no personal data
+1. **Create each agent as a scheduled task** on your platform (cron job, recurring task, scheduled workflow, or whatever your framework calls it). Each agent needs:
+   - **A prompt** that includes local configuration (database path/credentials, user profile path, delivery channel) followed by the routine
+   - **The routine** from `agents/routines/[name].md`, either fetched at runtime from the repo URL or inlined into the prompt
+   - **Shell access** to run `pftui` commands
+   - **A schedule** matching the table above (adjust times to the user's timezone)
 
 2. **Schedule order matters.** Timeframe analysts must run before delivery agents:
    - LOW pre-market → LOW midday → LOW close → MEDIUM → evening-analysis → (overnight) → morning-brief
@@ -530,6 +538,23 @@ Alert watchdog → investigator → low-agent + morning + evening (agent message
 4. **Prediction scoring.** Each timeframe agent owns its predictions end-to-end: creation, scoring, and reflection on wrong calls. The evening analysis reads the scorecard but does not score other agents' predictions.
 
 5. **Feedback loop.** Evening analysis sends WATCH TOMORROW guidance to the low-agent via `pftui agent message`, creating a feedback loop where synthesis informs the next day's observation.
+
+#### Prompt Structure
+
+Each scheduled agent's prompt has two parts:
+
+```
+== LOCAL CONFIGURATION ==
+[Private: database credentials, user profile path, delivery channel/target, git identity]
+[This section is NOT in the repo — it lives in your platform's cron/task config]
+
+== ROUTINE ==
+[Generic: the full routine from agents/routines/[name].md]
+[Either inline the content or fetch it at runtime:]
+Fetch from: https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/agents/routines/[name].md
+```
+
+Fetching at runtime means updating the routine in the repo instantly updates all agents on their next run. Inlining is simpler but requires manual updates.
 
 #### Routine Files
 
@@ -548,7 +573,21 @@ agents/routines/
 └── dev-agent.md
 ```
 
-These are generic templates. Your local cron configuration adds private details (database password, Telegram target, file paths). The routine files contain zero personal data and can be used by any pftui operator.
+These are generic templates containing zero personal data. They define inputs, analysis steps, outputs, and rules for each agent role. Any pftui operator on any agent platform can use them directly.
+
+#### Model Recommendations
+
+| Agent | Recommended Tier | Why |
+|---|---|---|
+| Low Timeframe | Mid-tier (Sonnet, GPT-4o, Gemini Pro) | High frequency, needs speed |
+| Medium Timeframe | Mid-tier | Deep research but not synthesis |
+| High Timeframe | Mid-tier | Structural research |
+| Macro Timeframe | Mid-tier | Weekly, can afford depth |
+| Morning Brief | Mid-tier | Concise delivery, not heavy reasoning |
+| Evening Analysis | Top-tier (Opus, o1, Gemini Ultra) | Cross-timeframe synthesis is the hardest task |
+| Alert Watchdog | Low-tier (Haiku, GPT-4o-mini, Flash) | Simple check, runs hourly |
+| Alert Investigator | Mid-tier | Needs judgment but runs rarely |
+| Dev Agent | Top-tier | Code generation + architecture decisions |
 
 ---
 
