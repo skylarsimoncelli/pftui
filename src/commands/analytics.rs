@@ -1,18 +1,493 @@
 use anyhow::{bail, Result};
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::alerts::AlertStatus;
 use crate::analytics::levels::nearest_actionable_levels;
+use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
 use crate::db::backend::BackendConnection;
-use crate::db::query;
+use crate::db::{price_history, query};
 use crate::db::{
     agent_messages, alerts, convictions, correlation_snapshots, price_cache, regime_snapshots,
     research_questions, scenarios, structural, technical_levels, technical_snapshots, thesis,
     timeframe_signals, transactions, trends, user_predictions, watchlist,
 };
 use crate::models::asset::AssetCategory;
+use crate::models::asset_names::{infer_category, resolve_name};
+use crate::models::position::compute_positions;
+
+/// F51: Asset Intelligence Blob — canonical per-asset synthesized state.
+///
+/// Aggregates spot price, OHLCV stats, technical snapshot, key levels, correlations,
+/// regime context, scenario/trend impacts, alerts, and freshness into one JSON payload.
+pub fn run_asset_intelligence(
+    backend: &BackendConnection,
+    symbol: &str,
+    json_output: bool,
+) -> Result<()> {
+    let sym = symbol.to_uppercase();
+    let name = resolve_name(&sym);
+    let category = infer_category(&sym);
+
+    // --- Spot price ---
+    let spot = price_cache::get_cached_price_backend(backend, &sym, "USD").ok().flatten();
+    let spot_price = spot.as_ref().map(|q| q.price);
+    let spot_fetched_at = spot.as_ref().map(|q| q.fetched_at.clone());
+    let spot_source = spot.as_ref().map(|q| q.source.clone());
+    let pre_market = spot.as_ref().and_then(|q| q.pre_market_price);
+    let post_market = spot.as_ref().and_then(|q| q.post_market_price);
+    let post_market_change_pct = spot.as_ref().and_then(|q| q.post_market_change_percent);
+
+    // --- Price history (recent) ---
+    let history = price_history::get_history_backend(backend, &sym, 370)
+        .unwrap_or_default();
+    let history_days = history.len();
+    let oldest_date = history.first().map(|r| r.date.clone());
+    let newest_date = history.last().map(|r| r.date.clone());
+
+    // Daily change from latest two history rows
+    let daily_change_pct = if history.len() >= 2 {
+        let prev = &history[history.len() - 2].close;
+        let curr = &history[history.len() - 1].close;
+        if *prev > dec!(0) {
+            Some(((*curr - *prev) / *prev * dec!(100)).round_dp(2))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // OHLCV stats from most recent bar
+    let latest_bar = history.last().cloned();
+
+    // --- Technical snapshot ---
+    let snap_map = load_or_compute_snapshots_backend(backend, std::slice::from_ref(&sym), DEFAULT_TIMEFRAME);
+    let snapshot = snap_map.get(&sym).cloned();
+
+    // --- Key levels ---
+    let levels = technical_levels::get_levels_for_symbol_backend(backend, &sym)
+        .unwrap_or_default();
+    let nearest = spot_price.as_ref().and_then(|price| {
+        let p = price.to_string().parse::<f64>().ok()?;
+        let pair = nearest_actionable_levels(&levels, p);
+        if pair.support.is_none() && pair.resistance.is_none() {
+            None
+        } else {
+            Some(pair)
+        }
+    });
+
+    // --- Correlations involving this symbol ---
+    let all_correlations = correlation_snapshots::list_current_backend(backend, None)
+        .unwrap_or_default();
+    let relevant_correlations: Vec<_> = all_correlations
+        .into_iter()
+        .filter(|c| c.symbol_a.to_uppercase() == sym || c.symbol_b.to_uppercase() == sym)
+        .collect();
+
+    // --- Regime context ---
+    let regime = regime_snapshots::get_current_backend(backend).ok().flatten();
+
+    // --- Alerts for this symbol ---
+    let all_alerts = alerts::list_alerts_backend(backend).unwrap_or_default();
+    let symbol_alerts: Vec<_> = all_alerts
+        .into_iter()
+        .filter(|a| a.symbol.to_uppercase() == sym)
+        .collect();
+
+    // --- Scenarios mentioning this symbol ---
+    let all_scenarios = scenarios::list_scenarios_backend(backend, Some("active"))
+        .unwrap_or_default();
+    let relevant_scenarios: Vec<_> = all_scenarios
+        .into_iter()
+        .filter(|s| {
+            let impact = s.asset_impact.as_deref().unwrap_or("");
+            let desc = s.description.as_deref().unwrap_or("");
+            let triggers = s.triggers.as_deref().unwrap_or("");
+            let haystack = format!("{} {} {} {}", s.name, impact, desc, triggers).to_uppercase();
+            haystack.contains(&sym)
+        })
+        .collect();
+
+    // --- Trends mentioning this symbol ---
+    let all_trends = trends::list_trends_backend(backend, Some("active"), None)
+        .unwrap_or_default();
+    let relevant_trends: Vec<_> = all_trends
+        .into_iter()
+        .filter(|t| {
+            let impact = t.asset_impact.as_deref().unwrap_or("");
+            let desc = t.description.as_deref().unwrap_or("");
+            let haystack = format!("{} {} {}", t.name, impact, desc).to_uppercase();
+            haystack.contains(&sym)
+        })
+        .collect();
+
+    // --- Portfolio position (if held) ---
+    let txs = transactions::list_transactions_backend(backend).unwrap_or_default();
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+    let mut prices_map: HashMap<String, Decimal> = HashMap::new();
+    if let Some(price) = spot_price {
+        prices_map.insert(sym.clone(), price);
+    }
+    let positions = compute_positions(&txs, &prices_map, &fx_rates);
+    let position = positions.into_iter().find(|p| p.symbol.to_uppercase() == sym);
+
+    // --- Watchlist entry ---
+    let wl_entries = watchlist::list_watchlist_backend(backend).unwrap_or_default();
+    let wl_entry = wl_entries.into_iter().find(|w| w.symbol.to_uppercase() == sym);
+
+    // --- Convictions for this symbol ---
+    let all_convictions = convictions::list_current_backend(backend)
+        .unwrap_or_default();
+    let symbol_convictions: Vec<_> = all_convictions
+        .into_iter()
+        .filter(|c| c.symbol.to_uppercase() == sym)
+        .collect();
+
+    // --- Build output ---
+    let now = Utc::now().to_rfc3339();
+
+    if json_output {
+        let output = json!({
+            "symbol": sym,
+            "name": name,
+            "category": format!("{:?}", category),
+            "generated_at": now,
+
+            "price": {
+                "spot": spot_price.map(|p| p.to_string()),
+                "source": spot_source,
+                "fetched_at": spot_fetched_at,
+                "pre_market": pre_market.map(|p| p.to_string()),
+                "post_market": post_market.map(|p| p.to_string()),
+                "post_market_change_pct": post_market_change_pct.map(|p| p.to_string()),
+                "daily_change_pct": daily_change_pct.map(|p| p.to_string()),
+                "latest_bar": latest_bar.as_ref().map(|b| json!({
+                    "date": b.date,
+                    "open": b.open.map(|v| v.to_string()),
+                    "high": b.high.map(|v| v.to_string()),
+                    "low": b.low.map(|v| v.to_string()),
+                    "close": b.close.to_string(),
+                    "volume": b.volume,
+                })),
+            },
+
+            "technicals": snapshot.as_ref().map(|s| json!({
+                "timeframe": s.timeframe,
+                "rsi_14": s.rsi_14,
+                "rsi_signal": s.rsi_14.map(|v| if v > 70.0 { "overbought" } else if v < 30.0 { "oversold" } else { "neutral" }),
+                "macd": s.macd,
+                "macd_signal": s.macd_signal,
+                "macd_histogram": s.macd_histogram,
+                "sma_20": s.sma_20,
+                "sma_50": s.sma_50,
+                "sma_200": s.sma_200,
+                "bollinger_upper": s.bollinger_upper,
+                "bollinger_middle": s.bollinger_middle,
+                "bollinger_lower": s.bollinger_lower,
+                "range_52w_low": s.range_52w_low,
+                "range_52w_high": s.range_52w_high,
+                "range_52w_position": s.range_52w_position,
+                "above_sma_20": s.above_sma_20,
+                "above_sma_50": s.above_sma_50,
+                "above_sma_200": s.above_sma_200,
+                "volume_avg_20": s.volume_avg_20,
+                "volume_ratio_20": s.volume_ratio_20,
+                "volume_regime": s.volume_regime,
+                "computed_at": s.computed_at,
+            })),
+
+            "levels": {
+                "nearest_support": nearest.as_ref().and_then(|n| n.support.as_ref()),
+                "nearest_resistance": nearest.as_ref().and_then(|n| n.resistance.as_ref()),
+                "all": levels,
+                "count": levels.len(),
+            },
+
+            "correlations": relevant_correlations.iter().map(|c| {
+                let other = if c.symbol_a.to_uppercase() == sym { &c.symbol_b } else { &c.symbol_a };
+                json!({
+                    "symbol": other,
+                    "correlation": c.correlation,
+                    "period": c.period,
+                    "recorded_at": c.recorded_at,
+                })
+            }).collect::<Vec<_>>(),
+
+            "regime": regime.as_ref().map(|r| json!({
+                "regime": r.regime,
+                "confidence": r.confidence,
+                "drivers": r.drivers,
+                "vix": r.vix,
+                "dxy": r.dxy,
+                "yield_10y": r.yield_10y,
+                "oil": r.oil,
+                "gold": r.gold,
+                "btc": r.btc,
+                "recorded_at": r.recorded_at,
+            })),
+
+            "scenarios": relevant_scenarios.iter().map(|s| json!({
+                "id": s.id,
+                "name": s.name,
+                "probability": s.probability,
+                "description": s.description,
+                "asset_impact": s.asset_impact,
+                "triggers": s.triggers,
+                "status": s.status,
+            })).collect::<Vec<_>>(),
+
+            "trends": relevant_trends.iter().map(|t| json!({
+                "id": t.id,
+                "name": t.name,
+                "timeframe": t.timeframe,
+                "direction": t.direction,
+                "conviction": t.conviction,
+                "category": t.category,
+                "description": t.description,
+                "asset_impact": t.asset_impact,
+                "key_signal": t.key_signal,
+                "status": t.status,
+            })).collect::<Vec<_>>(),
+
+            "alerts": symbol_alerts.iter().map(|a| json!({
+                "id": a.id,
+                "kind": format!("{:?}", a.kind),
+                "direction": format!("{:?}", a.direction),
+                "condition": a.condition,
+                "threshold": a.threshold,
+                "status": format!("{:?}", a.status),
+                "rule_text": a.rule_text,
+                "recurring": a.recurring,
+                "triggered_at": a.triggered_at,
+            })).collect::<Vec<_>>(),
+
+            "portfolio": position.as_ref().map(|p| json!({
+                "quantity": p.quantity.to_string(),
+                "avg_cost": p.avg_cost.to_string(),
+                "total_cost": p.total_cost.to_string(),
+                "current_value": p.current_value.map(|v| v.to_string()),
+                "unrealized_gain": p.gain.map(|g| g.to_string()),
+                "unrealized_gain_pct": p.gain_pct.map(|g| g.round_dp(2).to_string()),
+                "allocation_pct": p.allocation_pct.map(|a| a.round_dp(2).to_string()),
+            })),
+
+            "watchlist": wl_entry.as_ref().map(|w| json!({
+                "group_id": w.group_id,
+                "target_price": w.target_price,
+                "target_direction": w.target_direction,
+                "added_at": w.added_at,
+            })),
+
+            "convictions": symbol_convictions.iter().map(|c| json!({
+                "id": c.id,
+                "symbol": c.symbol,
+                "score": c.score,
+                "notes": c.notes,
+                "recorded_at": c.recorded_at,
+            })).collect::<Vec<_>>(),
+
+            "freshness": {
+                "price_fetched_at": spot_fetched_at,
+                "technicals_computed_at": snapshot.as_ref().map(|s| s.computed_at.clone()),
+                "history_days": history_days,
+                "history_range": if oldest_date.is_some() && newest_date.is_some() {
+                    Some(json!({ "oldest": oldest_date, "newest": newest_date }))
+                } else {
+                    None
+                },
+                "levels_count": levels.len(),
+                "alerts_count": symbol_alerts.len(),
+                "correlations_count": relevant_correlations.len(),
+                "scenarios_count": relevant_scenarios.len(),
+                "trends_count": relevant_trends.len(),
+            },
+        });
+
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        // Human-readable markdown output
+        println!("# {} — {}", sym, name);
+        println!("Category: {:?}", category);
+        println!();
+
+        // Price
+        if let Some(price) = spot_price {
+            print!("**Price:** {}", price);
+            if let Some(pct) = daily_change_pct {
+                let arrow = if pct > dec!(0) { "▲" } else if pct < dec!(0) { "▼" } else { "—" };
+                print!("  {} {}%", arrow, pct);
+            }
+            println!();
+            if let Some(pre) = pre_market {
+                println!("  Pre-market: {}", pre);
+            }
+            if let Some(post) = post_market {
+                print!("  Post-market: {}", post);
+                if let Some(pct) = post_market_change_pct {
+                    print!(" ({}%)", pct);
+                }
+                println!();
+            }
+        } else {
+            println!("**Price:** N/A (no cached data)");
+        }
+        println!();
+
+        // Technicals
+        if let Some(s) = &snapshot {
+            println!("## Technicals ({})", s.timeframe);
+            if let Some(rsi) = s.rsi_14 {
+                let signal = if rsi > 70.0 { "OVERBOUGHT" } else if rsi < 30.0 { "OVERSOLD" } else { "neutral" };
+                println!("  RSI(14): {:.1} [{}]", rsi, signal);
+            }
+            if let (Some(macd), Some(sig), Some(hist)) = (s.macd, s.macd_signal, s.macd_histogram) {
+                println!("  MACD: {:.4}  Signal: {:.4}  Hist: {:.4}", macd, sig, hist);
+            }
+            let smas = [("SMA(20)", s.sma_20, s.above_sma_20), ("SMA(50)", s.sma_50, s.above_sma_50), ("SMA(200)", s.sma_200, s.above_sma_200)];
+            for (label, val, above) in smas {
+                if let Some(v) = val {
+                    let pos = above.map(|a| if a { "above" } else { "below" }).unwrap_or("?");
+                    println!("  {}: {:.2} [{}]", label, v, pos);
+                }
+            }
+            if let Some(pos) = s.range_52w_position {
+                println!("  52W range: {:.0}% (low: {}, high: {})",
+                    pos,
+                    s.range_52w_low.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "?".into()),
+                    s.range_52w_high.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "?".into()),
+                );
+            }
+            if let Some(regime) = &s.volume_regime {
+                println!("  Volume regime: {} (ratio: {:.2}x)",
+                    regime,
+                    s.volume_ratio_20.unwrap_or(0.0),
+                );
+            }
+            println!();
+        }
+
+        // Levels
+        if !levels.is_empty() || nearest.is_some() {
+            println!("## Key Levels");
+            if let Some(ref pair) = nearest {
+                if let Some(ref sup) = pair.support {
+                    println!("  Nearest support: {:.2} ({}, strength {:.0}%)", sup.price, sup.level_type, sup.strength * 100.0);
+                }
+                if let Some(ref res) = pair.resistance {
+                    println!("  Nearest resistance: {:.2} ({}, strength {:.0}%)", res.price, res.level_type, res.strength * 100.0);
+                }
+            }
+            println!("  Total stored levels: {}", levels.len());
+            println!();
+        }
+
+        // Portfolio position
+        if let Some(p) = &position {
+            println!("## Portfolio Position");
+            println!("  Qty: {}  Avg cost: {}  Total cost: {}", p.quantity, p.avg_cost, p.total_cost);
+            if let Some(val) = p.current_value {
+                println!("  Current value: {}", val);
+            }
+            if let Some(g) = p.gain {
+                let pct_str = p.gain_pct.map(|pct| format!(" ({}%)", pct.round_dp(2))).unwrap_or_default();
+                println!("  Unrealized P&L: {}{}", g, pct_str);
+            }
+            if let Some(a) = p.allocation_pct {
+                println!("  Allocation: {}%", a.round_dp(2));
+            }
+            println!();
+        }
+
+        // Watchlist
+        if let Some(w) = &wl_entry {
+            println!("## Watchlist");
+            if let Some(ref target) = w.target_price {
+                println!("  Target: {} {}", w.target_direction.as_deref().unwrap_or("at"), target);
+            }
+            println!();
+        }
+
+        // Alerts
+        if !symbol_alerts.is_empty() {
+            println!("## Alerts ({})", symbol_alerts.len());
+            for a in &symbol_alerts {
+                println!("  {}", a);
+            }
+            println!();
+        }
+
+        // Correlations
+        if !relevant_correlations.is_empty() {
+            println!("## Correlations");
+            for c in &relevant_correlations {
+                let other = if c.symbol_a.to_uppercase() == sym { &c.symbol_b } else { &c.symbol_a };
+                println!("  {} ↔ {}: {:.2} ({})", sym, other, c.correlation, c.period);
+            }
+            println!();
+        }
+
+        // Regime
+        if let Some(r) = &regime {
+            println!("## Current Regime: {} (confidence: {:.0}%)",
+                r.regime,
+                r.confidence.unwrap_or(0.0) * 100.0,
+            );
+            if let Some(ref drivers) = r.drivers {
+                println!("  Drivers: {}", drivers);
+            }
+            println!();
+        }
+
+        // Scenarios
+        if !relevant_scenarios.is_empty() {
+            println!("## Related Scenarios ({})", relevant_scenarios.len());
+            for s in &relevant_scenarios {
+                println!("  [{:.0}%] {} — {}", s.probability * 100.0, s.name, s.description.as_deref().unwrap_or(""));
+            }
+            println!();
+        }
+
+        // Trends
+        if !relevant_trends.is_empty() {
+            println!("## Related Trends ({})", relevant_trends.len());
+            for t in &relevant_trends {
+                println!("  {} {} ({}) — {}", t.direction, t.name, t.conviction, t.description.as_deref().unwrap_or(""));
+            }
+            println!();
+        }
+
+        // Convictions
+        if !symbol_convictions.is_empty() {
+            println!("## Convictions");
+            for c in &symbol_convictions {
+                println!("  {} score={} — {}", c.symbol, c.score, c.notes.as_deref().unwrap_or(""));
+            }
+            println!();
+        }
+
+        // Freshness
+        println!("## Freshness");
+        println!("  History: {} days{}", history_days,
+            if oldest_date.is_some() && newest_date.is_some() {
+                format!(" ({} → {})", oldest_date.as_deref().unwrap_or("?"), newest_date.as_deref().unwrap_or("?"))
+            } else {
+                String::new()
+            });
+        if let Some(ref at) = spot_fetched_at {
+            println!("  Price fetched: {}", at);
+        }
+        if let Some(ref s) = snapshot {
+            println!("  Technicals computed: {}", s.computed_at);
+        }
+    }
+
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(

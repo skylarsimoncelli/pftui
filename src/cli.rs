@@ -1865,6 +1865,13 @@ pub enum AnalyticsConvictionCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsCommand {
+    /// Full synthesized intelligence blob for a single asset
+    Asset {
+        /// Symbol to analyze (required)
+        symbol: String,
+        #[arg(long)]
+        json: bool,
+    },
     Technicals {
         #[arg(long)]
         symbol: Option<String>,
@@ -3126,5 +3133,36 @@ mod tests {
         assert_eq!(level_type.as_deref(), Some("support"));
         assert_eq!(limit, Some(10));
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_asset_command() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "asset", "BTC-USD", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Asset { symbol, json },
+        }) = cli.command
+        else {
+            panic!("expected analytics asset command");
+        };
+
+        assert_eq!(symbol, "BTC-USD");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_asset_command_no_json() {
+        let cli = Cli::try_parse_from(["pftui", "analytics", "asset", "GC=F"]).unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Asset { symbol, json },
+        }) = cli.command
+        else {
+            panic!("expected analytics asset command");
+        };
+
+        assert_eq!(symbol, "GC=F");
+        assert!(!json);
     }
 }

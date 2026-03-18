@@ -1371,6 +1371,9 @@ fn main() -> Result<()> {
             },
         },
         Some(Command::Analytics { command }) => match command {
+            cli::AnalyticsCommand::Asset { symbol, json } => {
+                commands::analytics::run_asset_intelligence(&backend, &symbol, json)
+            }
             cli::AnalyticsCommand::Technicals {
                 symbol,
                 timeframe,
