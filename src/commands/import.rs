@@ -209,25 +209,35 @@ fn validate_snapshot(snapshot: &Snapshot, config: &Config) -> Result<()> {
 
 /// Replace mode: wipe existing data, then insert everything from snapshot.
 fn import_replace(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()> {
+    const TABLES_TO_CLEAR: &[&str] = &[
+        "transactions",
+        "portfolio_allocations",
+        "watchlist",
+        "price_cache",
+        "price_history",
+        "technical_snapshots",
+        "technical_levels",
+        "timeframe_signals",
+        "fx_cache",
+    ];
+
     crate::db::query::dispatch(
         backend,
         |conn| {
             let tx = conn.unchecked_transaction()?;
-            tx.execute_batch("DELETE FROM transactions")?;
-            tx.execute_batch("DELETE FROM portfolio_allocations")?;
-            tx.execute_batch("DELETE FROM watchlist")?;
+            for table in TABLES_TO_CLEAR {
+                tx.execute_batch(&format!("DELETE FROM {table}"))?;
+            }
             tx.commit()?;
             Ok(())
         },
         |pool| {
             crate::db::pg_runtime::block_on(async {
-                sqlx::query("DELETE FROM transactions")
-                    .execute(pool)
-                    .await?;
-                sqlx::query("DELETE FROM portfolio_allocations")
-                    .execute(pool)
-                    .await?;
-                sqlx::query("DELETE FROM watchlist").execute(pool).await?;
+                for table in TABLES_TO_CLEAR {
+                    sqlx::query(&format!("DELETE FROM {table}"))
+                        .execute(pool)
+                        .await?;
+                }
                 Ok::<(), sqlx::Error>(())
             })?;
             Ok(())
@@ -322,6 +332,7 @@ mod tests {
     use crate::db::allocations::{insert_allocation, list_allocations};
     use crate::db::backend::BackendConnection;
     use crate::db::open_in_memory;
+    use crate::db::price_cache::{get_cached_price_backend, upsert_price_backend};
     use crate::db::transactions::{
         insert_transaction, insert_transaction_backend, list_transactions,
         list_transactions_backend,
@@ -329,6 +340,7 @@ mod tests {
     use crate::db::watchlist::{
         add_to_watchlist, add_to_watchlist_backend, list_watchlist, list_watchlist_backend,
     };
+    use crate::models::price::PriceQuote;
     use crate::models::transaction::{NewTransaction, TxType};
     use rust_decimal_macros::dec;
 
@@ -367,7 +379,13 @@ mod tests {
                 conn.execute_batch(
                     "DELETE FROM transactions;
                      DELETE FROM portfolio_allocations;
-                     DELETE FROM watchlist;",
+                     DELETE FROM watchlist;
+                     DELETE FROM price_cache;
+                     DELETE FROM price_history;
+                     DELETE FROM technical_snapshots;
+                     DELETE FROM technical_levels;
+                     DELETE FROM timeframe_signals;
+                     DELETE FROM fx_cache;",
                 )?;
                 Ok(())
             },
@@ -380,6 +398,20 @@ mod tests {
                         .execute(pool)
                         .await?;
                     sqlx::query("DELETE FROM watchlist").execute(pool).await?;
+                    sqlx::query("DELETE FROM price_cache").execute(pool).await?;
+                    sqlx::query("DELETE FROM price_history")
+                        .execute(pool)
+                        .await?;
+                    sqlx::query("DELETE FROM technical_snapshots")
+                        .execute(pool)
+                        .await?;
+                    sqlx::query("DELETE FROM technical_levels")
+                        .execute(pool)
+                        .await?;
+                    sqlx::query("DELETE FROM timeframe_signals")
+                        .execute(pool)
+                        .await?;
+                    sqlx::query("DELETE FROM fx_cache").execute(pool).await?;
                     Ok::<(), sqlx::Error>(())
                 })
                 .expect("clear tables");
@@ -492,6 +524,43 @@ mod tests {
         let entries = list_watchlist(conn).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].symbol, "ETH");
+
+        std::fs::remove_file(&_path).ok();
+    }
+
+    #[test]
+    fn import_replace_clears_stale_cached_prices() {
+        let backend = to_backend(open_in_memory());
+        let config = Config::default();
+
+        upsert_price_backend(
+            &backend,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: dec!(999),
+                currency: "USD".to_string(),
+                fetched_at: "2026-03-18T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+            },
+        )
+        .unwrap();
+
+        let json = make_snapshot_json(
+            r#"{"symbol":"AAPL","category":"equity","tx_type":"buy","quantity":"10","price_per":"150","currency":"USD","date":"2025-06-01","notes":null}"#,
+            "",
+            "",
+            "full",
+        );
+        let (_path, path_str) = write_tmp_file(&json);
+
+        run(&backend, &config, &path_str, ImportMode::Replace).unwrap();
+
+        assert!(get_cached_price_backend(&backend, "AAPL", "USD")
+            .unwrap()
+            .is_none());
 
         std::fs::remove_file(&_path).ok();
     }
