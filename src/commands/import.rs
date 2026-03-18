@@ -234,9 +234,7 @@ fn import_replace(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()
         |pool| {
             crate::db::pg_runtime::block_on(async {
                 for table in TABLES_TO_CLEAR {
-                    sqlx::query(&format!("DELETE FROM {table}"))
-                        .execute(pool)
-                        .await?;
+                    clear_postgres_table_if_present(pool, table).await?;
                 }
                 Ok::<(), sqlx::Error>(())
             })?;
@@ -272,6 +270,20 @@ fn import_replace(backend: &BackendConnection, snapshot: &Snapshot) -> Result<()
         add_to_watchlist_backend(backend, &w.symbol, cat)?;
     }
     Ok(())
+}
+
+async fn clear_postgres_table_if_present(
+    pool: &sqlx::PgPool,
+    table: &str,
+) -> Result<(), sqlx::Error> {
+    match sqlx::query(&format!("DELETE FROM {table}"))
+        .execute(pool)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(sqlx::Error::Database(err)) if err.code().as_deref() == Some("42P01") => Ok(()),
+        Err(err) => Err(err),
+    }
 }
 
 /// Merge mode: add new entries without deleting existing data.
@@ -391,27 +403,19 @@ mod tests {
             },
             |pool| {
                 crate::db::pg_runtime::block_on(async {
-                    sqlx::query("DELETE FROM transactions")
-                        .execute(pool)
-                        .await?;
-                    sqlx::query("DELETE FROM portfolio_allocations")
-                        .execute(pool)
-                        .await?;
-                    sqlx::query("DELETE FROM watchlist").execute(pool).await?;
-                    sqlx::query("DELETE FROM price_cache").execute(pool).await?;
-                    sqlx::query("DELETE FROM price_history")
-                        .execute(pool)
-                        .await?;
-                    sqlx::query("DELETE FROM technical_snapshots")
-                        .execute(pool)
-                        .await?;
-                    sqlx::query("DELETE FROM technical_levels")
-                        .execute(pool)
-                        .await?;
-                    sqlx::query("DELETE FROM timeframe_signals")
-                        .execute(pool)
-                        .await?;
-                    sqlx::query("DELETE FROM fx_cache").execute(pool).await?;
+                    for table in [
+                        "transactions",
+                        "portfolio_allocations",
+                        "watchlist",
+                        "price_cache",
+                        "price_history",
+                        "technical_snapshots",
+                        "technical_levels",
+                        "timeframe_signals",
+                        "fx_cache",
+                    ] {
+                        clear_postgres_table_if_present(pool, table).await?;
+                    }
                     Ok::<(), sqlx::Error>(())
                 })
                 .expect("clear tables");
