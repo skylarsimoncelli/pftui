@@ -30,7 +30,13 @@ pftui analytics macro regime current --json
 - **Does it matter?** Connect to active scenarios, convictions, and portfolio holdings.
 - **Is it actionable?** Does this change the thesis, or is it noise?
 
-4. Update the system:
+4. Acknowledge processed alerts so they don't re-fire next hour:
+```bash
+pftui analytics alerts ack [ID]
+```
+This prevents the same alert from triggering duplicate messages. If the condition persists and you want it to fire again later, rearm it after acknowledging.
+
+5. Update the system:
 ```bash
 # Log a note
 pftui journal notes add "ALERT INVESTIGATION [date]: [symbol] hit [threshold]. Catalyst: [X]. Scenario impact: [Y]. Action: [Z]." \
@@ -44,7 +50,7 @@ pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened] — [sig
   --from alert-investigator --to evening-analyst --priority high --category signal --layer low
 ```
 
-5. **Decision: message the user or not.**
+6. **Decision: message the user or not.**
 
 Only message the user if the alert is SIGNIFICANT:
 - Affects a held position (BTC, gold, silver, uranium, cash via DXY)
@@ -66,6 +72,7 @@ If NOT significant (routine threshold touch, noise, already priced in): log the 
 ## Rules
 
 - Think before messaging. The user does not want 24 alerts a day. Filter aggressively.
+- **Never send the same alert twice.** Always ack after investigating. If you already messaged the user about gold being down, don't message again next hour with the same information.
 - Cluster analysis: if 3 alerts fire at once (e.g. gold + silver + DXY), that's ONE message about a macro move, not three separate alerts.
 - Always connect to scenarios and portfolio. "BTC dropped 5%" is useless. "BTC dropped 5% on [catalyst], moving Hard Recession scenario from 42% to 48%, and your 18% BTC position is now at [level] vs your $58-65k add zone" is useful.
 - 2 web searches maximum. Use pftui data first.
