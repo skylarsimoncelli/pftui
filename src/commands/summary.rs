@@ -1052,6 +1052,10 @@ fn format_percent_2(d: Decimal) -> String {
     format!("{:.2}", d)
 }
 
+fn sort_positions_for_json(positions: &mut [Position]) {
+    positions.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_full_json(
     backend: &BackendConnection,
@@ -1069,11 +1073,12 @@ fn run_full_json(
     }
 
     let fx_rates = load_fx_rates(backend);
-    let positions = compute_positions(&txs, prices, &fx_rates);
+    let mut positions = compute_positions(&txs, prices, &fx_rates);
     if positions.is_empty() {
         println!("{{\"error\": \"No positions\"}}");
         return Ok(());
     }
+    sort_positions_for_json(&mut positions);
 
     let data: Vec<_> = positions
         .iter()
@@ -1114,7 +1119,8 @@ fn run_percentage_json(
     }
 
     let fx_rates = load_fx_rates(backend);
-    let positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
+    let mut positions = compute_positions_from_allocations(&allocs, prices, &fx_rates);
+    sort_positions_for_json(&mut positions);
 
     let data: Vec<_> = positions
         .iter()
@@ -1281,6 +1287,19 @@ mod tests {
         assert_eq!(format_category(&AssetCategory::Cash), "Cash");
         assert_eq!(format_category(&AssetCategory::Commodity), "Commodity");
         assert_eq!(format_category(&AssetCategory::Fund), "Fund");
+    }
+
+    #[test]
+    fn sort_positions_for_json_orders_by_symbol() {
+        let mut positions = vec![
+            make_position("BTC", AssetCategory::Crypto, dec!(1), dec!(1), None),
+            make_position("AAPL", AssetCategory::Equity, dec!(1), dec!(1), None),
+        ];
+
+        sort_positions_for_json(&mut positions);
+
+        assert_eq!(positions[0].symbol, "AAPL");
+        assert_eq!(positions[1].symbol, "BTC");
     }
 
     #[test]
