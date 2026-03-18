@@ -6,8 +6,11 @@ use serde_json::json;
 use crate::alerts::engine::{check_alerts_backend_only, AlertCheckResult};
 use crate::alerts::rules::parse_rule;
 use crate::alerts::{AlertDirection, AlertKind, AlertRule, AlertStatus};
+use crate::analytics::levels::select_actionable_level;
 use crate::db::alerts::{self as alerts_db, NewAlert};
 use crate::db::backend::BackendConnection;
+use crate::db::price_cache;
+use crate::db::technical_levels;
 use crate::db::triggered_alerts as triggered_alerts_db;
 use crate::models::asset::AssetCategory;
 use crate::models::transaction::TxType;
@@ -38,6 +41,7 @@ pub struct AlertsArgs {
     pub today: bool,
     pub kind: Option<String>,
     pub symbol: Option<String>,
+    pub from_level: Option<String>,
     pub condition: Option<String>,
     pub label: Option<String>,
     pub triggered: bool,
@@ -47,6 +51,10 @@ pub struct AlertsArgs {
 }
 
 fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
+    if let Some(selector) = args.from_level.as_deref() {
+        return run_add_from_stored_level(backend, selector, args);
+    }
+
     if args.kind.is_none() && args.condition.is_none() {
         let rule_text = args.rule.as_deref().unwrap_or("");
         if rule_text.is_empty() {
@@ -113,6 +121,78 @@ fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
     println!(
         "   Type: {} | Condition: {} | Recurring: {}",
         kind, condition, args.recurring
+    );
+    Ok(())
+}
+
+fn run_add_from_stored_level(
+    backend: &BackendConnection,
+    selector: &str,
+    args: &AlertsArgs,
+) -> Result<()> {
+    let symbol = args
+        .symbol
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_uppercase();
+    if symbol.is_empty() {
+        bail!("--symbol is required when using --from-level");
+    }
+    if let Some(kind) = args.kind.as_deref() {
+        if !kind.eq_ignore_ascii_case("price") {
+            bail!("--from-level only supports price alerts");
+        }
+    }
+
+    let prices = price_cache::get_all_cached_prices_backend(backend)?;
+    let current_price = prices
+        .into_iter()
+        .find(|quote| quote.symbol.eq_ignore_ascii_case(&symbol))
+        .map(|quote| quote.price)
+        .ok_or_else(|| anyhow::anyhow!("No cached price available for {}", symbol))?;
+    let current_f = current_price
+        .to_string()
+        .parse::<f64>()
+        .map_err(|_| anyhow::anyhow!("Failed to parse cached price for {}", symbol))?;
+
+    let levels = technical_levels::get_levels_for_symbol_backend(backend, &symbol)?;
+    if levels.is_empty() {
+        bail!("No stored levels available for {}", symbol);
+    }
+
+    let selected = select_actionable_level(&levels, current_f, selector).ok_or_else(|| {
+        anyhow::anyhow!("No stored '{}' level available for {}", selector, symbol)
+    })?;
+    let direction = if selected.price >= current_f {
+        AlertDirection::Above
+    } else {
+        AlertDirection::Below
+    };
+    let threshold = format_level_threshold(selected.price);
+    let label = args
+        .label
+        .clone()
+        .unwrap_or_else(|| format!("{} {} stored {} {}", symbol, direction, selector, threshold));
+    let direction_text = direction.to_string();
+    let id = alerts_db::add_alert_backend(
+        backend,
+        NewAlert {
+            kind: "price",
+            symbol: &symbol,
+            direction: &direction_text,
+            condition: None,
+            threshold: &threshold,
+            rule_text: &label,
+            recurring: args.recurring,
+            cooldown_minutes: args.cooldown_minutes,
+        },
+    )?;
+
+    println!("🟢 Alert #{} created: {}", id, label);
+    println!(
+        "   Type: price | Source: stored {} | Threshold: {}",
+        selector, threshold
     );
     Ok(())
 }
@@ -380,6 +460,16 @@ fn inferred_threshold(condition: &str) -> String {
     }
 }
 
+fn format_level_threshold(price: f64) -> String {
+    if price >= 10000.0 {
+        format!("{:.0}", price)
+    } else if price >= 1.0 {
+        format!("{:.2}", price)
+    } else {
+        format!("{:.4}", price)
+    }
+}
+
 fn portfolio_symbols(backend: &BackendConnection) -> Result<Vec<String>> {
     let mut symbols = std::collections::BTreeSet::new();
 
@@ -629,6 +719,7 @@ mod tests {
     use crate::db::backend::BackendConnection;
     use crate::db::open_in_memory;
     use crate::db::price_cache;
+    use crate::db::technical_levels::{self, TechnicalLevelRecord};
     use crate::models::price::PriceQuote;
     use rust_decimal::Decimal;
     use std::str::FromStr;
@@ -672,6 +763,25 @@ mod tests {
         BackendConnection::Sqlite { conn: setup_db() }
     }
 
+    fn insert_level(backend: &BackendConnection, symbol: &str, level_type: &str, price: f64) {
+        technical_levels::upsert_levels_backend(
+            backend,
+            symbol,
+            &[TechnicalLevelRecord {
+                id: None,
+                symbol: symbol.to_string(),
+                level_type: level_type.to_string(),
+                price,
+                strength: 0.8,
+                source_method: "test".to_string(),
+                timeframe: "1d".to_string(),
+                notes: Some("test level".to_string()),
+                computed_at: "2026-03-18T16:00:00Z".to_string(),
+            }],
+        )
+        .unwrap();
+    }
+
     fn default_args() -> AlertsArgs {
         AlertsArgs {
             rule: None,
@@ -681,6 +791,7 @@ mod tests {
             today: false,
             kind: None,
             symbol: None,
+            from_level: None,
             condition: None,
             label: None,
             triggered: false,
@@ -715,6 +826,24 @@ mod tests {
         let alerts = alerts_db::list_alerts_backend(&backend).unwrap();
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].kind, crate::alerts::AlertKind::Allocation);
+    }
+
+    #[test]
+    fn test_add_alert_from_stored_support_level() {
+        let backend = setup_backend();
+        insert_level(&backend, "BTC", "support", 65000.0);
+        let args = AlertsArgs {
+            kind: Some("price".to_string()),
+            symbol: Some("BTC".to_string()),
+            from_level: Some("support".to_string()),
+            ..default_args()
+        };
+
+        run_add(&backend, &args).unwrap();
+        let alerts = alerts_db::list_alerts_backend(&backend).unwrap();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].threshold, "65000");
+        assert_eq!(alerts[0].direction, AlertDirection::Below);
     }
 
     #[test]

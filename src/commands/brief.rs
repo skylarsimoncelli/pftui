@@ -8,6 +8,7 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::alerts::AlertStatus;
+use crate::analytics::levels::{nearest_actionable_levels, ActionableLevelPair};
 use crate::analytics::risk;
 use crate::analytics::technicals::{
     load_or_compute_snapshots, load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME,
@@ -19,6 +20,7 @@ use crate::db::economic_cache;
 use crate::db::price_cache::{get_all_cached_prices, get_cached_price};
 use crate::db::price_history::{get_history, get_prices_at_date};
 use crate::db::snapshots::get_all_portfolio_snapshots;
+use crate::db::technical_levels;
 use crate::db::technical_snapshots::TechnicalSnapshotRecord;
 use crate::db::transactions::list_transactions;
 use crate::indicators::correlation::compute_rolling_correlation;
@@ -88,6 +90,8 @@ struct PositionJson {
     allocation_pct: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     technicals: Option<TechnicalSnapshotJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    levels: Option<ActionableLevelPair>,
 }
 
 #[derive(Serialize)]
@@ -269,6 +273,9 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
                     sma_20: None, // Not available in current TechnicalSnapshot
                     sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
                 });
+            let levels_json = pos
+                .current_price
+                .and_then(|price| get_nearest_levels_json(conn, &pos.symbol, price));
 
             PositionJson {
                 symbol: pos.symbol.clone(),
@@ -284,6 +291,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
                 daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
                 allocation_pct: allocation_pct.map(|a| a.to_string()),
                 technicals: technicals_json,
+                levels: levels_json,
             }
         })
         .collect();
@@ -454,6 +462,9 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
                     sma_20: None,
                     sma_50: t.sma_50.map(|v| format!("{:.2}", v)),
                 });
+            let levels_json = pos
+                .current_price
+                .and_then(|price| get_nearest_levels_json_backend(backend, &pos.symbol, price));
 
             PositionJson {
                 symbol: pos.symbol.clone(),
@@ -469,6 +480,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
                 daily_change_pct: daily_change_pct.map(|p| p.round_dp(2).to_string()),
                 allocation_pct: allocation_pct.map(|a| a.to_string()),
                 technicals: technicals_json,
+                levels: levels_json,
             }
         })
         .collect();
@@ -735,6 +747,42 @@ fn get_top_timeframe_signal_json_backend(backend: &BackendConnection) -> Result<
         }))
     } else {
         anyhow::bail!("No timeframe signals available")
+    }
+}
+
+fn get_nearest_levels_json(
+    conn: &Connection,
+    symbol: &str,
+    current_price: Decimal,
+) -> Option<ActionableLevelPair> {
+    let levels = technical_levels::get_levels_for_symbol(conn, symbol).ok()?;
+    if levels.is_empty() {
+        return None;
+    }
+    let price = current_price.to_string().parse::<f64>().ok()?;
+    let pair = nearest_actionable_levels(&levels, price);
+    if pair.support.is_none() && pair.resistance.is_none() {
+        None
+    } else {
+        Some(pair)
+    }
+}
+
+fn get_nearest_levels_json_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+    current_price: Decimal,
+) -> Option<ActionableLevelPair> {
+    let levels = technical_levels::get_levels_for_symbol_backend(backend, symbol).ok()?;
+    if levels.is_empty() {
+        return None;
+    }
+    let price = current_price.to_string().parse::<f64>().ok()?;
+    let pair = nearest_actionable_levels(&levels, price);
+    if pair.support.is_none() && pair.resistance.is_none() {
+        None
+    } else {
+        Some(pair)
     }
 }
 
@@ -1440,6 +1488,7 @@ fn run_full(
     if !technicals_data.is_empty() {
         print_technicals_section(&positions, technicals_data);
     }
+    print_key_levels(conn, &positions, base);
 
     // Warnings
     if priced_count < total_count {
@@ -1536,6 +1585,7 @@ fn run_percentage(
     if !technicals_data.is_empty() {
         print_technicals_section(&positions, technicals_data);
     }
+    print_key_levels(conn, &positions, base);
 
     let missing = positions.len() - priced.len();
     if missing > 0 {
@@ -1639,6 +1689,7 @@ fn run_full_backend(
     if !technicals_data.is_empty() {
         print_technicals_section(&positions, technicals_data);
     }
+    print_key_levels_backend(backend, &positions, base);
     if priced_count < total_count {
         let missing = total_count - priced_count;
         println!(
@@ -1724,6 +1775,7 @@ fn run_percentage_backend(
     if !technicals_data.is_empty() {
         print_technicals_section(&positions, technicals_data);
     }
+    print_key_levels_backend(backend, &positions, base);
     let missing = positions.len() - priced.len();
     if missing > 0 {
         println!(
@@ -2056,6 +2108,93 @@ fn print_what_changed_today_backend(
     println!("## What Changed Today\n");
     print_top_movers(positions, hist_1d, base);
     print_alerts_backend(backend);
+}
+
+fn print_key_levels(conn: &Connection, positions: &[Position], base: &str) {
+    println!("## Key Levels\n");
+    print_key_levels_rows(
+        positions.iter().filter_map(|pos| {
+            if pos.category == AssetCategory::Cash {
+                return None;
+            }
+            let price = pos.current_price?;
+            let levels = get_nearest_levels_json(conn, &pos.symbol, price)?;
+            Some((pos, levels))
+        }),
+        base,
+    );
+}
+
+fn print_key_levels_backend(backend: &BackendConnection, positions: &[Position], base: &str) {
+    println!("## Key Levels\n");
+    print_key_levels_rows(
+        positions.iter().filter_map(|pos| {
+            if pos.category == AssetCategory::Cash {
+                return None;
+            }
+            let price = pos.current_price?;
+            let levels = get_nearest_levels_json_backend(backend, &pos.symbol, price)?;
+            Some((pos, levels))
+        }),
+        base,
+    );
+}
+
+fn print_key_levels_rows<'a, I>(rows: I, base: &str)
+where
+    I: Iterator<Item = (&'a Position, ActionableLevelPair)>,
+{
+    let rows: Vec<_> = rows.take(8).collect();
+    if rows.is_empty() {
+        println!("No stored market structure levels available.\n");
+        return;
+    }
+
+    println!("| Symbol | Spot | Support | Resistance |");
+    println!("|--------|-----:|--------:|-----------:|");
+    for (pos, levels) in rows {
+        let spot = pos
+            .current_price
+            .map(|price| fmt_currency(price, 2, base))
+            .unwrap_or_else(|| "N/A".to_string());
+        let support = levels
+            .support
+            .as_ref()
+            .map(format_actionable_level_cell)
+            .unwrap_or_else(|| "—".to_string());
+        let resistance = levels
+            .resistance
+            .as_ref()
+            .map(format_actionable_level_cell)
+            .unwrap_or_else(|| "—".to_string());
+
+        println!(
+            "| {} | {} | {} | {} |",
+            pos.symbol, spot, support, resistance
+        );
+    }
+    println!();
+}
+
+fn format_actionable_level_cell(level: &crate::analytics::levels::ActionableLevel) -> String {
+    format!(
+        "{} ({}, {:.1}%)",
+        format_level_value(level.price),
+        level.level_type.replace('_', " "),
+        level.distance_pct
+    )
+}
+
+fn format_level_value(price: f64) -> String {
+    if price >= 10000.0 {
+        format!("{:.0}", price)
+    } else if price >= 100.0 {
+        format!("{:.1}", price)
+    } else if price >= 1.0 {
+        format!("{:.2}", price)
+    } else {
+        format!("{:.4}", price)
+    }
 }
 
 fn print_correlation_summary(conn: &Connection, positions: &[Position]) {

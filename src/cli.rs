@@ -1426,6 +1426,9 @@ pub enum AnalyticsAlertsCommand {
         /// Symbol or symbol pair (for structured alerts)
         #[arg(long)]
         symbol: Option<String>,
+        /// Create a price alert from a stored level selector (support, resistance, bb_upper, bb_lower, range_52w_high, range_52w_low, swing_high, swing_low)
+        #[arg(long = "from-level")]
+        from_level: Option<String>,
         /// Structured smart-alert condition name
         #[arg(long)]
         condition: Option<String>,
@@ -2538,14 +2541,9 @@ mod tests {
 
     #[test]
     fn parse_prediction_score_batch_single_entry() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "journal",
-            "prediction",
-            "score-batch",
-            "5:correct",
-        ])
-        .expect("cli should parse");
+        let cli =
+            Cli::try_parse_from(["pftui", "journal", "prediction", "score-batch", "5:correct"])
+                .expect("cli should parse");
 
         let Some(Command::Journal {
             command:
@@ -2747,8 +2745,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Scenario {
-                    command:
-                        AnalyticsScenarioCommand::Remove { value, json },
+                    command: AnalyticsScenarioCommand::Remove { value, json },
                 },
         }) = cli.command
         else {
@@ -2776,12 +2773,7 @@ mod tests {
         let Some(Command::Analytics {
             command:
                 AnalyticsCommand::Scenario {
-                    command:
-                        AnalyticsScenarioCommand::History {
-                            value,
-                            limit,
-                            json,
-                        },
+                    command: AnalyticsScenarioCommand::History { value, limit, json },
                 },
         }) = cli.command
         else {
@@ -2851,12 +2843,7 @@ mod tests {
                 AnalyticsCommand::Scenario {
                     command:
                         AnalyticsScenarioCommand::Signal {
-                            command:
-                                AnalyticsScenarioSignalCommand::List {
-                                    scenario,
-                                    json,
-                                    ..
-                                },
+                            command: AnalyticsScenarioSignalCommand::List { scenario, json, .. },
                         },
                 },
         }) = cli.command
@@ -3093,23 +3080,12 @@ mod tests {
 
     #[test]
     fn parse_analytics_levels_command() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "levels",
-            "--symbol",
-            "BTC",
-            "--json",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "levels", "--symbol", "BTC", "--json"])
+                .unwrap();
 
         let Some(Command::Analytics {
-            command:
-                AnalyticsCommand::Levels {
-                    symbol,
-                    json,
-                    ..
-                },
+            command: AnalyticsCommand::Levels { symbol, json, .. },
         }) = cli.command
         else {
             panic!("expected analytics levels command");
