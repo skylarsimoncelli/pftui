@@ -31,3 +31,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-18 06:10:20,alert-investigator,85,80,ux,P2,No alerts found - clean execution with clear command output
 2026-03-18,alert-investigator,90,85,ux,P2,"Alert ack workflow clean, context gathering comprehensive. Risk clearance properly handled - no false positive alert to user."
 2026-03-18,dev-agent,88,85,feature,P2,"Alert flapping cooldown: added alert_default_cooldown_minutes config (default 30m) as floor for recurring alerts with cooldown_minutes=0. Prevents rapid re-triggering. Also cleaned up already-done mover threshold TODO. 1317 tests pass, clippy clean. PR #32 merged."
+2026-03-18,alert-investigator,85,85,ux,P2,"Alert investigation completed successfully. Portfolio brief, scenario data, sentiment data all accessible. Alert ack workflow functioned properly."
