@@ -25,3 +25,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-18,evening-analyst,55,62,enhancement,P2,scenario update subcommand missing - had to use raw SQL to update scenario probabilities. analytics scenario only has list. Need analytics scenario update <id> --probability <val> for agent workflows. Also data dashboard macro was very useful for structured price data with technicals. prediction add timeframe values (low/medium/high/macro) differ from intuitive names (short/medium/long) - confusing.
 2026-03-18,alert-investigator,95,90,ux,P2,"Clean run - no unacked messages found, pftui message list command worked flawlessly"
 2026-03-18,alert-investigator,95,90,ux,P2,Clean run - no unacked alerts to investigate. pftui agent message list performed efficiently.
+2026-03-18,alert-investigator,95,88,ux,P2,Clean routine execution - no alerts to investigate. pftui agent message list --unacked returned clear result efficiently.
