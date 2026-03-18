@@ -916,5 +916,24 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    // F46: Stored market structure and key levels
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS technical_levels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            level_type TEXT NOT NULL,
+            price REAL NOT NULL,
+            strength REAL NOT NULL DEFAULT 0.5,
+            source_method TEXT NOT NULL,
+            timeframe TEXT NOT NULL DEFAULT '1d',
+            notes TEXT,
+            computed_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_technical_levels_symbol
+            ON technical_levels(symbol);
+        CREATE INDEX IF NOT EXISTS idx_technical_levels_type
+            ON technical_levels(symbol, level_type);",
+    )?;
+
     Ok(())
 }

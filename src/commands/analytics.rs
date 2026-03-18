@@ -8,8 +8,8 @@ use crate::db::backend::BackendConnection;
 use crate::db::query;
 use crate::db::{
     agent_messages, alerts, convictions, correlation_snapshots, price_cache, regime_snapshots,
-    research_questions, scenarios, structural, technical_snapshots, thesis, timeframe_signals,
-    transactions, trends, user_predictions, watchlist,
+    research_questions, scenarios, structural, technical_levels, technical_snapshots, thesis,
+    timeframe_signals, transactions, trends, user_predictions, watchlist,
 };
 use crate::models::asset::AssetCategory;
 
@@ -52,6 +52,7 @@ pub fn run(
             limit,
             json_output,
         ),
+        "levels" => run_levels(backend, symbol, signal_type, limit, json_output),
         "signals" => run_signals(backend, symbol, signal_type, severity, limit, json_output),
         "summary" => run_summary(backend, json_output),
         "low" => run_low(backend, json_output),
@@ -89,7 +90,7 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
@@ -594,6 +595,151 @@ fn fmt_opt(value: Option<f64>, precision: usize) -> String {
     value
         .map(|v| format!("{:.*}", precision, v))
         .unwrap_or_else(|| "N/A".to_string())
+}
+
+fn run_levels(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    level_type: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let mut rows = if let Some(sym) = symbol {
+        technical_levels::get_levels_for_symbol_backend(backend, &sym.to_uppercase())?
+    } else {
+        technical_levels::list_all_levels_backend(backend, None)?
+    };
+
+    // Filter by level_type if provided
+    if let Some(lt) = level_type {
+        let lt_lower = lt.to_lowercase();
+        rows.retain(|r| r.level_type.to_lowercase() == lt_lower);
+    }
+
+    if let Some(limit) = limit {
+        rows.truncate(limit);
+    }
+
+    if json_output {
+        // Enrich with nearest-level context when filtering by symbol
+        let output = if let Some(sym) = symbol {
+            let spot = price_cache::get_cached_price_backend(backend, &sym.to_uppercase(), "USD")
+                .ok()
+                .flatten()
+                .map(|q| q.price.to_string().parse::<f64>().unwrap_or(0.0));
+
+            let nearest = spot.and_then(|price| {
+                nearest_levels(&rows, price)
+            });
+
+            json!({
+                "symbol": sym.to_uppercase(),
+                "spot_price": spot,
+                "nearest_support": nearest.as_ref().map(|n| &n.0),
+                "nearest_resistance": nearest.as_ref().map(|n| &n.1),
+                "levels": rows,
+                "count": rows.len(),
+            })
+        } else {
+            json!({
+                "levels": rows,
+                "count": rows.len(),
+            })
+        };
+
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else if rows.is_empty() {
+        println!(
+            "No market structure levels found{}.",
+            symbol
+                .map(|s| format!(" for {}", s.to_uppercase()))
+                .unwrap_or_default()
+        );
+        println!("Run `pftui data refresh` to compute levels.");
+    } else {
+        if let Some(sym) = symbol {
+            println!("Market Structure Levels — {}", sym.to_uppercase());
+        } else {
+            println!("Market Structure Levels — All Symbols");
+        }
+        println!(
+            "{:<10} {:<14} {:>12} {:>8} {:<16} Notes",
+            "Symbol", "Type", "Price", "Str", "Method"
+        );
+        println!("{}", "─".repeat(80));
+        for row in &rows {
+            println!(
+                "{:<10} {:<14} {:>12} {:>8} {:<16} {}",
+                row.symbol,
+                row.level_type,
+                format_level_price(row.price),
+                format!("{:.0}%", row.strength * 100.0),
+                row.source_method,
+                row.notes.as_deref().unwrap_or(""),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Find the nearest support (below price) and resistance (above price).
+fn nearest_levels(
+    levels: &[crate::db::technical_levels::TechnicalLevelRecord],
+    price: f64,
+) -> Option<(serde_json::Value, serde_json::Value)> {
+    let support_types = ["support", "swing_low", "bb_lower", "range_52w_low"];
+    let resist_types = ["resistance", "swing_high", "bb_upper", "range_52w_high"];
+
+    let nearest_support = levels
+        .iter()
+        .filter(|l| {
+            l.price < price
+                && (support_types.contains(&l.level_type.as_str())
+                    || l.level_type.starts_with("sma_"))
+        })
+        .max_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|l| {
+            json!({
+                "price": l.price,
+                "type": l.level_type,
+                "strength": l.strength,
+                "distance_pct": ((price - l.price) / price) * 100.0,
+                "notes": l.notes,
+            })
+        })
+        .unwrap_or(serde_json::Value::Null);
+
+    let nearest_resistance = levels
+        .iter()
+        .filter(|l| {
+            l.price > price
+                && (resist_types.contains(&l.level_type.as_str())
+                    || l.level_type.starts_with("sma_"))
+        })
+        .min_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|l| {
+            json!({
+                "price": l.price,
+                "type": l.level_type,
+                "strength": l.strength,
+                "distance_pct": ((l.price - price) / price) * 100.0,
+                "notes": l.notes,
+            })
+        })
+        .unwrap_or(serde_json::Value::Null);
+
+    Some((nearest_support, nearest_resistance))
+}
+
+fn format_level_price(price: f64) -> String {
+    if price >= 10000.0 {
+        format!("{:.0}", price)
+    } else if price >= 1.0 {
+        format!("{:.2}", price)
+    } else {
+        format!("{:.4}", price)
+    }
 }
 
 fn run_signals(

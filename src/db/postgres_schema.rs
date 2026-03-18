@@ -695,6 +695,34 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
+
+        // F46: Stored market structure and key levels
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS technical_levels (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                level_type TEXT NOT NULL,
+                price DOUBLE PRECISION NOT NULL,
+                strength DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+                source_method TEXT NOT NULL,
+                timeframe TEXT NOT NULL DEFAULT '1d',
+                notes TEXT,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_technical_levels_symbol ON technical_levels(symbol)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_technical_levels_type ON technical_levels(symbol, level_type)",
+        )
+        .execute(pool)
+        .await?;
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

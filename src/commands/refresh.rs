@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::alerts::engine;
+use crate::analytics::levels as level_engine;
 use crate::analytics::technicals;
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
@@ -24,6 +25,7 @@ use crate::db::price_history::{
     get_history_backend, get_price_at_date_backend, upsert_history_backend,
 };
 use crate::db::snapshots::{upsert_portfolio_snapshot_backend, upsert_position_snapshot_backend};
+use crate::db::technical_levels;
 use crate::db::technical_snapshots;
 use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
@@ -750,6 +752,17 @@ fn run_with_output(
             );
         } else {
             info_ln!(verbose, "⊘ Technical snapshots (insufficient history)");
+        }
+
+        let levels_count = store_technical_levels(backend, &symbols)?;
+        if levels_count > 0 {
+            info_ln!(
+                verbose,
+                "✓ Market structure levels ({} symbols)",
+                levels_count
+            );
+        } else {
+            info_ln!(verbose, "⊘ Market structure levels (insufficient history)");
         }
     } else {
         info_ln!(verbose, "⊘ Prices (no symbols)");
@@ -1745,6 +1758,40 @@ fn store_technical_snapshots(
             continue;
         };
         technical_snapshots::insert_snapshot_backend(backend, &snapshot)?;
+        stored += 1;
+    }
+    Ok(stored)
+}
+
+fn store_technical_levels(
+    backend: &BackendConnection,
+    symbols: &[(String, AssetCategory)],
+) -> Result<usize> {
+    let mut stored = 0usize;
+    for (symbol, category) in symbols {
+        if *category == AssetCategory::Cash {
+            continue;
+        }
+        let history = match get_history_backend(backend, symbol, 370) {
+            Ok(rows) if !rows.is_empty() => rows,
+            _ => continue,
+        };
+
+        // Load or compute the technical snapshot for this symbol
+        let snapshot = technicals::compute_snapshot(symbol, technicals::DEFAULT_TIMEFRAME, &history);
+
+        let levels = level_engine::compute_levels(
+            symbol,
+            technicals::DEFAULT_TIMEFRAME,
+            &history,
+            snapshot.as_ref(),
+        );
+
+        if levels.is_empty() {
+            continue;
+        }
+
+        technical_levels::upsert_levels_backend(backend, symbol, &levels)?;
         stored += 1;
     }
     Ok(stored)
