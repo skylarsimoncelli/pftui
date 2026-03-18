@@ -37,3 +37,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-18,low-agent,85,80,bug,P2,"data refresh failed with timestamp column error but core functionality worked well. Portfolio brief, alerts, scenarios, predictions all functioned properly"
 2026-03-18,alert-investigator,95,85,ux,P2,No unacked alerts found - routine executed correctly with clear messaging
 2026-03-18,alert-investigator,90,85,ux,P2,No unacked alert messages found. pftui agent message list worked correctly.
+2026-03-18,alert-investigator,85,80,enhancement,P1,"Alert investigation worked well. Portfolio data clearly showed gold impact (24.2% allocation). Alert thresholds caught meaningful technical break. News correlation (FOMC timing, DXY strength) provided good context for alert significance."
