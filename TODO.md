@@ -8,25 +8,43 @@
 
 ## P1 — Always-On Analytics Engine
 
-### F45: Persistent Technical Snapshot Engine
+### [Feedback] `analytics scenario update` alias (P0)
 
-> Vision fit: AI should consume precomputed technical state, not recompute RSI/MACD/SMA
-> ad hoc in `brief`, `summary`, watchlist, or web handlers.
+> Evening Analyst scored 55/62 on Mar 18 because `analytics scenario` only exposes `list`.
+> The update/add/remove/signal-* commands live at `agent journal scenario ...` but agents
+> try `analytics scenario update <id> --probability <val>` which doesn't exist.
 >
-> Current gap:
-> - Technical indicators are computed on demand in multiple command/UI paths
-> - There is no dedicated persisted technical snapshot table
-> - Refresh stores prices/history, correlations, regime, and snapshots, but not a normalized
->   per-symbol technical state
+> Fix: add `analytics scenario update`, `analytics scenario add`, `analytics scenario remove`,
+> and `analytics scenario signal-*` as aliases routing to the existing `agent journal scenario` handlers.
+> Same pattern used for the `analytics scenario list` alias added in Mar 16.
 >
-> Actionable scope:
-> 1. Add `technical_snapshots` table keyed by `symbol + timeframe + computed_at`
-> 2. Persist RSI(14), MACD(12,26,9), SMA(20/50/200), Bollinger bands, 52W range position,
->    price-vs-moving-average state, and volume regime
-> 3. Compute snapshots during `pftui data refresh`
-> 4. Add `pftui analytics technicals [--symbol SYM] [--json]`
-> 5. Make `brief`, `summary`, watchlist, and web APIs read cached technicals first
-> 6. Add freshness/staleness reporting for technical snapshots in `analytics gaps`
+> Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`
+
+### [Feedback] Batch prediction scoring (P1)
+
+> Low-timeframe and medium-timeframe analysts both report that scoring predictions one at a time
+> is tedious when multiple predictions need scoring after a session.
+>
+> Add `agent journal prediction score-batch` or `--batch` mode to `prediction score` that accepts
+> multiple `<id>:<outcome>` pairs in one command invocation.
+>
+> Files: `src/cli.rs`, `src/commands/predict.rs`
+
+### [Feedback] Configurable overnight mover threshold (P2)
+
+> Morning brief agent notes 3% threshold is too high during war/volatility periods.
+> Add `--threshold <pct>` flag to `portfolio movers --overnight` to let agents tune
+> sensitivity per-run instead of using the hardcoded default.
+>
+> Files: `src/commands/movers.rs`, `src/cli.rs`
+
+### [Feedback] Alert flapping cooldown logic (P2)
+
+> Low-timeframe analyst reports scan alerts flapping (triggered/untriggered same day).
+> Add cooldown period config to alert evaluation so alerts that were triggered within
+> the cooldown window are suppressed even if condition toggles back.
+>
+> Files: `src/alerts/engine.rs`, `src/alerts/mod.rs`
 
 ### F46: Stored Market Structure And Key Levels
 
@@ -173,24 +191,25 @@
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Morning Market Research | 88% | 82% | Mar 7 | ↑ (Mar 8-9 crash/hang since fixed) |
-| Evening Eventuality Planner | 55% | 62% | Mar 17 | ↓ (missing `analytics scenario update`, nonexistent subcommands) |
-| Sentinel Main TUI Review | 75% | 72% | Mar 10 | ↓ (display corruption, missing day P&L $) |
-| Market Close | 60% | 72% | Mar 9 | ↕ (movers bug + TIMESTAMPTZ crash, both fixed) |
+| Alert Investigator | 95% | 90% | Mar 18 | → (consistently high, no issues) |
+| Morning Brief Agent | 85% | 80% | Mar 17 | → (stable, minor threshold suggestion) |
+| Low-Timeframe Analyst | 85% | 88% | Mar 17 | → (stable, batch scoring + cooldown requests) |
+| Medium-Timeframe Analyst | 85% | 88% | Mar 18 | → (stable, wants conviction visualization) |
+| Evening Analyst | 55% | 62% | Mar 18 | ↓ (missing `analytics scenario update`, confusing timeframe names) |
 
 **Notes:**
-- Morning Research Mar 7 score (88/82) represents post-fix trajectory after Mar 8-9 crashes were resolved.
-- Evening Planner dropped on Mar 17: tried `analytics scenario update` (doesn't exist — command lives at `journal scenario update`), and guessed nonexistent `data prices`/`portfolio snapshot` subcommands. Root cause is namespace discoverability, not missing functionality.
-- Mar 16 run added `analytics scenario list --json`, `analytics conviction set`, `analytics macro regime set` aliases — but `analytics scenario update` alias was NOT added. This is the specific gap.
-- Sentinel has requested day P&L in dollars in *every single review since Mar 2* — still the most consistently requested feature.
-- Agent feedback (Mar 12-17) is predominantly P2 enhancement requests, not regressions.
+- Evening Analyst is the clear outlier at 55/62. Root cause is unchanged from last review: `analytics scenario` only has `list`, not `update`. Agent had to use raw SQL. Also confused by prediction timeframe values (low/medium/high/macro vs short/medium/long).
+- Alert Investigator is consistently 85-100% — no issues, system working as designed.
+- Both low-timeframe and medium-timeframe analysts independently request prediction scoring improvements (batch scoring, pending-items interface).
+- F45 (Persistent Technical Snapshots) shipped Mar 17, now removed from backlog.
+- 49 commits since v0.12.1 — mostly feedback log entries, but F45 is a meaningful feature.
 
 **Top 3 priorities based on feedback:**
 
-1. **`analytics scenario update` alias** — Evening Planner hit this on Mar 17. The command exists at `journal scenario update` but `analytics scenario` only has `list`. Add `update` (and other CRUD) as analytics aliases to match the list alias that was already added.
-2. **TUI day P&L $ column** — Sentinel requests this in every review. Most consistently requested feature across all testers since Mar 2.
-3. **Keep release quality green** — `cargo clippy --all-targets -- -D warnings` and test suite should stay clean.
+1. **P0: `analytics scenario update/add/remove` aliases** — Evening Analyst hit this again on Mar 18 (55/62). Blocking the lowest scorer. Must add CRUD aliases under `analytics scenario` routing to existing `agent journal scenario` handlers.
+2. **P1: Batch prediction scoring** — Both low-timeframe and medium-timeframe analysts request this. Tedious to score predictions one at a time.
+3. **P2: Configurable overnight mover threshold** — Morning brief agent says 3% is too high during volatile periods. Add `--threshold` flag.
 
-**Release status:** v0.12.1 shipped Mar 16. Only P3 items remain in backlog. Build green: `cargo test` (1297 tests), `cargo clippy --all-targets -- -D warnings` clean.
+**Release status:** v0.12.1 shipped Mar 16. F45 landed since then. Build green: `cargo test` (1303 tests), `cargo clippy --all-targets -- -D warnings` clean. No P0 bugs. Release eligible once `analytics scenario update` alias ships.
 
-**GitHub stars:** 1 — Homebrew Core requires 50+.
+**GitHub stars:** 2 — Homebrew Core requires 50+.
