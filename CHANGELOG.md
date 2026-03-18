@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-18 — feat: add batch prediction scoring (score-batch)
+
+- What: added `pftui journal prediction score-batch` command that accepts multiple `id:outcome` pairs in one invocation (e.g. `3:correct 7:wrong 12:partial`). Each entry is validated and scored independently with graceful error handling. Supports `--json` output with scored/errors arrays and counts.
+- Why: both low-timeframe and medium-timeframe analysts reported that scoring predictions one at a time is tedious when multiple predictions need scoring after a session. This was the top P1 in TODO.md.
+- Files: `src/cli.rs`, `src/commands/predict.rs`, `src/main.rs`
+- Tests: `cargo test` — 1311 pass; `cargo clippy --all-targets -- -D warnings` clean; new tests: `parse_prediction_score_batch_command`, `parse_prediction_score_batch_single_entry`
+- PR: #31
+
 ### 2026-03-18 — fix: expose full CRUD for analytics scenario namespace (P0)
 
 - What: expanded `pftui analytics scenario` from only `list` to full CRUD: `add`, `update`, `remove`, `history`, and `signal` (add/list/update/remove). All new variants route to the existing `commands::scenario::run` dispatcher, identical to `agent journal scenario`. Added `AnalyticsScenarioSignalCommand` enum and 6 CLI parse tests.

@@ -8,16 +8,6 @@
 
 ## P1 — Always-On Analytics Engine
 
-### [Feedback] Batch prediction scoring (P1)
-
-> Low-timeframe and medium-timeframe analysts both report that scoring predictions one at a time
-> is tedious when multiple predictions need scoring after a session.
->
-> Add `agent journal prediction score-batch` or `--batch` mode to `prediction score` that accepts
-> multiple `<id>:<outcome>` pairs in one command invocation.
->
-> Files: `src/cli.rs`, `src/commands/predict.rs`
-
 ### [Feedback] Configurable overnight mover threshold (P2)
 
 > Morning brief agent notes 3% threshold is too high during war/volatility periods.
@@ -194,7 +184,7 @@
 
 **Top 3 priorities based on feedback:**
 
-1. **P1: Batch prediction scoring** — Both low-timeframe and medium-timeframe analysts request this. Tedious to score predictions one at a time.
+1. ~~**P1: Batch prediction scoring**~~ — Shipped Mar 18 (PR #31). `journal prediction score-batch` accepts multiple `id:outcome` pairs.
 2. **P2: Configurable overnight mover threshold** — Morning brief agent says 3% is too high during volatile periods. Add `--threshold` flag.
 3. **P2: Alert flapping cooldown logic** — Low-timeframe analyst reports scan alerts flapping same day.
 
