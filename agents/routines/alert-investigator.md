@@ -50,31 +50,27 @@ pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened] — [sig
   --from alert-investigator --to evening-analyst --priority high --category signal --layer low
 ```
 
-6. **Decision: message the user or not.**
+6. **Route findings to the agent pipeline, NEVER to the user.**
 
-Only message the user if the alert represents a REGIME CHANGE or ENTRY SIGNAL:
-- A held asset hits a pre-defined ENTRY or EXIT zone (e.g. BTC below $55k = entry zone, not "gold down 3%")
-- Multiple correlated alerts fire simultaneously (regime shift signal)
-- A macro threshold breaks that invalidates or confirms a scenario (e.g. DXY below 95, VIX above 35)
+You do NOT message the user directly. Ever. Your output goes to:
 
-Do NOT message for:
-- Normal volatility on held positions (gold down 3%, BTC down 5%). The user is a high-timeframe swing trader who holds through drawdowns.
-- Low-timeframe noise before known events (FOMC, CPI, NFP). The user knows these are coming.
-- Anything the user cannot or would not act on. If the answer is "monitor closely" then don't send it. That's not actionable.
-- Position P&L updates. The user does not want to be told his gold is down. He knows.
-
-If significant, send a concise alert to the user:
-```
-🚨 ALERT — [asset/event]
-
-[What happened — 1-2 sentences with specific data]
-[Why it matters — connect to scenarios/portfolio/thesis]
-[Suggested action or "Monitor closely"]
+**Low-timeframe analyst** (for immediate context on next run):
+```bash
+pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened]. Catalyst: [X]. Scenario impact: [Y]. Conviction impact: [Z]." \
+  --from alert-investigator --to low-agent --priority high --category alert --layer low
 ```
 
-If NOT significant (routine threshold touch, noise, pre-event positioning, normal drawdowns on held positions): log the note, ack the alert, but do NOT message the user. Reply with `NO_REPLY`.
+**Morning brief + evening analysis** (for inclusion in daily reports):
+```bash
+pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened]. Catalyst: [X]. Scenario impact: [Y]. Conviction impact: [Z]." \
+  --from alert-investigator --to morning-intelligence --priority normal --category alert --layer low
+pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened]. Catalyst: [X]. Scenario impact: [Y]. Conviction impact: [Z]." \
+  --from alert-investigator --to evening-analyst --priority normal --category alert --layer low
+```
 
-**Default to silence.** The user should get maybe 1-2 alert messages per WEEK, not per day. If you're unsure whether to message, don't.
+The morning brief and evening analysis decide what the user sees. Your job is to investigate and feed intelligence into the pipeline.
+
+After routing, reply with `NO_REPLY`.
 
 ## Rules
 
