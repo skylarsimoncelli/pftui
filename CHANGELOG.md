@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-18 — F51: asset intelligence blob
+
+- What: added `pftui analytics asset <SYMBOL> [--json]` command that returns the full synthesized intelligence state for a single asset in one canonical payload. Aggregates spot price (with pre/post-market), daily change %, latest OHLCV bar, full technical snapshot (RSI, MACD, SMAs, Bollinger, 52W range, volume regime), all stored market structure levels with nearest support/resistance, correlations, current market regime, scenarios and trends mentioning the symbol, alerts, portfolio position (if held), watchlist entry (if tracked), conviction scores, and freshness metadata. Supports both `--json` (structured agent blob) and human-readable markdown output.
+- Why: agents had to run multiple commands (`analytics technicals`, `analytics levels`, `analytics alerts list`, etc.) and manually correlate results. F51 provides a single canonical AI consumption surface per asset — one command, one JSON blob, complete context.
+- Files: `src/cli.rs`, `src/commands/analytics.rs`, `src/main.rs`
+- Tests: `cargo test` — 1338 pass (2 new: `parse_analytics_asset_command`, `parse_analytics_asset_command_no_json`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #35
+
 ### 2026-03-18 — F46: surface stored key levels in brief, web, TUI, and alerts
 
 - What: surfaced nearest stored support/resistance levels in `portfolio brief` markdown plus agent JSON position payloads, added nearest actionable levels to the web asset detail response, and showed stored support/resistance in the asset detail popup. Added direct alert creation from stored levels via `pftui analytics alerts add --symbol SYM --from-level support|resistance|...` and matching web API support through `POST /api/alerts`.

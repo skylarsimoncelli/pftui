@@ -72,21 +72,6 @@
 > 3. Add CLI commands to inspect and mutate tracked universes
 > 4. Ensure per-source rate limits and refresh cadences remain safe
 
-### F51: Asset Intelligence Blob
-
-> Vision fit: the agent should be able to ask for one symbol and receive the full synthesized state.
->
-> Current gap:
-> - Analytics are available across several commands, but there is no canonical per-asset intelligence payload
-> - Web/API handlers also compute and assemble slices independently
->
-> Actionable scope:
-> 1. Add `pftui analytics asset <SYMBOL> --json`
-> 2. Return spot price, OHLCV stats, technical snapshot, key levels, technical signals,
->    correlations, regime context, scenario/trend/structural impacts, alerts, and freshness
-> 3. Reuse the same view model in CLI, web, and future agent integrations
-> 4. Treat this as the default AI consumption surface for market analysis
-
 ### F52: Refresh DAG, Parallelism, And Source Policies
 
 > Vision fit: an always-on aggregator needs a scheduler and dependency graph, not just a long sequential refresh pass.
