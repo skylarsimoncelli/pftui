@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-18 — fix: expose full CRUD for analytics scenario namespace (P0)
+
+- What: expanded `pftui analytics scenario` from only `list` to full CRUD: `add`, `update`, `remove`, `history`, and `signal` (add/list/update/remove). All new variants route to the existing `commands::scenario::run` dispatcher, identical to `agent journal scenario`. Added `AnalyticsScenarioSignalCommand` enum and 6 CLI parse tests.
+- Why: Evening Analyst agents scored 55% because they couldn't update scenarios through the `analytics` namespace — they had to fall back to `agent journal scenario` or raw SQL. This was the top P0 blocking the lowest-scoring agent.
+- Files: `src/cli.rs`, `src/main.rs`
+- Tests: `cargo clippy --all-targets -- -D warnings` clean; `cargo test` — 1309 tests pass; new tests: `parse_analytics_scenario_add`, `parse_analytics_scenario_update`, `parse_analytics_scenario_remove`, `parse_analytics_scenario_history`, `parse_analytics_scenario_signal_add`, `parse_analytics_scenario_signal_list`
+- PR: #30
+
 ### 2026-03-17 — F45 persistent technical snapshot engine
 
 - What:

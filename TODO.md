@@ -8,18 +8,6 @@
 
 ## P1 — Always-On Analytics Engine
 
-### [Feedback] `analytics scenario update` alias (P0)
-
-> Evening Analyst scored 55/62 on Mar 18 because `analytics scenario` only exposes `list`.
-> The update/add/remove/signal-* commands live at `agent journal scenario ...` but agents
-> try `analytics scenario update <id> --probability <val>` which doesn't exist.
->
-> Fix: add `analytics scenario update`, `analytics scenario add`, `analytics scenario remove`,
-> and `analytics scenario signal-*` as aliases routing to the existing `agent journal scenario` handlers.
-> Same pattern used for the `analytics scenario list` alias added in Mar 16.
->
-> Files: `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`
-
 ### [Feedback] Batch prediction scoring (P1)
 
 > Low-timeframe and medium-timeframe analysts both report that scoring predictions one at a time
@@ -206,10 +194,10 @@
 
 **Top 3 priorities based on feedback:**
 
-1. **P0: `analytics scenario update/add/remove` aliases** — Evening Analyst hit this again on Mar 18 (55/62). Blocking the lowest scorer. Must add CRUD aliases under `analytics scenario` routing to existing `agent journal scenario` handlers.
-2. **P1: Batch prediction scoring** — Both low-timeframe and medium-timeframe analysts request this. Tedious to score predictions one at a time.
-3. **P2: Configurable overnight mover threshold** — Morning brief agent says 3% is too high during volatile periods. Add `--threshold` flag.
+1. **P1: Batch prediction scoring** — Both low-timeframe and medium-timeframe analysts request this. Tedious to score predictions one at a time.
+2. **P2: Configurable overnight mover threshold** — Morning brief agent says 3% is too high during volatile periods. Add `--threshold` flag.
+3. **P2: Alert flapping cooldown logic** — Low-timeframe analyst reports scan alerts flapping same day.
 
-**Release status:** v0.12.1 shipped Mar 16. F45 landed since then. Build green: `cargo test` (1303 tests), `cargo clippy --all-targets -- -D warnings` clean. No P0 bugs. Release eligible once `analytics scenario update` alias ships.
+**Release status:** v0.12.1 shipped Mar 16. F45 landed since then. `analytics scenario` CRUD alias shipped Mar 18 (PR #30). Build green: `cargo test` (1309 tests), `cargo clippy --all-targets -- -D warnings` clean. No P0 bugs remaining. Release eligible.
 
 **GitHub stars:** 2 — Homebrew Core requires 50+.
