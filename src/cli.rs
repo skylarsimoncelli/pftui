@@ -1727,7 +1727,65 @@ pub enum AnalyticsMacroCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsScenarioSignalCommand {
+    Add {
+        value: String,
+        #[arg(long)]
+        scenario: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    List {
+        #[arg(long)]
+        scenario: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Update {
+        #[arg(long = "signal-id")]
+        signal_id: i64,
+        #[arg(long)]
+        evidence: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Remove {
+        #[arg(long = "signal-id")]
+        signal_id: i64,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsScenarioCommand {
+    Add {
+        value: String,
+        #[arg(long)]
+        probability: Option<f64>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        impact: Option<String>,
+        #[arg(long)]
+        triggers: Option<String>,
+        #[arg(long)]
+        precedent: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     List {
         #[arg(long)]
         status: Option<String>,
@@ -1735,6 +1793,45 @@ pub enum AnalyticsScenarioCommand {
         limit: Option<usize>,
         #[arg(long)]
         json: bool,
+    },
+    Update {
+        value: String,
+        /// History note / driver (positional shorthand)
+        note_pos: Option<String>,
+        #[arg(long)]
+        probability: Option<f64>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        impact: Option<String>,
+        #[arg(long)]
+        triggers: Option<String>,
+        #[arg(long)]
+        precedent: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        driver: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Remove {
+        value: String,
+        #[arg(long)]
+        json: bool,
+    },
+    History {
+        value: String,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Signal {
+        #[command(subcommand)]
+        command: AnalyticsScenarioSignalCommand,
     },
 }
 
@@ -2483,6 +2580,219 @@ mod tests {
 
         assert_eq!(status, None);
         assert_eq!(limit, None);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_add() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "add",
+            "Hard Landing",
+            "--probability",
+            "45.0",
+            "--description",
+            "Recession scenario",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command:
+                        AnalyticsScenarioCommand::Add {
+                            value,
+                            probability,
+                            description,
+                            json,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario add command");
+        };
+
+        assert_eq!(value, "Hard Landing");
+        assert_eq!(probability, Some(45.0));
+        assert_eq!(description.as_deref(), Some("Recession scenario"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_update() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "update",
+            "Hard Landing",
+            "labor rolling over",
+            "--probability",
+            "65.0",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command:
+                        AnalyticsScenarioCommand::Update {
+                            value,
+                            note_pos,
+                            probability,
+                            json,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario update command");
+        };
+
+        assert_eq!(value, "Hard Landing");
+        assert_eq!(note_pos.as_deref(), Some("labor rolling over"));
+        assert_eq!(probability, Some(65.0));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_remove() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "remove",
+            "Hard Landing",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command:
+                        AnalyticsScenarioCommand::Remove { value, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario remove command");
+        };
+
+        assert_eq!(value, "Hard Landing");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_history() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "history",
+            "Hard Landing",
+            "--limit",
+            "10",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command:
+                        AnalyticsScenarioCommand::History {
+                            value,
+                            limit,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario history command");
+        };
+
+        assert_eq!(value, "Hard Landing");
+        assert_eq!(limit, Some(10));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_signal_add() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "signal",
+            "add",
+            "ISM below 45",
+            "--scenario",
+            "Hard Landing",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command:
+                        AnalyticsScenarioCommand::Signal {
+                            command:
+                                AnalyticsScenarioSignalCommand::Add {
+                                    value,
+                                    scenario,
+                                    json,
+                                    ..
+                                },
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario signal add command");
+        };
+
+        assert_eq!(value, "ISM below 45");
+        assert_eq!(scenario.as_deref(), Some("Hard Landing"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_signal_list() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "signal",
+            "list",
+            "--scenario",
+            "Hard Landing",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command:
+                        AnalyticsScenarioCommand::Signal {
+                            command:
+                                AnalyticsScenarioSignalCommand::List {
+                                    scenario,
+                                    json,
+                                    ..
+                                },
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario signal list command");
+        };
+
+        assert_eq!(scenario.as_deref(), Some("Hard Landing"));
         assert!(json);
     }
 
