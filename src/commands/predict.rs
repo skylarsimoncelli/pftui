@@ -316,9 +316,116 @@ pub fn run(
         }
 
         _ => bail!(
-            "unknown predict action '{}'. Valid: add, list, score, stats, scorecard",
+            "unknown predict action '{}'. Valid: add, list, score, score-batch, stats, scorecard",
             action
         ),
+    }
+
+    Ok(())
+}
+
+/// Score multiple predictions at once. Each entry is `id:outcome` (e.g. `3:correct 7:wrong 12:partial`).
+pub fn run_score_batch(
+    backend: &BackendConnection,
+    entries: &[String],
+    json_output: bool,
+) -> Result<()> {
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    let mut errors: Vec<serde_json::Value> = Vec::new();
+
+    for entry in entries {
+        let parts: Vec<&str> = entry.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            let err_msg = format!(
+                "invalid entry '{}'. Expected format: id:outcome (e.g. 3:correct)",
+                entry
+            );
+            if json_output {
+                errors.push(serde_json::json!({
+                    "entry": entry,
+                    "error": err_msg,
+                }));
+            } else {
+                eprintln!("Error: {}", err_msg);
+            }
+            continue;
+        }
+
+        let id_str = parts[0].trim();
+        let outcome = parts[1].trim();
+
+        let id = match id_str.parse::<i64>() {
+            Ok(v) => v,
+            Err(_) => {
+                let err_msg = format!("invalid prediction id '{}' in entry '{}'", id_str, entry);
+                if json_output {
+                    errors.push(serde_json::json!({
+                        "entry": entry,
+                        "error": err_msg,
+                    }));
+                } else {
+                    eprintln!("Error: {}", err_msg);
+                }
+                continue;
+            }
+        };
+
+        if let Err(e) = validate_outcome(outcome) {
+            if json_output {
+                errors.push(serde_json::json!({
+                    "entry": entry,
+                    "error": e.to_string(),
+                }));
+            } else {
+                eprintln!("Error scoring #{}: {}", id, e);
+            }
+            continue;
+        }
+
+        match user_predictions::score_prediction_backend(backend, id, outcome, None, None) {
+            Ok(()) => {
+                if json_output {
+                    results.push(serde_json::json!({
+                        "id": id,
+                        "outcome": outcome,
+                        "status": "scored",
+                    }));
+                } else {
+                    println!("Scored prediction #{} as {}", id, outcome);
+                }
+            }
+            Err(e) => {
+                if json_output {
+                    errors.push(serde_json::json!({
+                        "entry": entry,
+                        "id": id,
+                        "error": e.to_string(),
+                    }));
+                } else {
+                    eprintln!("Error scoring #{}: {}", id, e);
+                }
+            }
+        }
+    }
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "scored": results,
+                "errors": errors,
+                "total_scored": results.len(),
+                "total_errors": errors.len(),
+            }))?
+        );
+    } else if results.is_empty() && errors.is_empty() {
+        println!("No entries to score.");
+    } else {
+        println!(
+            "\nBatch complete: {} scored, {} errors",
+            results.len(),
+            errors.len()
+        );
     }
 
     Ok(())

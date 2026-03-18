@@ -178,6 +178,9 @@ fn run_agent_journal(
                     json,
                 )
             }
+            cli::JournalPredictionCommand::ScoreBatch { entries, json } => {
+                commands::predict::run_score_batch(backend, &entries, json)
+            }
             cli::JournalPredictionCommand::Stats { json } => commands::predict::run(
                 backend, "stats", None, None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, json,
