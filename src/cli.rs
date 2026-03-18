@@ -1872,6 +1872,16 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    Levels {
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        level_type: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
     Signals {
         #[arg(long)]
         symbol: Option<String>,
@@ -3078,6 +3088,67 @@ mod tests {
 
         assert_eq!(symbol.as_deref(), Some("AAPL"));
         assert_eq!(timeframe, "1d");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_levels_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "levels",
+            "--symbol",
+            "BTC",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Levels {
+                    symbol,
+                    json,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics levels command");
+        };
+
+        assert_eq!(symbol.as_deref(), Some("BTC"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_levels_with_type_filter() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "levels",
+            "--level-type",
+            "support",
+            "--limit",
+            "10",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Levels {
+                    symbol,
+                    level_type,
+                    limit,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics levels command");
+        };
+
+        assert_eq!(symbol, None);
+        assert_eq!(level_type.as_deref(), Some("support"));
+        assert_eq!(limit, Some(10));
         assert!(json);
     }
 }

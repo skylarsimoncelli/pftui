@@ -53,6 +53,7 @@ pub mod schema;
 pub mod sentiment_cache;
 pub mod snapshots;
 pub mod structural;
+pub mod technical_levels;
 pub mod technical_snapshots;
 pub mod thesis;
 pub mod timeframe_signals;

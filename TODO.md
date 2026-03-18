@@ -8,23 +8,13 @@
 
 ## P1 — Always-On Analytics Engine
 
-### F46: Stored Market Structure And Key Levels
+### F46: Stored Market Structure And Key Levels — Surface Integration
 
-> Vision fit: pftui should map key levels mechanically so AI reasons on top of them.
+> Core engine shipped Mar 18 (schema, compute, refresh integration, CLI).
+> Remaining scope: surface levels in existing consumer paths and alert integration.
 >
-> Current gap:
-> - No persisted support/resistance/trigger levels engine
-> - AI still has to infer structure from raw history and indicator output
-> - Alerts can use indicators, but the system does not expose normalized market structure
->
-> Actionable scope:
-> 1. Add `technical_levels` table for support, resistance, breakout, breakdown, gap-fill,
->    20D/50D/200D MA levels, recent swing highs/lows, and 52W extremes
-> 2. Compute levels from cached history during refresh for held + watchlist + configured universe symbols
-> 3. Assign strength/confidence and source method to each level
-> 4. Add `pftui analytics levels --symbol SYM --json`
-> 5. Surface nearest actionable levels in `portfolio brief`, asset detail, and web asset endpoints
-> 6. Allow alert creation directly from stored levels
+> 1. Surface nearest actionable levels in `portfolio brief`, asset detail popup, and web asset endpoints
+> 2. Allow alert creation directly from stored levels
 
 ### F47: Dedicated Background Daemon
 
