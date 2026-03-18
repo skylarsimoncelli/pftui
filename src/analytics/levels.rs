@@ -1,6 +1,27 @@
+use serde::{Deserialize, Serialize};
+
 use crate::db::technical_levels::TechnicalLevelRecord;
 use crate::db::technical_snapshots::TechnicalSnapshotRecord;
 use crate::models::price::HistoryRecord;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ActionableLevel {
+    pub symbol: String,
+    pub level_type: String,
+    pub price: f64,
+    pub strength: f64,
+    pub source_method: String,
+    pub timeframe: String,
+    pub notes: Option<String>,
+    pub computed_at: String,
+    pub distance_pct: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ActionableLevelPair {
+    pub support: Option<ActionableLevel>,
+    pub resistance: Option<ActionableLevel>,
+}
 
 /// Compute market structure levels from price history and optional technical snapshot.
 ///
@@ -36,7 +57,11 @@ pub fn compute_levels(
         if let Some(sma) = snap.sma_20 {
             levels.push(make_level(
                 symbol,
-                if latest_close > sma { "support" } else { "resistance" },
+                if latest_close > sma {
+                    "support"
+                } else {
+                    "resistance"
+                },
                 sma,
                 0.6,
                 "moving_average",
@@ -48,7 +73,11 @@ pub fn compute_levels(
         if let Some(sma) = snap.sma_50 {
             levels.push(make_level(
                 symbol,
-                if latest_close > sma { "support" } else { "resistance" },
+                if latest_close > sma {
+                    "support"
+                } else {
+                    "resistance"
+                },
                 sma,
                 0.75,
                 "moving_average",
@@ -60,7 +89,11 @@ pub fn compute_levels(
         if let Some(sma) = snap.sma_200 {
             levels.push(make_level(
                 symbol,
-                if latest_close > sma { "support" } else { "resistance" },
+                if latest_close > sma {
+                    "support"
+                } else {
+                    "resistance"
+                },
                 sma,
                 0.9,
                 "moving_average",
@@ -228,12 +261,71 @@ pub fn compute_levels(
     }
 
     // Sort by price ascending
-    levels.sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal));
+    levels.sort_by(|a, b| {
+        a.price
+            .partial_cmp(&b.price)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Deduplicate very close levels (within 0.3% of each other), keeping highest strength
     dedup_close_levels(&mut levels, 0.003);
 
     levels
+}
+
+pub fn nearest_actionable_levels(
+    levels: &[TechnicalLevelRecord],
+    price: f64,
+) -> ActionableLevelPair {
+    ActionableLevelPair {
+        support: select_actionable_level(levels, price, "support"),
+        resistance: select_actionable_level(levels, price, "resistance"),
+    }
+}
+
+pub fn select_actionable_level(
+    levels: &[TechnicalLevelRecord],
+    price: f64,
+    selector: &str,
+) -> Option<ActionableLevel> {
+    let normalized = selector.trim().to_lowercase();
+    match normalized.as_str() {
+        "support" => levels
+            .iter()
+            .filter(|level| {
+                level.price < price
+                    && (is_support_type(&level.level_type) || level.level_type.starts_with("sma_"))
+            })
+            .max_by(|a, b| {
+                a.price
+                    .partial_cmp(&b.price)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|level| actionable_level(level, price)),
+        "resistance" => levels
+            .iter()
+            .filter(|level| {
+                level.price > price
+                    && (is_resistance_type(&level.level_type)
+                        || level.level_type.starts_with("sma_"))
+            })
+            .min_by(|a, b| {
+                a.price
+                    .partial_cmp(&b.price)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|level| actionable_level(level, price)),
+        exact_type => levels
+            .iter()
+            .filter(|level| level.level_type.eq_ignore_ascii_case(exact_type))
+            .min_by(|a, b| {
+                (a.price - price)
+                    .abs()
+                    .partial_cmp(&(b.price - price).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|level| actionable_level(level, price)),
+    }
 }
 
 /// Cluster nearby price points (within `tolerance` fraction of each other).
@@ -326,6 +418,40 @@ fn format_price(price: f64) -> String {
     } else {
         format!("{:.2}", price)
     }
+}
+
+fn actionable_level(level: &TechnicalLevelRecord, price: f64) -> ActionableLevel {
+    let distance_pct = if price > 0.0 {
+        ((level.price - price).abs() / price) * 100.0
+    } else {
+        0.0
+    };
+
+    ActionableLevel {
+        symbol: level.symbol.clone(),
+        level_type: level.level_type.clone(),
+        price: level.price,
+        strength: level.strength,
+        source_method: level.source_method.clone(),
+        timeframe: level.timeframe.clone(),
+        notes: level.notes.clone(),
+        computed_at: level.computed_at.clone(),
+        distance_pct,
+    }
+}
+
+fn is_support_type(level_type: &str) -> bool {
+    matches!(
+        level_type,
+        "support" | "swing_low" | "bb_lower" | "range_52w_low"
+    )
+}
+
+fn is_resistance_type(level_type: &str) -> bool {
+    matches!(
+        level_type,
+        "resistance" | "swing_high" | "bb_upper" | "range_52w_high"
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -427,10 +553,18 @@ mod tests {
         let snapshot = make_snapshot(101.0, 99.0, 95.0);
         let levels = compute_levels("TEST", "1d", &history, Some(&snapshot));
 
-        assert!(levels.iter().any(|l| l.level_type == "bb_upper" || l.level_type == "bb_lower"),
-            "expected Bollinger levels");
-        assert!(levels.iter().any(|l| l.level_type == "range_52w_low" || l.level_type == "range_52w_high"),
-            "expected 52w range levels");
+        assert!(
+            levels
+                .iter()
+                .any(|l| l.level_type == "bb_upper" || l.level_type == "bb_lower"),
+            "expected Bollinger levels"
+        );
+        assert!(
+            levels
+                .iter()
+                .any(|l| l.level_type == "range_52w_low" || l.level_type == "range_52w_high"),
+            "expected 52w range levels"
+        );
     }
 
     #[test]
@@ -476,5 +610,33 @@ mod tests {
         assert_eq!(round_number_step(170.0), 50.0);
         assert_eq!(round_number_step(32.0), 5.0);
         assert_eq!(round_number_step(0.5), 0.0);
+    }
+
+    #[test]
+    fn nearest_actionable_levels_selects_support_and_resistance() {
+        let now = "2026-03-18T16:00:00Z".to_string();
+        let levels = vec![
+            make_level("X", "support", 150.0, 0.4, "pivot", "1d", None, &now),
+            make_level("X", "support", 155.0, 0.8, "swing", "1d", None, &now),
+            make_level("X", "resistance", 165.0, 0.7, "pivot", "1d", None, &now),
+            make_level("X", "resistance", 172.0, 0.9, "swing", "1d", None, &now),
+        ];
+
+        let pair = nearest_actionable_levels(&levels, 160.0);
+        assert_eq!(pair.support.unwrap().price, 155.0);
+        assert_eq!(pair.resistance.unwrap().price, 165.0);
+    }
+
+    #[test]
+    fn select_actionable_level_uses_exact_type_when_requested() {
+        let now = "2026-03-18T16:00:00Z".to_string();
+        let levels = vec![
+            make_level("X", "bb_upper", 72000.0, 0.5, "bollinger", "1d", None, &now),
+            make_level("X", "bb_upper", 76000.0, 0.5, "bollinger", "1d", None, &now),
+        ];
+
+        let selected = select_actionable_level(&levels, 73000.0, "bb_upper").unwrap();
+        assert_eq!(selected.price, 72000.0);
+        assert!(selected.distance_pct < 2.0);
     }
 }

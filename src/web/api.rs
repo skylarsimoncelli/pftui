@@ -19,6 +19,10 @@ use ratatui::style::Color;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+use crate::analytics::levels::{
+    nearest_actionable_levels, select_actionable_level, ActionableLevelPair,
+};
+
 fn get_price_map_backend(
     backend: &crate::db::backend::BackendConnection,
 ) -> anyhow::Result<HashMap<String, Decimal>> {
@@ -190,6 +194,7 @@ pub struct AlertCreateRequest {
     pub symbol: Option<String>,
     pub direction: Option<String>,
     pub threshold: Option<String>,
+    pub from_level: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -450,6 +455,7 @@ pub struct AssetDetailResponse {
     pub latest_volume: Option<u64>,
     pub avg_volume_30d: Option<u64>,
     pub technicals: Option<AssetTechnicalsResponse>,
+    pub levels: Option<ActionableLevelPair>,
     pub position: Option<AssetPositionSummary>,
     pub history: Vec<ChartPoint>,
     pub meta: view_model::ResponseMeta,
@@ -517,6 +523,92 @@ fn map_technical_snapshot(
         above_sma_200: row.above_sma_200,
         computed_at: row.computed_at,
     })
+}
+
+fn load_nearest_levels(
+    backend: &crate::db::backend::BackendConnection,
+    symbol: &str,
+    fallback_symbol: &str,
+    current_price: Option<Decimal>,
+) -> Option<ActionableLevelPair> {
+    let price = current_price?.to_string().parse::<f64>().ok()?;
+    let levels = db::technical_levels::get_levels_for_symbol_backend(backend, symbol)
+        .ok()
+        .filter(|rows| !rows.is_empty())
+        .or_else(|| {
+            if fallback_symbol.eq_ignore_ascii_case(symbol) {
+                None
+            } else {
+                db::technical_levels::get_levels_for_symbol_backend(backend, fallback_symbol)
+                    .ok()
+                    .filter(|rows| !rows.is_empty())
+            }
+        })?;
+    let pair = nearest_actionable_levels(&levels, price);
+    if pair.support.is_none() && pair.resistance.is_none() {
+        None
+    } else {
+        Some(pair)
+    }
+}
+
+fn stored_level_alert(
+    backend: &crate::db::backend::BackendConnection,
+    symbol: &str,
+    selector: &str,
+    label: Option<&str>,
+) -> Result<(String, String, String, String), (StatusCode, String)> {
+    let current_price = get_price_map_backend(backend)
+        .ok()
+        .and_then(|prices| prices.get(symbol).copied())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("No cached price available for {}", symbol),
+            )
+        })?;
+    let current_f = current_price.to_string().parse::<f64>().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to parse cached price for {}", symbol),
+        )
+    })?;
+    let levels =
+        db::technical_levels::get_levels_for_symbol_backend(backend, symbol).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load stored levels: {}", e),
+            )
+        })?;
+    if levels.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("No stored levels available for {}", symbol),
+        ));
+    }
+    let selected = select_actionable_level(&levels, current_f, selector).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("No stored '{}' level available for {}", selector, symbol),
+        )
+    })?;
+    let direction = if selected.price >= current_f {
+        "above"
+    } else {
+        "below"
+    }
+    .to_string();
+    let threshold = if selected.price >= 10000.0 {
+        format!("{:.0}", selected.price)
+    } else if selected.price >= 1.0 {
+        format!("{:.2}", selected.price)
+    } else {
+        format!("{:.4}", selected.price)
+    };
+    let rule_text = label
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| format!("{symbol} {direction} stored {selector} {threshold}"));
+    Ok((symbol.to_string(), direction, threshold, rule_text))
 }
 
 fn bounded_limit(limit: Option<usize>, default: usize, max: usize) -> usize {
@@ -1069,6 +1161,7 @@ pub async fn get_asset_detail(
                     .flatten()
             }),
     );
+    let levels = load_nearest_levels(&backend, &symbol, &qsym, current_price);
 
     Ok(Json(AssetDetailResponse {
         symbol: symbol.clone(),
@@ -1087,6 +1180,7 @@ pub async fn get_asset_detail(
         latest_volume,
         avg_volume_30d,
         technicals,
+        levels,
         position,
         history: history_points,
         meta: view_model::fresh_meta(60),
@@ -1522,7 +1616,35 @@ pub async fn post_alert(
         )
     })?;
 
-    let parsed = if let Some(rule_text) = body.rule_text.as_deref() {
+    let mut custom_rule_text: Option<String> = None;
+    let parsed = if let Some(selector) = body.from_level.as_deref() {
+        if let Some(kind) = body.kind.as_deref() {
+            if !kind.eq_ignore_ascii_case("price") {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "from_level only supports price alerts".to_string(),
+                ));
+            }
+        }
+        let symbol = normalized_symbol(body.symbol.as_deref().unwrap_or(""));
+        if symbol.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "symbol is required when using from_level".to_string(),
+            ));
+        }
+        let (symbol, direction, threshold, rule_text) =
+            stored_level_alert(&backend, &symbol, selector, body.rule_text.as_deref())?;
+        custom_rule_text = Some(rule_text);
+        crate::alerts::rules::parse_rule(&format!("{symbol} {direction} {threshold}")).map_err(
+            |e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Failed to build level-based alert: {}", e),
+                )
+            },
+        )?
+    } else if let Some(rule_text) = body.rule_text.as_deref() {
         let parsed = crate::alerts::rules::parse_rule(rule_text)
             .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid rule_text: {}", e)))?;
         if let Some(kind) = body.kind.as_deref() {
@@ -1562,6 +1684,7 @@ pub async fn post_alert(
     let kind = parsed.kind.to_string();
     let direction = parsed.direction.to_string();
     let threshold = parsed.threshold.to_string();
+    let rule_text = custom_rule_text.unwrap_or_else(|| parsed.rule_text.clone());
     let id = db::alerts::add_alert_backend(
         &backend,
         db::alerts::NewAlert {
@@ -1570,7 +1693,7 @@ pub async fn post_alert(
             direction: &direction,
             condition: None,
             threshold: &threshold,
-            rule_text: &parsed.rule_text,
+            rule_text: &rule_text,
             recurring: false,
             cooldown_minutes: 0,
         },
@@ -2339,12 +2462,12 @@ mod tests {
 
     use super::{
         bounded_limit, delete_alert, delete_journal, delete_transaction, delete_watchlist,
-        history_change_pct, normalized_symbol, patch_journal, patch_transaction, post_alert,
-        post_alert_ack, post_alert_rearm, post_journal, post_transaction, post_watchlist,
-        range_from_history, volume_stats, AlertCreateRequest, AlertMutationResponse, AppState,
-        JournalCreateRequest, JournalMutationResponse, JournalUpdateRequest,
-        TransactionMutationRequest, TransactionMutationResponse, WatchlistMutationRequest,
-        WatchlistMutationResponse,
+        get_asset_detail, history_change_pct, normalized_symbol, patch_journal, patch_transaction,
+        post_alert, post_alert_ack, post_alert_rearm, post_journal, post_transaction,
+        post_watchlist, range_from_history, volume_stats, AlertCreateRequest,
+        AlertMutationResponse, AppState, JournalCreateRequest, JournalMutationResponse,
+        JournalUpdateRequest, TransactionMutationRequest, TransactionMutationResponse,
+        WatchlistMutationRequest, WatchlistMutationResponse,
     };
     use crate::models::price::HistoryRecord;
     use axum::extract::Path;
@@ -2429,6 +2552,7 @@ mod tests {
                     symbol: None,
                     direction: None,
                     threshold: None,
+                    from_level: None,
                 }),
             )
             .await
@@ -2463,6 +2587,146 @@ mod tests {
                 .unwrap();
             assert!(removed.0.ok);
             assert_eq!(removed.0.action, "removed");
+        });
+    }
+
+    #[test]
+    fn alert_mutation_contract_supports_stored_levels() {
+        run_async(async {
+            let ctx = setup_test_ctx();
+            let backend = ctx.state.get_backend().unwrap();
+            crate::db::price_cache::upsert_price_backend(
+                &backend,
+                &crate::models::price::PriceQuote {
+                    symbol: "MSFT".to_string(),
+                    price: dec!(410),
+                    currency: "USD".to_string(),
+                    fetched_at: "2026-03-18T12:00:00Z".to_string(),
+                    source: "test".to_string(),
+                    pre_market_price: None,
+                    post_market_price: None,
+                    post_market_change_percent: None,
+                },
+            )
+            .unwrap();
+            crate::db::technical_levels::upsert_levels_backend(
+                &backend,
+                "MSFT",
+                &[crate::db::technical_levels::TechnicalLevelRecord {
+                    id: None,
+                    symbol: "MSFT".to_string(),
+                    level_type: "resistance".to_string(),
+                    price: 420.0,
+                    strength: 0.8,
+                    source_method: "test".to_string(),
+                    timeframe: "1d".to_string(),
+                    notes: Some("test resistance".to_string()),
+                    computed_at: "2026-03-18T12:00:00Z".to_string(),
+                }],
+            )
+            .unwrap();
+
+            let created: Json<AlertMutationResponse> = post_alert(
+                State(ctx.state.clone()),
+                Json(AlertCreateRequest {
+                    rule_text: None,
+                    kind: Some("price".to_string()),
+                    symbol: Some("MSFT".to_string()),
+                    direction: None,
+                    threshold: None,
+                    from_level: Some("resistance".to_string()),
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(created.0.ok);
+
+            let alerts = crate::db::alerts::list_alerts_backend(&backend).unwrap();
+            assert_eq!(alerts.len(), 1);
+            assert_eq!(alerts[0].threshold, "420.00");
+            assert_eq!(alerts[0].direction.to_string(), "above");
+        });
+    }
+
+    #[test]
+    fn asset_detail_includes_nearest_levels() {
+        run_async(async {
+            let ctx = setup_test_ctx();
+            let backend = ctx.state.get_backend().unwrap();
+            crate::db::price_cache::upsert_price_backend(
+                &backend,
+                &crate::models::price::PriceQuote {
+                    symbol: "MSFT".to_string(),
+                    price: dec!(410),
+                    currency: "USD".to_string(),
+                    fetched_at: "2026-03-18T12:00:00Z".to_string(),
+                    source: "test".to_string(),
+                    pre_market_price: None,
+                    post_market_price: None,
+                    post_market_change_percent: None,
+                },
+            )
+            .unwrap();
+            crate::db::price_history::upsert_history_backend(
+                &backend,
+                "MSFT",
+                "test",
+                &[
+                    crate::models::price::HistoryRecord {
+                        date: "2026-03-17".to_string(),
+                        close: dec!(400),
+                        volume: Some(1_000),
+                        open: None,
+                        high: None,
+                        low: None,
+                    },
+                    crate::models::price::HistoryRecord {
+                        date: "2026-03-18".to_string(),
+                        close: dec!(410),
+                        volume: Some(1_200),
+                        open: None,
+                        high: None,
+                        low: None,
+                    },
+                ],
+            )
+            .unwrap();
+            crate::db::technical_levels::upsert_levels_backend(
+                &backend,
+                "MSFT",
+                &[
+                    crate::db::technical_levels::TechnicalLevelRecord {
+                        id: None,
+                        symbol: "MSFT".to_string(),
+                        level_type: "support".to_string(),
+                        price: 395.0,
+                        strength: 0.6,
+                        source_method: "test".to_string(),
+                        timeframe: "1d".to_string(),
+                        notes: Some("support".to_string()),
+                        computed_at: "2026-03-18T12:00:00Z".to_string(),
+                    },
+                    crate::db::technical_levels::TechnicalLevelRecord {
+                        id: None,
+                        symbol: "MSFT".to_string(),
+                        level_type: "resistance".to_string(),
+                        price: 420.0,
+                        strength: 0.8,
+                        source_method: "test".to_string(),
+                        timeframe: "1d".to_string(),
+                        notes: Some("resistance".to_string()),
+                        computed_at: "2026-03-18T12:00:00Z".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+
+            let detail = get_asset_detail(State(ctx.state.clone()), Path("MSFT".to_string()))
+                .await
+                .unwrap();
+            let levels = detail.0.levels.unwrap();
+            assert_eq!(levels.support.unwrap().price, 395.0);
+            assert_eq!(levels.resistance.unwrap().price, 420.0);
         });
     }
 

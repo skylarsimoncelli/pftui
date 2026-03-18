@@ -4,6 +4,7 @@ use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::alerts::AlertStatus;
+use crate::analytics::levels::nearest_actionable_levels;
 use crate::db::backend::BackendConnection;
 use crate::db::query;
 use crate::db::{
@@ -628,15 +629,13 @@ fn run_levels(
                 .flatten()
                 .map(|q| q.price.to_string().parse::<f64>().unwrap_or(0.0));
 
-            let nearest = spot.and_then(|price| {
-                nearest_levels(&rows, price)
-            });
+            let nearest = spot.map(|price| nearest_actionable_levels(&rows, price));
 
             json!({
                 "symbol": sym.to_uppercase(),
                 "spot_price": spot,
-                "nearest_support": nearest.as_ref().map(|n| &n.0),
-                "nearest_resistance": nearest.as_ref().map(|n| &n.1),
+                "nearest_support": nearest.as_ref().and_then(|n| n.support.as_ref()),
+                "nearest_resistance": nearest.as_ref().and_then(|n| n.resistance.as_ref()),
                 "levels": rows,
                 "count": rows.len(),
             })
@@ -681,55 +680,6 @@ fn run_levels(
     }
 
     Ok(())
-}
-
-/// Find the nearest support (below price) and resistance (above price).
-fn nearest_levels(
-    levels: &[crate::db::technical_levels::TechnicalLevelRecord],
-    price: f64,
-) -> Option<(serde_json::Value, serde_json::Value)> {
-    let support_types = ["support", "swing_low", "bb_lower", "range_52w_low"];
-    let resist_types = ["resistance", "swing_high", "bb_upper", "range_52w_high"];
-
-    let nearest_support = levels
-        .iter()
-        .filter(|l| {
-            l.price < price
-                && (support_types.contains(&l.level_type.as_str())
-                    || l.level_type.starts_with("sma_"))
-        })
-        .max_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|l| {
-            json!({
-                "price": l.price,
-                "type": l.level_type,
-                "strength": l.strength,
-                "distance_pct": ((price - l.price) / price) * 100.0,
-                "notes": l.notes,
-            })
-        })
-        .unwrap_or(serde_json::Value::Null);
-
-    let nearest_resistance = levels
-        .iter()
-        .filter(|l| {
-            l.price > price
-                && (resist_types.contains(&l.level_type.as_str())
-                    || l.level_type.starts_with("sma_"))
-        })
-        .min_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|l| {
-            json!({
-                "price": l.price,
-                "type": l.level_type,
-                "strength": l.strength,
-                "distance_pct": ((l.price - price) / price) * 100.0,
-                "notes": l.notes,
-            })
-        })
-        .unwrap_or(serde_json::Value::Null);
-
-    Some((nearest_support, nearest_resistance))
 }
 
 fn format_level_price(price: f64) -> String {
