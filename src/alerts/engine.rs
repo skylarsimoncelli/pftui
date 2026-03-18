@@ -49,9 +49,10 @@ pub fn check_alerts(conn: &Connection) -> Result<Vec<AlertCheckResult>> {
         .map(|q| (q.symbol.clone(), q.price))
         .collect();
 
+    let default_cooldown = load_default_cooldown();
     let mut results = Vec::new();
     for alert in all_alerts {
-        let result = check_single_alert_sqlite(conn, &alert, &price_map)?;
+        let result = check_single_alert_sqlite(conn, &alert, &price_map, default_cooldown)?;
         results.push(result);
     }
     Ok(results)
@@ -75,10 +76,12 @@ pub fn check_alerts_backend(
         .map(|q| (q.symbol.clone(), q.price))
         .collect();
 
+    let default_cooldown = load_default_cooldown();
     let mut results = Vec::new();
 
     for alert in all_alerts {
-        let result = check_single_alert_backend(backend, &alert, &price_map)?;
+        let result =
+            check_single_alert_backend(backend, &alert, &price_map, default_cooldown)?;
         results.push(result);
     }
 
@@ -103,12 +106,21 @@ pub fn check_alerts_backend_only(backend: &BackendConnection) -> Result<Vec<Aler
         .map(|q| (q.symbol.clone(), q.price))
         .collect();
 
+    let default_cooldown = load_default_cooldown();
     let mut results = Vec::new();
     for alert in all_alerts {
-        let result = check_single_alert_backend(backend, &alert, &price_map)?;
+        let result =
+            check_single_alert_backend(backend, &alert, &price_map, default_cooldown)?;
         results.push(result);
     }
     Ok(results)
+}
+
+/// Load the configured default cooldown floor for recurring alerts.
+fn load_default_cooldown() -> i64 {
+    crate::config::load_config()
+        .map(|c| c.alert_default_cooldown_minutes)
+        .unwrap_or(30)
 }
 
 /// Check a single alert against the price map. Updates DB if newly triggered.
@@ -116,18 +128,20 @@ fn check_single_alert_sqlite(
     conn: &Connection,
     alert: &AlertRule,
     price_map: &HashMap<String, Decimal>,
+    default_cooldown: i64,
 ) -> Result<AlertCheckResult> {
     let evaluation = evaluate_alert_sqlite(conn, alert, price_map)?;
-    finalize_sqlite_alert_result(conn, alert, evaluation)
+    finalize_sqlite_alert_result(conn, alert, evaluation, default_cooldown)
 }
 
 fn check_single_alert_backend(
     backend: &BackendConnection,
     alert: &AlertRule,
     price_map: &HashMap<String, Decimal>,
+    default_cooldown: i64,
 ) -> Result<AlertCheckResult> {
     let evaluation = evaluate_alert_backend(backend, alert, price_map)?;
-    finalize_backend_alert_result(backend, alert, evaluation)
+    finalize_backend_alert_result(backend, alert, evaluation, default_cooldown)
 }
 
 #[derive(Debug, Clone)]
@@ -142,9 +156,10 @@ fn finalize_sqlite_alert_result(
     conn: &Connection,
     alert: &AlertRule,
     evaluation: AlertEvaluation,
+    default_cooldown: i64,
 ) -> Result<AlertCheckResult> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let newly_triggered = should_log_trigger(conn, alert, evaluation.is_triggered)?;
+    let newly_triggered = should_log_trigger(conn, alert, evaluation.is_triggered, default_cooldown)?;
     if newly_triggered {
         let trigger_json = evaluation.trigger_data.to_string();
         triggered_alerts::add_triggered_alert(conn, alert.id, &now, &trigger_json)?;
@@ -168,9 +183,11 @@ fn finalize_backend_alert_result(
     backend: &BackendConnection,
     alert: &AlertRule,
     evaluation: AlertEvaluation,
+    default_cooldown: i64,
 ) -> Result<AlertCheckResult> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let newly_triggered = should_log_trigger_backend(backend, alert, evaluation.is_triggered)?;
+    let newly_triggered =
+        should_log_trigger_backend(backend, alert, evaluation.is_triggered, default_cooldown)?;
     if newly_triggered {
         let trigger_json = evaluation.trigger_data.to_string();
         triggered_alerts::add_triggered_alert_backend(backend, alert.id, &now, &trigger_json)?;
@@ -195,26 +212,11 @@ fn finalize_backend_alert_result(
     })
 }
 
-fn should_log_trigger(conn: &Connection, alert: &AlertRule, is_triggered: bool) -> Result<bool> {
-    if !is_triggered {
-        return Ok(false);
-    }
-    if !alert.recurring {
-        return Ok(alert.status == AlertStatus::Armed);
-    }
-
-    let recent = triggered_alerts::list_triggered_alerts(conn, None, false)?;
-    let latest = recent.into_iter().find(|row| row.alert_id == alert.id);
-    Ok(match latest {
-        None => true,
-        Some(row) => cooldown_elapsed(&row.triggered_at, alert.cooldown_minutes),
-    })
-}
-
-fn should_log_trigger_backend(
-    backend: &BackendConnection,
+fn should_log_trigger(
+    conn: &Connection,
     alert: &AlertRule,
     is_triggered: bool,
+    default_cooldown: i64,
 ) -> Result<bool> {
     if !is_triggered {
         return Ok(false);
@@ -222,12 +224,47 @@ fn should_log_trigger_backend(
     if !alert.recurring {
         return Ok(alert.status == AlertStatus::Armed);
     }
+
+    // Use the greater of per-alert cooldown and the configured default floor.
+    let effective_cooldown = effective_cooldown_minutes(alert.cooldown_minutes, default_cooldown);
+    let recent = triggered_alerts::list_triggered_alerts(conn, None, false)?;
+    let latest = recent.into_iter().find(|row| row.alert_id == alert.id);
+    Ok(match latest {
+        None => true,
+        Some(row) => cooldown_elapsed(&row.triggered_at, effective_cooldown),
+    })
+}
+
+fn should_log_trigger_backend(
+    backend: &BackendConnection,
+    alert: &AlertRule,
+    is_triggered: bool,
+    default_cooldown: i64,
+) -> Result<bool> {
+    if !is_triggered {
+        return Ok(false);
+    }
+    if !alert.recurring {
+        return Ok(alert.status == AlertStatus::Armed);
+    }
+    // Use the greater of per-alert cooldown and the configured default floor.
+    let effective_cooldown = effective_cooldown_minutes(alert.cooldown_minutes, default_cooldown);
     let recent = triggered_alerts::list_triggered_alerts_backend(backend, None, false)?;
     let latest = recent.into_iter().find(|row| row.alert_id == alert.id);
     Ok(match latest {
         None => true,
-        Some(row) => cooldown_elapsed(&row.triggered_at, alert.cooldown_minutes),
+        Some(row) => cooldown_elapsed(&row.triggered_at, effective_cooldown),
     })
+}
+
+/// Compute effective cooldown: use the per-alert value if set (> 0),
+/// otherwise fall back to the configured default floor.
+fn effective_cooldown_minutes(per_alert: i64, default_floor: i64) -> i64 {
+    if per_alert > 0 {
+        per_alert
+    } else {
+        default_floor
+    }
 }
 
 fn cooldown_elapsed(triggered_at: &str, cooldown_minutes: i64) -> bool {
@@ -1886,5 +1923,115 @@ mod tests {
         assert!(results
             .iter()
             .any(|row| row.rule.symbol == "MOVE CHANGE_PCT" && row.newly_triggered));
+    }
+
+    #[test]
+    fn effective_cooldown_uses_per_alert_when_set() {
+        assert_eq!(effective_cooldown_minutes(60, 30), 60);
+        assert_eq!(effective_cooldown_minutes(240, 30), 240);
+    }
+
+    #[test]
+    fn effective_cooldown_falls_back_to_default_when_zero() {
+        assert_eq!(effective_cooldown_minutes(0, 30), 30);
+        assert_eq!(effective_cooldown_minutes(0, 60), 60);
+    }
+
+    #[test]
+    fn effective_cooldown_zero_when_both_zero() {
+        // If the global default is also 0, no cooldown is enforced.
+        assert_eq!(effective_cooldown_minutes(0, 0), 0);
+    }
+
+    #[test]
+    fn cooldown_elapsed_respects_window() {
+        let now = chrono::Utc::now();
+        let five_min_ago = (now - chrono::Duration::minutes(5))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        // 5 minutes ago, cooldown 30 minutes → NOT elapsed
+        assert!(!cooldown_elapsed(&five_min_ago, 30));
+        // 5 minutes ago, cooldown 3 minutes → elapsed
+        assert!(cooldown_elapsed(&five_min_ago, 3));
+        // cooldown 0 → always elapsed
+        assert!(cooldown_elapsed(&five_min_ago, 0));
+    }
+
+    #[test]
+    fn recurring_alert_suppressed_within_default_cooldown() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        // Create a recurring alert with cooldown_minutes=0 (relies on default)
+        let id = alerts::add_alert(
+            conn,
+            alerts::NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500 (recurring)",
+                recurring: true,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+
+        // First check with default_cooldown=30 → should trigger
+        let price_map: HashMap<String, Decimal> =
+            [("GC=F".to_string(), Decimal::from(5600))].into();
+        let result =
+            check_single_alert_sqlite(conn, &alerts::get_alert(conn, id).unwrap().unwrap(), &price_map, 30)
+                .unwrap();
+        assert!(result.newly_triggered);
+
+        // Second check immediately → should be suppressed by the 30-minute default cooldown
+        let alert = alerts::get_alert(conn, id).unwrap().unwrap();
+        let result2 =
+            check_single_alert_sqlite(conn, &alert, &price_map, 30).unwrap();
+        assert!(!result2.newly_triggered);
+    }
+
+    #[test]
+    fn recurring_alert_fires_immediately_when_default_cooldown_zero() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        let id = alerts::add_alert(
+            conn,
+            alerts::NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500 (recurring, no cooldown)",
+                recurring: true,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+
+        let price_map: HashMap<String, Decimal> =
+            [("GC=F".to_string(), Decimal::from(5600))].into();
+
+        // First trigger
+        let result = check_single_alert_sqlite(
+            conn,
+            &alerts::get_alert(conn, id).unwrap().unwrap(),
+            &price_map,
+            0, // default cooldown also 0
+        )
+        .unwrap();
+        assert!(result.newly_triggered);
+
+        // Second trigger immediately → should also fire (no cooldown)
+        let alert = alerts::get_alert(conn, id).unwrap().unwrap();
+        let result2 =
+            check_single_alert_sqlite(conn, &alert, &price_map, 0).unwrap();
+        assert!(result2.newly_triggered);
     }
 }

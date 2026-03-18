@@ -276,6 +276,7 @@ mod tests {
             watchlist: crate::config::WatchlistConfig::default(),
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
+            alert_default_cooldown_minutes: 30,
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");
