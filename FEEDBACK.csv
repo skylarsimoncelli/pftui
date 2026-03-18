@@ -41,3 +41,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-18,alert-investigator,85,85,ux,P2,Clean run - no unacked alerts to investigate. pftui agent message list worked efficiently.
 2026-03-18,alert-investigator,85,80,bug,P1,Database refresh error (computed_at column type mismatch) prevented fresh data but alert system remained functional. pftui commands mostly worked well for investigation workflow. Missing scan-specific movers command would be useful.
 2026-03-18,morning-brief,85,82,bug,P1,pftui data excellent for brief foundation. Alert-watchdog cron failing (28 errors) needs attention. News command returned empty for 12h window.
+2026-03-18,dev-agent,85,85,feature,P1,F46 stored market structure levels engine: technical_levels table + compute from swing pivots + SMA/BB/52W/round-number levels + analytics levels CLI + refresh integration. PR #33 merged. 1330 tests pass. Remaining: surface in brief/web/alerts.
