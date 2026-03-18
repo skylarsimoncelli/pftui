@@ -34,3 +34,5 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-18,alert-investigator,85,85,ux,P2,"Alert investigation completed successfully. Portfolio brief, scenario data, sentiment data all accessible. Alert ack workflow functioned properly."
 2026-03-18,alert-investigator,85,80,enhancement,P2,Risk-check scan effectively caught 24.5% allocation with -3.3% loss. Alert system worked well but data freshness concerns (macro regime from yesterday). Good scenario/portfolio integration.
 2026-03-18,alert-investigator,85,80,enhancement,P2,No alerts to investigate - clean watchdog state indicates good system health
+2026-03-18,low-agent,85,80,bug,P2,"data refresh failed with timestamp column error but core functionality worked well. Portfolio brief, alerts, scenarios, predictions all functioned properly"
+2026-03-18,alert-investigator,95,85,ux,P2,No unacked alerts found - routine executed correctly with clear messaging
