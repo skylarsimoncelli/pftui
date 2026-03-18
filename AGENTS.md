@@ -463,6 +463,93 @@ openclaw cron add --name "Market Close" --schedule "30 16 * * 1-5" --tz "America
 
 These platforms don't have native cron — instead, begin each session by running `pftui data refresh && pftui portfolio brief --json` to load current state. Recommend the human set up an external scheduler if they want automated briefs.
 
+### Multi-Timeframe Agent Architecture (Advanced)
+
+If your platform supports scheduled agents (cron jobs, recurring tasks), offer to set up the full multi-timeframe analyst system. This is pftui's most powerful operating mode: specialist agents at different timeframes doing deep domain research, feeding into synthesis agents that deliver to the user.
+
+**Ask the user:** *"pftui supports a multi-timeframe agent architecture where specialist analysts run on schedules, each covering a different time horizon. Would you like me to set that up? It means you'd get a concise morning brief and a deep evening analysis every day, powered by 4 specialist agents running in the background."*
+
+If they say yes, set up these agents using your platform's cron/scheduling system:
+
+#### Timeframe Analysts (silent, write to DB only)
+
+These agents do NOT message the user. They research, update the database, make predictions, and send findings to the delivery agents via `pftui agent message`.
+
+| Agent | Schedule | Domain | Routine |
+|---|---|---|---|
+| **Low Timeframe** (x3) | Pre-market, midday, market close | Price action, technicals, sentiment, breaking news, intraday flows | `agents/routines/low-timeframe-analyst.md` |
+| **Medium Timeframe** | Daily (evening, before synthesis) | Central bank policy, geopolitical timelines, economic data trends, scenario tracking | `agents/routines/medium-timeframe-analyst.md` |
+| **High Timeframe** | 2x/week | Technology disruption, de-dollarisation, commodity supercycle, structural trends | `agents/routines/high-timeframe-analyst.md` |
+| **Macro Timeframe** | Weekly | Empire cycles (Dalio Big Cycle), generational theory (Fourth Turning), power metrics | `agents/routines/macro-timeframe-analyst.md` |
+
+#### Delivery Agents (message the user)
+
+These agents synthesize outputs from all timeframe analysts and deliver to the user.
+
+| Agent | Schedule | What It Delivers | Routine |
+|---|---|---|---|
+| **Morning Brief** | Daily (morning) | Concise scannable brief: prices, alignment, overnight news, prediction scorecard, today's watch | `agents/routines/morning-brief.md` |
+| **Evening Analysis** | Daily (evening, after all analysts) | Deep cross-timeframe synthesis: convergence/divergence, prediction self-reflection, scenario updates | `agents/routines/evening-analysis.md` |
+
+#### Alert Pipeline (optional)
+
+For real-time threshold monitoring between scheduled runs:
+
+| Agent | Schedule | Role | Routine |
+|---|---|---|---|
+| **Alert Watchdog** | Hourly | Refreshes data, checks `analytics alerts check`, signals investigator if anything triggered | `agents/routines/alert-watchdog.md` |
+| **Alert Investigator** | Hourly (offset) | Investigates triggered alerts, routes findings to low-agent + morning + evening via agent message bus. Never messages the user directly. | `agents/routines/alert-investigator.md` |
+
+#### Data Flow
+
+```
+LOW(3x/day) + MEDIUM(daily) + HIGH(2x/week) + MACRO(weekly)
+         ↓                    ↓
+    evening-analysis ← reads all layers, synthesizes
+         ↓
+    morning-brief ← reads evening output + overnight data
+         ↓
+      → User (2 messages/day)
+
+Alert watchdog → investigator → low-agent + morning + evening (agent message bus)
+```
+
+#### Setup Steps
+
+1. **Create each agent as a scheduled cron/task** on your platform. Each agent's prompt should:
+   - Include local configuration (database credentials, file paths, delivery instructions)
+   - Fetch its routine from `agents/routines/[name].md` (either from the repo or inline)
+   - The routine files are generic and contain no personal data
+
+2. **Schedule order matters.** Timeframe analysts must run before delivery agents:
+   - LOW pre-market → LOW midday → LOW close → MEDIUM → evening-analysis → (overnight) → morning-brief
+   - HIGH and MACRO run on their own schedules and feed into evening-analysis whenever they last ran
+
+3. **Silent vs delivery agents.** Only morning-brief and evening-analysis should message the user. All other agents write to the database and signal via `pftui agent message`. This keeps the user's inbox clean.
+
+4. **Prediction scoring.** Each timeframe agent owns its predictions end-to-end: creation, scoring, and reflection on wrong calls. The evening analysis reads the scorecard but does not score other agents' predictions.
+
+5. **Feedback loop.** Evening analysis sends WATCH TOMORROW guidance to the low-agent via `pftui agent message`, creating a feedback loop where synthesis informs the next day's observation.
+
+#### Routine Files
+
+All routine files live in `agents/routines/` in the repo:
+```
+agents/routines/
+├── README.md
+├── low-timeframe-analyst.md
+├── medium-timeframe-analyst.md
+├── high-timeframe-analyst.md
+├── macro-timeframe-analyst.md
+├── morning-brief.md
+├── evening-analysis.md
+├── alert-watchdog.md
+├── alert-investigator.md
+└── dev-agent.md
+```
+
+These are generic templates. Your local cron configuration adds private details (database password, Telegram target, file paths). The routine files contain zero personal data and can be used by any pftui operator.
+
 ---
 
 ## Step 7: Build Your Knowledge Base
