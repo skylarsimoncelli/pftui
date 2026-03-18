@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-18 — fix: alert flapping cooldown logic for recurring alerts
+
+- What: added `alert_default_cooldown_minutes` config field (default: 30 minutes) that acts as a floor cooldown for recurring alerts when their per-alert `cooldown_minutes` is 0. Previously, recurring alerts with no explicit cooldown could re-trigger every evaluation cycle if conditions toggled rapidly (flapping). The engine now computes an effective cooldown as `max(per_alert_cooldown, config_default)`, suppressing repeated triggers within the cooldown window. Also removed the "Configurable overnight mover threshold" TODO item since `analytics movers --threshold <pct>` already existed.
+- Why: low-timeframe analyst reported scan alerts flapping (triggered/untriggered same day). This adds a configurable anti-flap floor without changing existing alerts that already have explicit cooldowns.
+- Files: `src/config.rs`, `src/alerts/engine.rs`, `src/app.rs`, `src/commands/export.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1317 pass (6 new); `cargo clippy --all-targets -- -D warnings` clean; new tests: `effective_cooldown_uses_per_alert_when_set`, `effective_cooldown_falls_back_to_default_when_zero`, `effective_cooldown_zero_when_both_zero`, `cooldown_elapsed_respects_window`, `recurring_alert_suppressed_within_default_cooldown`, `recurring_alert_fires_immediately_when_default_cooldown_zero`
+
 ### 2026-03-18 — feat: add batch prediction scoring (score-batch)
 
 - What: added `pftui journal prediction score-batch` command that accepts multiple `id:outcome` pairs in one invocation (e.g. `3:correct 7:wrong 12:partial`). Each entry is validated and scored independently with graceful error handling. Supports `--json` output with scored/errors arrays and counts.

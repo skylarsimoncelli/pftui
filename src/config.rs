@@ -210,6 +210,11 @@ pub struct Config {
     /// Native mobile API server configuration.
     #[serde(default)]
     pub mobile: MobileServerConfig,
+    /// Default minimum cooldown (in minutes) for recurring alerts when no per-alert
+    /// cooldown is set. Prevents flapping when conditions toggle rapidly.
+    /// Set to 0 to disable the default cooldown floor. Default: 30 minutes.
+    #[serde(default = "default_alert_cooldown_minutes")]
+    pub alert_default_cooldown_minutes: i64,
 }
 
 fn default_brave_news_queries() -> Vec<String> {
@@ -225,6 +230,10 @@ fn default_brave_news_queries() -> Vec<String> {
 
 fn default_chart_sma() -> Vec<usize> {
     vec![20, 50]
+}
+
+fn default_alert_cooldown_minutes() -> i64 {
+    30
 }
 
 fn default_watchlist_columns() -> Vec<WatchlistColumn> {
@@ -350,6 +359,7 @@ impl Default for Config {
             watchlist: WatchlistConfig::default(),
             keybindings: KeybindingsConfig::default(),
             mobile: MobileServerConfig::default(),
+            alert_default_cooldown_minutes: default_alert_cooldown_minutes(),
         }
     }
 }
@@ -654,6 +664,7 @@ mod tests {
                 key_path: Some("/tmp/key.pem".to_string()),
                 session_ttl_hours: 24,
             },
+            alert_default_cooldown_minutes: 45,
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();
@@ -682,6 +693,7 @@ mod tests {
         assert_eq!(loaded.mobile.port, 10443);
         assert_eq!(loaded.mobile.session_ttl_hours, 24);
         assert_eq!(loaded.mobile.api_tokens.len(), 1);
+        assert_eq!(loaded.alert_default_cooldown_minutes, 45);
     }
 
     #[test]
@@ -708,6 +720,7 @@ mod tests {
         assert_eq!(config.mobile.bind, "127.0.0.1");
         assert_eq!(config.mobile.port, 9443);
         assert!(config.mobile.api_tokens.is_empty());
+        assert_eq!(config.alert_default_cooldown_minutes, 30);
     }
 
     #[test]
@@ -731,6 +744,7 @@ mod tests {
         assert!(!config.mobile.enabled);
         assert_eq!(config.mobile.bind, "127.0.0.1");
         assert!(config.mobile.api_tokens.is_empty());
+        assert_eq!(config.alert_default_cooldown_minutes, 30);
     }
 
     #[test]

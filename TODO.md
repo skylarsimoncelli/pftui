@@ -8,22 +8,6 @@
 
 ## P1 — Always-On Analytics Engine
 
-### [Feedback] Configurable overnight mover threshold (P2)
-
-> Morning brief agent notes 3% threshold is too high during war/volatility periods.
-> Add `--threshold <pct>` flag to `portfolio movers --overnight` to let agents tune
-> sensitivity per-run instead of using the hardcoded default.
->
-> Files: `src/commands/movers.rs`, `src/cli.rs`
-
-### [Feedback] Alert flapping cooldown logic (P2)
-
-> Low-timeframe analyst reports scan alerts flapping (triggered/untriggered same day).
-> Add cooldown period config to alert evaluation so alerts that were triggered within
-> the cooldown window are suppressed even if condition toggles back.
->
-> Files: `src/alerts/engine.rs`, `src/alerts/mod.rs`
-
 ### F46: Stored Market Structure And Key Levels
 
 > Vision fit: pftui should map key levels mechanically so AI reasons on top of them.
@@ -185,9 +169,9 @@
 **Top 3 priorities based on feedback:**
 
 1. ~~**P1: Batch prediction scoring**~~ — Shipped Mar 18 (PR #31). `journal prediction score-batch` accepts multiple `id:outcome` pairs.
-2. **P2: Configurable overnight mover threshold** — Morning brief agent says 3% is too high during volatile periods. Add `--threshold` flag.
-3. **P2: Alert flapping cooldown logic** — Low-timeframe analyst reports scan alerts flapping same day.
+2. ~~**P2: Configurable overnight mover threshold**~~ — Already implemented: `analytics movers --threshold <pct>` exists with default 3%.
+3. ~~**P2: Alert flapping cooldown logic**~~ — Shipped Mar 18. Added `alert_default_cooldown_minutes` config (default 30m) as floor for recurring alerts with cooldown_minutes=0.
 
-**Release status:** v0.12.1 shipped Mar 16. F45 landed since then. `analytics scenario` CRUD alias shipped Mar 18 (PR #30). Build green: `cargo test` (1309 tests), `cargo clippy --all-targets -- -D warnings` clean. No P0 bugs remaining. Release eligible.
+**Release status:** v0.12.1 shipped Mar 16. F45 landed since then. `analytics scenario` CRUD alias shipped Mar 18 (PR #30). Build green: `cargo test` (1317 tests), `cargo clippy --all-targets -- -D warnings` clean. No P0 bugs remaining. Release eligible.
 
 **GitHub stars:** 2 — Homebrew Core requires 50+.
