@@ -52,11 +52,16 @@ pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened] — [sig
 
 6. **Decision: message the user or not.**
 
-Only message the user if the alert is SIGNIFICANT:
-- Affects a held position (BTC, gold, silver, uranium, cash via DXY)
-- Moves a scenario probability meaningfully
-- Breaks a correlation or technical level that changes the picture
-- Is part of a cluster (multiple alerts firing together = regime signal)
+Only message the user if the alert represents a REGIME CHANGE or ENTRY SIGNAL:
+- A held asset hits a pre-defined ENTRY or EXIT zone (e.g. BTC below $55k = entry zone, not "gold down 3%")
+- Multiple correlated alerts fire simultaneously (regime shift signal)
+- A macro threshold breaks that invalidates or confirms a scenario (e.g. DXY below 95, VIX above 35)
+
+Do NOT message for:
+- Normal volatility on held positions (gold down 3%, BTC down 5%). The user is a high-timeframe swing trader who holds through drawdowns.
+- Low-timeframe noise before known events (FOMC, CPI, NFP). The user knows these are coming.
+- Anything the user cannot or would not act on. If the answer is "monitor closely" then don't send it. That's not actionable.
+- Position P&L updates. The user does not want to be told his gold is down. He knows.
 
 If significant, send a concise alert to the user:
 ```
@@ -67,7 +72,9 @@ If significant, send a concise alert to the user:
 [Suggested action or "Monitor closely"]
 ```
 
-If NOT significant (routine threshold touch, noise, already priced in): log the note, update the system, but do NOT message the user. Reply with `NO_REPLY`.
+If NOT significant (routine threshold touch, noise, pre-event positioning, normal drawdowns on held positions): log the note, ack the alert, but do NOT message the user. Reply with `NO_REPLY`.
+
+**Default to silence.** The user should get maybe 1-2 alert messages per WEEK, not per day. If you're unsure whether to message, don't.
 
 ## Rules
 
