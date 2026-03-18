@@ -261,13 +261,16 @@ After completing the analysis, generate a branded PFTUI Intelligence Report PDF.
 
 2. Generate the PDF using the bundled generator:
 ```bash
-python3 /root/pftui/agents/deep-analysis/gen-report.py \
+python3 /root/pftui/agents/intelligence-report/gen-report.py \
   /root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.md \
   /root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf \
   "<Report Title>" \
   "<Month Day, Year>" \
-  "<Optional Subtitle>"
+  "<Optional Subtitle>" \
+  "Skylar Simoncelli"
 ```
+
+The generator supports: relative image paths (auto-resolved to `file://`), author byline (defaults to "Skylar Simoncelli"), and all markdown extensions (tables, fenced code, images).
 
 3. **DO NOT send the PDF or upload to the repo automatically.** The report requires manual review and fact-checking before publication. After generating the PDF, notify the user that the draft is ready for review at the file path. The user will review, request corrections if needed, and explicitly approve publication.
 

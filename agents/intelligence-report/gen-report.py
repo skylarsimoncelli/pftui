@@ -257,7 +257,7 @@ p, li {
 }
 """
 
-def md_to_pdf(md_path, pdf_path, title, date, subtitle=None):
+def md_to_pdf(md_path, pdf_path, title, date, subtitle=None, author="Skylar Simoncelli"):
     with open(md_path, 'r') as f:
         md_content = f.read()
 
@@ -275,9 +275,22 @@ def md_to_pdf(md_path, pdf_path, title, date, subtitle=None):
             break
     md_content = '\n'.join(lines)
 
+    # Resolve relative image paths to absolute file:// URIs for WeasyPrint
+    import os
+    md_dir = os.path.dirname(os.path.abspath(md_path))
+    import re
+    def resolve_img(match):
+        alt = match.group(1)
+        src = match.group(2)
+        if not src.startswith(('http://', 'https://', 'file://', '/')):
+            src = 'file://' + os.path.join(md_dir, src)
+        return f'![{alt}]({src})'
+    md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img, md_content)
+
     html_body = markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
 
     sub_html = f'<div style="font-size: 10pt; color: #8b949e; margin-top: 0.2cm;">{subtitle}</div>' if subtitle else ''
+    author_html = f'<div style="font-family: \'JetBrains Mono\', monospace; font-size: 9pt; color: #8b949e; margin-top: 0.15cm;">By {author}</div>' if author else ''
 
     html_doc = f"""<!DOCTYPE html>
 <html>
@@ -288,6 +301,7 @@ def md_to_pdf(md_path, pdf_path, title, date, subtitle=None):
     <div class="report-title">{title}</div>
     <div class="report-date">{date}</div>
     {sub_html}
+    {author_html}
     <div class="report-classification">Confidential</div>
 </div>
 {html_body}
@@ -306,4 +320,5 @@ if __name__ == '__main__':
     title = sys.argv[3]
     date = sys.argv[4]
     subtitle = sys.argv[5] if len(sys.argv) > 5 else None
-    md_to_pdf(md_path, pdf_path, title, date, subtitle)
+    author = sys.argv[6] if len(sys.argv) > 6 else "Skylar Simoncelli"
+    md_to_pdf(md_path, pdf_path, title, date, subtitle, author)
