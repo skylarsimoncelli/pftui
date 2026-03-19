@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — feat: persist full OHLCV in price_history + per-symbol data quality (F48 step 1)
+
+- What: upgraded `price_history` from close-only to full OHLCV candle storage. Added `open`, `high`, `low` TEXT columns via migration (SQLite + PostgreSQL). Updated `upsert_history()` to persist OHLCV with COALESCE semantics (new values replace, NULL preserves existing). Updated `get_history()` to read and return OHLCV. Added `analytics gaps --symbol SYM [--json]` for per-symbol data quality reporting: bar count, date range, per-field coverage %, date gaps >3 calendar days, and quality grade (good/partial/close_only).
+- Why: Yahoo Finance already populates open/high/low in HistoryRecord but the DB layer was discarding them. This change persists what providers already return, enabling OHLCV-aware technicals (ATR, range, breakout). CoinGecko close+volume-only records continue to work — OHLC fields remain NULL.
+- Files: `src/db/price_history.rs`, `src/db/schema.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: `cargo test` — 1396 pass (+5 new: `ohlcv_round_trip`, `ohlcv_partial_preserves_existing`, `ohlcv_none_when_not_available`, `parse_analytics_gaps_with_symbol`, `parse_analytics_gaps_without_symbol`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #56
+
 ### 2026-03-19 — feat: finish F47 daemon scheduling, status surfacing, and systemd docs
 
 - What: completed the remaining F47 scope. Added per-source daemon cadence config under `daemon.cadence.*` so operators can tune prices, news, Brave news, predictions, sentiment, calendar, economy, COT, BLS, FRED, FedWatch, World Bank, COMEX, on-chain, analytics, alerts, and cleanup independently via `pftui system config`. Refactored refresh into a selectable `RefreshPlan` so the daemon can run one loop that includes refresh, technical snapshots, key levels, analytics, alert evaluation, and cache cleanup without re-running every source on every wake cycle. `pftui data status --json` now includes a top-level `daemon` object sourced from the daemon heartbeat, and human-readable `data status` shows daemon health before source freshness. Added dedicated systemd deployment documentation with a recommended unit file and cadence examples.

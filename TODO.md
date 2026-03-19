@@ -6,21 +6,13 @@
 
 ## P1 — Always-On Analytics Engine
 
-### F48: Rich OHLCV History And Data-Quality Layer
+### F48: Rich OHLCV History And Data-Quality Layer (remaining)
 
-> Vision fit: technical analysis quality depends on data quality and richer candles than close-only series.
+> Steps 1, 3, 4 complete (PR #56): schema upgraded, OHLCV persisted from Yahoo, `analytics gaps --symbol` shipped.
 >
-> Current gap:
-> - `price_history` logic mostly relies on close and partial volume
-> - open/high/low are optional in models but not treated as first-class stored inputs
-> - this limits robust breakout, wick, range, ATR, and volatility analysis
->
-> Actionable scope:
-> 1. Upgrade historical storage so open/high/low/close/volume are fully persisted and queryable
-> 2. Backfill OHLCV where providers support it
-> 3. Add data-quality metadata per symbol: coverage, stale bars, source, gaps, split-adjust ambiguity
-> 4. Add `pftui analytics gaps --symbol SYM` or equivalent asset-level data-quality output
-> 5. Use OHLCV-aware calculations for Bollinger, ATR, range expansion, and breakout detection
+> Remaining scope:
+> 1. Backfill OHLCV where providers support it (re-fetch history with OHLCV for existing symbols)
+> 2. Use OHLCV-aware calculations for Bollinger, ATR, range expansion, and breakout detection
 
 
 
