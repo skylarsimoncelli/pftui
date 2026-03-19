@@ -46,14 +46,16 @@
 > Vision fit: AI should receive mechanical signal state, not derive it from raw indicator values.
 >
 > Current gap:
-> - Cross-timeframe signals exist, but symbol-level technical signals are still mostly implicit
-> - No normalized store for events like RSI overbought, MACD bull cross, MA reclaim, BB squeeze, volume expansion
+> - ~~Cross-timeframe signals exist, but symbol-level technical signals are still mostly implicit~~ (Steps 1-4 shipped Mar 19)
+> - ~~No normalized store for events like RSI overbought, MACD bull cross, MA reclaim, BB squeeze, volume expansion~~ (Shipped Mar 19)
 >
-> Actionable scope:
-> 1. Add `technical_signals` table for per-symbol, per-timeframe signal events
-> 2. Generate signals during refresh from stored technical snapshots and levels
-> 3. Include severity, direction, trigger price, expiry/staleness, and explanation
-> 4. Add `pftui analytics signals technical [--symbol SYM] [--json]`
+> Completed:
+> 1. ✅ `technical_signals` table (SQLite + PostgreSQL) for per-symbol, per-timeframe signal events
+> 2. ✅ Signal generation during refresh from stored technical snapshots (RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes)
+> 3. ✅ Each signal includes severity, direction, trigger price, and explanation
+> 4. ✅ `pftui analytics signals --source technical [--symbol SYM] [--json]` — also supports `--source all` (default, shows both) and `--source timeframe` (cross-layer only)
+>
+> Remaining:
 > 5. Reuse the same store for alerts, movers context, and agent brief generation
 
 ## P2 — Coverage And Agent Consumption
@@ -131,7 +133,7 @@
 - Alert Investigator is consistently 85-100% — no issues, system working as designed.
 - Both low-timeframe and medium-timeframe analysts independently request prediction scoring improvements (batch scoring, pending-items interface).
 - F45 (Persistent Technical Snapshots) shipped Mar 17, now removed from backlog.
-- 49 commits since v0.12.1 — mostly feedback log entries, but F45 is a meaningful feature.
+- 50+ commits since v0.12.1 — F45, F46, F49 (steps 1-4), F51 are meaningful features.
 
 **Top 3 priorities based on feedback:**
 

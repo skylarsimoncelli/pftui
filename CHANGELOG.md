@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — F49 steps 1-4: precomputed technical signal engine
+
+- What: added a `technical_signals` table (SQLite + PostgreSQL) that stores per-symbol, per-timeframe signal events derived from stored technical snapshots. Signals generated during `pftui data refresh` include: RSI overbought/oversold, MACD bull/bear cross, SMA 200 reclaim/breakdown, Bollinger Band squeeze, volume expansion (2x+ 20-day average), and 52-week high/low proximity. Each signal carries direction (bullish/bearish/neutral), severity (notable/critical), optional trigger price, and a human-readable description. Signals are deduplicated within 6 hours per symbol+type and auto-pruned after 72 hours. Extended `pftui analytics signals` with `--source` flag: `technical` (per-symbol signals), `timeframe` (cross-layer signals), or `all` (default, both). Supports `--symbol`, `--signal-type`, `--limit`, `--json`.
+- Why: agents had to derive signal state from raw indicator values on every run. F49 moves mechanical signal detection into the always-on data layer, giving agents precomputed, queryable events like "RSI oversold on XRT" or "BB squeeze on AAPL" without recalculating indicators.
+- Files: `src/db/technical_signals.rs` (new), `src/analytics/signals.rs` (new), `src/db/mod.rs`, `src/analytics/mod.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/analytics.rs`, `src/commands/refresh.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1352 pass (14 new: `add_and_list_signals`, `list_filters_by_symbol`, `list_filters_by_signal_type`, `list_respects_limit`, `detects_rsi_overbought`, `detects_rsi_oversold`, `detects_volume_expansion`, `detects_bb_squeeze`, `detects_52w_high`, `detects_52w_low`, `neutral_snapshot_produces_no_signals`, `dedup_prevents_repeated_signals`, `parse_analytics_signals_technical_source`, `parse_analytics_signals_default_source_is_all`); `cargo clippy --all-targets -- -D warnings` clean; verified against production PostgreSQL (49 signals generated from 80 tracked symbols on first refresh).
+
 ### 2026-03-19 — fix: computed_at TIMESTAMPTZ cast in PostgreSQL queries (P0)
 
 - What: fixed `computed_at` column type mismatch that broke `pftui data refresh` on PostgreSQL backends. `technical_snapshots` and `technical_levels` PostgreSQL functions were binding `computed_at` as plain text to `TIMESTAMPTZ` columns without an explicit cast. Added `::TIMESTAMPTZ` cast on INSERT bind parameters and `computed_at::TEXT` in PostgreSQL-specific SELECT column lists, matching the established pattern in `price_cache.rs`.

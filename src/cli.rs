@@ -1899,6 +1899,9 @@ pub enum AnalyticsCommand {
         signal_type: Option<String>,
         #[arg(long)]
         severity: Option<String>,
+        /// Filter signal source: "technical" (per-symbol), "timeframe" (cross-layer), or "all" (default)
+        #[arg(long, default_value = "all")]
+        source: String,
         #[arg(long)]
         limit: Option<usize>,
         #[arg(long)]
@@ -3164,5 +3167,53 @@ mod tests {
 
         assert_eq!(symbol, "GC=F");
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_signals_technical_source() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "signals",
+            "--source",
+            "technical",
+            "--symbol",
+            "BTC",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Signals {
+                    symbol,
+                    source,
+                    json,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics signals command");
+        };
+
+        assert_eq!(symbol.as_deref(), Some("BTC"));
+        assert_eq!(source, "technical");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_signals_default_source_is_all() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "signals", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Signals { source, json, .. },
+        }) = cli.command
+        else {
+            panic!("expected analytics signals command");
+        };
+
+        assert_eq!(source, "all");
+        assert!(json);
     }
 }
