@@ -709,6 +709,9 @@ fn main() -> Result<()> {
                 limit,
                 json,
             ),
+            cli::DataCommand::Prices { symbol, json } => {
+                commands::prices::run(&backend, symbol.as_deref(), json)
+            }
             cli::DataCommand::Options {
                 symbol,
                 expiry,

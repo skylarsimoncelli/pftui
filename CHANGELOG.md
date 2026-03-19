@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — fix: add `pftui data prices` command (price snapshot exit code 2)
+
+- What: added `pftui data prices [--symbol SYM] [--json]` command that returns all cached prices for tracked symbols in one call. Includes previous close, daily change, and change percent when price history is available. Fixes the "price snapshot exit code 2" bug reported by Evening Analyst — the command didn't exist, so clap returned exit code 2 (unrecognized subcommand). Also resolves the P2 request for a consolidated closing-price endpoint.
+- Why: agents need a single command to get a price snapshot across all tracked symbols without per-symbol queries. The missing command was causing agent workflow failures.
+- Files: `src/commands/prices.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1359 pass (2 new: `price_entry_serializes_without_optional_nulls`, `price_entry_serializes_with_change`); `cargo clippy -- -D warnings` clean.
+
 ### 2026-03-19 — F49 steps 1-4: precomputed technical signal engine
 
 - What: added a `technical_signals` table (SQLite + PostgreSQL) that stores per-symbol, per-timeframe signal events derived from stored technical snapshots. Signals generated during `pftui data refresh` include: RSI overbought/oversold, MACD bull/bear cross, SMA 200 reclaim/breakdown, Bollinger Band squeeze, volume expansion (2x+ 20-day average), and 52-week high/low proximity. Each signal carries direction (bullish/bearish/neutral), severity (notable/critical), optional trigger price, and a human-readable description. Signals are deduplicated within 6 hours per symbol+type and auto-pruned after 72 hours. Extended `pftui analytics signals` with `--source` flag: `technical` (per-symbol signals), `timeframe` (cross-layer signals), or `all` (default, both). Supports `--symbol`, `--signal-type`, `--limit`, `--json`.
