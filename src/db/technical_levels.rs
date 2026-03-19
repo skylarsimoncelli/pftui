@@ -39,6 +39,9 @@ impl TechnicalLevelRecord {
 const SELECT_COLUMNS: &str =
     "id, symbol, level_type, price, strength, source_method, timeframe, notes, computed_at";
 
+const SELECT_COLUMNS_PG: &str =
+    "id, symbol, level_type, price, strength, source_method, timeframe, notes, computed_at::TEXT";
+
 // ---------------------------------------------------------------------------
 // SQLite
 // ---------------------------------------------------------------------------
@@ -169,7 +172,7 @@ fn upsert_levels_postgres(pool: &PgPool, symbol: &str, levels: &[TechnicalLevelR
         for level in levels {
             sqlx::query(
                 "INSERT INTO technical_levels (symbol, level_type, price, strength, source_method, timeframe, notes, computed_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::TIMESTAMPTZ)",
             )
             .bind(&level.symbol)
             .bind(&level.level_type)
@@ -193,7 +196,7 @@ fn get_levels_for_symbol_postgres(
 ) -> Result<Vec<TechnicalLevelRecord>> {
     let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM technical_levels WHERE symbol = $1 ORDER BY price ASC"
+            "SELECT {SELECT_COLUMNS_PG} FROM technical_levels WHERE symbol = $1 ORDER BY price ASC"
         ))
         .bind(symbol)
         .fetch_all(pool)
@@ -207,7 +210,7 @@ fn list_all_levels_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<TechnicalLevelRecord>> {
     let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(format!(
-        "SELECT {SELECT_COLUMNS} FROM technical_levels ORDER BY symbol ASC, price ASC"
+        "SELECT {SELECT_COLUMNS_PG} FROM technical_levels ORDER BY symbol ASC, price ASC"
     ));
     if let Some(limit) = limit {
         qb.push(" LIMIT ").push_bind(limit as i64);
