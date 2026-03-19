@@ -723,6 +723,9 @@ fn main() -> Result<()> {
             }
             cli::DataCommand::Sovereign { json } => commands::sovereign::run(&backend, json),
             cli::DataCommand::Prices { json } => commands::prices::run(&backend, json),
+            cli::DataCommand::OilInventory { weeks, json } => {
+                commands::oil_inventory::run(&config, weeks, json)
+            }
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Config {

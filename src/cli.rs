@@ -417,6 +417,17 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// EIA weekly crude oil inventory and Strategic Petroleum Reserve (SPR) levels
+    #[command(name = "oil-inventory")]
+    OilInventory {
+        /// Number of weeks of history to fetch for context (default: 52)
+        #[arg(long, default_value = "52")]
+        weeks: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2370,6 +2381,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_oil_inventory_command() {
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "oil-inventory", "--weeks", "12", "--json"])
+                .unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::OilInventory { weeks, json },
+            }) => {
+                assert_eq!(weeks, 12);
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_oil_inventory_defaults() {
+        let cli = Cli::try_parse_from(["pftui", "data", "oil-inventory"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::OilInventory { weeks, json },
+            }) => {
+                assert_eq!(weeks, 52);
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_data_onchain_command() {
         let cli = Cli::try_parse_from(["pftui", "data", "onchain", "--json"]).unwrap();
         match cli.command {
@@ -2478,6 +2519,7 @@ mod tests {
             "etf-flows",
             "supply",
             "sovereign",
+            "oil-inventory",
         ] {
             assert!(
                 data_help.contains(command),
