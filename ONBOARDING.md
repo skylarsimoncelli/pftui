@@ -4,6 +4,7 @@
 > Follow it end-to-end on your first interaction. It takes 15-20 minutes of conversation with the human.
 >
 > After setup is complete, see [AGENTS.md](AGENTS.md) for the full operational reference: CLI commands, data model, integration patterns, analytics engine, multi-timeframe agent architecture, and best practices.
+> For always-on local deployment after onboarding, see [docs/DAEMON.md](docs/DAEMON.md).
 
 ---
 
@@ -585,4 +586,3 @@ Without persistent files, every session starts from zero. With them:
 **By end of Week 1:** You have a functioning system with daily briefs, a growing knowledge base, calibrated communication style, and the beginning of an accuracy track record. Everything improves from here through compounding.
 
 ---
-

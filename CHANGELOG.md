@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — feat: finish F47 daemon scheduling, status surfacing, and systemd docs
+
+- What: completed the remaining F47 scope. Added per-source daemon cadence config under `daemon.cadence.*` so operators can tune prices, news, Brave news, predictions, sentiment, calendar, economy, COT, BLS, FRED, FedWatch, World Bank, COMEX, on-chain, analytics, alerts, and cleanup independently via `pftui system config`. Refactored refresh into a selectable `RefreshPlan` so the daemon can run one loop that includes refresh, technical snapshots, key levels, analytics, alert evaluation, and cache cleanup without re-running every source on every wake cycle. `pftui data status --json` now includes a top-level `daemon` object sourced from the daemon heartbeat, and human-readable `data status` shows daemon health before source freshness. Added dedicated systemd deployment documentation with a recommended unit file and cadence examples.
+- Why: F47 required a first-class always-on path, not just a long-running wrapper around `data refresh`. Agents need daemon health in the same status payload they already consume, and operators need a documented, local-first way to keep pftui running outside the TUI/web session.
+- Files: `src/commands/daemon.rs`, `src/commands/refresh.rs`, `src/commands/status.rs`, `src/commands/config_cmd.rs`, `src/config.rs`, `src/app.rs`, `AGENTS.md`, `ONBOARDING.md`, `docs/ARCHITECTURE.md`, `docs/DAEMON.md`, `TODO.md`
+- Tests: `cargo test`; `cargo clippy --all-targets -- -D warnings`
+
 ### 2026-03-19 — feat: `system daemon` background refresh service (F47 step 1)
 
 - What: added `pftui system daemon start [--interval 300] [--json]` and `pftui system daemon status [--json]` commands. The daemon runs the full data refresh pipeline + alert evaluation in a foreground loop on a configurable interval (default 5 minutes). Uses a PID-based lock file (`~/.local/share/pftui/daemon.lock`) to prevent multiple instances. Writes a heartbeat JSON file (`~/.local/share/pftui/daemon_heartbeat.json`) every cycle with PID, status (starting/healthy/degraded/error/stopped), cycle count, last refresh duration, errors, and interval. Handles SIGTERM/SIGINT for graceful shutdown with interruptible sleep. The `status` subcommand reads the heartbeat file and checks if the daemon PID is still alive. Supports `--json` structured log output.

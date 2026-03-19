@@ -1,25 +1,19 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
-use crate::commands::refresh;
-use crate::config::Config;
+use crate::commands::refresh::{self, RefreshPlan};
+use crate::config::{Config, DaemonCadenceConfig};
 use crate::db::backend::open_from_config;
 
-/// Global shutdown flag — set by the signal handler, read by the main loop.
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
-/// Install POSIX signal handlers for SIGTERM and SIGINT (graceful shutdown).
-///
-/// Uses raw `unsafe` because the `libc` crate is not a dependency. The handler
-/// only touches an `AtomicBool`, which is async-signal-safe.
 fn install_signal_handlers() {
-    // SAFETY: the handler performs a single atomic store — async-signal-safe.
     unsafe {
-        // sigaction approach using raw syscall pointers is heavy; instead we
-        // register a plain function pointer via std C `signal()`. Rust's std
-        // re-exports libc types on unix targets.
         #[cfg(unix)]
         {
             extern "C" {
@@ -38,9 +32,6 @@ extern "C" fn handle_signal(_sig: i32) {
     SHUTDOWN.store(true, Ordering::SeqCst);
 }
 
-// ── Lock file ───────────────────────────────────────────────────────────
-
-/// Daemon lock file to prevent multiple instances.
 struct DaemonLock {
     path: PathBuf,
 }
@@ -52,13 +43,10 @@ impl DaemonLock {
             std::fs::create_dir_all(parent)?;
         }
 
-        // Check for existing daemon
         if lock_path.exists() {
             if let Ok(contents) = std::fs::read_to_string(&lock_path) {
                 if let Ok(pid) = contents.trim().parse::<u32>() {
-                    // Check if process is still alive (Linux /proc check)
-                    let proc_path = format!("/proc/{}", pid);
-                    if std::path::Path::new(&proc_path).exists() {
+                    if process_is_alive(pid) {
                         anyhow::bail!(
                             "Daemon already running (PID {}). Kill it first or remove {}",
                             pid,
@@ -67,11 +55,9 @@ impl DaemonLock {
                     }
                 }
             }
-            // Stale lock — remove it
             let _ = std::fs::remove_file(&lock_path);
         }
 
-        // Write our PID
         let mut f = std::fs::File::create(&lock_path)?;
         write!(f, "{}", std::process::id())?;
 
@@ -93,8 +79,6 @@ fn daemon_lock_path() -> PathBuf {
         .join(".local/share/pftui/daemon.lock")
 }
 
-// ── Heartbeat ───────────────────────────────────────────────────────────
-
 fn heartbeat_path() -> PathBuf {
     if let Ok(path) = std::env::var("PFTUI_DATA_DIR") {
         return std::path::Path::new(&path).join("daemon_heartbeat.json");
@@ -103,39 +87,78 @@ fn heartbeat_path() -> PathBuf {
         .join(".local/share/pftui/daemon_heartbeat.json")
 }
 
-/// Write a heartbeat JSON file so `pftui data status` and external monitors can
-/// check daemon health without needing IPC.
+fn process_is_alive(pid: u32) -> bool {
+    std::path::Path::new(&format!("/proc/{}", pid)).exists()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaemonStatus {
+    pub running: bool,
+    pub pid: Option<u32>,
+    pub status: String,
+    pub cycle: u64,
+    pub last_heartbeat: Option<String>,
+    pub last_refresh_duration_secs: Option<f64>,
+    pub errors: Vec<String>,
+    pub interval_secs: u64,
+    #[serde(default)]
+    pub tasks: Vec<String>,
+    pub message: Option<String>,
+}
+
+impl DaemonStatus {
+    fn missing(message: &str) -> Self {
+        Self {
+            running: false,
+            pid: None,
+            status: "stopped".to_string(),
+            cycle: 0,
+            last_heartbeat: None,
+            last_refresh_duration_secs: None,
+            errors: Vec::new(),
+            interval_secs: 0,
+            tasks: Vec::new(),
+            message: Some(message.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HeartbeatPayload {
+    pid: u32,
+    status: String,
+    cycle: u64,
+    last_heartbeat: String,
+    last_refresh_duration_secs: Option<f64>,
+    errors: Vec<String>,
+    interval_secs: u64,
+    #[serde(default)]
+    tasks: Vec<String>,
+}
+
 fn write_heartbeat(
     cycle: u64,
     status: &str,
     last_refresh_secs: Option<f64>,
     errors: &[String],
     interval_secs: u64,
+    tasks: &[&str],
 ) {
-    let now = chrono::Utc::now().to_rfc3339();
-    let error_json: Vec<String> = errors
-        .iter()
-        .map(|e| format!("\"{}\"", e.replace('"', "\\\"")))
-        .collect();
-    let heartbeat = format!(
-        r#"{{"pid":{},"status":"{}","cycle":{},"last_heartbeat":"{}","last_refresh_duration_secs":{},"errors":[{}],"interval_secs":{}}}"#,
-        std::process::id(),
-        status,
+    let payload = HeartbeatPayload {
+        pid: std::process::id(),
+        status: status.to_string(),
         cycle,
-        now,
-        last_refresh_secs
-            .map(|s| format!("{:.1}", s))
-            .unwrap_or_else(|| "null".to_string()),
-        error_json.join(","),
+        last_heartbeat: chrono::Utc::now().to_rfc3339(),
+        last_refresh_duration_secs: last_refresh_secs,
+        errors: errors.to_vec(),
         interval_secs,
-    );
-    let path = heartbeat_path();
-    let _ = std::fs::write(path, heartbeat);
+        tasks: tasks.iter().map(|task| task.to_string()).collect(),
+    };
+    if let Ok(body) = serde_json::to_string_pretty(&payload) {
+        let _ = std::fs::write(heartbeat_path(), body);
+    }
 }
 
-// ── Logging ─────────────────────────────────────────────────────────────
-
-/// Structured log line for daemon events.
 fn log_event(json: bool, event: &str, message: &str) {
     if json {
         let now = chrono::Utc::now().to_rfc3339();
@@ -152,17 +175,54 @@ fn log_event(json: bool, event: &str, message: &str) {
     }
 }
 
-// ── Main daemon loop ────────────────────────────────────────────────────
+struct CadenceTracker {
+    last_run: HashMap<&'static str, Instant>,
+}
 
-/// Run the daemon: loops forever, refreshing data on the given interval.
-///
-/// The daemon acquires a PID-based lock file to prevent multiple instances,
-/// registers signal handlers for graceful shutdown, and on each cycle:
-///   1. Opens a fresh DB connection
-///   2. Runs the full data refresh pipeline (`data refresh`)
-///   3. Evaluates alert rules against updated data
-///   4. Writes a heartbeat JSON for external monitoring
-///   5. Sleeps until the next cycle (interruptible on signal)
+impl CadenceTracker {
+    fn new() -> Self {
+        Self {
+            last_run: HashMap::new(),
+        }
+    }
+
+    fn due(&self, key: &'static str, cadence_secs: u64) -> bool {
+        match self.last_run.get(key) {
+            None => true,
+            Some(last) => last.elapsed().as_secs() >= cadence_secs.max(1),
+        }
+    }
+
+    fn build_plan(&self, cadence: &DaemonCadenceConfig) -> RefreshPlan {
+        RefreshPlan {
+            prices: self.due("prices", cadence.prices_interval_secs),
+            predictions: self.due("predictions", cadence.predictions_interval_secs),
+            fedwatch: self.due("fedwatch", cadence.fedwatch_interval_secs),
+            news_rss: self.due("news_rss", cadence.news_interval_secs),
+            news_brave: self.due("news_brave", cadence.brave_news_interval_secs),
+            cot: self.due("cot", cadence.cot_interval_secs),
+            sentiment: self.due("sentiment", cadence.sentiment_interval_secs),
+            calendar: self.due("calendar", cadence.calendar_interval_secs),
+            economy: self.due("economy", cadence.economy_interval_secs),
+            fred: self.due("fred", cadence.fred_interval_secs),
+            bls: self.due("bls", cadence.bls_interval_secs),
+            worldbank: self.due("worldbank", cadence.worldbank_interval_secs),
+            comex: self.due("comex", cadence.comex_interval_secs),
+            onchain: self.due("onchain", cadence.onchain_interval_secs),
+            analytics: self.due("analytics", cadence.analytics_interval_secs),
+            alerts: self.due("alerts", cadence.alerts_interval_secs),
+            cleanup: self.due("cleanup", cadence.cleanup_interval_secs),
+        }
+    }
+
+    fn mark_executed(&mut self, plan: &RefreshPlan) {
+        let now = Instant::now();
+        for task in plan.selected_task_names() {
+            self.last_run.insert(task, now);
+        }
+    }
+}
+
 pub fn run(
     config: &Config,
     db_path: &std::path::Path,
@@ -176,31 +236,46 @@ pub fn run(
         json,
         "daemon_start",
         &format!(
-            "pftui daemon starting (PID {}, interval {}s)",
+            "pftui daemon starting (PID {}, wake interval {}s)",
             std::process::id(),
             interval_secs
         ),
     );
-    write_heartbeat(0, "starting", None, &[], interval_secs);
+    write_heartbeat(0, "starting", None, &[], interval_secs, &[]);
 
+    let cadence = &config.daemon.cadence;
+    let mut tracker = CadenceTracker::new();
     let mut cycle: u64 = 0;
 
     while !SHUTDOWN.load(Ordering::SeqCst) {
         cycle += 1;
+        let plan = tracker.build_plan(cadence);
+        let task_names = plan.selected_task_names();
 
-        log_event(json, "refresh_start", &format!("cycle {} beginning", cycle));
+        if task_names.is_empty() {
+            write_heartbeat(cycle, "idle", None, &[], interval_secs, &[]);
+            if !sleep_interruptible(interval_secs) {
+                break;
+            }
+            continue;
+        }
 
-        let start = std::time::Instant::now();
+        log_event(
+            json,
+            "refresh_start",
+            &format!("cycle {} beginning ({})", cycle, task_names.join(",")),
+        );
+
+        let start = Instant::now();
         let mut errors: Vec<String> = Vec::new();
 
-        // Open a fresh backend connection each cycle to avoid stale connections
         let backend = match open_from_config(config, db_path) {
             Ok(b) => b,
             Err(e) => {
                 let msg = format!("Failed to open database: {}", e);
                 log_event(json, "refresh_error", &msg);
                 errors.push(msg);
-                write_heartbeat(cycle, "error", None, &errors, interval_secs);
+                write_heartbeat(cycle, "error", None, &errors, interval_secs, &task_names);
                 if !sleep_interruptible(interval_secs) {
                     break;
                 }
@@ -208,148 +283,131 @@ pub fn run(
             }
         };
 
-        match refresh::run_quiet(&backend, config, false) {
+        match refresh::run_quiet_with_plan(&backend, config, false, &plan) {
             Ok(()) => {
                 let elapsed = start.elapsed().as_secs_f64();
+                tracker.mark_executed(&plan);
                 log_event(
                     json,
                     "refresh_complete",
-                    &format!("cycle {} completed in {:.1}s", cycle, elapsed),
+                    &format!(
+                        "cycle {} completed in {:.1}s ({})",
+                        cycle,
+                        elapsed,
+                        task_names.join(",")
+                    ),
                 );
-                write_heartbeat(cycle, "healthy", Some(elapsed), &[], interval_secs);
+                write_heartbeat(
+                    cycle,
+                    "healthy",
+                    Some(elapsed),
+                    &[],
+                    interval_secs,
+                    &task_names,
+                );
             }
             Err(e) => {
                 let elapsed = start.elapsed().as_secs_f64();
                 let msg = format!("cycle {} failed after {:.1}s: {}", cycle, elapsed, e);
                 log_event(json, "refresh_error", &msg);
-                errors.push(format!("{}", e));
-                write_heartbeat(cycle, "degraded", Some(elapsed), &errors, interval_secs);
+                errors.push(e.to_string());
+                write_heartbeat(
+                    cycle,
+                    "degraded",
+                    Some(elapsed),
+                    &errors,
+                    interval_secs,
+                    &task_names,
+                );
             }
         }
 
-        // Run alert evaluation after refresh
-        run_alert_check(&backend, json);
-
-        // Sleep until next cycle, checking for shutdown every second
         if !sleep_interruptible(interval_secs) {
             break;
         }
     }
 
     log_event(json, "daemon_stop", "shutting down gracefully");
-    write_heartbeat(cycle, "stopped", None, &[], interval_secs);
+    write_heartbeat(cycle, "stopped", None, &[], interval_secs, &[]);
 
     Ok(())
 }
 
-/// Run alert evaluation after each refresh cycle.
-fn run_alert_check(backend: &crate::db::backend::BackendConnection, json_log: bool) {
-    use crate::alerts::engine::check_alerts_backend_only;
-
-    match check_alerts_backend_only(backend) {
-        Ok(results) => {
-            let newly: Vec<_> = results.iter().filter(|r| r.newly_triggered).collect();
-            if !newly.is_empty() {
-                log_event(
-                    json_log,
-                    "alerts_triggered",
-                    &format!("{} alert(s) fired", newly.len()),
-                );
-            }
-        }
-        Err(e) => {
-            log_event(
-                json_log,
-                "alerts_error",
-                &format!("alert check failed: {}", e),
-            );
-        }
-    }
-}
-
-/// Sleep for `secs` seconds, waking every second to check for shutdown signal.
-/// Returns `true` if the full duration elapsed, `false` if interrupted.
 fn sleep_interruptible(secs: u64) -> bool {
     for _ in 0..secs {
         if SHUTDOWN.load(Ordering::SeqCst) {
             return false;
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(Duration::from_secs(1));
     }
     !SHUTDOWN.load(Ordering::SeqCst)
 }
 
-// ── Status subcommand ───────────────────────────────────────────────────
-
-/// Read the daemon heartbeat file and print daemon status.
-pub fn run_status(json: bool) -> Result<()> {
+pub fn read_status() -> Result<DaemonStatus> {
     let path = heartbeat_path();
     if !path.exists() {
-        if json {
-            println!(r#"{{"running":false,"message":"No daemon heartbeat found"}}"#);
-        } else {
-            println!("Daemon is not running (no heartbeat file found).");
-        }
-        return Ok(());
+        return Ok(DaemonStatus::missing("No daemon heartbeat found"));
     }
 
     let content = std::fs::read_to_string(&path)?;
+    let payload: HeartbeatPayload = match serde_json::from_str(&content) {
+        Ok(payload) => payload,
+        Err(_) => return Ok(DaemonStatus::missing("Heartbeat file is corrupt")),
+    };
 
-    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-        if let Some(pid) = parsed.get("pid").and_then(|p| p.as_u64()) {
-            let proc_path = format!("/proc/{}", pid);
-            let alive = std::path::Path::new(&proc_path).exists();
-
-            if json {
-                let mut obj = parsed.clone();
-                if let Some(map) = obj.as_object_mut() {
-                    map.insert("running".to_string(), serde_json::Value::Bool(alive));
-                }
-                println!("{}", serde_json::to_string(&obj)?);
-            } else if alive {
-                let status = parsed
-                    .get("status")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("unknown");
-                let cycle = parsed.get("cycle").and_then(|c| c.as_u64()).unwrap_or(0);
-                let last = parsed
-                    .get("last_heartbeat")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("unknown");
-                let interval = parsed
-                    .get("interval_secs")
-                    .and_then(|s| s.as_u64())
-                    .unwrap_or(0);
-                let duration = parsed
-                    .get("last_refresh_duration_secs")
-                    .and_then(|s| s.as_f64());
-                println!("✓ Daemon running (PID {})", pid);
-                println!("  Status:    {}", status);
-                println!("  Cycle:     {}", cycle);
-                println!("  Interval:  {}s", interval);
-                if let Some(d) = duration {
-                    println!("  Last run:  {:.1}s", d);
-                }
-                println!("  Heartbeat: {}", last);
-            } else {
-                println!("✗ Daemon not running (PID {} is dead)", pid);
-                println!(
-                    "  Last heartbeat: {}",
-                    parsed
-                        .get("last_heartbeat")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("unknown")
-                );
-            }
-        } else if json {
-            println!(r#"{{"running":false,"message":"Heartbeat file missing PID"}}"#);
-        } else {
-            println!("Daemon heartbeat file is missing PID field.");
-        }
-    } else if json {
-        println!(r#"{{"running":false,"message":"Heartbeat file is corrupt"}}"#);
+    let running = process_is_alive(payload.pid);
+    let message = if running {
+        None
     } else {
-        println!("Daemon heartbeat file is corrupt.");
+        Some(format!(
+            "Daemon is not running (PID {} is dead)",
+            payload.pid
+        ))
+    };
+
+    Ok(DaemonStatus {
+        running,
+        pid: Some(payload.pid),
+        status: payload.status,
+        cycle: payload.cycle,
+        last_heartbeat: Some(payload.last_heartbeat),
+        last_refresh_duration_secs: payload.last_refresh_duration_secs,
+        errors: payload.errors,
+        interval_secs: payload.interval_secs,
+        tasks: payload.tasks,
+        message,
+    })
+}
+
+pub fn run_status(json: bool) -> Result<()> {
+    let status = read_status()?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&status)?);
+    } else if status.running {
+        println!(
+            "✓ Daemon running (PID {})",
+            status
+                .pid
+                .map(|pid| pid.to_string())
+                .unwrap_or_else(|| "?".to_string())
+        );
+        println!("  Status:    {}", status.status);
+        println!("  Cycle:     {}", status.cycle);
+        println!("  Interval:  {}s", status.interval_secs);
+        if let Some(duration) = status.last_refresh_duration_secs {
+            println!("  Last run:  {:.1}s", duration);
+        }
+        if let Some(last) = &status.last_heartbeat {
+            println!("  Heartbeat: {}", last);
+        }
+        if !status.tasks.is_empty() {
+            println!("  Tasks:     {}", status.tasks.join(", "));
+        }
+    } else if let Some(message) = status.message {
+        println!("{}", message);
+        if let Some(last) = status.last_heartbeat {
+            println!("  Last heartbeat: {}", last);
+        }
     }
 
     Ok(())
@@ -373,30 +431,31 @@ mod tests {
 
     #[test]
     fn sleep_interruptible_exits_on_shutdown() {
-        // Set shutdown flag before calling sleep
         SHUTDOWN.store(true, Ordering::SeqCst);
         let result = sleep_interruptible(60);
         assert!(!result);
-        // Reset for other tests
         SHUTDOWN.store(false, Ordering::SeqCst);
     }
 
     #[test]
-    fn log_event_does_not_panic() {
-        log_event(true, "test_event", "test message with \"quotes\"");
-        log_event(false, "test_event", "plain test message");
+    fn cadence_tracker_marks_and_defers_tasks() {
+        let cadence = DaemonCadenceConfig::default();
+        let mut tracker = CadenceTracker::new();
+        let first = tracker.build_plan(&cadence);
+        assert!(first.prices);
+        assert!(first.news_rss);
+        tracker.mark_executed(&first);
+        let second = tracker.build_plan(&cadence);
+        assert!(!second.prices);
+        assert!(!second.news_rss);
     }
 
     #[test]
     fn run_status_no_heartbeat_file() {
-        // When no heartbeat file exists, run_status should not error
-        // (it prints "not running" message). We can't easily capture stdout
-        // here, so just verify no panic.
         std::env::set_var("PFTUI_DATA_DIR", "/tmp/pftui-daemon-test-nonexistent");
-        let result = run_status(false);
-        assert!(result.is_ok());
-        let result_json = run_status(true);
-        assert!(result_json.is_ok());
+        let status = read_status().unwrap();
+        assert!(!status.running);
+        assert_eq!(status.message.as_deref(), Some("No daemon heartbeat found"));
         std::env::remove_var("PFTUI_DATA_DIR");
     }
 }
