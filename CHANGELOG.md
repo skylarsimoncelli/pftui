@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — fix: computed_at TIMESTAMPTZ cast in PostgreSQL queries (P0)
+
+- What: fixed `computed_at` column type mismatch that broke `pftui data refresh` on PostgreSQL backends. `technical_snapshots` and `technical_levels` PostgreSQL functions were binding `computed_at` as plain text to `TIMESTAMPTZ` columns without an explicit cast. Added `::TIMESTAMPTZ` cast on INSERT bind parameters and `computed_at::TEXT` in PostgreSQL-specific SELECT column lists, matching the established pattern in `price_cache.rs`.
+- Why: multiple agents (low-agent, morning-brief, alert-investigator, low-timeframe-analyst) reported data refresh failures since F45/F46 shipped Mar 17-18. Technical snapshot persistence, level computation, and downstream analytics were blocked.
+- Files: `src/db/technical_snapshots.rs`, `src/db/technical_levels.rs`
+- Tests: `cargo test` — 1338 pass; `cargo clippy --all-targets -- -D warnings` clean; `pftui data refresh` verified against production PostgreSQL
+- PR: #37
+
 ### 2026-03-18 — F51: asset intelligence blob
 
 - What: added `pftui analytics asset <SYMBOL> [--json]` command that returns the full synthesized intelligence state for a single asset in one canonical payload. Aggregates spot price (with pre/post-market), daily change %, latest OHLCV bar, full technical snapshot (RSI, MACD, SMAs, Bollinger, 52W range, volume regime), all stored market structure levels with nearest support/resistance, correlations, current market regime, scenarios and trends mentioning the symbol, alerts, portfolio position (if held), watchlist entry (if tracked), conviction scores, and freshness metadata. Supports both `--json` (structured agent blob) and human-readable markdown output.
