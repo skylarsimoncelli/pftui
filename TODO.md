@@ -16,8 +16,8 @@
 > - "Always-on" currently depends on a UI process or external cron
 >
 > Actionable scope:
-> 1. Add `pftui system daemon` with refresh scheduler, lock coordination, structured logs,
->    and health heartbeat
+> 1. ~~Add `pftui system daemon` with refresh scheduler, lock coordination, structured logs,
+>    and health heartbeat~~ *(done — PR #54)*
 > 2. Support per-source cadence config instead of one global interval
 > 3. Run refresh, technical snapshot generation, level generation, alert evaluation, and cleanup in one loop
 > 4. Expose daemon status via `pftui data status --json`

@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — feat: `system daemon` background refresh service (F47 step 1)
+
+- What: added `pftui system daemon start [--interval 300] [--json]` and `pftui system daemon status [--json]` commands. The daemon runs the full data refresh pipeline + alert evaluation in a foreground loop on a configurable interval (default 5 minutes). Uses a PID-based lock file (`~/.local/share/pftui/daemon.lock`) to prevent multiple instances. Writes a heartbeat JSON file (`~/.local/share/pftui/daemon_heartbeat.json`) every cycle with PID, status (starting/healthy/degraded/error/stopped), cycle count, last refresh duration, errors, and interval. Handles SIGTERM/SIGINT for graceful shutdown with interruptible sleep. The `status` subcommand reads the heartbeat file and checks if the daemon PID is still alive. Supports `--json` structured log output.
+- Why: F47 (Dedicated Background Daemon) is the highest-priority P1 item. pftui's always-on data ingestion currently depends on a TUI/web session or external cron. This adds a first-class daemon mode that runs independently, enabling systemd-based deployment.
+- Files: `src/commands/daemon.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: `cargo test` — 1391 pass (5 new: `daemon_lock_path_ends_with_expected_name`, `heartbeat_path_ends_with_expected_name`, `sleep_interruptible_exits_on_shutdown`, `log_event_does_not_panic`, `run_status_no_heartbeat_file`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #54
+
 ### 2026-03-19 — feat: wire technical signals into movers and brief JSON (F49 step 5)
 
 - What: wired precomputed technical signals into agent consumption surfaces. Brief JSON (`portfolio brief --json`) gains a top-level `technical_signals` array with all recent signals (symbol, type, direction, severity, description, detected_at). Both `movers` and `market_movers` arrays in the brief now include per-mover `signals` fields with relevant technical signal descriptions. Movers CLI (`analytics movers --json`) also includes `signals` per mover. Signal fields are omitted when empty via `skip_serializing_if`.
