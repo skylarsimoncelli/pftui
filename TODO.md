@@ -62,12 +62,6 @@
 
 ## P2 — Coverage And Agent Consumption
 
-### [Feedback] Add consolidated closing-price endpoint for all watched symbols
-
-> Evening Analyst (Mar 19) requests a single command that returns closing prices for all watched/held symbols in one call. Currently requires multiple commands or per-symbol queries.
->
-> Suggested path: `pftui data prices --json` or `pftui portfolio prices --json` returning symbol, close, change, change_pct for all tracked symbols.
-
 ### [Feedback] Add oil inventory/SPR data command
 
 > Medium-Timeframe Analyst (Mar 19, 75/82) suggests adding `pftui data oil-inventory` or similar for EIA oil inventory and SPR data. Would enhance energy analysis without web searches.
@@ -152,11 +146,10 @@
 - F46 (Market Structure Levels) surfaced in brief/web/TUI/alerts Mar 18 (PR #34).
 - Evening Analyst improved 55→65 usefulness after `analytics scenario` CRUD shipped (PR #30), but still lowest due to `data sovereign` failures and empty `analytics summary`/`divergence` output.
 
-**Top 3 priorities based on feedback:**
+**Top 2 priorities based on feedback:**
 
 1. **P1: Fix `data sovereign` failures** — Both Evening Analyst and Medium-Timeframe Analyst report failures. Blocking two testers.
 2. **P1: Fix `analytics summary`/`divergence` empty JSON** — Evening Analyst reports empty objects from core analytics consumption surfaces.
-3. **P2: Consolidated closing-price endpoint** — Evening Analyst wants all watched symbols' prices in one call for EOD workflows.
 
 **Release status:** v0.12.1 shipped Mar 16. 108 commits since then including F45, F46, F49 (steps 1-4), F51, P0 TIMESTAMPTZ fix, batch prediction scoring, alert flapping cooldown, scenario CRUD. Build green: 1352 tests pass, clippy clean. **3 new P1 feedback bugs added this review.** Release should wait until the P1 feedback fixes land, then cut v0.13.0.
 

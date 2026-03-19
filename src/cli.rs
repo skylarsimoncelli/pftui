@@ -411,6 +411,12 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Consolidated closing prices for all portfolio + watchlist symbols
+    Prices {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
