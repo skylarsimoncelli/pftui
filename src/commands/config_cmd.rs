@@ -34,6 +34,7 @@ fn list_config(json: bool) -> Result<()> {
             "layout": format_layout(config.layout),
             "fred_api_key": format_secret(config.fred_api_key.as_deref()),
             "brave_api_key": format_secret(config.brave_api_key.as_deref()),
+            "eia_api_key": format_secret(config.eia_api_key.as_deref()),
             "news_poll_interval": config.news_poll_interval,
             "custom_news_feeds": config.custom_news_feeds.len(),
             "chart_sma": config.chart_sma,
@@ -90,6 +91,10 @@ fn list_config(json: bool) -> Result<()> {
         println!(
             "brave_api_key = {}",
             format_secret(config.brave_api_key.as_deref())
+        );
+        println!(
+            "eia_api_key = {}",
+            format_secret(config.eia_api_key.as_deref())
         );
         println!("news_poll_interval = {}", config.news_poll_interval);
         println!(
@@ -152,6 +157,7 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
             "layout" | "workspace_layout" => json!(format_layout(config.layout)),
             "fred_api_key" => json!(format_secret(config.fred_api_key.as_deref())),
             "brave_api_key" => json!(format_secret(config.brave_api_key.as_deref())),
+            "eia_api_key" => json!(format_secret(config.eia_api_key.as_deref())),
             "news_poll_interval" => json!(config.news_poll_interval),
             "custom_news_feeds" => json!(config.custom_news_feeds.len()),
             "chart_sma" => json!(config.chart_sma),
@@ -199,6 +205,7 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
             "layout" | "workspace_layout" => println!("{}", format_layout(config.layout)),
             "fred_api_key" => println!("{}", format_secret(config.fred_api_key.as_deref())),
             "brave_api_key" => println!("{}", format_secret(config.brave_api_key.as_deref())),
+            "eia_api_key" => println!("{}", format_secret(config.eia_api_key.as_deref())),
             "news_poll_interval" => println!("{}", config.news_poll_interval),
             "custom_news_feeds" => println!("{}", config.custom_news_feeds.len()),
             "chart_sma" => println!("{:?}", config.chart_sma),
@@ -312,6 +319,16 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             save_config(&config)?;
             println!("Updated brave_api_key");
         }
+        "eia_api_key" => {
+            let trimmed = value.trim();
+            config.eia_api_key = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            };
+            save_config(&config)?;
+            println!("Updated eia_api_key");
+        }
         "layout" | "workspace_layout" => {
             let parsed = match value.trim().to_lowercase().as_str() {
                 "compact" => WorkspaceLayout::Compact,
@@ -402,7 +419,7 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
             );
         }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: database_backend, database_url, mirror_source_url, postgres_read_only, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, layout, auto_refresh, refresh_interval_secs, mobile.enabled, mobile.bind, mobile.port, mobile.session_ttl_hours, watchlist.columns",
+            "Unsupported set field '{}'. Currently supported: database_backend, database_url, mirror_source_url, postgres_read_only, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, eia_api_key, layout, auto_refresh, refresh_interval_secs, mobile.enabled, mobile.bind, mobile.port, mobile.session_ttl_hours, watchlist.columns",
             field
         ),
     }

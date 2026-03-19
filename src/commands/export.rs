@@ -269,6 +269,7 @@ mod tests {
             layout: crate::config::WorkspaceLayout::Split,
             fred_api_key: None,
             brave_api_key: None,
+            eia_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
             brave_news_queries: Vec::new(),

@@ -10,6 +10,8 @@ pub mod comex;
 pub mod cot;
 #[allow(dead_code)] // Infrastructure for F28.1+ consumers (Brave economic data parsing)
 pub mod economic;
+#[allow(dead_code)] // Infrastructure for EIA oil inventory/SPR CLI
+pub mod eia;
 #[allow(dead_code)] // Infrastructure for F31+ consumers (FedWatch CLI)
 pub mod fedwatch;
 #[allow(dead_code)] // Infrastructure for F3.2+ consumers (macro dashboard, refresh)

@@ -189,6 +189,10 @@ pub struct Config {
     /// Register at: https://brave.com/search/api/
     #[serde(default)]
     pub brave_api_key: Option<String>,
+    /// EIA API key for oil inventory and SPR data.
+    /// Register (free) at: https://www.eia.gov/opendata/register.php
+    #[serde(default)]
+    pub eia_api_key: Option<String>,
     /// RSS news feed polling interval in seconds (default: 600 = 10 minutes)
     #[serde(default = "default_news_poll_interval")]
     pub news_poll_interval: u64,
@@ -379,6 +383,7 @@ impl Default for Config {
             layout: WorkspaceLayout::default(),
             fred_api_key: None,
             brave_api_key: None,
+            eia_api_key: None,
             news_poll_interval: default_news_poll_interval(),
             custom_news_feeds: Vec::new(),
             brave_news_queries: default_brave_news_queries(),
@@ -671,6 +676,7 @@ mod tests {
             layout: WorkspaceLayout::Analyst,
             fred_api_key: None,
             brave_api_key: None,
+            eia_api_key: None,
             news_poll_interval: 600,
             custom_news_feeds: Vec::new(),
             brave_news_queries: default_brave_news_queries(),

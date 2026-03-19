@@ -37,6 +37,7 @@ pub mod movers;
 pub mod news;
 pub mod notes;
 pub mod oil;
+pub mod oil_inventory;
 pub mod onchain;
 pub mod opportunity;
 pub mod options;
