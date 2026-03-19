@@ -57,8 +57,7 @@
 > 3. ✅ Each signal includes severity, direction, trigger price, and explanation
 > 4. ✅ `pftui analytics signals --source technical [--symbol SYM] [--json]` — also supports `--source all` (default, shows both) and `--source timeframe` (cross-layer only)
 >
-> Remaining:
-> 5. Reuse the same store for alerts, movers context, and agent brief generation
+> 5. ✅ Technical signals integrated into agent brief JSON (`technical_signals` array) and movers context (`signals` field on each mover)
 
 ## P2 — Coverage And Agent Consumption
 

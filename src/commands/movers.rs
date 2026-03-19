@@ -9,6 +9,7 @@ use crate::db::allocations::get_unique_allocation_symbols_backend;
 use crate::db::backend::BackendConnection;
 use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::price_history::{get_history_backend, get_price_at_date_backend};
+use crate::db::technical_signals;
 use crate::db::transactions::get_unique_symbols_backend;
 use crate::db::watchlist::list_watchlist_backend;
 use crate::models::asset::AssetCategory;
@@ -215,18 +216,38 @@ pub fn run(
     });
 
     if json {
+        // Load active technical signals for context enrichment
+        let all_signals = technical_signals::list_signals_backend(backend, None, None, Some(200))
+            .unwrap_or_default();
+        let mut signal_map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for sig in &all_signals {
+            signal_map
+                .entry(sig.symbol.clone())
+                .or_default()
+                .push(sig.description.clone());
+        }
+
         // JSON output for agent consumption
         let entries: Vec<serde_json::Value> = movers
             .iter()
             .map(|m| {
                 let f: f64 = m.change_pct.to_string().parse().unwrap_or(0.0);
-                serde_json::json!({
+                let signals = signal_map
+                    .get(&m.symbol)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut obj = serde_json::json!({
                     "symbol": m.symbol,
                     "name": m.name,
                     "category": m.category,
                     "source": m.source,
                     "change_pct": (f * 100.0).round() / 100.0,
-                })
+                });
+                if !signals.is_empty() {
+                    obj["signals"] = serde_json::json!(signals);
+                }
+                obj
             })
             .collect();
         let output = serde_json::json!({

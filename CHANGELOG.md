@@ -3,7 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
-<<<<<<< HEAD
+### 2026-03-19 — F49 step 5: integrate technical signals into brief and movers
+
+- What: the agent brief JSON (`pftui brief --agent`) now includes a `technical_signals` array with all active precomputed signals (RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes). Movers in both the brief and `pftui movers --json` are enriched with a `signals` field containing matching technical signal descriptions for each mover symbol. This completes F49 by connecting the precomputed signal store to all agent consumption surfaces.
+- Why: agents previously had to query `analytics signals` separately and manually correlate with movers/brief data. Now signals flow automatically into the brief and movers output, giving agents immediate context like "AAPL moved +5% AND has RSI overbought signal" in a single query.
+- Files: `src/commands/brief.rs`, `src/commands/movers.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1363 pass (2 new: `movers_include_matching_signals`, `build_signal_map_groups_by_symbol`); `cargo clippy -- -D warnings` clean.
+
 ### 2026-03-19 — fix: analytics summary/divergence/alignment/low resilience (P1)
 
 - What: fixed `analytics summary --json`, `analytics divergence --json`, `analytics alignment --json`, and `analytics low --json` returning empty stdout when underlying DB queries fail. Three `?` early-return operators in `run_summary` (regime_snapshots, latest_signal, build_alignment_rows) and one each in `run_divergence`, `run_alignment`, and `run_low` caused the function to bail before printing any JSON output when a query errored. Replaced all with `.unwrap_or(None)` or `.unwrap_or_default()` matching the pattern already used by `run_digest`, `run_medium`, `run_high`, and other resilient analytics commands.
@@ -24,14 +30,12 @@
 - Why: Evening Analyst requested a single command to get all tracked symbols' prices instead of per-symbol queries or combining multiple commands. Enables efficient EOD workflows.
 - Files: `src/commands/prices.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
 - Tests: `cargo test` — 1367 pass (7 new: `prices_empty_db`, `prices_empty_db_json`, `prices_with_watchlist_and_holdings`, `format_decimal_opt_large`, `format_decimal_opt_small`, `format_decimal_opt_none`, `format_change_opt_positive`, `format_change_opt_negative`, `format_pct_opt_positive`, `format_pct_opt_none`); `cargo clippy -- -D warnings` clean.
-=======
 ### 2026-03-18 — feat: `data oil-inventory` command for EIA crude oil & SPR levels
 
 - What: added `pftui data oil-inventory [--weeks N] [--json]` command that fetches EIA weekly petroleum status report data: commercial crude oil inventories, Strategic Petroleum Reserve (SPR) levels, and total crude stocks. Displays current levels, weekly changes, 5-year averages, and deviation from average (absolute and percentage). Added `eia_api_key` config field (set via `pftui system config set eia_api_key KEY`). New data source module `src/data/eia.rs` follows the same patterns as `cot.rs`/`fred.rs`.
 - Why: energy analysis agents had to perform web searches for EIA inventory data. This provides structured, queryable oil supply data directly from the CLI.
 - Files: `src/data/eia.rs` (new), `src/data/mod.rs`, `src/commands/oil_inventory.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `src/config.rs`, `src/commands/config_cmd.rs`, `src/app.rs`, `src/commands/export.rs`, `TODO.md`, `CHANGELOG.md`
 - Tests: `cargo test` — 1368 pass (9 new: `weekly_change_computes_diff`, `weekly_change_none_for_single_observation`, `five_year_average_computes_mean`, `deviation_pct_correct`, `deviation_pct_zero_avg`, `eia_series_have_correct_ids`, `normalize_key_produces_snake_case`, `format_with_commas_works`, `format_signed_works`, `parses_data_oil_inventory_command`, `parses_data_oil_inventory_defaults`); `cargo clippy -- -D warnings` clean
->>>>>>> 44420d7 (feat: add `data oil-inventory` command for EIA crude oil & SPR levels)
 
 ### 2026-03-19 — F49 steps 1-4: precomputed technical signal engine
 
