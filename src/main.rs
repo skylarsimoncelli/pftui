@@ -728,6 +728,12 @@ fn main() -> Result<()> {
             }
         },
         Some(Command::System { command }) => match command {
+            cli::SystemCommand::Daemon { command } => match command {
+                cli::DaemonCommand::Start { interval, json } => {
+                    commands::daemon::run(&config, &db_path, interval, json)
+                }
+                cli::DaemonCommand::Status { json } => commands::daemon::run_status(json),
+            },
             cli::SystemCommand::Config {
                 action,
                 field,

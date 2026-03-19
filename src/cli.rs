@@ -904,7 +904,32 @@ pub enum PortfolioBrokerCommand {
 }
 
 #[derive(Subcommand)]
+pub enum DaemonCommand {
+    /// Start the daemon (foreground — use systemd/screen/tmux to background)
+    Start {
+        /// Refresh interval in seconds (default: 300 = 5 minutes)
+        #[arg(long, default_value = "300")]
+        interval: u64,
+
+        /// Output structured JSON log lines instead of human-readable text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show daemon status (reads heartbeat file)
+    Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum SystemCommand {
+    /// Run as a background daemon: refresh data + evaluate alerts on a loop
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCommand,
+    },
     /// View and update pftui configuration fields
     Config {
         /// Action: list, get, set
