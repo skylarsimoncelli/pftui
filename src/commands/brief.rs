@@ -3294,7 +3294,7 @@ mod tests {
         let map = build_signal_map(&signals);
         assert_eq!(map.get("AAPL").unwrap().len(), 2);
         assert_eq!(map.get("BTC-USD").unwrap().len(), 1);
-        assert!(map.get("NVDA").is_none());
+        assert!(!map.contains_key("NVDA"));
     }
 
     #[test]
