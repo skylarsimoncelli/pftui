@@ -11,23 +11,29 @@ use crate::models::price::HistoryRecord;
 
 pub fn upsert_history(conn: &Connection, symbol: &str, source: &str, records: &[HistoryRecord]) -> Result<()> {
     let mut stmt = conn.prepare(
-        "INSERT INTO price_history (symbol, date, close, source, volume)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO price_history (symbol, date, close, source, volume, open, high, low)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(symbol, date) DO UPDATE SET
            close = excluded.close,
            source = excluded.source,
-           volume = COALESCE(excluded.volume, price_history.volume)",
+           volume = COALESCE(excluded.volume, price_history.volume),
+           open = COALESCE(excluded.open, price_history.open),
+           high = COALESCE(excluded.high, price_history.high),
+           low = COALESCE(excluded.low, price_history.low)",
     )?;
     for rec in records {
         let volume_str = rec.volume.map(|v| v.to_string());
-        stmt.execute(params![symbol, rec.date, rec.close.to_string(), source, volume_str])?;
+        let open_str = rec.open.map(|v| v.to_string());
+        let high_str = rec.high.map(|v| v.to_string());
+        let low_str = rec.low.map(|v| v.to_string());
+        stmt.execute(params![symbol, rec.date, rec.close.to_string(), source, volume_str, open_str, high_str, low_str])?;
     }
     Ok(())
 }
 
 pub fn get_history(conn: &Connection, symbol: &str, limit: u32) -> Result<Vec<HistoryRecord>> {
     let mut stmt = conn.prepare(
-        "SELECT date, close, volume FROM price_history
+        "SELECT date, close, volume, open, high, low FROM price_history
          WHERE symbol = ?1
          ORDER BY date DESC
          LIMIT ?2",
@@ -35,13 +41,16 @@ pub fn get_history(conn: &Connection, symbol: &str, limit: u32) -> Result<Vec<Hi
     let rows = stmt.query_map(params![symbol, limit], |row| {
         let volume_str: Option<String> = row.get(2)?;
         let volume = volume_str.and_then(|s| s.parse::<u64>().ok());
+        let open_str: Option<String> = row.get(3)?;
+        let high_str: Option<String> = row.get(4)?;
+        let low_str: Option<String> = row.get(5)?;
         Ok(HistoryRecord {
             date: row.get(0)?,
             close: row.get::<_, String>(1)?.parse().unwrap_or(Decimal::ZERO),
             volume,
-            open: None,
-            high: None,
-            low: None,
+            open: open_str.and_then(|s| s.parse().ok()),
+            high: high_str.and_then(|s| s.parse().ok()),
+            low: low_str.and_then(|s| s.parse().ok()),
         })
     })?;
     let mut result: Vec<HistoryRecord> = rows.filter_map(|r| r.ok()).collect();
@@ -175,11 +184,26 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 close TEXT NOT NULL,
                 source TEXT NOT NULL,
                 volume TEXT,
+                open TEXT,
+                high TEXT,
+                low TEXT,
                 PRIMARY KEY (symbol, date)
             )",
         )
         .execute(pool)
         .await?;
+
+        // Migration: add OHLC columns if missing (F48)
+        sqlx::query(
+            "DO $$ BEGIN
+                ALTER TABLE price_history ADD COLUMN IF NOT EXISTS open TEXT;
+                ALTER TABLE price_history ADD COLUMN IF NOT EXISTS high TEXT;
+                ALTER TABLE price_history ADD COLUMN IF NOT EXISTS low TEXT;
+             END $$",
+        )
+        .execute(pool)
+        .await?;
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
@@ -195,20 +219,29 @@ fn upsert_history_postgres(
     crate::db::pg_runtime::block_on(async {
         for rec in records {
             let volume = rec.volume.map(|v| v.to_string());
+            let open = rec.open.map(|v| v.to_string());
+            let high = rec.high.map(|v| v.to_string());
+            let low = rec.low.map(|v| v.to_string());
             sqlx::query(
-                "INSERT INTO price_history (symbol, date, close, source, volume)
-                 VALUES ($1, $2, $3, $4, $5)
+                "INSERT INTO price_history (symbol, date, close, source, volume, open, high, low)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                  ON CONFLICT (symbol, date)
                  DO UPDATE SET
                     close = EXCLUDED.close,
                     source = EXCLUDED.source,
-                    volume = COALESCE(EXCLUDED.volume, price_history.volume)",
+                    volume = COALESCE(EXCLUDED.volume, price_history.volume),
+                    open = COALESCE(EXCLUDED.open, price_history.open),
+                    high = COALESCE(EXCLUDED.high, price_history.high),
+                    low = COALESCE(EXCLUDED.low, price_history.low)",
             )
             .bind(symbol)
             .bind(&rec.date)
             .bind(rec.close.to_string())
             .bind(source)
             .bind(volume)
+            .bind(open)
+            .bind(high)
+            .bind(low)
             .execute(pool)
             .await?;
         }
@@ -217,7 +250,7 @@ fn upsert_history_postgres(
     Ok(())
 }
 
-type HistoryRow = (String, String, Option<String>);
+type HistoryRow = (String, String, Option<String>, Option<String>, Option<String>, Option<String>);
 
 fn history_record_from_row(row: HistoryRow) -> HistoryRecord {
     let volume = row.2.and_then(|v| v.parse::<u64>().ok());
@@ -225,9 +258,9 @@ fn history_record_from_row(row: HistoryRow) -> HistoryRecord {
         date: row.0,
         close: row.1.parse().unwrap_or(Decimal::ZERO),
         volume,
-        open: None,
-        high: None,
-        low: None,
+        open: row.3.and_then(|s| s.parse().ok()),
+        high: row.4.and_then(|s| s.parse().ok()),
+        low: row.5.and_then(|s| s.parse().ok()),
     }
 }
 
@@ -235,7 +268,7 @@ fn get_history_postgres(pool: &PgPool, symbol: &str, limit: u32) -> Result<Vec<H
     ensure_tables_postgres(pool)?;
     let rows: Vec<HistoryRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT date, close, volume
+            "SELECT date, close, volume, open, high, low
              FROM price_history
              WHERE symbol = $1
              ORDER BY date DESC
@@ -415,5 +448,97 @@ mod tests {
         assert_eq!(prices["AAPL"], dec!(150));
         assert_eq!(prices["BTC"], dec!(42000));
         assert!(!prices.contains_key("MISSING"));
+    }
+
+    #[test]
+    fn test_ohlcv_round_trip() {
+        let conn = open_in_memory();
+        let records = vec![
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(105),
+                volume: Some(2_000_000),
+                open: Some(dec!(100)),
+                high: Some(dec!(108)),
+                low: Some(dec!(98)),
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(110),
+                volume: Some(3_000_000),
+                open: Some(dec!(106)),
+                high: Some(dec!(112)),
+                low: Some(dec!(104)),
+            },
+        ];
+        upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
+
+        let fetched = get_history(&conn, "AAPL", 90).unwrap();
+        assert_eq!(fetched.len(), 2);
+        // First record (oldest)
+        assert_eq!(fetched[0].open, Some(dec!(100)));
+        assert_eq!(fetched[0].high, Some(dec!(108)));
+        assert_eq!(fetched[0].low, Some(dec!(98)));
+        assert_eq!(fetched[0].close, dec!(105));
+        assert_eq!(fetched[0].volume, Some(2_000_000));
+        // Second record
+        assert_eq!(fetched[1].open, Some(dec!(106)));
+        assert_eq!(fetched[1].high, Some(dec!(112)));
+        assert_eq!(fetched[1].low, Some(dec!(104)));
+        assert_eq!(fetched[1].close, dec!(110));
+    }
+
+    #[test]
+    fn test_ohlcv_partial_preserves_existing() {
+        let conn = open_in_memory();
+        // First upsert with full OHLCV
+        let r1 = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(105),
+            volume: Some(2_000_000),
+            open: Some(dec!(100)),
+            high: Some(dec!(108)),
+            low: Some(dec!(98)),
+        }];
+        upsert_history(&conn, "AAPL", "yahoo", &r1).unwrap();
+
+        // Second upsert with only close (no OHLC) — should preserve existing OHLC
+        let r2 = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(107),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
+        upsert_history(&conn, "AAPL", "yahoo", &r2).unwrap();
+
+        let fetched = get_history(&conn, "AAPL", 90).unwrap();
+        assert_eq!(fetched[0].close, dec!(107)); // close updated
+        assert_eq!(fetched[0].open, Some(dec!(100))); // preserved
+        assert_eq!(fetched[0].high, Some(dec!(108))); // preserved
+        assert_eq!(fetched[0].low, Some(dec!(98))); // preserved
+        assert_eq!(fetched[0].volume, Some(2_000_000)); // preserved
+    }
+
+    #[test]
+    fn test_ohlcv_none_when_not_available() {
+        let conn = open_in_memory();
+        // CoinGecko-style: close+volume only, no OHLC
+        let records = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(42000),
+            volume: Some(50_000_000_000),
+            open: None,
+            high: None,
+            low: None,
+        }];
+        upsert_history(&conn, "BTC", "coingecko", &records).unwrap();
+
+        let fetched = get_history(&conn, "BTC", 90).unwrap();
+        assert_eq!(fetched[0].close, dec!(42000));
+        assert_eq!(fetched[0].open, None);
+        assert_eq!(fetched[0].high, None);
+        assert_eq!(fetched[0].low, None);
     }
 }

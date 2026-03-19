@@ -2051,6 +2051,9 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     Gaps {
+        /// Show per-symbol OHLCV data quality for a specific symbol
+        #[arg(long)]
+        symbol: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -3338,6 +3341,45 @@ mod tests {
         };
 
         assert_eq!(source, "all");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_gaps_with_symbol() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "gaps",
+            "--symbol",
+            "AAPL",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Gaps { symbol, json },
+        }) = cli.command
+        else {
+            panic!("expected analytics gaps command");
+        };
+
+        assert_eq!(symbol, Some("AAPL".to_string()));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_gaps_without_symbol() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "gaps", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Gaps { symbol, json },
+        }) = cli.command
+        else {
+            panic!("expected analytics gaps command");
+        };
+
+        assert_eq!(symbol, None);
         assert!(json);
     }
 }

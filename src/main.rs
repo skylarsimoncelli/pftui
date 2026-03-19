@@ -2091,13 +2091,13 @@ fn main() -> Result<()> {
                 limit,
                 json,
             ),
-            cli::AnalyticsCommand::Gaps { json } => commands::analytics::run(
+            cli::AnalyticsCommand::Gaps { symbol, json } => commands::analytics::run(
                 &backend,
                 "gaps",
                 None,
                 None,
                 None,
-                None,
+                symbol.as_deref(),
                 &[],
                 None,
                 None,

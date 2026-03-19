@@ -729,6 +729,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute_batch("ALTER TABLE price_history ADD COLUMN volume TEXT")?;
     }
 
+    // Migration: add OHLC columns to price_history (F48 — OHLCV history)
+    let has_open: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('price_history') WHERE name = 'open'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+
+    if !has_open {
+        conn.execute_batch(
+            "ALTER TABLE price_history ADD COLUMN open TEXT;
+             ALTER TABLE price_history ADD COLUMN high TEXT;
+             ALTER TABLE price_history ADD COLUMN low TEXT;",
+        )?;
+    }
+
     // Migration: add target_price and target_direction to watchlist (F6.3)
     let has_target_price: bool = conn
         .prepare("SELECT COUNT(*) FROM pragma_table_info('watchlist') WHERE name = 'target_price'")?
