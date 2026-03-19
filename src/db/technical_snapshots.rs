@@ -66,6 +66,11 @@ const SELECT_COLUMNS: &str = "symbol, timeframe, rsi_14, macd, macd_signal, macd
     range_52w_low, range_52w_high, range_52w_position, volume_avg_20, volume_ratio_20, \
     volume_regime, above_sma_20, above_sma_50, above_sma_200, computed_at";
 
+const SELECT_COLUMNS_PG: &str = "symbol, timeframe, rsi_14, macd, macd_signal, macd_histogram, \
+    sma_20, sma_50, sma_200, bollinger_upper, bollinger_middle, bollinger_lower, \
+    range_52w_low, range_52w_high, range_52w_position, volume_avg_20, volume_ratio_20, \
+    volume_regime, above_sma_20, above_sma_50, above_sma_200, computed_at::TEXT";
+
 pub fn insert_snapshot(conn: &Connection, row: &TechnicalSnapshotRecord) -> Result<()> {
     conn.execute(
         "INSERT INTO technical_snapshots (
@@ -222,7 +227,7 @@ fn insert_snapshot_postgres(pool: &PgPool, row: &TechnicalSnapshotRecord) -> Res
             above_sma_20, above_sma_50, above_sma_200, computed_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::TIMESTAMPTZ
         )";
     crate::db::pg_runtime::block_on(async {
         sqlx::query(query)
@@ -262,7 +267,7 @@ fn get_latest_snapshot_postgres(
 ) -> Result<Option<TechnicalSnapshotRecord>> {
     let row = crate::db::pg_runtime::block_on(async {
         sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS}
+            "SELECT {SELECT_COLUMNS_PG}
              FROM technical_snapshots
              WHERE symbol = $1 AND timeframe = $2
              ORDER BY computed_at DESC
@@ -282,7 +287,7 @@ fn list_latest_snapshots_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<TechnicalSnapshotRecord>> {
     let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(format!(
-        "SELECT {SELECT_COLUMNS}
+        "SELECT {SELECT_COLUMNS_PG}
          FROM technical_snapshots t
          WHERE timeframe = "
     ));
