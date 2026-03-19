@@ -4,7 +4,25 @@
 
 ---
 
-## P3 — Long Term
+## P1 — Feedback-Driven Fixes
+
+### [Feedback] Fix `data sovereign` command failures
+
+> Evening Analyst (Mar 19, 65/72) and Medium-Timeframe Analyst (Mar 19, 75/82) both report `data sovereign` failing entirely (COMEX silver specifically). Investigate and fix the sovereign data path.
+>
+> Files to check: `src/commands/sovereign.rs` or equivalent, `src/data/comex_cache.rs`
+
+### [Feedback] Fix `analytics summary` and `analytics divergence` returning empty objects
+
+> Evening Analyst (Mar 19) reports both `analytics summary --json` and `analytics divergence --json` returning empty/blank objects. These are core agent consumption surfaces — they must return populated data when portfolio/analytics state exists.
+>
+> Files to check: `src/commands/analytics.rs`
+
+### [Feedback] Fix price snapshot command exit code 2
+
+> Evening Analyst (Mar 19) reports the price snapshot command returning exit code 2. Need a reliable price-only snapshot path.
+>
+> Files to check: `src/commands/snapshot.rs` or `system snapshot`
 
 ## P1 — Always-On Analytics Engine
 
@@ -15,7 +33,7 @@
 > Current gap:
 > - Background refresh exists inside TUI/web sessions
 > - There is no first-class long-running daemon/service mode for ingestion + analytics
-> - “Always-on” currently depends on a UI process or external cron
+> - "Always-on" currently depends on a UI process or external cron
 >
 > Actionable scope:
 > 1. Add `pftui system daemon` with refresh scheduler, lock coordination, structured logs,
@@ -45,10 +63,6 @@
 
 > Vision fit: AI should receive mechanical signal state, not derive it from raw indicator values.
 >
-> Current gap:
-> - ~~Cross-timeframe signals exist, but symbol-level technical signals are still mostly implicit~~ (Steps 1-4 shipped Mar 19)
-> - ~~No normalized store for events like RSI overbought, MACD bull cross, MA reclaim, BB squeeze, volume expansion~~ (Shipped Mar 19)
->
 > Completed:
 > 1. ✅ `technical_signals` table (SQLite + PostgreSQL) for per-symbol, per-timeframe signal events
 > 2. ✅ Signal generation during refresh from stored technical snapshots (RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes)
@@ -59,6 +73,18 @@
 > 5. Reuse the same store for alerts, movers context, and agent brief generation
 
 ## P2 — Coverage And Agent Consumption
+
+### [Feedback] Add consolidated closing-price endpoint for all watched symbols
+
+> Evening Analyst (Mar 19) requests a single command that returns closing prices for all watched/held symbols in one call. Currently requires multiple commands or per-symbol queries.
+>
+> Suggested path: `pftui data prices --json` or `pftui portfolio prices --json` returning symbol, close, change, change_pct for all tracked symbols.
+
+### [Feedback] Add oil inventory/SPR data command
+
+> Medium-Timeframe Analyst (Mar 19, 75/82) suggests adding `pftui data oil-inventory` or similar for EIA oil inventory and SPR data. Would enhance energy analysis without web searches.
+>
+> Files to check: `src/data/` for new data source module
 
 ### F50: Configurable Universe Expansion
 
@@ -89,6 +115,8 @@
 > 3. Move freshness thresholds and cadence policies into config/runtime policy structs
 > 4. Emit structured refresh metrics: duration, failures, fallbacks, cached reuse, symbols updated
 > 5. Add `pftui data refresh --json` summary output for agents and observability
+
+## P3 — Long Term
 
 ### F39.7b: Historical Power Metrics Data Population (Sentinel)
 
@@ -122,25 +150,26 @@
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Alert Investigator | 95% | 90% | Mar 18 | → (consistently high, no issues) |
-| Morning Brief Agent | 85% | 80% | Mar 17 | → (stable, minor threshold suggestion) |
-| Low-Timeframe Analyst | 85% | 88% | Mar 17 | → (stable, batch scoring + cooldown requests) |
-| Medium-Timeframe Analyst | 85% | 88% | Mar 18 | → (stable, wants conviction visualization) |
-| Evening Analyst | 55% | 62% | Mar 18 | ↓ (missing `analytics scenario update`, confusing timeframe names) |
+| Alert Investigator | 85% | 90% | Mar 19 | → (consistently high, stable) |
+| Morning Brief Agent | 85% | 82% | Mar 18 | → (alert-watchdog cron errors noted) |
+| Low-Timeframe Analyst | 75% | 80% | Mar 18 | ↓ (data refresh timestamp bug — now fixed by PR #37) |
+| Medium-Timeframe Analyst | 75% | 82% | Mar 19 | ↓ (data sovereign failures, wants oil inventory data) |
+| Evening Analyst | 65% | 72% | Mar 19 | ↑ (improved from 55/62; still lowest — empty analytics, price snapshot fails, sovereign broken) |
+| Dev Agent | 90% | 88% | Mar 19 | → (shipping features and fixes consistently) |
 
-**Notes:**
-- Evening Analyst is the clear outlier at 55/62. Root cause is unchanged from last review: `analytics scenario` only has `list`, not `update`. Agent had to use raw SQL. Also confused by prediction timeframe values (low/medium/high/macro vs short/medium/long).
-- Alert Investigator is consistently 85-100% — no issues, system working as designed.
-- Both low-timeframe and medium-timeframe analysts independently request prediction scoring improvements (batch scoring, pending-items interface).
-- F45 (Persistent Technical Snapshots) shipped Mar 17, now removed from backlog.
-- 50+ commits since v0.12.1 — F45, F46, F49 (steps 1-4), F51 are meaningful features.
+**Key changes since last review:**
+- P0 TIMESTAMPTZ bug (PR #37) fixed Mar 19 — this was blocking data refresh for multiple agents for 24+ hours. Binary deployment also verified.
+- F49 (Precomputed Technical Signal Engine, steps 1-4) shipped Mar 19 (PR #38). 49 signals from 80 symbols on first production refresh.
+- F51 (Asset Intelligence Blob) shipped Mar 18 (PR #35).
+- F46 (Market Structure Levels) surfaced in brief/web/TUI/alerts Mar 18 (PR #34).
+- Evening Analyst improved 55→65 usefulness after `analytics scenario` CRUD shipped (PR #30), but still lowest due to `data sovereign` failures and empty `analytics summary`/`divergence` output.
 
 **Top 3 priorities based on feedback:**
 
-1. ~~**P1: Batch prediction scoring**~~ — Shipped Mar 18 (PR #31). `journal prediction score-batch` accepts multiple `id:outcome` pairs.
-2. ~~**P2: Configurable overnight mover threshold**~~ — Already implemented: `analytics movers --threshold <pct>` exists with default 3%.
-3. ~~**P2: Alert flapping cooldown logic**~~ — Shipped Mar 18. Added `alert_default_cooldown_minutes` config (default 30m) as floor for recurring alerts with cooldown_minutes=0.
+1. **P1: Fix `data sovereign` failures** — Both Evening Analyst and Medium-Timeframe Analyst report failures. Blocking two testers.
+2. **P1: Fix `analytics summary`/`divergence` empty JSON** — Evening Analyst reports empty objects from core analytics consumption surfaces.
+3. **P2: Consolidated closing-price endpoint** — Evening Analyst wants all watched symbols' prices in one call for EOD workflows.
 
-**Release status:** v0.12.1 shipped Mar 16. F45 landed since then. `analytics scenario` CRUD alias shipped Mar 18 (PR #30). Build green: `cargo test` (1317 tests), `cargo clippy --all-targets -- -D warnings` clean. No P0 bugs remaining. Release eligible.
+**Release status:** v0.12.1 shipped Mar 16. 108 commits since then including F45, F46, F49 (steps 1-4), F51, P0 TIMESTAMPTZ fix, batch prediction scoring, alert flapping cooldown, scenario CRUD. Build green: 1352 tests pass, clippy clean. **3 new P1 feedback bugs added this review.** Release should wait until the P1 feedback fixes land, then cut v0.13.0.
 
 **GitHub stars:** 2 — Homebrew Core requires 50+.
