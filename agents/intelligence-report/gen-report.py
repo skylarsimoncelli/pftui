@@ -239,6 +239,15 @@ a {
     text-decoration: none;
 }
 
+/* Images — fit within page margins */
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 12px auto;
+    page-break-inside: avoid;
+}
+
 /* Star marker for most likely scenario */
 p, li {
     orphans: 3;
