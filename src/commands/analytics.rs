@@ -564,7 +564,7 @@ pub fn run(
         "divergence" => run_divergence(backend, symbol, json_output),
         "digest" => run_digest(backend, from, limit, json_output),
         "recap" => run_recap(backend, date, limit, json_output),
-        "gaps" => run_gaps(backend, json_output),
+        "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
             "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
@@ -931,7 +931,10 @@ fn classify_gap(
     }
 }
 
-fn run_gaps(backend: &BackendConnection, json_output: bool) -> Result<()> {
+fn run_gaps(backend: &BackendConnection, symbol: Option<&str>, json_output: bool) -> Result<()> {
+    if let Some(sym) = symbol {
+        return run_gaps_symbol(backend, sym, json_output);
+    }
     let specs: [(&str, &str, &str, i64, bool); 14] = [
         ("low", "price_cache", "fetched_at", 1, false),
         ("low", "price_history", "date", 48, false),
@@ -1004,6 +1007,167 @@ fn run_gaps(backend: &BackendConnection, json_output: bool) -> Result<()> {
             stale,
             missing
         );
+    }
+
+    Ok(())
+}
+
+/// Row from price_history: (date, close, volume, open, high, low)
+type OhlcvRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+/// Per-symbol OHLCV data quality report (F48)
+fn run_gaps_symbol(backend: &BackendConnection, symbol: &str, json_output: bool) -> Result<()> {
+    let sym = symbol.to_uppercase();
+
+    // Query all price_history rows for this symbol
+    let sqlite_sql = format!(
+        "SELECT date, close, volume, open, high, low FROM price_history WHERE symbol = '{}' ORDER BY date ASC",
+        sym.replace('\'', "''")
+    );
+    let pg_sql = sqlite_sql.clone();
+
+    let rows: Vec<OhlcvRow> = query::dispatch(
+        backend,
+        |conn| {
+            let mut stmt = conn.prepare(&sqlite_sql)?;
+            let result = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                    ))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(result)
+        },
+        |pool| {
+            let result: Vec<OhlcvRow> = crate::db::pg_runtime::block_on(async {
+                sqlx::query_as(&pg_sql).fetch_all(pool).await
+            })?;
+            Ok(result)
+        },
+    )?;
+
+    let total_bars = rows.len();
+    if total_bars == 0 {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "symbol": sym,
+                    "total_bars": 0,
+                    "message": "No price history found"
+                }))?
+            );
+        } else {
+            println!("No price history found for {}", sym);
+        }
+        return Ok(());
+    }
+
+    let first_date = &rows[0].0;
+    let last_date = &rows[total_bars - 1].0;
+
+    let has_close = total_bars; // all rows have close
+    let has_volume = rows.iter().filter(|r| r.2.is_some()).count();
+    let has_open = rows.iter().filter(|r| r.3.is_some()).count();
+    let has_high = rows.iter().filter(|r| r.4.is_some()).count();
+    let has_low = rows.iter().filter(|r| r.5.is_some()).count();
+    let full_ohlcv = rows
+        .iter()
+        .filter(|r| r.2.is_some() && r.3.is_some() && r.4.is_some() && r.5.is_some())
+        .count();
+
+    // Detect date gaps (missing trading days)
+    let mut date_gaps = Vec::new();
+    for i in 1..rows.len() {
+        let prev = chrono::NaiveDate::parse_from_str(&rows[i - 1].0, "%Y-%m-%d");
+        let curr = chrono::NaiveDate::parse_from_str(&rows[i].0, "%Y-%m-%d");
+        if let (Ok(p), Ok(c)) = (prev, curr) {
+            let gap_days = (c - p).num_days();
+            // >3 calendar days = likely a gap (weekends are 2 days)
+            if gap_days > 3 {
+                date_gaps.push(json!({
+                    "from": rows[i - 1].0,
+                    "to": rows[i].0,
+                    "gap_days": gap_days,
+                }));
+            }
+        }
+    }
+
+    let pct = |n: usize| {
+        if total_bars == 0 {
+            0.0
+        } else {
+            (n as f64 / total_bars as f64) * 100.0
+        }
+    };
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "symbol": sym,
+                "total_bars": total_bars,
+                "date_range": { "first": first_date, "last": last_date },
+                "coverage": {
+                    "close": { "count": has_close, "pct": pct(has_close) },
+                    "open": { "count": has_open, "pct": pct(has_open) },
+                    "high": { "count": has_high, "pct": pct(has_high) },
+                    "low": { "count": has_low, "pct": pct(has_low) },
+                    "volume": { "count": has_volume, "pct": pct(has_volume) },
+                    "full_ohlcv": { "count": full_ohlcv, "pct": pct(full_ohlcv) },
+                },
+                "date_gaps": date_gaps,
+                "quality": if pct(full_ohlcv) >= 90.0 { "good" } else if pct(full_ohlcv) >= 50.0 { "partial" } else { "close_only" },
+            }))?
+        );
+    } else {
+        println!("OHLCV Data Quality — {}", sym);
+        println!("Date range: {} to {} ({} bars)", first_date, last_date, total_bars);
+        println!();
+        println!("{:<10} {:>8} {:>8}", "Field", "Count", "Coverage");
+        println!("{}", "─".repeat(30));
+        println!("{:<10} {:>8} {:>7.1}%", "Close", has_close, pct(has_close));
+        println!("{:<10} {:>8} {:>7.1}%", "Open", has_open, pct(has_open));
+        println!("{:<10} {:>8} {:>7.1}%", "High", has_high, pct(has_high));
+        println!("{:<10} {:>8} {:>7.1}%", "Low", has_low, pct(has_low));
+        println!("{:<10} {:>8} {:>7.1}%", "Volume", has_volume, pct(has_volume));
+        println!("{:<10} {:>8} {:>7.1}%", "Full OHLCV", full_ohlcv, pct(full_ohlcv));
+
+        if !date_gaps.is_empty() {
+            println!("\nDate Gaps (>{} calendar days):", 3);
+            for gap in &date_gaps {
+                println!(
+                    "  {} → {} ({} days)",
+                    gap["from"].as_str().unwrap_or("-"),
+                    gap["to"].as_str().unwrap_or("-"),
+                    gap["gap_days"]
+                );
+            }
+        }
+
+        let quality = if pct(full_ohlcv) >= 90.0 {
+            "GOOD — full OHLCV available"
+        } else if pct(full_ohlcv) >= 50.0 {
+            "PARTIAL — some bars missing OHLC data"
+        } else {
+            "CLOSE-ONLY — OHLCV data not yet backfilled"
+        };
+        println!("\nQuality: {}", quality);
     }
 
     Ok(())
