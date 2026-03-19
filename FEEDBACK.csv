@@ -72,3 +72,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-19,alert-investigator,75,85,ux,P2,No alerts triggered this hour. Alert system functioning normally - scan activity acknowledged properly. Clean investigation workflow.
 2026-03-19,alert-investigator,85,80,alert-investigation,normal,BIG-LOSERS scan alert investigated. Found 5th asset (LUNR -7.12%) due to Fed hawkish hold + Iran war escalation. Precious metals crash despite safe-haven environment confirms higher-for-longer rates narrative. Properly routed to agent pipeline.
 2026-03-19,alert-investigator,85,80,critical-signal,high,Identified precious metals correlation break during war - key recession signal. Limited by web access to full catalyst analysis.
+2026-03-19,morning-brief,85,90,enhancement,P2,Would benefit from integrated overnight news correlation - had to cross-reference pftui data with web_search manually for complete context
