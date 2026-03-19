@@ -83,3 +83,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-19,alert-investigator,85,80,scan-threshold,normal,"Big-losers scan 5→4 investigation revealed precious metals flash crash from Fed hawkish stance + Iran energy inflation. Clear catalyst identified, proper scenario context provided."
 2026-03-19,alert-investigator,85,80,scan,minor,"Big-gainers scan correctly detected LUNR earnings recovery. Valid signal, good responsiveness, watchlist-only impact."
 2026-03-19,low-timeframe-analyst,85,82,ux,P2,"pftui agent message ack command cannot accept multiple --id flags, requiring loop for bulk acknowledgment. Consider adding bulk ack support."
+2026-03-19,alert-investigator,85,80,monitoring,none,Alert system functioning well. Scan alerts properly acknowledged. No false positives. System clean and responsive.
