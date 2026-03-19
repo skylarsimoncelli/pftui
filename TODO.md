@@ -4,14 +4,6 @@
 
 ---
 
-## P1 — Feedback-Driven Fixes
-
-### [Feedback] Fix price snapshot command exit code 2
-
-> Evening Analyst (Mar 19) reports the price snapshot command returning exit code 2. Need a reliable price-only snapshot path.
->
-> Files to check: `src/commands/snapshot.rs` or `system snapshot`
-
 ## P1 — Always-On Analytics Engine
 
 ### F47: Dedicated Background Daemon
@@ -61,20 +53,6 @@
 > 5. Reuse the same store for alerts, movers context, and agent brief generation
 
 ## P2 — Coverage And Agent Consumption
-
-<<<<<<< HEAD
-### [Feedback] Add oil inventory/SPR data command
-
-> Medium-Timeframe Analyst (Mar 19, 75/82) suggests adding `pftui data oil-inventory` or similar for EIA oil inventory and SPR data. Would enhance energy analysis without web searches.
->
-> Files to check: `src/data/` for new data source module
-=======
-### [Feedback] Add consolidated closing-price endpoint for all watched symbols
-
-> Evening Analyst (Mar 19) requests a single command that returns closing prices for all watched/held symbols in one call. Currently requires multiple commands or per-symbol queries.
->
-> Suggested path: `pftui data prices --json` or `pftui portfolio prices --json` returning symbol, close, change, change_pct for all tracked symbols.
->>>>>>> 44420d7 (feat: add `data oil-inventory` command for EIA crude oil & SPR levels)
 
 ### F50: Configurable Universe Expansion
 
@@ -148,17 +126,22 @@
 | Dev Agent | 90% | 88% | Mar 19 | → (shipping features and fixes consistently) |
 
 **Key changes since last review:**
-- P0 TIMESTAMPTZ bug (PR #37) fixed Mar 19 — this was blocking data refresh for multiple agents for 24+ hours. Binary deployment also verified.
-- F49 (Precomputed Technical Signal Engine, steps 1-4) shipped Mar 19 (PR #38). 49 signals from 80 symbols on first production refresh.
-- F51 (Asset Intelligence Blob) shipped Mar 18 (PR #35).
-- F46 (Market Structure Levels) surfaced in brief/web/TUI/alerts Mar 18 (PR #34).
-- Evening Analyst improved 55→65 usefulness after `analytics scenario` CRUD shipped (PR #30), but still lowest due to `data sovereign` failures and empty `analytics summary`/`divergence` output.
+- Broker integration shipped (PR #41): Trading212, IBKR, Binance, Kraken, Coinbase, Crypto.com
+- `data prices` consolidated endpoint shipped (PR #47)
+- `data oil-inventory` EIA command shipped (PR #44)
+- `data sovereign` COMEX failures fixed (PR #45)
+- `analytics summary`/`divergence` empty JSON fixed (PR #46)
+- Price snapshot exit code 2 fixed (PR #47 — `data prices` replaces missing command)
+- Postgres parity CI fixed (PR #50)
+- F49 (Precomputed Technical Signal Engine, steps 1-4) shipped Mar 19 (PR #38)
+- All 3 P1 feedback bugs from Mar 19 review resolved
 
-**Top 2 priorities based on feedback:**
+**Top priorities:**
 
-1. **P1: Fix `data sovereign` failures** — Both Evening Analyst and Medium-Timeframe Analyst report failures. Blocking two testers.
-2. **P1: Fix `analytics summary`/`divergence` empty JSON** — Evening Analyst reports empty objects from core analytics consumption surfaces.
+1. **P1: F47 Background Daemon** — always-on ingestion without TUI/cron dependency
+2. **P1: F48 Rich OHLCV History** — upgrade from close-only to full candle data
+3. **P2: F50 Configurable Universe Expansion** — track more symbols beyond holdings/watchlist
 
-**Release status:** v0.12.1 shipped Mar 16. 108 commits since then including F45, F46, F49 (steps 1-4), F51, P0 TIMESTAMPTZ fix, batch prediction scoring, alert flapping cooldown, scenario CRUD. Build green: 1352 tests pass, clippy clean. **3 new P1 feedback bugs added this review.** Release should wait until the P1 feedback fixes land, then cut v0.13.0.
+**Release status:** v0.13.0 shipped Mar 19. All P1 feedback bugs resolved. CI green. Ready for next feature cycle.
 
 **GitHub stars:** 2 — Homebrew Core requires 50+.
