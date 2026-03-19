@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — fix: `data sovereign` resilient to COMEX silver fetch failures
+
+- What: the `data sovereign` command failed entirely when COMEX silver XLS parsing encountered format changes ("No TOTAL rows found"). Fixed three issues: (1) COMEX XLS parser now separates header detection from TOTAL row extraction into two passes, skips header-like rows, matches GRAND TOTAL / COMBINED variants, and falls back to scanning all numeric cells when column indices don't work; (2) sovereign command now accepts a `BackendConnection` and loads cached COMEX silver data from `comex_cache` as fallback when live fetch fails; (3) all three sovereign data sources (WGC gold, government BTC, COMEX silver) now fail independently with warnings instead of aborting the entire command.
+- Why: Evening Analyst (Mar 19, 65/72) and Medium-Timeframe Analyst (Mar 19, 75/82) both reported `data sovereign` failing entirely. Agents need partial data with warnings rather than total failure.
+- Files: `src/data/comex.rs`, `src/data/sovereign.rs`, `src/commands/sovereign.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1357 pass; `cargo clippy -- -D warnings` clean
+
 ### 2026-03-19 — F49 steps 1-4: precomputed technical signal engine
 
 - What: added a `technical_signals` table (SQLite + PostgreSQL) that stores per-symbol, per-timeframe signal events derived from stored technical snapshots. Signals generated during `pftui data refresh` include: RSI overbought/oversold, MACD bull/bear cross, SMA 200 reclaim/breakdown, Bollinger Band squeeze, volume expansion (2x+ 20-day average), and 52-week high/low proximity. Each signal carries direction (bullish/bearish/neutral), severity (notable/critical), optional trigger price, and a human-readable description. Signals are deduplicated within 6 hours per symbol+type and auto-pruned after 72 hours. Extended `pftui analytics signals` with `--source` flag: `technical` (per-symbol signals), `timeframe` (cross-layer signals), or `all` (default, both). Supports `--symbol`, `--signal-type`, `--limit`, `--json`.

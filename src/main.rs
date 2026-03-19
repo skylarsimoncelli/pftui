@@ -721,7 +721,7 @@ fn main() -> Result<()> {
             cli::DataCommand::Supply { symbol, json } => {
                 commands::supply::run(&backend, symbol, json)
             }
-            cli::DataCommand::Sovereign { json } => commands::sovereign::run(json),
+            cli::DataCommand::Sovereign { json } => commands::sovereign::run(&backend, json),
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Config {

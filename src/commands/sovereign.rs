@@ -1,13 +1,35 @@
 use anyhow::Result;
 
-use crate::data::sovereign;
+use crate::data::sovereign::{self, CachedComexSilver};
+use crate::db::backend::BackendConnection;
+use crate::db::comex_cache::get_latest_inventory_backend;
 
-pub fn run(json: bool) -> Result<()> {
-    let snapshot = sovereign::fetch_snapshot()?;
+pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
+    // Load cached COMEX silver data as fallback for when live fetch fails
+    let cached_silver = get_latest_inventory_backend(backend, "SI=F")
+        .ok()
+        .flatten()
+        .map(|entry| CachedComexSilver {
+            date: entry.date,
+            registered_oz: entry.registered,
+            eligible_oz: entry.eligible,
+            total_oz: entry.total,
+            registered_ratio_pct: entry.reg_ratio,
+        });
+
+    let snapshot = sovereign::fetch_snapshot(cached_silver)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&snapshot)?);
         return Ok(());
+    }
+
+    // Print warnings first if any
+    for warning in &snapshot.warnings {
+        eprintln!("  warning: {}", warning);
+    }
+    if !snapshot.warnings.is_empty() {
+        eprintln!();
     }
 
     println!("\nSovereign Holdings Tracker\n");
@@ -17,28 +39,40 @@ pub fn run(json: bool) -> Result<()> {
     }
     println!();
 
-    println!("  Central-bank gold (WGC, tonnes):");
-    for row in snapshot.cb_gold_tonnes.iter().take(12) {
-        println!("    {:<28} {:>10.2}", row.country, row.tonnes);
+    if snapshot.cb_gold_tonnes.is_empty() {
+        println!("  Central-bank gold: unavailable\n");
+    } else {
+        println!("  Central-bank gold (WGC, tonnes):");
+        for row in snapshot.cb_gold_tonnes.iter().take(12) {
+            println!("    {:<28} {:>10.2}", row.country, row.tonnes);
+        }
+        println!();
     }
-    println!();
 
-    println!("  Government BTC holdings:");
-    for row in snapshot.government_btc_holdings.iter().take(12) {
-        println!("    {:<28} {:>10.0} BTC", row.name, row.btc);
+    if snapshot.government_btc_holdings.is_empty() {
+        println!("  Government BTC holdings: unavailable\n");
+    } else {
+        println!("  Government BTC holdings:");
+        for row in snapshot.government_btc_holdings.iter().take(12) {
+            println!("    {:<28} {:>10.0} BTC", row.name, row.btc);
+        }
+        println!();
     }
-    println!();
 
     println!("  COMEX silver (SI=F):");
-    let registered = format_with_commas(snapshot.comex_silver.registered_oz);
-    let eligible = format_with_commas(snapshot.comex_silver.eligible_oz);
-    println!(
-        "    Date {} | Registered {} oz | Eligible {} oz | Reg ratio {:.1}%",
-        snapshot.comex_silver.date,
-        registered,
-        eligible,
-        snapshot.comex_silver.registered_ratio_pct
-    );
+    if snapshot.comex_silver.date == "unavailable" {
+        println!("    No data available");
+    } else {
+        let registered = format_with_commas(snapshot.comex_silver.registered_oz);
+        let eligible = format_with_commas(snapshot.comex_silver.eligible_oz);
+        println!(
+            "    Date {} | Registered {} oz | Eligible {} oz | Reg ratio {:.1}%",
+            snapshot.comex_silver.date,
+            registered,
+            eligible,
+            snapshot.comex_silver.registered_ratio_pct
+        );
+    }
     println!();
 
     println!("  Sources:");
