@@ -39,18 +39,7 @@
 > 4. Add `pftui analytics gaps --symbol SYM` or equivalent asset-level data-quality output
 > 5. Use OHLCV-aware calculations for Bollinger, ATR, range expansion, and breakout detection
 
-### F49: Precomputed Signal Engine
 
-> Vision fit: AI should receive mechanical signal state, not derive it from raw indicator values.
->
-> Completed:
-> 1. ✅ `technical_signals` table (SQLite + PostgreSQL) for per-symbol, per-timeframe signal events
-> 2. ✅ Signal generation during refresh from stored technical snapshots (RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes)
-> 3. ✅ Each signal includes severity, direction, trigger price, and explanation
-> 4. ✅ `pftui analytics signals --source technical [--symbol SYM] [--json]` — also supports `--source all` (default, shows both) and `--source timeframe` (cross-layer only)
->
-> Remaining:
-> 5. Reuse the same store for alerts, movers context, and agent brief generation
 
 ## P2 — Coverage And Agent Consumption
 
@@ -126,6 +115,7 @@
 | Dev Agent | 90% | 88% | Mar 19 | → (shipping features and fixes consistently) |
 
 **Key changes since last review:**
+- F49 complete: technical signals wired into brief + movers JSON (PR #52)
 - Broker integration shipped (PR #41): Trading212, IBKR, Binance, Kraken, Coinbase, Crypto.com
 - `data prices` consolidated endpoint shipped (PR #47)
 - `data oil-inventory` EIA command shipped (PR #44)
@@ -133,7 +123,7 @@
 - `analytics summary`/`divergence` empty JSON fixed (PR #46)
 - Price snapshot exit code 2 fixed (PR #47 — `data prices` replaces missing command)
 - Postgres parity CI fixed (PR #50)
-- F49 (Precomputed Technical Signal Engine, steps 1-4) shipped Mar 19 (PR #38)
+- CHANGELOG.md conflict markers resolved (PR #52 batch)
 - All 3 P1 feedback bugs from Mar 19 review resolved
 
 **Top priorities:**
