@@ -112,42 +112,132 @@ pub fn fetch_inventory(symbol: &str) -> Result<ComexInventory> {
             // Find header row to determine column indices
             let mut reg_col: Option<usize> = None;
             let mut elig_col: Option<usize> = None;
-            
+
+            // First pass: find header columns
             for row in range.rows() {
-                // Check if this is a header row
-                if reg_col.is_none() {
-                    for (idx, cell) in row.iter().enumerate() {
-                        let cell_str = cell_to_text(cell).to_uppercase();
-                        if cell_str.contains("REGISTERED") {
-                            reg_col = Some(idx);
-                        }
-                        if cell_str.contains("ELIGIBLE") {
-                            elig_col = Some(idx);
-                        }
+                for (idx, cell) in row.iter().enumerate() {
+                    let cell_str = cell_to_text(cell).to_uppercase();
+                    if cell_str.contains("REGISTERED") {
+                        reg_col = Some(idx);
+                    }
+                    if cell_str.contains("ELIGIBLE") {
+                        elig_col = Some(idx);
                     }
                 }
-                
-                // Look for TOTAL row (can appear in multiple formats/columns)
-                let has_total = row
-                    .iter()
-                    .any(|cell| cell_to_text(cell).to_uppercase().contains("TOTAL"));
-                if has_total {
-                    // Use discovered columns or common fallback indices
-                    let r_idx = reg_col.unwrap_or(2);
-                    let e_idx = elig_col.unwrap_or(3);
-
-                    if let Some(reg_cell) = row.get(r_idx) {
-                        if let Ok(reg_val) = parse_cell_as_float(reg_cell) {
-                            total_registered += reg_val;
-                        }
-                    }
-                    if let Some(elig_cell) = row.get(e_idx) {
-                        if let Ok(elig_val) = parse_cell_as_float(elig_cell) {
-                            total_eligible += elig_val;
-                        }
-                    }
+                if reg_col.is_some() || elig_col.is_some() {
                     break;
                 }
+            }
+
+            // Second pass: find TOTAL / GRAND TOTAL rows and extract values.
+            // We look for the last TOTAL-like row in each sheet since that
+            // is typically the summary row.  Earlier TOTAL rows (sub-totals)
+            // may also appear but the grand total is the one we want.
+            let mut sheet_reg = 0.0_f64;
+            let mut sheet_elig = 0.0_f64;
+            let mut found_total = false;
+
+            for row in range.rows() {
+                let row_text: String = row
+                    .iter()
+                    .map(|c| cell_to_text(c).to_uppercase())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                // Skip rows that are clearly headers (contain both REGISTERED
+                // and TOTAL/ELIGIBLE in the same row as text labels).
+                let is_header = row_text.contains("REGISTERED") && row_text.contains("ELIGIBLE");
+                if is_header {
+                    continue;
+                }
+
+                // Match TOTAL, GRAND TOTAL, or similar summary rows
+                let has_total = row_text.contains("TOTAL")
+                    || row_text.contains("GRAND")
+                    || row_text.contains("COMBINED");
+
+                if !has_total {
+                    continue;
+                }
+
+                // Use discovered columns or try common fallback indices
+                let r_idx = reg_col.unwrap_or(2);
+                let e_idx = elig_col.unwrap_or(3);
+
+                let mut row_reg = 0.0_f64;
+                let mut row_elig = 0.0_f64;
+                let mut got_reg = false;
+                let mut got_elig = false;
+
+                // Try the header-discovered column first
+                if let Some(reg_cell) = row.get(r_idx) {
+                    if let Ok(v) = parse_cell_as_float(reg_cell) {
+                        row_reg = v;
+                        got_reg = true;
+                    }
+                }
+                if let Some(elig_cell) = row.get(e_idx) {
+                    if let Ok(v) = parse_cell_as_float(elig_cell) {
+                        row_elig = v;
+                        got_elig = true;
+                    }
+                }
+
+                // If header columns didn't work, scan all numeric cells in
+                // the row and pick the two largest as registered/eligible.
+                if !got_reg && !got_elig {
+                    let mut nums: Vec<(usize, f64)> = Vec::new();
+                    for (idx, cell) in row.iter().enumerate() {
+                        if let Ok(v) = parse_cell_as_float(cell) {
+                            if v > 0.0 {
+                                nums.push((idx, v));
+                            }
+                        }
+                    }
+                    nums.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                    if nums.len() >= 2 {
+                        // Larger value is typically eligible, smaller is registered
+                        row_elig = nums[0].1;
+                        row_reg = nums[1].1;
+                        got_reg = true;
+                        got_elig = true;
+                    } else if nums.len() == 1 {
+                        row_reg = nums[0].1;
+                        got_reg = true;
+                    }
+                } else if !got_reg || !got_elig {
+                    // One column worked, try fallback indices for the other
+                    for &fi in &[1_usize, 2, 3, 4] {
+                        if fi == r_idx || fi == e_idx {
+                            continue;
+                        }
+                        if let Some(cell) = row.get(fi) {
+                            if let Ok(v) = parse_cell_as_float(cell) {
+                                if !got_reg {
+                                    row_reg = v;
+                                    got_reg = true;
+                                    break;
+                                } else if !got_elig {
+                                    row_elig = v;
+                                    got_elig = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if got_reg || got_elig {
+                    // Use the last (grand) total we find — overwrite, don't accumulate
+                    sheet_reg = row_reg;
+                    sheet_elig = row_elig;
+                    found_total = true;
+                }
+            }
+
+            if found_total {
+                total_registered += sheet_reg;
+                total_eligible += sheet_elig;
             }
         }
     }

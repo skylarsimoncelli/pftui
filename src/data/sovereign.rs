@@ -15,6 +15,9 @@ pub struct SovereignSnapshot {
     pub cb_gold_tonnes: Vec<CentralBankGold>,
     pub government_btc_holdings: Vec<GovernmentBtcHolding>,
     pub comex_silver: ComexSilverSnapshot,
+    /// Non-fatal warnings from data sources that partially failed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -46,14 +49,70 @@ pub struct ComexSilverSnapshot {
     pub registered_ratio_pct: f64,
 }
 
-pub fn fetch_snapshot() -> Result<SovereignSnapshot> {
-    let cb_gold = fetch_cb_gold()?;
-    let gov_btc = fetch_government_btc()?;
-    let silver =
-        comex::fetch_inventory("SI=F").context("failed to fetch COMEX silver inventory")?;
+/// Optional cached COMEX silver data to use as fallback when live fetch fails.
+pub struct CachedComexSilver {
+    pub date: String,
+    pub registered_oz: f64,
+    pub eligible_oz: f64,
+    pub total_oz: f64,
+    pub registered_ratio_pct: f64,
+}
 
-    let cb_gold_as_of = cb_gold.0;
-    let cb_gold_tonnes = cb_gold.1;
+pub fn fetch_snapshot(cached_silver: Option<CachedComexSilver>) -> Result<SovereignSnapshot> {
+    let mut warnings = Vec::new();
+
+    // Fetch CB gold — non-fatal on failure
+    let (cb_gold_as_of, cb_gold_tonnes) = match fetch_cb_gold() {
+        Ok((as_of, tonnes)) => (as_of, tonnes),
+        Err(e) => {
+            warnings.push(format!("WGC central-bank gold: {}", e));
+            (None, Vec::new())
+        }
+    };
+
+    // Fetch government BTC — non-fatal on failure
+    let government_btc_holdings = match fetch_government_btc() {
+        Ok(btc) => btc,
+        Err(e) => {
+            warnings.push(format!("Government BTC holdings: {}", e));
+            Vec::new()
+        }
+    };
+
+    // Fetch COMEX silver — fall back to cached data if live fetch fails
+    let comex_silver = match comex::fetch_inventory("SI=F") {
+        Ok(silver) => ComexSilverSnapshot {
+            date: silver.date,
+            registered_oz: silver.registered,
+            eligible_oz: silver.eligible,
+            total_oz: silver.total,
+            registered_ratio_pct: silver.reg_ratio,
+        },
+        Err(e) => {
+            if let Some(cached) = cached_silver {
+                warnings.push(format!(
+                    "COMEX silver live fetch failed ({}), using cached data from {}",
+                    e, cached.date
+                ));
+                ComexSilverSnapshot {
+                    date: cached.date,
+                    registered_oz: cached.registered_oz,
+                    eligible_oz: cached.eligible_oz,
+                    total_oz: cached.total_oz,
+                    registered_ratio_pct: cached.registered_ratio_pct,
+                }
+            } else {
+                warnings.push(format!("COMEX silver: {}", e));
+                ComexSilverSnapshot {
+                    date: "unavailable".to_string(),
+                    registered_oz: 0.0,
+                    eligible_oz: 0.0,
+                    total_oz: 0.0,
+                    registered_ratio_pct: 0.0,
+                }
+            }
+        }
+    };
 
     Ok(SovereignSnapshot {
         fetched_at: chrono::Utc::now().to_rfc3339(),
@@ -65,14 +124,9 @@ pub fn fetch_snapshot() -> Result<SovereignSnapshot> {
         },
         cb_gold_as_of,
         cb_gold_tonnes,
-        government_btc_holdings: gov_btc,
-        comex_silver: ComexSilverSnapshot {
-            date: silver.date,
-            registered_oz: silver.registered,
-            eligible_oz: silver.eligible,
-            total_oz: silver.total,
-            registered_ratio_pct: silver.reg_ratio,
-        },
+        government_btc_holdings,
+        comex_silver,
+        warnings,
     })
 }
 

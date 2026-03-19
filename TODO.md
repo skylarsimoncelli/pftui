@@ -6,12 +6,6 @@
 
 ## P1 — Feedback-Driven Fixes
 
-### [Feedback] Fix `data sovereign` command failures
-
-> Evening Analyst (Mar 19, 65/72) and Medium-Timeframe Analyst (Mar 19, 75/82) both report `data sovereign` failing entirely (COMEX silver specifically). Investigate and fix the sovereign data path.
->
-> Files to check: `src/commands/sovereign.rs` or equivalent, `src/data/comex_cache.rs`
-
 ### [Feedback] Fix `analytics summary` and `analytics divergence` returning empty objects
 
 > Evening Analyst (Mar 19) reports both `analytics summary --json` and `analytics divergence --json` returning empty/blank objects. These are core agent consumption surfaces — they must return populated data when portfolio/analytics state exists.
