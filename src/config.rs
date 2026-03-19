@@ -215,6 +215,9 @@ pub struct Config {
     /// Set to 0 to disable the default cooldown floor. Default: 30 minutes.
     #[serde(default = "default_alert_cooldown_minutes")]
     pub alert_default_cooldown_minutes: i64,
+    /// Broker API credentials for each supported integration.
+    #[serde(default)]
+    pub brokers: BrokerCredentials,
 }
 
 fn default_brave_news_queries() -> Vec<String> {
@@ -326,6 +329,30 @@ fn default_mobile_session_ttl_hours() -> u64 {
     12
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BrokerCredentials {
+    #[serde(default)]
+    pub trading212_api_key: Option<String>,
+    #[serde(default)]
+    pub ibkr_account_id: Option<String>,
+    #[serde(default)]
+    pub binance_api_key: Option<String>,
+    #[serde(default)]
+    pub binance_secret_key: Option<String>,
+    #[serde(default)]
+    pub kraken_api_key: Option<String>,
+    #[serde(default)]
+    pub kraken_private_key: Option<String>,
+    #[serde(default)]
+    pub coinbase_api_key: Option<String>,
+    #[serde(default)]
+    pub coinbase_api_secret: Option<String>,
+    #[serde(default)]
+    pub crypto_com_api_key: Option<String>,
+    #[serde(default)]
+    pub crypto_com_secret_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomNewsFeed {
     pub name: String,
@@ -360,6 +387,7 @@ impl Default for Config {
             keybindings: KeybindingsConfig::default(),
             mobile: MobileServerConfig::default(),
             alert_default_cooldown_minutes: default_alert_cooldown_minutes(),
+            brokers: BrokerCredentials::default(),
         }
     }
 }
@@ -665,6 +693,7 @@ mod tests {
                 session_ttl_hours: 24,
             },
             alert_default_cooldown_minutes: 45,
+            brokers: BrokerCredentials::default(),
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();

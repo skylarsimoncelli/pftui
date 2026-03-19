@@ -90,6 +90,10 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui portfolio target set SYMBOL --target PCT` | Set target allocation % |
 | `pftui portfolio target remove SYMBOL` | Remove target |
 | `pftui portfolio rebalance --json` | Suggested trades to reach targets |
+| `pftui portfolio broker add BROKER --api-key KEY [--secret SECRET]` | Connect a broker (trading212, ibkr, binance, kraken, coinbase, crypto-com) |
+| `pftui portfolio broker sync [BROKER] [--dry-run] --json` | Sync positions from connected brokers |
+| `pftui portfolio broker list --json` | List configured broker connections |
+| `pftui portfolio broker remove BROKER` | Remove a broker and its synced transactions |
 | `pftui analytics alerts add "CONDITION"` | Add alert |
 | `pftui analytics alerts list --json` | List active alerts |
 | `pftui analytics alerts remove ID` | Remove alert |

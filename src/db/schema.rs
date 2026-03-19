@@ -956,5 +956,19 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             ON technical_signals(detected_at);",
     )?;
 
+    // Broker connections registry
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS broker_connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            broker_name TEXT NOT NULL UNIQUE,
+            account_id TEXT,
+            label TEXT,
+            last_sync_at TEXT,
+            sync_status TEXT NOT NULL DEFAULT 'configured',
+            sync_error TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+    )?;
+
     Ok(())
 }

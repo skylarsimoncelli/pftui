@@ -833,6 +833,57 @@ pub enum PortfolioCommand {
         #[command(subcommand)]
         command: PortfolioTransactionCommand,
     },
+    /// Connect and sync broker accounts
+    Broker {
+        #[command(subcommand)]
+        command: PortfolioBrokerCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PortfolioBrokerCommand {
+    /// Add or update a broker connection
+    Add {
+        /// Broker name (trading212, ibkr, binance, kraken, coinbase, crypto-com)
+        broker: crate::broker::BrokerKind,
+        /// API key or access token
+        #[arg(long)]
+        api_key: Option<String>,
+        /// API secret or private key
+        #[arg(long)]
+        secret: Option<String>,
+        /// Optional label for this connection
+        #[arg(long)]
+        label: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Sync positions from a broker (or all configured brokers)
+    Sync {
+        /// Broker to sync (omit to sync all configured brokers)
+        broker: Option<crate::broker::BrokerKind>,
+        /// Show what would be synced without writing any data
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a broker connection and its synced transactions
+    Remove {
+        /// Broker name to remove
+        broker: crate::broker::BrokerKind,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List configured broker connections
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

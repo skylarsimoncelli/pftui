@@ -1,6 +1,7 @@
 mod alerts;
 mod analytics;
 mod app;
+mod broker;
 mod cli;
 mod commands;
 mod config;
@@ -1188,6 +1189,33 @@ fn main() -> Result<()> {
                         bail!("list-tx is not available in percentage mode (no transactions).\nRun `pftui setup` to switch to full mode.");
                     }
                     commands::list_tx::run(&backend, notes, json)
+                }
+            },
+            Some(cli::PortfolioCommand::Broker { command }) => match command {
+                cli::PortfolioBrokerCommand::Add {
+                    broker,
+                    api_key,
+                    secret,
+                    label,
+                    json,
+                } => commands::broker::run_add(
+                    &backend,
+                    broker,
+                    api_key.as_deref(),
+                    secret.as_deref(),
+                    label.as_deref(),
+                    json,
+                ),
+                cli::PortfolioBrokerCommand::Sync {
+                    broker,
+                    dry_run,
+                    json,
+                } => commands::broker::run_sync(&backend, broker, dry_run, json),
+                cli::PortfolioBrokerCommand::Remove { broker, json } => {
+                    commands::broker::run_remove(&backend, broker, json)
+                }
+                cli::PortfolioBrokerCommand::List { json } => {
+                    commands::broker::run_list(&backend, json)
                 }
             },
         },
