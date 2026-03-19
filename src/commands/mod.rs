@@ -4,6 +4,7 @@ pub mod alerts;
 pub mod analytics;
 pub mod annotate;
 pub mod brief;
+pub mod broker;
 pub mod calendar;
 pub mod config_cmd;
 pub mod consensus;

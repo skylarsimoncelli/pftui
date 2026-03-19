@@ -58,6 +58,8 @@ rcgen = "0.13"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 sha2 = "0.10"
+hex = "0.4"
+hmac = "0.12"
 
 [package.metadata.generate-rpm]
 assets = [

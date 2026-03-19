@@ -24,6 +24,7 @@ It brings together **positions, markets, macro, sentiment, news, and analytics**
 - **Local-first by default** — your data stays with you, not inside a hosted black box
 - **Built for daily use** — fast, keyboard-driven, and practical enough to live in every day
 - **Agent-ready** — every major feature is accessible through the CLI with structured JSON output
+- **Broker sync** — connect Trading212, IBKR, Binance, Kraken, Coinbase, or Crypto.com and pull positions automatically
 - **More valuable over time** — the longer you run it, the richer and more useful your local dataset becomes
 
 ---
