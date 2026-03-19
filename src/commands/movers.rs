@@ -215,18 +215,41 @@ pub fn run(
     });
 
     if json {
+        // Fetch recent technical signals for mover context
+        let recent_signals =
+            crate::db::technical_signals::list_signals_backend(backend, None, None, Some(200))
+                .unwrap_or_default();
+        let signal_map: std::collections::HashMap<String, Vec<String>> = {
+            let mut map: std::collections::HashMap<String, Vec<String>> =
+                std::collections::HashMap::new();
+            for sig in &recent_signals {
+                map.entry(sig.symbol.clone())
+                    .or_default()
+                    .push(sig.description.clone());
+            }
+            map
+        };
+
         // JSON output for agent consumption
         let entries: Vec<serde_json::Value> = movers
             .iter()
             .map(|m| {
                 let f: f64 = m.change_pct.to_string().parse().unwrap_or(0.0);
-                serde_json::json!({
+                let sym_signals = signal_map
+                    .get(&m.symbol)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut obj = serde_json::json!({
                     "symbol": m.symbol,
                     "name": m.name,
                     "category": m.category,
                     "source": m.source,
                     "change_pct": (f * 100.0).round() / 100.0,
-                })
+                });
+                if !sym_signals.is_empty() {
+                    obj["signals"] = serde_json::json!(sym_signals);
+                }
+                obj
             })
             .collect();
         let output = serde_json::json!({

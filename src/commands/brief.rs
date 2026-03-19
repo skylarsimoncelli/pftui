@@ -61,6 +61,8 @@ struct AgentBrief {
     correlations: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     timeframe_signal: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    technical_signals: Vec<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -122,6 +124,8 @@ struct MoverJson {
     name: String,
     daily_change_pct: String,
     daily_change_abs: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    signals: Vec<String>,
 }
 
 const DEFAULT_MARKET_MOVER_SYMBOLS: &[&str] = &[
@@ -299,11 +303,17 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     // Watchlist
     let watchlist_json = get_watchlist_json(conn, &prices, &hist_1d, &technicals_data)?;
 
+    // Technical signals for mover context and brief summary
+    let recent_signals = crate::db::technical_signals::list_signals(conn, None, None, Some(100))
+        .unwrap_or_default();
+    let signal_map = build_signal_map(&recent_signals);
+    let technical_signals_json = signals_to_json(&recent_signals);
+
     // Top movers (held positions)
-    let movers_json = get_movers_json(&positions, &hist_1d);
+    let movers_json = get_movers_json(&positions, &hist_1d, &signal_map);
     let watchlist_symbols: Vec<String> = watchlist_json.iter().map(|w| w.symbol.clone()).collect();
     let market_movers_json =
-        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
+        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &signal_map);
 
     // Macro data (if available)
     let macro_data = get_macro_json(conn).ok();
@@ -341,6 +351,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         regime: regime_json,
         correlations,
         timeframe_signal,
+        technical_signals: technical_signals_json,
     };
 
     let json = serde_json::to_string_pretty(&brief)?;
@@ -486,10 +497,18 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         .collect();
 
     let watchlist_json = get_watchlist_json_backend(backend, &prices, &hist_1d, &technicals_data)?;
-    let movers_json = get_movers_json(&positions, &hist_1d);
+
+    // Technical signals for mover context and brief summary
+    let recent_signals =
+        crate::db::technical_signals::list_signals_backend(backend, None, None, Some(100))
+            .unwrap_or_default();
+    let signal_map = build_signal_map(&recent_signals);
+    let technical_signals_json = signals_to_json(&recent_signals);
+
+    let movers_json = get_movers_json(&positions, &hist_1d, &signal_map);
     let watchlist_symbols: Vec<String> = watchlist_json.iter().map(|w| w.symbol.clone()).collect();
     let market_movers_json =
-        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
+        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &signal_map);
     let macro_data = get_macro_json_backend(backend).ok();
     let alerts_json = get_alerts_json_backend(backend);
     let drift_json = get_drift_json_backend(backend).ok();
@@ -519,6 +538,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         regime: regime_json,
         correlations,
         timeframe_signal,
+        technical_signals: technical_signals_json,
     };
     println!("{}", serde_json::to_string_pretty(&brief)?);
     Ok(())
@@ -839,7 +859,43 @@ fn get_watchlist_json(
     Ok(items)
 }
 
-fn get_movers_json(positions: &[Position], hist_1d: &HashMap<String, Decimal>) -> Vec<MoverJson> {
+/// Build a map of symbol → signal descriptions from recent technical signals.
+fn build_signal_map(
+    signals: &[crate::db::technical_signals::TechnicalSignalRecord],
+) -> HashMap<String, Vec<String>> {
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+    for sig in signals {
+        map.entry(sig.symbol.clone())
+            .or_default()
+            .push(sig.description.clone());
+    }
+    map
+}
+
+/// Serialize technical signals to JSON values for the brief.
+fn signals_to_json(
+    signals: &[crate::db::technical_signals::TechnicalSignalRecord],
+) -> Vec<serde_json::Value> {
+    signals
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "symbol": s.symbol,
+                "type": s.signal_type,
+                "direction": s.direction,
+                "severity": s.severity,
+                "description": s.description,
+                "detected_at": s.detected_at,
+            })
+        })
+        .collect()
+}
+
+fn get_movers_json(
+    positions: &[Position],
+    hist_1d: &HashMap<String, Decimal>,
+    signal_map: &HashMap<String, Vec<String>>,
+) -> Vec<MoverJson> {
     let mut movers: Vec<(String, String, Decimal)> = Vec::new();
 
     for pos in positions {
@@ -858,11 +914,18 @@ fn get_movers_json(positions: &[Position], hist_1d: &HashMap<String, Decimal>) -
 
     movers
         .into_iter()
-        .map(|(symbol, name, pct)| MoverJson {
-            symbol,
-            name,
-            daily_change_pct: pct.round_dp(2).to_string(),
-            daily_change_abs: pct.abs().round_dp(2).to_string(),
+        .map(|(symbol, name, pct)| {
+            let signals = signal_map
+                .get(&symbol)
+                .cloned()
+                .unwrap_or_default();
+            MoverJson {
+                symbol,
+                name,
+                daily_change_pct: pct.round_dp(2).to_string(),
+                daily_change_abs: pct.abs().round_dp(2).to_string(),
+                signals,
+            }
         })
         .collect()
 }
@@ -872,6 +935,7 @@ fn get_market_movers_json(
     watchlist_symbols: &[String],
     prices: &HashMap<String, Decimal>,
     hist_1d: &HashMap<String, Decimal>,
+    signal_map: &HashMap<String, Vec<String>>,
 ) -> Vec<MoverJson> {
     let held: HashSet<String> = positions
         .iter()
@@ -903,11 +967,18 @@ fn get_market_movers_json(
     movers.truncate(5);
     movers
         .into_iter()
-        .map(|(symbol, name, pct)| MoverJson {
-            symbol,
-            name,
-            daily_change_pct: pct.round_dp(2).to_string(),
-            daily_change_abs: pct.abs().round_dp(2).to_string(),
+        .map(|(symbol, name, pct)| {
+            let signals = signal_map
+                .get(&symbol)
+                .cloned()
+                .unwrap_or_default();
+            MoverJson {
+                symbol,
+                name,
+                daily_change_pct: pct.round_dp(2).to_string(),
+                daily_change_abs: pct.abs().round_dp(2).to_string(),
+                signals,
+            }
         })
         .collect()
 }
@@ -3112,7 +3183,8 @@ mod tests {
         hist_1d.insert("NVDA".to_string(), dec!(100));
         hist_1d.insert("TSLA".to_string(), dec!(200));
 
-        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
+        let empty_signals: HashMap<String, Vec<String>> = HashMap::new();
+        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &empty_signals);
         assert!(!movers.iter().any(|m| m.symbol == "AAPL"));
         assert!(movers.iter().any(|m| m.symbol == "NVDA"));
         assert!(movers.iter().any(|m| m.symbol == "TSLA"));
@@ -3147,7 +3219,8 @@ mod tests {
         hist_1d.insert("XLE".to_string(), dec!(100));
         hist_1d.insert("SPY".to_string(), dec!(100));
 
-        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d);
+        let empty_signals: HashMap<String, Vec<String>> = HashMap::new();
+        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &empty_signals);
         assert_eq!(movers.first().map(|m| m.symbol.as_str()), Some("NVDA"));
         assert_eq!(movers.get(1).map(|m| m.symbol.as_str()), Some("TSLA"));
     }
@@ -3316,5 +3389,113 @@ mod tests {
         // With technicals=true, should succeed (no history means no indicators displayed)
         let result = run_internal(&conn, &config, true, false, false);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn build_signal_map_groups_by_symbol() {
+        let signals = vec![
+            crate::db::technical_signals::TechnicalSignalRecord {
+                id: 1,
+                symbol: "BTC-USD".to_string(),
+                signal_type: "rsi_oversold".to_string(),
+                direction: "bullish".to_string(),
+                severity: "notable".to_string(),
+                trigger_price: Some(60000.0),
+                description: "RSI(14) at 28.5 — oversold".to_string(),
+                timeframe: "1d".to_string(),
+                detected_at: "2026-03-19T08:00:00Z".to_string(),
+            },
+            crate::db::technical_signals::TechnicalSignalRecord {
+                id: 2,
+                symbol: "BTC-USD".to_string(),
+                signal_type: "bb_squeeze".to_string(),
+                direction: "neutral".to_string(),
+                severity: "notable".to_string(),
+                trigger_price: None,
+                description: "Bollinger Band squeeze — width 3.2%".to_string(),
+                timeframe: "1d".to_string(),
+                detected_at: "2026-03-19T08:00:00Z".to_string(),
+            },
+            crate::db::technical_signals::TechnicalSignalRecord {
+                id: 3,
+                symbol: "GC=F".to_string(),
+                signal_type: "52w_high".to_string(),
+                direction: "bullish".to_string(),
+                severity: "critical".to_string(),
+                trigger_price: Some(3050.0),
+                description: "Within 1% of 52-week high".to_string(),
+                timeframe: "1d".to_string(),
+                detected_at: "2026-03-19T08:00:00Z".to_string(),
+            },
+        ];
+        let map = build_signal_map(&signals);
+        assert_eq!(map.get("BTC-USD").map(|v| v.len()), Some(2));
+        assert_eq!(map.get("GC=F").map(|v| v.len()), Some(1));
+        assert!(!map.contains_key("AAPL"));
+    }
+
+    #[test]
+    fn movers_include_signals_when_present() {
+        let positions = vec![make_position(
+            "BTC-USD",
+            AssetCategory::Crypto,
+            dec!(1),
+            dec!(60000),
+            Some(dec!(66000)),
+            Some(dec!(1000)),
+        )];
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("BTC-USD".to_string(), dec!(60000));
+
+        let mut signal_map: HashMap<String, Vec<String>> = HashMap::new();
+        signal_map.insert(
+            "BTC-USD".to_string(),
+            vec!["RSI(14) at 28.5 — oversold".to_string()],
+        );
+
+        let movers = get_movers_json(&positions, &hist_1d, &signal_map);
+        assert_eq!(movers.len(), 1);
+        assert_eq!(movers[0].signals.len(), 1);
+        assert_eq!(movers[0].signals[0], "RSI(14) at 28.5 — oversold");
+    }
+
+    #[test]
+    fn movers_omit_signals_when_absent() {
+        let positions = vec![make_position(
+            "AAPL",
+            AssetCategory::Equity,
+            dec!(10),
+            dec!(100),
+            Some(dec!(110)),
+            Some(dec!(1000)),
+        )];
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("AAPL".to_string(), dec!(100));
+
+        let empty_signals: HashMap<String, Vec<String>> = HashMap::new();
+        let movers = get_movers_json(&positions, &hist_1d, &empty_signals);
+        assert_eq!(movers.len(), 1);
+        assert!(movers[0].signals.is_empty());
+    }
+
+    #[test]
+    fn signals_to_json_serializes_correctly() {
+        let signals = vec![crate::db::technical_signals::TechnicalSignalRecord {
+            id: 1,
+            symbol: "GC=F".to_string(),
+            signal_type: "52w_high".to_string(),
+            direction: "bullish".to_string(),
+            severity: "critical".to_string(),
+            trigger_price: Some(3050.0),
+            description: "Within 1% of 52-week high".to_string(),
+            timeframe: "1d".to_string(),
+            detected_at: "2026-03-19T08:00:00Z".to_string(),
+        }];
+        let json_values = signals_to_json(&signals);
+        assert_eq!(json_values.len(), 1);
+        assert_eq!(json_values[0]["symbol"], "GC=F");
+        assert_eq!(json_values[0]["type"], "52w_high");
+        assert_eq!(json_values[0]["direction"], "bullish");
+        assert_eq!(json_values[0]["severity"], "critical");
     }
 }
