@@ -49,6 +49,13 @@ pftui analytics scenario list --json      # scenario probabilities for framing
 
 5. Only use web_search (1-2 searches max) for context behind specific overnight developments that pftui news flagged but didn't explain.
 
+## Tone Calibration
+
+- **Do NOT flag routine pullbacks on held positions.** Gold down 3%, silver down 2%, BTC down 5% are NOT developments. The user holds structural positions and knows they fluctuate.
+- **DO flag regime changes, entry zone approaches, scenario probability shifts, and structural thesis changes.**
+- **Be forward-looking.** "What's coming" matters more than "what happened." Connect data to what it means for the week ahead.
+- **No fearmongering.** Present risks honestly but don't dramatize normal volatility.
+
 ## Brief Format
 
 Keep it tight. Designed for mobile reading.
