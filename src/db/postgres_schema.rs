@@ -723,6 +723,38 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
 
+        // F49: Precomputed technical signals
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS technical_signals (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                signal_type TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                trigger_price DOUBLE PRECISION,
+                description TEXT NOT NULL,
+                timeframe TEXT NOT NULL DEFAULT '1d',
+                detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_technical_signals_symbol ON technical_signals(symbol)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_technical_signals_type ON technical_signals(signal_type)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_technical_signals_detected ON technical_signals(detected_at)",
+        )
+        .execute(pool)
+        .await?;
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

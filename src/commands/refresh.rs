@@ -764,6 +764,12 @@ fn run_with_output(
         } else {
             info_ln!(verbose, "⊘ Market structure levels (insufficient history)");
         }
+
+        match crate::analytics::signals::generate_signals(backend) {
+            Ok(n) if n > 0 => info_ln!(verbose, "✓ Technical signals ({} new)", n),
+            Ok(_) => info_ln!(verbose, "⊘ Technical signals (no new)"),
+            Err(e) => info_ln!(verbose, "✗ Technical signals (failed: {})", e),
+        }
     } else {
         info_ln!(verbose, "⊘ Prices (no symbols)");
     }

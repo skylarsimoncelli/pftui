@@ -137,7 +137,10 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics digest --from low-agent --json` | Role-aware summary payload for agent handoffs |
 | `pftui analytics recap --date yesterday --json` | Chronological event recap for a given day |
 | `pftui analytics gaps --json` | Data freshness/missing-table check across timeframe layers |
-| `pftui analytics signals --json` | Show cross-timeframe alignment/divergence/transition signals |
+| `pftui analytics signals --json` | Show all signals (cross-timeframe + per-symbol technical) |
+| `pftui analytics signals --source technical --json` | Per-symbol technical signals: RSI overbought/oversold, MACD cross, SMA 200 reclaim/break, BB squeeze, volume expansion, 52W extremes |
+| `pftui analytics signals --source timeframe --json` | Cross-timeframe alignment/divergence/transition signals only |
+| `pftui analytics signals --source technical --symbol BTC-USD --json` | Technical signals for a specific symbol |
 | `pftui analytics technicals [--symbol SYM] --json` | Latest persisted technical snapshot(s) — RSI, MACD, SMA, Bollinger, 52W position, volume regime |
 
 ### Utility

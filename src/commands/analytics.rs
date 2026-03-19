@@ -1214,6 +1214,121 @@ fn run_signals(
     Ok(())
 }
 
+/// Combined signal view: cross-timeframe signals, per-symbol technical signals, or both.
+///
+/// `source` can be "technical", "timeframe", or "all" (default).
+pub fn run_signals_combined(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    signal_type: Option<&str>,
+    severity: Option<&str>,
+    source: &str,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    let show_timeframe = source == "all" || source == "timeframe";
+    let show_technical = source == "all" || source == "technical";
+
+    let lim = limit.unwrap_or(25);
+
+    // Cross-timeframe signals
+    let tf_signals = if show_timeframe {
+        let mut rows = timeframe_signals::list_signals_backend(
+            backend,
+            signal_type,
+            severity,
+            Some(lim),
+        )?;
+        if let Some(sym) = symbol {
+            let needle = format!("\"{}\"", sym.to_uppercase());
+            rows.retain(|r| r.assets.to_uppercase().contains(&needle));
+        }
+        rows
+    } else {
+        Vec::new()
+    };
+
+    // Per-symbol technical signals
+    let tech_signals = if show_technical {
+        crate::db::technical_signals::list_signals_backend(
+            backend,
+            symbol,
+            signal_type,
+            Some(lim),
+        )
+        .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    if json_output {
+        let mut payload = serde_json::Map::new();
+        if show_timeframe {
+            payload.insert(
+                "timeframe_signals".to_string(),
+                serde_json::to_value(&tf_signals)?,
+            );
+        }
+        if show_technical {
+            payload.insert(
+                "technical_signals".to_string(),
+                serde_json::to_value(&tech_signals)?,
+            );
+        }
+        payload.insert(
+            "count".to_string(),
+            json!(tf_signals.len() + tech_signals.len()),
+        );
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::Value::Object(payload))?
+        );
+    } else {
+        if !tf_signals.is_empty() {
+            println!("Cross-timeframe signals ({}):", tf_signals.len());
+            for sig in &tf_signals {
+                println!(
+                    "  [{}|{}] {}\n    assets={} layers={} at={}",
+                    sig.severity,
+                    sig.signal_type,
+                    sig.description,
+                    sig.assets,
+                    sig.layers,
+                    sig.detected_at
+                );
+            }
+        } else if show_timeframe {
+            println!("No cross-timeframe signals found.");
+        }
+
+        if !tech_signals.is_empty() {
+            if show_timeframe {
+                println!();
+            }
+            println!("Technical signals ({}):", tech_signals.len());
+            for sig in &tech_signals {
+                let price_str = sig
+                    .trigger_price
+                    .map(|p| format!(" @ {:.2}", p))
+                    .unwrap_or_default();
+                println!(
+                    "  [{}|{}] {} — {}{}\n    at={}",
+                    sig.severity,
+                    sig.direction,
+                    sig.symbol,
+                    sig.description,
+                    price_str,
+                    sig.detected_at
+                );
+            }
+        } else if show_technical {
+            println!("No technical signals found.");
+        }
+    }
+
+    Ok(())
+}
+
 fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let regime = regime_snapshots::get_current_backend(backend)?;
     let scenarios_list =

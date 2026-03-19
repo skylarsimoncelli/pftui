@@ -935,5 +935,26 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             ON technical_levels(symbol, level_type);",
     )?;
 
+    // F49: Precomputed technical signals
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS technical_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            trigger_price REAL,
+            description TEXT NOT NULL,
+            timeframe TEXT NOT NULL DEFAULT '1d',
+            detected_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_technical_signals_symbol
+            ON technical_signals(symbol);
+        CREATE INDEX IF NOT EXISTS idx_technical_signals_type
+            ON technical_signals(signal_type);
+        CREATE INDEX IF NOT EXISTS idx_technical_signals_detected
+            ON technical_signals(detected_at);",
+    )?;
+
     Ok(())
 }
