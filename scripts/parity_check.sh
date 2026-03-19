@@ -94,12 +94,17 @@ normalize_json() {
     walk(
       if type == "object" then
         del(.id, .created_at, .updated_at, .added_at, .fetched_at, .snapshot_at, .recorded_at, .timestamp)
+      elif type == "array" and (length > 0) and (.[0] | type == "object") and (.[0] | has("symbol")) then
+        sort_by(.symbol)
       else
         .
       end
     )
   ' "$in_file" >"$out_file"
 }
+
+# Clear stale Postgres state so both backends start from identical data
+psql "$POSTGRES_URL" -q -c "TRUNCATE price_cache, price_history, allocation_targets CASCADE;" 2>/dev/null || true
 
 run_in_env "$sqlite_cfg_home" "$sqlite_data_home" "$PFTUI_BIN" system import "$snapshot_json" --mode replace >/dev/null
 run_in_env "$pg_cfg_home" "$pg_data_home" "$PFTUI_BIN" system import "$snapshot_json" --mode replace >/dev/null
