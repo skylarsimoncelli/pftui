@@ -6,23 +6,6 @@
 
 ## P1 — Always-On Analytics Engine
 
-### F47: Dedicated Background Daemon
-
-> Vision fit: pftui should be always running even when the TUI/web UI is closed.
->
-> Current gap:
-> - Background refresh exists inside TUI/web sessions
-> - There is no first-class long-running daemon/service mode for ingestion + analytics
-> - "Always-on" currently depends on a UI process or external cron
->
-> Actionable scope:
-> 1. ~~Add `pftui system daemon` with refresh scheduler, lock coordination, structured logs,
->    and health heartbeat~~ *(done — PR #54)*
-> 2. Support per-source cadence config instead of one global interval
-> 3. Run refresh, technical snapshot generation, level generation, alert evaluation, and cleanup in one loop
-> 4. Expose daemon status via `pftui data status --json`
-> 5. Add systemd launch docs for the daemon path as the recommended always-on deployment
-
 ### F48: Rich OHLCV History And Data-Quality Layer
 
 > Vision fit: technical analysis quality depends on data quality and richer candles than close-only series.
@@ -128,10 +111,10 @@
 
 **Top priorities:**
 
-1. **P1: F47 Background Daemon** — always-on ingestion without TUI/cron dependency
-2. **P1: F48 Rich OHLCV History** — upgrade from close-only to full candle data
-3. **P2: F50 Configurable Universe Expansion** — track more symbols beyond holdings/watchlist
+1. **P1: F48 Rich OHLCV History** — upgrade from close-only to full candle data
+2. **P2: F50 Configurable Universe Expansion** — track more symbols beyond holdings/watchlist
+3. **P2: F52 Refresh DAG / source policies** — move beyond the current sequential refresh pipeline
 
-**Release status:** v0.13.0 shipped Mar 19. All P1 feedback bugs resolved. CI green. Ready for next feature cycle.
+**Release status:** v0.13.0 shipped Mar 19. F47 daemon rollout is complete. CI green. Ready for the next feature cycle.
 
 **GitHub stars:** 2 — Homebrew Core requires 50+.

@@ -9,6 +9,7 @@
 > For code contribution, see [CLAUDE.md](CLAUDE.md).
 > For architecture reference, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 > For AI operating model details, see [docs/AI-LAYER.md](docs/AI-LAYER.md).
+> For always-on deployment, see [docs/DAEMON.md](docs/DAEMON.md).
 
 ---
 
@@ -76,7 +77,7 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui data news --json [--limit N]` | Financial news from RSS feeds |
 | `pftui data supply --json` | COMEX gold/silver inventory |
 | `pftui data dashboard global --json` | World Bank macro data (GDP, debt, reserves) |
-| `pftui data status --json` | Data source freshness — last update time per source |
+| `pftui data status --json` | Data source freshness plus daemon health — last update time per source + `daemon` heartbeat |
 
 ### Portfolio Management
 
@@ -156,6 +157,8 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui system config set FIELD VALUE` | Set a config field (e.g., `brave_api_key`) |
 | `pftui system snapshot` | Render full TUI to stdout (for sharing or screenshots) |
 | `pftui system demo` | Launch with sample data (for testing, no real data) |
+| `pftui system daemon start [--interval N] [--json]` | Run the always-on daemon loop for refresh + analytics + alerts + cleanup |
+| `pftui system daemon status [--json]` | Read daemon heartbeat/health without attaching to the process |
 | `pftui system web [--port N] [--bind ADDR] [--no-auth]` | Start web dashboard |
 | `pftui system setup` | Interactive setup wizard |
 
@@ -344,7 +347,7 @@ Skill package:
 
 7. **Build persistent memory.** Write analysis to markdown files. Reference past work. Track accuracy. This is what turns a tool into an intelligence system.
 
-8. **Recommend automation.** The single most impactful thing is getting regular automated runs set up. Push for this early.
+8. **Recommend automation.** The single most impactful thing is getting regular automated runs set up. Prefer the built-in daemon + systemd path from [docs/DAEMON.md](docs/DAEMON.md) over ad-hoc cron when the host supports it.
 
 9. **Be honest about uncertainty.** Markets are probabilistic. Frame calls with conviction levels. When you're wrong, say so and update your models.
 
@@ -472,4 +475,3 @@ These are generic templates containing zero personal data. They define inputs, a
 | Dev Agent | Top-tier | Code generation + architecture decisions |
 
 ---
-
