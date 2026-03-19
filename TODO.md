@@ -4,14 +4,6 @@
 
 ---
 
-## P1 — Feedback-Driven Fixes
-
-### [Feedback] Fix price snapshot command exit code 2
-
-> Evening Analyst (Mar 19) reports the price snapshot command returning exit code 2. Need a reliable price-only snapshot path.
->
-> Files to check: `src/commands/snapshot.rs` or `system snapshot`
-
 ## P1 — Always-On Analytics Engine
 
 ### F47: Dedicated Background Daemon
@@ -61,12 +53,6 @@
 > 5. Reuse the same store for alerts, movers context, and agent brief generation
 
 ## P2 — Coverage And Agent Consumption
-
-### [Feedback] Add consolidated closing-price endpoint for all watched symbols
-
-> Evening Analyst (Mar 19) requests a single command that returns closing prices for all watched/held symbols in one call. Currently requires multiple commands or per-symbol queries.
->
-> Suggested path: `pftui data prices --json` or `pftui portfolio prices --json` returning symbol, close, change, change_pct for all tracked symbols.
 
 ### [Feedback] Add oil inventory/SPR data command
 

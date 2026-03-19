@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — fix: add `pftui data prices` command (price snapshot exit code 2)
+
+- What: added `pftui data prices [--symbol SYM] [--json]` command that returns all cached prices for tracked symbols in one call. Includes previous close, daily change, and change percent when price history is available. Fixes the "price snapshot exit code 2" bug reported by Evening Analyst — the command didn't exist, so clap returned exit code 2 (unrecognized subcommand). Also resolves the P2 request for a consolidated closing-price endpoint.
+- Why: agents need a single command to get a price snapshot across all tracked symbols without per-symbol queries. The missing command was causing agent workflow failures.
+- Files: `src/commands/prices.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1359 pass (2 new: `price_entry_serializes_without_optional_nulls`, `price_entry_serializes_with_change`); `cargo clippy -- -D warnings` clean.
+
 ### 2026-03-19 — fix: analytics summary/divergence/alignment/low resilience (P1)
 
 - What: fixed `analytics summary --json`, `analytics divergence --json`, `analytics alignment --json`, and `analytics low --json` returning empty stdout when underlying DB queries fail. Three `?` early-return operators in `run_summary` (regime_snapshots, latest_signal, build_alignment_rows) and one each in `run_divergence`, `run_alignment`, and `run_low` caused the function to bail before printing any JSON output when a query errored. Replaced all with `.unwrap_or(None)` or `.unwrap_or_default()` matching the pattern already used by `run_digest`, `run_medium`, `run_high`, and other resilient analytics commands.

@@ -44,6 +44,7 @@ pub mod performance;
 pub mod portfolio;
 pub mod predict;
 pub mod predictions;
+pub mod prices;
 pub mod question;
 pub mod rebalance;
 pub mod refresh;

@@ -364,6 +364,16 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show cached prices for all tracked symbols (price snapshot)
+    Prices {
+        /// Filter to a single symbol (e.g. BTC-USD, GC=F, AAPL)
+        #[arg(long)]
+        symbol: Option<String>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Show options chain for an equity symbol (Yahoo free data)
     Options {
         /// Underlying symbol (e.g. AAPL, TSLA)
