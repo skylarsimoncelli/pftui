@@ -3,7 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
-<<<<<<< HEAD
+### 2026-03-19 — feat: wire technical signals into movers and brief JSON (F49 step 5)
+
+- What: wired precomputed technical signals into agent consumption surfaces. Brief JSON (`portfolio brief --json`) gains a top-level `technical_signals` array with all recent signals (symbol, type, direction, severity, description, detected_at). Both `movers` and `market_movers` arrays in the brief now include per-mover `signals` fields with relevant technical signal descriptions. Movers CLI (`analytics movers --json`) also includes `signals` per mover. Signal fields are omitted when empty via `skip_serializing_if`.
+- Why: F49 steps 1-4 built the signal generation and storage engine but agents still had to run separate `analytics signals` queries to correlate signals with price movements. This completes F49 by surfacing signals through the two primary agent consumption surfaces (brief and movers).
+- Files: `src/commands/brief.rs`, `src/commands/movers.rs`
+- Tests: `cargo test` — 1386 pass (4 new: `build_signal_map_groups_by_symbol`, `movers_include_signals_when_present`, `movers_omit_signals_when_absent`, `signals_to_json_serializes_correctly`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #52
+
 ### 2026-03-19 — fix: analytics summary/divergence/alignment/low resilience (P1)
 
 - What: fixed `analytics summary --json`, `analytics divergence --json`, `analytics alignment --json`, and `analytics low --json` returning empty stdout when underlying DB queries fail. Three `?` early-return operators in `run_summary` (regime_snapshots, latest_signal, build_alignment_rows) and one each in `run_divergence`, `run_alignment`, and `run_low` caused the function to bail before printing any JSON output when a query errored. Replaced all with `.unwrap_or(None)` or `.unwrap_or_default()` matching the pattern already used by `run_digest`, `run_medium`, `run_high`, and other resilient analytics commands.
@@ -18,20 +25,19 @@
 - Files: `src/data/comex.rs`, `src/data/sovereign.rs`, `src/commands/sovereign.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
 - Tests: `cargo test` — 1357 pass; `cargo clippy -- -D warnings` clean
 
-### 2026-03-18 — feat: consolidated closing-price endpoint (`data prices`)
-
-- What: added `pftui data prices [--json]` command that returns cached closing prices for all portfolio holdings + watchlist symbols in a single call. Output includes symbol, name, price, change, change_pct, source, and fetched_at. Table output for humans, `--json` for agents. Deduplicates symbols present in both portfolio and watchlist. Resolves crypto Yahoo symbol mapping (BTC -> BTC-USD) automatically.
-- Why: Evening Analyst requested a single command to get all tracked symbols' prices instead of per-symbol queries or combining multiple commands. Enables efficient EOD workflows.
-- Files: `src/commands/prices.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
-- Tests: `cargo test` — 1367 pass (7 new: `prices_empty_db`, `prices_empty_db_json`, `prices_with_watchlist_and_holdings`, `format_decimal_opt_large`, `format_decimal_opt_small`, `format_decimal_opt_none`, `format_change_opt_positive`, `format_change_opt_negative`, `format_pct_opt_positive`, `format_pct_opt_none`); `cargo clippy -- -D warnings` clean.
-=======
 ### 2026-03-18 — feat: `data oil-inventory` command for EIA crude oil & SPR levels
 
 - What: added `pftui data oil-inventory [--weeks N] [--json]` command that fetches EIA weekly petroleum status report data: commercial crude oil inventories, Strategic Petroleum Reserve (SPR) levels, and total crude stocks. Displays current levels, weekly changes, 5-year averages, and deviation from average (absolute and percentage). Added `eia_api_key` config field (set via `pftui system config set eia_api_key KEY`). New data source module `src/data/eia.rs` follows the same patterns as `cot.rs`/`fred.rs`.
 - Why: energy analysis agents had to perform web searches for EIA inventory data. This provides structured, queryable oil supply data directly from the CLI.
 - Files: `src/data/eia.rs` (new), `src/data/mod.rs`, `src/commands/oil_inventory.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `src/config.rs`, `src/commands/config_cmd.rs`, `src/app.rs`, `src/commands/export.rs`, `TODO.md`, `CHANGELOG.md`
 - Tests: `cargo test` — 1368 pass (9 new: `weekly_change_computes_diff`, `weekly_change_none_for_single_observation`, `five_year_average_computes_mean`, `deviation_pct_correct`, `deviation_pct_zero_avg`, `eia_series_have_correct_ids`, `normalize_key_produces_snake_case`, `format_with_commas_works`, `format_signed_works`, `parses_data_oil_inventory_command`, `parses_data_oil_inventory_defaults`); `cargo clippy -- -D warnings` clean
->>>>>>> 44420d7 (feat: add `data oil-inventory` command for EIA crude oil & SPR levels)
+
+### 2026-03-18 — feat: consolidated closing-price endpoint (`data prices`)
+
+- What: added `pftui data prices [--json]` command that returns cached closing prices for all portfolio holdings + watchlist symbols in a single call. Output includes symbol, name, price, change, change_pct, source, and fetched_at. Table output for humans, `--json` for agents. Deduplicates symbols present in both portfolio and watchlist. Resolves crypto Yahoo symbol mapping (BTC -> BTC-USD) automatically.
+- Why: Evening Analyst requested a single command to get all tracked symbols' prices instead of per-symbol queries or combining multiple commands. Enables efficient EOD workflows.
+- Files: `src/commands/prices.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1367 pass (7 new: `prices_empty_db`, `prices_empty_db_json`, `prices_with_watchlist_and_holdings`, `format_decimal_opt_large`, `format_decimal_opt_small`, `format_decimal_opt_none`, `format_change_opt_positive`, `format_change_opt_negative`, `format_pct_opt_positive`, `format_pct_opt_none`); `cargo clippy -- -D warnings` clean.
 
 ### 2026-03-19 — F49 steps 1-4: precomputed technical signal engine
 
