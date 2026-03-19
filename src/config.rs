@@ -120,6 +120,74 @@ impl Default for MobileServerConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaemonCadenceConfig {
+    #[serde(default = "default_daemon_prices_interval_secs")]
+    pub prices_interval_secs: u64,
+    #[serde(default = "default_daemon_news_interval_secs")]
+    pub news_interval_secs: u64,
+    #[serde(default = "default_daemon_brave_news_interval_secs")]
+    pub brave_news_interval_secs: u64,
+    #[serde(default = "default_daemon_predictions_interval_secs")]
+    pub predictions_interval_secs: u64,
+    #[serde(default = "default_daemon_sentiment_interval_secs")]
+    pub sentiment_interval_secs: u64,
+    #[serde(default = "default_daemon_calendar_interval_secs")]
+    pub calendar_interval_secs: u64,
+    #[serde(default = "default_daemon_economy_interval_secs")]
+    pub economy_interval_secs: u64,
+    #[serde(default = "default_daemon_cot_interval_secs")]
+    pub cot_interval_secs: u64,
+    #[serde(default = "default_daemon_bls_interval_secs")]
+    pub bls_interval_secs: u64,
+    #[serde(default = "default_daemon_fred_interval_secs")]
+    pub fred_interval_secs: u64,
+    #[serde(default = "default_daemon_fedwatch_interval_secs")]
+    pub fedwatch_interval_secs: u64,
+    #[serde(default = "default_daemon_worldbank_interval_secs")]
+    pub worldbank_interval_secs: u64,
+    #[serde(default = "default_daemon_comex_interval_secs")]
+    pub comex_interval_secs: u64,
+    #[serde(default = "default_daemon_onchain_interval_secs")]
+    pub onchain_interval_secs: u64,
+    #[serde(default = "default_daemon_analytics_interval_secs")]
+    pub analytics_interval_secs: u64,
+    #[serde(default = "default_daemon_alerts_interval_secs")]
+    pub alerts_interval_secs: u64,
+    #[serde(default = "default_daemon_cleanup_interval_secs")]
+    pub cleanup_interval_secs: u64,
+}
+
+impl Default for DaemonCadenceConfig {
+    fn default() -> Self {
+        Self {
+            prices_interval_secs: default_daemon_prices_interval_secs(),
+            news_interval_secs: default_daemon_news_interval_secs(),
+            brave_news_interval_secs: default_daemon_brave_news_interval_secs(),
+            predictions_interval_secs: default_daemon_predictions_interval_secs(),
+            sentiment_interval_secs: default_daemon_sentiment_interval_secs(),
+            calendar_interval_secs: default_daemon_calendar_interval_secs(),
+            economy_interval_secs: default_daemon_economy_interval_secs(),
+            cot_interval_secs: default_daemon_cot_interval_secs(),
+            bls_interval_secs: default_daemon_bls_interval_secs(),
+            fred_interval_secs: default_daemon_fred_interval_secs(),
+            fedwatch_interval_secs: default_daemon_fedwatch_interval_secs(),
+            worldbank_interval_secs: default_daemon_worldbank_interval_secs(),
+            comex_interval_secs: default_daemon_comex_interval_secs(),
+            onchain_interval_secs: default_daemon_onchain_interval_secs(),
+            analytics_interval_secs: default_daemon_analytics_interval_secs(),
+            alerts_interval_secs: default_daemon_alerts_interval_secs(),
+            cleanup_interval_secs: default_daemon_cleanup_interval_secs(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DaemonConfig {
+    #[serde(default)]
+    pub cadence: DaemonCadenceConfig,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MobileTokenPermission {
@@ -219,6 +287,9 @@ pub struct Config {
     /// Set to 0 to disable the default cooldown floor. Default: 30 minutes.
     #[serde(default = "default_alert_cooldown_minutes")]
     pub alert_default_cooldown_minutes: i64,
+    /// Background daemon cadence controls for per-source scheduling.
+    #[serde(default)]
+    pub daemon: DaemonConfig,
     /// Broker API credentials for each supported integration.
     #[serde(default)]
     pub brokers: BrokerCredentials,
@@ -333,6 +404,74 @@ fn default_mobile_session_ttl_hours() -> u64 {
     12
 }
 
+fn default_daemon_prices_interval_secs() -> u64 {
+    300
+}
+
+fn default_daemon_news_interval_secs() -> u64 {
+    600
+}
+
+fn default_daemon_brave_news_interval_secs() -> u64 {
+    4 * 60 * 60
+}
+
+fn default_daemon_predictions_interval_secs() -> u64 {
+    60 * 60
+}
+
+fn default_daemon_sentiment_interval_secs() -> u64 {
+    60 * 60
+}
+
+fn default_daemon_calendar_interval_secs() -> u64 {
+    24 * 60 * 60
+}
+
+fn default_daemon_economy_interval_secs() -> u64 {
+    6 * 60 * 60
+}
+
+fn default_daemon_cot_interval_secs() -> u64 {
+    7 * 24 * 60 * 60
+}
+
+fn default_daemon_bls_interval_secs() -> u64 {
+    30 * 24 * 60 * 60
+}
+
+fn default_daemon_fred_interval_secs() -> u64 {
+    24 * 60 * 60
+}
+
+fn default_daemon_fedwatch_interval_secs() -> u64 {
+    60 * 60
+}
+
+fn default_daemon_worldbank_interval_secs() -> u64 {
+    30 * 24 * 60 * 60
+}
+
+fn default_daemon_comex_interval_secs() -> u64 {
+    24 * 60 * 60
+}
+
+fn default_daemon_onchain_interval_secs() -> u64 {
+    24 * 60 * 60
+}
+
+fn default_daemon_analytics_interval_secs() -> u64 {
+    300
+}
+
+fn default_daemon_alerts_interval_secs() -> u64 {
+    60
+}
+
+fn default_daemon_cleanup_interval_secs() -> u64 {
+    24 * 60 * 60
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BrokerCredentials {
     #[serde(default)]
@@ -392,6 +531,7 @@ impl Default for Config {
             keybindings: KeybindingsConfig::default(),
             mobile: MobileServerConfig::default(),
             alert_default_cooldown_minutes: default_alert_cooldown_minutes(),
+            daemon: DaemonConfig::default(),
             brokers: BrokerCredentials::default(),
         }
     }
@@ -699,6 +839,7 @@ mod tests {
                 session_ttl_hours: 24,
             },
             alert_default_cooldown_minutes: 45,
+            daemon: DaemonConfig::default(),
             brokers: BrokerCredentials::default(),
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();

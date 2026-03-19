@@ -59,6 +59,111 @@ const BRAVE_NEWS_QUERY_LIMIT: usize = 12;
 const FEDWATCH_CONFLICT_THRESHOLD_PCT_POINTS: f64 = 5.0;
 const FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS: f64 = 10.0;
 const COT_HISTORY_WEEKS: usize = 156;
+const CALENDAR_RETENTION_DAYS: i64 = 30;
+const COT_RETENTION_DAYS: i64 = 365 * 3;
+const SENTIMENT_RETENTION_DAYS: u32 = 365;
+const TECHNICAL_SIGNAL_RETENTION_HOURS: i64 = 24 * 14;
+
+#[derive(Debug, Clone)]
+pub struct RefreshPlan {
+    pub prices: bool,
+    pub predictions: bool,
+    pub fedwatch: bool,
+    pub news_rss: bool,
+    pub news_brave: bool,
+    pub cot: bool,
+    pub sentiment: bool,
+    pub calendar: bool,
+    pub economy: bool,
+    pub fred: bool,
+    pub bls: bool,
+    pub worldbank: bool,
+    pub comex: bool,
+    pub onchain: bool,
+    pub analytics: bool,
+    pub alerts: bool,
+    pub cleanup: bool,
+}
+
+impl RefreshPlan {
+    pub fn full() -> Self {
+        Self {
+            prices: true,
+            predictions: true,
+            fedwatch: true,
+            news_rss: true,
+            news_brave: true,
+            cot: true,
+            sentiment: true,
+            calendar: true,
+            economy: true,
+            fred: true,
+            bls: true,
+            worldbank: true,
+            comex: true,
+            onchain: true,
+            analytics: true,
+            alerts: true,
+            cleanup: true,
+        }
+    }
+
+    pub fn selected_task_names(&self) -> Vec<&'static str> {
+        let mut names = Vec::new();
+        if self.prices {
+            names.push("prices");
+        }
+        if self.predictions {
+            names.push("predictions");
+        }
+        if self.fedwatch {
+            names.push("fedwatch");
+        }
+        if self.news_rss {
+            names.push("news_rss");
+        }
+        if self.news_brave {
+            names.push("news_brave");
+        }
+        if self.cot {
+            names.push("cot");
+        }
+        if self.sentiment {
+            names.push("sentiment");
+        }
+        if self.calendar {
+            names.push("calendar");
+        }
+        if self.economy {
+            names.push("economy");
+        }
+        if self.fred {
+            names.push("fred");
+        }
+        if self.bls {
+            names.push("bls");
+        }
+        if self.worldbank {
+            names.push("worldbank");
+        }
+        if self.comex {
+            names.push("comex");
+        }
+        if self.onchain {
+            names.push("onchain");
+        }
+        if self.analytics {
+            names.push("analytics");
+        }
+        if self.alerts {
+            names.push("alerts");
+        }
+        if self.cleanup {
+            names.push("cleanup");
+        }
+        names
+    }
+}
 
 /// Collect all symbols that need pricing: portfolio positions + watchlist.
 fn collect_symbols(
@@ -551,11 +656,20 @@ macro_rules! warn_ln {
 }
 
 pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
-    run_with_output(backend, config, notify, true)
+    run_with_output(backend, config, notify, true, &RefreshPlan::full())
 }
 
 pub fn run_quiet(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
-    run_with_output(backend, config, notify, false)
+    run_with_output(backend, config, notify, false, &RefreshPlan::full())
+}
+
+pub fn run_quiet_with_plan(
+    backend: &BackendConnection,
+    config: &Config,
+    notify: bool,
+    plan: &RefreshPlan,
+) -> Result<()> {
+    run_with_output(backend, config, notify, false, plan)
 }
 
 fn run_with_output(
@@ -563,33 +677,47 @@ fn run_with_output(
     config: &Config,
     notify: bool,
     verbose: bool,
+    plan: &RefreshPlan,
 ) -> Result<()> {
     let _lock = RefreshLock::acquire()?;
 
-    info_ln!(verbose, "Refreshing all data sources...\n");
+    info_ln!(verbose, "Refreshing selected data sources...\n");
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
 
+    if plan.selected_task_names().is_empty() {
+        info_ln!(verbose, "⊘ Refresh (no tasks due)");
+        return Ok(());
+    }
+
     // 1. FX Rates
-    match rt.block_on(fx::fetch_all_fx_rates()) {
-        Ok(rates) => {
-            for (currency, rate) in &rates {
-                if let Err(e) = fx_cache::upsert_fx_rate_backend(backend, currency, *rate) {
-                    warn_ln!(verbose, "Failed to cache FX rate for {}: {}", currency, e);
+    if plan.prices {
+        match rt.block_on(fx::fetch_all_fx_rates()) {
+            Ok(rates) => {
+                for (currency, rate) in &rates {
+                    if let Err(e) = fx_cache::upsert_fx_rate_backend(backend, currency, *rate) {
+                        warn_ln!(verbose, "Failed to cache FX rate for {}: {}", currency, e);
+                    }
                 }
+                info_ln!(verbose, "✓ FX rates ({} currencies)", rates.len());
             }
-            info_ln!(verbose, "✓ FX rates ({} currencies)", rates.len());
+            Err(e) => {
+                info_ln!(verbose, "✗ FX rates (failed: {})", e);
+            }
         }
-        Err(e) => {
-            info_ln!(verbose, "✗ FX rates (failed: {})", e);
-        }
+    } else {
+        info_ln!(verbose, "⊘ FX rates (cadence deferred)");
     }
 
     // 2. Prices
-    let symbols = collect_symbols(backend, config)?;
-    if !symbols.is_empty() {
+    let symbols = if plan.prices {
+        collect_symbols(backend, config)?
+    } else {
+        Vec::new()
+    };
+    if plan.prices && !symbols.is_empty() {
         let _non_cash: Vec<_> = symbols
             .iter()
             .filter(|(_, cat)| *cat != AssetCategory::Cash)
@@ -770,26 +898,32 @@ fn run_with_output(
             Ok(_) => info_ln!(verbose, "⊘ Technical signals (no new)"),
             Err(e) => info_ln!(verbose, "✗ Technical signals (failed: {})", e),
         }
-    } else {
+    } else if plan.prices {
         info_ln!(verbose, "⊘ Prices (no symbols)");
+    } else {
+        info_ln!(verbose, "⊘ Prices (cadence deferred)");
     }
 
     // 3. Predictions (Polymarket)
     // 3a. Correlation snapshots + regime classification
-    match crate::commands::correlations::compute_and_store_default_snapshots_backend(backend) {
-        Ok(n) if n > 0 => info_ln!(verbose, "✓ Correlation snapshots ({} rows)", n),
-        Ok(_) => info_ln!(verbose, "⊘ Correlation snapshots (insufficient history)"),
-        Err(e) => info_ln!(verbose, "✗ Correlation snapshots (failed: {})", e),
-    }
+    if plan.analytics {
+        match crate::commands::correlations::compute_and_store_default_snapshots_backend(backend) {
+            Ok(n) if n > 0 => info_ln!(verbose, "✓ Correlation snapshots ({} rows)", n),
+            Ok(_) => info_ln!(verbose, "⊘ Correlation snapshots (insufficient history)"),
+            Err(e) => info_ln!(verbose, "✗ Correlation snapshots (failed: {})", e),
+        }
 
-    match crate::commands::regime::classify_and_store_if_needed(backend) {
-        Ok(true) => info_ln!(verbose, "✓ Regime classification (stored)"),
-        Ok(false) => info_ln!(verbose, "⊘ Regime classification (unchanged today)"),
-        Err(e) => info_ln!(verbose, "✗ Regime classification (failed: {})", e),
+        match crate::commands::regime::classify_and_store_if_needed(backend) {
+            Ok(true) => info_ln!(verbose, "✓ Regime classification (stored)"),
+            Ok(false) => info_ln!(verbose, "⊘ Regime classification (unchanged today)"),
+            Err(e) => info_ln!(verbose, "✗ Regime classification (failed: {})", e),
+        }
+    } else {
+        info_ln!(verbose, "⊘ Analytics snapshots (cadence deferred)");
     }
 
     // 3. Predictions (Polymarket)
-    if predictions_need_refresh(backend)? {
+    if plan.predictions && predictions_need_refresh(backend)? {
         match rt.block_on(predictions::fetch_polymarket_predictions()) {
             Ok(markets) => match predictions_cache::upsert_predictions_backend(backend, &markets) {
                 Ok(_) => info_ln!(verbose, "✓ Predictions ({} markets)", markets.len()),
@@ -804,10 +938,12 @@ fn run_with_output(
                 info_ln!(verbose, "✗ Predictions (failed: {})", e);
             }
         }
-    } else {
+    } else if plan.predictions {
         info_ln!(verbose, "⊘ Predictions (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ Predictions (cadence deferred)");
     }
-    if fedwatch_needs_refresh(backend)? {
+    if plan.fedwatch && fedwatch_needs_refresh(backend)? {
         let previous = fedwatch_cache::get_latest_snapshot_backend(backend)?;
         match fedwatch::fetch_snapshot_with_fallback(config.brave_api_key.as_deref()) {
             Ok((snapshot, source_label)) => {
@@ -845,20 +981,22 @@ fn run_with_output(
             }
             Err(e) => info_ln!(verbose, "✗ FedWatch (failed: {})", e),
         }
-    } else {
+    } else if plan.fedwatch {
         info_ln!(verbose, "⊘ FedWatch (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ FedWatch (cadence deferred)");
     }
     maybe_report_fedwatch_conflict(backend, verbose);
 
     // 4. News (Brave primary when configured, RSS supplements)
-    let rss_refresh = news_needs_refresh(backend)?;
+    let rss_refresh = plan.news_rss && news_needs_refresh(backend)?;
     let brave_key = config
         .brave_api_key
         .as_deref()
         .unwrap_or("")
         .trim()
         .to_string();
-    let brave_refresh = if brave_key.is_empty() {
+    let brave_refresh = if !plan.news_brave || brave_key.is_empty() {
         false
     } else {
         brave_news_needs_refresh(backend)?
@@ -953,12 +1091,14 @@ fn run_with_output(
         } else {
             info_ln!(verbose, "⊘ News (fresh, skipping)");
         }
-    } else {
+    } else if plan.news_rss || plan.news_brave {
         info_ln!(verbose, "⊘ News (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ News (cadence deferred)");
     }
 
     // 5. COT (CFTC)
-    if cot_needs_refresh(backend)? {
+    if plan.cot && cot_needs_refresh(backend)? {
         let mut contracts_updated = 0;
         let mut reports_upserted = 0;
 
@@ -1002,12 +1142,14 @@ fn run_with_output(
         } else {
             info_ln!(verbose, "✗ COT (all failed)");
         }
-    } else {
+    } else if plan.cot {
         info_ln!(verbose, "⊘ COT (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ COT (cadence deferred)");
     }
 
     // 6. Sentiment (Fear & Greed)
-    if sentiment_needs_refresh(backend)? {
+    if plan.sentiment && sentiment_needs_refresh(backend)? {
         let mut count = 0;
 
         if let Ok(crypto) = sentiment::fetch_crypto_fng() {
@@ -1035,12 +1177,14 @@ fn run_with_output(
         }
 
         info_ln!(verbose, "✓ Sentiment ({} indices)", count);
-    } else {
+    } else if plan.sentiment {
         info_ln!(verbose, "⊘ Sentiment (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ Sentiment (cadence deferred)");
     }
 
     // 7. Calendar (TradingEconomics)
-    if calendar_needs_refresh(backend)? {
+    if plan.calendar && calendar_needs_refresh(backend)? {
         match calendar::fetch_events(7) {
             Ok(mut events) => {
                 let brave_key = config
@@ -1070,12 +1214,14 @@ fn run_with_output(
                 info_ln!(verbose, "✗ Calendar (failed: {})", e);
             }
         }
-    } else {
+    } else if plan.calendar {
         info_ln!(verbose, "⊘ Calendar (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ Calendar (cadence deferred)");
     }
 
     // 9. Economy indicators (Brave primary, BLS fallback)
-    {
+    if plan.economy {
         let brave_key = config
             .brave_api_key
             .as_deref()
@@ -1122,6 +1268,8 @@ fn run_with_output(
             }
             Err(e) => info_ln!(verbose, "✗ Economy (failed: {})", e),
         }
+    } else {
+        info_ln!(verbose, "⊘ Economy (cadence deferred)");
     }
 
     // 9a. FRED macro cache + surprise detection
@@ -1131,7 +1279,7 @@ fn run_with_output(
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        if fred_needs_refresh(backend)? {
+        if plan.fred && fred_needs_refresh(backend)? {
             let mut updated = 0usize;
             let mut surprise_count = 0usize;
             let fetched_at = chrono::Utc::now().to_rfc3339();
@@ -1179,15 +1327,17 @@ fn run_with_output(
                 updated,
                 surprise_count
             );
-        } else {
+        } else if plan.fred {
             info_ln!(verbose, "⊘ FRED (fresh, skipping)");
+        } else {
+            info_ln!(verbose, "⊘ FRED (cadence deferred)");
         }
     } else {
         info_ln!(verbose, "⊘ FRED (no API key configured)");
     }
 
     // 9. BLS
-    if bls_needs_refresh(backend)? {
+    if plan.bls && bls_needs_refresh(backend)? {
         match rt.block_on(bls::fetch_all_key_series()) {
             Ok(data) => {
                 bls_cache::upsert_bls_data_backend(backend, &data)?;
@@ -1197,12 +1347,14 @@ fn run_with_output(
                 info_ln!(verbose, "✗ BLS (failed: {})", e);
             }
         }
-    } else {
+    } else if plan.bls {
         info_ln!(verbose, "⊘ BLS (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ BLS (cadence deferred)");
     }
 
     // 10. World Bank
-    if worldbank_needs_refresh(backend)? {
+    if plan.worldbank && worldbank_needs_refresh(backend)? {
         match rt.block_on(worldbank::fetch_all_indicators()) {
             Ok(data) => {
                 worldbank_cache::upsert_worldbank_data_backend(backend, &data)?;
@@ -1212,12 +1364,14 @@ fn run_with_output(
                 info_ln!(verbose, "✗ World Bank (failed: {})", e);
             }
         }
-    } else {
+    } else if plan.worldbank {
         info_ln!(verbose, "⊘ World Bank (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ World Bank (cadence deferred)");
     }
 
     // 11. COMEX
-    if comex_needs_refresh(backend)? {
+    if plan.comex && comex_needs_refresh(backend)? {
         let results = comex::fetch_all_inventories();
         let mut count = 0;
 
@@ -1243,224 +1397,285 @@ fn run_with_output(
         } else {
             info_ln!(verbose, "✗ COMEX (all failed)");
         }
-    } else {
+    } else if plan.comex {
         info_ln!(verbose, "⊘ COMEX (fresh, skipping)");
+    } else {
+        info_ln!(verbose, "⊘ COMEX (cadence deferred)");
     }
 
     // 13. On-chain (network + ETF flows)
     let mut onchain_ok_parts = Vec::new();
     let mut onchain_errors = Vec::new();
 
-    match onchain::fetch_network_metrics() {
-        Ok(metrics) => {
-            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            let metric = crate::db::onchain_cache::OnchainMetric {
-                metric: "network".to_string(),
-                date: today,
-                value: metrics.hash_rate.to_string(),
-                metadata: Some(
-                    serde_json::json!({
-                        "difficulty": metrics.difficulty,
-                        "blocks_24h": metrics.blocks_24h,
-                        "mempool_size": metrics.mempool_size,
-                        "avg_fee_sat_b": metrics.avg_fee_sat_b,
-                    })
-                    .to_string(),
-                ),
-                fetched_at: chrono::Utc::now().to_rfc3339(),
-            };
-            let _ = onchain_cache::upsert_metric_backend(backend, &metric);
-            onchain_ok_parts.push("network");
-        }
-        Err(e) => onchain_errors.push(format!("network: {}", e)),
-    }
-
-    match onchain::fetch_exchange_reserve_snapshot() {
-        Ok(snapshot) => {
-            let metric = crate::db::onchain_cache::OnchainMetric {
-                metric: "exchange_reserve_proxy_btc".to_string(),
-                date: snapshot.date.clone(),
-                value: snapshot.reserve_btc.to_string(),
-                metadata: Some(
-                    serde_json::json!({
-                        "reserve_usd": snapshot.reserve_usd,
-                        "tracked_wallets": snapshot.tracked_wallets,
-                        "exchange_labels": snapshot.exchange_labels,
-                        "flow_7d_btc": snapshot.net_flow_7d_btc,
-                        "flow_30d_btc": snapshot.net_flow_30d_btc,
-                        "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
-                            serde_json::json!({
-                                "label": entry.label,
-                                "balance_btc": entry.balance_btc,
-                                "balance_usd": entry.balance_usd,
-                                "wallets": entry.wallets,
-                                "flow_7d_btc": entry.flow_7d_btc,
-                                "flow_30d_btc": entry.flow_30d_btc,
-                            })
-                        }).collect::<Vec<_>>(),
-                    })
-                    .to_string(),
-                ),
-                fetched_at: chrono::Utc::now().to_rfc3339(),
-            };
-            let _ = onchain_cache::upsert_metric_backend(backend, &metric);
-            onchain_ok_parts.push("exchange reserves");
-        }
-        Err(e) => onchain_errors.push(format!("exchange reserves: {}", e)),
-    }
-
-    match onchain::fetch_etf_flows() {
-        Ok(flows) => {
-            let fetched_at = chrono::Utc::now().to_rfc3339();
-            for flow in &flows {
+    if plan.onchain {
+        match onchain::fetch_network_metrics() {
+            Ok(metrics) => {
+                let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
                 let metric = crate::db::onchain_cache::OnchainMetric {
-                    metric: format!("etf_flow_{}", flow.fund),
-                    date: flow.date.clone(),
-                    value: flow.net_flow_btc.to_string(),
+                    metric: "network".to_string(),
+                    date: today,
+                    value: metrics.hash_rate.to_string(),
                     metadata: Some(
                         serde_json::json!({
-                                "fund": flow.fund,
-                                "net_flow_usd": flow.net_flow_usd,
+                            "difficulty": metrics.difficulty,
+                            "blocks_24h": metrics.blocks_24h,
+                            "mempool_size": metrics.mempool_size,
+                            "avg_fee_sat_b": metrics.avg_fee_sat_b,
                         })
                         .to_string(),
                     ),
-                    fetched_at: fetched_at.clone(),
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                onchain_ok_parts.push("network");
             }
-            onchain_ok_parts.push("etf flows");
+            Err(e) => onchain_errors.push(format!("network: {}", e)),
         }
-        Err(e) => onchain_errors.push(format!("etf flows: {}", e)),
-    }
 
-    match onchain::fetch_market_stats() {
-        Ok(stats) => {
-            let fetched_at = chrono::Utc::now().to_rfc3339();
-            let metrics = [
-                (
-                    "largest_transactions_24h_btc",
-                    stats.largest_transactions_24h_btc.to_string(),
-                    serde_json::json!({
-                        "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
-                        "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
-                    }),
-                ),
-                (
-                    "active_addresses_24h",
-                    stats.active_addresses_24h.to_string(),
-                    serde_json::json!({}),
-                ),
-                (
-                    "wealth_distribution_top10_pct",
-                    stats.top_10_share_pct.to_string(),
-                    serde_json::json!({
-                        "top_100_share_pct": stats.top_100_share_pct,
-                        "top_1000_share_pct": stats.top_1000_share_pct,
-                        "top_10000_share_pct": stats.top_10000_share_pct,
-                        "top_100_richest_btc": stats.top_100_richest_btc,
-                    }),
-                ),
-            ];
-
-            for (name, value, metadata) in metrics {
+        match onchain::fetch_exchange_reserve_snapshot() {
+            Ok(snapshot) => {
                 let metric = crate::db::onchain_cache::OnchainMetric {
-                    metric: name.to_string(),
-                    date: stats.date.clone(),
-                    value,
-                    metadata: Some(metadata.to_string()),
-                    fetched_at: fetched_at.clone(),
+                    metric: "exchange_reserve_proxy_btc".to_string(),
+                    date: snapshot.date.clone(),
+                    value: snapshot.reserve_btc.to_string(),
+                    metadata: Some(
+                        serde_json::json!({
+                            "reserve_usd": snapshot.reserve_usd,
+                            "tracked_wallets": snapshot.tracked_wallets,
+                            "exchange_labels": snapshot.exchange_labels,
+                            "flow_7d_btc": snapshot.net_flow_7d_btc,
+                            "flow_30d_btc": snapshot.net_flow_30d_btc,
+                            "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
+                                serde_json::json!({
+                                    "label": entry.label,
+                                    "balance_btc": entry.balance_btc,
+                                    "balance_usd": entry.balance_usd,
+                                    "wallets": entry.wallets,
+                                    "flow_7d_btc": entry.flow_7d_btc,
+                                    "flow_30d_btc": entry.flow_30d_btc,
+                                })
+                            }).collect::<Vec<_>>(),
+                        })
+                        .to_string(),
+                    ),
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                onchain_ok_parts.push("exchange reserves");
             }
-            onchain_ok_parts.push("whales");
+            Err(e) => onchain_errors.push(format!("exchange reserves: {}", e)),
         }
-        Err(e) => onchain_errors.push(format!("whales: {}", e)),
-    }
 
-    if !onchain_ok_parts.is_empty() {
-        info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
+        match onchain::fetch_etf_flows() {
+            Ok(flows) => {
+                let fetched_at = chrono::Utc::now().to_rfc3339();
+                for flow in &flows {
+                    let metric = crate::db::onchain_cache::OnchainMetric {
+                        metric: format!("etf_flow_{}", flow.fund),
+                        date: flow.date.clone(),
+                        value: flow.net_flow_btc.to_string(),
+                        metadata: Some(
+                            serde_json::json!({
+                                "fund": flow.fund,
+                                "net_flow_usd": flow.net_flow_usd,
+                            })
+                            .to_string(),
+                        ),
+                        fetched_at: fetched_at.clone(),
+                    };
+                    let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                }
+                onchain_ok_parts.push("etf flows");
+            }
+            Err(e) => onchain_errors.push(format!("etf flows: {}", e)),
+        }
+
+        match onchain::fetch_market_stats() {
+            Ok(stats) => {
+                let fetched_at = chrono::Utc::now().to_rfc3339();
+                let metrics = [
+                    (
+                        "largest_transactions_24h_btc",
+                        stats.largest_transactions_24h_btc.to_string(),
+                        serde_json::json!({
+                            "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
+                            "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
+                        }),
+                    ),
+                    (
+                        "active_addresses_24h",
+                        stats.active_addresses_24h.to_string(),
+                        serde_json::json!({}),
+                    ),
+                    (
+                        "wealth_distribution_top10_pct",
+                        stats.top_10_share_pct.to_string(),
+                        serde_json::json!({
+                            "top_100_share_pct": stats.top_100_share_pct,
+                            "top_1000_share_pct": stats.top_1000_share_pct,
+                            "top_10000_share_pct": stats.top_10000_share_pct,
+                            "top_100_richest_btc": stats.top_100_richest_btc,
+                        }),
+                    ),
+                ];
+
+                for (name, value, metadata) in metrics {
+                    let metric = crate::db::onchain_cache::OnchainMetric {
+                        metric: name.to_string(),
+                        date: stats.date.clone(),
+                        value,
+                        metadata: Some(metadata.to_string()),
+                        fetched_at: fetched_at.clone(),
+                    };
+                    let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                }
+                onchain_ok_parts.push("whales");
+            }
+            Err(e) => onchain_errors.push(format!("whales: {}", e)),
+        }
+
+        if !onchain_ok_parts.is_empty() {
+            info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
+        } else {
+            info_ln!(
+                verbose,
+                "✗ On-chain (failed: {})",
+                onchain_errors.join("; ")
+            );
+        }
     } else {
-        info_ln!(
-            verbose,
-            "✗ On-chain (failed: {})",
-            onchain_errors.join("; ")
-        );
+        info_ln!(verbose, "⊘ On-chain (cadence deferred)");
     }
 
     // Store daily portfolio snapshot
-    if let Err(e) = store_portfolio_snapshot(backend, config, verbose) {
-        warn_ln!(
-            verbose,
-            "\nWarning: failed to store portfolio snapshot: {}",
-            e
-        );
-    }
-    if let Err(e) = detect_timeframe_signals(backend) {
-        warn_ln!(
-            verbose,
-            "\nWarning: failed to compute cross-timeframe signals: {}",
-            e
-        );
+    if plan.analytics {
+        if let Err(e) = store_portfolio_snapshot(backend, config, verbose) {
+            warn_ln!(
+                verbose,
+                "\nWarning: failed to store portfolio snapshot: {}",
+                e
+            );
+        }
+        if let Err(e) = detect_timeframe_signals(backend) {
+            warn_ln!(
+                verbose,
+                "\nWarning: failed to compute cross-timeframe signals: {}",
+                e
+            );
+        }
     }
 
     // Check for newly triggered alerts
-    match engine::check_alerts_backend_only(backend) {
-        Ok(results) => {
-            let newly_triggered = engine::get_newly_triggered(&results);
-            let armed_count = results
-                .iter()
-                .filter(|r| {
-                    r.rule.status == crate::alerts::AlertStatus::Armed && !r.newly_triggered
-                })
-                .count();
-            info_ln!(
-                verbose,
-                "\n✓ Smart alerts evaluated ({} triggered, {} armed)",
-                newly_triggered.len(),
-                armed_count
-            );
-            if !newly_triggered.is_empty() {
-                info_ln!(verbose, "\n🔔 Alerts Triggered:");
-                for result in &newly_triggered {
-                    let dir_emoji = match result.rule.direction {
-                        crate::alerts::AlertDirection::Above => "↑",
-                        crate::alerts::AlertDirection::Below => "↓",
-                    };
-                    let current_str = result
-                        .current_value
-                        .map(|v| format!("{:.2}", v))
-                        .unwrap_or_else(|| "N/A".to_string());
-                    info_ln!(
-                        verbose,
-                        "  {} {} {} {} (current: {})",
-                        dir_emoji,
-                        result.rule.symbol,
-                        result.rule.kind,
-                        result.rule.threshold,
-                        current_str
-                    );
-
-                    // Send OS notification if --notify flag is set
-                    if notify {
-                        let title = format!("pftui Alert: {}", result.rule.symbol);
-                        let body = format!(
-                            "{} {} {} (current: {})",
-                            result.rule.kind, dir_emoji, result.rule.threshold, current_str
+    if plan.alerts {
+        match engine::check_alerts_backend_only(backend) {
+            Ok(results) => {
+                let newly_triggered = engine::get_newly_triggered(&results);
+                let armed_count = results
+                    .iter()
+                    .filter(|r| {
+                        r.rule.status == crate::alerts::AlertStatus::Armed && !r.newly_triggered
+                    })
+                    .count();
+                info_ln!(
+                    verbose,
+                    "\n✓ Smart alerts evaluated ({} triggered, {} armed)",
+                    newly_triggered.len(),
+                    armed_count
+                );
+                if !newly_triggered.is_empty() {
+                    info_ln!(verbose, "\n🔔 Alerts Triggered:");
+                    for result in &newly_triggered {
+                        let dir_emoji = match result.rule.direction {
+                            crate::alerts::AlertDirection::Above => "↑",
+                            crate::alerts::AlertDirection::Below => "↓",
+                        };
+                        let current_str = result
+                            .current_value
+                            .map(|v| format!("{:.2}", v))
+                            .unwrap_or_else(|| "N/A".to_string());
+                        info_ln!(
+                            verbose,
+                            "  {} {} {} {} (current: {})",
+                            dir_emoji,
+                            result.rule.symbol,
+                            result.rule.kind,
+                            result.rule.threshold,
+                            current_str
                         );
-                        if let Err(e) = notify::send_notification(&title, &body) {
-                            warn_ln!(verbose, "  Warning: failed to send notification: {}", e);
+
+                        if notify {
+                            let title = format!("pftui Alert: {}", result.rule.symbol);
+                            let body = format!(
+                                "{} {} {} (current: {})",
+                                result.rule.kind, dir_emoji, result.rule.threshold, current_str
+                            );
+                            if let Err(e) = notify::send_notification(&title, &body) {
+                                warn_ln!(verbose, "  Warning: failed to send notification: {}", e);
+                            }
                         }
                     }
                 }
             }
+            Err(e) => {
+                warn_ln!(verbose, "\nWarning: failed to check alerts: {}", e);
+            }
         }
-        Err(e) => {
-            warn_ln!(verbose, "\nWarning: failed to check alerts: {}", e);
-        }
+    } else {
+        info_ln!(verbose, "\n⊘ Smart alerts (cadence deferred)");
+    }
+
+    if plan.cleanup {
+        run_cleanup(backend, verbose);
+    } else {
+        info_ln!(verbose, "⊘ Cleanup (cadence deferred)");
     }
 
     info_ln!(verbose, "\nRefresh complete.");
     Ok(())
+}
+
+fn run_cleanup(backend: &BackendConnection, verbose: bool) {
+    let mut parts = Vec::new();
+
+    match news_cache::cleanup_old_news_backend(backend) {
+        Ok(count) => parts.push(format!("news={}", count)),
+        Err(e) => warn_ln!(verbose, "Cleanup warning (news): {}", e),
+    }
+
+    let calendar_cutoff = (chrono::Utc::now() - chrono::Duration::days(CALENDAR_RETENTION_DAYS))
+        .format("%Y-%m-%d")
+        .to_string();
+    match calendar_cache::delete_old_events_backend(backend, &calendar_cutoff) {
+        Ok(count) => parts.push(format!("calendar={}", count)),
+        Err(e) => warn_ln!(verbose, "Cleanup warning (calendar): {}", e),
+    }
+
+    match sentiment_cache::prune_old_backend(backend, SENTIMENT_RETENTION_DAYS) {
+        Ok(count) => parts.push(format!("sentiment={}", count)),
+        Err(e) => warn_ln!(verbose, "Cleanup warning (sentiment): {}", e),
+    }
+
+    match onchain_cache::prune_old_metrics_backend(backend) {
+        Ok(count) => parts.push(format!("onchain={}", count)),
+        Err(e) => warn_ln!(verbose, "Cleanup warning (on-chain): {}", e),
+    }
+
+    match cot_cache::delete_old_reports_backend(backend, COT_RETENTION_DAYS) {
+        Ok(count) => parts.push(format!("cot={}", count)),
+        Err(e) => warn_ln!(verbose, "Cleanup warning (COT): {}", e),
+    }
+
+    match crate::db::technical_signals::prune_signals_backend(
+        backend,
+        TECHNICAL_SIGNAL_RETENTION_HOURS,
+    ) {
+        Ok(count) => parts.push(format!("technical_signals={}", count)),
+        Err(e) => warn_ln!(verbose, "Cleanup warning (technical signals): {}", e),
+    }
+
+    if !parts.is_empty() {
+        info_ln!(verbose, "✓ Cleanup ({})", parts.join(", "));
+    }
 }
 
 fn maybe_report_fedwatch_conflict(backend: &BackendConnection, verbose: bool) {
@@ -1784,7 +1999,8 @@ fn store_technical_levels(
         };
 
         // Load or compute the technical snapshot for this symbol
-        let snapshot = technicals::compute_snapshot(symbol, technicals::DEFAULT_TIMEFRAME, &history);
+        let snapshot =
+            technicals::compute_snapshot(symbol, technicals::DEFAULT_TIMEFRAME, &history);
 
         let levels = level_engine::compute_levels(
             symbol,

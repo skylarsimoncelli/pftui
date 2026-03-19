@@ -1059,7 +1059,8 @@ impl App {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         if self.postgres_read_only {
             self.price_service = None;
@@ -1122,7 +1123,8 @@ impl App {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -6142,7 +6144,8 @@ mod vim_motion_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_vim.db"));
 
@@ -6397,7 +6400,8 @@ mod search_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_search.db"));
 
@@ -6765,7 +6769,8 @@ mod timeframe_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf.db"));
         assert_eq!(app.chart_timeframe, ChartTimeframe::ThreeMonths);
@@ -6798,7 +6803,8 @@ mod timeframe_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_tf2.db"));
         app.display_positions.push(Position {
@@ -6899,7 +6905,8 @@ mod crosshair_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let mut app = App::new(&config, PathBuf::from(":memory:"));
         app.view_mode = ViewMode::Positions;
@@ -7071,7 +7078,8 @@ mod responsive_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_responsive.db"))
     }
@@ -7145,7 +7153,8 @@ mod on_demand_history_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_ondemand.db"))
     }
@@ -7280,7 +7289,8 @@ mod daily_change_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_daily.db"))
     }
@@ -7535,7 +7545,8 @@ mod portfolio_value_history_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_pvh.db"))
     }
@@ -8149,7 +8160,8 @@ mod tui_add_popup_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         App::new(&config, PathBuf::from(db_path))
     }
@@ -8696,7 +8708,8 @@ mod sort_flash_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_sort_flash.db"));
         for i in 0..3 {
@@ -8807,7 +8820,8 @@ mod prev_day_alloc_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         App::new(&config, PathBuf::from("/tmp/pftui_test_prevalloc.db"))
     }
@@ -9129,7 +9143,8 @@ mod mouse_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let mut app = App::new(&config, PathBuf::from("/tmp/pftui_test_mouse.db"));
         app.terminal_width = 120;
@@ -10203,7 +10218,8 @@ mod mouse_tests {
             keybindings: crate::config::KeybindingsConfig::default(),
             mobile: crate::config::MobileServerConfig::default(),
             alert_default_cooldown_minutes: 30,
-                brokers: crate::config::BrokerCredentials::default(),
+            daemon: crate::config::DaemonConfig::default(),
+            brokers: crate::config::BrokerCredentials::default(),
         };
         let mut app = App::new(&config, db_path);
         app.init_offline();

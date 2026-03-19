@@ -15,42 +15,166 @@ fn list_config(json: bool) -> Result<()> {
     let config = load_config()?;
 
     if json {
-        use serde_json::json;
+        use serde_json::{json, Map, Value};
 
-        let output = json!({
-            "database_backend": format_database_backend(config.database_backend),
-            "database_url": format_secret(config.database_url.as_deref()),
-            "mirror_source_url": format_secret(config.mirror_source_url.as_deref()),
-            "postgres_read_only": config.postgres_read_only,
-            "postgres_max_connections": config.postgres_max_connections,
-            "postgres_connect_timeout_secs": config.postgres_connect_timeout_secs,
-            "base_currency": config.base_currency,
-            "refresh_interval": config.refresh_interval,
-            "auto_refresh": config.auto_refresh,
-            "refresh_interval_secs": config.refresh_interval_secs,
-            "portfolio_mode": format!("{:?}", config.portfolio_mode).to_lowercase(),
-            "theme": config.theme,
-            "home_tab": config.home_tab,
-            "layout": format_layout(config.layout),
-            "fred_api_key": format_secret(config.fred_api_key.as_deref()),
-            "brave_api_key": format_secret(config.brave_api_key.as_deref()),
-            "eia_api_key": format_secret(config.eia_api_key.as_deref()),
-            "news_poll_interval": config.news_poll_interval,
-            "custom_news_feeds": config.custom_news_feeds.len(),
-            "chart_sma": config.chart_sma,
-            "mobile.enabled": config.mobile.enabled,
-            "mobile.bind": config.mobile.bind,
-            "mobile.port": config.mobile.port,
-            "mobile.api_tokens": config.mobile.api_tokens.len(),
-            "mobile.cert_path": config.mobile.cert_path,
-            "mobile.key_path": config.mobile.key_path,
-            "mobile.session_ttl_hours": config.mobile.session_ttl_hours,
-            "watchlist_columns": config.watchlist.columns.iter()
+        let mut output = Map::new();
+        output.insert(
+            "database_backend".to_string(),
+            json!(format_database_backend(config.database_backend)),
+        );
+        output.insert(
+            "database_url".to_string(),
+            json!(format_secret(config.database_url.as_deref())),
+        );
+        output.insert(
+            "mirror_source_url".to_string(),
+            json!(format_secret(config.mirror_source_url.as_deref())),
+        );
+        output.insert(
+            "postgres_read_only".to_string(),
+            json!(config.postgres_read_only),
+        );
+        output.insert(
+            "postgres_max_connections".to_string(),
+            json!(config.postgres_max_connections),
+        );
+        output.insert(
+            "postgres_connect_timeout_secs".to_string(),
+            json!(config.postgres_connect_timeout_secs),
+        );
+        output.insert("base_currency".to_string(), json!(config.base_currency));
+        output.insert(
+            "refresh_interval".to_string(),
+            json!(config.refresh_interval),
+        );
+        output.insert("auto_refresh".to_string(), json!(config.auto_refresh));
+        output.insert(
+            "refresh_interval_secs".to_string(),
+            json!(config.refresh_interval_secs),
+        );
+        output.insert(
+            "portfolio_mode".to_string(),
+            json!(format!("{:?}", config.portfolio_mode).to_lowercase()),
+        );
+        output.insert("theme".to_string(), json!(config.theme));
+        output.insert("home_tab".to_string(), json!(config.home_tab));
+        output.insert("layout".to_string(), json!(format_layout(config.layout)));
+        output.insert(
+            "fred_api_key".to_string(),
+            json!(format_secret(config.fred_api_key.as_deref())),
+        );
+        output.insert(
+            "brave_api_key".to_string(),
+            json!(format_secret(config.brave_api_key.as_deref())),
+        );
+        output.insert(
+            "eia_api_key".to_string(),
+            json!(format_secret(config.eia_api_key.as_deref())),
+        );
+        output.insert(
+            "news_poll_interval".to_string(),
+            json!(config.news_poll_interval),
+        );
+        output.insert(
+            "custom_news_feeds".to_string(),
+            json!(config.custom_news_feeds.len()),
+        );
+        output.insert("chart_sma".to_string(), json!(config.chart_sma));
+        output.insert("mobile.enabled".to_string(), json!(config.mobile.enabled));
+        output.insert("mobile.bind".to_string(), json!(config.mobile.bind));
+        output.insert("mobile.port".to_string(), json!(config.mobile.port));
+        output.insert(
+            "mobile.api_tokens".to_string(),
+            json!(config.mobile.api_tokens.len()),
+        );
+        output.insert(
+            "mobile.cert_path".to_string(),
+            json!(config.mobile.cert_path),
+        );
+        output.insert("mobile.key_path".to_string(), json!(config.mobile.key_path));
+        output.insert(
+            "mobile.session_ttl_hours".to_string(),
+            json!(config.mobile.session_ttl_hours),
+        );
+        output.insert(
+            "daemon.cadence.prices_interval_secs".to_string(),
+            json!(config.daemon.cadence.prices_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.news_interval_secs".to_string(),
+            json!(config.daemon.cadence.news_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.brave_news_interval_secs".to_string(),
+            json!(config.daemon.cadence.brave_news_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.predictions_interval_secs".to_string(),
+            json!(config.daemon.cadence.predictions_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.sentiment_interval_secs".to_string(),
+            json!(config.daemon.cadence.sentiment_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.calendar_interval_secs".to_string(),
+            json!(config.daemon.cadence.calendar_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.economy_interval_secs".to_string(),
+            json!(config.daemon.cadence.economy_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.cot_interval_secs".to_string(),
+            json!(config.daemon.cadence.cot_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.bls_interval_secs".to_string(),
+            json!(config.daemon.cadence.bls_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.fred_interval_secs".to_string(),
+            json!(config.daemon.cadence.fred_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.fedwatch_interval_secs".to_string(),
+            json!(config.daemon.cadence.fedwatch_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.worldbank_interval_secs".to_string(),
+            json!(config.daemon.cadence.worldbank_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.comex_interval_secs".to_string(),
+            json!(config.daemon.cadence.comex_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.onchain_interval_secs".to_string(),
+            json!(config.daemon.cadence.onchain_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.analytics_interval_secs".to_string(),
+            json!(config.daemon.cadence.analytics_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.alerts_interval_secs".to_string(),
+            json!(config.daemon.cadence.alerts_interval_secs),
+        );
+        output.insert(
+            "daemon.cadence.cleanup_interval_secs".to_string(),
+            json!(config.daemon.cadence.cleanup_interval_secs),
+        );
+        output.insert(
+            "watchlist_columns".to_string(),
+            json!(config
+                .watchlist
+                .columns
+                .iter()
                 .map(|c| format_watchlist_column(*c))
-                .collect::<Vec<_>>(),
-        });
+                .collect::<Vec<_>>()),
+        );
 
-        println!("{}", serde_json::to_string_pretty(&output)?);
+        println!("{}", serde_json::to_string_pretty(&Value::Object(output))?);
     } else {
         println!(
             "database_backend = {}",
@@ -119,6 +243,74 @@ fn list_config(json: bool) -> Result<()> {
             config.mobile.session_ttl_hours
         );
         println!(
+            "daemon.cadence.prices_interval_secs = {}",
+            config.daemon.cadence.prices_interval_secs
+        );
+        println!(
+            "daemon.cadence.news_interval_secs = {}",
+            config.daemon.cadence.news_interval_secs
+        );
+        println!(
+            "daemon.cadence.brave_news_interval_secs = {}",
+            config.daemon.cadence.brave_news_interval_secs
+        );
+        println!(
+            "daemon.cadence.predictions_interval_secs = {}",
+            config.daemon.cadence.predictions_interval_secs
+        );
+        println!(
+            "daemon.cadence.sentiment_interval_secs = {}",
+            config.daemon.cadence.sentiment_interval_secs
+        );
+        println!(
+            "daemon.cadence.calendar_interval_secs = {}",
+            config.daemon.cadence.calendar_interval_secs
+        );
+        println!(
+            "daemon.cadence.economy_interval_secs = {}",
+            config.daemon.cadence.economy_interval_secs
+        );
+        println!(
+            "daemon.cadence.cot_interval_secs = {}",
+            config.daemon.cadence.cot_interval_secs
+        );
+        println!(
+            "daemon.cadence.bls_interval_secs = {}",
+            config.daemon.cadence.bls_interval_secs
+        );
+        println!(
+            "daemon.cadence.fred_interval_secs = {}",
+            config.daemon.cadence.fred_interval_secs
+        );
+        println!(
+            "daemon.cadence.fedwatch_interval_secs = {}",
+            config.daemon.cadence.fedwatch_interval_secs
+        );
+        println!(
+            "daemon.cadence.worldbank_interval_secs = {}",
+            config.daemon.cadence.worldbank_interval_secs
+        );
+        println!(
+            "daemon.cadence.comex_interval_secs = {}",
+            config.daemon.cadence.comex_interval_secs
+        );
+        println!(
+            "daemon.cadence.onchain_interval_secs = {}",
+            config.daemon.cadence.onchain_interval_secs
+        );
+        println!(
+            "daemon.cadence.analytics_interval_secs = {}",
+            config.daemon.cadence.analytics_interval_secs
+        );
+        println!(
+            "daemon.cadence.alerts_interval_secs = {}",
+            config.daemon.cadence.alerts_interval_secs
+        );
+        println!(
+            "daemon.cadence.cleanup_interval_secs = {}",
+            config.daemon.cadence.cleanup_interval_secs
+        );
+        println!(
             "watchlist.columns = [{}]",
             config
                 .watchlist
@@ -168,6 +360,49 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
             "mobile.cert_path" => json!(config.mobile.cert_path),
             "mobile.key_path" => json!(config.mobile.key_path),
             "mobile.session_ttl_hours" => json!(config.mobile.session_ttl_hours),
+            "daemon.cadence.prices_interval_secs" => {
+                json!(config.daemon.cadence.prices_interval_secs)
+            }
+            "daemon.cadence.news_interval_secs" => json!(config.daemon.cadence.news_interval_secs),
+            "daemon.cadence.brave_news_interval_secs" => {
+                json!(config.daemon.cadence.brave_news_interval_secs)
+            }
+            "daemon.cadence.predictions_interval_secs" => {
+                json!(config.daemon.cadence.predictions_interval_secs)
+            }
+            "daemon.cadence.sentiment_interval_secs" => {
+                json!(config.daemon.cadence.sentiment_interval_secs)
+            }
+            "daemon.cadence.calendar_interval_secs" => {
+                json!(config.daemon.cadence.calendar_interval_secs)
+            }
+            "daemon.cadence.economy_interval_secs" => {
+                json!(config.daemon.cadence.economy_interval_secs)
+            }
+            "daemon.cadence.cot_interval_secs" => json!(config.daemon.cadence.cot_interval_secs),
+            "daemon.cadence.bls_interval_secs" => json!(config.daemon.cadence.bls_interval_secs),
+            "daemon.cadence.fred_interval_secs" => json!(config.daemon.cadence.fred_interval_secs),
+            "daemon.cadence.fedwatch_interval_secs" => {
+                json!(config.daemon.cadence.fedwatch_interval_secs)
+            }
+            "daemon.cadence.worldbank_interval_secs" => {
+                json!(config.daemon.cadence.worldbank_interval_secs)
+            }
+            "daemon.cadence.comex_interval_secs" => {
+                json!(config.daemon.cadence.comex_interval_secs)
+            }
+            "daemon.cadence.onchain_interval_secs" => {
+                json!(config.daemon.cadence.onchain_interval_secs)
+            }
+            "daemon.cadence.analytics_interval_secs" => {
+                json!(config.daemon.cadence.analytics_interval_secs)
+            }
+            "daemon.cadence.alerts_interval_secs" => {
+                json!(config.daemon.cadence.alerts_interval_secs)
+            }
+            "daemon.cadence.cleanup_interval_secs" => {
+                json!(config.daemon.cadence.cleanup_interval_secs)
+            }
             "watchlist.columns" | "watchlist_columns" => json!(config
                 .watchlist
                 .columns
@@ -216,6 +451,57 @@ fn get_field(field: Option<&str>, json: bool) -> Result<()> {
             "mobile.cert_path" => println!("{}", config.mobile.cert_path.as_deref().unwrap_or("")),
             "mobile.key_path" => println!("{}", config.mobile.key_path.as_deref().unwrap_or("")),
             "mobile.session_ttl_hours" => println!("{}", config.mobile.session_ttl_hours),
+            "daemon.cadence.prices_interval_secs" => {
+                println!("{}", config.daemon.cadence.prices_interval_secs)
+            }
+            "daemon.cadence.news_interval_secs" => {
+                println!("{}", config.daemon.cadence.news_interval_secs)
+            }
+            "daemon.cadence.brave_news_interval_secs" => {
+                println!("{}", config.daemon.cadence.brave_news_interval_secs)
+            }
+            "daemon.cadence.predictions_interval_secs" => {
+                println!("{}", config.daemon.cadence.predictions_interval_secs)
+            }
+            "daemon.cadence.sentiment_interval_secs" => {
+                println!("{}", config.daemon.cadence.sentiment_interval_secs)
+            }
+            "daemon.cadence.calendar_interval_secs" => {
+                println!("{}", config.daemon.cadence.calendar_interval_secs)
+            }
+            "daemon.cadence.economy_interval_secs" => {
+                println!("{}", config.daemon.cadence.economy_interval_secs)
+            }
+            "daemon.cadence.cot_interval_secs" => {
+                println!("{}", config.daemon.cadence.cot_interval_secs)
+            }
+            "daemon.cadence.bls_interval_secs" => {
+                println!("{}", config.daemon.cadence.bls_interval_secs)
+            }
+            "daemon.cadence.fred_interval_secs" => {
+                println!("{}", config.daemon.cadence.fred_interval_secs)
+            }
+            "daemon.cadence.fedwatch_interval_secs" => {
+                println!("{}", config.daemon.cadence.fedwatch_interval_secs)
+            }
+            "daemon.cadence.worldbank_interval_secs" => {
+                println!("{}", config.daemon.cadence.worldbank_interval_secs)
+            }
+            "daemon.cadence.comex_interval_secs" => {
+                println!("{}", config.daemon.cadence.comex_interval_secs)
+            }
+            "daemon.cadence.onchain_interval_secs" => {
+                println!("{}", config.daemon.cadence.onchain_interval_secs)
+            }
+            "daemon.cadence.analytics_interval_secs" => {
+                println!("{}", config.daemon.cadence.analytics_interval_secs)
+            }
+            "daemon.cadence.alerts_interval_secs" => {
+                println!("{}", config.daemon.cadence.alerts_interval_secs)
+            }
+            "daemon.cadence.cleanup_interval_secs" => {
+                println!("{}", config.daemon.cadence.cleanup_interval_secs)
+            }
             "watchlist.columns" | "watchlist_columns" => println!(
                 "[{}]",
                 config
@@ -418,12 +704,108 @@ fn set_field(field: Option<&str>, value: Option<&str>) -> Result<()> {
                 config.watchlist.columns.iter().map(|c| format!("\"{}\"", format_watchlist_column(*c))).collect::<Vec<_>>().join(", ")
             );
         }
+        "daemon.cadence.prices_interval_secs" => {
+            config.daemon.cadence.prices_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.prices_interval_secs = {}", config.daemon.cadence.prices_interval_secs);
+        }
+        "daemon.cadence.news_interval_secs" => {
+            config.daemon.cadence.news_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.news_interval_secs = {}", config.daemon.cadence.news_interval_secs);
+        }
+        "daemon.cadence.brave_news_interval_secs" => {
+            config.daemon.cadence.brave_news_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.brave_news_interval_secs = {}", config.daemon.cadence.brave_news_interval_secs);
+        }
+        "daemon.cadence.predictions_interval_secs" => {
+            config.daemon.cadence.predictions_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.predictions_interval_secs = {}", config.daemon.cadence.predictions_interval_secs);
+        }
+        "daemon.cadence.sentiment_interval_secs" => {
+            config.daemon.cadence.sentiment_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.sentiment_interval_secs = {}", config.daemon.cadence.sentiment_interval_secs);
+        }
+        "daemon.cadence.calendar_interval_secs" => {
+            config.daemon.cadence.calendar_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.calendar_interval_secs = {}", config.daemon.cadence.calendar_interval_secs);
+        }
+        "daemon.cadence.economy_interval_secs" => {
+            config.daemon.cadence.economy_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.economy_interval_secs = {}", config.daemon.cadence.economy_interval_secs);
+        }
+        "daemon.cadence.cot_interval_secs" => {
+            config.daemon.cadence.cot_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.cot_interval_secs = {}", config.daemon.cadence.cot_interval_secs);
+        }
+        "daemon.cadence.bls_interval_secs" => {
+            config.daemon.cadence.bls_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.bls_interval_secs = {}", config.daemon.cadence.bls_interval_secs);
+        }
+        "daemon.cadence.fred_interval_secs" => {
+            config.daemon.cadence.fred_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.fred_interval_secs = {}", config.daemon.cadence.fred_interval_secs);
+        }
+        "daemon.cadence.fedwatch_interval_secs" => {
+            config.daemon.cadence.fedwatch_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.fedwatch_interval_secs = {}", config.daemon.cadence.fedwatch_interval_secs);
+        }
+        "daemon.cadence.worldbank_interval_secs" => {
+            config.daemon.cadence.worldbank_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.worldbank_interval_secs = {}", config.daemon.cadence.worldbank_interval_secs);
+        }
+        "daemon.cadence.comex_interval_secs" => {
+            config.daemon.cadence.comex_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.comex_interval_secs = {}", config.daemon.cadence.comex_interval_secs);
+        }
+        "daemon.cadence.onchain_interval_secs" => {
+            config.daemon.cadence.onchain_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.onchain_interval_secs = {}", config.daemon.cadence.onchain_interval_secs);
+        }
+        "daemon.cadence.analytics_interval_secs" => {
+            config.daemon.cadence.analytics_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.analytics_interval_secs = {}", config.daemon.cadence.analytics_interval_secs);
+        }
+        "daemon.cadence.alerts_interval_secs" => {
+            config.daemon.cadence.alerts_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.alerts_interval_secs = {}", config.daemon.cadence.alerts_interval_secs);
+        }
+        "daemon.cadence.cleanup_interval_secs" => {
+            config.daemon.cadence.cleanup_interval_secs = parse_positive_u64(value, field)?;
+            save_config(&config)?;
+            println!("Updated daemon.cadence.cleanup_interval_secs = {}", config.daemon.cadence.cleanup_interval_secs);
+        }
         _ => bail!(
-            "Unsupported set field '{}'. Currently supported: database_backend, database_url, mirror_source_url, postgres_read_only, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, eia_api_key, layout, auto_refresh, refresh_interval_secs, mobile.enabled, mobile.bind, mobile.port, mobile.session_ttl_hours, watchlist.columns",
+            "Unsupported set field '{}'. Currently supported: database_backend, database_url, mirror_source_url, postgres_read_only, postgres_max_connections, postgres_connect_timeout_secs, brave_api_key, eia_api_key, layout, auto_refresh, refresh_interval_secs, mobile.enabled, mobile.bind, mobile.port, mobile.session_ttl_hours, daemon.cadence.*, watchlist.columns",
             field
         ),
     }
     Ok(())
+}
+
+fn parse_positive_u64(value: &str, field: &str) -> Result<u64> {
+    let parsed = value
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| anyhow!("Invalid {} '{}'", field, value))?;
+    if parsed == 0 {
+        bail!("{} must be > 0", field);
+    }
+    Ok(parsed)
 }
 
 fn parse_bool(value: &str, field: &str) -> Result<bool> {

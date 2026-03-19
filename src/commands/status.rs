@@ -2,6 +2,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use sqlx::PgPool;
 
+use crate::commands::daemon;
 use crate::config::load_config;
 use crate::db::backend::BackendConnection;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, news_cache};
@@ -710,8 +711,10 @@ fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> R
         })
         .collect();
 
+    let daemon_status = daemon::read_status()?;
     let output = json!({
         "brave_api_key_configured": brave_configured,
+        "daemon": daemon_status,
         "sources": sources_json,
     });
 
@@ -720,6 +723,23 @@ fn print_json(config: &crate::config::Config, sources: &[DataSourceStatus]) -> R
 }
 
 fn print_table(config: &crate::config::Config, sources: &[DataSourceStatus]) {
+    if let Ok(daemon_status) = daemon::read_status() {
+        if daemon_status.running {
+            let heartbeat = daemon_status
+                .last_heartbeat
+                .as_deref()
+                .map(format_time_ago)
+                .unwrap_or_else(|| "unknown".to_string());
+            println!(
+                "Daemon: ✓ {} (cycle {}, heartbeat {}, wake {}s)",
+                daemon_status.status, daemon_status.cycle, heartbeat, daemon_status.interval_secs
+            );
+        } else if let Some(message) = daemon_status.message {
+            println!("Daemon: ✗ {}", message);
+        }
+        println!();
+    }
+
     let brave_key = config.brave_api_key.as_deref().unwrap_or("").trim();
     if brave_key.is_empty() {
         println!(
