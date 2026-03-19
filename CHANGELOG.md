@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-19 — fix: analytics summary/divergence/alignment/low resilience (P1)
+
+- What: fixed `analytics summary --json`, `analytics divergence --json`, `analytics alignment --json`, and `analytics low --json` returning empty stdout when underlying DB queries fail. Three `?` early-return operators in `run_summary` (regime_snapshots, latest_signal, build_alignment_rows) and one each in `run_divergence`, `run_alignment`, and `run_low` caused the function to bail before printing any JSON output when a query errored. Replaced all with `.unwrap_or(None)` or `.unwrap_or_default()` matching the pattern already used by `run_digest`, `run_medium`, `run_high`, and other resilient analytics commands.
+- Why: Evening Analyst reported both commands returning empty/blank objects. Agents consuming `--json` output saw empty stdout (interpreted as empty objects) when any single DB table query failed, even though other data was available. These are core agent consumption surfaces that must always produce valid JSON.
+- Files: `src/commands/analytics.rs`
+- Tests: `cargo test` — 1361 pass (4 new: `summary_json_never_empty_on_fresh_db`, `divergence_json_never_empty_on_fresh_db`, `alignment_json_never_empty_on_fresh_db`, `low_json_never_empty_on_fresh_db`); `cargo clippy -- -D warnings` clean
+
 ### 2026-03-19 — fix: `data sovereign` resilient to COMEX silver fetch failures
 
 - What: the `data sovereign` command failed entirely when COMEX silver XLS parsing encountered format changes ("No TOTAL rows found"). Fixed three issues: (1) COMEX XLS parser now separates header detection from TOTAL row extraction into two passes, skips header-like rows, matches GRAND TOTAL / COMBINED variants, and falls back to scanning all numeric cells when column indices don't work; (2) sovereign command now accepts a `BackendConnection` and loads cached COMEX silver data from `comex_cache` as fallback when live fetch fails; (3) all three sovereign data sources (WGC gold, government BTC, COMEX silver) now fail independently with warnings instead of aborting the entire command.
