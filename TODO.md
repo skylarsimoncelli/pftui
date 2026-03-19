@@ -74,12 +74,6 @@
 
 ## P2 — Coverage And Agent Consumption
 
-### [Feedback] Add consolidated closing-price endpoint for all watched symbols
-
-> Evening Analyst (Mar 19) requests a single command that returns closing prices for all watched/held symbols in one call. Currently requires multiple commands or per-symbol queries.
->
-> Suggested path: `pftui data prices --json` or `pftui portfolio prices --json` returning symbol, close, change, change_pct for all tracked symbols.
-
 ### [Feedback] Add oil inventory/SPR data command
 
 > Medium-Timeframe Analyst (Mar 19, 75/82) suggests adding `pftui data oil-inventory` or similar for EIA oil inventory and SPR data. Would enhance energy analysis without web searches.

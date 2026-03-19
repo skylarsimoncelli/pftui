@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-18 — feat: consolidated closing-price endpoint (`data prices`)
+
+- What: added `pftui data prices [--json]` command that returns cached closing prices for all portfolio holdings + watchlist symbols in a single call. Output includes symbol, name, price, change, change_pct, source, and fetched_at. Table output for humans, `--json` for agents. Deduplicates symbols present in both portfolio and watchlist. Resolves crypto Yahoo symbol mapping (BTC -> BTC-USD) automatically.
+- Why: Evening Analyst requested a single command to get all tracked symbols' prices instead of per-symbol queries or combining multiple commands. Enables efficient EOD workflows.
+- Files: `src/commands/prices.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1367 pass (7 new: `prices_empty_db`, `prices_empty_db_json`, `prices_with_watchlist_and_holdings`, `format_decimal_opt_large`, `format_decimal_opt_small`, `format_decimal_opt_none`, `format_change_opt_positive`, `format_change_opt_negative`, `format_pct_opt_positive`, `format_pct_opt_none`); `cargo clippy -- -D warnings` clean.
+
 ### 2026-03-19 — F49 steps 1-4: precomputed technical signal engine
 
 - What: added a `technical_signals` table (SQLite + PostgreSQL) that stores per-symbol, per-timeframe signal events derived from stored technical snapshots. Signals generated during `pftui data refresh` include: RSI overbought/oversold, MACD bull/bear cross, SMA 200 reclaim/breakdown, Bollinger Band squeeze, volume expansion (2x+ 20-day average), and 52-week high/low proximity. Each signal carries direction (bullish/bearish/neutral), severity (notable/critical), optional trigger price, and a human-readable description. Signals are deduplicated within 6 hours per symbol+type and auto-pruned after 72 hours. Extended `pftui analytics signals` with `--source` flag: `technical` (per-symbol signals), `timeframe` (cross-layer signals), or `all` (default, both). Supports `--symbol`, `--signal-type`, `--limit`, `--json`.
