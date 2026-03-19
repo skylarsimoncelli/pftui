@@ -6,12 +6,6 @@
 
 ## P1 — Feedback-Driven Fixes
 
-### [Feedback] Fix `analytics summary` and `analytics divergence` returning empty objects
-
-> Evening Analyst (Mar 19) reports both `analytics summary --json` and `analytics divergence --json` returning empty/blank objects. These are core agent consumption surfaces — they must return populated data when portfolio/analytics state exists.
->
-> Files to check: `src/commands/analytics.rs`
-
 ### [Feedback] Fix price snapshot command exit code 2
 
 > Evening Analyst (Mar 19) reports the price snapshot command returning exit code 2. Need a reliable price-only snapshot path.

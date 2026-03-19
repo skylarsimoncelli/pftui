@@ -1330,7 +1330,7 @@ pub fn run_signals_combined(
 }
 
 fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
-    let regime = regime_snapshots::get_current_backend(backend)?;
+    let regime = regime_snapshots::get_current_backend(backend).unwrap_or(None);
     let scenarios_list =
         scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let top_scenario = scenarios_list.first().cloned();
@@ -1339,7 +1339,7 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let top_trend = trends_list.first().cloned();
     let cycles = structural::list_cycles_backend(backend).unwrap_or_default();
     let top_cycle = cycles.first().cloned();
-    let signal = timeframe_signals::latest_signal_backend(backend)?;
+    let signal = timeframe_signals::latest_signal_backend(backend).unwrap_or(None);
     let signal_count = timeframe_signals::list_signals_backend(backend, None, None, None)
         .unwrap_or_default()
         .len();
@@ -1352,7 +1352,7 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
         .iter()
         .filter(|a| a.status == AlertStatus::Triggered)
         .count();
-    let alignments = build_alignment_rows(backend, None)?;
+    let alignments = build_alignment_rows(backend, None).unwrap_or_default();
     let alignment_score = if alignments.is_empty() {
         0.0
     } else {
@@ -1431,7 +1431,7 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
 }
 
 fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
-    let regime = regime_snapshots::get_current_backend(backend)?;
+    let regime = regime_snapshots::get_current_backend(backend).unwrap_or(None);
     let corr =
         correlation_snapshots::list_current_backend(backend, Some("30d")).unwrap_or_default();
     let signals =
@@ -2381,7 +2381,7 @@ fn run_alignment(
     symbol: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let alignments = build_alignment_rows(backend, symbol)?;
+    let alignments = build_alignment_rows(backend, symbol).unwrap_or_default();
 
     if json_output {
         println!(
@@ -2431,7 +2431,8 @@ fn run_divergence(
     symbol: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let mut rows: Vec<DivergenceRow> = build_alignment_rows(backend, symbol)?
+    let mut rows: Vec<DivergenceRow> = build_alignment_rows(backend, symbol)
+        .unwrap_or_default()
         .into_iter()
         .filter(|a| a.bull_layers > 0 && a.bear_layers > 0)
         .map(|a| {
@@ -2576,7 +2577,7 @@ fn build_alignment_rows(
     filter_symbol: Option<&str>,
 ) -> Result<Vec<AlignmentRow>> {
     let symbols = discover_alignment_symbols(backend, filter_symbol);
-    let low_regime = regime_snapshots::get_current_backend(backend)?;
+    let low_regime = regime_snapshots::get_current_backend(backend).unwrap_or(None);
     let low_bias = low_regime
         .as_ref()
         .map(|r| regime_to_bias(&r.regime).to_string())
@@ -2759,5 +2760,39 @@ mod tests {
         assert_eq!(rows[0].score, 9.0);
         assert_eq!(rows[0].notes.as_deref(), Some("GI Bill expansion"));
         assert_eq!(rows[0].source.as_deref(), Some("test-source"));
+    }
+
+    #[test]
+    fn summary_json_never_empty_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        // run_summary should succeed and not error out on an empty database
+        let result = run_summary(&backend, true);
+        assert!(result.is_ok(), "run_summary should not error: {:?}", result);
+    }
+
+    #[test]
+    fn divergence_json_never_empty_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        // run_divergence should succeed and not error out on an empty database
+        let result = run_divergence(&backend, None, true);
+        assert!(result.is_ok(), "run_divergence should not error: {:?}", result);
+    }
+
+    #[test]
+    fn alignment_json_never_empty_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_alignment(&backend, None, true);
+        assert!(result.is_ok(), "run_alignment should not error: {:?}", result);
+    }
+
+    #[test]
+    fn low_json_never_empty_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_low(&backend, true);
+        assert!(result.is_ok(), "run_low should not error: {:?}", result);
     }
 }
