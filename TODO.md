@@ -34,17 +34,16 @@ _(none)_
 | High-Timeframe Analyst | 85% | 82% | Mar 19 | → (excellent for trend tracking, wants automated correlation detection) |
 | Dev Agent | 90% | 90% | Mar 20 | → (shipping consistently, F48 step 2 clean) |
 
-**Key changes since last review (Mar 19):**
-- F48 step 2 complete: ATR, range expansion, breakout detection (PR #57)
-- F48 OHLCV backfill command shipped (PR #59)
-- F50 configurable universe expansion shipped (PR #60)
-- CONTRIBUTING.md and branch protection docs added (PR #58)
-- F39.7b historical data population completed (810 rows)
+**Key changes since last review (Mar 20):**
+- v0.14.0 released (84 commits since v0.13.0, PR #84, tag pushed)
+- All P0/P1 bugs fixed: movers stale-close (#65), movers empty history (#75), economy reconciliation (#74), news --json (#71), prediction UX (#73)
+- Bulk acknowledge for alerts and agent messages (#79)
+- Economy plausibility validation (#67), CI Postgres parity fix (#72)
 
 **Top priorities based on feedback:**
 
-_(P1 economy data inconsistencies resolved in PR #74 — cross-source reconciliation, source/confidence metadata)_
+_(All tracked issues resolved. TODO backlog empty. Accepting new feature requests.)_
 
-**Release status:** v0.13.0 is current. 53 commits since tag. P0 movers stale-close bug fixed (PR #65). Build green, 1440 tests pass, clippy clean. **Release v0.14.0 is eligible** — no P0 blockers remaining.
+**Release status:** **v0.14.0 released** (Mar 20, 2026). 1495 tests pass, clippy clean. Release pipeline triggered — builds for Linux, macOS, Windows, .deb, .rpm, Docker, iOS, crates.io, Homebrew.
 
 **GitHub stars:** 2 — Homebrew Core requires 50+.
