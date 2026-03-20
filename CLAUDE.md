@@ -52,11 +52,11 @@ This repo is improved by automated hourly cron runs. Each run should:
 - **Author:** pftui-bot <pftui-bot@users.noreply.github.com>
 - Always set both `--author` and `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars
 - No Co-Authored-By lines — repo doesn't allow co-authors
-- **Never commit directly to master** — use git worktrees + branches + PRs:
+- **`master` is branch-protected — direct pushes will be rejected.** All changes go through PRs:
   1. `git worktree add /tmp/pftui-work -b "cron/YYYYMMDD-task-name" origin/master`
   2. Work in `/tmp/pftui-work`, commit, push branch
   3. `gh pr create --base master` then `gh pr merge --squash --delete-branch`
-  4. Clean up: `git worktree remove /tmp/pftui-work`
+  4. Clean up: `cd /root/pftui && git worktree remove /tmp/pftui-work && git pull origin master`
 - One focused commit per TODO item
 - **REMOVE completed items from TODO.md** — don't mark [x], don't leave them
 
