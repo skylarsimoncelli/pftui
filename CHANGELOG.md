@@ -54,6 +54,13 @@
 - Files: `src/cli.rs`, `src/commands/alerts.rs`, `src/commands/agent_msg.rs`, `src/main.rs`
 - Tests: `cargo test` — 1495 pass (+7 new: bulk ack multiple alerts, partial failure, nonexistent ID, bulk ack multiple messages, JSON output, empty IDs error, legacy single-ID backwards compat); `cargo clippy --all-targets -- -D warnings` clean
 
+### 2026-03-20 — fix: Replace partial_cmp().unwrap() with unwrap_or in asset_detail_popup
+
+- What: Fixed the sole remaining `partial_cmp().unwrap()` in production code (ETF fund flow sort in asset detail popup). Changed to `unwrap_or(std::cmp::Ordering::Equal)` to prevent potential NaN panic, matching the pattern used across 9 other sort_by call sites.
+- Files: `src/tui/views/asset_detail_popup.rs`
+- Tests: 1495 pass; clippy clean
+- PR: #92
+
 ### 2026-03-20 — fix: Movers returns 0 results when price history is empty/stale (P0)
 
 - What: Fixed `analytics movers` silently returning 0 results during extreme market moves when price history was empty or stale. Added `previous_close` field to `PriceQuote` from Yahoo's `chartPreviousClose`. `compute_change_pct()` now falls back to cached `previous_close` when history is unavailable. Added `skipped` diagnostic in `--json` mode for symbols with price but no computable change. Yahoo chart API now fetches `chartPreviousClose` for ALL symbols, not just US equities.
