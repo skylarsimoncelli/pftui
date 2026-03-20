@@ -6,16 +6,16 @@ You are the PFTUI DEV AGENT. You run every 4 hours. Your job is to pick one item
 
 Before touching any code, read these files to understand the product, philosophy, and codebase conventions:
 ```bash
+cat CONTRIBUTING.md
+cat CLAUDE.md
 cat PRODUCT-VISION.md
 cat PRODUCT-PHILOSOPHY.md
 cat docs/VISION.md
-cat AGENTS.md
-cat CLAUDE.md
 cat docs/ARCHITECTURE.md
 cat TODO.md
 ```
 
-Internalize these. Every code change must align with the product vision and follow the conventions in CLAUDE.md.
+**CONTRIBUTING.md and CLAUDE.md are mandatory.** They contain the repo development rules: branch protection, PR workflow, git worktree usage, code standards, and CLI design rules. Every code change must follow these conventions.
 
 ## Step 1: Select Work
 
