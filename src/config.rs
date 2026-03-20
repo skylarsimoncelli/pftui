@@ -188,6 +188,156 @@ pub struct DaemonConfig {
     pub cadence: DaemonCadenceConfig,
 }
 
+/// The tracked universe: groups of symbols that get refreshed, priced,
+/// and analysed alongside portfolio holdings and watchlist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackedUniverse {
+    #[serde(default = "default_universe_indices")]
+    pub indices: Vec<String>,
+    #[serde(default = "default_universe_sectors")]
+    pub sectors: Vec<String>,
+    #[serde(default = "default_universe_commodities")]
+    pub commodities: Vec<String>,
+    #[serde(default = "default_universe_fx")]
+    pub fx: Vec<String>,
+    #[serde(default = "default_universe_rates")]
+    pub rates: Vec<String>,
+    #[serde(default = "default_universe_crypto_majors")]
+    pub crypto_majors: Vec<String>,
+    #[serde(default)]
+    pub custom: Vec<String>,
+}
+
+impl Default for TrackedUniverse {
+    fn default() -> Self {
+        Self {
+            indices: default_universe_indices(),
+            sectors: default_universe_sectors(),
+            commodities: default_universe_commodities(),
+            fx: default_universe_fx(),
+            rates: default_universe_rates(),
+            crypto_majors: default_universe_crypto_majors(),
+            custom: Vec::new(),
+        }
+    }
+}
+
+impl TrackedUniverse {
+    /// Return all symbols across all groups (deduplicated, order preserved).
+    pub fn all_symbols(&self) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for sym in self
+            .indices
+            .iter()
+            .chain(&self.sectors)
+            .chain(&self.commodities)
+            .chain(&self.fx)
+            .chain(&self.rates)
+            .chain(&self.crypto_majors)
+            .chain(&self.custom)
+        {
+            if seen.insert(sym.clone()) {
+                out.push(sym.clone());
+            }
+        }
+        out
+    }
+
+    /// Return all group names.
+    pub fn group_names() -> &'static [&'static str] {
+        &[
+            "indices",
+            "sectors",
+            "commodities",
+            "fx",
+            "rates",
+            "crypto_majors",
+            "custom",
+        ]
+    }
+
+    /// Get symbols for a named group.
+    pub fn group(&self, name: &str) -> Option<&Vec<String>> {
+        match name {
+            "indices" => Some(&self.indices),
+            "sectors" => Some(&self.sectors),
+            "commodities" => Some(&self.commodities),
+            "fx" => Some(&self.fx),
+            "rates" => Some(&self.rates),
+            "crypto_majors" => Some(&self.crypto_majors),
+            "custom" => Some(&self.custom),
+            _ => None,
+        }
+    }
+
+    /// Get mutable symbols for a named group.
+    pub fn group_mut(&mut self, name: &str) -> Option<&mut Vec<String>> {
+        match name {
+            "indices" => Some(&mut self.indices),
+            "sectors" => Some(&mut self.sectors),
+            "commodities" => Some(&mut self.commodities),
+            "fx" => Some(&mut self.fx),
+            "rates" => Some(&mut self.rates),
+            "crypto_majors" => Some(&mut self.crypto_majors),
+            "custom" => Some(&mut self.custom),
+            _ => None,
+        }
+    }
+}
+
+fn default_universe_indices() -> Vec<String> {
+    vec![
+        "SPY".into(),
+        "QQQ".into(),
+        "DIA".into(),
+        "IWM".into(),
+    ]
+}
+
+fn default_universe_sectors() -> Vec<String> {
+    vec![
+        "XLE".into(),
+        "XLF".into(),
+        "XLK".into(),
+        "XLV".into(),
+        "XLY".into(),
+        "XLP".into(),
+        "XLI".into(),
+        "XLU".into(),
+        "XLB".into(),
+        "XLRE".into(),
+        "XLC".into(),
+    ]
+}
+
+fn default_universe_commodities() -> Vec<String> {
+    vec![
+        "GC=F".into(),
+        "SI=F".into(),
+        "CL=F".into(),
+        "HG=F".into(),
+        "URA".into(),
+    ]
+}
+
+fn default_universe_fx() -> Vec<String> {
+    vec![
+        "DX-Y.NYB".into(),
+        "EURUSD=X".into(),
+        "GBPUSD=X".into(),
+        "USDJPY=X".into(),
+    ]
+}
+
+fn default_universe_rates() -> Vec<String> {
+    vec!["^TNX".into(), "^TYX".into()]
+}
+
+fn default_universe_crypto_majors() -> Vec<String> {
+    vec!["BTC-USD".into(), "ETH-USD".into()]
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MobileTokenPermission {
@@ -293,6 +443,10 @@ pub struct Config {
     /// Broker API credentials for each supported integration.
     #[serde(default)]
     pub brokers: BrokerCredentials,
+    /// Tracked universe: groups of symbols refreshed and analysed
+    /// alongside portfolio holdings and watchlist.
+    #[serde(default)]
+    pub tracked_universe: TrackedUniverse,
 }
 
 fn default_brave_news_queries() -> Vec<String> {
@@ -533,6 +687,7 @@ impl Default for Config {
             alert_default_cooldown_minutes: default_alert_cooldown_minutes(),
             daemon: DaemonConfig::default(),
             brokers: BrokerCredentials::default(),
+            tracked_universe: TrackedUniverse::default(),
         }
     }
 }
@@ -841,6 +996,7 @@ mod tests {
             alert_default_cooldown_minutes: 45,
             daemon: DaemonConfig::default(),
             brokers: BrokerCredentials::default(),
+            tracked_universe: TrackedUniverse::default(),
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let loaded: Config = toml::from_str(&toml_str).unwrap();

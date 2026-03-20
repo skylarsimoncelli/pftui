@@ -280,6 +280,7 @@ mod tests {
             alert_default_cooldown_minutes: 30,
             daemon: crate::config::DaemonConfig::default(),
             brokers: crate::config::BrokerCredentials::default(),
+            tracked_universe: crate::config::TrackedUniverse::default(),
         };
         let export = ConfigExport::from(&config);
         assert_eq!(export.base_currency, "EUR");

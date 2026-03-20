@@ -726,6 +726,9 @@ fn main() -> Result<()> {
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }
+            cli::DataCommand::Backfill { json } => {
+                commands::backfill::run(&backend, json)
+            }
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Daemon { command } => match command {
@@ -802,6 +805,19 @@ fn main() -> Result<()> {
                             .await
                     })
                 }
+            },
+            cli::SystemCommand::Universe { command } => match command {
+                cli::UniverseCommand::List { json } => commands::universe::list(json),
+                cli::UniverseCommand::Add {
+                    symbol,
+                    group,
+                    json,
+                } => commands::universe::add(&symbol, &group, json),
+                cli::UniverseCommand::Remove {
+                    symbol,
+                    group,
+                    json,
+                } => commands::universe::remove(&symbol, &group, json),
             },
             cli::SystemCommand::MigrateJournal {
                 path,

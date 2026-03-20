@@ -18,20 +18,6 @@
 
 ## P2 — Coverage And Agent Consumption
 
-### F50: Configurable Universe Expansion
-
-> Vision fit: the system should analyze more than just current holdings and watchlist when running always-on.
->
-> Current gap:
-> - Refresh symbol discovery is driven by portfolio, watchlist, economy symbols, and sector ETFs
-> - There is no first-class tracked-universe config for sectors, indices, macro proxies, or custom symbol packs
->
-> Actionable scope:
-> 1. Add `tracked_universe` config groups for indices, sectors, commodities, FX, rates, crypto majors, and custom symbols
-> 2. Feed the universe into refresh, technical snapshots, levels, and signals
-> 3. Add CLI commands to inspect and mutate tracked universes
-> 4. Ensure per-source rate limits and refresh cadences remain safe
-
 ### F52: Refresh DAG, Parallelism, And Source Policies
 
 > Vision fit: an always-on aggregator needs a scheduler and dependency graph, not just a long sequential refresh pass.
@@ -49,30 +35,6 @@
 > 5. Add `pftui data refresh --json` summary output for agents and observability
 
 ## P3 — Long Term
-
-### F39.7b: Historical Power Metrics Data Population (Sentinel)
-
-> After dev cron ships F39.7 CLI + schema, spawn a research sub-agent to populate
-> the historical database. The sub-agent should:
->
-> 1. Research each determinant for each power at each decade using web_search
-> 2. Score on Dalio's 1-10 scale with brief justification and source
-> 3. Populate via `pftui analytics macro cycles history add` CLI commands
-> 4. Cross-reference Dalio's own charts from "Principles for Dealing with
->    the Changing World Order" as a baseline, then refine with primary sources
->
-> Powers and spans:
-> - US: 1900-2020 (13 decades)
-> - China: 1900-2020 (13 decades)
-> - Russia/USSR: 1900-2020 (13 decades, note regime transitions)
-> - UK/British Empire: 1900-2020 (13 decades, the decline narrative)
-> - Japan: 1900-2020 (13 decades, rise and plateau)
-> - EU: 1950-2020 (8 decades, post-ECSC)
-> - India: 1950-2020 (8 decades, post-independence)
-> - Saudi: 1940-2020 (9 decades, post-oil discovery)
->
-> Estimated: ~700 rows. Each needs a score, notes, and source.
-> Break into multiple sub-agent runs by country if needed.
 
 ---
 
@@ -104,8 +66,7 @@
 **Top priorities:**
 
 1. **P1: F48 Rich OHLCV History** — upgrade from close-only to full candle data
-2. **P2: F50 Configurable Universe Expansion** — track more symbols beyond holdings/watchlist
-3. **P2: F52 Refresh DAG / source policies** — move beyond the current sequential refresh pipeline
+2. **P2: F52 Refresh DAG / source policies** — move beyond the current sequential refresh pipeline
 
 **Release status:** v0.13.0 shipped Mar 19. F47 daemon rollout is complete. CI green. Ready for the next feature cycle.
 

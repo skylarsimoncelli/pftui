@@ -417,6 +417,12 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Backfill missing OHLCV data for existing price history (re-fetches from Yahoo Finance)
+    Backfill {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// EIA weekly crude oil inventory and Strategic Petroleum Reserve (SPR) levels
     #[command(name = "oil-inventory")]
     OilInventory {
@@ -924,6 +930,38 @@ pub enum DaemonCommand {
 }
 
 #[derive(Subcommand)]
+pub enum UniverseCommand {
+    /// List all tracked universe groups and symbols
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a symbol to a universe group
+    Add {
+        /// Symbol to add
+        symbol: String,
+        /// Group name (indices, sectors, commodities, fx, rates, crypto_majors, custom)
+        #[arg(long, default_value = "custom")]
+        group: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a symbol from a universe group
+    Remove {
+        /// Symbol to remove
+        symbol: String,
+        /// Group name (indices, sectors, commodities, fx, rates, crypto_majors, custom)
+        #[arg(long, default_value = "custom")]
+        group: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum SystemCommand {
     /// Run as a background daemon: refresh data + evaluate alerts on a loop
     Daemon {
@@ -1014,6 +1052,11 @@ pub enum SystemCommand {
     Mobile {
         #[command(subcommand)]
         command: MobileCommand,
+    },
+    /// Manage the tracked symbol universe (indices, sectors, commodities, FX, rates, crypto, custom)
+    Universe {
+        #[command(subcommand)]
+        command: UniverseCommand,
     },
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     #[command(name = "migrate-journal")]
@@ -2439,6 +2482,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_backfill_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "backfill", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Backfill { json },
+            }) => {
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_backfill_no_flags() {
+        let cli = Cli::try_parse_from(["pftui", "data", "backfill"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Backfill { json },
+            }) => {
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_data_onchain_command() {
         let cli = Cli::try_parse_from(["pftui", "data", "onchain", "--json"]).unwrap();
         match cli.command {
@@ -2548,6 +2617,7 @@ mod tests {
             "supply",
             "sovereign",
             "oil-inventory",
+            "backfill",
         ] {
             assert!(
                 data_help.contains(command),
