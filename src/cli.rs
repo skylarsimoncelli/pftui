@@ -924,6 +924,38 @@ pub enum DaemonCommand {
 }
 
 #[derive(Subcommand)]
+pub enum UniverseCommand {
+    /// List all tracked universe groups and symbols
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a symbol to a universe group
+    Add {
+        /// Symbol to add
+        symbol: String,
+        /// Group name (indices, sectors, commodities, fx, rates, crypto_majors, custom)
+        #[arg(long, default_value = "custom")]
+        group: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a symbol from a universe group
+    Remove {
+        /// Symbol to remove
+        symbol: String,
+        /// Group name (indices, sectors, commodities, fx, rates, crypto_majors, custom)
+        #[arg(long, default_value = "custom")]
+        group: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum SystemCommand {
     /// Run as a background daemon: refresh data + evaluate alerts on a loop
     Daemon {
@@ -1014,6 +1046,11 @@ pub enum SystemCommand {
     Mobile {
         #[command(subcommand)]
         command: MobileCommand,
+    },
+    /// Manage the tracked symbol universe (indices, sectors, commodities, FX, rates, crypto, custom)
+    Universe {
+        #[command(subcommand)]
+        command: UniverseCommand,
     },
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     #[command(name = "migrate-journal")]

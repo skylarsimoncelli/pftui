@@ -165,7 +165,20 @@ impl RefreshPlan {
     }
 }
 
-/// Collect all symbols that need pricing: portfolio positions + watchlist.
+/// Infer the asset category for a universe symbol based on its group.
+fn category_for_universe_group(group: &str) -> AssetCategory {
+    match group {
+        "indices" | "sectors" => AssetCategory::Equity,
+        "commodities" => AssetCategory::Commodity,
+        "fx" => AssetCategory::Forex,
+        "rates" => AssetCategory::Fund, // Treasury yields use Fund like economy view
+        "crypto_majors" => AssetCategory::Crypto,
+        "custom" => AssetCategory::Equity, // default; infer_category may override
+        _ => AssetCategory::Equity,
+    }
+}
+
+/// Collect all symbols that need pricing: portfolio positions + watchlist + tracked universe.
 fn collect_symbols(
     backend: &BackendConnection,
     config: &Config,
@@ -197,6 +210,22 @@ fn collect_symbols(
     for (symbol, _name) in crate::commands::sector::SECTOR_ETFS {
         seen.entry(symbol.to_string())
             .or_insert(AssetCategory::Equity);
+    }
+
+    // Tracked universe symbols from config
+    for group_name in crate::config::TrackedUniverse::group_names() {
+        if let Some(symbols) = config.tracked_universe.group(group_name) {
+            let cat = category_for_universe_group(group_name);
+            for sym in symbols {
+                // For custom group, try to infer category from the symbol itself
+                let effective_cat = if *group_name == "custom" {
+                    crate::models::asset_names::infer_category(sym)
+                } else {
+                    cat
+                };
+                seen.entry(sym.clone()).or_insert(effective_cat);
+            }
+        }
     }
 
     Ok(seen.into_iter().collect())
