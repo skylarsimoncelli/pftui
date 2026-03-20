@@ -144,6 +144,7 @@ fn parse_price_response(
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
+                    previous_close: None,
             });
         }
     }

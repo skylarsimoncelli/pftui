@@ -34,10 +34,16 @@ struct Mover {
 /// The new logic walks backwards through history to find the last *prior* trading
 /// session close, skipping any records that share today's date or that duplicate
 /// the current cached price on adjacent dates.
+///
+/// Bug fix (2026-03-20): Added `cached_previous_close` fallback. When price history
+/// is empty or stale (e.g. during extreme market moves before history refresh), the
+/// function now falls back to Yahoo's `regularMarketPreviousClose` stored in the
+/// price cache. This prevents symbols from being silently skipped during crashes.
 fn compute_change_pct(
     backend: &BackendConnection,
     symbol: &str,
     current_price: Option<Decimal>,
+    cached_previous_close: Option<Decimal>,
 ) -> Option<Decimal> {
     use chrono::Utc;
 
@@ -45,21 +51,24 @@ fn compute_change_pct(
 
     let today = Utc::now().date_naive();
     // Fetch more history to survive multi-day stale-close duplication (weekends, holidays).
-    let history = get_history_backend(backend, symbol, 10).ok()?;
-    let prev_close = previous_close_from_history(&history, today, current).or_else(|| {
-        // Fallback: explicit yesterday lookup
-        let yesterday = today - chrono::Duration::days(1);
-        let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
-        let price = get_price_at_date_backend(backend, symbol, &yesterday_str)
-            .ok()
-            .flatten()?;
-        // Only use fallback if it differs from current (same stale-close guard)
-        if price != current {
-            Some(price)
-        } else {
-            None
-        }
-    })?;
+    let history = get_history_backend(backend, symbol, 10).ok().unwrap_or_default();
+    let prev_close = previous_close_from_history(&history, today, current)
+        .or_else(|| {
+            // Fallback: explicit yesterday lookup
+            let yesterday = today - chrono::Duration::days(1);
+            let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
+            let price = get_price_at_date_backend(backend, symbol, &yesterday_str)
+                .ok()
+                .flatten()?;
+            // Only use fallback if it differs from current (same stale-close guard)
+            if price != current {
+                Some(price)
+            } else {
+                None
+            }
+        })
+        .or(cached_previous_close); // Final fallback: Yahoo's regularMarketPreviousClose
+    let prev_close = prev_close?;
     if prev_close == dec!(0) {
         return None;
     }
@@ -211,40 +220,56 @@ pub fn run(
         return Ok(());
     }
 
-    // Build price map for display
+    // Build price map for display (includes previous_close from Yahoo)
     let cached = get_all_cached_prices_backend(backend)?;
     let price_map: std::collections::HashMap<String, Decimal> =
-        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
+        cached.iter().map(|q| (q.symbol.clone(), q.price)).collect();
+    let prev_close_map: std::collections::HashMap<String, Decimal> = cached
+        .iter()
+        .filter_map(|q| q.previous_close.map(|pc| (q.symbol.clone(), pc)))
+        .collect();
 
     let csym = crate::config::currency_symbol(&config.base_currency);
 
     // Compute movers
     let mut movers: Vec<Mover> = Vec::new();
+    let mut skipped: Vec<serde_json::Value> = Vec::new();
     for (sym, cat, source) in &symbols {
         let current_price = price_map.get(sym).copied();
+        let cached_prev_close = prev_close_map.get(sym).copied();
 
-        if let Some(pct) = compute_change_pct(backend, sym, current_price) {
-            let abs_pct = if pct < dec!(0) { -pct } else { pct };
-            if abs_pct >= threshold_pct {
-                let name = resolve_name(sym);
-                let display_name = if name.is_empty() { sym.clone() } else { name };
-                let price_str = match current_price {
-                    Some(p) => format!("{}{}", csym, format_price(p)),
-                    None => "N/A".to_string(),
-                };
-                let f: f64 = pct.to_string().parse().unwrap_or(0.0);
-                let change_str = format!("{:+.2}%", f);
+        match compute_change_pct(backend, sym, current_price, cached_prev_close) {
+            Some(pct) => {
+                let abs_pct = if pct < dec!(0) { -pct } else { pct };
+                if abs_pct >= threshold_pct {
+                    let name = resolve_name(sym);
+                    let display_name = if name.is_empty() { sym.clone() } else { name };
+                    let price_str = match current_price {
+                        Some(p) => format!("{}{}", csym, format_price(p)),
+                        None => "N/A".to_string(),
+                    };
+                    let f: f64 = pct.to_string().parse().unwrap_or(0.0);
+                    let change_str = format!("{:+.2}%", f);
 
-                movers.push(Mover {
-                    symbol: sym.clone(),
-                    name: display_name,
-                    category: cat.to_string(),
-                    source,
-                    price: price_str,
-                    change_pct: pct,
-                    change_str,
-                });
+                    movers.push(Mover {
+                        symbol: sym.clone(),
+                        name: display_name,
+                        category: cat.to_string(),
+                        source,
+                        price: price_str,
+                        change_pct: pct,
+                        change_str,
+                    });
+                }
             }
+            None if current_price.is_some() => {
+                // Symbol has a price but no computable change — no history and no previous_close
+                skipped.push(serde_json::json!({
+                    "symbol": sym,
+                    "reason": "no previous close available (no history, no cached previous_close)"
+                }));
+            }
+            None => {} // No current price — expected for unfetched symbols
         }
     }
 
@@ -301,13 +326,17 @@ pub fn run(
                 obj
             })
             .collect();
-        let output = serde_json::json!({
+        let mut output = serde_json::json!({
             "threshold_pct": threshold_pct.to_string().parse::<f64>().unwrap_or(3.0),
             "mode": if overnight { "overnight" } else { "daily" },
             "total_scanned": symbols.len(),
             "movers_count": movers.len(),
             "movers": entries,
         });
+        if !skipped.is_empty() {
+            output["skipped"] = serde_json::json!(skipped);
+            output["skipped_count"] = serde_json::json!(skipped.len());
+        }
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -471,6 +500,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
+                    previous_close: None,
             },
         )
         .unwrap();
@@ -734,7 +764,7 @@ mod tests {
 
         // Current price is 210, previous close was 200 → 5% gain
         let backend = to_backend(conn);
-        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210))).unwrap();
+        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210)), None).unwrap();
         assert_eq!(pct, dec!(5));
     }
 
@@ -761,7 +791,7 @@ mod tests {
 
         // Previous close was 0 → should return None (can't compute % change)
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(100))).is_none());
+        assert!(compute_change_pct(&backend, "AAPL", Some(dec!(100)), None).is_none());
     }
 
     #[test]
@@ -787,7 +817,7 @@ mod tests {
 
         // No current price provided → should return None
         let backend = to_backend(conn);
-        assert!(compute_change_pct(&backend, "AAPL", None).is_none());
+        assert!(compute_change_pct(&backend, "AAPL", None, None).is_none());
     }
 
     #[test]
@@ -943,5 +973,123 @@ mod tests {
             previous_close_from_history(&history, today, dec!(100)),
             Some(dec!(100))
         );
+    }
+
+    #[test]
+    fn change_pct_uses_cached_previous_close_when_no_history() {
+        // P0 fix: symbol has current price + cached previous_close but no history
+        // → should compute change using the cached previous_close
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        // No history at all — but we have a cached previous_close
+        let pct = compute_change_pct(&backend, "GC=F", Some(dec!(2700)), Some(dec!(3000)));
+        assert!(pct.is_some());
+        let pct = pct.unwrap();
+        assert_eq!(pct, dec!(-10)); // (2700 - 3000) / 3000 * 100 = -10%
+    }
+
+    #[test]
+    fn change_pct_none_when_no_history_and_no_cached_previous_close() {
+        // Symbol has current price but no previous_close and no history
+        // → should return None (symbol appears in skipped list)
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        assert!(compute_change_pct(&backend, "GC=F", Some(dec!(2700)), None).is_none());
+    }
+
+    #[test]
+    fn change_pct_prefers_history_over_cached_previous_close() {
+        // When history is available, it should be used over cached previous_close
+        let conn = crate::db::open_in_memory();
+        use crate::db::price_history::upsert_history;
+        use crate::models::price::HistoryRecord;
+
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[HistoryRecord {
+                date: "2026-03-02".to_string(),
+                close: dec!(200),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+        // History says 200, cached says 195 — should use history (200)
+        let pct = compute_change_pct(&backend, "AAPL", Some(dec!(210)), Some(dec!(195))).unwrap();
+        assert_eq!(pct, dec!(5)); // (210 - 200) / 200 * 100 = 5%
+    }
+
+    #[test]
+    fn movers_json_includes_skipped() {
+        // Test that --json mode includes skipped symbols diagnostic
+        let conn = crate::db::open_in_memory();
+        let config = crate::config::Config::default();
+        use crate::db::price_cache::upsert_price;
+        use crate::db::watchlist::add_to_watchlist;
+        use crate::models::price::PriceQuote;
+
+        // Add a symbol with a cached price but no history and no previous_close
+        add_to_watchlist(&conn, "GC=F", AssetCategory::Commodity).unwrap();
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "GC=F".to_string(),
+                price: dec!(2700),
+                currency: "USD".to_string(),
+                source: "yahoo".to_string(),
+                fetched_at: "2026-03-20T12:00:00Z".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None, // No previous_close
+            },
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+        // Should succeed without panic — GC=F will be in skipped list
+        let result = run(&backend, &config, None, false, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn movers_uses_cached_previous_close_for_extreme_moves() {
+        // The actual P0 bug scenario: gold crashes but has no history, only
+        // cached previous_close from Yahoo's regularMarketPreviousClose
+        let conn = crate::db::open_in_memory();
+        let config = crate::config::Config::default();
+        use crate::db::price_cache::upsert_price;
+        use crate::db::watchlist::add_to_watchlist;
+        use crate::models::price::PriceQuote;
+
+        add_to_watchlist(&conn, "GC=F", AssetCategory::Commodity).unwrap();
+        upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "GC=F".to_string(),
+                price: dec!(2700),
+                currency: "USD".to_string(),
+                source: "yahoo".to_string(),
+                fetched_at: "2026-03-20T12:00:00Z".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: Some(dec!(3000)), // Previous close from Yahoo
+            },
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+        // Should show GC=F as a mover (-10% exceeds 3% threshold)
+        let result = run(&backend, &config, None, false, false);
+        assert!(result.is_ok());
     }
 }

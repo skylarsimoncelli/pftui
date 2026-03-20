@@ -535,6 +535,7 @@ async fn fetch_all_prices(
                     pre_market_price: None,
                     post_market_price: None,
                     post_market_change_percent: None,
+                    previous_close: None,
                 });
             }
             AssetCategory::Crypto => crypto_symbols.push(sym.clone()),

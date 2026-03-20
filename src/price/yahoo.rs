@@ -132,6 +132,7 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
                     pre_market_price: None,
                     post_market_price: None,
                     post_market_change_percent: None,
+                    previous_close: None,
                 });
             }
             Err(_) => {
@@ -182,14 +183,14 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
                     pre_market_price: None,
                     post_market_price: None,
                     post_market_change_percent: None,
+                    previous_close: None,
                 });
             }
         }
     }
 
-    // Fetch extended hours data for US equities
-    let (pre_market_price, post_market_price, post_market_change_percent) = 
-        fetch_extended_hours(&yahoo_sym, &provider).await;
+    // Fetch chart extras (previous close, pre/post market) from Yahoo chart API
+    let extras = fetch_chart_extras(&yahoo_sym, &provider).await;
 
     Ok(PriceQuote {
         symbol: symbol.to_string(),
@@ -197,24 +198,36 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
         currency: "USD".to_string(),
         source: "yahoo".to_string(),
         fetched_at: now,
-        pre_market_price,
-        post_market_price,
-        post_market_change_percent,
+        pre_market_price: extras.pre_market_price,
+        post_market_price: extras.post_market_price,
+        post_market_change_percent: extras.post_market_change_percent,
+        previous_close: extras.previous_close,
     })
 }
 
-/// Fetch pre-market and post-market prices using Yahoo Finance v8 quote API.
-/// Returns (pre_market, post_market, post_change_pct).
-async fn fetch_extended_hours(
+/// Extra fields from the Yahoo Finance v8 chart API.
+struct ChartExtras {
+    pre_market_price: Option<Decimal>,
+    post_market_price: Option<Decimal>,
+    post_market_change_percent: Option<Decimal>,
+    previous_close: Option<Decimal>,
+}
+
+/// Fetch chart extras (previous close, pre/post market) from Yahoo Finance v8 API.
+/// `previous_close` (chartPreviousClose) is available for ALL symbols.
+/// Pre/post market prices are only meaningful for US equities.
+async fn fetch_chart_extras(
     symbol: &str,
     _provider: &yahoo::YahooConnector,
-) -> (Option<Decimal>, Option<Decimal>, Option<Decimal>) {
-    // Only attempt extended hours for US equities (no .TO, no =X, etc.)
-    if symbol.contains('.') || symbol.contains('=') {
-        return (None, None, None);
-    }
+) -> ChartExtras {
+    let default = ChartExtras {
+        pre_market_price: None,
+        post_market_price: None,
+        post_market_change_percent: None,
+        previous_close: None,
+    };
 
-    // Use Yahoo Finance v8 quote API which includes extended hours
+    // Use Yahoo Finance v8 chart API which includes extended hours + previous close
     let url = format!(
         "https://query1.finance.yahoo.com/v8/finance/chart/{}?region=US&includePrePost=true&interval=1d&range=1d",
         symbol
@@ -225,48 +238,75 @@ async fn fetch_extended_hours(
         .build()
     {
         Ok(c) => c,
-        Err(_) => return (None, None, None),
+        Err(_) => return default,
     };
 
     let resp = match client.get(&url).send().await {
         Ok(r) => r,
-        Err(_) => return (None, None, None),
+        Err(_) => return default,
     };
 
     if !resp.status().is_success() {
-        return (None, None, None);
+        return default;
     }
 
     let json: serde_json::Value = match resp.json().await {
         Ok(j) => j,
-        Err(_) => return (None, None, None),
+        Err(_) => return default,
     };
-    
-    // Extract post-market price and change from the meta section
+
+    // Extract fields from the meta section
     let meta = match json.get("chart")
         .and_then(|c| c.get("result"))
         .and_then(|r| r.get(0))
         .and_then(|r0| r0.get("meta"))
     {
         Some(m) => m,
-        None => return (None, None, None),
+        None => return default,
     };
-    
-    let post_market_price = meta.get("postMarketPrice")
-        .and_then(|v| v.as_f64())
-        .and_then(|p| Decimal::try_from(p).ok())
-        .filter(|&p| p > dec!(0));
-    
-    let post_market_change_percent = meta.get("postMarketChangePercent")
-        .and_then(|v| v.as_f64())
-        .and_then(|p| Decimal::try_from(p).ok());
 
-    let pre_market_price = meta.get("preMarketPrice")
+    // previousClose / chartPreviousClose — available for all symbols
+    let previous_close = meta.get("chartPreviousClose")
+        .or_else(|| meta.get("previousClose"))
         .and_then(|v| v.as_f64())
         .and_then(|p| Decimal::try_from(p).ok())
         .filter(|&p| p > dec!(0));
 
-    (pre_market_price, post_market_price, post_market_change_percent)
+    // Pre/post market — only meaningful for US equities (no .TO, no =X, etc.)
+    let is_us_equity = !symbol.contains('.') && !symbol.contains('=');
+
+    let post_market_price = if is_us_equity {
+        meta.get("postMarketPrice")
+            .and_then(|v| v.as_f64())
+            .and_then(|p| Decimal::try_from(p).ok())
+            .filter(|&p| p > dec!(0))
+    } else {
+        None
+    };
+
+    let post_market_change_percent = if is_us_equity {
+        meta.get("postMarketChangePercent")
+            .and_then(|v| v.as_f64())
+            .and_then(|p| Decimal::try_from(p).ok())
+    } else {
+        None
+    };
+
+    let pre_market_price = if is_us_equity {
+        meta.get("preMarketPrice")
+            .and_then(|v| v.as_f64())
+            .and_then(|p| Decimal::try_from(p).ok())
+            .filter(|&p| p > dec!(0))
+    } else {
+        None
+    };
+
+    ChartExtras {
+        pre_market_price,
+        post_market_price,
+        post_market_change_percent,
+        previous_close,
+    }
 }
 
 pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>> {

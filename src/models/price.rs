@@ -17,6 +17,9 @@ pub struct PriceQuote {
     /// Post-market change percentage (if available)
     #[serde(default)]
     pub post_market_change_percent: Option<Decimal>,
+    /// Previous trading session close (from Yahoo `regularMarketPreviousClose`)
+    #[serde(default)]
+    pub previous_close: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

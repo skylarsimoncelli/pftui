@@ -1002,5 +1002,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    // Migration: add previous_close to price_cache (movers P0 fix)
+    let has_previous_close: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('price_cache') WHERE name = 'previous_close'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_previous_close {
+        conn.execute_batch("ALTER TABLE price_cache ADD COLUMN previous_close TEXT")?;
+    }
+
     Ok(())
 }
