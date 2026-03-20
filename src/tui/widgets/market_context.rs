@@ -167,7 +167,13 @@ fn compute_daily_change(pos: &Position, today: &str, app: &App) -> Option<Decima
         return None;
     }
 
-    Some(((current - close) / close) * dec!(100))
+    let pct = ((current - close) / close) * dec!(100);
+    // Plausibility guard: reject anomalous changes from corrupt price data
+    if crate::models::price::is_plausible_daily_change(pct) {
+        Some(pct)
+    } else {
+        None
+    }
 }
 
 fn compute_watchlist_change(symbol: &str, current: Decimal, today: &str, app: &App) -> Option<Decimal> {
@@ -183,7 +189,13 @@ fn compute_watchlist_change(symbol: &str, current: Decimal, today: &str, app: &A
         return None;
     }
 
-    Some(((current - close) / close) * dec!(100))
+    let pct = ((current - close) / close) * dec!(100);
+    // Plausibility guard: reject anomalous changes from corrupt price data
+    if crate::models::price::is_plausible_daily_change(pct) {
+        Some(pct)
+    } else {
+        None
+    }
 }
 
 /// Render related macro indicators based on selected position category.

@@ -1241,7 +1241,13 @@ fn fmt_currency(value: Decimal, dp: u32, base: &str) -> String {
 /// Compute percent change between two values.
 fn pct_change(current: Decimal, previous: Decimal) -> Option<Decimal> {
     if previous > dec!(0) {
-        Some(((current - previous) / previous) * dec!(100))
+        let pct = ((current - previous) / previous) * dec!(100);
+        // Plausibility guard: reject anomalous changes from corrupt price data
+        if crate::models::price::is_plausible_daily_change(pct) {
+            Some(pct)
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -2896,6 +2902,20 @@ mod tests {
     fn pct_change_zero_base() {
         let result = pct_change(dec!(100), dec!(0));
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn pct_change_rejects_anomalous_values() {
+        // Corrupt previous close near zero → absurd percentage (e.g. 224,632%)
+        let result = pct_change(dec!(84000), dec!(37));
+        assert_eq!(result, None, "Should reject >500% change as implausible data");
+    }
+
+    #[test]
+    fn pct_change_allows_legitimate_extreme() {
+        // -50% crash is legitimate
+        let result = pct_change(dec!(50), dec!(100));
+        assert_eq!(result, Some(dec!(-50)));
     }
 
     #[test]

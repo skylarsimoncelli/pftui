@@ -56,13 +56,16 @@ fn compute_movers(app: &App) -> Vec<(AssetCategory, Mover)> {
                 if prev_close > dec!(0) {
                     let change_pct =
                         ((current_price - prev_close) / prev_close) * dec!(100);
-                    result.push((
-                        pos.category,
-                        Mover {
-                            symbol: pos.symbol.clone(),
-                            change_pct,
-                        },
-                    ));
+                    // Plausibility guard: skip anomalous changes from corrupt price data
+                    if crate::models::price::is_plausible_daily_change(change_pct) {
+                        result.push((
+                            pos.category,
+                            Mover {
+                                symbol: pos.symbol.clone(),
+                                change_pct,
+                            },
+                        ));
+                    }
                 }
             }
         }

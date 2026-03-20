@@ -177,7 +177,13 @@ fn ticker_change_pct(app: &App, yahoo_symbol: &str) -> Option<Decimal> {
     if prev.close == dec!(0) {
         return None;
     }
-    Some((latest.close - prev.close) / prev.close * dec!(100))
+    let pct = (latest.close - prev.close) / prev.close * dec!(100);
+    // Plausibility guard: reject anomalous changes from corrupt price data
+    if crate::models::price::is_plausible_daily_change(pct) {
+        Some(pct)
+    } else {
+        None
+    }
 }
 
 /// Build the plain-text ticker string for measuring length.
