@@ -97,3 +97,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-20,alert-investigator,95,85,data_quality,P0,"Critical BTC data error detected: 227,837% impossible daily change. Alert investigation system functioned perfectly to identify this serious data integrity issue before user briefing. Real market context (Iran war, oil 20) properly identified via news analysis."
 2026-03-20,alert-investigator,85,80,enhancement,P2,Alert investigation workflow effective. Portfolio brief and movers commands excellent. News command comprehensive. Minor enhancement: alerts ack could support multiple IDs in single command for efficiency.
 2026-03-20,alert-investigator,85,80,monitoring,low,Routine run - no active alerts. Alert system properly acknowledged all recent scan changes.
+2026-03-20,alert-investigator,90,88,data-access,minor,"Alert system operational, comprehensive market data access, minor CLI validation issues with categories"
