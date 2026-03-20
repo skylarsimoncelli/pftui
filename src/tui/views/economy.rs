@@ -300,7 +300,7 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::from(""));
     if let Some(fed) = econ.get("fed_funds_rate") {
         lines.push(Line::from(Span::styled(
-            format!("Fed Funds: {:.2}%  (Brave)", fed.value),
+            format!("Fed Funds: {:.2}%  ({})", fed.value, fed.source),
             Style::default().fg(t.text_muted).italic(),
         )));
     } else {

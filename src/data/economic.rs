@@ -4,6 +4,52 @@ use std::str::FromStr;
 
 use crate::data::{bls, brave};
 
+/// Source of an economic data reading, ordered by authority.
+/// Higher-authority sources are preferred during reconciliation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataSource {
+    /// FRED (Federal Reserve Economic Data) — most authoritative
+    Fred,
+    /// Bureau of Labor Statistics
+    Bls,
+    /// Brave Search text extraction — least reliable
+    Brave,
+}
+
+impl DataSource {
+    /// Priority rank: lower = more authoritative.
+    pub fn priority(&self) -> u8 {
+        match self {
+            DataSource::Fred => 0,
+            DataSource::Bls => 1,
+            DataSource::Brave => 2,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            DataSource::Fred => "fred",
+            DataSource::Bls => "bls",
+            DataSource::Brave => "brave",
+        }
+    }
+
+    /// Confidence level for values from this source.
+    pub fn confidence(&self) -> &'static str {
+        match self {
+            DataSource::Fred => "high",
+            DataSource::Bls => "high",
+            DataSource::Brave => "low",
+        }
+    }
+}
+
+impl std::fmt::Display for DataSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EconomicReading {
     pub indicator: String,
@@ -11,6 +57,96 @@ pub struct EconomicReading {
     pub previous: Option<Decimal>,
     pub change: Option<Decimal>,
     pub source_url: String,
+    pub source: DataSource,
+}
+
+/// A discrepancy found between two sources for the same indicator.
+#[derive(Debug, Clone)]
+pub struct SourceDiscrepancy {
+    pub indicator: String,
+    pub preferred_source: DataSource,
+    pub preferred_value: Decimal,
+    pub other_source: DataSource,
+    pub other_value: Decimal,
+    /// Absolute percentage difference between values.
+    pub diff_pct: Decimal,
+}
+
+/// Maps FRED series IDs to economy indicator names.
+/// Used for cross-source reconciliation.
+pub fn fred_to_indicator(series_id: &str) -> Option<&'static str> {
+    match series_id {
+        "FEDFUNDS" => Some("fed_funds_rate"),
+        "UNRATE" => Some("unemployment_rate"),
+        "PAYEMS" => Some("nfp"),
+        "NAPM" => Some("pmi_manufacturing"),
+        "ICSA" => Some("initial_jobless_claims"),
+        // CPIAUCSL is an index, not a YoY rate, so not directly comparable to Brave "cpi"
+        // PPIACO is also an index, not a YoY rate
+        _ => None,
+    }
+}
+
+/// Reconcile readings from multiple sources for the same indicators.
+///
+/// When multiple sources provide the same indicator, this function:
+/// 1. Groups readings by indicator name
+/// 2. Picks the most authoritative source (FRED > BLS > Brave)
+/// 3. Returns the winning readings along with any discrepancies found
+///
+/// `fred_readings` should be pre-mapped from FRED series IDs to indicator names.
+pub fn reconcile(
+    readings: Vec<EconomicReading>,
+) -> (Vec<EconomicReading>, Vec<SourceDiscrepancy>) {
+    use std::collections::HashMap;
+
+    let mut by_indicator: HashMap<String, Vec<EconomicReading>> = HashMap::new();
+    for r in readings {
+        by_indicator
+            .entry(r.indicator.clone())
+            .or_default()
+            .push(r);
+    }
+
+    let mut winners = Vec::new();
+    let mut discrepancies = Vec::new();
+
+    for (indicator, mut sources) in by_indicator {
+        // Sort by source priority (lower = more authoritative)
+        sources.sort_by_key(|r| r.source.priority());
+
+        let best = sources[0].clone();
+
+        // Check for discrepancies between sources
+        for other in &sources[1..] {
+            let denominator = best.value.abs();
+            let diff = if denominator > Decimal::ZERO {
+                let diff_abs = (best.value - other.value).abs();
+                (diff_abs * Decimal::from(100)) / denominator
+            } else {
+                Decimal::ZERO
+            };
+            // Flag if difference > 0.5% (significant enough to note)
+            if diff > Decimal::from_str("0.5").unwrap_or(Decimal::ONE) {
+                discrepancies.push(SourceDiscrepancy {
+                    indicator: indicator.clone(),
+                    preferred_source: best.source.clone(),
+                    preferred_value: best.value,
+                    other_source: other.source.clone(),
+                    other_value: other.value,
+                    diff_pct: diff.round_dp(2),
+                });
+            }
+        }
+
+        winners.push(best);
+    }
+
+    // Sort by indicator name for consistent output
+    winners.sort_by(|a, b| a.indicator.cmp(&b.indicator));
+    discrepancies.sort_by(|a, b| a.indicator.cmp(&b.indicator));
+
+    (winners, discrepancies)
 }
 
 const ECONOMIC_QUERIES: &[(&str, &str)] = &[
@@ -49,6 +185,7 @@ pub async fn fetch_via_brave(key: &str) -> Result<Vec<EconomicReading>> {
                 previous: None,
                 change: None,
                 source_url: results[0].url.clone(),
+                source: DataSource::Brave,
             });
         }
     }
@@ -96,6 +233,7 @@ fn reading(indicator: &str, value: Decimal) -> EconomicReading {
         previous: None,
         change: None,
         source_url: "https://api.bls.gov/publicAPI/v1/timeseries/data/".to_string(),
+        source: DataSource::Bls,
     }
 }
 
@@ -173,6 +311,17 @@ mod tests {
     use super::*;
     use rust_decimal_macros::dec;
 
+    fn make_reading(indicator: &str, value: Decimal, source: DataSource) -> EconomicReading {
+        EconomicReading {
+            indicator: indicator.to_string(),
+            value,
+            previous: None,
+            change: None,
+            source_url: format!("https://{}.example.com", source.name()),
+            source,
+        }
+    }
+
     #[test]
     fn parses_percent_like() {
         assert_eq!(extract_percent_like("CPI rose 3.2% year-over-year"), Some(dec!(3.2)));
@@ -188,7 +337,6 @@ mod tests {
 
     #[test]
     fn plausibility_rejects_year_as_pmi() {
-        // PMI must be 0-100; "2025" (a year) should be rejected
         assert!(!is_plausible("pmi_manufacturing", dec!(2025)));
         assert!(!is_plausible("pmi_services", dec!(2025)));
     }
@@ -201,7 +349,6 @@ mod tests {
 
     #[test]
     fn plausibility_rejects_tiny_nfp() {
-        // "19" is not a plausible NFP reading (thousands)
         assert!(!is_plausible("nfp", dec!(19)));
     }
 
@@ -213,7 +360,6 @@ mod tests {
 
     #[test]
     fn plausibility_rejects_low_jobless_claims() {
-        // 8000 is implausibly low for initial jobless claims (typically 150K+)
         assert!(!is_plausible("initial_jobless_claims", dec!(8000)));
         assert!(!is_plausible("initial_jobless_claims", dec!(500)));
         assert!(!is_plausible("initial_jobless_claims", dec!(49999)));
@@ -241,13 +387,137 @@ mod tests {
 
     #[test]
     fn extract_value_filters_implausible() {
-        // "economy grew 2025 percent" — 2025 extracted as PMI → rejected
         assert!(extract_value("pmi_manufacturing", "ISM PMI fell in 2025 outlook uncertain").is_none());
-        // Valid extraction
         assert_eq!(
             extract_value("cpi", "CPI rose 3.2% year-over-year"),
             Some(dec!(3.2))
         );
+    }
+
+    // ─── Reconciliation tests ───
+
+    #[test]
+    fn data_source_priority_ordering() {
+        assert!(DataSource::Fred.priority() < DataSource::Bls.priority());
+        assert!(DataSource::Bls.priority() < DataSource::Brave.priority());
+    }
+
+    #[test]
+    fn data_source_names() {
+        assert_eq!(DataSource::Fred.name(), "fred");
+        assert_eq!(DataSource::Bls.name(), "bls");
+        assert_eq!(DataSource::Brave.name(), "brave");
+    }
+
+    #[test]
+    fn data_source_confidence() {
+        assert_eq!(DataSource::Fred.confidence(), "high");
+        assert_eq!(DataSource::Bls.confidence(), "high");
+        assert_eq!(DataSource::Brave.confidence(), "low");
+    }
+
+    #[test]
+    fn reconcile_prefers_fred_over_brave() {
+        let readings = vec![
+            make_reading("fed_funds_rate", dec!(4.33), DataSource::Brave),
+            make_reading("fed_funds_rate", dec!(4.50), DataSource::Fred),
+        ];
+        let (winners, discrepancies) = reconcile(readings);
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].source, DataSource::Fred);
+        assert_eq!(winners[0].value, dec!(4.50));
+        // Should flag the discrepancy
+        assert_eq!(discrepancies.len(), 1);
+        assert_eq!(discrepancies[0].preferred_value, dec!(4.50));
+        assert_eq!(discrepancies[0].other_value, dec!(4.33));
+    }
+
+    #[test]
+    fn reconcile_prefers_fred_over_bls() {
+        let readings = vec![
+            make_reading("unemployment_rate", dec!(4.2), DataSource::Bls),
+            make_reading("unemployment_rate", dec!(4.1), DataSource::Fred),
+        ];
+        let (winners, discrepancies) = reconcile(readings);
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].source, DataSource::Fred);
+        assert_eq!(winners[0].value, dec!(4.1));
+        // ~2.4% difference — should be flagged
+        assert_eq!(discrepancies.len(), 1);
+    }
+
+    #[test]
+    fn reconcile_prefers_bls_over_brave() {
+        let readings = vec![
+            make_reading("cpi", dec!(3.1), DataSource::Brave),
+            make_reading("cpi", dec!(3.2), DataSource::Bls),
+        ];
+        let (winners, _) = reconcile(readings);
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].source, DataSource::Bls);
+        assert_eq!(winners[0].value, dec!(3.2));
+    }
+
+    #[test]
+    fn reconcile_no_discrepancy_when_values_match() {
+        let readings = vec![
+            make_reading("fed_funds_rate", dec!(4.50), DataSource::Brave),
+            make_reading("fed_funds_rate", dec!(4.50), DataSource::Fred),
+        ];
+        let (winners, discrepancies) = reconcile(readings);
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].source, DataSource::Fred);
+        // 0% difference — no discrepancy
+        assert!(discrepancies.is_empty());
+    }
+
+    #[test]
+    fn reconcile_no_discrepancy_under_threshold() {
+        // 0.22% difference — below 0.5% threshold
+        let readings = vec![
+            make_reading("fed_funds_rate", dec!(4.50), DataSource::Fred),
+            make_reading("fed_funds_rate", dec!(4.51), DataSource::Brave),
+        ];
+        let (_, discrepancies) = reconcile(readings);
+        assert!(discrepancies.is_empty());
+    }
+
+    #[test]
+    fn reconcile_handles_single_source() {
+        let readings = vec![
+            make_reading("cpi", dec!(3.2), DataSource::Brave),
+            make_reading("ppi", dec!(2.1), DataSource::Bls),
+        ];
+        let (winners, discrepancies) = reconcile(readings);
+        assert_eq!(winners.len(), 2);
+        assert!(discrepancies.is_empty());
+    }
+
+    #[test]
+    fn reconcile_handles_three_sources() {
+        let readings = vec![
+            make_reading("fed_funds_rate", dec!(4.33), DataSource::Brave),
+            make_reading("fed_funds_rate", dec!(4.40), DataSource::Bls),
+            make_reading("fed_funds_rate", dec!(4.50), DataSource::Fred),
+        ];
+        let (winners, discrepancies) = reconcile(readings);
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].source, DataSource::Fred);
+        assert_eq!(winners[0].value, dec!(4.50));
+        // Two discrepancies: FRED vs BLS, FRED vs Brave
+        assert_eq!(discrepancies.len(), 2);
+    }
+
+    #[test]
+    fn fred_to_indicator_mappings() {
+        assert_eq!(fred_to_indicator("FEDFUNDS"), Some("fed_funds_rate"));
+        assert_eq!(fred_to_indicator("UNRATE"), Some("unemployment_rate"));
+        assert_eq!(fred_to_indicator("PAYEMS"), Some("nfp"));
+        assert_eq!(fred_to_indicator("NAPM"), Some("pmi_manufacturing"));
+        assert_eq!(fred_to_indicator("ICSA"), Some("initial_jobless_claims"));
+        // CPI index is not directly comparable to CPI YoY rate
+        assert_eq!(fred_to_indicator("CPIAUCSL"), None);
+        assert_eq!(fred_to_indicator("BOGUS"), None);
     }
 }
 
