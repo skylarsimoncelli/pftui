@@ -16,11 +16,12 @@ _(none)_
 >
 > Files: `src/commands/news.rs` or equivalent news command handler
 
-### [Feedback] Economy data inconsistencies and unclear units
+### [Feedback] Economy data inconsistencies and unclear units — PARTIALLY FIXED
 
-> Medium-Timeframe Analyst (Mar 20, 70/75): `pftui data economy` shows fed_funds_rate=2% vs FedWatch showing 3.5-3.75% hold probability, NFP=19 with unclear units. Economy data values need source attribution, unit labels, and consistency checks against other pftui data sources.
+> ~~Medium-Timeframe Analyst (Mar 20, 70/75): NFP=19, PMI=2025, claims=8000 — garbage values from Brave Search extraction.~~
+> Fixed: Added plausibility validation (indicator-specific bounds) and unit labels in JSON output (PR #67). Remaining: fed_funds_rate discrepancy vs FedWatch is a different-source issue (Brave vs FRED), not validation. Consider cross-source reconciliation as follow-up.
 >
-> Files: `src/commands/economy.rs`, `src/data/fred.rs`
+> Files: `src/commands/economy.rs`, `src/data/economic.rs`
 
 ## P2 — Coverage And Agent Consumption
 

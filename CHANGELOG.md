@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — fix: Economy data plausibility validation and unit labels (P1)
+
+- What: Added `is_plausible()` validation with indicator-specific bounds to reject garbage values from Brave Search text extraction (PMI=2025, NFP=19, claims=8000). Added `unit` and `display_name` fields to economy JSON output so agents can interpret values correctly.
+- Why: Brave Search snippet extraction was producing obviously wrong values (extracting years as PMI readings, random small numbers as NFP, etc.). The plausibility filter catches the most egregious errors while FRED API handles authoritative data separately.
+- Files: `src/commands/economy.rs`, `src/data/economic.rs`
+- Tests: `cargo test` — 1449 pass (+11 new plausibility tests); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #67
+
 ### 2026-03-20 — fix: Movers scanner returning 0% during stale-close duplication (P0)
 
 - What: Fixed critical bug where `analytics movers` (CLI) and TUI top-movers widget returned 0% change for all symbols. Root cause: Yahoo Finance duplicates the same closing price across consecutive history dates during after-hours fetches (e.g. 4 AM UTC). The old `previous_close_from_history` used the penultimate record, which had the same close as the cached spot → 0% for everything. New logic walks backwards through history, skipping records whose close matches the current cached price (stale duplicates), and returns the first genuinely different close. Falls back to oldest candidate for truly flat markets (correct 0% change). Also expanded history fetch from 5 to 10 records for better coverage across weekends/holidays.
