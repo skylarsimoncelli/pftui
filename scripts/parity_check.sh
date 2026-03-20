@@ -4,6 +4,16 @@ set -euo pipefail
 PFTUI_BIN="${PFTUI_BIN:-pftui}"
 POSTGRES_URL="${PFTUI_TEST_POSTGRES_URL:-${DATABASE_URL:-}}"
 
+# Safety: refuse to run against a production database.
+# The parity check TRUNCATES tables and imports test data — running against
+# a real database will destroy portfolio data.
+if [[ -n "$POSTGRES_URL" ]] && [[ "$POSTGRES_URL" != *"_test"* ]] && [[ "$POSTGRES_URL" != *"localhost:5432"* ]] && [[ "${PFTUI_PARITY_ALLOW_PROD:-}" != "1" ]]; then
+  echo "error: POSTGRES_URL does not look like a test database (missing '_test' in name)." >&2
+  echo "       This script TRUNCATES tables and imports test data. Do not run against production." >&2
+  echo "       Set PFTUI_PARITY_ALLOW_PROD=1 to override (dangerous)." >&2
+  exit 1
+fi
+
 if ! command -v "$PFTUI_BIN" >/dev/null 2>&1; then
   echo "error: pftui binary not found. Set PFTUI_BIN or install pftui." >&2
   exit 1
