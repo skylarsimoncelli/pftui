@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use rust_decimal::Decimal;
@@ -9,6 +9,7 @@ use rust_decimal_macros::dec;
 use crate::alerts::engine;
 use crate::analytics::levels as level_engine;
 use crate::analytics::technicals;
+use crate::commands::refresh_dag::{RefreshResult, SourceResult, SourceStatus};
 use crate::config::{Config, PortfolioMode};
 use crate::data::{
     bls, brave, calendar, comex, cot, economic, fedwatch, fred, fx, onchain, predictions, rss,
@@ -688,6 +689,13 @@ pub fn run(backend: &BackendConnection, config: &Config, notify: bool) -> Result
     run_with_output(backend, config, notify, true, &RefreshPlan::full())
 }
 
+/// Run refresh and output structured JSON metrics.
+pub fn run_json(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
+    let result = run_pipeline(backend, config, notify, false, &RefreshPlan::full())?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}
+
 pub fn run_quiet(backend: &BackendConnection, config: &Config, notify: bool) -> Result<()> {
     run_with_output(backend, config, notify, false, &RefreshPlan::full())
 }
@@ -708,7 +716,23 @@ fn run_with_output(
     verbose: bool,
     plan: &RefreshPlan,
 ) -> Result<()> {
+    let _result = run_pipeline(backend, config, notify, verbose, plan)?;
+    Ok(())
+}
+
+/// Core refresh pipeline that returns structured results.
+/// When `verbose` is true, prints human-readable output to stdout (existing behavior).
+/// Always returns a `RefreshResult` for programmatic consumption.
+fn run_pipeline(
+    backend: &BackendConnection,
+    config: &Config,
+    notify: bool,
+    verbose: bool,
+    plan: &RefreshPlan,
+) -> Result<RefreshResult> {
     let _lock = RefreshLock::acquire()?;
+    let pipeline_start = Instant::now();
+    let mut dag_result = RefreshResult::new();
 
     info_ln!(verbose, "Refreshing selected data sources...\n");
 
@@ -718,11 +742,206 @@ fn run_with_output(
 
     if plan.selected_task_names().is_empty() {
         info_ln!(verbose, "⊘ Refresh (no tasks due)");
-        return Ok(());
+        dag_result.finalize(pipeline_start.elapsed());
+        return Ok(dag_result);
     }
 
-    // 1. FX Rates
+    // ── DAG Layer 0: Independent data sources ──────────────────────────
+    // These sources have no dependency on each other. We determine
+    // freshness up front, then fetch concurrently via tokio::join!,
+    // then write results to the database sequentially.
+
+    let predictions_due = plan.predictions && predictions_need_refresh(backend).unwrap_or(true);
+    let fedwatch_due = plan.fedwatch && fedwatch_needs_refresh(backend).unwrap_or(true);
+    let rss_refresh = plan.news_rss && news_needs_refresh(backend).unwrap_or(true);
+    let brave_key = config
+        .brave_api_key
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let brave_refresh = if !plan.news_brave || brave_key.is_empty() {
+        false
+    } else {
+        brave_news_needs_refresh(backend).unwrap_or(true)
+    };
+    let sentiment_due = plan.sentiment && sentiment_needs_refresh(backend).unwrap_or(true);
+    let calendar_due = plan.calendar && calendar_needs_refresh(backend).unwrap_or(true);
+    let cot_due = plan.cot && cot_needs_refresh(backend).unwrap_or(true);
+    let bls_due = plan.bls && bls_needs_refresh(backend).unwrap_or(true);
+    let fred_api_key_str = config
+        .fred_api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    let fred_due = plan.fred
+        && fred_api_key_str.is_some()
+        && fred_needs_refresh(backend).unwrap_or(true);
+    let worldbank_due = plan.worldbank && worldbank_needs_refresh(backend).unwrap_or(true);
+    let comex_due = plan.comex && comex_needs_refresh(backend).unwrap_or(true);
+
+    // Build Brave news queries before entering async context (needs DB)
+    let brave_queries = if brave_refresh {
+        build_brave_news_queries(backend, config).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Capture FedWatch previous snapshot for validation
+    let fedwatch_previous = if fedwatch_due {
+        fedwatch_cache::get_latest_snapshot_backend(backend)
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
+    // ── Parallel async fetch for independent sources ───────────────────
+    // Network I/O runs concurrently via tokio::join!; DB writes are sequential.
+    let layer0_fetched = rt.block_on(async {
+        let predictions_fut = async {
+            if !predictions_due {
+                return None;
+            }
+            let start = Instant::now();
+            Some((predictions::fetch_polymarket_predictions().await, start.elapsed()))
+        };
+
+        let sentiment_fut = async {
+            if !sentiment_due {
+                return None;
+            }
+            let start = Instant::now();
+            let crypto = sentiment::fetch_crypto_fng();
+            let trad = sentiment::fetch_traditional_fng();
+            Some((crypto, trad, start.elapsed()))
+        };
+
+        let bls_fut = async {
+            if !bls_due {
+                return None;
+            }
+            let start = Instant::now();
+            Some((bls::fetch_all_key_series().await, start.elapsed()))
+        };
+
+        let worldbank_fut = async {
+            if !worldbank_due {
+                return None;
+            }
+            let start = Instant::now();
+            Some((worldbank::fetch_all_indicators().await, start.elapsed()))
+        };
+
+        let economy_fut = async {
+            if !plan.economy {
+                return None;
+            }
+            let start = Instant::now();
+            let bk = brave_key.clone();
+            let mut used_brave = false;
+            let readings = if !bk.is_empty() {
+                match economic::fetch_via_brave(&bk).await {
+                    Ok(v) if !v.is_empty() => {
+                        used_brave = true;
+                        Ok(v)
+                    }
+                    Ok(_) => economic::fetch_bls_fallback().await,
+                    Err(_) => economic::fetch_bls_fallback().await,
+                }
+            } else {
+                economic::fetch_bls_fallback().await
+            };
+            Some((readings, used_brave, start.elapsed()))
+        };
+
+        let fred_fut = async {
+            if !fred_due {
+                return None;
+            }
+            let api_key = fred_api_key_str.as_deref().unwrap_or("");
+            let start = Instant::now();
+            let mut results = Vec::new();
+            for series in fred::FRED_SERIES {
+                match fred::fetch_series(api_key, series.id, 24).await {
+                    Ok(obs) if !obs.is_empty() => results.push((series.id, Ok(obs))),
+                    Ok(_) => {}
+                    Err(e) => results.push((series.id, Err(e))),
+                }
+            }
+            Some((results, start.elapsed()))
+        };
+
+        let rss_fut = async {
+            if !rss_refresh {
+                return None;
+            }
+            let start = Instant::now();
+            let feeds = rss::default_feeds();
+            Some((rss::fetch_all_feeds(&feeds).await, start.elapsed()))
+        };
+
+        let brave_news_fut = async {
+            if !brave_refresh {
+                return None;
+            }
+            let start = Instant::now();
+            let mut all_results = Vec::new();
+            for query in &brave_queries {
+                match brave::brave_news_search(&brave_key, query, Some("pd"), 5).await {
+                    Ok(r) => all_results.push((query.clone(), Ok(r))),
+                    Err(e) => all_results.push((query.clone(), Err(e))),
+                }
+            }
+            Some((all_results, start.elapsed()))
+        };
+
+        let calendar_fut = async {
+            if !calendar_due {
+                return None;
+            }
+            let start = Instant::now();
+            match calendar::fetch_events(7) {
+                Ok(mut events) => {
+                    let bk = brave_key.clone();
+                    if !bk.is_empty() {
+                        let _ = calendar::enrich_with_brave(&mut events, &bk).await;
+                    }
+                    Some((Ok(events), start.elapsed()))
+                }
+                Err(e) => Some((Err(e), start.elapsed())),
+            }
+        };
+
+        tokio::join!(
+            predictions_fut,
+            sentiment_fut,
+            bls_fut,
+            worldbank_fut,
+            economy_fut,
+            fred_fut,
+            rss_fut,
+            brave_news_fut,
+            calendar_fut,
+        )
+    });
+
+    let (
+        predictions_data,
+        sentiment_data,
+        bls_data,
+        worldbank_data,
+        economy_data,
+        fred_data,
+        rss_data,
+        brave_news_data,
+        calendar_data,
+    ) = layer0_fetched;
+
+    // ── Layer 0: FX Rates (sequential, fast) ───────────────────────────
     if plan.prices {
+        let fx_start = Instant::now();
         match rt.block_on(fx::fetch_all_fx_rates()) {
             Ok(rates) => {
                 for (currency, rate) in &rates {
@@ -730,28 +949,99 @@ fn run_with_output(
                         warn_ln!(verbose, "Failed to cache FX rate for {}: {}", currency, e);
                     }
                 }
-                info_ln!(verbose, "✓ FX rates ({} currencies)", rates.len());
+                let detail = format!("✓ FX rates ({} currencies)", rates.len());
+                info_ln!(verbose, "{}", detail);
+                dag_result.add(SourceResult {
+                    name: "fx_rates".to_string(),
+                    label: "FX Rates".to_string(),
+                    status: SourceStatus::Ok,
+                    items_updated: Some(rates.len()),
+                    duration_ms: fx_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: None,
+                    detail: Some(detail),
+                });
             }
             Err(e) => {
-                info_ln!(verbose, "✗ FX rates (failed: {})", e);
+                let detail = format!("✗ FX rates (failed: {})", e);
+                info_ln!(verbose, "{}", detail);
+                dag_result.add(SourceResult {
+                    name: "fx_rates".to_string(),
+                    label: "FX Rates".to_string(),
+                    status: SourceStatus::Failed,
+                    items_updated: None,
+                    duration_ms: fx_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: Some(e.to_string()),
+                    detail: Some(detail),
+                });
             }
         }
     } else {
-        info_ln!(verbose, "⊘ FX rates (cadence deferred)");
+        let detail = "⊘ FX rates (cadence deferred)".to_string();
+        info_ln!(verbose, "{}", detail);
+        dag_result.add(SourceResult {
+            name: "fx_rates".to_string(),
+            label: "FX Rates".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: Some(detail),
+        });
     }
 
-    // 2. Prices
+    // ── Layer 0: Store async-fetched results ───────────────────────────
+
+    // Predictions
+    store_predictions_result(backend, verbose, predictions_due, plan.predictions, predictions_data, &mut dag_result);
+
+    // FedWatch (synchronous fetch — not parallelized due to scraping nature)
+    store_fedwatch_result(backend, config, verbose, fedwatch_due, plan.fedwatch, fedwatch_previous.as_ref(), &mut dag_result);
+    maybe_report_fedwatch_conflict(backend, verbose);
+
+    // Sentiment
+    store_sentiment_result(backend, verbose, sentiment_due, plan.sentiment, sentiment_data, &mut dag_result);
+
+    // News (RSS + Brave)
+    store_news_result(backend, verbose, rss_refresh, brave_refresh, plan.news_rss || plan.news_brave, rss_data, brave_news_data, &mut dag_result);
+
+    // COT (synchronous — uses reqwest::blocking internally)
+    store_cot_result(backend, verbose, cot_due, plan.cot, &mut dag_result);
+
+    // Calendar
+    store_calendar_result(backend, verbose, calendar_due, plan.calendar, calendar_data, &rt, &mut dag_result);
+
+    // Economy
+    store_economy_result(backend, verbose, plan.economy, economy_data, &mut dag_result);
+
+    // FRED
+    store_fred_result(backend, verbose, fred_due, plan.fred, fred_api_key_str.is_some(), fred_data, &mut dag_result);
+
+    // BLS
+    store_bls_result(backend, verbose, bls_due, plan.bls, bls_data, &mut dag_result);
+
+    // World Bank
+    store_worldbank_result(backend, verbose, worldbank_due, plan.worldbank, worldbank_data, &mut dag_result);
+
+    // COMEX (synchronous)
+    store_comex_result(backend, verbose, comex_due, plan.comex, &mut dag_result);
+
+    // On-chain (synchronous)
+    store_onchain_result(backend, verbose, plan.onchain, &mut dag_result);
+
+    // ── DAG Layer 1: Prices ────────────────────────────────────────────
     let symbols = if plan.prices {
         collect_symbols(backend, config)?
     } else {
         Vec::new()
     };
     if plan.prices && !symbols.is_empty() {
-        let _non_cash: Vec<_> = symbols
-            .iter()
-            .filter(|(_, cat)| *cat != AssetCategory::Cash)
-            .collect();
-
+        let price_start = Instant::now();
         let (quotes, errors) = rt.block_on(fetch_all_prices(&symbols, config));
 
         for quote in &quotes {
@@ -759,8 +1049,7 @@ fn run_with_output(
                 warn_ln!(verbose, "Failed to cache {}: {}", quote.symbol, e);
             }
         }
-        // Always stamp today's close into price_history so 1D consumers
-        // (movers/brief/correlations) have a daily anchor on refresh runs.
+        // Stamp today's close into price_history
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let mut history_stamp_ok = 0usize;
         let mut history_stamp_err = 0usize;
@@ -788,8 +1077,7 @@ fn run_with_output(
             }
         }
 
-        // If live providers failed for some symbols, still stamp today's close from
-        // existing cache so 1D analytics keep moving forward instead of stalling.
+        // Stamp cached prices for symbols that failed live fetch
         let live_symbols: HashSet<String> = quotes
             .iter()
             .filter(|q| q.source != "static")
@@ -797,11 +1085,7 @@ fn run_with_output(
             .collect();
         let cached_prices = get_all_cached_prices_backend(backend).unwrap_or_default();
         for cached in cached_prices {
-            if live_symbols.contains(&cached.symbol) {
-                continue;
-            }
-            // Avoid stamping synthetic FX/cash/static rows into history.
-            if cached.source == "static" {
+            if live_symbols.contains(&cached.symbol) || cached.source == "static" {
                 continue;
             }
             let record = HistoryRecord {
@@ -863,8 +1147,20 @@ fn run_with_output(
             }
         }
 
-        // Backfill history for symbols missing sufficient history so
-        // technicals/day-change consumers have data after refresh-only runs.
+        dag_result.add(SourceResult {
+            name: "prices".to_string(),
+            label: "Prices".to_string(),
+            status: if fetched_count > 0 { SourceStatus::Ok } else { SourceStatus::Failed },
+            items_updated: Some(fetched_count),
+            duration_ms: price_start.elapsed().as_millis() as u64,
+            reason: None,
+            age_minutes: None,
+            error: if errors.is_empty() { None } else { Some(format!("{} fetch errors", errors.len())) },
+            detail: None,
+        });
+
+        // Backfill history for symbols missing sufficient history
+        let backfill_start = Instant::now();
         let mut history_updated = 0usize;
         let mut history_attempted = 0usize;
         let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
@@ -893,12 +1189,23 @@ fn run_with_output(
             }
         }
         if history_attempted > 0 {
-            info_ln!(
-                verbose,
-                "✓ Price history ({} symbol backfills)",
-                history_updated
-            );
+            let detail = format!("✓ Price history ({} symbol backfills)", history_updated);
+            info_ln!(verbose, "{}", detail);
+            dag_result.add(SourceResult {
+                name: "price_history".to_string(),
+                label: "Price History Backfill".to_string(),
+                status: SourceStatus::Ok,
+                items_updated: Some(history_updated),
+                duration_ms: backfill_start.elapsed().as_millis() as u64,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: Some(detail),
+            });
         }
+
+        // ── DAG Layer 2: Post-price analytics ──────────────────────────
+        let analytics_start = Instant::now();
 
         let technical_count = store_technical_snapshots(backend, &symbols)?;
         if technical_count > 0 {
@@ -922,20 +1229,63 @@ fn run_with_output(
             info_ln!(verbose, "⊘ Market structure levels (insufficient history)");
         }
 
-        match crate::analytics::signals::generate_signals(backend) {
-            Ok(n) if n > 0 => info_ln!(verbose, "✓ Technical signals ({} new)", n),
-            Ok(_) => info_ln!(verbose, "⊘ Technical signals (no new)"),
-            Err(e) => info_ln!(verbose, "✗ Technical signals (failed: {})", e),
-        }
+        let signals_count = match crate::analytics::signals::generate_signals(backend) {
+            Ok(n) if n > 0 => {
+                info_ln!(verbose, "✓ Technical signals ({} new)", n);
+                n
+            }
+            Ok(_) => {
+                info_ln!(verbose, "⊘ Technical signals (no new)");
+                0
+            }
+            Err(e) => {
+                info_ln!(verbose, "✗ Technical signals (failed: {})", e);
+                0
+            }
+        };
+
+        dag_result.add(SourceResult {
+            name: "technical_snapshots".to_string(),
+            label: "Technical Analysis".to_string(),
+            status: SourceStatus::Ok,
+            items_updated: Some(technical_count + levels_count + signals_count),
+            duration_ms: analytics_start.elapsed().as_millis() as u64,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     } else if plan.prices {
         info_ln!(verbose, "⊘ Prices (no symbols)");
+        dag_result.add(SourceResult {
+            name: "prices".to_string(),
+            label: "Prices".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("no symbols".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     } else {
         info_ln!(verbose, "⊘ Prices (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "prices".to_string(),
+            label: "Prices".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     }
 
-    // 3. Predictions (Polymarket)
-    // 3a. Correlation snapshots + regime classification
+    // ── DAG Layer 2: Analytics snapshots (correlation + regime) ─────
     if plan.analytics {
+        let corr_start = Instant::now();
         match crate::commands::correlations::compute_and_store_default_snapshots_backend(backend) {
             Ok(n) if n > 0 => info_ln!(verbose, "✓ Correlation snapshots ({} rows)", n),
             Ok(_) => info_ln!(verbose, "⊘ Correlation snapshots (insufficient history)"),
@@ -947,636 +1297,34 @@ fn run_with_output(
             Ok(false) => info_ln!(verbose, "⊘ Regime classification (unchanged today)"),
             Err(e) => info_ln!(verbose, "✗ Regime classification (failed: {})", e),
         }
+
+        dag_result.add(SourceResult {
+            name: "analytics".to_string(),
+            label: "Analytics (correlation + regime)".to_string(),
+            status: SourceStatus::Ok,
+            items_updated: None,
+            duration_ms: corr_start.elapsed().as_millis() as u64,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     } else {
         info_ln!(verbose, "⊘ Analytics snapshots (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "analytics".to_string(),
+            label: "Analytics (correlation + regime)".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     }
 
-    // 3. Predictions (Polymarket)
-    if plan.predictions && predictions_need_refresh(backend)? {
-        match rt.block_on(predictions::fetch_polymarket_predictions()) {
-            Ok(markets) => match predictions_cache::upsert_predictions_backend(backend, &markets) {
-                Ok(_) => info_ln!(verbose, "✓ Predictions ({} markets)", markets.len()),
-                Err(e) => info_ln!(
-                    verbose,
-                    "⚠ Predictions fetched ({} markets) but cache write failed: {}",
-                    markets.len(),
-                    e
-                ),
-            },
-            Err(e) => {
-                info_ln!(verbose, "✗ Predictions (failed: {})", e);
-            }
-        }
-    } else if plan.predictions {
-        info_ln!(verbose, "⊘ Predictions (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ Predictions (cadence deferred)");
-    }
-    if plan.fedwatch && fedwatch_needs_refresh(backend)? {
-        let previous = fedwatch_cache::get_latest_snapshot_backend(backend)?;
-        match fedwatch::fetch_snapshot_with_fallback(config.brave_api_key.as_deref()) {
-            Ok((snapshot, source_label)) => {
-                let validated = fedwatch::validate_reading(
-                    snapshot,
-                    source_label,
-                    previous.as_ref().map(|entry| entry.no_change_pct),
-                    FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS,
-                );
-                if let Some(warning) = &validated.warning {
-                    warn_ln!(verbose, "FedWatch validation warning: {}", warning);
-                }
-                let entry = fedwatch_cache::FedWatchCacheEntry::from_snapshot(
-                    validated.snapshot,
-                    validated.source_label,
-                    validated.verified,
-                    validated.warning,
-                );
-                match fedwatch_cache::insert_snapshot_backend(backend, &entry) {
-                    Ok(_) => info_ln!(
-                        verbose,
-                        "✓ FedWatch ({}{}, {:.1}% no-change)",
-                        entry.source_label,
-                        if entry.verified { "" } else { ", unverified" },
-                        entry.no_change_pct
-                    ),
-                    Err(e) => info_ln!(
-                        verbose,
-                        "⚠ FedWatch fetched ({}, {:.1}% no-change) but cache write failed: {}",
-                        entry.source_label,
-                        entry.no_change_pct,
-                        e
-                    ),
-                }
-            }
-            Err(e) => info_ln!(verbose, "✗ FedWatch (failed: {})", e),
-        }
-    } else if plan.fedwatch {
-        info_ln!(verbose, "⊘ FedWatch (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ FedWatch (cadence deferred)");
-    }
-    maybe_report_fedwatch_conflict(backend, verbose);
-
-    // 4. News (Brave primary when configured, RSS supplements)
-    let rss_refresh = plan.news_rss && news_needs_refresh(backend)?;
-    let brave_key = config
-        .brave_api_key
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let brave_refresh = if !plan.news_brave || brave_key.is_empty() {
-        false
-    } else {
-        brave_news_needs_refresh(backend)?
-    };
-
-    if rss_refresh || brave_refresh {
-        let mut inserted = 0usize;
-        let mut brave_inserted = 0usize;
-        let mut brave_query_count = 0usize;
-
-        if brave_refresh {
-            let queries = build_brave_news_queries(backend, config)?;
-            brave_query_count = queries.len();
-            for query in &queries {
-                match rt.block_on(brave::brave_news_search(&brave_key, query, Some("pd"), 5)) {
-                    Ok(results) => {
-                        for item in &results {
-                            let source = item.source.as_deref().unwrap_or("Brave");
-                            if news_cache::insert_news_with_source_type_backend(
-                                backend,
-                                &item.title,
-                                &item.url,
-                                source,
-                                "brave",
-                                None,
-                                "markets",
-                                chrono::Utc::now().timestamp(),
-                                Some(&item.description),
-                                &item.extra_snippets,
-                            )
-                            .is_ok()
-                            {
-                                inserted += 1;
-                                brave_inserted += 1;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn_ln!(verbose, "Brave news query failed ({}): {}", query, e);
-                    }
-                }
-            }
-        }
-
-        if rss_refresh {
-            let feeds = rss::default_feeds();
-            let items = rt.block_on(rss::fetch_all_feeds(&feeds));
-            for item in &items {
-                let category_str = match item.category {
-                    rss::NewsCategory::Macro => "macro",
-                    rss::NewsCategory::Crypto => "crypto",
-                    rss::NewsCategory::Commodities => "commodities",
-                    rss::NewsCategory::Geopolitics => "geopolitics",
-                    rss::NewsCategory::Markets => "markets",
-                };
-
-                if news_cache::insert_news_with_source_type_backend(
-                    backend,
-                    &item.title,
-                    &item.url,
-                    &item.source,
-                    "rss",
-                    None,
-                    category_str,
-                    item.published_at,
-                    None,
-                    &[],
-                )
-                .is_ok()
-                {
-                    inserted += 1;
-                }
-            }
-        }
-
-        if brave_refresh && rss_refresh {
-            info_ln!(
-                verbose,
-                "✓ News ({} articles from {} Brave queries + RSS)",
-                inserted,
-                brave_query_count
-            );
-        } else if brave_refresh {
-            info_ln!(
-                verbose,
-                "✓ News ({} articles from {} Brave queries)",
-                brave_inserted,
-                brave_query_count
-            );
-        } else if rss_refresh {
-            info_ln!(verbose, "✓ News ({} articles via RSS)", inserted);
-        } else {
-            info_ln!(verbose, "⊘ News (fresh, skipping)");
-        }
-    } else if plan.news_rss || plan.news_brave {
-        info_ln!(verbose, "⊘ News (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ News (cadence deferred)");
-    }
-
-    // 5. COT (CFTC)
-    if plan.cot && cot_needs_refresh(backend)? {
-        let mut contracts_updated = 0;
-        let mut reports_upserted = 0;
-
-        for contract in cot::COT_CONTRACTS {
-            match cot::fetch_historical_reports(contract.cftc_code, COT_HISTORY_WEEKS) {
-                Ok(reports) if !reports.is_empty() => {
-                    let fetched_at = chrono::Utc::now().to_rfc3339();
-                    let entries: Vec<_> = reports
-                        .into_iter()
-                        .map(|report| crate::db::cot_cache::CotCacheEntry {
-                            cftc_code: report.cftc_code,
-                            report_date: report.report_date,
-                            open_interest: report.open_interest,
-                            managed_money_long: report.managed_money_long,
-                            managed_money_short: report.managed_money_short,
-                            managed_money_net: report.managed_money_net,
-                            commercial_long: report.commercial_long,
-                            commercial_short: report.commercial_short,
-                            commercial_net: report.commercial_net,
-                            fetched_at: fetched_at.clone(),
-                        })
-                        .collect();
-                    cot_cache::upsert_reports_backend(backend, &entries)?;
-                    contracts_updated += 1;
-                    reports_upserted += entries.len();
-                }
-                Ok(_) => {}
-                Err(_) => {
-                    // Continue on error
-                }
-            }
-        }
-
-        if contracts_updated > 0 {
-            info_ln!(
-                verbose,
-                "✓ COT ({} contracts, {} reports cached)",
-                contracts_updated,
-                reports_upserted
-            );
-        } else {
-            info_ln!(verbose, "✗ COT (all failed)");
-        }
-    } else if plan.cot {
-        info_ln!(verbose, "⊘ COT (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ COT (cadence deferred)");
-    }
-
-    // 6. Sentiment (Fear & Greed)
-    if plan.sentiment && sentiment_needs_refresh(backend)? {
-        let mut count = 0;
-
-        if let Ok(crypto) = sentiment::fetch_crypto_fng() {
-            let reading = crate::db::sentiment_cache::SentimentReading {
-                index_type: "crypto_fng".to_string(),
-                value: crypto.value,
-                classification: crypto.classification.clone(),
-                timestamp: crypto.timestamp,
-                fetched_at: chrono::Utc::now().to_rfc3339(),
-            };
-            sentiment_cache::upsert_reading_backend(backend, &reading)?;
-            count += 1;
-        }
-
-        if let Ok(trad) = sentiment::fetch_traditional_fng() {
-            let reading = crate::db::sentiment_cache::SentimentReading {
-                index_type: "traditional_fng".to_string(),
-                value: trad.value,
-                classification: trad.classification.clone(),
-                timestamp: trad.timestamp,
-                fetched_at: chrono::Utc::now().to_rfc3339(),
-            };
-            sentiment_cache::upsert_reading_backend(backend, &reading)?;
-            count += 1;
-        }
-
-        info_ln!(verbose, "✓ Sentiment ({} indices)", count);
-    } else if plan.sentiment {
-        info_ln!(verbose, "⊘ Sentiment (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ Sentiment (cadence deferred)");
-    }
-
-    // 7. Calendar (TradingEconomics)
-    if plan.calendar && calendar_needs_refresh(backend)? {
-        match calendar::fetch_events(7) {
-            Ok(mut events) => {
-                let brave_key = config
-                    .brave_api_key
-                    .as_deref()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-                if !brave_key.is_empty() {
-                    let _ = rt.block_on(calendar::enrich_with_brave(&mut events, &brave_key));
-                }
-                for event in &events {
-                    let _ = calendar_cache::upsert_event_backend(
-                        backend,
-                        &event.date,
-                        &event.name,
-                        &event.impact,
-                        event.previous.as_deref(),
-                        event.forecast.as_deref(),
-                        &event.event_type,
-                        event.symbol.as_deref(),
-                    );
-                }
-                info_ln!(verbose, "✓ Calendar ({} events)", events.len());
-            }
-            Err(e) => {
-                info_ln!(verbose, "✗ Calendar (failed: {})", e);
-            }
-        }
-    } else if plan.calendar {
-        info_ln!(verbose, "⊘ Calendar (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ Calendar (cadence deferred)");
-    }
-
-    // 9. Economy indicators (Brave primary, BLS fallback)
-    if plan.economy {
-        let brave_key = config
-            .brave_api_key
-            .as_deref()
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        let mut used_brave = false;
-        let readings = if !brave_key.is_empty() {
-            match rt.block_on(economic::fetch_via_brave(&brave_key)) {
-                Ok(v) if !v.is_empty() => {
-                    used_brave = true;
-                    Ok(v)
-                }
-                Ok(_) => rt.block_on(economic::fetch_bls_fallback()),
-                Err(_) => rt.block_on(economic::fetch_bls_fallback()),
-            }
-        } else {
-            rt.block_on(economic::fetch_bls_fallback())
-        };
-
-        match readings {
-            Ok(items) => {
-                let now = chrono::Utc::now().to_rfc3339();
-                for item in &items {
-                    let entry = economic_data_db::EconomicDataEntry {
-                        indicator: item.indicator.clone(),
-                        value: item.value,
-                        previous: item.previous,
-                        change: item.change,
-                        source_url: item.source_url.clone(),
-                        fetched_at: now.clone(),
-                    };
-                    let _ = economic_data_db::upsert_entry_backend(backend, &entry);
-                }
-                if used_brave {
-                    info_ln!(verbose, "✓ Economy ({} indicators via Brave)", items.len());
-                } else {
-                    info_ln!(
-                        verbose,
-                        "✓ Economy ({} indicators via BLS fallback)",
-                        items.len()
-                    );
-                }
-            }
-            Err(e) => info_ln!(verbose, "✗ Economy (failed: {})", e),
-        }
-    } else {
-        info_ln!(verbose, "⊘ Economy (cadence deferred)");
-    }
-
-    // 9a. FRED macro cache + surprise detection
-    if let Some(api_key) = config
-        .fred_api_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        if plan.fred && fred_needs_refresh(backend)? {
-            let mut updated = 0usize;
-            let mut surprise_count = 0usize;
-            let fetched_at = chrono::Utc::now().to_rfc3339();
-
-            for series in fred::FRED_SERIES {
-                match rt.block_on(fred::fetch_series(api_key, series.id, 24)) {
-                    Ok(observations) if !observations.is_empty() => {
-                        let cached: Vec<_> = observations
-                            .iter()
-                            .cloned()
-                            .map(|obs| economic_cache::EconomicObservation {
-                                series_id: obs.series_id,
-                                date: obs.date,
-                                value: obs.value,
-                                fetched_at: fetched_at.clone(),
-                            })
-                            .collect();
-
-                        if economic_cache::upsert_observations_backend(backend, &cached).is_ok() {
-                            updated += 1;
-                        }
-
-                        if let Some(surprise) = fred::detect_surprise(&observations) {
-                            let event = macro_events::MacroEvent {
-                                series_id: surprise.series_id,
-                                event_date: surprise.event_date,
-                                expected: surprise.expected,
-                                actual: surprise.actual,
-                                surprise_pct: surprise.surprise_pct,
-                                created_at: fetched_at.clone(),
-                            };
-                            if macro_events::insert_event_backend(backend, &event).is_ok() {
-                                surprise_count += 1;
-                            }
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(e) => warn_ln!(verbose, "FRED series fetch failed ({}): {}", series.id, e),
-                }
-            }
-
-            info_ln!(
-                verbose,
-                "✓ FRED ({} series, {} surprise events)",
-                updated,
-                surprise_count
-            );
-        } else if plan.fred {
-            info_ln!(verbose, "⊘ FRED (fresh, skipping)");
-        } else {
-            info_ln!(verbose, "⊘ FRED (cadence deferred)");
-        }
-    } else {
-        info_ln!(verbose, "⊘ FRED (no API key configured)");
-    }
-
-    // 9. BLS
-    if plan.bls && bls_needs_refresh(backend)? {
-        match rt.block_on(bls::fetch_all_key_series()) {
-            Ok(data) => {
-                bls_cache::upsert_bls_data_backend(backend, &data)?;
-                info_ln!(verbose, "✓ BLS ({} series)", data.len());
-            }
-            Err(e) => {
-                info_ln!(verbose, "✗ BLS (failed: {})", e);
-            }
-        }
-    } else if plan.bls {
-        info_ln!(verbose, "⊘ BLS (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ BLS (cadence deferred)");
-    }
-
-    // 10. World Bank
-    if plan.worldbank && worldbank_needs_refresh(backend)? {
-        match rt.block_on(worldbank::fetch_all_indicators()) {
-            Ok(data) => {
-                worldbank_cache::upsert_worldbank_data_backend(backend, &data)?;
-                info_ln!(verbose, "✓ World Bank ({} indicators)", data.len());
-            }
-            Err(e) => {
-                info_ln!(verbose, "✗ World Bank (failed: {})", e);
-            }
-        }
-    } else if plan.worldbank {
-        info_ln!(verbose, "⊘ World Bank (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ World Bank (cadence deferred)");
-    }
-
-    // 11. COMEX
-    if plan.comex && comex_needs_refresh(backend)? {
-        let results = comex::fetch_all_inventories();
-        let mut count = 0;
-
-        for (symbol, result) in results {
-            if let Ok(inv) = result {
-                let entry = crate::db::comex_cache::ComexCacheEntry {
-                    symbol: symbol.clone(),
-                    date: inv.date.clone(),
-                    registered: inv.registered,
-                    eligible: inv.eligible,
-                    total: inv.total,
-                    reg_ratio: inv.reg_ratio,
-                    fetched_at: chrono::Utc::now().to_rfc3339(),
-                };
-                if comex_cache::upsert_inventory_backend(backend, &entry).is_ok() {
-                    count += 1;
-                }
-            }
-        }
-
-        if count > 0 {
-            info_ln!(verbose, "✓ COMEX ({} metals)", count);
-        } else {
-            info_ln!(verbose, "✗ COMEX (all failed)");
-        }
-    } else if plan.comex {
-        info_ln!(verbose, "⊘ COMEX (fresh, skipping)");
-    } else {
-        info_ln!(verbose, "⊘ COMEX (cadence deferred)");
-    }
-
-    // 13. On-chain (network + ETF flows)
-    let mut onchain_ok_parts = Vec::new();
-    let mut onchain_errors = Vec::new();
-
-    if plan.onchain {
-        match onchain::fetch_network_metrics() {
-            Ok(metrics) => {
-                let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-                let metric = crate::db::onchain_cache::OnchainMetric {
-                    metric: "network".to_string(),
-                    date: today,
-                    value: metrics.hash_rate.to_string(),
-                    metadata: Some(
-                        serde_json::json!({
-                            "difficulty": metrics.difficulty,
-                            "blocks_24h": metrics.blocks_24h,
-                            "mempool_size": metrics.mempool_size,
-                            "avg_fee_sat_b": metrics.avg_fee_sat_b,
-                        })
-                        .to_string(),
-                    ),
-                    fetched_at: chrono::Utc::now().to_rfc3339(),
-                };
-                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
-                onchain_ok_parts.push("network");
-            }
-            Err(e) => onchain_errors.push(format!("network: {}", e)),
-        }
-
-        match onchain::fetch_exchange_reserve_snapshot() {
-            Ok(snapshot) => {
-                let metric = crate::db::onchain_cache::OnchainMetric {
-                    metric: "exchange_reserve_proxy_btc".to_string(),
-                    date: snapshot.date.clone(),
-                    value: snapshot.reserve_btc.to_string(),
-                    metadata: Some(
-                        serde_json::json!({
-                            "reserve_usd": snapshot.reserve_usd,
-                            "tracked_wallets": snapshot.tracked_wallets,
-                            "exchange_labels": snapshot.exchange_labels,
-                            "flow_7d_btc": snapshot.net_flow_7d_btc,
-                            "flow_30d_btc": snapshot.net_flow_30d_btc,
-                            "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
-                                serde_json::json!({
-                                    "label": entry.label,
-                                    "balance_btc": entry.balance_btc,
-                                    "balance_usd": entry.balance_usd,
-                                    "wallets": entry.wallets,
-                                    "flow_7d_btc": entry.flow_7d_btc,
-                                    "flow_30d_btc": entry.flow_30d_btc,
-                                })
-                            }).collect::<Vec<_>>(),
-                        })
-                        .to_string(),
-                    ),
-                    fetched_at: chrono::Utc::now().to_rfc3339(),
-                };
-                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
-                onchain_ok_parts.push("exchange reserves");
-            }
-            Err(e) => onchain_errors.push(format!("exchange reserves: {}", e)),
-        }
-
-        match onchain::fetch_etf_flows() {
-            Ok(flows) => {
-                let fetched_at = chrono::Utc::now().to_rfc3339();
-                for flow in &flows {
-                    let metric = crate::db::onchain_cache::OnchainMetric {
-                        metric: format!("etf_flow_{}", flow.fund),
-                        date: flow.date.clone(),
-                        value: flow.net_flow_btc.to_string(),
-                        metadata: Some(
-                            serde_json::json!({
-                                "fund": flow.fund,
-                                "net_flow_usd": flow.net_flow_usd,
-                            })
-                            .to_string(),
-                        ),
-                        fetched_at: fetched_at.clone(),
-                    };
-                    let _ = onchain_cache::upsert_metric_backend(backend, &metric);
-                }
-                onchain_ok_parts.push("etf flows");
-            }
-            Err(e) => onchain_errors.push(format!("etf flows: {}", e)),
-        }
-
-        match onchain::fetch_market_stats() {
-            Ok(stats) => {
-                let fetched_at = chrono::Utc::now().to_rfc3339();
-                let metrics = [
-                    (
-                        "largest_transactions_24h_btc",
-                        stats.largest_transactions_24h_btc.to_string(),
-                        serde_json::json!({
-                            "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
-                            "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
-                        }),
-                    ),
-                    (
-                        "active_addresses_24h",
-                        stats.active_addresses_24h.to_string(),
-                        serde_json::json!({}),
-                    ),
-                    (
-                        "wealth_distribution_top10_pct",
-                        stats.top_10_share_pct.to_string(),
-                        serde_json::json!({
-                            "top_100_share_pct": stats.top_100_share_pct,
-                            "top_1000_share_pct": stats.top_1000_share_pct,
-                            "top_10000_share_pct": stats.top_10000_share_pct,
-                            "top_100_richest_btc": stats.top_100_richest_btc,
-                        }),
-                    ),
-                ];
-
-                for (name, value, metadata) in metrics {
-                    let metric = crate::db::onchain_cache::OnchainMetric {
-                        metric: name.to_string(),
-                        date: stats.date.clone(),
-                        value,
-                        metadata: Some(metadata.to_string()),
-                        fetched_at: fetched_at.clone(),
-                    };
-                    let _ = onchain_cache::upsert_metric_backend(backend, &metric);
-                }
-                onchain_ok_parts.push("whales");
-            }
-            Err(e) => onchain_errors.push(format!("whales: {}", e)),
-        }
-
-        if !onchain_ok_parts.is_empty() {
-            info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
-        } else {
-            info_ln!(
-                verbose,
-                "✗ On-chain (failed: {})",
-                onchain_errors.join("; ")
-            );
-        }
-    } else {
-        info_ln!(verbose, "⊘ On-chain (cadence deferred)");
-    }
-
-    // Store daily portfolio snapshot
+    // ── DAG Layer 3: Portfolio + alerts ─────────────────────────────
     if plan.analytics {
         if let Err(e) = store_portfolio_snapshot(backend, config, verbose) {
             warn_ln!(
@@ -1594,8 +1342,9 @@ fn run_with_output(
         }
     }
 
-    // Check for newly triggered alerts
+    // Alerts
     if plan.alerts {
+        let alerts_start = Instant::now();
         match engine::check_alerts_backend_only(backend) {
             Ok(results) => {
                 let newly_triggered = engine::get_newly_triggered(&results);
@@ -1644,25 +1393,1020 @@ fn run_with_output(
                         }
                     }
                 }
+                dag_result.add(SourceResult {
+                    name: "alerts".to_string(),
+                    label: "Smart Alerts".to_string(),
+                    status: SourceStatus::Ok,
+                    items_updated: Some(newly_triggered.len()),
+                    duration_ms: alerts_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: None,
+                    detail: None,
+                });
             }
             Err(e) => {
                 warn_ln!(verbose, "\nWarning: failed to check alerts: {}", e);
+                dag_result.add(SourceResult {
+                    name: "alerts".to_string(),
+                    label: "Smart Alerts".to_string(),
+                    status: SourceStatus::Failed,
+                    items_updated: None,
+                    duration_ms: alerts_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: Some(e.to_string()),
+                    detail: None,
+                });
             }
         }
     } else {
         info_ln!(verbose, "\n⊘ Smart alerts (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "alerts".to_string(),
+            label: "Smart Alerts".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     }
 
+    // ── DAG Layer 4: Cleanup ───────────────────────────────────────
     if plan.cleanup {
+        let cleanup_start = Instant::now();
         run_cleanup(backend, verbose);
+        dag_result.add(SourceResult {
+            name: "cleanup".to_string(),
+            label: "Cleanup".to_string(),
+            status: SourceStatus::Ok,
+            items_updated: None,
+            duration_ms: cleanup_start.elapsed().as_millis() as u64,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     } else {
         info_ln!(verbose, "⊘ Cleanup (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "cleanup".to_string(),
+            label: "Cleanup".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
     }
 
     info_ln!(verbose, "\nRefresh complete.");
-    Ok(())
+    dag_result.finalize(pipeline_start.elapsed());
+    Ok(dag_result)
 }
 
+// ── Helper functions for storing layer-0 async results ─────────────────
+
+fn store_predictions_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    data: Option<(Result<Vec<crate::data::predictions::PredictionMarket>>, Duration)>,
+    dag_result: &mut RefreshResult,
+) {
+    if due {
+        if let Some((result, elapsed)) = data {
+            match result {
+                Ok(markets) => {
+                    let count = markets.len();
+                    match predictions_cache::upsert_predictions_backend(backend, &markets) {
+                        Ok(_) => {
+                            info_ln!(verbose, "✓ Predictions ({} markets)", count);
+                            dag_result.add(SourceResult {
+                                name: "predictions".to_string(),
+                                label: "Predictions (Polymarket)".to_string(),
+                                status: SourceStatus::Ok,
+                                items_updated: Some(count),
+                                duration_ms: elapsed.as_millis() as u64,
+                                reason: None, age_minutes: None, error: None, detail: None,
+                            });
+                        }
+                        Err(e) => {
+                            info_ln!(verbose, "⚠ Predictions fetched ({} markets) but cache write failed: {}", count, e);
+                            dag_result.add(SourceResult {
+                                name: "predictions".to_string(),
+                                label: "Predictions (Polymarket)".to_string(),
+                                status: SourceStatus::Failed,
+                                items_updated: None,
+                                duration_ms: elapsed.as_millis() as u64,
+                                reason: None, age_minutes: None,
+                                error: Some(format!("cache write failed: {}", e)),
+                                detail: None,
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    info_ln!(verbose, "✗ Predictions (failed: {})", e);
+                    dag_result.add(SourceResult {
+                        name: "predictions".to_string(),
+                        label: "Predictions (Polymarket)".to_string(),
+                        status: SourceStatus::Failed,
+                        items_updated: None,
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None, age_minutes: None,
+                        error: Some(e.to_string()),
+                        detail: None,
+                    });
+                }
+            }
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ Predictions (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "predictions".to_string(),
+            label: "Predictions (Polymarket)".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ Predictions (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "predictions".to_string(),
+            label: "Predictions (Polymarket)".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_fedwatch_result(
+    backend: &BackendConnection,
+    config: &Config,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    previous: Option<&fedwatch_cache::FedWatchCacheEntry>,
+    dag_result: &mut RefreshResult,
+) {
+    let fw_start = Instant::now();
+    if due {
+        match fedwatch::fetch_snapshot_with_fallback(config.brave_api_key.as_deref()) {
+            Ok((snapshot, source_label)) => {
+                let validated = fedwatch::validate_reading(
+                    snapshot,
+                    source_label,
+                    previous.map(|entry| entry.no_change_pct),
+                    FEDWATCH_VALIDATION_THRESHOLD_PCT_POINTS,
+                );
+                if let Some(warning) = &validated.warning {
+                    warn_ln!(verbose, "FedWatch validation warning: {}", warning);
+                }
+                let entry = fedwatch_cache::FedWatchCacheEntry::from_snapshot(
+                    validated.snapshot,
+                    validated.source_label,
+                    validated.verified,
+                    validated.warning,
+                );
+                match fedwatch_cache::insert_snapshot_backend(backend, &entry) {
+                    Ok(_) => {
+                        info_ln!(
+                            verbose,
+                            "✓ FedWatch ({}{}, {:.1}% no-change)",
+                            entry.source_label,
+                            if entry.verified { "" } else { ", unverified" },
+                            entry.no_change_pct
+                        );
+                        dag_result.add(SourceResult {
+                            name: "fedwatch".to_string(),
+                            label: "FedWatch".to_string(),
+                            status: SourceStatus::Ok,
+                            items_updated: Some(1),
+                            duration_ms: fw_start.elapsed().as_millis() as u64,
+                            reason: None, age_minutes: None, error: None, detail: None,
+                        });
+                    }
+                    Err(e) => {
+                        info_ln!(
+                            verbose,
+                            "⚠ FedWatch fetched ({}, {:.1}% no-change) but cache write failed: {}",
+                            entry.source_label, entry.no_change_pct, e
+                        );
+                        dag_result.add(SourceResult {
+                            name: "fedwatch".to_string(),
+                            label: "FedWatch".to_string(),
+                            status: SourceStatus::Failed,
+                            items_updated: None,
+                            duration_ms: fw_start.elapsed().as_millis() as u64,
+                            reason: None, age_minutes: None,
+                            error: Some(format!("cache write failed: {}", e)),
+                            detail: None,
+                        });
+                    }
+                }
+            }
+            Err(e) => {
+                info_ln!(verbose, "✗ FedWatch (failed: {})", e);
+                dag_result.add(SourceResult {
+                    name: "fedwatch".to_string(),
+                    label: "FedWatch".to_string(),
+                    status: SourceStatus::Failed,
+                    items_updated: None,
+                    duration_ms: fw_start.elapsed().as_millis() as u64,
+                    reason: None, age_minutes: None,
+                    error: Some(e.to_string()),
+                    detail: None,
+                });
+            }
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ FedWatch (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "fedwatch".to_string(), label: "FedWatch".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ FedWatch (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "fedwatch".to_string(), label: "FedWatch".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_sentiment_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    data: Option<(Result<crate::data::sentiment::SentimentIndex>, Result<crate::data::sentiment::SentimentIndex>, Duration)>,
+    dag_result: &mut RefreshResult,
+) {
+    if due {
+        if let Some((crypto_result, trad_result, elapsed)) = data {
+            let mut count = 0;
+            if let Ok(crypto) = crypto_result {
+                let reading = crate::db::sentiment_cache::SentimentReading {
+                    index_type: "crypto_fng".to_string(),
+                    value: crypto.value,
+                    classification: crypto.classification.clone(),
+                    timestamp: crypto.timestamp,
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                };
+                if sentiment_cache::upsert_reading_backend(backend, &reading).is_ok() {
+                    count += 1;
+                }
+            }
+            if let Ok(trad) = trad_result {
+                let reading = crate::db::sentiment_cache::SentimentReading {
+                    index_type: "traditional_fng".to_string(),
+                    value: trad.value,
+                    classification: trad.classification.clone(),
+                    timestamp: trad.timestamp,
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                };
+                if sentiment_cache::upsert_reading_backend(backend, &reading).is_ok() {
+                    count += 1;
+                }
+            }
+            info_ln!(verbose, "✓ Sentiment ({} indices)", count);
+            dag_result.add(SourceResult {
+                name: "sentiment".to_string(),
+                label: "Sentiment (Fear & Greed)".to_string(),
+                status: if count > 0 { SourceStatus::Ok } else { SourceStatus::Failed },
+                items_updated: Some(count),
+                duration_ms: elapsed.as_millis() as u64,
+                reason: None, age_minutes: None, error: None, detail: None,
+            });
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ Sentiment (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "sentiment".to_string(), label: "Sentiment (Fear & Greed)".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ Sentiment (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "sentiment".to_string(), label: "Sentiment (Fear & Greed)".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+type BraveNewsData = Option<(Vec<(String, Result<Vec<crate::data::brave::BraveNewsResult>>)>, Duration)>;
+
+#[allow(clippy::too_many_arguments)]
+fn store_news_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    rss_refresh: bool,
+    brave_refresh: bool,
+    in_plan: bool,
+    rss_data: Option<(Vec<crate::data::rss::NewsItem>, Duration)>,
+    brave_news_data: BraveNewsData,
+    dag_result: &mut RefreshResult,
+) {
+    let mut inserted = 0usize;
+    let mut brave_inserted = 0usize;
+    let mut brave_query_count = 0usize;
+    let mut news_elapsed = Duration::ZERO;
+
+    if let Some((brave_results, elapsed)) = brave_news_data {
+        brave_query_count = brave_results.len();
+        news_elapsed = elapsed;
+        for (query, result) in brave_results {
+            match result {
+                Ok(results) => {
+                    for item in &results {
+                        let source = item.source.as_deref().unwrap_or("Brave");
+                        if news_cache::insert_news_with_source_type_backend(
+                            backend, &item.title, &item.url, source, "brave",
+                            None, "markets", chrono::Utc::now().timestamp(),
+                            Some(&item.description), &item.extra_snippets,
+                        ).is_ok() {
+                            inserted += 1;
+                            brave_inserted += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn_ln!(verbose, "Brave news query failed ({}): {}", query, e);
+                }
+            }
+        }
+    }
+
+    if let Some((items, elapsed)) = rss_data {
+        if elapsed > news_elapsed {
+            news_elapsed = elapsed;
+        }
+        for item in &items {
+            let category_str = match item.category {
+                rss::NewsCategory::Macro => "macro",
+                rss::NewsCategory::Crypto => "crypto",
+                rss::NewsCategory::Commodities => "commodities",
+                rss::NewsCategory::Geopolitics => "geopolitics",
+                rss::NewsCategory::Markets => "markets",
+            };
+            if news_cache::insert_news_with_source_type_backend(
+                backend, &item.title, &item.url, &item.source, "rss",
+                None, category_str, item.published_at, None, &[],
+            ).is_ok() {
+                inserted += 1;
+            }
+        }
+    }
+
+    if brave_refresh || rss_refresh {
+        if brave_refresh && rss_refresh {
+            info_ln!(verbose, "✓ News ({} articles from {} Brave queries + RSS)", inserted, brave_query_count);
+        } else if brave_refresh {
+            info_ln!(verbose, "✓ News ({} articles from {} Brave queries)", brave_inserted, brave_query_count);
+        } else {
+            info_ln!(verbose, "✓ News ({} articles via RSS)", inserted);
+        }
+        dag_result.add(SourceResult {
+            name: "news".to_string(),
+            label: "News".to_string(),
+            status: SourceStatus::Ok,
+            items_updated: Some(inserted),
+            duration_ms: news_elapsed.as_millis() as u64,
+            reason: None, age_minutes: None, error: None, detail: None,
+        });
+    } else if in_plan {
+        info_ln!(verbose, "⊘ News (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "news".to_string(), label: "News".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ News (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "news".to_string(), label: "News".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_cot_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    dag_result: &mut RefreshResult,
+) {
+    let cot_start = Instant::now();
+    if due {
+        let mut contracts_updated = 0;
+        let mut reports_upserted = 0;
+
+        for contract in cot::COT_CONTRACTS {
+            match cot::fetch_historical_reports(contract.cftc_code, COT_HISTORY_WEEKS) {
+                Ok(reports) if !reports.is_empty() => {
+                    let fetched_at = chrono::Utc::now().to_rfc3339();
+                    let entries: Vec<_> = reports
+                        .into_iter()
+                        .map(|report| crate::db::cot_cache::CotCacheEntry {
+                            cftc_code: report.cftc_code,
+                            report_date: report.report_date,
+                            open_interest: report.open_interest,
+                            managed_money_long: report.managed_money_long,
+                            managed_money_short: report.managed_money_short,
+                            managed_money_net: report.managed_money_net,
+                            commercial_long: report.commercial_long,
+                            commercial_short: report.commercial_short,
+                            commercial_net: report.commercial_net,
+                            fetched_at: fetched_at.clone(),
+                        })
+                        .collect();
+                    if cot_cache::upsert_reports_backend(backend, &entries).is_ok() {
+                        contracts_updated += 1;
+                        reports_upserted += entries.len();
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        }
+        if contracts_updated > 0 {
+            info_ln!(verbose, "✓ COT ({} contracts, {} reports cached)", contracts_updated, reports_upserted);
+            dag_result.add(SourceResult {
+                name: "cot".to_string(), label: "COT (CFTC)".to_string(),
+                status: SourceStatus::Ok,
+                items_updated: Some(reports_upserted),
+                duration_ms: cot_start.elapsed().as_millis() as u64,
+                reason: None, age_minutes: None, error: None, detail: None,
+            });
+        } else {
+            info_ln!(verbose, "✗ COT (all failed)");
+            dag_result.add(SourceResult {
+                name: "cot".to_string(), label: "COT (CFTC)".to_string(),
+                status: SourceStatus::Failed, items_updated: None,
+                duration_ms: cot_start.elapsed().as_millis() as u64,
+                reason: None, age_minutes: None,
+                error: Some("all contracts failed".to_string()), detail: None,
+            });
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ COT (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "cot".to_string(), label: "COT (CFTC)".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ COT (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "cot".to_string(), label: "COT (CFTC)".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_calendar_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    data: Option<(Result<Vec<crate::data::calendar::Event>>, Duration)>,
+    _rt: &tokio::runtime::Runtime,
+    dag_result: &mut RefreshResult,
+) {
+    if due {
+        if let Some((result, elapsed)) = data {
+            match result {
+                Ok(events) => {
+                    for event in &events {
+                        let _ = calendar_cache::upsert_event_backend(
+                            backend, &event.date, &event.name, &event.impact,
+                            event.previous.as_deref(), event.forecast.as_deref(),
+                            &event.event_type, event.symbol.as_deref(),
+                        );
+                    }
+                    info_ln!(verbose, "✓ Calendar ({} events)", events.len());
+                    dag_result.add(SourceResult {
+                        name: "calendar".to_string(), label: "Calendar".to_string(),
+                        status: SourceStatus::Ok, items_updated: Some(events.len()),
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None, age_minutes: None, error: None, detail: None,
+                    });
+                }
+                Err(e) => {
+                    info_ln!(verbose, "✗ Calendar (failed: {})", e);
+                    dag_result.add(SourceResult {
+                        name: "calendar".to_string(), label: "Calendar".to_string(),
+                        status: SourceStatus::Failed, items_updated: None,
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None, age_minutes: None,
+                        error: Some(e.to_string()), detail: None,
+                    });
+                }
+            }
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ Calendar (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "calendar".to_string(), label: "Calendar".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ Calendar (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "calendar".to_string(), label: "Calendar".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_economy_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    in_plan: bool,
+    data: Option<(Result<Vec<crate::data::economic::EconomicReading>>, bool, Duration)>,
+    dag_result: &mut RefreshResult,
+) {
+    if in_plan {
+        if let Some((readings, used_brave, elapsed)) = data {
+            match readings {
+                Ok(items) => {
+                    let now = chrono::Utc::now().to_rfc3339();
+                    for item in &items {
+                        let entry = economic_data_db::EconomicDataEntry {
+                            indicator: item.indicator.clone(),
+                            value: item.value,
+                            previous: item.previous,
+                            change: item.change,
+                            source_url: item.source_url.clone(),
+                            fetched_at: now.clone(),
+                        };
+                        let _ = economic_data_db::upsert_entry_backend(backend, &entry);
+                    }
+                    if used_brave {
+                        info_ln!(verbose, "✓ Economy ({} indicators via Brave)", items.len());
+                    } else {
+                        info_ln!(verbose, "✓ Economy ({} indicators via BLS fallback)", items.len());
+                    }
+                    dag_result.add(SourceResult {
+                        name: "economy".to_string(), label: "Economy".to_string(),
+                        status: SourceStatus::Ok, items_updated: Some(items.len()),
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None, age_minutes: None, error: None, detail: None,
+                    });
+                }
+                Err(e) => {
+                    info_ln!(verbose, "✗ Economy (failed: {})", e);
+                    dag_result.add(SourceResult {
+                        name: "economy".to_string(), label: "Economy".to_string(),
+                        status: SourceStatus::Failed, items_updated: None,
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None, age_minutes: None,
+                        error: Some(e.to_string()), detail: None,
+                    });
+                }
+            }
+        }
+    } else {
+        info_ln!(verbose, "⊘ Economy (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "economy".to_string(), label: "Economy".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+type FredFetchData = Option<(Vec<(&'static str, Result<Vec<crate::data::fred::FredObservation>>)>, Duration)>;
+
+fn store_fred_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    has_key: bool,
+    data: FredFetchData,
+    dag_result: &mut RefreshResult,
+) {
+    if !has_key {
+        info_ln!(verbose, "⊘ FRED (no API key configured)");
+        dag_result.add(SourceResult {
+            name: "fred".to_string(), label: "FRED".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("no API key".to_string()), age_minutes: None, error: None, detail: None,
+        });
+        return;
+    }
+    if due {
+        if let Some((results, elapsed)) = data {
+            let mut updated = 0usize;
+            let mut surprise_count = 0usize;
+            let fetched_at = chrono::Utc::now().to_rfc3339();
+
+            for (_series_id, result) in results {
+                match result {
+                    Ok(observations) => {
+                        let cached: Vec<_> = observations
+                            .iter()
+                            .cloned()
+                            .map(|obs| economic_cache::EconomicObservation {
+                                series_id: obs.series_id,
+                                date: obs.date,
+                                value: obs.value,
+                                fetched_at: fetched_at.clone(),
+                            })
+                            .collect();
+                        if economic_cache::upsert_observations_backend(backend, &cached).is_ok() {
+                            updated += 1;
+                        }
+                        if let Some(surprise) = fred::detect_surprise(&observations) {
+                            let event = macro_events::MacroEvent {
+                                series_id: surprise.series_id,
+                                event_date: surprise.event_date,
+                                expected: surprise.expected,
+                                actual: surprise.actual,
+                                surprise_pct: surprise.surprise_pct,
+                                created_at: fetched_at.clone(),
+                            };
+                            if macro_events::insert_event_backend(backend, &event).is_ok() {
+                                surprise_count += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn_ln!(verbose, "FRED series fetch failed: {}", e);
+                    }
+                }
+            }
+            info_ln!(verbose, "✓ FRED ({} series, {} surprise events)", updated, surprise_count);
+            dag_result.add(SourceResult {
+                name: "fred".to_string(), label: "FRED".to_string(),
+                status: SourceStatus::Ok, items_updated: Some(updated),
+                duration_ms: elapsed.as_millis() as u64,
+                reason: None, age_minutes: None, error: None, detail: None,
+            });
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ FRED (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "fred".to_string(), label: "FRED".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ FRED (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "fred".to_string(), label: "FRED".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_bls_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    data: Option<(Result<Vec<crate::data::bls::BlsDataPoint>>, Duration)>,
+    dag_result: &mut RefreshResult,
+) {
+    if due {
+        if let Some((result, elapsed)) = data {
+            match result {
+                Ok(series_data) => {
+                    if bls_cache::upsert_bls_data_backend(backend, &series_data).is_ok() {
+                        info_ln!(verbose, "✓ BLS ({} series)", series_data.len());
+                        dag_result.add(SourceResult {
+                            name: "bls".to_string(), label: "BLS".to_string(),
+                            status: SourceStatus::Ok, items_updated: Some(series_data.len()),
+                            duration_ms: elapsed.as_millis() as u64,
+                            reason: None, age_minutes: None, error: None, detail: None,
+                        });
+                    } else {
+                        info_ln!(verbose, "✗ BLS (cache write failed)");
+                        dag_result.add(SourceResult {
+                            name: "bls".to_string(), label: "BLS".to_string(),
+                            status: SourceStatus::Failed, items_updated: None,
+                            duration_ms: elapsed.as_millis() as u64,
+                            reason: None, age_minutes: None,
+                            error: Some("cache write failed".to_string()), detail: None,
+                        });
+                    }
+                }
+                Err(e) => {
+                    info_ln!(verbose, "✗ BLS (failed: {})", e);
+                    dag_result.add(SourceResult {
+                        name: "bls".to_string(), label: "BLS".to_string(),
+                        status: SourceStatus::Failed, items_updated: None,
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None, age_minutes: None,
+                        error: Some(e.to_string()), detail: None,
+                    });
+                }
+            }
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ BLS (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "bls".to_string(), label: "BLS".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ BLS (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "bls".to_string(), label: "BLS".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_worldbank_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    data: Option<(Result<Vec<crate::data::worldbank::WorldBankDataPoint>>, Duration)>,
+    dag_result: &mut RefreshResult,
+) {
+    if due {
+        if let Some((result, elapsed)) = data {
+            match result {
+                Ok(indicators) => {
+                    if worldbank_cache::upsert_worldbank_data_backend(backend, &indicators).is_ok() {
+                        info_ln!(verbose, "✓ World Bank ({} indicators)", indicators.len());
+                        dag_result.add(SourceResult {
+                            name: "worldbank".to_string(), label: "World Bank".to_string(),
+                            status: SourceStatus::Ok, items_updated: Some(indicators.len()),
+                            duration_ms: elapsed.as_millis() as u64,
+                            reason: None, age_minutes: None, error: None, detail: None,
+                        });
+                    } else {
+                        info_ln!(verbose, "✗ World Bank (cache write failed)");
+                        dag_result.add(SourceResult {
+                            name: "worldbank".to_string(), label: "World Bank".to_string(),
+                            status: SourceStatus::Failed, items_updated: None,
+                            duration_ms: elapsed.as_millis() as u64,
+                            reason: None, age_minutes: None,
+                            error: Some("cache write failed".to_string()), detail: None,
+                        });
+                    }
+                }
+                Err(e) => {
+                    info_ln!(verbose, "✗ World Bank (failed: {})", e);
+                    dag_result.add(SourceResult {
+                        name: "worldbank".to_string(), label: "World Bank".to_string(),
+                        status: SourceStatus::Failed, items_updated: None,
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None, age_minutes: None,
+                        error: Some(e.to_string()), detail: None,
+                    });
+                }
+            }
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ World Bank (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "worldbank".to_string(), label: "World Bank".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ World Bank (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "worldbank".to_string(), label: "World Bank".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_comex_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    dag_result: &mut RefreshResult,
+) {
+    let comex_start = Instant::now();
+    if due {
+        let results = comex::fetch_all_inventories();
+        let mut count = 0;
+        for (symbol, result) in results {
+            if let Ok(inv) = result {
+                let entry = crate::db::comex_cache::ComexCacheEntry {
+                    symbol: symbol.clone(),
+                    date: inv.date.clone(),
+                    registered: inv.registered,
+                    eligible: inv.eligible,
+                    total: inv.total,
+                    reg_ratio: inv.reg_ratio,
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                };
+                if comex_cache::upsert_inventory_backend(backend, &entry).is_ok() {
+                    count += 1;
+                }
+            }
+        }
+        if count > 0 {
+            info_ln!(verbose, "✓ COMEX ({} metals)", count);
+            dag_result.add(SourceResult {
+                name: "comex".to_string(), label: "COMEX".to_string(),
+                status: SourceStatus::Ok, items_updated: Some(count),
+                duration_ms: comex_start.elapsed().as_millis() as u64,
+                reason: None, age_minutes: None, error: None, detail: None,
+            });
+        } else {
+            info_ln!(verbose, "✗ COMEX (all failed)");
+            dag_result.add(SourceResult {
+                name: "comex".to_string(), label: "COMEX".to_string(),
+                status: SourceStatus::Failed, items_updated: None,
+                duration_ms: comex_start.elapsed().as_millis() as u64,
+                reason: None, age_minutes: None,
+                error: Some("all metals failed".to_string()), detail: None,
+            });
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ COMEX (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "comex".to_string(), label: "COMEX".to_string(),
+            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
+            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    } else {
+        info_ln!(verbose, "⊘ COMEX (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "comex".to_string(), label: "COMEX".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
+
+fn store_onchain_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    in_plan: bool,
+    dag_result: &mut RefreshResult,
+) {
+    let onchain_start = Instant::now();
+    if in_plan {
+        let mut onchain_ok_parts = Vec::new();
+        let mut onchain_errors = Vec::new();
+
+        match onchain::fetch_network_metrics() {
+            Ok(metrics) => {
+                let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+                let metric = crate::db::onchain_cache::OnchainMetric {
+                    metric: "network".to_string(),
+                    date: today,
+                    value: metrics.hash_rate.to_string(),
+                    metadata: Some(serde_json::json!({
+                        "difficulty": metrics.difficulty,
+                        "blocks_24h": metrics.blocks_24h,
+                        "mempool_size": metrics.mempool_size,
+                        "avg_fee_sat_b": metrics.avg_fee_sat_b,
+                    }).to_string()),
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                };
+                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                onchain_ok_parts.push("network");
+            }
+            Err(e) => onchain_errors.push(format!("network: {}", e)),
+        }
+
+        match onchain::fetch_exchange_reserve_snapshot() {
+            Ok(snapshot) => {
+                let metric = crate::db::onchain_cache::OnchainMetric {
+                    metric: "exchange_reserve_proxy_btc".to_string(),
+                    date: snapshot.date.clone(),
+                    value: snapshot.reserve_btc.to_string(),
+                    metadata: Some(serde_json::json!({
+                        "reserve_usd": snapshot.reserve_usd,
+                        "tracked_wallets": snapshot.tracked_wallets,
+                        "exchange_labels": snapshot.exchange_labels,
+                        "flow_7d_btc": snapshot.net_flow_7d_btc,
+                        "flow_30d_btc": snapshot.net_flow_30d_btc,
+                        "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
+                            serde_json::json!({
+                                "label": entry.label,
+                                "balance_btc": entry.balance_btc,
+                                "balance_usd": entry.balance_usd,
+                                "wallets": entry.wallets,
+                                "flow_7d_btc": entry.flow_7d_btc,
+                                "flow_30d_btc": entry.flow_30d_btc,
+                            })
+                        }).collect::<Vec<_>>(),
+                    }).to_string()),
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                };
+                let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                onchain_ok_parts.push("exchange reserves");
+            }
+            Err(e) => onchain_errors.push(format!("exchange reserves: {}", e)),
+        }
+
+        match onchain::fetch_etf_flows() {
+            Ok(flows) => {
+                let fetched_at = chrono::Utc::now().to_rfc3339();
+                for flow in &flows {
+                    let metric = crate::db::onchain_cache::OnchainMetric {
+                        metric: format!("etf_flow_{}", flow.fund),
+                        date: flow.date.clone(),
+                        value: flow.net_flow_btc.to_string(),
+                        metadata: Some(serde_json::json!({
+                            "fund": flow.fund,
+                            "net_flow_usd": flow.net_flow_usd,
+                        }).to_string()),
+                        fetched_at: fetched_at.clone(),
+                    };
+                    let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                }
+                onchain_ok_parts.push("etf flows");
+            }
+            Err(e) => onchain_errors.push(format!("etf flows: {}", e)),
+        }
+
+        match onchain::fetch_market_stats() {
+            Ok(stats) => {
+                let fetched_at = chrono::Utc::now().to_rfc3339();
+                let metrics = [
+                    ("largest_transactions_24h_btc", stats.largest_transactions_24h_btc.to_string(),
+                     serde_json::json!({
+                        "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
+                        "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
+                     })),
+                    ("active_addresses_24h", stats.active_addresses_24h.to_string(), serde_json::json!({})),
+                    ("wealth_distribution_top10_pct", stats.top_10_share_pct.to_string(),
+                     serde_json::json!({
+                        "top_100_share_pct": stats.top_100_share_pct,
+                        "top_1000_share_pct": stats.top_1000_share_pct,
+                        "top_10000_share_pct": stats.top_10000_share_pct,
+                        "top_100_richest_btc": stats.top_100_richest_btc,
+                     })),
+                ];
+                for (name, value, metadata) in metrics {
+                    let metric = crate::db::onchain_cache::OnchainMetric {
+                        metric: name.to_string(),
+                        date: stats.date.clone(),
+                        value,
+                        metadata: Some(metadata.to_string()),
+                        fetched_at: fetched_at.clone(),
+                    };
+                    let _ = onchain_cache::upsert_metric_backend(backend, &metric);
+                }
+                onchain_ok_parts.push("whales");
+            }
+            Err(e) => onchain_errors.push(format!("whales: {}", e)),
+        }
+
+        if !onchain_ok_parts.is_empty() {
+            info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
+            dag_result.add(SourceResult {
+                name: "onchain".to_string(), label: "On-chain".to_string(),
+                status: SourceStatus::Ok,
+                items_updated: Some(onchain_ok_parts.len()),
+                duration_ms: onchain_start.elapsed().as_millis() as u64,
+                reason: None, age_minutes: None, error: None, detail: None,
+            });
+        } else {
+            info_ln!(verbose, "✗ On-chain (failed: {})", onchain_errors.join("; "));
+            dag_result.add(SourceResult {
+                name: "onchain".to_string(), label: "On-chain".to_string(),
+                status: SourceStatus::Failed, items_updated: None,
+                duration_ms: onchain_start.elapsed().as_millis() as u64,
+                reason: None, age_minutes: None,
+                error: Some(onchain_errors.join("; ")), detail: None,
+            });
+        }
+    } else {
+        info_ln!(verbose, "⊘ On-chain (cadence deferred)");
+        dag_result.add(SourceResult {
+            name: "onchain".to_string(), label: "On-chain".to_string(),
+            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
+            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+        });
+    }
+}
 fn run_cleanup(backend: &BackendConnection, verbose: bool) {
     let mut parts = Vec::new();
 
