@@ -25,9 +25,15 @@ struct Mover {
     change_str: String,
 }
 
-/// Compute daily change % from current price vs yesterday's close.
-/// Returns None if no yesterday price exists or current price is not available.
-/// Uses same logic as brief.rs to ensure consistency.
+/// Compute daily change % from current price vs the previous trading session's close.
+/// Returns None if no previous close exists or current price is not available.
+///
+/// Bug fix (2026-03-20): When Yahoo duplicates the same closing price across
+/// consecutive days (common for after-hours fetches and weekends), the old logic
+/// compared identical values and produced 0% change — missing real movers.
+/// The new logic walks backwards through history to find the last *prior* trading
+/// session close, skipping any records that share today's date or that duplicate
+/// the current cached price on adjacent dates.
 fn compute_change_pct(
     backend: &BackendConnection,
     symbol: &str,
@@ -38,13 +44,21 @@ fn compute_change_pct(
     let current = current_price?;
 
     let today = Utc::now().date_naive();
-    let history = get_history_backend(backend, symbol, 5).ok()?;
-    let prev_close = previous_close_from_history(&history, today).or_else(|| {
+    // Fetch more history to survive multi-day stale-close duplication (weekends, holidays).
+    let history = get_history_backend(backend, symbol, 10).ok()?;
+    let prev_close = previous_close_from_history(&history, today, current).or_else(|| {
+        // Fallback: explicit yesterday lookup
         let yesterday = today - chrono::Duration::days(1);
         let yesterday_str = yesterday.format("%Y-%m-%d").to_string();
-        get_price_at_date_backend(backend, symbol, &yesterday_str)
+        let price = get_price_at_date_backend(backend, symbol, &yesterday_str)
             .ok()
-            .flatten()
+            .flatten()?;
+        // Only use fallback if it differs from current (same stale-close guard)
+        if price != current {
+            Some(price)
+        } else {
+            None
+        }
     })?;
     if prev_close == dec!(0) {
         return None;
@@ -53,21 +67,56 @@ fn compute_change_pct(
     Some((current - prev_close) / prev_close * dec!(100))
 }
 
+/// Find the previous trading session's close from history.
+///
+/// Strategy (ordered):
+/// 1. Skip today's record (if present at the tail of history).
+/// 2. From the remaining records (newest-first), return the first close that
+///    differs from `current_price`. This handles Yahoo's common pattern of
+///    writing the same stale close to multiple consecutive dates.
+/// 3. If ALL remaining closes equal current_price (unlikely but possible for
+///    very flat markets), return the oldest available close — which produces 0%
+///    change rather than a false mover.
 fn previous_close_from_history(
     history: &[crate::models::price::HistoryRecord],
     today: chrono::NaiveDate,
+    current_price: Decimal,
 ) -> Option<Decimal> {
     if history.is_empty() {
         return None;
     }
 
-    let latest = history.last()?;
+    // History is chronological (oldest first). Walk from the end.
+    let iter = history.iter().rev();
+
+    // Step 1: skip today's record if present
+    let latest = iter.clone().next()?;
     let latest_date = chrono::NaiveDate::parse_from_str(&latest.date, "%Y-%m-%d").ok();
-    if latest_date == Some(today) {
-        history.iter().rev().nth(1).map(|record| record.close)
-    } else {
-        Some(latest.close)
+    let candidates: Box<dyn Iterator<Item = &crate::models::price::HistoryRecord> + '_> =
+        if latest_date == Some(today) {
+            // Skip today's entry
+            let mut skipped = iter.clone();
+            skipped.next();
+            Box::new(skipped)
+        } else {
+            Box::new(iter)
+        };
+
+    // Step 2: find the first close that differs from the cached spot price.
+    // This is the real "previous session" close.
+    let mut fallback: Option<Decimal> = None;
+    for record in candidates {
+        if fallback.is_none() {
+            fallback = Some(record.close);
+        }
+        if record.close != current_price {
+            return Some(record.close);
+        }
     }
+
+    // Step 3: all historical closes equal current_price — return the oldest
+    // candidate (produces 0% change, which is correct for truly flat markets).
+    fallback
 }
 
 /// Format a decimal price with commas.
@@ -765,8 +814,9 @@ mod tests {
             },
         ];
 
+        // Current price is 110 (different from history) — should return Friday close (105)
         assert_eq!(
-            previous_close_from_history(&history, today),
+            previous_close_from_history(&history, today, dec!(110)),
             Some(dec!(105))
         );
     }
@@ -795,9 +845,103 @@ mod tests {
             },
         ];
 
+        // Current price matches today's close — should skip today and return 105
         assert_eq!(
-            previous_close_from_history(&history, today),
+            previous_close_from_history(&history, today, dec!(109)),
             Some(dec!(105))
+        );
+    }
+
+    #[test]
+    fn previous_close_skips_stale_duplicates() {
+        // This is the core bug scenario: Yahoo writes the same close to multiple
+        // consecutive dates (e.g. after-hours fetch duplicates yesterday's close
+        // into today's row). The old logic returned the penultimate record, which
+        // also had the same close as the cached spot → 0% change.
+        use crate::models::price::HistoryRecord;
+
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 20).unwrap();
+        let current_price = dec!(4600);
+        let history = vec![
+            HistoryRecord {
+                date: "2026-03-17".to_string(),
+                close: dec!(5001),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-18".to_string(),
+                close: dec!(4890),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-19".to_string(),
+                close: dec!(4600), // same as cached spot — stale duplicate
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-20".to_string(),
+                close: dec!(4600), // today — also stale duplicate
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        // Should skip today (Mar 20) and the stale Mar 19 duplicate, returning Mar 18 close
+        assert_eq!(
+            previous_close_from_history(&history, today, current_price),
+            Some(dec!(4890))
+        );
+    }
+
+    #[test]
+    fn previous_close_flat_market_returns_zero_change() {
+        // When ALL history records genuinely have the same close (flat market),
+        // the function should still return a value (producing 0% change).
+        use crate::models::price::HistoryRecord;
+
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 20).unwrap();
+        let history = vec![
+            HistoryRecord {
+                date: "2026-03-18".to_string(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-19".to_string(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-20".to_string(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+
+        // All closes are 100, current is also 100 — returns 100 (oldest candidate), yielding 0%
+        assert_eq!(
+            previous_close_from_history(&history, today, dec!(100)),
+            Some(dec!(100))
         );
     }
 }
