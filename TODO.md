@@ -28,21 +28,6 @@
 
 ## P2 — Coverage And Agent Consumption
 
-### F52: Refresh DAG, Parallelism, And Source Policies
-
-> Vision fit: an always-on aggregator needs a scheduler and dependency graph, not just a long sequential refresh pass.
->
-> Current gap:
-> - `data refresh` is centralized, but much of it is still sequential and monolithic
-> - freshness windows are hardcoded in command logic
-> - source priorities and retry/backoff policies are not explicit
->
-> Actionable scope:
-> 1. Refactor refresh into a dependency-aware job graph
-> 2. Parallelize safe source fetches with bounded concurrency and per-provider backoff
-> 3. Move freshness thresholds and cadence policies into config/runtime policy structs
-> 4. Emit structured refresh metrics: duration, failures, fallbacks, cached reuse, symbols updated
-> 5. Add `pftui data refresh --json` summary output for agents and observability
 
 ### [Feedback] Prediction CLI positional vs flag syntax confusion
 
