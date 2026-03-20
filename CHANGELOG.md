@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — fix: Plausibility guard for daily change percentages (#99)
+
+- What: Added bounds checking (±500% max) on all daily change percentage calculations. Anomalous values from corrupt price data (e.g. 224,000% BTC change from near-zero previous close) are now filtered out as `None` across all surfaces: movers CLI, brief CLI, header ticker, market context widget, and top movers widget. New shared utility `is_plausible_daily_change()` in `models::price`.
+- Why: Two agents (low-timeframe-analyst, alert-investigator) independently reported BTC showing 224,632% daily change from corrupt Yahoo previous-close data. The garbage data propagated unfiltered through all change calculation surfaces.
+- Files: `src/models/price.rs`, `src/commands/movers.rs`, `src/commands/brief.rs`, `src/tui/widgets/header.rs`, `src/tui/widgets/market_context.rs`, `src/tui/widgets/top_movers.rs`
+- Tests: `cargo test` — 1503 pass (+8 new: plausibility unit tests, boundary tests, anomaly rejection); `cargo clippy --all-targets -- -D warnings` clean
+
 ## v0.14.0 — 2026-03-20
 
 **84 commits since v0.13.0.** Major release: always-on analytics engine, broker integrations, parallel refresh, OHLCV technical analysis.
