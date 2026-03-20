@@ -985,5 +985,22 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );",
     )?;
 
+    // Migration: add OHLCV-aware ATR columns to technical_snapshots (F48 step 2)
+    let has_atr_14: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('technical_snapshots') WHERE name = 'atr_14'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_atr_14 {
+        conn.execute_batch(
+            "ALTER TABLE technical_snapshots ADD COLUMN atr_14 REAL;
+             ALTER TABLE technical_snapshots ADD COLUMN atr_ratio REAL;
+             ALTER TABLE technical_snapshots ADD COLUMN range_expansion INTEGER;
+             ALTER TABLE technical_snapshots ADD COLUMN day_range_ratio REAL;",
+        )?;
+    }
+
     Ok(())
 }

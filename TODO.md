@@ -9,10 +9,10 @@
 ### F48: Rich OHLCV History And Data-Quality Layer (remaining)
 
 > Steps 1, 3, 4 complete (PR #56): schema upgraded, OHLCV persisted from Yahoo, `analytics gaps --symbol` shipped.
+> Step 2 (OHLCV-aware calculations) complete (PR pending): ATR-14, ATR ratio, range expansion, day range ratio added to technical snapshots.
 >
 > Remaining scope:
 > 1. Backfill OHLCV where providers support it (re-fetch history with OHLCV for existing symbols)
-> 2. Use OHLCV-aware calculations for Bollinger, ATR, range expansion, and breakout detection
 
 
 

@@ -224,6 +224,59 @@ fn derive_signals(snap: &TechnicalSnapshotRecord) -> Vec<DetectedSignal> {
         }
     }
 
+    // ATR-based range expansion (OHLCV-aware, F48)
+    if let Some(true) = snap.range_expansion {
+        if let Some(atr) = snap.atr_14 {
+            let severity = if snap.atr_ratio.unwrap_or(0.0) > 5.0 {
+                "critical"
+            } else {
+                "notable"
+            };
+            signals.push(DetectedSignal {
+                signal_type: "range_expansion",
+                direction: "neutral",
+                severity,
+                trigger_price: None,
+                description: format!(
+                    "ATR range expansion — current ATR {:.2} exceeds 1.5x its 20-period average (volatility breakout)",
+                    atr
+                ),
+            });
+        }
+    }
+
+    // Wide bar: day range > 2x ATR (potential breakout bar)
+    if let Some(ratio) = snap.day_range_ratio {
+        if ratio >= 2.0 {
+            signals.push(DetectedSignal {
+                signal_type: "wide_range_bar",
+                direction: "neutral",
+                severity: "notable",
+                trigger_price: None,
+                description: format!(
+                    "Wide range bar: day range is {:.1}x ATR — potential breakout or reversal candle",
+                    ratio
+                ),
+            });
+        }
+    }
+
+    // Inside bar: day range < 0.5x ATR (compression, potential coil)
+    if let Some(ratio) = snap.day_range_ratio {
+        if ratio > 0.0 && ratio <= 0.5 {
+            signals.push(DetectedSignal {
+                signal_type: "inside_bar",
+                direction: "neutral",
+                severity: "informational",
+                trigger_price: None,
+                description: format!(
+                    "Inside bar: day range is {:.1}x ATR — volatility compression, breakout setup forming",
+                    ratio
+                ),
+            });
+        }
+    }
+
     signals
 }
 
@@ -274,6 +327,10 @@ mod tests {
             above_sma_20: Some(true),
             above_sma_50: Some(true),
             above_sma_200: Some(true),
+            atr_14: Some(3.5),
+            atr_ratio: Some(3.5),
+            range_expansion: Some(false),
+            day_range_ratio: Some(1.0),
             computed_at: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -360,5 +417,47 @@ mod tests {
         assert!(is_duplicate(&existing, "AAPL", "rsi_overbought"));
         assert!(!is_duplicate(&existing, "BTC", "rsi_overbought"));
         assert!(!is_duplicate(&existing, "AAPL", "macd_bull_cross"));
+    }
+
+    #[test]
+    fn detects_range_expansion() {
+        let mut snap = make_snapshot("AAPL");
+        snap.range_expansion = Some(true);
+        snap.atr_14 = Some(5.0);
+        snap.atr_ratio = Some(5.0);
+        let signals = derive_signals(&snap);
+        assert!(signals.iter().any(|s| s.signal_type == "range_expansion"));
+    }
+
+    #[test]
+    fn no_range_expansion_when_false() {
+        let mut snap = make_snapshot("AAPL");
+        snap.range_expansion = Some(false);
+        let signals = derive_signals(&snap);
+        assert!(!signals.iter().any(|s| s.signal_type == "range_expansion"));
+    }
+
+    #[test]
+    fn detects_wide_range_bar() {
+        let mut snap = make_snapshot("AAPL");
+        snap.day_range_ratio = Some(2.5);
+        let signals = derive_signals(&snap);
+        assert!(signals.iter().any(|s| s.signal_type == "wide_range_bar"));
+    }
+
+    #[test]
+    fn detects_inside_bar() {
+        let mut snap = make_snapshot("AAPL");
+        snap.day_range_ratio = Some(0.3);
+        let signals = derive_signals(&snap);
+        assert!(signals.iter().any(|s| s.signal_type == "inside_bar"));
+    }
+
+    #[test]
+    fn no_bar_signals_at_normal_range() {
+        let snap = make_snapshot("AAPL"); // day_range_ratio = 1.0
+        let signals = derive_signals(&snap);
+        assert!(!signals.iter().any(|s| s.signal_type == "wide_range_bar"));
+        assert!(!signals.iter().any(|s| s.signal_type == "inside_bar"));
     }
 }
