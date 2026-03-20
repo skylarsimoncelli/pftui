@@ -20,6 +20,7 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 currency TEXT NOT NULL DEFAULT 'USD',
                 fetched_at TIMESTAMPTZ NOT NULL,
                 source TEXT NOT NULL,
+                previous_close NUMERIC,
                 PRIMARY KEY (symbol, currency)
             )",
         )
@@ -775,6 +776,13 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
                 sqlx::query(&alter).execute(pool).await?;
             }
         }
+
+        // Migration: add previous_close to price_cache (movers P0 fix)
+        sqlx::query(
+            "ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS previous_close NUMERIC",
+        )
+        .execute(pool)
+        .await?;
 
         Ok::<(), sqlx::Error>(())
     })?;

@@ -10,7 +10,7 @@ use crate::models::price::PriceQuote;
 #[allow(dead_code)]
 pub fn get_cached_price(conn: &Connection, symbol: &str, currency: &str) -> Result<Option<PriceQuote>> {
     let mut stmt = conn.prepare(
-        "SELECT symbol, price, currency, fetched_at, source FROM price_cache
+        "SELECT symbol, price, currency, fetched_at, source, previous_close FROM price_cache
          WHERE symbol = ?1 AND currency = ?2",
     )?;
     let mut rows = stmt.query_map(params![symbol, currency], |row| {
@@ -23,6 +23,8 @@ pub fn get_cached_price(conn: &Connection, symbol: &str, currency: &str) -> Resu
             pre_market_price: None,
             post_market_price: None,
             post_market_change_percent: None,
+            previous_close: row.get::<_, Option<String>>(5)?
+                .and_then(|s| s.parse().ok()),
         })
     })?;
     match rows.next() {
@@ -33,18 +35,20 @@ pub fn get_cached_price(conn: &Connection, symbol: &str, currency: &str) -> Resu
 
 pub fn upsert_price(conn: &Connection, quote: &PriceQuote) -> Result<()> {
     conn.execute(
-        "INSERT INTO price_cache (symbol, price, currency, fetched_at, source)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO price_cache (symbol, price, currency, fetched_at, source, previous_close)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(symbol, currency) DO UPDATE SET
            price = excluded.price,
            fetched_at = excluded.fetched_at,
-           source = excluded.source",
+           source = excluded.source,
+           previous_close = excluded.previous_close",
         params![
             quote.symbol,
             quote.price.to_string(),
             quote.currency,
             quote.fetched_at,
             quote.source,
+            quote.previous_close.map(|d| d.to_string()),
         ],
     )?;
     Ok(())
@@ -52,7 +56,7 @@ pub fn upsert_price(conn: &Connection, quote: &PriceQuote) -> Result<()> {
 
 pub fn get_all_cached_prices(conn: &Connection) -> Result<Vec<PriceQuote>> {
     let mut stmt = conn.prepare(
-        "SELECT symbol, price, currency, fetched_at, source FROM price_cache",
+        "SELECT symbol, price, currency, fetched_at, source, previous_close FROM price_cache",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(PriceQuote {
@@ -64,6 +68,8 @@ pub fn get_all_cached_prices(conn: &Connection) -> Result<Vec<PriceQuote>> {
             pre_market_price: None,
             post_market_price: None,
             post_market_change_percent: None,
+            previous_close: row.get::<_, Option<String>>(5)?
+                .and_then(|s| s.parse().ok()),
         })
     })?;
     let mut result = Vec::new();
@@ -107,8 +113,15 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
                 currency TEXT NOT NULL DEFAULT 'USD',
                 fetched_at TIMESTAMPTZ NOT NULL,
                 source TEXT NOT NULL,
+                previous_close NUMERIC,
                 PRIMARY KEY (symbol, currency)
             )",
+        )
+        .execute(pool)
+        .await?;
+        // Ensure column exists on older tables
+        sqlx::query(
+            "ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS previous_close NUMERIC",
         )
         .execute(pool)
         .await?;
@@ -117,7 +130,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-type PriceCacheRow = (String, String, String, String, String);
+type PriceCacheRow = (String, String, String, String, String, Option<String>);
 
 fn price_quote_from_row(row: PriceCacheRow) -> PriceQuote {
     PriceQuote {
@@ -129,6 +142,7 @@ fn price_quote_from_row(row: PriceCacheRow) -> PriceQuote {
         pre_market_price: None,
         post_market_price: None,
         post_market_change_percent: None,
+        previous_close: row.5.and_then(|s| s.parse().ok()),
     }
 }
 
@@ -136,7 +150,7 @@ fn get_cached_price_postgres(pool: &PgPool, symbol: &str, currency: &str) -> Res
     ensure_tables_postgres(pool)?;
     let row: Option<PriceCacheRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT symbol, price::TEXT, currency, fetched_at::TEXT, source
+            "SELECT symbol, price::TEXT, currency, fetched_at::TEXT, source, previous_close::TEXT
              FROM price_cache
              WHERE symbol = $1 AND currency = $2",
         )
@@ -152,19 +166,21 @@ fn upsert_price_postgres(pool: &PgPool, quote: &PriceQuote) -> Result<()> {
     ensure_tables_postgres(pool)?;
     crate::db::pg_runtime::block_on(async {
         sqlx::query(
-            "INSERT INTO price_cache (symbol, price, currency, fetched_at, source)
-             VALUES ($1, $2::NUMERIC, $3, $4::TIMESTAMPTZ, $5)
+            "INSERT INTO price_cache (symbol, price, currency, fetched_at, source, previous_close)
+             VALUES ($1, $2::NUMERIC, $3, $4::TIMESTAMPTZ, $5, $6::NUMERIC)
              ON CONFLICT (symbol, currency)
              DO UPDATE SET
                 price = EXCLUDED.price,
                 fetched_at = EXCLUDED.fetched_at,
-                source = EXCLUDED.source",
+                source = EXCLUDED.source,
+                previous_close = EXCLUDED.previous_close",
         )
         .bind(&quote.symbol)
         .bind(quote.price.to_string())
         .bind(&quote.currency)
         .bind(&quote.fetched_at)
         .bind(&quote.source)
+        .bind(quote.previous_close.map(|d| d.to_string()))
         .execute(pool)
         .await?;
         Ok::<(), sqlx::Error>(())
@@ -176,7 +192,7 @@ fn get_all_cached_prices_postgres(pool: &PgPool) -> Result<Vec<PriceQuote>> {
     ensure_tables_postgres(pool)?;
     let rows: Vec<PriceCacheRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
-            "SELECT symbol, price::TEXT, currency, fetched_at::TEXT, source FROM price_cache",
+            "SELECT symbol, price::TEXT, currency, fetched_at::TEXT, source, previous_close::TEXT FROM price_cache",
         )
             .fetch_all(pool)
             .await
@@ -205,6 +221,7 @@ mod tests {
             pre_market_price: None,
             post_market_price: None,
             post_market_change_percent: None,
+            previous_close: None,
         };
         upsert_price(&conn, &quote).unwrap();
 
@@ -250,6 +267,7 @@ mod tests {
             pre_market_price: None,
             post_market_price: None,
             post_market_change_percent: None,
+            previous_close: None,
         };
 
         upsert_price_backend(&backend, &quote).unwrap();
