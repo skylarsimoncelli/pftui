@@ -29,6 +29,18 @@ pub struct TechnicalSnapshotRecord {
     pub above_sma_20: Option<bool>,
     pub above_sma_50: Option<bool>,
     pub above_sma_200: Option<bool>,
+    /// Average True Range (14-period), computed from OHLCV when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atr_14: Option<f64>,
+    /// ATR as percentage of current price (ATR / close * 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atr_ratio: Option<f64>,
+    /// Whether current ATR exceeds 1.5x its 20-period average (volatility expansion).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range_expansion: Option<bool>,
+    /// Day's range relative to ATR: (high - low) / ATR. >1.5 = wide bar, <0.5 = inside bar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub day_range_ratio: Option<f64>,
     pub computed_at: String,
 }
 
@@ -56,7 +68,11 @@ impl TechnicalSnapshotRecord {
             above_sma_20: row.get(18)?,
             above_sma_50: row.get(19)?,
             above_sma_200: row.get(20)?,
-            computed_at: row.get(21)?,
+            atr_14: row.get(21)?,
+            atr_ratio: row.get(22)?,
+            range_expansion: row.get(23)?,
+            day_range_ratio: row.get(24)?,
+            computed_at: row.get(25)?,
         })
     }
 }
@@ -64,12 +80,14 @@ impl TechnicalSnapshotRecord {
 const SELECT_COLUMNS: &str = "symbol, timeframe, rsi_14, macd, macd_signal, macd_histogram, \
     sma_20, sma_50, sma_200, bollinger_upper, bollinger_middle, bollinger_lower, \
     range_52w_low, range_52w_high, range_52w_position, volume_avg_20, volume_ratio_20, \
-    volume_regime, above_sma_20, above_sma_50, above_sma_200, computed_at";
+    volume_regime, above_sma_20, above_sma_50, above_sma_200, \
+    atr_14, atr_ratio, range_expansion, day_range_ratio, computed_at";
 
 const SELECT_COLUMNS_PG: &str = "symbol, timeframe, rsi_14, macd, macd_signal, macd_histogram, \
     sma_20, sma_50, sma_200, bollinger_upper, bollinger_middle, bollinger_lower, \
     range_52w_low, range_52w_high, range_52w_position, volume_avg_20, volume_ratio_20, \
-    volume_regime, above_sma_20, above_sma_50, above_sma_200, computed_at::TEXT";
+    volume_regime, above_sma_20, above_sma_50, above_sma_200, \
+    atr_14, atr_ratio, range_expansion, day_range_ratio, computed_at::TEXT";
 
 pub fn insert_snapshot(conn: &Connection, row: &TechnicalSnapshotRecord) -> Result<()> {
     conn.execute(
@@ -78,8 +96,9 @@ pub fn insert_snapshot(conn: &Connection, row: &TechnicalSnapshotRecord) -> Resu
             sma_20, sma_50, sma_200, bollinger_upper, bollinger_middle, bollinger_lower,
             range_52w_low, range_52w_high, range_52w_position,
             volume_avg_20, volume_ratio_20, volume_regime,
-            above_sma_20, above_sma_50, above_sma_200, computed_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+            above_sma_20, above_sma_50, above_sma_200,
+            atr_14, atr_ratio, range_expansion, day_range_ratio, computed_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
         params![
             row.symbol,
             row.timeframe,
@@ -102,6 +121,10 @@ pub fn insert_snapshot(conn: &Connection, row: &TechnicalSnapshotRecord) -> Resu
             row.above_sma_20,
             row.above_sma_50,
             row.above_sma_200,
+            row.atr_14,
+            row.atr_ratio,
+            row.range_expansion,
+            row.day_range_ratio,
             row.computed_at,
         ],
     )?;
@@ -214,7 +237,11 @@ fn row_to_record_pg(row: &sqlx::postgres::PgRow) -> TechnicalSnapshotRecord {
         above_sma_20: row.get(18),
         above_sma_50: row.get(19),
         above_sma_200: row.get(20),
-        computed_at: row.get(21),
+        atr_14: row.get(21),
+        atr_ratio: row.get(22),
+        range_expansion: row.get(23),
+        day_range_ratio: row.get(24),
+        computed_at: row.get(25),
     }
 }
 
@@ -224,10 +251,12 @@ fn insert_snapshot_postgres(pool: &PgPool, row: &TechnicalSnapshotRecord) -> Res
             sma_20, sma_50, sma_200, bollinger_upper, bollinger_middle, bollinger_lower,
             range_52w_low, range_52w_high, range_52w_position,
             volume_avg_20, volume_ratio_20, volume_regime,
-            above_sma_20, above_sma_50, above_sma_200, computed_at
+            above_sma_20, above_sma_50, above_sma_200,
+            atr_14, atr_ratio, range_expansion, day_range_ratio, computed_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::TIMESTAMPTZ
+            $13, $14, $15, $16, $17, $18, $19, $20, $21,
+            $22, $23, $24, $25, $26::TIMESTAMPTZ
         )";
     crate::db::pg_runtime::block_on(async {
         sqlx::query(query)
@@ -252,6 +281,10 @@ fn insert_snapshot_postgres(pool: &PgPool, row: &TechnicalSnapshotRecord) -> Res
             .bind(row.above_sma_20)
             .bind(row.above_sma_50)
             .bind(row.above_sma_200)
+            .bind(row.atr_14)
+            .bind(row.atr_ratio)
+            .bind(row.range_expansion)
+            .bind(row.day_range_ratio)
             .bind(&row.computed_at)
             .execute(pool)
             .await?;
@@ -335,6 +368,10 @@ mod tests {
             above_sma_20: Some(true),
             above_sma_50: Some(true),
             above_sma_200: Some(true),
+            atr_14: Some(3.5),
+            atr_ratio: Some(3.5),
+            range_expansion: Some(false),
+            day_range_ratio: Some(1.0),
             computed_at: computed_at.to_string(),
         }
     }

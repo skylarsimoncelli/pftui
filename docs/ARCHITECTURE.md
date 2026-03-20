@@ -91,6 +91,8 @@ indicators/mod.rs re-exports:
   compute_sma(&[f64], period) -> Vec<Option<f64>>           // Simple moving average
   compute_macd(&[f64]) -> MacdResult { macd, signal, histogram: Vec<f64> }
   compute_bollinger(&[f64], period, multiplier) -> BollingerBands { upper, lower, middle, width: Vec<f64> }
+  atr::compute_atr(&[Option<f64>], &[Option<f64>], &[f64], period) -> Vec<Option<f64>>  // ATR from OHLCV, Wilder smoothing
+  atr::compute_true_range(&[Option<f64>], &[Option<f64>], &[f64]) -> Vec<Option<f64>>   // True Range per bar
 ```
 Color conventions: RSI >70 = red (overbought), <30 = green (oversold), 30-70 = neutral
 

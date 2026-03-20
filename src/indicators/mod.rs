@@ -1,8 +1,9 @@
 //! Technical indicators engine.
 //!
-//! Pure functions that compute RSI, MACD, SMA, Bollinger Bands, and correlation
+//! Pure functions that compute RSI, MACD, SMA, Bollinger Bands, ATR, and correlation
 //! from price history slices (`&[f64]`). No I/O, no side effects — just math.
 
+pub mod atr;
 pub mod bollinger;
 pub mod correlation;
 pub mod macd;

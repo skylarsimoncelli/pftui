@@ -525,6 +525,10 @@ mod tests {
             above_sma_20: Some(true),
             above_sma_50: Some(true),
             above_sma_200: Some(true),
+            atr_14: None,
+            atr_ratio: None,
+            range_expansion: None,
+            day_range_ratio: None,
             computed_at: "2026-03-18T16:00:00Z".to_string(),
         }
     }

@@ -755,6 +755,27 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
 
+        // Migration: add OHLCV-aware ATR columns to technical_snapshots (F48 step 2)
+        for col in &[
+            ("atr_14", "DOUBLE PRECISION"),
+            ("atr_ratio", "DOUBLE PRECISION"),
+            ("range_expansion", "BOOLEAN"),
+            ("day_range_ratio", "DOUBLE PRECISION"),
+        ] {
+            let check = format!(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'technical_snapshots' AND column_name = '{}'",
+                col.0
+            );
+            let exists: (i64,) = sqlx::query_as(&check).fetch_one(pool).await?;
+            if exists.0 == 0 {
+                let alter = format!(
+                    "ALTER TABLE technical_snapshots ADD COLUMN {} {}",
+                    col.0, col.1
+                );
+                sqlx::query(&alter).execute(pool).await?;
+            }
+        }
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

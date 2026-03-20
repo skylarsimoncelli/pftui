@@ -480,6 +480,14 @@ pub struct AssetTechnicalsResponse {
     pub above_sma_20: Option<bool>,
     pub above_sma_50: Option<bool>,
     pub above_sma_200: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atr_14: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atr_ratio: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range_expansion: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub day_range_ratio: Option<f64>,
     pub computed_at: String,
 }
 
@@ -521,6 +529,10 @@ fn map_technical_snapshot(
         above_sma_20: row.above_sma_20,
         above_sma_50: row.above_sma_50,
         above_sma_200: row.above_sma_200,
+        atr_14: row.atr_14,
+        atr_ratio: row.atr_ratio,
+        range_expansion: row.range_expansion,
+        day_range_ratio: row.day_range_ratio,
         computed_at: row.computed_at,
     })
 }
