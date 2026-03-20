@@ -3,6 +3,50 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+## v0.14.0 — 2026-03-20
+
+**84 commits since v0.13.0.** Major release: always-on analytics engine, broker integrations, parallel refresh, OHLCV technical analysis.
+
+### Highlights
+
+- **Always-on daemon** (`pftui system daemon`): background refresh service with configurable scheduling, systemd integration, and health monitoring (F47)
+- **Refresh DAG with parallelism**: `data refresh` now runs independent sources concurrently via dependency-aware DAG with per-source policies, retries, and `--json` metrics (F52)
+- **Full OHLCV history**: price_history upgraded from close-only to full OHLCV. ATR, range expansion, and breakout detection signals now available across all symbols (F48)
+- **Precomputed technical signal engine**: per-symbol RSI, MACD cross, SMA reclaim, Bollinger squeeze, volume, and 52-week signals precomputed and stored in DB. Wired into movers and brief JSON (F49)
+- **Broker integration**: sync positions from Trading212, IBKR, Binance, Kraken, Coinbase, and Crypto.com (F41)
+- **Configurable universe expansion**: user-defined symbol universe beyond default watchlist (F50)
+- **Asset intelligence blob**: consolidated per-asset intelligence endpoint (F51)
+- **Stored market structure**: key levels engine with support/resistance, MA levels, swing points surfaced in brief, web, TUI, and alerts (F46)
+- **Oil inventory data**: EIA crude oil and SPR levels via `data oil-inventory` (F44)
+- **Consolidated prices endpoint**: `data prices` for all closing prices in one call (F47)
+- **Batch prediction scoring**: `journal prediction score-batch` for bulk scorecard evaluation
+- **Persistent technical snapshots**: stored technical state for trend tracking (F45)
+- **Economy data reconciliation**: cross-source validation (FRED > BLS > Brave), plausibility filters, source/confidence metadata
+- **Bulk acknowledge**: `analytics alerts ack` and `agent message ack` accept multiple IDs per call
+- **iOS mobile client**: streamlined remote monitoring app for iOS simulator
+- **Prediction CLI UX**: `--timeframe` flag with intuitive aliases (`short`→`low`, `long`→`high`)
+- **Branch protection**: `master` is now branch-protected; all changes go through PRs
+
+### Bug Fixes
+
+- **P0**: movers scanner returning 0% during stale-close duplication — Yahoo duplicates closing prices after-hours, now skips stale duplicates
+- **P0**: movers returning 0 results when price history is empty/stale — added `previous_close` fallback from Yahoo's `chartPreviousClose`
+- **P0**: analytics summary/divergence/alignment/low return empty JSON on DB errors — resilient error handling
+- **P0**: TIMESTAMPTZ decode crash in PostgreSQL queries — ::text cast fix
+- **P0**: scenario CRUD fully exposed in analytics namespace
+- **P1**: `data news --json` resilient to empty cache / API failures — always returns valid JSON
+- **P1**: `data sovereign` resilient to COMEX silver fetch failures
+- **P1**: economy data plausibility validation rejects garbage Brave Search extractions
+- **P1**: alert flapping cooldown logic for recurring alerts
+- **P0**: CI Postgres parity suite — fixed TRUNCATE atomicity bug leaving stale test data
+
+### Stats
+
+- Tests: 1495 passing (up from ~1400 in v0.13.0)
+- Clippy: clean (`-D warnings`)
+
+---
+
 ### 2026-03-20 — feat: Bulk acknowledge for alerts and agent messages (P2)
 
 - What: Both `analytics alerts ack` and `agent message ack` now accept multiple IDs in a single call. Alerts: `pftui analytics alerts ack 1 2 3` (positional). Messages: `pftui agent message ack --id 1 --id 2 --id 3` (repeatable flag). Both produce per-ID success/error reporting. JSON output includes `acked` array and `errors` array. Partial success is allowed — if some IDs fail (wrong status, not found), the ones that can be acked are, with warnings for the rest. Only fails entirely if zero IDs were acknowledged.
