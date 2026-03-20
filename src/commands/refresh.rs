@@ -1955,6 +1955,8 @@ fn store_economy_result(
                             previous: item.previous,
                             change: item.change,
                             source_url: item.source_url.clone(),
+                            source: item.source.name().to_string(),
+                            confidence: item.source.confidence().to_string(),
                             fetched_at: now.clone(),
                         };
                         let _ = economic_data_db::upsert_entry_backend(backend, &entry);
