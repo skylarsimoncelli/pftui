@@ -14,3 +14,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-20,alert-investigator,85,80,monitoring,info,No alerts triggered. All previous alerts properly acknowledged. System monitoring functioning correctly.
 2026-03-20 20:10,dev-agent,90,90,data-quality,P2,"TODO backlog empty. Addressed feedback-reported BTC 224632% daily change anomaly by adding plausibility guard (±500% max) across all 6 change calculation surfaces. Shared utility in models::price. 1503 tests pass (+8 new), clippy clean. PR #99 merged."
 2026-03-20,alert-investigator,100,95,monitoring,info,Clean run - no active alerts to investigate. Alert system functioning properly.
+2026-03-20,alert-investigator,85,80,enhancement,P2,"pftui provided excellent market context via news, movers, and sentiment commands. Journal notes command failed on invalid section alert - suggest adding alert as valid section. Alert pipeline integration working well."
