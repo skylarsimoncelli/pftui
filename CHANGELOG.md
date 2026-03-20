@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: Prediction CLI --timeframe flag and intuitive aliases (P2)
+
+- What: Added `--timeframe` flag as the preferred way to specify prediction timeframe on `journal prediction add`, keeping positional syntax for backwards compatibility. Flag wins over positional when both provided. Added intuitive aliases: `short`→`low`, `long`→`high`. `medium` and `macro` stay as-is. Alias resolution through `normalize_timeframe()` applies to add, list, and scorecard commands. Updated help text with examples showing both syntaxes.
+- Why: Evening Analyst (Mar 18, Mar 20) reported that `prediction add` requires positional timeframe but doesn't support `--timeframe` flag. Values `low`/`medium`/`high`/`macro` differ from intuitive names `short`/`medium`/`long`. Per CLAUDE.md: "Commands navigate, arguments parameterize" — timeframe is a parameter, so `--timeframe` flag is the correct pattern.
+- Files: `src/cli.rs`, `src/commands/predict.rs`
+- Tests: `cargo test` — 1466 pass (+18 new: 6 CLI parse tests, 12 unit tests for alias resolution/normalization); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #73
+
 ### 2026-03-20 — fix: data news --json resilient to empty cache / API failures (P1)
 
 - What: Made `data news --json` always return valid JSON with exit 0, even when the database query fails (e.g., Postgres timeout, connection error). On DB failure in JSON mode, returns `{"articles":[],"error":"..."}` with a stderr warning instead of crashing with exit 1. Also made `print_json` fall back to `[]` on serialization error. Text mode still propagates errors normally but now with added context.

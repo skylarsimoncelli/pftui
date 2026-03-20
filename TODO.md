@@ -19,12 +19,7 @@ _(none)_
 
 ## P2 — Coverage And Agent Consumption
 
-
-### [Feedback] Prediction CLI positional vs flag syntax confusion
-
-> Evening Analyst (Mar 18, Mar 20): `prediction add` requires positional timeframe syntax but not `--timeframe` flag. Timeframe values (low/medium/high/macro) differ from intuitive names (short/medium/long). Consider accepting both positional and flag syntax, and adding aliases for common timeframe names.
->
-> Files: `src/cli.rs`, `src/commands/predict.rs`
+_(none)_
 
 ## P3 — Long Term
 
@@ -51,10 +46,9 @@ _(none)_
 - CONTRIBUTING.md and branch protection docs added (PR #58)
 - F39.7b historical data population completed (810 rows)
 
-**Top 3 priorities based on feedback:**
+**Top priorities based on feedback:**
 
 1. **P1: Economy data inconsistencies** — Medium-Timeframe Analyst (70/75) confused by values without units/context.
-2. **P2: Prediction CLI syntax confusion** — Evening Analyst wants `--timeframe` flag and intuitive aliases.
 
 **Release status:** v0.13.0 is current. 53 commits since tag. P0 movers stale-close bug fixed (PR #65). Build green, 1440 tests pass, clippy clean. **Release v0.14.0 is eligible** — no P0 blockers remaining.
 
