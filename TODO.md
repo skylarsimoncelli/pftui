@@ -6,11 +6,7 @@
 
 ## P0 — Critical
 
-### [Feedback] Movers scanner returning 0 results during extreme moves
-
-> Evening Analyst (Mar 20, 45/55): `analytics movers` returned 0 results despite gold -10% and silver -14% — the biggest metals crash in 40 years. Suggests threshold, calculation, or data freshness issue in the movers pipeline. Investigate whether movers relies on stale daily close comparisons that break during multi-day crashes or if the threshold/filter logic is excluding extreme outliers.
->
-> Files: `src/commands/movers.rs`, `src/analytics/technicals.rs`
+_(none)_
 
 ## P1 — Always-On Analytics Engine
 
@@ -62,10 +58,10 @@
 
 **Top 3 priorities based on feedback:**
 
-1. **P0: Movers scanner returning 0 during extreme moves** — Evening Analyst's biggest pain (45/55). Missing the largest metals crash in 40 years is a critical gap for an analytics engine.
-2. **P1: `data news --json` exit code 1** — JSON output broken while text works. Agents need reliable JSON.
-3. **P1: Economy data inconsistencies** — Medium-Timeframe Analyst (70/75) confused by values without units/context.
+1. **P1: `data news --json` exit code 1** — JSON output broken while text works. Agents need reliable JSON.
+2. **P1: Economy data inconsistencies** — Medium-Timeframe Analyst (70/75) confused by values without units/context.
+3. **P2: Prediction CLI syntax confusion** — Evening Analyst wants `--timeframe` flag and intuitive aliases.
 
-**Release status:** v0.13.0 is current. 52 commits since tag. Major features landed (F48 steps 1-2, F50 universe, F47 daemon complete). Build green, 1420 tests pass, clippy clean. **Release v0.14.0 is eligible** once the P0 movers bug is resolved — or could ship now if the movers issue is deemed non-blocking since it's a data/threshold edge case rather than a crash.
+**Release status:** v0.13.0 is current. 53 commits since tag. P0 movers stale-close bug fixed (PR #65). Build green, 1440 tests pass, clippy clean. **Release v0.14.0 is eligible** — no P0 blockers remaining.
 
 **GitHub stars:** 2 — Homebrew Core requires 50+.

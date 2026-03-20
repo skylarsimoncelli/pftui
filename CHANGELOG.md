@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — fix: Movers scanner returning 0% during stale-close duplication (P0)
+
+- What: Fixed critical bug where `analytics movers` (CLI) and TUI top-movers widget returned 0% change for all symbols. Root cause: Yahoo Finance duplicates the same closing price across consecutive history dates during after-hours fetches (e.g. 4 AM UTC). The old `previous_close_from_history` used the penultimate record, which had the same close as the cached spot → 0% for everything. New logic walks backwards through history, skipping records whose close matches the current cached price (stale duplicates), and returns the first genuinely different close. Falls back to oldest candidate for truly flat markets (correct 0% change). Also expanded history fetch from 5 to 10 records for better coverage across weekends/holidays.
+- Why: This bug caused the movers scanner to miss the largest metals crash in 40 years (gold -10%, silver -14% on Mar 20 2026) — reported by Evening Analyst as P0 with 45/55 scores. The same stale-close pattern affected all 50 scanned symbols, not just metals.
+- Files: `src/commands/movers.rs`, `src/tui/widgets/top_movers.rs`
+- Tests: `cargo test` — 1440 pass (+20 new including `previous_close_skips_stale_duplicates` for CLI and TUI, `previous_close_flat_market_returns_zero_change`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #65
+
 ### 2026-03-20 — feat: Refresh DAG with parallelism and source policies (F52)
 
 - What: transformed `data refresh` from a sequential monolithic pass into a dependency-aware, parallel, policy-driven pipeline. Modeled refresh as a 5-layer DAG: Layer 0 (independent sources: predictions, sentiment, BLS, World Bank, economy, FRED, RSS news, Brave news, calendar — all fetch concurrently via `tokio::join!`), Layer 1 (prices: Yahoo + CoinGecko + history backfill), Layer 2 (post-price analytics: technical snapshots, levels, signals, correlations, regime), Layer 3 (portfolio snapshots, cross-timeframe signals, alerts), Layer 4 (cleanup). Added `refresh_dag` module with per-source policy structs (`min_refresh_interval`, `max_retries`, `backoff_base_ms`, `timeout_ms`, `max_concurrency`). Added structured `RefreshResult`/`SourceResult` types tracking per-source duration, status, items_updated, and failure details. Added `pftui data refresh --json` for structured JSON output. DB writes remain sequential to respect connection pool limits. Yahoo Finance rate limiting preserved. Existing human-readable output unchanged for non-json mode. Daemon integration unchanged.
