@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: Bulk acknowledge for alerts and agent messages (P2)
+
+- What: Both `analytics alerts ack` and `agent message ack` now accept multiple IDs in a single call. Alerts: `pftui analytics alerts ack 1 2 3` (positional). Messages: `pftui agent message ack --id 1 --id 2 --id 3` (repeatable flag). Both produce per-ID success/error reporting. JSON output includes `acked` array and `errors` array. Partial success is allowed — if some IDs fail (wrong status, not found), the ones that can be acked are, with warnings for the rest. Only fails entirely if zero IDs were acknowledged.
+- Why: Two agents (low-timeframe-analyst Mar 19, alert-investigator Mar 20) independently requested bulk ack. Previously required a shell loop (`for id in 1 2 3; do pftui analytics alerts ack $id; done`), adding latency and complexity for agent pipelines that process multiple alerts per cycle.
+- Files: `src/cli.rs`, `src/commands/alerts.rs`, `src/commands/agent_msg.rs`, `src/main.rs`
+- Tests: `cargo test` — 1495 pass (+7 new: bulk ack multiple alerts, partial failure, nonexistent ID, bulk ack multiple messages, JSON output, empty IDs error, legacy single-ID backwards compat); `cargo clippy --all-targets -- -D warnings` clean
+
 ### 2026-03-20 — fix: Movers returns 0 results when price history is empty/stale (P0)
 
 - What: Fixed `analytics movers` silently returning 0 results during extreme market moves when price history was empty or stale. Added `previous_close` field to `PriceQuote` from Yahoo's `chartPreviousClose`. `compute_change_pct()` now falls back to cached `previous_close` when history is unavailable. Added `skipped` diagnostic in `--json` mode for symbols with price but no computable change. Yahoo chart API now fetches `chartPreviousClose` for ALL symbols, not just US equities.

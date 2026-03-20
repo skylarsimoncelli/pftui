@@ -36,6 +36,8 @@ pub fn run(backend: &BackendConnection, action: &str, args: &AlertsArgs) -> Resu
 pub struct AlertsArgs {
     pub rule: Option<String>,
     pub id: Option<i64>,
+    /// Multiple IDs for bulk operations (e.g. ack).
+    pub ids: Vec<i64>,
     pub json: bool,
     pub status_filter: Option<String>,
     pub today: bool,
@@ -527,21 +529,61 @@ fn seed_alert(
 }
 
 fn run_ack(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
-    let id = args.id.unwrap_or_else(|| {
-        eprintln!("Usage: pftui alerts ack <id>");
-        std::process::exit(1);
-    });
-
-    if let Some(alert) = alerts_db::get_alert_backend(backend, id)? {
-        if alert.status != AlertStatus::Triggered {
-            bail!("Alert #{} is not triggered (status: {}). Only triggered alerts can be acknowledged.", id, alert.status);
+    // Collect IDs from both the bulk `ids` vec and the legacy single `id` field.
+    let mut all_ids = args.ids.clone();
+    if let Some(single) = args.id {
+        if !all_ids.contains(&single) {
+            all_ids.push(single);
         }
-        alerts_db::acknowledge_alert_backend(backend, id)?;
-        let _ = triggered_alerts_db::acknowledge_for_alert_backend(backend, id)?;
-        println!("✅ Acknowledged alert #{}: {}", id, alert.rule_text);
-    } else {
-        bail!("No alert found with id #{}", id);
     }
+
+    if all_ids.is_empty() {
+        eprintln!("Usage: pftui analytics alerts ack <ID> [<ID> ...]");
+        std::process::exit(1);
+    }
+
+    let mut acked = Vec::new();
+    let mut errors = Vec::new();
+
+    for id in &all_ids {
+        match alerts_db::get_alert_backend(backend, *id)? {
+            Some(alert) => {
+                if alert.status != AlertStatus::Triggered {
+                    errors.push(format!(
+                        "Alert #{} is not triggered (status: {})",
+                        id, alert.status
+                    ));
+                    continue;
+                }
+                alerts_db::acknowledge_alert_backend(backend, *id)?;
+                let _ = triggered_alerts_db::acknowledge_for_alert_backend(backend, *id)?;
+                acked.push((*id, alert.rule_text.clone()));
+            }
+            None => {
+                errors.push(format!("No alert found with id #{}", id));
+            }
+        }
+    }
+
+    if args.json {
+        let result = serde_json::json!({
+            "acked": acked.iter().map(|(id, rule)| serde_json::json!({"id": id, "rule": rule})).collect::<Vec<_>>(),
+            "errors": errors,
+        });
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        for (id, rule) in &acked {
+            println!("✅ Acknowledged alert #{}: {}", id, rule);
+        }
+        for err in &errors {
+            eprintln!("⚠️  {}", err);
+        }
+    }
+
+    if !errors.is_empty() && acked.is_empty() {
+        bail!("No alerts were acknowledged");
+    }
+
     Ok(())
 }
 
@@ -788,6 +830,7 @@ mod tests {
         AlertsArgs {
             rule: None,
             id: None,
+            ids: vec![],
             json: false,
             status_filter: None,
             today: false,
@@ -989,6 +1032,106 @@ mod tests {
             id: Some(id),
             ..default_args()
         };
+        assert!(run_ack(&backend, &args).is_err());
+    }
+
+    #[test]
+    fn test_bulk_ack_multiple_triggered_alerts() {
+        let backend = setup_backend();
+        let id1 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let id2 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5000",
+                rule_text: "GC=F above 5000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // Trigger both
+        check_alerts_backend_only(&backend).unwrap();
+        let args = AlertsArgs {
+            ids: vec![id1, id2],
+            ..default_args()
+        };
+        run_ack(&backend, &args).unwrap();
+        let a1 = alerts_db::get_alert_backend(&backend, id1).unwrap().unwrap();
+        let a2 = alerts_db::get_alert_backend(&backend, id2).unwrap().unwrap();
+        assert_eq!(a1.status, AlertStatus::Acknowledged);
+        assert_eq!(a2.status, AlertStatus::Acknowledged);
+    }
+
+    #[test]
+    fn test_bulk_ack_partial_failure() {
+        let backend = setup_backend();
+        let id1 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        let id2 = alerts_db::add_alert_backend(
+            &backend,
+            NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "6000",
+                rule_text: "GC=F above 6000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        // Only trigger id1 (above 5500), id2 (above 6000) stays armed
+        check_alerts_backend_only(&backend).unwrap();
+        let args = AlertsArgs {
+            ids: vec![id1, id2],
+            ..default_args()
+        };
+        // Should succeed (partial) — id1 acked, id2 error
+        run_ack(&backend, &args).unwrap();
+        let a1 = alerts_db::get_alert_backend(&backend, id1).unwrap().unwrap();
+        assert_eq!(a1.status, AlertStatus::Acknowledged);
+        let a2 = alerts_db::get_alert_backend(&backend, id2).unwrap().unwrap();
+        assert_eq!(a2.status, AlertStatus::Armed); // still armed
+    }
+
+    #[test]
+    fn test_bulk_ack_nonexistent_id_fails() {
+        let backend = setup_backend();
+        let args = AlertsArgs {
+            ids: vec![999],
+            ..default_args()
+        };
+        // All failed → error
         assert!(run_ack(&backend, &args).is_err());
     }
 
