@@ -1215,9 +1215,16 @@ pub enum JournalEntryCommand {
 
 #[derive(Subcommand)]
 pub enum JournalPredictionCommand {
+    /// Add a prediction. Timeframe accepts: low, medium, high, macro (aliases: short=low, long=high).
+    /// Prefer --timeframe flag; positional shorthand kept for backwards compatibility.
+    ///
+    /// Examples:
+    ///   pftui journal prediction add "BTC above 70k" --timeframe short --confidence 0.7
+    ///   pftui journal prediction add "Gold to 3000" medium 0.8
     Add {
+        /// The prediction claim text
         value: String,
-        /// Timeframe (positional shorthand): low|medium|high|macro
+        /// Timeframe (positional shorthand, backwards-compat): low|medium|high|macro|short|long
         timeframe_pos: Option<String>,
         /// Confidence (positional shorthand): 0.0..=1.0
         confidence_pos: Option<f64>,
@@ -1225,6 +1232,7 @@ pub enum JournalPredictionCommand {
         symbol: Option<String>,
         #[arg(long)]
         conviction: Option<String>,
+        /// Analytics timeframe: low, medium, high, macro (aliases: short=low, long=high). Preferred over positional.
         #[arg(long)]
         timeframe: Option<String>,
         #[arg(long)]
@@ -3453,6 +3461,202 @@ mod tests {
         };
 
         assert_eq!(symbol, None);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_prediction_add_timeframe_flag_syntax() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "BTC above 70k",
+            "--timeframe",
+            "low",
+            "--confidence",
+            "0.7",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            value,
+                            timeframe_pos,
+                            confidence_pos,
+                            timeframe,
+                            confidence,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(value, "BTC above 70k");
+        assert_eq!(timeframe_pos, None);
+        assert_eq!(confidence_pos, None);
+        assert_eq!(timeframe.as_deref(), Some("low"));
+        assert_eq!(confidence, Some(0.7));
+    }
+
+    #[test]
+    fn parse_prediction_add_timeframe_alias_short() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "BTC above 70k",
+            "--timeframe",
+            "short",
+            "--confidence",
+            "0.7",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            value,
+                            timeframe,
+                            confidence,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(value, "BTC above 70k");
+        assert_eq!(timeframe.as_deref(), Some("short"));
+        assert_eq!(confidence, Some(0.7));
+    }
+
+    #[test]
+    fn parse_prediction_add_timeframe_alias_long_positional() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "Gold to 5000",
+            "long",
+            "0.6",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            value,
+                            timeframe_pos,
+                            confidence_pos,
+                            timeframe,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(value, "Gold to 5000");
+        assert_eq!(timeframe_pos.as_deref(), Some("long"));
+        assert_eq!(confidence_pos, Some(0.6));
+        assert_eq!(timeframe, None);
+    }
+
+    #[test]
+    fn parse_prediction_add_flag_wins_over_positional() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "BTC above 70k",
+            "macro",
+            "0.9",
+            "--timeframe",
+            "short",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            value,
+                            timeframe_pos,
+                            timeframe,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(value, "BTC above 70k");
+        // Both are captured; the dispatch in main.rs uses flag first
+        assert_eq!(timeframe_pos.as_deref(), Some("macro"));
+        assert_eq!(timeframe.as_deref(), Some("short"));
+    }
+
+    #[test]
+    fn parse_prediction_add_full_flag_syntax_with_all_options() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "add",
+            "BTC above 70k",
+            "--timeframe",
+            "short",
+            "--confidence",
+            "0.7",
+            "--symbol",
+            "BTC",
+            "--source-agent",
+            "evening-analyst",
+            "--json",
+        ])
+        .expect("cli should parse");
+
+        let Some(Command::Journal {
+            command:
+                Some(JournalCommand::Prediction {
+                    command:
+                        JournalPredictionCommand::Add {
+                            value,
+                            timeframe,
+                            confidence,
+                            symbol,
+                            source_agent,
+                            json,
+                            ..
+                        },
+                }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction add command");
+        };
+
+        assert_eq!(value, "BTC above 70k");
+        assert_eq!(timeframe.as_deref(), Some("short"));
+        assert_eq!(confidence, Some(0.7));
+        assert_eq!(symbol.as_deref(), Some("BTC"));
+        assert_eq!(source_agent.as_deref(), Some("evening-analyst"));
         assert!(json);
     }
 }

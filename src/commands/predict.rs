@@ -12,14 +12,31 @@ fn validate_conviction(value: &str) -> Result<()> {
     }
 }
 
+/// Resolve intuitive timeframe aliases to canonical names.
+/// `short` → `low`, `long` → `high`. `medium` and `macro` are already canonical.
+fn resolve_timeframe_alias(value: &str) -> &str {
+    match value {
+        "short" => "low",
+        "long" => "high",
+        _ => value,
+    }
+}
+
 fn validate_timeframe(value: &str) -> Result<()> {
     match value {
         "low" | "medium" | "high" | "macro" => Ok(()),
         _ => bail!(
-            "invalid timeframe '{}'. Valid: low, medium, high, macro. Use --timeframe <value> or positional shorthand after the claim.",
+            "invalid timeframe '{}'. Valid: low, medium, high, macro (aliases: short=low, long=high). Use --timeframe <value> or positional shorthand after the claim.",
             value
         ),
     }
+}
+
+/// Resolve aliases and validate a timeframe value. Returns the canonical name.
+fn normalize_timeframe(value: &str) -> Result<String> {
+    let canonical = resolve_timeframe_alias(value);
+    validate_timeframe(canonical)?;
+    Ok(canonical.to_string())
 }
 
 fn validate_outcome(value: &str) -> Result<()> {
@@ -93,9 +110,10 @@ pub fn run(
             if let Some(c) = conviction {
                 validate_conviction(c)?;
             }
-            if let Some(tf) = timeframe {
-                validate_timeframe(tf)?;
-            }
+            let resolved_timeframe = match timeframe {
+                Some(tf) => Some(normalize_timeframe(tf)?),
+                None => None,
+            };
             if let Some(conf) = confidence {
                 if !(0.0..=1.0).contains(&conf) {
                     bail!("invalid confidence '{}'. Valid range: 0.0..=1.0", conf);
@@ -106,7 +124,7 @@ pub fn run(
                 claim,
                 symbol,
                 conviction,
-                timeframe,
+                resolved_timeframe.as_deref(),
                 confidence,
                 source_agent,
                 target_date,
@@ -128,11 +146,12 @@ pub fn run(
             if let Some(f) = filter {
                 validate_outcome(f)?;
             }
-            if let Some(tf) = timeframe {
-                validate_timeframe(tf)?;
-            }
+            let resolved_timeframe = match timeframe {
+                Some(tf) => Some(normalize_timeframe(tf)?),
+                None => None,
+            };
             let rows = user_predictions::list_predictions_backend(
-                backend, filter, symbol, timeframe, limit,
+                backend, filter, symbol, resolved_timeframe.as_deref(), limit,
             )?;
 
             if json_output {
@@ -205,12 +224,13 @@ pub fn run(
         }
 
         "scorecard" => {
-            if let Some(tf) = timeframe {
-                validate_timeframe(tf)?;
-            }
+            let resolved_timeframe = match timeframe {
+                Some(tf) => Some(normalize_timeframe(tf)?),
+                None => None,
+            };
             let target_date = parse_date_filter(date)?;
             let mut rows = user_predictions::list_predictions_backend(
-                backend, filter, symbol, timeframe, limit,
+                backend, filter, symbol, resolved_timeframe.as_deref(), limit,
             )?;
             if let Some(d) = target_date {
                 rows.retain(|row| {
@@ -280,7 +300,7 @@ pub fn run(
 
             let payload = json!({
                 "date": target_date.map(|d| d.to_string()),
-                "timeframe": timeframe,
+                "timeframe": resolved_timeframe,
                 "symbol": symbol,
                 "total": total,
                 "scored": scored,
@@ -300,7 +320,7 @@ pub fn run(
                 if let Some(d) = target_date {
                     println!("  Date: {}", d);
                 }
-                if let Some(tf) = timeframe {
+                if let Some(ref tf) = resolved_timeframe {
                     println!("  Timeframe: {}", tf);
                 }
                 println!("  Total: {}", total);
@@ -429,4 +449,83 @@ pub fn run_score_batch(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_alias_short_to_low() {
+        assert_eq!(resolve_timeframe_alias("short"), "low");
+    }
+
+    #[test]
+    fn resolve_alias_long_to_high() {
+        assert_eq!(resolve_timeframe_alias("long"), "high");
+    }
+
+    #[test]
+    fn resolve_alias_medium_passthrough() {
+        assert_eq!(resolve_timeframe_alias("medium"), "medium");
+    }
+
+    #[test]
+    fn resolve_alias_macro_passthrough() {
+        assert_eq!(resolve_timeframe_alias("macro"), "macro");
+    }
+
+    #[test]
+    fn resolve_alias_canonical_low_passthrough() {
+        assert_eq!(resolve_timeframe_alias("low"), "low");
+    }
+
+    #[test]
+    fn resolve_alias_canonical_high_passthrough() {
+        assert_eq!(resolve_timeframe_alias("high"), "high");
+    }
+
+    #[test]
+    fn normalize_short_resolves_to_low() {
+        let result = normalize_timeframe("short").unwrap();
+        assert_eq!(result, "low");
+    }
+
+    #[test]
+    fn normalize_long_resolves_to_high() {
+        let result = normalize_timeframe("long").unwrap();
+        assert_eq!(result, "high");
+    }
+
+    #[test]
+    fn normalize_canonical_values_pass() {
+        for tf in &["low", "medium", "high", "macro"] {
+            let result = normalize_timeframe(tf).unwrap();
+            assert_eq!(result, *tf);
+        }
+    }
+
+    #[test]
+    fn normalize_invalid_timeframe_errors() {
+        let result = normalize_timeframe("weekly");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("invalid timeframe"));
+        assert!(msg.contains("aliases: short=low, long=high"));
+    }
+
+    #[test]
+    fn validate_timeframe_rejects_aliases_directly() {
+        // validate_timeframe only accepts canonical; aliases go through normalize_timeframe
+        assert!(validate_timeframe("short").is_err());
+        assert!(validate_timeframe("long").is_err());
+    }
+
+    #[test]
+    fn validate_timeframe_accepts_canonical() {
+        assert!(validate_timeframe("low").is_ok());
+        assert!(validate_timeframe("medium").is_ok());
+        assert!(validate_timeframe("high").is_ok());
+        assert!(validate_timeframe("macro").is_ok());
+    }
 }
