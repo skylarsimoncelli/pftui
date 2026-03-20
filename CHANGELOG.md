@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — fix: Movers returns 0 results when price history is empty/stale (P0)
+
+- What: Fixed `analytics movers` silently returning 0 results during extreme market moves when price history was empty or stale. Added `previous_close` field to `PriceQuote` from Yahoo's `chartPreviousClose`. `compute_change_pct()` now falls back to cached `previous_close` when history is unavailable. Added `skipped` diagnostic in `--json` mode for symbols with price but no computable change. Yahoo chart API now fetches `chartPreviousClose` for ALL symbols, not just US equities.
+- Why: During gold -10% / silver -14% crash, movers scanner returned 0 results because `compute_change_pct()` returned `None` when `get_history_backend()` had no data — symbols were invisible exactly when they mattered most.
+- Files: `src/models/price.rs`, `src/db/price_cache.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/price/yahoo.rs`, `src/commands/movers.rs` (+12 files with `previous_close: None` field addition)
+- Tests: 1488 pass (+5 new: cached previous_close fallback, preference ordering, skipped diagnostic, extreme moves scenario); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #75
+
 ### 2026-03-20 — fix: CI Postgres parity suite — truncate price tables individually (P0)
 
 - What: Fixed the parity check script's TRUNCATE command which atomically failed when `price_history` didn't exist in the Postgres schema, silently leaving `price_cache` dirty with leftover test data (AAPL at $201.25). Changed to per-table truncation in a loop. Added `fx_cache`, `technical_snapshots`, `technical_signals`, `technical_levels` to cleanup.
