@@ -8,7 +8,7 @@ BACKUP_DIR="/backups"
 DB_NAME="pftui"
 DB_USER="pftui"
 DB_HOST="127.0.0.1"
-KEEP=7
+KEEP=28
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/pftui_${TIMESTAMP}.sql.gz"
 
