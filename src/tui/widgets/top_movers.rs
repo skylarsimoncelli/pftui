@@ -52,7 +52,7 @@ fn compute_movers(app: &App) -> Vec<(AssetCategory, Mover)> {
         };
 
         if let Some(records) = app.price_history.get(&pos.symbol) {
-            if let Some(prev_close) = prev_close_from_history(records, &today) {
+            if let Some(prev_close) = prev_close_from_history(records, &today, current_price) {
                 if prev_close > dec!(0) {
                     let change_pct =
                         ((current_price - prev_close) / prev_close) * dec!(100);
@@ -72,17 +72,37 @@ fn compute_movers(app: &App) -> Vec<(AssetCategory, Mover)> {
 }
 
 /// Get the previous close price from history records.
-/// If the last record is today, use the second-to-last.
-/// Otherwise use the last record.
-fn prev_close_from_history(records: &[HistoryRecord], today: &str) -> Option<Decimal> {
+///
+/// Walks backwards through history, skipping today's record and any records
+/// whose close matches `current_price` (stale-close duplication from Yahoo).
+/// Returns the first genuinely different close, or the oldest candidate if
+/// all closes are identical (flat market → 0% change).
+fn prev_close_from_history(
+    records: &[HistoryRecord],
+    today: &str,
+    current_price: Decimal,
+) -> Option<Decimal> {
     if records.is_empty() {
         return None;
     }
-    if records.len() >= 2 && records.last().map(|r| r.date.as_str()) == Some(today) {
-        Some(records[records.len() - 2].close)
-    } else {
-        records.last().map(|r| r.close)
+
+    let mut fallback: Option<Decimal> = None;
+    for record in records.iter().rev() {
+        // Skip today's entry
+        if record.date == today {
+            continue;
+        }
+        if fallback.is_none() {
+            fallback = Some(record.close);
+        }
+        // Return the first close that differs from the cached spot
+        if record.close != current_price {
+            return Some(record.close);
+        }
     }
+
+    // All prior closes equal current_price — return oldest candidate (produces 0%)
+    fallback
 }
 
 /// Group movers by category and sort each group by |change_pct| descending.
@@ -281,7 +301,8 @@ mod tests {
                 low: None,
             },
         ];
-        let prev = prev_close_from_history(&records, "2026-03-03");
+        // Current price matches today's close — should return previous day's close
+        let prev = prev_close_from_history(&records, "2026-03-03", dec!(105));
         assert_eq!(prev, Some(dec!(100)));
     }
 
@@ -305,13 +326,14 @@ mod tests {
                 low: None,
             },
         ];
-        let prev = prev_close_from_history(&records, "2026-03-03");
+        // Current price is 110 (different from history) — should return last close
+        let prev = prev_close_from_history(&records, "2026-03-03", dec!(110));
         assert_eq!(prev, Some(dec!(105)));
     }
 
     #[test]
     fn prev_close_empty_returns_none() {
-        let prev = prev_close_from_history(&[], "2026-03-03");
+        let prev = prev_close_from_history(&[], "2026-03-03", dec!(100));
         assert_eq!(prev, None);
     }
 
@@ -326,9 +348,49 @@ mod tests {
                 low: None,
             }];
         // Single record that IS today — no previous close available
-        // (falls to else branch, returns last = today's close)
-        let prev = prev_close_from_history(&records, "2026-03-03");
-        assert_eq!(prev, Some(dec!(100)));
+        let prev = prev_close_from_history(&records, "2026-03-03", dec!(100));
+        assert_eq!(prev, None);
+    }
+
+    #[test]
+    fn prev_close_skips_stale_duplicates_in_tui() {
+        let records = vec![
+            HistoryRecord {
+                date: "2026-03-17".into(),
+                close: dec!(5001),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-18".into(),
+                close: dec!(4890),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-19".into(),
+                close: dec!(4600),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-03-20".into(),
+                close: dec!(4600),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
+        // Should skip today and the stale Mar 19 dup, returning Mar 18
+        let prev = prev_close_from_history(&records, "2026-03-20", dec!(4600));
+        assert_eq!(prev, Some(dec!(4890)));
     }
 
     #[test]
