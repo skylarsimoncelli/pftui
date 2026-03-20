@@ -10,12 +10,7 @@ _(none)_
 
 ## P1 — Always-On Analytics Engine
 
-### [Feedback] Economy data inconsistencies and unclear units — PARTIALLY FIXED
-
-> ~~Medium-Timeframe Analyst (Mar 20, 70/75): NFP=19, PMI=2025, claims=8000 — garbage values from Brave Search extraction.~~
-> Fixed: Added plausibility validation (indicator-specific bounds) and unit labels in JSON output (PR #67). Remaining: fed_funds_rate discrepancy vs FedWatch is a different-source issue (Brave vs FRED), not validation. Consider cross-source reconciliation as follow-up.
->
-> Files: `src/commands/economy.rs`, `src/data/economic.rs`
+_(none)_
 
 ## P2 — Coverage And Agent Consumption
 
@@ -48,7 +43,7 @@ _(none)_
 
 **Top priorities based on feedback:**
 
-1. **P1: Economy data inconsistencies** — Medium-Timeframe Analyst (70/75) confused by values without units/context.
+_(P1 economy data inconsistencies resolved in PR #74 — cross-source reconciliation, source/confidence metadata)_
 
 **Release status:** v0.13.0 is current. 53 commits since tag. P0 movers stale-close bug fixed (PR #65). Build green, 1440 tests pass, clippy clean. **Release v0.14.0 is eligible** — no P0 blockers remaining.
 
