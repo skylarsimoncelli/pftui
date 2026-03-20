@@ -50,30 +50,6 @@
 
 ## P3 — Long Term
 
-### F39.7b: Historical Power Metrics Data Population (Sentinel)
-
-> After dev cron ships F39.7 CLI + schema, spawn a research sub-agent to populate
-> the historical database. The sub-agent should:
->
-> 1. Research each determinant for each power at each decade using web_search
-> 2. Score on Dalio's 1-10 scale with brief justification and source
-> 3. Populate via `pftui analytics macro cycles history add` CLI commands
-> 4. Cross-reference Dalio's own charts from "Principles for Dealing with
->    the Changing World Order" as a baseline, then refine with primary sources
->
-> Powers and spans:
-> - US: 1900-2020 (13 decades)
-> - China: 1900-2020 (13 decades)
-> - Russia/USSR: 1900-2020 (13 decades, note regime transitions)
-> - UK/British Empire: 1900-2020 (13 decades, the decline narrative)
-> - Japan: 1900-2020 (13 decades, rise and plateau)
-> - EU: 1950-2020 (8 decades, post-ECSC)
-> - India: 1950-2020 (8 decades, post-independence)
-> - Saudi: 1940-2020 (9 decades, post-oil discovery)
->
-> Estimated: ~700 rows. Each needs a score, notes, and source.
-> Break into multiple sub-agent runs by country if needed.
-
 ---
 
 ## Feedback Summary
