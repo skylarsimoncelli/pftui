@@ -1002,5 +1002,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    // Migration: add previous_close and open columns to price_cache
+    // These fields enable movers/change calculations without relying on price_history
+    let has_prev_close: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('price_cache') WHERE name = 'previous_close'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_prev_close {
+        conn.execute_batch(
+            "ALTER TABLE price_cache ADD COLUMN previous_close TEXT;
+             ALTER TABLE price_cache ADD COLUMN open TEXT;",
+        )?;
+    }
+
     Ok(())
 }

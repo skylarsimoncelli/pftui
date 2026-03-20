@@ -776,6 +776,25 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             }
         }
 
+        // Migration: add previous_close and open columns to price_cache
+        for col in &[
+            ("previous_close", "NUMERIC"),
+            ("open", "NUMERIC"),
+        ] {
+            let check = format!(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'price_cache' AND column_name = '{}'",
+                col.0
+            );
+            let exists: (i64,) = sqlx::query_as(&check).fetch_one(pool).await?;
+            if exists.0 == 0 {
+                let alter = format!(
+                    "ALTER TABLE price_cache ADD COLUMN {} {}",
+                    col.0, col.1
+                );
+                sqlx::query(&alter).execute(pool).await?;
+            }
+        }
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

@@ -132,6 +132,8 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
                     pre_market_price: None,
                     post_market_price: None,
                     post_market_change_percent: None,
+                    previous_close: None,
+                    open: None,
                 });
             }
             Err(_) => {
@@ -145,6 +147,14 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
     let quote = response.last_quote()?;
 
     let mut price = Decimal::try_from(quote.close)?;
+
+    // Extract previous_close from Yahoo metadata and open from today's quote
+    let mut meta_previous_close = response
+        .metadata()
+        .ok()
+        .and_then(|m| m.previous_close)
+        .and_then(|v| Decimal::try_from(v).ok());
+    let mut quote_open = Decimal::try_from(quote.open).ok();
     
     // Check if Yahoo returned a bogus 1.0 for FX pairs
     if (symbol.ends_with("=X") || symbol.contains("USD")) && (price - dec!(1.0)).abs() < dec!(0.001) {
@@ -170,6 +180,8 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
         match fetch_fx_rate(&currency).await {
             Ok(fx_rate) => {
                 price = (price * fx_rate).round_dp(4);
+                meta_previous_close = meta_previous_close.map(|p| (p * fx_rate).round_dp(4));
+                quote_open = quote_open.map(|p| (p * fx_rate).round_dp(4));
             }
             Err(_) => {
                 // If FX fetch fails, return the foreign price with a warning in source
@@ -182,6 +194,8 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
                     pre_market_price: None,
                     post_market_price: None,
                     post_market_change_percent: None,
+                    previous_close: meta_previous_close,
+                    open: quote_open,
                 });
             }
         }
@@ -200,6 +214,8 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
         pre_market_price,
         post_market_price,
         post_market_change_percent,
+        previous_close: meta_previous_close,
+        open: quote_open,
     })
 }
 

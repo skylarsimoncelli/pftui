@@ -302,6 +302,8 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
+                previous_close: None,
+                open: None,
             },
         )
         .unwrap();
@@ -317,6 +319,8 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
+                previous_close: None,
+                open: None,
             },
         )
         .unwrap();
