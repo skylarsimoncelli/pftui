@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: reshape the iOS app into a streamlined remote monitoring client
+
+- What: expanded the TLS mobile API with a new aggregated `/api/dashboard` payload that bundles portfolio state, timeframe analytics, latest cross-timeframe signal, technical/alert counts, market pulse, watchlist pressure, latest news, and system freshness/daemon status in one read-only response. Reworked the SwiftUI app around that payload: new Home tab for remote monitoring, upgraded visual system, market pulse and watchlist cards, signal summary, source freshness panel, and a cleaner Portfolio/Analytics split driven from a single refresh path. Added mobile server tests for time labels, source freshness shaping, and timestamp formatting.
+- Why: the previous mobile scaffold proved connectivity but still felt like a thin debug client. The product docs are clear that mobile exists for remote monitoring of the shared pftui database, so this change makes the phone app a deliberate companion surface for analytics, market context, and operational health instead of a pair of raw lists.
+- Files: `src/mobile/server.rs`, `src/web/mod.rs`, `mobile/app/PftuiMobile/ContentView.swift`, `mobile/app/PftuiMobile/MobileAPI.swift`, `mobile/app/PftuiMobile/Models.swift`, `CHANGELOG.md`
+- Tests: `swiftc -typecheck mobile/app/PftuiMobile/*.swift`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`
+
 ### 2026-03-20 — feat: OHLCV-aware ATR, range expansion, and breakout detection (F48 step 2)
 
 - What: added ATR (Average True Range) indicator module using full OHLCV data with Wilder's smoothing. Integrated ATR-14, ATR ratio (ATR/price %), range expansion detection (ATR > 1.5x 20-period ATR average), and day range ratio (day's high-low / ATR) into `TechnicalSnapshotRecord`. Added schema migration for 4 new columns (`atr_14`, `atr_ratio`, `range_expansion`, `day_range_ratio`) in both SQLite and PostgreSQL. Added 3 new ATR-based technical signals: `range_expansion` (volatility breakout), `wide_range_bar` (day range > 2x ATR, potential breakout), `inside_bar` (day range < 0.5x ATR, compression/coil). ATR gracefully degrades to close-to-close range when OHLCV is unavailable (CoinGecko, ratio charts). Web dashboard API updated with new fields (skip_serializing_if for backward compat).

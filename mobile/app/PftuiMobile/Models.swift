@@ -30,6 +30,13 @@ struct ConnectionSettings: Codable, Equatable {
     var token: String
 }
 
+struct DashboardPayload: Decodable {
+    let generatedAt: String
+    let portfolio: PortfolioPayload
+    let analytics: AnalyticsPayload
+    let monitoring: MonitoringPayload
+}
+
 struct PortfolioPayload: Decodable {
     let totalValue: FlexValue?
     let dailyChangePct: FlexValue?
@@ -59,4 +66,69 @@ struct TimeframePayload: Decodable, Identifiable {
     let score: Double
     let summary: String?
     let updatedAt: String?
+}
+
+struct MonitoringPayload: Decodable {
+    let latestTimeframeSignal: LatestSignalPayload?
+    let technicalSignalCount: Int
+    let triggeredAlertCount: Int
+    let marketPulse: [MarketPulsePayload]
+    let watchlist: [WatchlistPayload]
+    let news: [NewsPayload]
+    let system: SystemSnapshotPayload
+}
+
+struct LatestSignalPayload: Decodable {
+    let signalType: String
+    let severity: String
+    let description: String
+    let detectedAt: String
+}
+
+struct MarketPulsePayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let value: FlexValue?
+    let dayChangePct: FlexValue?
+}
+
+struct WatchlistPayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let category: String
+    let currentPrice: FlexValue?
+    let dayChangePct: FlexValue?
+    let targetPrice: FlexValue?
+    let distancePct: FlexValue?
+    let targetHit: Bool
+}
+
+struct NewsPayload: Decodable, Identifiable {
+    var id: String { "\(source)-\(publishedAt)-\(title)" }
+    let title: String
+    let source: String
+    let publishedAt: String
+    let sourceType: String
+}
+
+struct SystemSnapshotPayload: Decodable {
+    let daemon: DaemonPayload
+    let sources: [SourceStatusPayload]
+}
+
+struct DaemonPayload: Decodable {
+    let running: Bool
+    let status: String
+    let lastHeartbeat: String?
+}
+
+struct SourceStatusPayload: Decodable, Identifiable {
+    var id: String { name }
+    let name: String
+    let status: String
+    let freshness: String
+    let lastFetch: String?
+    let records: Int
 }
