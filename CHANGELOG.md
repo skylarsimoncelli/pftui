@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: OHLCV history backfill command (F48 complete)
+
+- What: added `pftui data backfill [--json]` CLI command that identifies symbols in `price_history` with NULL open/high/low/volume columns, re-fetches 365 days of historical data from Yahoo Finance with full OHLCV, and updates existing rows via COALESCE upsert (preserves existing data, fills gaps). Rate-limits Yahoo requests at 200ms intervals with 30s per-request timeout. Reports per-symbol results as ok/skipped/error. Ran against production database: 92/96 symbols backfilled successfully, 23,143 rows fetched with OHLCV data, 4 commodity futures skipped (Yahoo returned 0 rows for KC=F, ZC=F, ZS=F, ZW=F). Added `find_symbols_needing_backfill` query for both SQLite and Postgres backends.
+- Why: PRs #56/#57 upgraded the schema and new fetches include OHLCV, but existing price_history rows still had only `close` populated. This command completes F48 by backfilling all historical OHLCV data, enabling ATR, range expansion, and breakout detection signals to work across the full history.
+- Files: `src/commands/backfill.rs` (new), `src/db/price_history.rs`, `src/cli.rs`, `src/main.rs`, `src/commands/mod.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` — 1417 pass (+6 new: `parses_data_backfill_command`, `parses_data_backfill_no_flags`, `test_find_symbols_needing_backfill_empty_db`, `test_find_symbols_needing_backfill_all_complete`, `test_find_symbols_needing_backfill_partial`, `test_find_symbols_needing_backfill_mixed_rows`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #59
+
 ### 2026-03-20 — feat: reshape the iOS app into a streamlined remote monitoring client
 
 - What: expanded the TLS mobile API with a new aggregated `/api/dashboard` payload that bundles portfolio state, timeframe analytics, latest cross-timeframe signal, technical/alert counts, market pulse, watchlist pressure, latest news, and system freshness/daemon status in one read-only response. Reworked the SwiftUI app around that payload: new Home tab for remote monitoring, upgraded visual system, market pulse and watchlist cards, signal summary, source freshness panel, and a cleaner Portfolio/Analytics split driven from a single refresh path. Added mobile server tests for time labels, source freshness shaping, and timestamp formatting.

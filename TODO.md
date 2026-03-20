@@ -14,13 +14,6 @@
 
 ## P1 — Always-On Analytics Engine
 
-### F48: Rich OHLCV History And Data-Quality Layer (remaining)
-
-> Steps 1-4 complete (PRs #56, #57, #59): schema upgraded, OHLCV persisted, ATR/range expansion shipped, backfill command shipped.
->
-> Remaining scope:
-> 1. Backfill OHLCV where providers support it (re-fetch history with OHLCV for existing symbols)
-
 ### [Feedback] `data news --json` fails with exit code 1 (text mode works)
 
 > Evening Analyst (Mar 20): JSON output mode for news command exits with code 1 while text mode works fine. Agents consuming `--json` output get failures. Check JSON serialization path in news command for edge cases (empty results, special characters in article text, etc.).
