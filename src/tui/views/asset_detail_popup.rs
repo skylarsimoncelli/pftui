@@ -814,7 +814,7 @@ pub fn build_lines<'a>(symbol: &str, app: &'a App) -> Vec<Line<'a>> {
                     b.net_flow_usd
                         .abs()
                         .partial_cmp(&a.net_flow_usd.abs())
-                        .unwrap()
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
                 for fund in fund_flows.iter().take(3) {
