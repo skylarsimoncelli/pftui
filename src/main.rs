@@ -803,6 +803,19 @@ fn main() -> Result<()> {
                     })
                 }
             },
+            cli::SystemCommand::Universe { command } => match command {
+                cli::UniverseCommand::List { json } => commands::universe::list(json),
+                cli::UniverseCommand::Add {
+                    symbol,
+                    group,
+                    json,
+                } => commands::universe::add(&symbol, &group, json),
+                cli::UniverseCommand::Remove {
+                    symbol,
+                    group,
+                    json,
+                } => commands::universe::remove(&symbol, &group, json),
+            },
             cli::SystemCommand::MigrateJournal {
                 path,
                 dry_run,
