@@ -57,6 +57,10 @@ struct PositionPayload: Decodable, Identifiable {
 
 struct AnalyticsPayload: Decodable {
     let timeframes: [TimeframePayload]
+    let regime: RegimePayload?
+    let correlations: [CorrelationPayload]
+    let sentiment: [SentimentPayload]
+    let predictions: [PredictionPayload]
 }
 
 struct TimeframePayload: Decodable, Identifiable {
@@ -66,6 +70,43 @@ struct TimeframePayload: Decodable, Identifiable {
     let score: Double
     let summary: String?
     let updatedAt: String?
+}
+
+struct RegimePayload: Decodable {
+    let regime: String
+    let confidence: Double?
+    let drivers: [String]
+    let recordedAt: String
+    let vix: Double?
+    let dxy: Double?
+    let yield10y: Double?
+    let oil: Double?
+    let gold: Double?
+    let btc: Double?
+}
+
+struct CorrelationPayload: Decodable, Identifiable {
+    var id: String { "\(symbolA)-\(symbolB)-\(period)" }
+    let symbolA: String
+    let symbolB: String
+    let correlation: Double
+    let period: String
+    let recordedAt: String
+}
+
+struct SentimentPayload: Decodable, Identifiable {
+    var id: String { indexType }
+    let indexType: String
+    let value: Int
+    let classification: String
+    let updatedAt: String
+}
+
+struct PredictionPayload: Decodable, Identifiable {
+    var id: String { question }
+    let question: String
+    let probabilityPct: Double
+    let category: String
 }
 
 struct MonitoringPayload: Decodable {

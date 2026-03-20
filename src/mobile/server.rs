@@ -65,6 +65,10 @@ pub struct MobilePosition {
 #[derive(Serialize)]
 pub struct MobileAnalyticsResponse {
     pub timeframes: Vec<MobileTimeframeOutlook>,
+    pub regime: Option<MobileRegimeSnapshot>,
+    pub correlations: Vec<MobileCorrelationItem>,
+    pub sentiment: Vec<MobileSentimentItem>,
+    pub predictions: Vec<MobilePredictionItem>,
 }
 
 #[derive(Serialize)]
@@ -74,6 +78,44 @@ pub struct MobileTimeframeOutlook {
     pub score: f64,
     pub summary: Option<String>,
     pub updated_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct MobileRegimeSnapshot {
+    pub regime: String,
+    pub confidence: Option<f64>,
+    pub drivers: Vec<String>,
+    pub recorded_at: String,
+    pub vix: Option<f64>,
+    pub dxy: Option<f64>,
+    pub yield_10y: Option<f64>,
+    pub oil: Option<f64>,
+    pub gold: Option<f64>,
+    pub btc: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct MobileCorrelationItem {
+    pub symbol_a: String,
+    pub symbol_b: String,
+    pub correlation: f64,
+    pub period: String,
+    pub recorded_at: String,
+}
+
+#[derive(Serialize)]
+pub struct MobileSentimentItem {
+    pub index_type: String,
+    pub value: u8,
+    pub classification: String,
+    pub updated_at: String,
+}
+
+#[derive(Serialize)]
+pub struct MobilePredictionItem {
+    pub question: String,
+    pub probability_pct: f64,
+    pub category: String,
 }
 
 #[derive(Serialize)]
@@ -368,7 +410,66 @@ fn analytics_payload(backend: &crate::db::backend::BackendConnection) -> MobileA
         })
         .collect();
 
-    MobileAnalyticsResponse { timeframes }
+    let regime = crate::db::regime_snapshots::get_current_backend(backend)
+        .unwrap_or(None)
+        .map(|row| MobileRegimeSnapshot {
+            regime: row.regime,
+            confidence: row.confidence,
+            drivers: parse_driver_list(row.drivers.as_deref()),
+            recorded_at: row.recorded_at,
+            vix: row.vix,
+            dxy: row.dxy,
+            yield_10y: row.yield_10y,
+            oil: row.oil,
+            gold: row.gold,
+            btc: row.btc,
+        });
+
+    let correlations = crate::db::correlation_snapshots::list_current_backend(backend, Some("30d"))
+        .unwrap_or_default()
+        .into_iter()
+        .take(4)
+        .map(|row| MobileCorrelationItem {
+            symbol_a: row.symbol_a,
+            symbol_b: row.symbol_b,
+            correlation: row.correlation,
+            period: row.period,
+            recorded_at: row.recorded_at,
+        })
+        .collect();
+
+    let sentiment = ["crypto", "traditional"]
+        .into_iter()
+        .filter_map(|kind| {
+            crate::db::sentiment_cache::get_latest_backend(backend, kind)
+                .ok()
+                .flatten()
+        })
+        .map(|row| MobileSentimentItem {
+            index_type: row.index_type,
+            value: row.value,
+            classification: row.classification,
+            updated_at: row.fetched_at,
+        })
+        .collect();
+
+    let predictions = crate::db::predictions_cache::get_cached_predictions_backend(backend, 3)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| MobilePredictionItem {
+            question: row.question,
+            probability_pct: row.probability * 100.0,
+            category: row.category.to_string(),
+        })
+        .collect();
+
+    MobileAnalyticsResponse {
+        timeframes,
+        regime,
+        correlations,
+        sentiment,
+        predictions,
+    }
 }
 
 fn monitoring_payload(
@@ -623,6 +724,11 @@ fn parse_timestamp(raw: &str) -> Option<DateTime<Utc>> {
         .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
 }
 
+fn parse_driver_list(raw: Option<&str>) -> Vec<String> {
+    raw.and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
+        .unwrap_or_default()
+}
+
 fn relative_time(timestamp: DateTime<Utc>, now: DateTime<Utc>) -> String {
     let seconds = now.signed_duration_since(timestamp).num_seconds();
     if seconds < 60 {
@@ -678,7 +784,7 @@ fn portfolio_day_change_pct(
 
 #[cfg(test)]
 mod tests {
-    use super::{relative_time, source_status, timeframe_label, timestamp_to_rfc3339};
+    use super::{parse_driver_list, relative_time, source_status, timeframe_label, timestamp_to_rfc3339};
     use chrono::{TimeZone, Utc};
 
     #[test]
@@ -711,5 +817,14 @@ mod tests {
     #[test]
     fn unix_timestamp_formats_as_rfc3339() {
         assert_eq!(timestamp_to_rfc3339(0), "1970-01-01T00:00:00+00:00");
+    }
+
+    #[test]
+    fn parse_driver_list_reads_json_arrays() {
+        assert_eq!(
+            parse_driver_list(Some("[\"dollar strength\",\"oil shock\"]")),
+            vec!["dollar strength".to_string(), "oil shock".to_string()]
+        );
+        assert!(parse_driver_list(Some("not-json")).is_empty());
     }
 }
