@@ -175,15 +175,48 @@ pub struct MobileNewsItem {
 
 #[derive(Serialize)]
 pub struct MobileSystemSnapshot {
+    pub server: MobileServerRuntime,
+    pub database: MobileDatabaseHealth,
     pub daemon: MobileDaemonSnapshot,
     pub sources: Vec<MobileSourceStatus>,
+}
+
+#[derive(Serialize)]
+pub struct MobileServerRuntime {
+    pub pftui_version: String,
+    pub backend: String,
+    pub portfolio_mode: String,
+    pub database_mode: String,
+    pub mobile_port: u16,
+    pub api_token_count: usize,
+    pub session_ttl_hours: u64,
+}
+
+#[derive(Serialize)]
+pub struct MobileDatabaseHealth {
+    pub status: String,
+    pub label: String,
+    pub integrity: String,
+    pub positions: usize,
+    pub transactions: usize,
+    pub watchlist: usize,
+    pub tracked_prices: usize,
+    pub stale_sources: usize,
+    pub last_market_sync: Option<String>,
+    pub last_news_sync: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct MobileDaemonSnapshot {
     pub running: bool,
     pub status: String,
+    pub cycle: u64,
     pub last_heartbeat: Option<String>,
+    pub last_refresh_duration_secs: Option<f64>,
+    pub interval_secs: u64,
+    pub task_count: usize,
+    pub error_count: usize,
+    pub tasks: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -283,7 +316,7 @@ async fn get_dashboard(
         .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
     let portfolio = portfolio_payload(&backend, &state.config).map_err(internal_error)?;
     let analytics = analytics_payload(&backend);
-    let monitoring = monitoring_payload(&backend).map_err(internal_error)?;
+    let monitoring = monitoring_payload(&backend, &state.config, &state.db_path).map_err(internal_error)?;
 
     Ok(Json(MobileDashboardResponse {
         generated_at: Utc::now().to_rfc3339(),
@@ -474,6 +507,8 @@ fn analytics_payload(backend: &crate::db::backend::BackendConnection) -> MobileA
 
 fn monitoring_payload(
     backend: &crate::db::backend::BackendConnection,
+    config: &Config,
+    db_path: &str,
 ) -> Result<MobileMonitoringResponse> {
     let prices = crate::db::price_cache::get_all_cached_prices_backend(backend)?
         .into_iter()
@@ -562,21 +597,37 @@ fn monitoring_payload(
         market_pulse,
         watchlist,
         news,
-        system: system_snapshot(backend),
+        system: system_snapshot(backend, config, db_path)?,
     })
 }
 
-fn system_snapshot(backend: &crate::db::backend::BackendConnection) -> MobileSystemSnapshot {
+fn system_snapshot(
+    backend: &crate::db::backend::BackendConnection,
+    config: &Config,
+    db_path: &str,
+) -> Result<MobileSystemSnapshot> {
     let daemon = crate::commands::daemon::read_status()
         .map(|status| MobileDaemonSnapshot {
             running: status.running,
             status: status.status,
+            cycle: status.cycle,
             last_heartbeat: status.last_heartbeat,
+            last_refresh_duration_secs: status.last_refresh_duration_secs,
+            interval_secs: status.interval_secs,
+            task_count: status.tasks.len(),
+            error_count: status.errors.len(),
+            tasks: status.tasks,
         })
         .unwrap_or(MobileDaemonSnapshot {
             running: false,
             status: "stopped".to_string(),
+            cycle: 0,
             last_heartbeat: None,
+            last_refresh_duration_secs: None,
+            interval_secs: 0,
+            task_count: 0,
+            error_count: 0,
+            tasks: Vec::new(),
         });
 
     let prices = crate::db::price_cache::get_all_cached_prices_backend(backend).unwrap_or_default();
@@ -613,25 +664,69 @@ fn system_snapshot(backend: &crate::db::backend::BackendConnection) -> MobileSys
         .filter_map(|entry| parse_timestamp(&entry.fetched_at))
         .max();
 
-    MobileSystemSnapshot {
+    let sources = vec![
+        source_status("Prices", latest_price_fetch, prices.len(), 15 * 60),
+        source_status("News", latest_news_fetch, news.len(), 30 * 60),
+        source_status(
+            "Predictions",
+            latest_prediction_fetch,
+            predictions.len(),
+            2 * 60 * 60,
+        ),
+        source_status(
+            "Sentiment",
+            latest_sentiment_fetch,
+            sentiments.len(),
+            2 * 60 * 60,
+        ),
+    ];
+
+    let positions = crate::db::transactions::get_unique_symbols_backend(backend)
+        .map(|rows| rows.len())
+        .unwrap_or(0);
+    let transactions = crate::db::transactions::count_transactions_backend(backend)
+        .map(|count| count.max(0) as usize)
+        .unwrap_or(0);
+    let watchlist = crate::db::watchlist::list_watchlist_backend(backend)
+        .map(|rows| rows.len())
+        .unwrap_or(0);
+    let stale_sources = sources.iter().filter(|source| source.status != "fresh").count();
+    let integrity = database_integrity(backend);
+    let database = MobileDatabaseHealth {
+        status: database_health_status(&integrity, stale_sources),
+        label: database_label(backend, db_path, config),
+        integrity,
+        positions,
+        transactions,
+        watchlist,
+        tracked_prices: prices.len(),
+        stale_sources,
+        last_market_sync: latest_price_fetch.map(|ts| ts.to_rfc3339()),
+        last_news_sync: latest_news_fetch.map(|ts| ts.to_rfc3339()),
+    };
+
+    Ok(MobileSystemSnapshot {
+        server: MobileServerRuntime {
+            pftui_version: env!("CARGO_PKG_VERSION").to_string(),
+            backend: backend_name(config).to_string(),
+            portfolio_mode: if config.is_percentage_mode() {
+                "percentage".to_string()
+            } else {
+                "full".to_string()
+            },
+            database_mode: if config.effective_postgres_read_only() {
+                "read-only".to_string()
+            } else {
+                "read-write".to_string()
+            },
+            mobile_port: config.mobile.port,
+            api_token_count: config.mobile.api_tokens.len(),
+            session_ttl_hours: config.mobile.session_ttl_hours,
+        },
+        database,
         daemon,
-        sources: vec![
-            source_status("Prices", latest_price_fetch, prices.len(), 15 * 60),
-            source_status("News", latest_news_fetch, news.len(), 30 * 60),
-            source_status(
-                "Predictions",
-                latest_prediction_fetch,
-                predictions.len(),
-                2 * 60 * 60,
-            ),
-            source_status(
-                "Sentiment",
-                latest_sentiment_fetch,
-                sentiments.len(),
-                2 * 60 * 60,
-            ),
-        ],
-    }
+        sources,
+    })
 }
 
 fn source_status(
@@ -729,6 +824,68 @@ fn parse_driver_list(raw: Option<&str>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn backend_name(config: &Config) -> &'static str {
+    match config.database_backend {
+        crate::config::DatabaseBackend::Sqlite => "sqlite",
+        crate::config::DatabaseBackend::Postgres => "postgres",
+    }
+}
+
+fn database_label(
+    backend: &crate::db::backend::BackendConnection,
+    db_path: &str,
+    config: &Config,
+) -> String {
+    match backend {
+        crate::db::backend::BackendConnection::Sqlite { .. } => Path::new(db_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("pftui.db")
+            .to_string(),
+        crate::db::backend::BackendConnection::Postgres { .. } => config
+            .database_url
+            .as_deref()
+            .and_then(postgres_label_from_url)
+            .unwrap_or_else(|| "postgres".to_string()),
+    }
+}
+
+fn postgres_label_from_url(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    let host_and_db = trimmed.split('@').nth(1).unwrap_or(trimmed);
+    let host = host_and_db.split('/').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
+}
+
+fn database_integrity(backend: &crate::db::backend::BackendConnection) -> String {
+    match backend {
+        crate::db::backend::BackendConnection::Sqlite { conn } => conn
+            .query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0))
+            .unwrap_or_else(|_| "check failed".to_string()),
+        crate::db::backend::BackendConnection::Postgres { pool } => {
+            crate::db::pg_runtime::block_on(async {
+                sqlx::query("SELECT 1").fetch_one(pool).await.map(|_| ())
+            })
+            .map(|_| "connected".to_string())
+            .unwrap_or_else(|_| "check failed".to_string())
+        }
+    }
+}
+
+fn database_health_status(integrity: &str, stale_sources: usize) -> String {
+    if integrity != "ok" && integrity != "connected" {
+        "critical".to_string()
+    } else if stale_sources > 0 {
+        "warning".to_string()
+    } else {
+        "healthy".to_string()
+    }
+}
+
 fn relative_time(timestamp: DateTime<Utc>, now: DateTime<Utc>) -> String {
     let seconds = now.signed_duration_since(timestamp).num_seconds();
     if seconds < 60 {
@@ -784,7 +941,10 @@ fn portfolio_day_change_pct(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_driver_list, relative_time, source_status, timeframe_label, timestamp_to_rfc3339};
+    use super::{
+        database_health_status, parse_driver_list, postgres_label_from_url, relative_time,
+        source_status, timeframe_label, timestamp_to_rfc3339,
+    };
     use chrono::{TimeZone, Utc};
 
     #[test]
@@ -826,5 +986,20 @@ mod tests {
             vec!["dollar strength".to_string(), "oil shock".to_string()]
         );
         assert!(parse_driver_list(Some("not-json")).is_empty());
+    }
+
+    #[test]
+    fn postgres_label_uses_host_and_port() {
+        assert_eq!(
+            postgres_label_from_url("postgres://user:pass@db.example:5432/pftui"),
+            Some("db.example:5432".to_string())
+        );
+    }
+
+    #[test]
+    fn database_health_reflects_integrity_and_freshness() {
+        assert_eq!(database_health_status("ok", 0), "healthy");
+        assert_eq!(database_health_status("ok", 1), "warning");
+        assert_eq!(database_health_status("check failed", 0), "critical");
     }
 }

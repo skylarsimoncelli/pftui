@@ -155,14 +155,45 @@ struct NewsPayload: Decodable, Identifiable {
 }
 
 struct SystemSnapshotPayload: Decodable {
+    let server: ServerRuntimePayload
+    let database: DatabaseHealthPayload
     let daemon: DaemonPayload
     let sources: [SourceStatusPayload]
+}
+
+struct ServerRuntimePayload: Decodable {
+    let pftuiVersion: String
+    let backend: String
+    let portfolioMode: String
+    let databaseMode: String
+    let mobilePort: Int
+    let apiTokenCount: Int
+    let sessionTtlHours: Int
+}
+
+struct DatabaseHealthPayload: Decodable {
+    let status: String
+    let label: String
+    let integrity: String
+    let positions: Int
+    let transactions: Int
+    let watchlist: Int
+    let trackedPrices: Int
+    let staleSources: Int
+    let lastMarketSync: String?
+    let lastNewsSync: String?
 }
 
 struct DaemonPayload: Decodable {
     let running: Bool
     let status: String
+    let cycle: Int
     let lastHeartbeat: String?
+    let lastRefreshDurationSecs: Double?
+    let intervalSecs: Int
+    let taskCount: Int
+    let errorCount: Int
+    let tasks: [String]
 }
 
 struct SourceStatusPayload: Decodable, Identifiable {

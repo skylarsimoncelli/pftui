@@ -135,6 +135,14 @@ struct DashboardShellView: View {
                 Label("Analytics", systemImage: "chart.line.uptrend.xyaxis")
             }
             .tag(2)
+
+            NavigationStack {
+                SystemView()
+            }
+            .tabItem {
+                Label("System", systemImage: "server.rack")
+            }
+            .tag(3)
         }
         .tint(MobilePalette.accent)
     }
@@ -143,6 +151,13 @@ struct DashboardShellView: View {
 struct HomeView: View {
     @EnvironmentObject private var store: MobileStore
     @AppStorage("pftui.mobile.maskValues") private var maskValues = false
+    @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
+    @State private var showTimeframes = true
+    @State private var showConcentration = true
+    @State private var showPulse = true
+    @State private var showWatchlist = true
+    @State private var showSystem = false
+    @State private var showNews = false
 
     var body: some View {
         ScrollView {
@@ -155,14 +170,49 @@ struct HomeView: View {
                     detail: "\(store.portfolio?.positionCount ?? 0) positions"
                 )
 
-                if let monitoring = store.dashboard?.monitoring {
-                    signalSummaryCard(monitoring: monitoring)
+                if let dashboard = store.dashboard {
+                    signalSummaryCard(monitoring: dashboard.monitoring)
+                    commandDeckCard(dashboard: dashboard)
 
-                    if !monitoring.marketPulse.isEmpty {
-                        sectionTitle("Market Pulse")
-                        card {
+                    if let analytics = store.analytics, !analytics.timeframes.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Timeframe Stack",
+                            subtitle: homeDensity == "dense" ? "4-layer engine" : "Expanded read",
+                            isExpanded: $showTimeframes
+                        ) {
+                            let columns = homeDensity == "dense"
+                                ? [GridItem(.flexible()), GridItem(.flexible())]
+                                : [GridItem(.flexible())]
+                            LazyVGrid(columns: columns, spacing: 12) {
+                                ForEach(analytics.timeframes) { timeframe in
+                                    timeframeChip(timeframe)
+                                }
+                            }
+                        }
+                    }
+
+                    if let positions = store.portfolio?.positions, !positions.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Portfolio Concentration",
+                            subtitle: homeDensity == "dense" ? "Top allocations" : "Extended breakdown",
+                            isExpanded: $showConcentration
+                        ) {
                             VStack(spacing: 12) {
-                                ForEach(monitoring.marketPulse) { item in
+                                ForEach(Array(positions.prefix(homeDensity == "dense" ? 4 : 7))) { position in
+                                    holdingRow(position)
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.monitoring.marketPulse.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Market Pulse",
+                            subtitle: "Cross-asset tape",
+                            isExpanded: $showPulse
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(dashboard.monitoring.marketPulse) { item in
                                     compactRow(
                                         title: item.symbol,
                                         subtitle: item.name,
@@ -174,11 +224,14 @@ struct HomeView: View {
                         }
                     }
 
-                    if !monitoring.watchlist.isEmpty {
-                        sectionTitle("Watchlist")
-                        card {
+                    if !dashboard.monitoring.watchlist.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Watchlist Pressure",
+                            subtitle: "Targets and proximity",
+                            isExpanded: $showWatchlist
+                        ) {
                             VStack(spacing: 12) {
-                                ForEach(monitoring.watchlist.prefix(5)) { item in
+                                ForEach(dashboard.monitoring.watchlist.prefix(homeDensity == "dense" ? 5 : 8)) { item in
                                     compactRow(
                                         title: item.symbol,
                                         subtitle: item.distancePct.map { "Target \($0.raw) away" } ?? item.category,
@@ -190,44 +243,36 @@ struct HomeView: View {
                         }
                     }
 
-                    sectionTitle("System")
-                    card {
+                    CollapsibleCardSection(
+                        title: "Operational Snapshot",
+                        subtitle: "Server and daemon",
+                        isExpanded: $showSystem
+                    ) {
                         VStack(alignment: .leading, spacing: 14) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Daemon")
-                                        .foregroundStyle(MobilePalette.textSecondary)
-                                    Text(monitoring.system.daemon.running ? "Running" : "Stopped")
-                                        .foregroundStyle(monitoring.system.daemon.running ? MobilePalette.green : MobilePalette.red)
-                                        .font(.headline)
-                                }
-                                Spacer()
-                                Text(monitoring.system.daemon.status.capitalized)
-                                    .foregroundStyle(MobilePalette.textPrimary)
-                                    .font(.subheadline.weight(.semibold))
+                            HStack(spacing: 12) {
+                                metricChip(label: "Server", value: dashboard.monitoring.system.server.pftuiVersion)
+                                metricChip(label: "DB", value: dashboard.monitoring.system.server.backend.uppercased())
                             }
 
-                            ForEach(monitoring.system.sources) { source in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(source.name)
-                                            .foregroundStyle(MobilePalette.textPrimary)
-                                        Text("\(source.records) records • \(source.freshness)")
-                                            .foregroundStyle(MobilePalette.textSecondary)
-                                            .font(.caption)
-                                    }
-                                    Spacer()
-                                    StatusPill(text: source.status)
-                                }
+                            HStack(spacing: 12) {
+                                metricChip(label: "Daemon", value: dashboard.monitoring.system.daemon.running ? "Running" : "Stopped")
+                                metricChip(label: "Stale Sources", value: "\(dashboard.monitoring.system.database.staleSources)")
                             }
+
+                            Text("Last sync \(shortTimestamp(dashboard.generatedAt))")
+                                .foregroundStyle(MobilePalette.textSecondary)
+                                .font(.caption)
                         }
                     }
 
-                    if !monitoring.news.isEmpty {
-                        sectionTitle("News")
-                        card {
+                    if !dashboard.monitoring.news.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Catalysts",
+                            subtitle: "Latest headlines",
+                            isExpanded: $showNews
+                        ) {
                             VStack(alignment: .leading, spacing: 14) {
-                                ForEach(monitoring.news) { item in
+                                ForEach(dashboard.monitoring.news.prefix(homeDensity == "dense" ? 4 : 6)) { item in
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(item.title)
                                             .foregroundStyle(MobilePalette.textPrimary)
@@ -259,6 +304,18 @@ struct HomeView: View {
             .buttonStyle(SecondaryIconButtonStyle())
 
             Spacer()
+
+            Menu {
+                Button(homeDensity == "dense" ? "Dense Layout ✓" : "Dense Layout") {
+                    homeDensity = "dense"
+                }
+                Button(homeDensity == "expanded" ? "Expanded Layout ✓" : "Expanded Layout") {
+                    homeDensity = "expanded"
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .buttonStyle(SecondaryIconButtonStyle())
 
             Button(store.isBusy ? "Refreshing…" : "Refresh") {
                 Task { await store.refresh() }
@@ -299,6 +356,112 @@ struct HomeView: View {
                         .foregroundStyle(MobilePalette.textSecondary)
                         .font(.subheadline)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func commandDeckCard(dashboard: DashboardPayload) -> some View {
+        let staleSources = dashboard.monitoring.system.database.staleSources
+        let average = averageScore(dashboard.analytics.timeframes)
+
+        card {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Command Deck")
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.subheadline.weight(.medium))
+
+                let columns = homeDensity == "dense"
+                    ? [GridItem(.flexible()), GridItem(.flexible())]
+                    : [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+
+                LazyVGrid(columns: columns, spacing: 12) {
+                    metricChip(label: "Avg Score", value: String(format: "%.0f", average))
+                    metricChip(label: "Alerts", value: "\(dashboard.monitoring.triggeredAlertCount)")
+                    metricChip(label: "Tech Signals", value: "\(dashboard.monitoring.technicalSignalCount)")
+                    metricChip(label: "Stale Sources", value: "\(staleSources)")
+                    if homeDensity != "dense" {
+                        metricChip(label: "Backend", value: dashboard.monitoring.system.server.backend.uppercased())
+                        metricChip(label: "Version", value: dashboard.monitoring.system.server.pftuiVersion)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func timeframeChip(_ timeframe: TimeframePayload) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(timeframe.label)
+                    .foregroundStyle(MobilePalette.textPrimary)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Text(String(format: "%.0f", timeframe.score))
+                    .foregroundStyle(scoreColor(timeframe.score))
+                    .font(.subheadline.weight(.bold))
+            }
+
+            ScoreBar(score: timeframe.score)
+                .frame(height: 18)
+
+            if homeDensity != "dense" {
+                Text(timeframe.summary ?? "No narrative yet.")
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.caption)
+                    .lineLimit(2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private func holdingRow(_ position: PositionPayload) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(position.symbol)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                        .font(.subheadline.weight(.semibold))
+                    Text(position.name)
+                        .foregroundStyle(MobilePalette.textSecondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(masked(position.currentValue?.raw))
+                    .foregroundStyle(MobilePalette.textPrimary)
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            let allocation = percentageValue(position.allocationPct?.raw)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(MobilePalette.bgPrimary.opacity(0.7))
+                    .frame(height: 8)
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [MobilePalette.green, MobilePalette.accent, MobilePalette.blue],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: CGFloat(allocation).clamped(to: 0...100) * 2.4, height: 8)
+            }
+
+            HStack {
+                Text(position.allocationPct?.raw ?? "—")
+                    .foregroundStyle(MobilePalette.accent)
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Text(position.dayChangePct?.raw ?? "—")
+                    .foregroundStyle(deltaColor(position.dayChangePct?.raw))
+                    .font(.caption.weight(.medium))
             }
         }
     }
@@ -361,17 +524,33 @@ struct PortfolioView: View {
 
 struct AnalyticsView: View {
     @EnvironmentObject private var store: MobileStore
+    @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
+    @State private var showOverview = true
+    @State private var showRegime = true
+    @State private var showSentiment = true
+    @State private var showCorrelations = true
+    @State private var showPredictions = true
+    @State private var showScores = true
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let analytics = store.analytics {
                     analyticsHero(analytics: analytics)
-                    analyticsSummary(analytics: analytics)
+                    CollapsibleCardSection(
+                        title: "Overview",
+                        subtitle: analyticsDensity == "dense" ? "High-density scan" : "Expanded read",
+                        isExpanded: $showOverview
+                    ) {
+                        analyticsSummary(analytics: analytics)
+                    }
 
                     if let regime = analytics.regime {
-                        sectionTitle("Regime Drivers")
-                        card {
+                        CollapsibleCardSection(
+                            title: "Regime Drivers",
+                            subtitle: shortTimestamp(regime.recordedAt),
+                            isExpanded: $showRegime
+                        ) {
                             VStack(alignment: .leading, spacing: 14) {
                                 if !regime.drivers.isEmpty {
                                     ScrollView(.horizontal, showsIndicators: false) {
@@ -402,8 +581,11 @@ struct AnalyticsView: View {
                     }
 
                     if !analytics.sentiment.isEmpty {
-                        sectionTitle("Sentiment")
-                        card {
+                        CollapsibleCardSection(
+                            title: "Sentiment",
+                            subtitle: "Crypto + traditional",
+                            isExpanded: $showSentiment
+                        ) {
                             VStack(spacing: 14) {
                                 ForEach(analytics.sentiment) { item in
                                     SentimentMeter(item: item)
@@ -413,8 +595,11 @@ struct AnalyticsView: View {
                     }
 
                     if !analytics.correlations.isEmpty {
-                        sectionTitle("Correlations")
-                        card {
+                        CollapsibleCardSection(
+                            title: "Correlations",
+                            subtitle: "Live relationship map",
+                            isExpanded: $showCorrelations
+                        ) {
                             VStack(spacing: 12) {
                                 ForEach(analytics.correlations) { item in
                                     compactRow(
@@ -429,8 +614,11 @@ struct AnalyticsView: View {
                     }
 
                     if !analytics.predictions.isEmpty {
-                        sectionTitle("Prediction Markets")
-                        card {
+                        CollapsibleCardSection(
+                            title: "Prediction Markets",
+                            subtitle: "Crowd-implied odds",
+                            isExpanded: $showPredictions
+                        ) {
                             VStack(alignment: .leading, spacing: 14) {
                                 ForEach(analytics.predictions) { item in
                                     VStack(alignment: .leading, spacing: 6) {
@@ -451,32 +639,42 @@ struct AnalyticsView: View {
                             }
                         }
                     }
-                }
 
-                sectionTitle("Timeframe Scores")
-                ForEach(store.analytics?.timeframes ?? []) { timeframe in
-                    card {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(timeframe.label)
-                                    .font(.headline)
-                                    .foregroundStyle(MobilePalette.textPrimary)
-                                Spacer()
-                                Text(String(format: "%.0f", timeframe.score))
-                                    .font(.title3.weight(.bold))
-                                    .foregroundStyle(scoreColor(timeframe.score))
-                            }
+                    CollapsibleCardSection(
+                        title: "Timeframe Scores",
+                        subtitle: "\(analytics.timeframes.count) tracked layers",
+                        isExpanded: $showScores
+                    ) {
+                        VStack(spacing: 12) {
+                            ForEach(analytics.timeframes) { timeframe in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack(alignment: .firstTextBaseline) {
+                                        Text(timeframe.label)
+                                            .font(.headline)
+                                            .foregroundStyle(MobilePalette.textPrimary)
+                                        Spacer()
+                                        Text(String(format: "%.0f", timeframe.score))
+                                            .font(.title3.weight(.bold))
+                                            .foregroundStyle(scoreColor(timeframe.score))
+                                    }
 
-                            ScoreBar(score: timeframe.score)
+                                    ScoreBar(score: timeframe.score)
 
-                            Text(timeframe.summary ?? "No score set yet.")
-                                .font(.subheadline)
-                                .foregroundStyle(MobilePalette.textSecondary)
+                                    Text(timeframe.summary ?? "No score set yet.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(MobilePalette.textSecondary)
+                                        .lineLimit(analyticsDensity == "dense" ? 2 : nil)
 
-                            if let updatedAt = timeframe.updatedAt {
-                                Text("Updated \(shortTimestamp(updatedAt))")
-                                    .font(.caption)
-                                    .foregroundStyle(MobilePalette.textSecondary)
+                                    if let updatedAt = timeframe.updatedAt {
+                                        Text("Updated \(shortTimestamp(updatedAt))")
+                                            .font(.caption)
+                                            .foregroundStyle(MobilePalette.textSecondary)
+                                    }
+                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(MobilePalette.bgPrimary.opacity(0.4))
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
                             }
                         }
                     }
@@ -487,6 +685,18 @@ struct AnalyticsView: View {
         .background(MobilePalette.bgPrimary)
         .navigationTitle("Analytics")
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(analyticsDensity == "dense" ? "Dense Layout ✓" : "Dense Layout") {
+                        analyticsDensity = "dense"
+                    }
+                    Button(analyticsDensity == "expanded" ? "Expanded Layout ✓" : "Expanded Layout") {
+                        analyticsDensity = "expanded"
+                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Disconnect") {
                     store.disconnect()
@@ -509,19 +719,199 @@ struct AnalyticsView: View {
         let avg = averageScore(analytics.timeframes)
         let strongest = strongestTimeframe(analytics.timeframes)
 
-        card {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Overview")
-                    .foregroundStyle(MobilePalette.textSecondary)
-                    .font(.subheadline.weight(.medium))
+        VStack(alignment: .leading, spacing: 14) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                analyticsStat(label: "Average Score", value: String(format: "%.0f", avg))
+                analyticsStat(label: "Strongest Layer", value: strongest?.label ?? "—")
+                analyticsStat(label: "Correlations", value: "\(analytics.correlations.count)")
+                analyticsStat(label: "Prediction Signals", value: "\(analytics.predictions.count)")
+            }
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    analyticsStat(label: "Average Score", value: String(format: "%.0f", avg))
-                    analyticsStat(label: "Strongest Layer", value: strongest?.label ?? "—")
-                    analyticsStat(label: "Correlations", value: "\(analytics.correlations.count)")
-                    analyticsStat(label: "Prediction Signals", value: "\(analytics.predictions.count)")
+            if analyticsDensity != "dense" {
+                VStack(spacing: 10) {
+                    ForEach(analytics.timeframes) { timeframe in
+                        compactRow(
+                            title: timeframe.label,
+                            subtitle: timeframe.summary ?? "No summary",
+                            trailing: String(format: "%.0f", timeframe.score),
+                            trailingColor: scoreColor(timeframe.score)
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+struct SystemView: View {
+    @EnvironmentObject private var store: MobileStore
+    @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
+    @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
+    @AppStorage("pftui.mobile.systemDensity") private var systemDensity = "dense"
+    @State private var showDisplay = true
+    @State private var showConnection = true
+    @State private var showServer = true
+    @State private var showDatabase = true
+    @State private var showDaemon = true
+    @State private var showSources = true
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                heroCard(
+                    title: store.dashboard?.monitoring.system.server.pftuiVersion ?? "Offline",
+                    subtitle: "Server Control",
+                    detail: store.connection?.server ?? "No active connection"
+                )
+
+                CollapsibleCardSection(
+                    title: "Display Profiles",
+                    subtitle: "Customize information density",
+                    isExpanded: $showDisplay
+                ) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        densityPicker(title: "Home", selection: $homeDensity)
+                        densityPicker(title: "Analytics", selection: $analyticsDensity)
+                        densityPicker(title: "System", selection: $systemDensity)
+                    }
+                }
+
+                CollapsibleCardSection(
+                    title: "Connection",
+                    subtitle: store.errorMessage == nil ? "Pinned TLS session" : "Attention needed",
+                    isExpanded: $showConnection
+                ) {
+                    VStack(spacing: 12) {
+                        systemMetricRow("Host", store.connection?.server ?? "—")
+                        systemMetricRow("Status", connectionStatus)
+                        systemMetricRow("Fingerprint", abbreviatedFingerprint(store.connection?.fingerprint))
+                        systemMetricRow("Last Sync", store.dashboard.map { shortTimestamp($0.generatedAt) } ?? "—")
+                    }
+                }
+
+                if let system = store.dashboard?.monitoring.system {
+                    CollapsibleCardSection(
+                        title: "Server Runtime",
+                        subtitle: "\(system.server.backend.uppercased()) • \(system.server.databaseMode)",
+                        isExpanded: $showServer
+                    ) {
+                        let columns = systemDensity == "dense"
+                            ? [GridItem(.flexible()), GridItem(.flexible())]
+                            : [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            metricChip(label: "Version", value: system.server.pftuiVersion)
+                            metricChip(label: "Backend", value: system.server.backend.uppercased())
+                            metricChip(label: "Portfolio", value: system.server.portfolioMode.capitalized)
+                            metricChip(label: "DB Mode", value: system.server.databaseMode.capitalized)
+                            metricChip(label: "Port", value: "\(system.server.mobilePort)")
+                            metricChip(label: "Tokens", value: "\(system.server.apiTokenCount)")
+                        }
+                    }
+
+                    CollapsibleCardSection(
+                        title: "Database Health",
+                        subtitle: system.database.label,
+                        isExpanded: $showDatabase
+                    ) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                StatusPill(text: system.database.status)
+                                Spacer()
+                                Text(system.database.integrity.capitalized)
+                                    .foregroundStyle(system.database.integrity == "ok" || system.database.integrity == "connected" ? MobilePalette.green : MobilePalette.red)
+                                    .font(.subheadline.weight(.semibold))
+                            }
+
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                                metricChip(label: "Positions", value: "\(system.database.positions)")
+                                metricChip(label: "Transactions", value: "\(system.database.transactions)")
+                                metricChip(label: "Watchlist", value: "\(system.database.watchlist)")
+                                metricChip(label: "Tracked Prices", value: "\(system.database.trackedPrices)")
+                                metricChip(label: "Stale Sources", value: "\(system.database.staleSources)")
+                                metricChip(label: "Market Sync", value: system.database.lastMarketSync.map(shortTimestamp) ?? "Never")
+                            }
+
+                            if systemDensity != "dense" {
+                                systemMetricRow("News Sync", system.database.lastNewsSync.map(shortTimestamp) ?? "Never")
+                            }
+                        }
+                    }
+
+                    CollapsibleCardSection(
+                        title: "Daemon",
+                        subtitle: system.daemon.running ? "Automation online" : "Automation offline",
+                        isExpanded: $showDaemon
+                    ) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(spacing: 12) {
+                                metricChip(label: "State", value: system.daemon.running ? "Running" : "Stopped")
+                                metricChip(label: "Cycle", value: "\(system.daemon.cycle)")
+                                metricChip(label: "Wake", value: "\(system.daemon.intervalSecs)s")
+                            }
+
+                            HStack(spacing: 12) {
+                                metricChip(label: "Tasks", value: "\(system.daemon.taskCount)")
+                                metricChip(label: "Errors", value: "\(system.daemon.errorCount)")
+                                metricChip(label: "Last Beat", value: system.daemon.lastHeartbeat.map(shortTimestamp) ?? "Never")
+                            }
+
+                            if !system.daemon.tasks.isEmpty && systemDensity != "dense" {
+                                FlowTagList(items: system.daemon.tasks)
+                            }
+                        }
+                    }
+
+                    CollapsibleCardSection(
+                        title: "Source Freshness",
+                        subtitle: "Data pipeline health",
+                        isExpanded: $showSources
+                    ) {
+                        VStack(spacing: 12) {
+                            ForEach(system.sources) { source in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(source.name)
+                                            .foregroundStyle(MobilePalette.textPrimary)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text("\(source.records) records • \(source.freshness)")
+                                            .foregroundStyle(MobilePalette.textSecondary)
+                                            .font(.caption)
+                                    }
+                                    Spacer()
+                                    StatusPill(text: source.status)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(MobilePalette.bgPrimary)
+        .navigationTitle("System")
+    }
+
+    private var connectionStatus: String {
+        if store.dashboard != nil && store.errorMessage == nil {
+            return "Connected"
+        }
+        if let error = store.errorMessage, !error.isEmpty {
+            return "Error"
+        }
+        return "Idle"
+    }
+
+    @ViewBuilder
+    private func densityPicker(title: String, selection: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .foregroundStyle(MobilePalette.textSecondary)
+                .font(.caption)
+            Picker(title, selection: selection) {
+                Text("Dense").tag("dense")
+                Text("Expanded").tag("expanded")
+            }
+            .pickerStyle(.segmented)
         }
     }
 }
@@ -693,6 +1083,80 @@ struct SentimentMeter: View {
     }
 }
 
+struct CollapsibleCardSection<Content: View>: View {
+    let title: String
+    let subtitle: String
+    @Binding var isExpanded: Bool
+    @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        subtitle: String,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self._isExpanded = isExpanded
+        self.content = content()
+    }
+
+    var body: some View {
+        card {
+            VStack(alignment: .leading, spacing: 14) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(title)
+                                .foregroundStyle(MobilePalette.textPrimary)
+                                .font(.headline)
+                            Text(subtitle)
+                                .foregroundStyle(MobilePalette.textSecondary)
+                                .font(.caption)
+                        }
+                        Spacer()
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundStyle(MobilePalette.accent)
+                            .font(.caption.weight(.bold))
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if isExpanded {
+                    content
+                }
+            }
+        }
+    }
+}
+
+struct FlowTagList: View {
+    let items: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(chunked(items, by: 3), id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.self) { item in
+                        Text(item)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(MobilePalette.textPrimary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(MobilePalette.bgPrimary.opacity(0.65))
+                            .clipShape(Capsule())
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+}
+
 @ViewBuilder
 private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     content()
@@ -796,6 +1260,18 @@ private func metricRow(_ title: String, _ value: String) -> some View {
     .font(.subheadline)
 }
 
+private func systemMetricRow(_ title: String, _ value: String) -> some View {
+    HStack(alignment: .top) {
+        Text(title)
+            .foregroundStyle(MobilePalette.textSecondary)
+        Spacer()
+        Text(value)
+            .foregroundStyle(MobilePalette.textPrimary)
+            .multilineTextAlignment(.trailing)
+    }
+    .font(.subheadline)
+}
+
 private func scoreColor(_ score: Double) -> Color {
     if score > 15 { return MobilePalette.green }
     if score < -15 { return MobilePalette.red }
@@ -854,6 +1330,25 @@ private func formatNumber(_ value: Double?) -> String {
         return String(format: "%.1f", value)
     }
     return String(format: "%.2f", value)
+}
+
+private func percentageValue(_ raw: String?) -> Double {
+    guard let raw else { return 0 }
+    let cleaned = raw.replacingOccurrences(of: "%", with: "")
+    return Double(cleaned) ?? 0
+}
+
+private func abbreviatedFingerprint(_ raw: String?) -> String {
+    guard let raw, !raw.isEmpty else { return "—" }
+    let compact = raw.replacingOccurrences(of: ":", with: "")
+    guard compact.count > 12 else { return raw }
+    return "\(compact.prefix(6))…\(compact.suffix(6))"
+}
+
+private func chunked(_ items: [String], by size: Int) -> [[String]] {
+    stride(from: 0, to: items.count, by: size).map { index in
+        Array(items[index..<Swift.min(index + size, items.count)])
+    }
 }
 
 private extension CGFloat {

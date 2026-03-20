@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: add dense mobile command center + system management surfaces
+
+- What: pushed the iOS client further toward a true remote control surface for pftui. Added a dedicated System tab with connection state, runtime metadata, backend/database health, daemon cadence, source freshness, and per-screen density controls. Expanded the mobile server payload to expose pftui version, backend/runtime mode, database health checks, sync timestamps, and daemon execution details. Reworked the Home and Analytics tabs into denser command-center views with collapsible sections, layout profiles, portfolio concentration, timeframe stack, and faster top-level scan paths.
+- Why: the prior pass improved look and data coverage, but the app still lacked two things the product vision calls for: explicit operational awareness when the stack is remote, and user control over how much information is visible at once. This makes the phone client feel more like a serious monitoring console instead of a static dashboard.
+- Files: `src/mobile/server.rs`, `mobile/app/PftuiMobile/ContentView.swift`, `mobile/app/PftuiMobile/Models.swift`, `CHANGELOG.md`
+- Tests: `swiftc -typecheck mobile/app/PftuiMobile/*.swift`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`
+
 ### 2026-03-20 — feat: polish the iOS analytics dashboard around the website theme
 
 - What: aligned the SwiftUI palette with the website visual system (GitHub-dark neutrals with green/cyan/blue accents), refined the analytics tab hierarchy, and expanded the aggregated mobile analytics payload with regime context, regime drivers, macro stat tiles, sentiment gauges, live correlation snapshots, and prediction-market probabilities. The analytics dashboard now leads with a regime hero and summary card, then presents additional data in compact sections instead of raw lists.
