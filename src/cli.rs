@@ -123,10 +123,11 @@ pub enum AgentMessageCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Acknowledge a single message
+    /// Acknowledge one or more messages by ID
     Ack {
+        /// One or more message IDs (repeatable: --id 1 --id 2 --id 3)
         #[arg(long)]
-        id: Option<i64>,
+        id: Vec<i64>,
 
         #[arg(long)]
         json: bool,
@@ -1618,8 +1619,12 @@ pub enum AnalyticsAlertsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Acknowledge alert by ID
-    Ack { id: i64 },
+    /// Acknowledge one or more alerts by ID
+    Ack {
+        /// One or more alert IDs to acknowledge
+        #[arg(required = true)]
+        ids: Vec<i64>,
+    },
     /// Rearm alert by ID
     Rearm { id: i64 },
     /// Seed a default smart-alert set for current holdings + core macro conditions

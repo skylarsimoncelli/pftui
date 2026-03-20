@@ -42,6 +42,7 @@ pub fn run(
     value: Option<&str>,
     batch: &[String],
     id: Option<i64>,
+    ids: &[i64],
     package_id: Option<&str>,
     package_title: Option<&str>,
     from: Option<&str>,
@@ -286,15 +287,46 @@ pub fn run(
         }
 
         "ack" => {
-            let msg_id = id.ok_or_else(|| anyhow::anyhow!("--id required"))?;
-            agent_messages::acknowledge_backend(backend, msg_id)?;
+            // Collect IDs from both the bulk `ids` slice and the legacy single `id` field.
+            let mut all_ids: Vec<i64> = ids.to_vec();
+            if let Some(single) = id {
+                if !all_ids.contains(&single) {
+                    all_ids.push(single);
+                }
+            }
+            if all_ids.is_empty() {
+                anyhow::bail!("--id required (use --id N, repeatable for multiple)");
+            }
+
+            let mut acked = Vec::new();
+            let mut errors = Vec::new();
+
+            for msg_id in &all_ids {
+                match agent_messages::acknowledge_backend(backend, *msg_id) {
+                    Ok(()) => acked.push(*msg_id),
+                    Err(e) => errors.push((*msg_id, e.to_string())),
+                }
+            }
+
             if json_output {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&json!({ "acked": msg_id }))?
+                    serde_json::to_string_pretty(&json!({
+                        "acked": acked,
+                        "errors": errors.iter().map(|(id, err)| json!({"id": id, "error": err})).collect::<Vec<_>>(),
+                    }))?
                 );
             } else {
-                println!("Acknowledged message #{}", msg_id);
+                for msg_id in &acked {
+                    println!("Acknowledged message #{}", msg_id);
+                }
+                for (msg_id, err) in &errors {
+                    eprintln!("⚠️  Failed to ack message #{}: {}", msg_id, err);
+                }
+            }
+
+            if !errors.is_empty() && acked.is_empty() {
+                anyhow::bail!("No messages were acknowledged");
             }
         }
 
@@ -364,4 +396,82 @@ fn sanitize_package_fragment(value: &str) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::agent_messages;
+    use crate::db::backend::BackendConnection;
+
+    fn setup_backend() -> BackendConnection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::schema::run_migrations(&conn).unwrap();
+        BackendConnection::Sqlite { conn }
+    }
+
+    #[test]
+    fn test_bulk_ack_multiple_messages() {
+        let backend = setup_backend();
+        let id1 = agent_messages::send_message_backend(
+            &backend, "agent-a", Some("agent-b"), None, "msg1", None, None, None, None,
+        )
+        .unwrap();
+        let id2 = agent_messages::send_message_backend(
+            &backend, "agent-a", Some("agent-b"), None, "msg2", None, None, None, None,
+        )
+        .unwrap();
+        let id3 = agent_messages::send_message_backend(
+            &backend, "agent-a", Some("agent-b"), None, "msg3", None, None, None, None,
+        )
+        .unwrap();
+
+        run(
+            &backend, "ack", None, &[], None, &[id1, id2, id3],
+            None, None, None, None, None, None, None, false, None, None, None, false,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_bulk_ack_json_output() {
+        let backend = setup_backend();
+        let id1 = agent_messages::send_message_backend(
+            &backend, "agent-a", Some("agent-b"), None, "msg1", None, None, None, None,
+        )
+        .unwrap();
+
+        // Should not error
+        run(
+            &backend, "ack", None, &[], None, &[id1],
+            None, None, None, None, None, None, None, false, None, None, None, true,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_ack_empty_ids_fails() {
+        let backend = setup_backend();
+        let result = run(
+            &backend, "ack", None, &[], None, &[],
+            None, None, None, None, None, None, None, false, None, None, None, false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ack_legacy_single_id() {
+        let backend = setup_backend();
+        let id = agent_messages::send_message_backend(
+            &backend, "agent-a", Some("agent-b"), None, "msg", None, None, None, None,
+        )
+        .unwrap();
+
+        // Legacy path: single id through the old Option parameter, empty ids slice
+        run(
+            &backend, "ack", None, &[], Some(id), &[],
+            None, None, None, None, None, None, None, false, None, None, None, false,
+        )
+        .unwrap();
+    }
 }
