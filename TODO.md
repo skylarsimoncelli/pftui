@@ -10,13 +10,6 @@ _(none)_
 
 ## P1 — Always-On Analytics Engine
 
-### [Feedback] `data news --json` fails with exit code 1 (text mode works) — CANNOT REPRODUCE
-
-> Evening Analyst (Mar 20): JSON output mode for news command exits with code 1 while text mode works fine.
-> Dev Agent (Mar 20): Tested — `data news --json` returns 20 articles, exit 0. JSON serialization path is clean (serde_json::to_string_pretty). Likely transient: empty news cache at time of test, or Brave API timeout. Monitoring.
->
-> Files: `src/commands/news.rs`
-
 ### [Feedback] Economy data inconsistencies and unclear units — PARTIALLY FIXED
 
 > ~~Medium-Timeframe Analyst (Mar 20, 70/75): NFP=19, PMI=2025, claims=8000 — garbage values from Brave Search extraction.~~
@@ -60,9 +53,8 @@ _(none)_
 
 **Top 3 priorities based on feedback:**
 
-1. **P1: `data news --json` exit code 1** — JSON output broken while text works. Agents need reliable JSON.
-2. **P1: Economy data inconsistencies** — Medium-Timeframe Analyst (70/75) confused by values without units/context.
-3. **P2: Prediction CLI syntax confusion** — Evening Analyst wants `--timeframe` flag and intuitive aliases.
+1. **P1: Economy data inconsistencies** — Medium-Timeframe Analyst (70/75) confused by values without units/context.
+2. **P2: Prediction CLI syntax confusion** — Evening Analyst wants `--timeframe` flag and intuitive aliases.
 
 **Release status:** v0.13.0 is current. 53 commits since tag. P0 movers stale-close bug fixed (PR #65). Build green, 1440 tests pass, clippy clean. **Release v0.14.0 is eligible** — no P0 blockers remaining.
 

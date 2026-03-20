@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — fix: data news --json resilient to empty cache / API failures (P1)
+
+- What: Made `data news --json` always return valid JSON with exit 0, even when the database query fails (e.g., Postgres timeout, connection error). On DB failure in JSON mode, returns `{"articles":[],"error":"..."}` with a stderr warning instead of crashing with exit 1. Also made `print_json` fall back to `[]` on serialization error. Text mode still propagates errors normally but now with added context.
+- Why: Evening Analyst reported `data news --json` exiting with code 1 while text mode worked. Root cause: transient Postgres failures (timeouts, brief unavailability) propagated via `?` through `main() -> Result<()>` to exit 1. Agents consuming JSON output need reliable exit codes and valid JSON even during transient failures.
+- Files: `src/commands/news.rs`
+- Tests: `cargo test` — 1455 pass (+6 new: `test_run_empty_cache_json`, `test_run_empty_cache_text`, `test_run_with_entries_json`, `test_run_with_entries_text`, `test_print_json_empty`, `test_print_json_valid_entries`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #71
+
 ### 2026-03-20 — fix: Economy data plausibility validation and unit labels (P1)
 
 - What: Added `is_plausible()` validation with indicator-specific bounds to reject garbage values from Brave Search text extraction (PMI=2025, NFP=19, claims=8000). Added `unit` and `display_name` fields to economy JSON output so agents can interpret values correctly.
