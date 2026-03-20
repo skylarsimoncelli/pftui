@@ -603,10 +603,16 @@ fn main() -> Result<()> {
         Some(Command::Journal { command }) => run_agent_journal(&backend, command),
 
         Some(Command::Data { command }) => match command {
-            cli::DataCommand::Refresh { notify } => {
+            cli::DataCommand::Refresh { notify, json } => {
                 if cached_only {
-                    println!("Cached-only mode enabled; skipping refresh network calls.");
+                    if json {
+                        println!("{{\"error\": \"cached-only mode enabled\"}}");
+                    } else {
+                        println!("Cached-only mode enabled; skipping refresh network calls.");
+                    }
                     Ok(())
+                } else if json {
+                    commands::refresh::run_json(&backend, &config, notify)
                 } else {
                     commands::refresh::run(&backend, &config, notify)
                 }

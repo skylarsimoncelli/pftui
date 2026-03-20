@@ -246,6 +246,9 @@ pub enum DataCommand {
         /// Send OS notification for newly triggered alerts
         #[arg(long)]
         notify: bool,
+        /// Output structured JSON metrics instead of human-readable text
+        #[arg(long)]
+        json: bool,
     },
     /// Show data freshness status for all cached sources
     Status {
