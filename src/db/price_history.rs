@@ -111,6 +111,71 @@ pub fn get_all_symbols_history(conn: &Connection, limit: u32) -> Result<Vec<(Str
     Ok(result)
 }
 
+/// Summary of OHLCV backfill status for a single symbol.
+#[derive(Debug, Clone)]
+pub struct BackfillSymbolStatus {
+    pub symbol: String,
+    pub total_rows: u32,
+    pub missing_ohlcv_rows: u32,
+}
+
+/// Find symbols that have price_history rows with NULL open/high/low/volume.
+/// Returns a list of symbols and their row counts.
+pub fn find_symbols_needing_backfill(conn: &Connection) -> Result<Vec<BackfillSymbolStatus>> {
+    let mut stmt = conn.prepare(
+        "SELECT symbol,
+                COUNT(*) AS total,
+                SUM(CASE WHEN open IS NULL OR high IS NULL OR low IS NULL OR volume IS NULL THEN 1 ELSE 0 END) AS missing
+         FROM price_history
+         GROUP BY symbol
+         HAVING missing > 0
+         ORDER BY symbol",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(BackfillSymbolStatus {
+            symbol: row.get(0)?,
+            total_rows: row.get(1)?,
+            missing_ohlcv_rows: row.get(2)?,
+        })
+    })?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+fn find_symbols_needing_backfill_postgres(pool: &PgPool) -> Result<Vec<BackfillSymbolStatus>> {
+    ensure_tables_postgres(pool)?;
+    let rows: Vec<(String, i64, i64)> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT symbol,
+                    COUNT(*)::bigint AS total,
+                    SUM(CASE WHEN open IS NULL OR high IS NULL OR low IS NULL OR volume IS NULL THEN 1 ELSE 0 END)::bigint AS missing
+             FROM price_history
+             GROUP BY symbol
+             HAVING SUM(CASE WHEN open IS NULL OR high IS NULL OR low IS NULL OR volume IS NULL THEN 1 ELSE 0 END) > 0
+             ORDER BY symbol",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(symbol, total, missing)| BackfillSymbolStatus {
+            symbol,
+            total_rows: total as u32,
+            missing_ohlcv_rows: missing as u32,
+        })
+        .collect())
+}
+
+pub fn find_symbols_needing_backfill_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<BackfillSymbolStatus>> {
+    query::dispatch(
+        backend,
+        find_symbols_needing_backfill,
+        find_symbols_needing_backfill_postgres,
+    )
+}
+
 #[allow(dead_code)]
 pub fn upsert_history_backend(
     backend: &BackendConnection,

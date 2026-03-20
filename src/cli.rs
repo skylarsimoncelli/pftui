@@ -417,6 +417,12 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Backfill missing OHLCV data for existing price history (re-fetches from Yahoo Finance)
+    Backfill {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// EIA weekly crude oil inventory and Strategic Petroleum Reserve (SPR) levels
     #[command(name = "oil-inventory")]
     OilInventory {
@@ -2476,6 +2482,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_data_backfill_command() {
+        let cli = Cli::try_parse_from(["pftui", "data", "backfill", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Backfill { json },
+            }) => {
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_backfill_no_flags() {
+        let cli = Cli::try_parse_from(["pftui", "data", "backfill"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Backfill { json },
+            }) => {
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
     fn parses_data_onchain_command() {
         let cli = Cli::try_parse_from(["pftui", "data", "onchain", "--json"]).unwrap();
         match cli.command {
@@ -2585,6 +2617,7 @@ mod tests {
             "supply",
             "sovereign",
             "oil-inventory",
+            "backfill",
         ] {
             assert!(
                 data_help.contains(command),

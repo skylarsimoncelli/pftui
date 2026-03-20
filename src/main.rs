@@ -726,6 +726,9 @@ fn main() -> Result<()> {
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }
+            cli::DataCommand::Backfill { json } => {
+                commands::backfill::run(&backend, json)
+            }
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Daemon { command } => match command {

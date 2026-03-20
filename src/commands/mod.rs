@@ -2,6 +2,7 @@ pub mod add_tx;
 pub mod agent_msg;
 pub mod alerts;
 pub mod analytics;
+pub mod backfill;
 pub mod daemon;
 pub mod annotate;
 pub mod brief;
