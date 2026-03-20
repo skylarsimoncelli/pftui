@@ -353,6 +353,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             previous TEXT,
             change TEXT,
             source_url TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'unknown',
+            confidence TEXT NOT NULL DEFAULT 'medium',
             fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -999,6 +1001,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
              ALTER TABLE technical_snapshots ADD COLUMN atr_ratio REAL;
              ALTER TABLE technical_snapshots ADD COLUMN range_expansion INTEGER;
              ALTER TABLE technical_snapshots ADD COLUMN day_range_ratio REAL;",
+        )?;
+    }
+
+    // Migration: add source and confidence columns to economic_data
+    let has_source: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('economic_data') WHERE name = 'source'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_source {
+        conn.execute_batch(
+            "ALTER TABLE economic_data ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown';
+             ALTER TABLE economic_data ADD COLUMN confidence TEXT NOT NULL DEFAULT 'medium';",
         )?;
     }
 

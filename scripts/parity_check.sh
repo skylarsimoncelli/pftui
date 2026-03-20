@@ -103,8 +103,13 @@ normalize_json() {
   ' "$in_file" >"$out_file"
 }
 
-# Clear stale Postgres state so both backends start from identical data
-psql "$POSTGRES_URL" -q -c "TRUNCATE price_cache, price_history, allocation_targets CASCADE;" 2>/dev/null || true
+# Clear stale Postgres state so both backends start from identical data.
+# Truncate each table individually — some may not exist in the Postgres schema
+# and a single multi-table TRUNCATE would fail atomically if any table is missing,
+# leaving ALL tables un-truncated (including price_cache with leftover test data).
+for _tbl in price_cache price_history allocation_targets fx_cache technical_snapshots technical_signals technical_levels; do
+  psql "$POSTGRES_URL" -q -c "TRUNCATE ${_tbl} CASCADE;" 2>/dev/null || true
+done
 
 run_in_env "$sqlite_cfg_home" "$sqlite_data_home" "$PFTUI_BIN" system import "$snapshot_json" --mode replace >/dev/null
 run_in_env "$pg_cfg_home" "$pg_data_home" "$PFTUI_BIN" system import "$snapshot_json" --mode replace >/dev/null

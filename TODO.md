@@ -10,28 +10,11 @@ _(none)_
 
 ## P1 — Always-On Analytics Engine
 
-### [Feedback] `data news --json` fails with exit code 1 (text mode works) — CANNOT REPRODUCE
-
-> Evening Analyst (Mar 20): JSON output mode for news command exits with code 1 while text mode works fine.
-> Dev Agent (Mar 20): Tested — `data news --json` returns 20 articles, exit 0. JSON serialization path is clean (serde_json::to_string_pretty). Likely transient: empty news cache at time of test, or Brave API timeout. Monitoring.
->
-> Files: `src/commands/news.rs`
-
-### [Feedback] Economy data inconsistencies and unclear units — PARTIALLY FIXED
-
-> ~~Medium-Timeframe Analyst (Mar 20, 70/75): NFP=19, PMI=2025, claims=8000 — garbage values from Brave Search extraction.~~
-> Fixed: Added plausibility validation (indicator-specific bounds) and unit labels in JSON output (PR #67). Remaining: fed_funds_rate discrepancy vs FedWatch is a different-source issue (Brave vs FRED), not validation. Consider cross-source reconciliation as follow-up.
->
-> Files: `src/commands/economy.rs`, `src/data/economic.rs`
+_(none)_
 
 ## P2 — Coverage And Agent Consumption
 
-
-### [Feedback] Prediction CLI positional vs flag syntax confusion
-
-> Evening Analyst (Mar 18, Mar 20): `prediction add` requires positional timeframe syntax but not `--timeframe` flag. Timeframe values (low/medium/high/macro) differ from intuitive names (short/medium/long). Consider accepting both positional and flag syntax, and adding aliases for common timeframe names.
->
-> Files: `src/cli.rs`, `src/commands/predict.rs`
+_(none)_
 
 ## P3 — Long Term
 
@@ -58,11 +41,9 @@ _(none)_
 - CONTRIBUTING.md and branch protection docs added (PR #58)
 - F39.7b historical data population completed (810 rows)
 
-**Top 3 priorities based on feedback:**
+**Top priorities based on feedback:**
 
-1. **P1: `data news --json` exit code 1** — JSON output broken while text works. Agents need reliable JSON.
-2. **P1: Economy data inconsistencies** — Medium-Timeframe Analyst (70/75) confused by values without units/context.
-3. **P2: Prediction CLI syntax confusion** — Evening Analyst wants `--timeframe` flag and intuitive aliases.
+_(P1 economy data inconsistencies resolved in PR #74 — cross-source reconciliation, source/confidence metadata)_
 
 **Release status:** v0.13.0 is current. 53 commits since tag. P0 movers stale-close bug fixed (PR #65). Build green, 1440 tests pass, clippy clean. **Release v0.14.0 is eligible** — no P0 blockers remaining.
 

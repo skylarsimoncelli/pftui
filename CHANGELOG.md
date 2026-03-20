@@ -3,6 +3,38 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — fix: CI Postgres parity suite — truncate price tables individually (P0)
+
+- What: Fixed the parity check script's TRUNCATE command which atomically failed when `price_history` didn't exist in the Postgres schema, silently leaving `price_cache` dirty with leftover test data (AAPL at $201.25). Changed to per-table truncation in a loop. Added `fx_cache`, `technical_snapshots`, `technical_signals`, `technical_levels` to cleanup.
+- Why: The `postgres_roundtrip_when_env_set` unit test writes AAPL at $201.25 to `price_cache` without cleanup. The parity script's `TRUNCATE price_cache, price_history, allocation_targets CASCADE` failed atomically because `price_history` isn't in the Postgres schema, leaving all tables dirty. The `|| true` swallowed the error. Result: Postgres had prices, SQLite didn't.
+- Files: `scripts/parity_check.sh`
+- Tests: All 1449 tests pass; `cargo clippy` clean; Postgres Parity Suite CI passes
+- PR: #72
+
+### 2026-03-20 — fix: Economy data cross-source reconciliation and metadata (P1)
+
+- What: Added cross-source reconciliation for economy data. When the same indicator is available from multiple sources (FRED, BLS, Brave Search), the system now cross-references values, prefers the most authoritative source (FRED > BLS > Brave), and flags discrepancies >0.5%. Added `source` and `confidence` fields to JSON output so agents know where each value came from and how reliable it is. Added `discrepancy` object when sources disagree. DB migration adds source/confidence columns to economic_data table. TUI economy view now shows actual source name instead of hardcoded "Brave". Added unit metadata for GDP, PCE, JOLTS, Treasury yields, yield spread.
+- Why: fed_funds_rate from Brave Search extraction could differ from FRED/FedWatch data. No reconciliation existed between the separate economic_data (Brave/BLS) and economic_cache (FRED) tables. Agents consuming economy data had no way to know which source provided a value or how reliable it was.
+- Files: `src/commands/economy.rs`, `src/commands/refresh.rs`, `src/data/economic.rs`, `src/db/economic_data.rs`, `src/db/schema.rs`, `src/tui/views/economy.rs`
+- Tests: `cargo test` — 1460 pass (+14 new: reconciliation logic, source priority ordering, discrepancy detection, FRED series mapping); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #74
+
+### 2026-03-20 — feat: Prediction CLI --timeframe flag and intuitive aliases (P2)
+
+- What: Added `--timeframe` flag as the preferred way to specify prediction timeframe on `journal prediction add`, keeping positional syntax for backwards compatibility. Flag wins over positional when both provided. Added intuitive aliases: `short`→`low`, `long`→`high`. `medium` and `macro` stay as-is. Alias resolution through `normalize_timeframe()` applies to add, list, and scorecard commands. Updated help text with examples showing both syntaxes.
+- Why: Evening Analyst (Mar 18, Mar 20) reported that `prediction add` requires positional timeframe but doesn't support `--timeframe` flag. Values `low`/`medium`/`high`/`macro` differ from intuitive names `short`/`medium`/`long`. Per CLAUDE.md: "Commands navigate, arguments parameterize" — timeframe is a parameter, so `--timeframe` flag is the correct pattern.
+- Files: `src/cli.rs`, `src/commands/predict.rs`
+- Tests: `cargo test` — 1466 pass (+18 new: 6 CLI parse tests, 12 unit tests for alias resolution/normalization); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #73
+
+### 2026-03-20 — fix: data news --json resilient to empty cache / API failures (P1)
+
+- What: Made `data news --json` always return valid JSON with exit 0, even when the database query fails (e.g., Postgres timeout, connection error). On DB failure in JSON mode, returns `{"articles":[],"error":"..."}` with a stderr warning instead of crashing with exit 1. Also made `print_json` fall back to `[]` on serialization error. Text mode still propagates errors normally but now with added context.
+- Why: Evening Analyst reported `data news --json` exiting with code 1 while text mode worked. Root cause: transient Postgres failures (timeouts, brief unavailability) propagated via `?` through `main() -> Result<()>` to exit 1. Agents consuming JSON output need reliable exit codes and valid JSON even during transient failures.
+- Files: `src/commands/news.rs`
+- Tests: `cargo test` — 1455 pass (+6 new: `test_run_empty_cache_json`, `test_run_empty_cache_text`, `test_run_with_entries_json`, `test_run_with_entries_text`, `test_print_json_empty`, `test_print_json_valid_entries`); `cargo clippy --all-targets -- -D warnings` clean
+- PR: #71
+
 ### 2026-03-20 — fix: Economy data plausibility validation and unit labels (P1)
 
 - What: Added `is_plausible()` validation with indicator-specific bounds to reject garbage values from Brave Search text extraction (PMI=2025, NFP=19, claims=8000). Added `unit` and `display_name` fields to economy JSON output so agents can interpret values correctly.
