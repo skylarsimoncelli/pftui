@@ -17,9 +17,12 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
         let indicators: Vec<_> = rows
             .iter()
             .map(|r| {
+                let (unit, display_name) = indicator_metadata(&r.indicator);
                 serde_json::json!({
                     "indicator": r.indicator,
+                    "display_name": display_name,
                     "value": r.value.to_string(),
+                    "unit": unit,
                     "previous": r.previous.map(|v| v.to_string()),
                     "change": r.change.map(|v| v.to_string()),
                     "source_url": r.source_url,
@@ -112,6 +115,22 @@ fn display_name(indicator: &str) -> &str {
         "initial_jobless_claims" => "Initial Jobless Claims",
         "ppi" => "PPI",
         _ => indicator,
+    }
+}
+
+/// Return (unit, display_name) for an economy indicator.
+/// Units help agents and users interpret raw values correctly.
+fn indicator_metadata(indicator: &str) -> (&str, &str) {
+    match indicator {
+        "cpi" => ("% YoY", "CPI (YoY Inflation)"),
+        "unemployment_rate" => ("%", "Unemployment Rate"),
+        "nfp" => ("thousands", "Nonfarm Payrolls"),
+        "pmi_manufacturing" => ("index (0-100)", "ISM Manufacturing PMI"),
+        "pmi_services" => ("index (0-100)", "ISM Services PMI"),
+        "fed_funds_rate" => ("%", "Federal Funds Rate"),
+        "initial_jobless_claims" => ("claims", "Initial Jobless Claims"),
+        "ppi" => ("% YoY", "PPI (Producer Prices)"),
+        _ => ("", indicator),
     }
 }
 
