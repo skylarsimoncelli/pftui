@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: reshape the iOS app into a streamlined remote monitoring client
+
+- What: expanded the TLS mobile API with a new aggregated `/api/dashboard` payload that bundles portfolio state, timeframe analytics, latest cross-timeframe signal, technical/alert counts, market pulse, watchlist pressure, latest news, and system freshness/daemon status in one read-only response. Reworked the SwiftUI app around that payload: new Home tab for remote monitoring, upgraded visual system, market pulse and watchlist cards, signal summary, source freshness panel, and a cleaner Portfolio/Analytics split driven from a single refresh path. Added mobile server tests for time labels, source freshness shaping, and timestamp formatting.
+- Why: the previous mobile scaffold proved connectivity but still felt like a thin debug client. The product docs are clear that mobile exists for remote monitoring of the shared pftui database, so this change makes the phone app a deliberate companion surface for analytics, market context, and operational health instead of a pair of raw lists.
+- Files: `src/mobile/server.rs`, `src/web/mod.rs`, `mobile/app/PftuiMobile/ContentView.swift`, `mobile/app/PftuiMobile/MobileAPI.swift`, `mobile/app/PftuiMobile/Models.swift`, `CHANGELOG.md`
+- Tests: `swiftc -typecheck mobile/app/PftuiMobile/*.swift`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`
+
 ### 2026-03-20 — feat: configurable universe expansion (F50)
 
 - What: added first-class `[tracked_universe]` config section with 7 symbol groups: `indices` (SPY, QQQ, DIA, IWM), `sectors` (XLE, XLF, XLK, XLV, XLY, XLP, XLI, XLU, XLB, XLRE, XLC), `commodities` (GC=F, SI=F, CL=F, HG=F, URA), `fx` (DX-Y.NYB, EURUSD=X, GBPUSD=X, USDJPY=X), `rates` (^TNX, ^TYX), `crypto_majors` (BTC-USD, ETH-USD), and `custom` (empty, user-defined). Universe symbols are collected alongside portfolio/watchlist/economy/sector symbols during refresh, getting full price fetch, technical snapshots, market structure levels, and signal generation. Added CLI: `pftui system universe list [--json]`, `pftui system universe add SYMBOL [--group GROUP] [--json]`, `pftui system universe remove SYMBOL [--group GROUP] [--json]`. Category inference per group ensures correct data routing (crypto through CoinGecko, fx through Yahoo, etc.). Custom group uses `infer_category()` for smart detection.

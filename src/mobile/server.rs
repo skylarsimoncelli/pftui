@@ -4,20 +4,25 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
-use axum::{extract::State, middleware, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, middleware, routing::get, Json, Router};
 use axum_server::tls_rustls::RustlsConfig;
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rustls::crypto::CryptoProvider;
 use serde::Serialize;
 
+use crate::alerts::AlertStatus;
 use crate::config::Config;
 use crate::db;
 use crate::mobile::auth::{auth_middleware, health, MobileAuthState};
 use crate::mobile::commands::certificate_fingerprint;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
-use crate::web::api::{self, AppState};
+use crate::web::{
+    api::{self, AppState},
+    view_model,
+};
 
 #[derive(Serialize)]
 pub struct MobilePortfolioResponse {
@@ -52,8 +57,84 @@ pub struct MobileTimeframeOutlook {
     pub updated_at: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct MobileDashboardResponse {
+    pub generated_at: String,
+    pub portfolio: MobilePortfolioResponse,
+    pub analytics: MobileAnalyticsResponse,
+    pub monitoring: MobileMonitoringResponse,
+}
+
+#[derive(Serialize)]
+pub struct MobileMonitoringResponse {
+    pub latest_timeframe_signal: Option<MobileLatestSignal>,
+    pub technical_signal_count: usize,
+    pub triggered_alert_count: usize,
+    pub market_pulse: Vec<MobileMarketPulseItem>,
+    pub watchlist: Vec<MobileWatchlistItem>,
+    pub news: Vec<MobileNewsItem>,
+    pub system: MobileSystemSnapshot,
+}
+
+#[derive(Serialize)]
+pub struct MobileLatestSignal {
+    pub signal_type: String,
+    pub severity: String,
+    pub description: String,
+    pub detected_at: String,
+}
+
+#[derive(Serialize)]
+pub struct MobileMarketPulseItem {
+    pub symbol: String,
+    pub name: String,
+    pub value: Option<Decimal>,
+    pub day_change_pct: Option<Decimal>,
+}
+
+#[derive(Serialize)]
+pub struct MobileWatchlistItem {
+    pub symbol: String,
+    pub name: String,
+    pub category: String,
+    pub current_price: Option<Decimal>,
+    pub day_change_pct: Option<Decimal>,
+    pub target_price: Option<Decimal>,
+    pub distance_pct: Option<Decimal>,
+    pub target_hit: bool,
+}
+
+#[derive(Serialize)]
+pub struct MobileNewsItem {
+    pub title: String,
+    pub source: String,
+    pub published_at: String,
+    pub source_type: String,
+}
+
+#[derive(Serialize)]
+pub struct MobileSystemSnapshot {
+    pub daemon: MobileDaemonSnapshot,
+    pub sources: Vec<MobileSourceStatus>,
+}
+
+#[derive(Serialize)]
+pub struct MobileDaemonSnapshot {
+    pub running: bool,
+    pub status: String,
+    pub last_heartbeat: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct MobileSourceStatus {
+    pub name: String,
+    pub status: String,
+    pub freshness: String,
+    pub last_fetch: Option<String>,
+    pub records: usize,
+}
+
 pub async fn run_server(db_path: String, config: Config) -> Result<()> {
-    // Ensure rustls has a crypto provider before any TLS operations
     let _ = CryptoProvider::install_default(rustls::crypto::ring::default_provider());
 
     if !config.mobile.enabled {
@@ -84,6 +165,7 @@ pub async fn run_server(db_path: String, config: Config) -> Result<()> {
     ));
 
     let api_routes = Router::new()
+        .route("/dashboard", get(get_dashboard))
         .route("/portfolio", get(get_portfolio))
         .route("/analytics", get(get_analytics))
         .route("/ui-config", get(api::get_ui_config))
@@ -113,47 +195,69 @@ pub async fn run_server(db_path: String, config: Config) -> Result<()> {
     Ok(())
 }
 
+async fn get_dashboard(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<MobileDashboardResponse>, (StatusCode, String)> {
+    let backend = crate::db::backend::open_from_config(&state.config, Path::new(&state.db_path))
+        .map_err(internal_error)?;
+    let portfolio = portfolio_payload(&backend, &state.config).map_err(internal_error)?;
+    let analytics = analytics_payload(&backend);
+    let monitoring = monitoring_payload(&backend).map_err(internal_error)?;
+
+    Ok(Json(MobileDashboardResponse {
+        generated_at: Utc::now().to_rfc3339(),
+        portfolio,
+        analytics,
+        monitoring,
+    }))
+}
+
 async fn get_portfolio(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<MobilePortfolioResponse>, (axum::http::StatusCode, String)> {
+) -> Result<Json<MobilePortfolioResponse>, (StatusCode, String)> {
     let backend = crate::db::backend::open_from_config(&state.config, Path::new(&state.db_path))
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
+        .map_err(internal_error)?;
+    Ok(Json(
+        portfolio_payload(&backend, &state.config).map_err(internal_error)?,
+    ))
+}
 
-    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(&backend).unwrap_or_default();
-    let prices = crate::db::price_cache::get_all_cached_prices_backend(&backend)
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to load prices: {}", e),
-            )
-        })?
+async fn get_analytics(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<MobileAnalyticsResponse>, (StatusCode, String)> {
+    let backend = crate::db::backend::open_from_config(&state.config, Path::new(&state.db_path))
+        .map_err(internal_error)?;
+    Ok(Json(analytics_payload(&backend)))
+}
+
+fn portfolio_payload(
+    backend: &crate::db::backend::BackendConnection,
+    config: &Config,
+) -> Result<MobilePortfolioResponse> {
+    let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
+    let prices = crate::db::price_cache::get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|quote| (quote.symbol, quote.price))
         .collect::<HashMap<_, _>>();
 
-    let positions = load_positions(&backend, &state.config, &prices, &fx_rates).map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load positions: {}", e),
-        )
-    })?;
+    let positions = load_positions(backend, config, &prices, &fx_rates)?;
 
     let total_value: Option<Decimal> = positions
         .iter()
         .filter_map(|position| position.current_value)
         .sum::<Decimal>()
         .into();
-    let daily_change_pct = portfolio_day_change_pct(&backend, &positions, total_value);
+    let daily_change_pct = portfolio_day_change_pct(backend, &positions, total_value);
 
     let mut mobile_positions: Vec<MobilePosition> = positions
         .into_iter()
         .map(|position| {
-            let day_change_pct = position_day_change_pct(&backend, &position);
+            let day_change_pct = if position.category == AssetCategory::Cash {
+                Some(dec!(0))
+            } else {
+                day_change_pct_backend(backend, &position.symbol)
+            };
+
             MobilePosition {
                 symbol: position.symbol,
                 name: position.name,
@@ -174,26 +278,16 @@ async fn get_portfolio(
             .then_with(|| left.symbol.cmp(&right.symbol))
     });
 
-    Ok(Json(MobilePortfolioResponse {
+    Ok(MobilePortfolioResponse {
         total_value,
         daily_change_pct,
         position_count: mobile_positions.len(),
         positions: mobile_positions,
-    }))
+    })
 }
 
-async fn get_analytics(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<MobileAnalyticsResponse>, (axum::http::StatusCode, String)> {
-    let backend = crate::db::backend::open_from_config(&state.config, Path::new(&state.db_path))
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?;
-
-    let configured = crate::db::mobile_timeframe_scores::list_scores_backend(&backend)
+fn analytics_payload(backend: &crate::db::backend::BackendConnection) -> MobileAnalyticsResponse {
+    let configured = crate::db::mobile_timeframe_scores::list_scores_backend(backend)
         .unwrap_or_default()
         .into_iter()
         .map(|row| (row.timeframe.clone(), row))
@@ -222,7 +316,196 @@ async fn get_analytics(
         })
         .collect();
 
-    Ok(Json(MobileAnalyticsResponse { timeframes }))
+    MobileAnalyticsResponse { timeframes }
+}
+
+fn monitoring_payload(
+    backend: &crate::db::backend::BackendConnection,
+) -> Result<MobileMonitoringResponse> {
+    let prices = crate::db::price_cache::get_all_cached_prices_backend(backend)?
+        .into_iter()
+        .map(|quote| (quote.symbol, quote.price))
+        .collect::<HashMap<_, _>>();
+
+    let latest_timeframe_signal = crate::db::timeframe_signals::latest_signal_backend(backend)?
+        .map(|signal| MobileLatestSignal {
+            signal_type: signal.signal_type,
+            severity: signal.severity,
+            description: signal.description,
+            detected_at: signal.detected_at,
+        });
+
+    let technical_signal_count =
+        crate::db::technical_signals::list_signals_backend(backend, None, None, Some(200))
+            .map(|rows| rows.len())
+            .unwrap_or(0);
+    let triggered_alert_count = crate::db::alerts::list_alerts_backend(backend)
+        .map(|rows| {
+            rows.into_iter()
+                .filter(|row| row.status == AlertStatus::Triggered)
+                .count()
+        })
+        .unwrap_or(0);
+
+    let market_pulse = view_model::market_overview_symbols()
+        .into_iter()
+        .take(6)
+        .map(|spec| MobileMarketPulseItem {
+            symbol: spec.symbol.clone(),
+            name: spec.name,
+            value: prices.get(&spec.symbol).copied(),
+            day_change_pct: day_change_pct_backend(backend, &spec.symbol),
+        })
+        .collect();
+
+    let watchlist = db::watchlist::list_watchlist_backend(backend)?
+        .into_iter()
+        .take(8)
+        .map(|item| {
+            let category: AssetCategory = item.category.parse().unwrap_or(AssetCategory::Equity);
+            let quote_symbol = view_model::watchlist_quote_symbol(&item.symbol, category);
+            let current_price = prices
+                .get(&item.symbol)
+                .copied()
+                .or_else(|| prices.get(&quote_symbol).copied());
+            let target_price = item
+                .target_price
+                .and_then(|value| value.parse::<Decimal>().ok());
+            let (distance_pct, target_hit) = view_model::compute_watchlist_proximity(
+                current_price,
+                target_price,
+                item.target_direction.as_deref(),
+            );
+
+            MobileWatchlistItem {
+                symbol: item.symbol.clone(),
+                name: crate::models::asset_names::resolve_name(&item.symbol),
+                category: category.to_string(),
+                current_price,
+                day_change_pct: day_change_pct_backend(backend, &quote_symbol)
+                    .or_else(|| day_change_pct_backend(backend, &item.symbol)),
+                target_price,
+                distance_pct,
+                target_hit,
+            }
+        })
+        .collect();
+
+    let news =
+        crate::db::news_cache::get_latest_news_backend(backend, 5, None, None, None, Some(72))?
+            .into_iter()
+            .map(|entry| MobileNewsItem {
+                title: entry.title,
+                source: entry.source,
+                published_at: timestamp_to_rfc3339(entry.published_at),
+                source_type: entry.source_type,
+            })
+            .collect();
+
+    Ok(MobileMonitoringResponse {
+        latest_timeframe_signal,
+        technical_signal_count,
+        triggered_alert_count,
+        market_pulse,
+        watchlist,
+        news,
+        system: system_snapshot(backend),
+    })
+}
+
+fn system_snapshot(backend: &crate::db::backend::BackendConnection) -> MobileSystemSnapshot {
+    let daemon = crate::commands::daemon::read_status()
+        .map(|status| MobileDaemonSnapshot {
+            running: status.running,
+            status: status.status,
+            last_heartbeat: status.last_heartbeat,
+        })
+        .unwrap_or(MobileDaemonSnapshot {
+            running: false,
+            status: "stopped".to_string(),
+            last_heartbeat: None,
+        });
+
+    let prices = crate::db::price_cache::get_all_cached_prices_backend(backend).unwrap_or_default();
+    let latest_price_fetch = prices
+        .iter()
+        .filter_map(|quote| parse_timestamp(&quote.fetched_at))
+        .max();
+
+    let news =
+        crate::db::news_cache::get_latest_news_backend(backend, 50, None, None, None, Some(72))
+            .unwrap_or_default();
+    let latest_news_fetch = news
+        .iter()
+        .filter_map(|entry| parse_timestamp(&entry.fetched_at))
+        .max();
+
+    let predictions = crate::db::predictions_cache::get_cached_predictions_backend(backend, 200)
+        .unwrap_or_default();
+    let latest_prediction_fetch = crate::db::predictions_cache::get_last_update_backend(backend)
+        .ok()
+        .flatten()
+        .and_then(|ts| DateTime::<Utc>::from_timestamp(ts, 0));
+
+    let sentiments = ["crypto", "traditional"]
+        .into_iter()
+        .filter_map(|kind| {
+            crate::db::sentiment_cache::get_latest_backend(backend, kind)
+                .ok()
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    let latest_sentiment_fetch = sentiments
+        .iter()
+        .filter_map(|entry| parse_timestamp(&entry.fetched_at))
+        .max();
+
+    MobileSystemSnapshot {
+        daemon,
+        sources: vec![
+            source_status("Prices", latest_price_fetch, prices.len(), 15 * 60),
+            source_status("News", latest_news_fetch, news.len(), 30 * 60),
+            source_status(
+                "Predictions",
+                latest_prediction_fetch,
+                predictions.len(),
+                2 * 60 * 60,
+            ),
+            source_status(
+                "Sentiment",
+                latest_sentiment_fetch,
+                sentiments.len(),
+                2 * 60 * 60,
+            ),
+        ],
+    }
+}
+
+fn source_status(
+    name: &str,
+    last_fetch: Option<DateTime<Utc>>,
+    records: usize,
+    fresh_within_secs: i64,
+) -> MobileSourceStatus {
+    let now = Utc::now();
+    let freshness = last_fetch
+        .map(|ts| relative_time(ts, now))
+        .unwrap_or_else(|| "never".to_string());
+    let status = match (records, last_fetch) {
+        (0, _) => "empty",
+        (_, Some(ts)) if now.signed_duration_since(ts).num_seconds() <= fresh_within_secs => {
+            "fresh"
+        }
+        _ => "stale",
+    };
+
+    MobileSourceStatus {
+        name: name.to_string(),
+        status: status.to_string(),
+        freshness,
+        last_fetch: last_fetch.map(|ts| ts.to_rfc3339()),
+        records,
+    }
 }
 
 fn load_positions(
@@ -244,6 +527,10 @@ fn load_positions(
     }
 }
 
+fn internal_error(error: anyhow::Error) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+}
+
 fn timeframe_label(value: &str) -> &'static str {
     match value {
         "low" => "Low Timeframe",
@@ -254,16 +541,11 @@ fn timeframe_label(value: &str) -> &'static str {
     }
 }
 
-fn position_day_change_pct(
+fn day_change_pct_backend(
     backend: &crate::db::backend::BackendConnection,
-    position: &Position,
+    symbol: &str,
 ) -> Option<Decimal> {
-    if position.category == AssetCategory::Cash {
-        return Some(dec!(0));
-    }
-
-    let history =
-        crate::db::price_history::get_history_backend(backend, &position.symbol, 2).ok()?;
+    let history = crate::db::price_history::get_history_backend(backend, symbol, 2).ok()?;
     if history.len() < 2 {
         return None;
     }
@@ -273,6 +555,35 @@ fn position_day_change_pct(
         return None;
     }
     Some((latest - previous) / previous * dec!(100))
+}
+
+fn parse_timestamp(raw: &str) -> Option<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&Utc));
+    }
+
+    chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+}
+
+fn relative_time(timestamp: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let seconds = now.signed_duration_since(timestamp).num_seconds();
+    if seconds < 60 {
+        format!("{}s ago", seconds)
+    } else if seconds < 3600 {
+        format!("{}m ago", seconds / 60)
+    } else if seconds < 86_400 {
+        format!("{}h ago", seconds / 3600)
+    } else {
+        format!("{}d ago", seconds / 86_400)
+    }
+}
+
+fn timestamp_to_rfc3339(timestamp: i64) -> String {
+    DateTime::<Utc>::from_timestamp(timestamp, 0)
+        .unwrap_or_else(Utc::now)
+        .to_rfc3339()
 }
 
 fn portfolio_day_change_pct(
@@ -307,4 +618,42 @@ fn portfolio_day_change_pct(
     }
 
     Some((current_total - previous_total) / previous_total * dec!(100))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{relative_time, source_status, timeframe_label, timestamp_to_rfc3339};
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn timeframe_labels_cover_known_values() {
+        assert_eq!(timeframe_label("low"), "Low Timeframe");
+        assert_eq!(timeframe_label("macro"), "Macro Timeframe");
+        assert_eq!(timeframe_label("other"), "Timeframe");
+    }
+
+    #[test]
+    fn source_status_marks_empty_and_stale() {
+        let old = Utc.with_ymd_and_hms(2026, 3, 19, 9, 0, 0).unwrap();
+
+        let empty = source_status("News", None, 0, 300);
+        assert_eq!(empty.status, "empty");
+        assert_eq!(empty.freshness, "never");
+
+        let stale = source_status("Prices", Some(old), 10, 60);
+        assert_eq!(stale.status, "stale");
+        assert!(stale.last_fetch.is_some());
+    }
+
+    #[test]
+    fn relative_time_uses_compact_units() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 19, 12, 0, 0).unwrap();
+        let ts = Utc.with_ymd_and_hms(2026, 3, 19, 11, 58, 0).unwrap();
+        assert_eq!(relative_time(ts, now), "2m ago");
+    }
+
+    #[test]
+    fn unix_timestamp_formats_as_rfc3339() {
+        assert_eq!(timestamp_to_rfc3339(0), "1970-01-01T00:00:00+00:00");
+    }
 }

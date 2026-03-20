@@ -5,6 +5,7 @@ import Security
 @MainActor
 final class MobileStore: ObservableObject {
     @Published var connection: ConnectionSettings?
+    @Published var dashboard: DashboardPayload?
     @Published var portfolio: PortfolioPayload?
     @Published var analytics: AnalyticsPayload?
     @Published var errorMessage: String?
@@ -27,6 +28,7 @@ final class MobileStore: ObservableObject {
             errorMessage = "Enter the server, API token, and TLS fingerprint."
             return
         }
+
         connection = settings
         saveConnection(settings)
         KeychainHelper.save(password: settings.token, account: tokenAccount)
@@ -41,10 +43,14 @@ final class MobileStore: ObservableObject {
         await refresh()
     }
 
-    func logout() {
+    func disconnect() {
+        connection = nil
+        dashboard = nil
         portfolio = nil
         analytics = nil
         errorMessage = nil
+        UserDefaults.standard.removeObject(forKey: connectionKey)
+        KeychainHelper.deletePassword(account: tokenAccount)
     }
 
     func refresh() async {
@@ -54,11 +60,12 @@ final class MobileStore: ObservableObject {
         }
         isBusy = true
         defer { isBusy = false }
+
         do {
-            async let portfolioTask: PortfolioPayload = request(path: "/api/portfolio")
-            async let analyticsTask: AnalyticsPayload = request(path: "/api/analytics")
-            portfolio = try await portfolioTask
-            analytics = try await analyticsTask
+            let payload: DashboardPayload = try await request(path: "/api/dashboard")
+            dashboard = payload
+            portfolio = payload.portfolio
+            analytics = payload.analytics
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -147,9 +154,11 @@ final class PinnedSessionDelegate: NSObject, URLSessionDelegate {
         self.fingerprint = fingerprint
     }
 
-    func urlSession(_ session: URLSession,
-                    didReceive challenge: URLAuthenticationChallenge,
-                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust,
               let certificate = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first else {
@@ -195,5 +204,13 @@ enum KeychainHelper {
             return nil
         }
         return password
+    }
+
+    static func deletePassword(account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
