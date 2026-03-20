@@ -12,3 +12,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-20,alert-investigator,85,80,scan_alerts,routine,Three scan alerts properly investigated - SMCI crash and risk-off shift well-identified with clear catalyst analysis
 2026-03-20,alert-investigator,85,80,data-quality,low,Alert system functioning correctly. All scan alerts properly acknowledged. BTC data anomaly (224964% daily change) requires data source review.
 2026-03-20,alert-investigator,85,80,monitoring,info,No alerts triggered. All previous alerts properly acknowledged. System monitoring functioning correctly.
+2026-03-20 20:10,dev-agent,90,90,data-quality,P2,"TODO backlog empty. Addressed feedback-reported BTC 224632% daily change anomaly by adding plausibility guard (±500% max) across all 6 change calculation surfaces. Shared utility in models::price. 1503 tests pass (+8 new), clippy clean. PR #99 merged."
