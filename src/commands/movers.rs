@@ -73,7 +73,14 @@ fn compute_change_pct(
         return None;
     }
 
-    Some((current - prev_close) / prev_close * dec!(100))
+    let pct = (current - prev_close) / prev_close * dec!(100);
+
+    // Plausibility guard: reject anomalous changes (e.g. 224,000% from corrupt data)
+    if !crate::models::price::is_plausible_daily_change(pct) {
+        return None;
+    }
+
+    Some(pct)
 }
 
 /// Find the previous trading session's close from history.
@@ -1091,5 +1098,44 @@ mod tests {
         // Should show GC=F as a mover (-10% exceeds 3% threshold)
         let result = run(&backend, &config, None, false, false);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn change_pct_rejects_anomalous_data() {
+        // Reproduces the BTC 224,632% anomaly: corrupt previous_close near zero
+        // should be filtered by the plausibility guard
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        // Current BTC = $84,000, corrupt previous_close = $37 → ~227,000% change
+        let pct = compute_change_pct(&backend, "BTC-USD", Some(dec!(84000)), Some(dec!(37)));
+        assert!(pct.is_none(), "Should reject >500% change as implausible");
+    }
+
+    #[test]
+    fn change_pct_allows_legitimate_extreme_moves() {
+        // A real 50% crash (e.g. small-cap halt) should still be allowed
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        // Current = $50, previous = $100 → -50% change (legitimate)
+        let pct = compute_change_pct(&backend, "SMCI", Some(dec!(50)), Some(dec!(100)));
+        assert!(pct.is_some(), "Should allow legitimate -50% move");
+        assert_eq!(pct.unwrap(), dec!(-50));
+    }
+
+    #[test]
+    fn change_pct_boundary_at_500_pct() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        // Exactly 500% → allowed
+        let pct = compute_change_pct(&backend, "TEST", Some(dec!(600)), Some(dec!(100)));
+        assert!(pct.is_some(), "500% should be allowed");
+        assert_eq!(pct.unwrap(), dec!(500));
+
+        // Just over 500% → rejected
+        let pct = compute_change_pct(&backend, "TEST", Some(dec!(602)), Some(dec!(100)));
+        assert!(pct.is_none(), "502% should be rejected as implausible");
     }
 }
