@@ -13,9 +13,9 @@ use crate::data::brave;
 /// A calendar event (economic or earnings).
 #[derive(Debug, Clone)]
 pub struct Event {
-    pub date: String,      // YYYY-MM-DD
+    pub date: String, // YYYY-MM-DD
     pub name: String,
-    pub impact: String,    // "high", "medium", "low"
+    pub impact: String, // "high", "medium", "low"
     pub previous: Option<String>,
     pub forecast: Option<String>,
     pub event_type: String, // "economic" or "earnings"
@@ -61,7 +61,12 @@ pub async fn enrich_with_brave(events: &mut Vec<Event>, brave_key: &str) -> Resu
         let results = brave::brave_web_search(brave_key, query, Some("pm"), 5).await?;
         let mut discovered_date = None;
         for r in &results {
-            let corpus = format!("{} {} {}", r.title, r.description, r.extra_snippets.join(" "));
+            let corpus = format!(
+                "{} {} {}",
+                r.title,
+                r.description,
+                r.extra_snippets.join(" ")
+            );
             if let Some(d) = extract_date_from_text(&corpus) {
                 if d >= today {
                     discovered_date = Some(d);
@@ -72,9 +77,9 @@ pub async fn enrich_with_brave(events: &mut Vec<Event>, brave_key: &str) -> Resu
 
         if let Some(date) = discovered_date {
             let date_str = date.format("%Y-%m-%d").to_string();
-            let exists = events
-                .iter()
-                .any(|e| e.date == date_str && e.name.to_lowercase().contains(&event_name.to_lowercase()));
+            let exists = events.iter().any(|e| {
+                e.date == date_str && e.name.to_lowercase().contains(&event_name.to_lowercase())
+            });
             if !exists {
                 events.push(Event {
                     date: date_str,
@@ -100,13 +105,16 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
 
     // TradingEconomics calendar page for US events
     let url = "https://tradingeconomics.com/united-states/calendar";
-    
+
     let client = reqwest::blocking::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
 
-    let response = client.get(url).send().context("Failed to fetch TradingEconomics calendar")?;
+    let response = client
+        .get(url)
+        .send()
+        .context("Failed to fetch TradingEconomics calendar")?;
     let html_content = response.text()?;
     let document = Html::parse_document(&html_content);
 
@@ -159,29 +167,32 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
         }
 
         // Extract actual, previous, forecast
-        let _actual = row
-            .select(actual_selector)
-            .next()
-            .and_then(|e| {
-                let text = e.text().collect::<String>().trim().to_string();
-                if text.is_empty() { None } else { Some(text) }
-            });
+        let _actual = row.select(actual_selector).next().and_then(|e| {
+            let text = e.text().collect::<String>().trim().to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        });
 
-        let previous = row
-            .select(previous_selector)
-            .next()
-            .and_then(|e| {
-                let text = e.text().collect::<String>().trim().to_string();
-                if text.is_empty() { None } else { Some(text) }
-            });
+        let previous = row.select(previous_selector).next().and_then(|e| {
+            let text = e.text().collect::<String>().trim().to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        });
 
-        let forecast = row
-            .select(forecast_selector)
-            .next()
-            .and_then(|e| {
-                let text = e.text().collect::<String>().trim().to_string();
-                if text.is_empty() { None } else { Some(text) }
-            });
+        let forecast = row.select(forecast_selector).next().and_then(|e| {
+            let text = e.text().collect::<String>().trim().to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        });
 
         // Determine impact based on event type
         let impact = classify_impact(&name);
@@ -202,8 +213,8 @@ fn scrape_tradingeconomics_calendar(days_ahead: i64) -> Result<Vec<Event>> {
 
 fn cached_selector<'a>(slot: &'a OnceLock<Selector>, css: &str) -> Result<&'a Selector> {
     if slot.get().is_none() {
-        let parsed = Selector::parse(css)
-            .map_err(|e| anyhow!("invalid CSS selector '{}': {:?}", css, e))?;
+        let parsed =
+            Selector::parse(css).map_err(|e| anyhow!("invalid CSS selector '{}': {:?}", css, e))?;
         let _ = slot.set(parsed);
     }
     slot.get()
@@ -233,18 +244,37 @@ fn parse_te_date(date_str: &str, year: i32) -> Result<NaiveDate> {
 /// Classify event impact based on event name.
 fn classify_impact(name: &str) -> String {
     let name_lower = name.to_lowercase();
-    
+
     // High impact events
     let high_impact = [
-        "fomc", "federal funds", "interest rate", "nonfarm payroll", "nfp",
-        "unemployment", "cpi", "inflation", "gdp", "pce", "retail sales",
-        "jobless claims", "ism", "pmi", "jolts", "adp", "consumer confidence",
+        "fomc",
+        "federal funds",
+        "interest rate",
+        "nonfarm payroll",
+        "nfp",
+        "unemployment",
+        "cpi",
+        "inflation",
+        "gdp",
+        "pce",
+        "retail sales",
+        "jobless claims",
+        "ism",
+        "pmi",
+        "jolts",
+        "adp",
+        "consumer confidence",
     ];
 
     // Medium impact events
     let medium_impact = [
-        "housing", "durable goods", "factory orders", "wholesale",
-        "trade balance", "business inventories", "capacity utilization",
+        "housing",
+        "durable goods",
+        "factory orders",
+        "wholesale",
+        "trade balance",
+        "business inventories",
+        "capacity utilization",
     ];
 
     for keyword in &high_impact {
@@ -275,7 +305,10 @@ fn extract_date_from_text(text: &str) -> Option<NaiveDate> {
     let normalized = text.replace(',', "");
     let words: Vec<String> = normalized
         .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| ".;:()[]{}".contains(c)).to_string())
+        .map(|w| {
+            w.trim_matches(|c: char| ".;:()[]{}".contains(c))
+                .to_string()
+        })
         .collect();
     for window in words.windows(3) {
         let candidate = format!("{} {} {}", window[0], window[1], window[2]);
@@ -513,12 +546,8 @@ mod tests {
         if let Some(first) = events.first() {
             assert!(!first.date.is_empty());
             assert!(!first.name.is_empty());
-            assert!(
-                first.impact == "high" || first.impact == "medium" || first.impact == "low"
-            );
-            assert!(
-                first.event_type == "economic" || first.event_type == "earnings"
-            );
+            assert!(first.impact == "high" || first.impact == "medium" || first.impact == "low");
+            assert!(first.event_type == "economic" || first.event_type == "earnings");
         }
     }
 

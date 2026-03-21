@@ -199,13 +199,16 @@ pub fn run(config: &Config, is_explicit: bool) -> Result<()> {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("missing mirror source URL"))?;
         crate::commands::mirror::sync_and_activate(&new_config, &db_path, source_url)?;
-        let reloaded = open_from_config(&Config {
-            database_backend: DatabaseBackend::Sqlite,
-            database_url: None,
-            mirror_source_url: db_selection.mirror_source_url.clone(),
-            postgres_read_only: false,
-            ..new_config.clone()
-        }, &db_path)?;
+        let reloaded = open_from_config(
+            &Config {
+                database_backend: DatabaseBackend::Sqlite,
+                database_url: None,
+                mirror_source_url: db_selection.mirror_source_url.clone(),
+                postgres_read_only: false,
+                ..new_config.clone()
+            },
+            &db_path,
+        )?;
         let tx_count = transactions::count_transactions_backend(&reloaded).unwrap_or(0);
         let alloc_count = allocations::count_allocations_backend(&reloaded).unwrap_or(0);
         if tx_count > 0 {
@@ -272,10 +275,7 @@ fn reset_setup_tables(backend: &BackendConnection) -> Result<()> {
     )
 }
 
-fn prompt_database_backend(
-    config: &Config,
-    sqlite_path: &Path,
-) -> Result<DatabaseSetupSelection> {
+fn prompt_database_backend(config: &Config, sqlite_path: &Path) -> Result<DatabaseSetupSelection> {
     println!("  Database backend:");
     println!("    \x1b[1m[1]\x1b[0m Local SQLite \x1b[90m(default, zero config)\x1b[0m");
     println!("    \x1b[1m[2]\x1b[0m Local PostgreSQL \x1b[90m(localhost / 127.0.0.1)\x1b[0m");
@@ -481,15 +481,7 @@ fn prompt_remote_postgres_url(
             let username = prompt_required_with_default("  User", &defaults.username)?;
             let password = prompt("  Password: ")?;
             let ssl_mode = prompt_postgres_ssl_mode(defaults.ssl_mode)?;
-            build_postgres_url(
-                &host,
-                port,
-                &database,
-                &username,
-                &password,
-                ssl_mode,
-                true,
-            )
+            build_postgres_url(&host, port, &database, &username, &password, ssl_mode, true)
         }
         PostgresConnectionInputMode::ConnectionString => loop {
             let raw = prompt("  PostgreSQL URL (postgres://...): ")?;
@@ -1386,8 +1378,8 @@ mod tests {
 
     #[test]
     fn enforce_postgres_read_only_adds_read_only_option() {
-        let url = enforce_postgres_read_only("postgres://user:pass@db.example.com:5432/pftui")
-            .unwrap();
+        let url =
+            enforce_postgres_read_only("postgres://user:pass@db.example.com:5432/pftui").unwrap();
         assert!(url.contains("options=-c+default_transaction_read_only%3Don"));
     }
 }

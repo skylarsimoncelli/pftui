@@ -81,7 +81,10 @@ pub fn build_detail_lines<'a>(pos: &Position, app: &'a App, privacy: bool) -> Ve
     };
     lines.push(Line::from(vec![
         Span::styled("  Symbol    ", Style::default().fg(t.text_secondary)),
-        Span::styled(pos.symbol.clone(), Style::default().fg(t.text_primary).bold()),
+        Span::styled(
+            pos.symbol.clone(),
+            Style::default().fg(t.text_primary).bold(),
+        ),
     ]));
     if !pos.name.is_empty() {
         lines.push(Line::from(vec![
@@ -118,7 +121,10 @@ pub fn build_detail_lines<'a>(pos: &Position, app: &'a App, privacy: bool) -> Ve
         // Quantity
         lines.push(Line::from(vec![
             Span::styled("  Quantity  ", Style::default().fg(t.text_secondary)),
-            Span::styled(format_qty(pos.quantity), Style::default().fg(t.text_primary)),
+            Span::styled(
+                format_qty(pos.quantity),
+                Style::default().fg(t.text_primary),
+            ),
         ]));
 
         // Avg cost
@@ -229,10 +235,7 @@ pub fn build_detail_lines<'a>(pos: &Position, app: &'a App, privacy: bool) -> Ve
         };
         lines.push(Line::from(vec![
             Span::styled("            ", Style::default().fg(t.text_secondary)),
-            Span::styled(
-                format!(" {}", pct_text),
-                Style::default().fg(pct_color),
-            ),
+            Span::styled(format!(" {}", pct_text), Style::default().fg(pct_color)),
         ]));
     }
 
@@ -457,10 +460,16 @@ mod tests {
         // Should NOT contain quantity, gain, cost values
         assert!(!text.contains("Quantity"), "privacy should hide quantity");
         assert!(!text.contains("Avg Cost"), "privacy should hide avg cost");
-        assert!(!text.contains("Cost Basis"), "privacy should hide cost basis");
+        assert!(
+            !text.contains("Cost Basis"),
+            "privacy should hide cost basis"
+        );
         // Should still contain price and allocation
         assert!(text.contains("175"), "privacy should still show price");
-        assert!(text.contains("25.0%"), "privacy should still show allocation");
+        assert!(
+            text.contains("25.0%"),
+            "privacy should still show allocation"
+        );
     }
 
     #[test]
@@ -510,10 +519,16 @@ mod tests {
 
         let lines = build_detail_lines(&pos, &app, false);
         let text = lines_to_string(&lines);
-        assert!(text.contains("Transactions"), "should contain transactions section");
+        assert!(
+            text.contains("Transactions"),
+            "should contain transactions section"
+        );
         assert!(text.contains("BUY"), "should show buy type");
         assert!(text.contains("2025-01-15"), "should show transaction date");
-        assert!(text.contains("2025-06-01"), "should show second transaction date");
+        assert!(
+            text.contains("2025-06-01"),
+            "should show second transaction date"
+        );
     }
 
     #[test]
@@ -536,7 +551,10 @@ mod tests {
 
         let lines = build_detail_lines(&pos, &app, true);
         let text = lines_to_string(&lines);
-        assert!(!text.contains("Transactions"), "privacy should hide transactions");
+        assert!(
+            !text.contains("Transactions"),
+            "privacy should hide transactions"
+        );
     }
 
     #[test]

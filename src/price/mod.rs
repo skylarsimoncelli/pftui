@@ -1,12 +1,12 @@
 pub mod coingecko;
 pub mod yahoo;
 
-use anyhow::{Context, Result};
-use std::sync::mpsc;
-use std::time::Duration;
 use crate::config::Config;
 use crate::models::asset::AssetCategory;
 use crate::models::price::{HistoryRecord, PriceQuote};
+use anyhow::{Context, Result};
+use std::sync::mpsc;
+use std::time::Duration;
 
 /// Delay between sequential Yahoo Finance API requests to avoid rate limiting.
 const YAHOO_RATE_LIMIT_DELAY: Duration = Duration::from_millis(100);
@@ -31,7 +31,6 @@ pub enum PriceUpdate {
     Error(String),
     FetchComplete,
 }
-
 
 /// Format a crypto symbol for Yahoo Finance (append -USD if not already present)
 fn yahoo_crypto_symbol(symbol: &str) -> String {
@@ -153,9 +152,7 @@ impl PriceService {
                     let _ = update_tx.send(PriceUpdate::Quote(quote));
                 }
                 Err(e) => {
-                    let _ = update_tx.send(PriceUpdate::Error(
-                        format!("Yahoo {}: {}", sym, e),
-                    ));
+                    let _ = update_tx.send(PriceUpdate::Error(format!("Yahoo {}: {}", sym, e)));
                 }
             }
         }
@@ -181,9 +178,10 @@ impl PriceService {
                 }
                 Err(e) => {
                     // CoinGecko failed — report why
-                    let _ = update_tx.send(PriceUpdate::Error(
-                        format!("CoinGecko batch failed: {}, falling back to Yahoo", e),
-                    ));
+                    let _ = update_tx.send(PriceUpdate::Error(format!(
+                        "CoinGecko batch failed: {}, falling back to Yahoo",
+                        e
+                    )));
                 }
             }
 
@@ -200,9 +198,10 @@ impl PriceService {
                             let _ = update_tx.send(PriceUpdate::Quote(quote));
                         }
                         Err(_e) => {
-                            let _ = update_tx.send(PriceUpdate::Error(
-                                format!("{}: price fetch failed (CoinGecko + Yahoo)", sym),
-                            ));
+                            let _ = update_tx.send(PriceUpdate::Error(format!(
+                                "{}: price fetch failed (CoinGecko + Yahoo)",
+                                sym
+                            )));
                         }
                     }
                 }
@@ -222,9 +221,7 @@ impl PriceService {
                 let _ = update_tx.send(PriceUpdate::History(sym, records));
             }
             Err(e) => {
-                let _ = update_tx.send(PriceUpdate::Error(
-                    format!("History {}: {}", sym, e),
-                ));
+                let _ = update_tx.send(PriceUpdate::Error(format!("History {}: {}", sym, e)));
             }
             _ => {}
         }
@@ -244,16 +241,13 @@ impl PriceService {
                 };
                 tokio::time::sleep(delay).await;
             }
-            let (sym, fetch_result) =
-                fetch_history_single(symbol, *category, *days).await;
+            let (sym, fetch_result) = fetch_history_single(symbol, *category, *days).await;
             match fetch_result {
                 Ok(records) if !records.is_empty() => {
                     let _ = update_tx.send(PriceUpdate::History(sym, records));
                 }
                 Err(e) => {
-                    let _ = update_tx.send(PriceUpdate::Error(
-                        format!("History {}: {}", sym, e),
-                    ));
+                    let _ = update_tx.send(PriceUpdate::Error(format!("History {}: {}", sym, e)));
                 }
                 _ => {}
             }

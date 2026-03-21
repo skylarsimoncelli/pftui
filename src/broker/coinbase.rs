@@ -52,8 +52,7 @@ impl CoinbaseProvider {
 
     fn sign(&self, timestamp: u64, method: &str, path: &str, body: &str) -> String {
         let message = format!("{timestamp}{method}{path}{body}");
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes()).expect("HMAC key");
+        let mut mac = Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes()).expect("HMAC key");
         mac.update(message.as_bytes());
         hex::encode(mac.finalize().into_bytes())
     }

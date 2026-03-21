@@ -13,7 +13,10 @@ fn print_list(json: bool) -> Result<()> {
             .iter()
             .map(|name| serde_json::json!({"name": name, "active": *name == active}))
             .collect();
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({"portfolios": items}))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({"portfolios": items}))?
+        );
         return Ok(());
     }
 

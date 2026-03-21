@@ -57,13 +57,9 @@ impl CryptoComProvider {
             String::new()
         };
 
-        let sig_payload = format!(
-            "{}{}{}{}{}",
-            method, id, self.api_key, params_str, nonce
-        );
+        let sig_payload = format!("{}{}{}{}{}", method, id, self.api_key, params_str, nonce);
 
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(self.secret_key.as_bytes()).expect("HMAC key");
+        let mut mac = Hmac::<Sha256>::new_from_slice(self.secret_key.as_bytes()).expect("HMAC key");
         mac.update(sig_payload.as_bytes());
         hex::encode(mac.finalize().into_bytes())
     }
@@ -175,10 +171,7 @@ impl BrokerProvider for CryptoComProvider {
             anyhow::bail!("Crypto.com API error code: {}", cdc_resp.code);
         }
 
-        let balances = cdc_resp
-            .result
-            .and_then(|r| r.data)
-            .unwrap_or_default();
+        let balances = cdc_resp.result.and_then(|r| r.data).unwrap_or_default();
 
         let prices = Self::fetch_ticker_prices();
 
@@ -189,12 +182,11 @@ impl BrokerProvider for CryptoComProvider {
                 continue;
             }
 
-            let avg_cost =
-                if b.currency == "USDT" || b.currency == "USD" || b.currency == "USDC" {
-                    Decimal::ONE
-                } else {
-                    prices.get(&b.currency).copied().unwrap_or(Decimal::ZERO)
-                };
+            let avg_cost = if b.currency == "USDT" || b.currency == "USD" || b.currency == "USDC" {
+                Decimal::ONE
+            } else {
+                prices.get(&b.currency).copied().unwrap_or(Decimal::ZERO)
+            };
 
             result.push(BrokerPosition {
                 symbol: b.currency.clone(),

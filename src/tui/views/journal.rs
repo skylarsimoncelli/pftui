@@ -79,7 +79,11 @@ fn render_table(
             } else {
                 Span::raw(" ")
             };
-            let date = entry.timestamp.split('T').next().unwrap_or(&entry.timestamp);
+            let date = entry
+                .timestamp
+                .split('T')
+                .next()
+                .unwrap_or(&entry.timestamp);
             let status_color = match entry.status.as_str() {
                 "active" => t.gain_green,
                 "closed" => t.text_secondary,
@@ -150,8 +154,16 @@ fn render_detail_panel(
         .get(app.journal_selected_index)
         .copied()
         .unwrap_or(entries[0]);
-    let active = app.journal_entries.iter().filter(|item| item.status == "active").count();
-    let tagged = app.journal_entries.iter().filter(|item| item.tag.is_some()).count();
+    let active = app
+        .journal_entries
+        .iter()
+        .filter(|item| item.status == "active")
+        .count();
+    let tagged = app
+        .journal_entries
+        .iter()
+        .filter(|item| item.tag.is_some())
+        .count();
     let with_symbols = app
         .journal_entries
         .iter()
@@ -161,12 +173,18 @@ fn render_detail_panel(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(t.border_inactive))
-        .title(Span::styled(" Entry Detail ", Style::default().fg(t.text_accent).bold()));
+        .title(Span::styled(
+            " Entry Detail ",
+            Style::default().fg(t.text_accent).bold(),
+        ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let lines = vec![
-        Line::styled("Selected entry", Style::default().fg(t.text_secondary).bold()),
+        Line::styled(
+            "Selected entry",
+            Style::default().fg(t.text_secondary).bold(),
+        ),
         Line::raw(entry.timestamp.clone()),
         Line::raw(entry.content.clone()),
         Line::raw(""),
@@ -180,7 +198,10 @@ fn render_detail_panel(
         )),
         Line::from(format!("Status: {}", entry.status)),
         Line::raw(""),
-        Line::styled("Journal stats", Style::default().fg(t.text_secondary).bold()),
+        Line::styled(
+            "Journal stats",
+            Style::default().fg(t.text_secondary).bold(),
+        ),
         Line::from(format!("Active entries: {active}")),
         Line::from(format!("Tagged entries: {tagged}")),
         Line::from(format!("Symbol-linked: {with_symbols}")),

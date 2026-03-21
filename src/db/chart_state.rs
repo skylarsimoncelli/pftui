@@ -84,7 +84,7 @@ fn save_timeframe_postgres(pool: &PgPool, symbol: &str, timeframe: &str) -> Resu
 
 fn load_timeframe_postgres(pool: &PgPool, symbol: &str) -> Result<Option<String>> {
     ensure_table_postgres(pool)?;
-        let row: Option<(String,)> = crate::db::pg_runtime::block_on(async {
+    let row: Option<(String,)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as("SELECT timeframe FROM chart_state WHERE symbol = $1")
             .bind(symbol.to_uppercase())
             .fetch_optional(pool)

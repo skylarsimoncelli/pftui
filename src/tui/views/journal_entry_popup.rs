@@ -78,7 +78,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     let footer = if let Some(message) = &state.message {
-        Line::from(Span::styled(message.clone(), Style::default().fg(t.loss_red)))
+        Line::from(Span::styled(
+            message.clone(),
+            Style::default().fg(t.loss_red),
+        ))
     } else {
         Line::from(vec![
             Span::styled("Tip: ", Style::default().fg(t.text_muted)),
@@ -110,10 +113,7 @@ fn render_field(
     };
     let cursor = if active { "▏" } else { "" };
     let text = if value.is_empty() && !active {
-        Line::from(Span::styled(
-            " ",
-            Style::default().fg(t.text_muted),
-        ))
+        Line::from(Span::styled(" ", Style::default().fg(t.text_muted)))
     } else {
         Line::from(Span::styled(
             format!("{value}{cursor}"),
@@ -129,7 +129,11 @@ fn render_field(
             .title(Span::styled(
                 format!(" {} ", title),
                 Style::default()
-                    .fg(if active { t.text_accent } else { t.text_secondary })
+                    .fg(if active {
+                        t.text_accent
+                    } else {
+                        t.text_secondary
+                    })
                     .bold(),
             )),
     );

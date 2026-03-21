@@ -134,10 +134,7 @@ static NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
 });
 
 pub fn resolve_name(symbol: &str) -> String {
-    NAMES
-        .get(symbol)
-        .map(|s| s.to_string())
-        .unwrap_or_default()
+    NAMES.get(symbol).map(|s| s.to_string()).unwrap_or_default()
 }
 
 /// Compute a fuzzy match score for `query` against a candidate string.
@@ -254,8 +251,23 @@ pub fn infer_category(symbol: &str) -> AssetCategory {
     // Known ETFs/Funds
     if matches!(
         upper.as_str(),
-        "SPY" | "QQQ" | "IWM" | "VTI" | "VOO" | "VT" | "VXUS" | "BND" | "GLD" | "SLV"
-            | "TLT" | "IEF" | "ARKK" | "XLE" | "XLF" | "URA" | "URNM"
+        "SPY"
+            | "QQQ"
+            | "IWM"
+            | "VTI"
+            | "VOO"
+            | "VT"
+            | "VXUS"
+            | "BND"
+            | "GLD"
+            | "SLV"
+            | "TLT"
+            | "IEF"
+            | "ARKK"
+            | "XLE"
+            | "XLF"
+            | "URA"
+            | "URNM"
     ) {
         return AssetCategory::Fund;
     }
@@ -371,7 +383,7 @@ mod tests {
         let results = search_names("old");
         let tickers: Vec<&str> = results.iter().map(|(t, _)| *t).collect();
         assert!(tickers.contains(&"GC=F")); // Gold
-        assert!(tickers.contains(&"GLD"));  // Gold ETF
+        assert!(tickers.contains(&"GLD")); // Gold ETF
     }
 
     #[test]
@@ -449,7 +461,11 @@ mod tests {
     #[test]
     fn fuzzy_score_subsequence() {
         let score = fuzzy_score("slna", "Solana");
-        assert!(score > 0 && score < 50, "subsequence score should be 10-30, got {}", score);
+        assert!(
+            score > 0 && score < 50,
+            "subsequence score should be 10-30, got {}",
+            score
+        );
     }
 
     #[test]

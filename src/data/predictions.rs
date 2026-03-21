@@ -61,7 +61,7 @@ struct GammaMarket {
 pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
     // Fetch open markets (active=true, closed=false), sorted by volume
     let url = "https://gamma-api.polymarket.com/markets?limit=100&active=true&closed=false";
-    
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
@@ -81,10 +81,11 @@ pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
     }
 
     let text = resp.text().await?;
-    
-    let gamma_resp: GammaResponse = serde_json::from_str(&text)
-        .context(format!("Failed to parse Polymarket response. First 500 chars: {}", 
-            &text.chars().take(500).collect::<String>()))?;
+
+    let gamma_resp: GammaResponse = serde_json::from_str(&text).context(format!(
+        "Failed to parse Polymarket response. First 500 chars: {}",
+        &text.chars().take(500).collect::<String>()
+    ))?;
 
     let now = chrono::Utc::now().timestamp();
 
@@ -111,7 +112,7 @@ pub async fn fetch_polymarket_predictions() -> Result<Vec<PredictionMarket>> {
                 updated_at: now,
             })
         })
-        .take(50)  // Limit to top 50 by volume
+        .take(50) // Limit to top 50 by volume
         .collect();
 
     Ok(markets)
@@ -193,7 +194,7 @@ fn infer_category_from_question(question: &str) -> MarketCategory {
 /// Check if a market question is entertainment/sports (should be filtered out).
 fn is_entertainment_market(question: &str) -> bool {
     let q_lower = question.to_lowercase();
-    
+
     // Explicit entertainment/sports signals
     q_lower.contains("gta vi")
         || q_lower.contains("grand theft auto")

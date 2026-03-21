@@ -65,10 +65,12 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
             Row::new(vec![
                 Cell::from(id_line),
                 Cell::from(tx.symbol.clone()).style(Style::default().fg(t.text_primary)),
-                Cell::from(tx.category.to_string()).style(Style::default().fg(t.category_color(tx.category))),
+                Cell::from(tx.category.to_string())
+                    .style(Style::default().fg(t.category_color(tx.category))),
                 Cell::from(type_label).style(Style::default().fg(type_color)),
                 Cell::from(format!("{}", tx.quantity)).style(Style::default().fg(t.text_primary)),
-                Cell::from(format!("{:.2}", tx.price_per)).style(Style::default().fg(t.text_primary)),
+                Cell::from(format!("{:.2}", tx.price_per))
+                    .style(Style::default().fg(t.text_primary)),
                 Cell::from(tx.currency.clone()).style(Style::default().fg(t.text_muted)),
                 Cell::from(tx.date.clone()).style(Style::default().fg(t.text_secondary)),
             ])
@@ -176,11 +178,17 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(vec![
             Span::styled("Qty:    ", Style::default().fg(t.text_secondary)),
-            Span::styled(format!("{}", tx.quantity), Style::default().fg(t.text_primary)),
+            Span::styled(
+                format!("{}", tx.quantity),
+                Style::default().fg(t.text_primary),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Paid:   ", Style::default().fg(t.text_secondary)),
-            Span::styled(format!("{:.2} {}", tx.price_per, tx.currency), Style::default().fg(t.text_primary)),
+            Span::styled(
+                format!("{:.2} {}", tx.price_per, tx.currency),
+                Style::default().fg(t.text_primary),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Live:   ", Style::default().fg(t.text_secondary)),
@@ -207,7 +215,10 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(""),
         Line::from(vec![
             Span::styled("Related fills: ", Style::default().fg(t.text_secondary)),
-            Span::styled(format!("{sibling_count}"), Style::default().fg(t.text_primary)),
+            Span::styled(
+                format!("{sibling_count}"),
+                Style::default().fg(t.text_primary),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Open position: ", Style::default().fg(t.text_secondary)),

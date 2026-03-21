@@ -55,12 +55,24 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let vol_label = if app.volume_overlay { "V:on" } else { "V:off" };
     let nav_hint = if app.crosshair_mode {
         if variant_count > 1 {
-            format!(" ⊹ [{}/{}] J/K  h/l:cursor  x:off  C:{}  {} ", idx + 1, variant_count, mode_label, vol_label)
+            format!(
+                " ⊹ [{}/{}] J/K  h/l:cursor  x:off  C:{}  {} ",
+                idx + 1,
+                variant_count,
+                mode_label,
+                vol_label
+            )
         } else {
             format!(" ⊹ h/l:cursor  x:off  C:{}  {} ", mode_label, vol_label)
         }
     } else if variant_count > 1 {
-        format!(" [{}/{}] J/K  h/l  C:{}  {} ", idx + 1, variant_count, mode_label, vol_label)
+        format!(
+            " [{}/{}] J/K  h/l  C:{}  {} ",
+            idx + 1,
+            variant_count,
+            mode_label,
+            vol_label
+        )
     } else {
         format!(" h/l  C:{}  {} ", mode_label, vol_label)
     };
@@ -68,7 +80,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let chart_border_color = if app.prices_live {
         // Pulse active chart border when prices are live — subtle breathing effect
-        theme::pulse_color(t.border_active, t.border_inactive, app.tick_count, theme::PULSE_PERIOD_BORDER)
+        theme::pulse_color(
+            t.border_active,
+            t.border_inactive,
+            app.tick_count,
+            theme::PULSE_PERIOD_BORDER,
+        )
     } else {
         t.border_active
     };
@@ -83,11 +100,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(t.text_primary).bold(),
         ))
         .title(
-            Line::from(Span::styled(
-                nav_hint,
-                Style::default().fg(t.text_muted),
-            ))
-            .alignment(Alignment::Right),
+            Line::from(Span::styled(nav_hint, Style::default().fg(t.text_muted)))
+                .alignment(Alignment::Right),
         );
 
     let inner = block.inner(area);
@@ -108,14 +122,29 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             render_multi_panel(frame, inner, &individuals, app);
         }
         ChartKind::Single { symbol, .. } => {
-            render_single_chart(frame, inner, symbol, &variant.label, crosshair.as_ref(), app);
+            render_single_chart(
+                frame,
+                inner,
+                symbol,
+                &variant.label,
+                crosshair.as_ref(),
+                app,
+            );
         }
         ChartKind::Ratio {
             num_symbol,
             den_symbol,
             ..
         } => {
-            render_ratio_chart(frame, inner, num_symbol, den_symbol, &variant.label, crosshair.as_ref(), app);
+            render_ratio_chart(
+                frame,
+                inner,
+                num_symbol,
+                den_symbol,
+                &variant.label,
+                crosshair.as_ref(),
+                app,
+            );
         }
     }
 }
@@ -128,64 +157,64 @@ fn render_ratio_context_header(
     app: &App,
 ) {
     let t = &app.theme;
-    
+
     // Detect which asset we're viewing based on the variants
     let primary_symbol = variants.iter().find_map(|v| match &v.kind {
         ChartKind::Single { symbol, .. } => Some(symbol.as_str()),
         _ => None,
     });
-    
+
     let (title, explanation) = match primary_symbol {
         Some("DX-Y.NYB") | Some("DXY") => (
             "Key Macro Ratios",
-            "DXY strength vs assets shows dollar purchasing power & safe-haven flows"
+            "DXY strength vs assets shows dollar purchasing power & safe-haven flows",
         ),
         Some(sym) if sym.contains("GC") || sym.contains("GOLD") => (
             "Gold Context",
-            "Gold vs currencies & assets reveals inflation hedging & macro risk sentiment"
+            "Gold vs currencies & assets reveals inflation hedging & macro risk sentiment",
         ),
         Some(sym) if sym.contains("BTC") => (
             "Bitcoin Context",
-            "BTC vs macro assets tracks risk appetite & digital gold narrative"
+            "BTC vs macro assets tracks risk appetite & digital gold narrative",
         ),
         Some(sym) if sym.starts_with("^") => (
             "Index Context",
-            "Index vs macro indicators shows risk-on/risk-off positioning"
+            "Index vs macro indicators shows risk-on/risk-off positioning",
         ),
         _ => (
             "Ratio Analysis",
-            "Asset relationships reveal relative strength & capital rotation"
+            "Asset relationships reveal relative strength & capital rotation",
         ),
     };
-    
+
     let header_line = Line::from(vec![
-        Span::styled(format!(" {} ", title), Style::default().fg(t.text_accent).bold()),
+        Span::styled(
+            format!(" {} ", title),
+            Style::default().fg(t.text_accent).bold(),
+        ),
         Span::styled("│ ", Style::default().fg(t.border_inactive)),
         Span::styled(explanation, Style::default().fg(t.text_muted).italic()),
     ]);
-    
-    let para = Paragraph::new(vec![Line::from(""), header_line])
-        .style(Style::default().bg(t.surface_1));
-    
+
+    let para =
+        Paragraph::new(vec![Line::from(""), header_line]).style(Style::default().bg(t.surface_1));
+
     frame.render_widget(para, area);
 }
 
 /// Renders a multi-panel stacked view of all individual charts
-fn render_multi_panel(
-    frame: &mut Frame,
-    area: Rect,
-    variants: &[&ChartVariant],
-    app: &App,
-) {
+fn render_multi_panel(frame: &mut Frame, area: Rect, variants: &[&ChartVariant], app: &App) {
     let t = &app.theme;
     if variants.is_empty() || area.height < 4 {
         return;
     }
 
     // Check if we have ratio charts and enough height for a header
-    let has_ratios = variants.iter().any(|v| matches!(v.kind, ChartKind::Ratio { .. }));
+    let has_ratios = variants
+        .iter()
+        .any(|v| matches!(v.kind, ChartKind::Ratio { .. }));
     let header_height = if has_ratios && area.height >= 8 { 2 } else { 0 };
-    
+
     // Render context header if we have ratio charts
     if header_height > 0 {
         let header_area = Rect::new(area.x, area.y, area.width, header_height);
@@ -213,7 +242,9 @@ fn render_multi_panel(
                     den_symbol,
                     ..
                 } => {
-                    render_ratio_chart(frame, chart_area, num_symbol, den_symbol, &v.label, None, app);
+                    render_ratio_chart(
+                        frame, chart_area, num_symbol, den_symbol, &v.label, None, app,
+                    );
                 }
                 _ => {}
             }
@@ -282,10 +313,7 @@ fn render_single_chart(
                 } else {
                     format!("Loading {}...", symbol)
                 };
-                let msg = Paragraph::new(Span::styled(
-                    msg_text,
-                    Style::default().fg(t.text_muted),
-                ));
+                let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
                 frame.render_widget(msg, area);
                 return;
             }
@@ -297,10 +325,7 @@ fn render_single_chart(
             } else {
                 format!("Loading {}...", symbol)
             };
-            let msg = Paragraph::new(Span::styled(
-                msg_text,
-                Style::default().fg(t.text_muted),
-            ));
+            let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
         }
@@ -334,7 +359,7 @@ fn render_single_chart(
             if spy_sliced.len() >= 2 {
                 let spy_first = spy_sliced.first().map(|r| r.close).unwrap_or(dec!(1));
                 let primary_first = records.first().map(|r| r.close).unwrap_or(dec!(1));
-                
+
                 // Normalize both to percentage change from first value, then scale SPY to match primary's price scale
                 let spy_normalized: Vec<Option<f64>> = spy_sliced
                     .iter()
@@ -342,13 +367,18 @@ fn render_single_chart(
                         if spy_first > dec!(0) && primary_first > dec!(0) {
                             let spy_pct_change = (r.close - spy_first) / spy_first;
                             let spy_in_primary_scale = primary_first * (dec!(1) + spy_pct_change);
-                            Some(spy_in_primary_scale.to_string().parse::<f64>().unwrap_or(0.0))
+                            Some(
+                                spy_in_primary_scale
+                                    .to_string()
+                                    .parse::<f64>()
+                                    .unwrap_or(0.0),
+                            )
                         } else {
                             None
                         }
                     })
                     .collect();
-                
+
                 // Add SPY as gray overlay (distinct from indicators)
                 sma_overlays.push((spy_normalized, Color::DarkGray));
             }
@@ -377,7 +407,20 @@ fn render_single_chart(
         }
     }
 
-    render_braille_chart(frame, area, records, Some(last_close), gain_pct, if show_volume { Some(&volumes) } else { None }, &sma_overlays, sma_overlay_count, &app.chart_sma_periods, crosshair, app.chart_render_mode, t);
+    render_braille_chart(
+        frame,
+        area,
+        records,
+        Some(last_close),
+        gain_pct,
+        if show_volume { Some(&volumes) } else { None },
+        &sma_overlays,
+        sma_overlay_count,
+        &app.chart_sma_periods,
+        crosshair,
+        app.chart_render_mode,
+        t,
+    );
 }
 
 /// Render a ratio chart (numerator / denominator)
@@ -401,10 +444,7 @@ fn render_ratio_chart(
             } else {
                 format!("Loading {}...", num_symbol)
             };
-            let msg = Paragraph::new(Span::styled(
-                msg_text,
-                Style::default().fg(t.text_muted),
-            ));
+            let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
         }
@@ -417,10 +457,7 @@ fn render_ratio_chart(
             } else {
                 format!("Loading {}...", den_symbol)
             };
-            let msg = Paragraph::new(Span::styled(
-                msg_text,
-                Style::default().fg(t.text_muted),
-            ));
+            let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
         }
@@ -445,16 +482,24 @@ fn render_ratio_chart(
     };
 
     // No volume or overlays for ratio charts
-    render_braille_chart(frame, area, &ratio_records, Some(last_close), gain_pct, None, &[], 0, &[], crosshair, app.chart_render_mode, t);
+    render_braille_chart(
+        frame,
+        area,
+        &ratio_records,
+        Some(last_close),
+        gain_pct,
+        None,
+        &[],
+        0,
+        &[],
+        crosshair,
+        app.chart_render_mode,
+        t,
+    );
 }
 
 /// Compact single chart for multi-panel (no stats line, just braille)
-fn render_single_mini(
-    frame: &mut Frame,
-    area: Rect,
-    symbol: &str,
-    app: &App,
-) {
+fn render_single_mini(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
     let t = &app.theme;
     let tf_days = app.chart_timeframe.days();
     let records = match app.price_history.get(symbol) {
@@ -465,10 +510,7 @@ fn render_single_mini(
             } else {
                 "..."
             };
-            let msg = Paragraph::new(Span::styled(
-                msg_text,
-                Style::default().fg(t.text_muted),
-            ));
+            let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
         }
@@ -486,19 +528,17 @@ fn render_single_mini(
 }
 
 /// Compact ratio chart for multi-panel
-fn render_ratio_mini(
-    frame: &mut Frame,
-    area: Rect,
-    num_symbol: &str,
-    den_symbol: &str,
-    app: &App,
-) {
+fn render_ratio_mini(frame: &mut Frame, area: Rect, num_symbol: &str, den_symbol: &str, app: &App) {
     let t = &app.theme;
     let tf_days = app.chart_timeframe.days();
     let num_records = match app.price_history.get(num_symbol) {
         Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
-            let msg_text = if app.history_attempted.contains(num_symbol) { "No data" } else { "..." };
+            let msg_text = if app.history_attempted.contains(num_symbol) {
+                "No data"
+            } else {
+                "..."
+            };
             let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
@@ -507,7 +547,11 @@ fn render_ratio_mini(
     let den_records = match app.price_history.get(den_symbol) {
         Some(r) if slice_history(r, tf_days).len() >= 2 => slice_history(r, tf_days),
         _ => {
-            let msg_text = if app.history_attempted.contains(den_symbol) { "No data" } else { "..." };
+            let msg_text = if app.history_attempted.contains(den_symbol) {
+                "No data"
+            } else {
+                "..."
+            };
             let msg = Paragraph::new(Span::styled(msg_text, Style::default().fg(t.text_muted)));
             frame.render_widget(msg, area);
             return;
@@ -536,10 +580,7 @@ fn render_ratio_mini(
 }
 
 /// Compute ratio records by aligning two histories on date and dividing
-fn compute_ratio(
-    numerator: &[HistoryRecord],
-    denominator: &[HistoryRecord],
-) -> Vec<HistoryRecord> {
+fn compute_ratio(numerator: &[HistoryRecord], denominator: &[HistoryRecord]) -> Vec<HistoryRecord> {
     use std::collections::HashMap;
 
     let den_map: HashMap<&str, Decimal> = denominator
@@ -656,50 +697,67 @@ fn render_candlestick_chart(
         0
     };
     let visible_records = &records[skip..];
-    
+
     // Crosshair column position
     let ch_col = crosshair.map(|ch| ch.x.min(chart_width.saturating_sub(1)));
-    
+
     for row in (0..chart_height).rev() {
         let mut spans = Vec::new();
-        
+
         for col in 0..chart_width {
             if col >= visible_records.len() {
                 // No data for this column
                 spans.push(Span::styled(" ", Style::default().bg(t.surface_1)));
                 continue;
             }
-            
+
             let rec = &visible_records[col];
-            
+
             // Parse OHLC values - fallback to close if OHLC not available
-            let open_val = rec.open.unwrap_or(rec.close).to_string().parse::<f64>().unwrap_or(0.0);
-            let high_val = rec.high.unwrap_or(rec.close).to_string().parse::<f64>().unwrap_or(0.0);
-            let low_val = rec.low.unwrap_or(rec.close).to_string().parse::<f64>().unwrap_or(0.0);
+            let open_val = rec
+                .open
+                .unwrap_or(rec.close)
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or(0.0);
+            let high_val = rec
+                .high
+                .unwrap_or(rec.close)
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or(0.0);
+            let low_val = rec
+                .low
+                .unwrap_or(rec.close)
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or(0.0);
             let close_val = rec.close.to_string().parse::<f64>().unwrap_or(0.0);
-            
+
             // Normalize to dot rows
             let open_y = normalize_val(open_val);
             let high_y = normalize_val(high_val);
             let low_y = normalize_val(low_val);
             let close_y = normalize_val(close_val);
-            
+
             // Determine bullish (close >= open) or bearish
             let is_bullish = close_val >= open_val;
             let candle_color = if is_bullish { t.gain_green } else { t.loss_red };
-            
+
             // Body range (min/max of open/close)
             let body_top = open_y.max(close_y);
             let body_bottom = open_y.min(close_y);
-            
+
             // Current row in dot coordinates
             let row_start = row * BRAILLE_ROWS;
             let row_end = row_start + BRAILLE_ROWS;
-            
+
             // Render candle elements for this column
-            let is_wick = ((row_start..row_end).contains(&high_y) && (high_y > body_top || body_top == body_bottom))
-                       || ((row_start..row_end).contains(&low_y) && (low_y < body_bottom || body_top == body_bottom));
-            
+            let is_wick = ((row_start..row_end).contains(&high_y)
+                && (high_y > body_top || body_top == body_bottom))
+                || ((row_start..row_end).contains(&low_y)
+                    && (low_y < body_bottom || body_top == body_bottom));
+
             let ch = if is_wick {
                 '│'
             } else if body_top >= row_start && body_bottom < row_end {
@@ -712,20 +770,20 @@ fn render_candlestick_chart(
             } else {
                 ' '
             };
-            
+
             spans.push(Span::styled(
                 String::from(ch),
                 Style::default().fg(candle_color).bg(t.surface_1),
             ));
         }
-        
+
         // Crosshair vertical line overlay
         if let Some(cx) = ch_col {
             if cx < spans.len() {
                 spans[cx] = Span::styled("│", Style::default().fg(t.text_accent).bg(t.surface_1));
             }
         }
-        
+
         lines.push(Line::from(spans));
     }
 }
@@ -789,10 +847,7 @@ fn render_braille_chart(
         .iter()
         .map(|(sma_raw, color)| {
             // Convert Option<f64> to f64 for resampling, preserving None positions
-            let sma_f64: Vec<f64> = sma_raw
-                .iter()
-                .map(|v| v.unwrap_or(f64::NAN))
-                .collect();
+            let sma_f64: Vec<f64> = sma_raw.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
             let resampled_sma = resample(&sma_f64, sample_count);
             let norm: Vec<Option<usize>> = resampled_sma
                 .iter()
@@ -813,7 +868,7 @@ fn render_braille_chart(
     let (grad_low, grad_mid, grad_high) = gain_gradient(gain_f, t);
 
     let mut lines: Vec<Line> = Vec::new();
-    
+
     // Render chart based on mode
     match render_mode {
         crate::app::ChartRenderMode::Line => {
@@ -893,7 +948,16 @@ fn render_braille_chart(
         }
         crate::app::ChartRenderMode::Candlestick => {
             // Candlestick rendering using OHLC data
-            render_candlestick_chart(&mut lines, records, chart_height, chart_width, &normalize_val, dot_rows, crosshair, t);
+            render_candlestick_chart(
+                &mut lines,
+                records,
+                chart_height,
+                chart_width,
+                &normalize_val,
+                dot_rows,
+                crosshair,
+                t,
+            );
         }
     }
 
@@ -939,7 +1003,10 @@ fn render_braille_chart(
             sep_str[cx] = '┼';
         }
         let sep_string: String = sep_str.into_iter().collect();
-        sep_chars = vec![Span::styled(sep_string, Style::default().fg(t.border_subtle))];
+        sep_chars = vec![Span::styled(
+            sep_string,
+            Style::default().fg(t.border_subtle),
+        )];
     }
     lines.push(Line::from(sep_chars));
 
@@ -948,20 +1015,14 @@ fn render_braille_chart(
         // Crosshair tooltip: date + price at cursor position
         let stats_spans = vec![
             Span::styled("⊹ ", Style::default().fg(t.text_accent)),
-            Span::styled(
-                date.to_string(),
-                Style::default().fg(t.text_primary).bold(),
-            ),
+            Span::styled(date.to_string(), Style::default().fg(t.text_primary).bold()),
             Span::styled("  ", Style::default()),
             Span::styled(
                 format_price_f64(price),
                 Style::default().fg(t.text_accent).bold(),
             ),
             Span::styled("  ", Style::default()),
-            Span::styled(
-                "x:off  h/l:move",
-                Style::default().fg(t.text_muted),
-            ),
+            Span::styled("x:off  h/l:move", Style::default().fg(t.text_muted)),
         ];
         lines.push(Line::from(stats_spans));
     } else {
@@ -980,10 +1041,7 @@ fn render_braille_chart(
         let mut stats_spans = vec![
             Span::styled(price_str, Style::default().fg(t.text_primary).bold()),
             Span::raw(" "),
-            Span::styled(
-                format!("({:+.1}%)", gain),
-                Style::default().fg(gain_color),
-            ),
+            Span::styled(format!("({:+.1}%)", gain), Style::default().fg(gain_color)),
             Span::raw("  "),
             Span::styled(
                 format!(
@@ -1011,10 +1069,7 @@ fn render_braille_chart(
                     }
                 } else if !bb_labeled {
                     // Bollinger Band overlay — label once for both upper+lower
-                    stats_spans.push(Span::styled(
-                        "─BB".to_string(),
-                        Style::default().fg(*color),
-                    ));
+                    stats_spans.push(Span::styled("─BB".to_string(), Style::default().fg(*color)));
                     bb_labeled = true;
                     // Skip adding separator for the paired lower band
                     continue;
@@ -1043,10 +1098,7 @@ fn build_volume_line<'a>(
     chart_width: usize,
     t: &theme::Theme,
 ) -> Line<'a> {
-    let vol_f64: Vec<f64> = volumes
-        .iter()
-        .map(|v| v.unwrap_or(0) as f64)
-        .collect();
+    let vol_f64: Vec<f64> = volumes.iter().map(|v| v.unwrap_or(0) as f64).collect();
 
     let resampled = resample(&vol_f64, chart_width);
     let max_vol = resampled.iter().cloned().fold(0.0_f64, f64::max);
@@ -1062,10 +1114,7 @@ fn build_volume_line<'a>(
             } else {
                 let level = ((v / max_vol) * 7.0).round() as usize;
                 let ch = VOLUME_BLOCKS[level.min(7)];
-                Span::styled(
-                    String::from(ch),
-                    Style::default().fg(vol_color),
-                )
+                Span::styled(String::from(ch), Style::default().fg(vol_color))
             }
         })
         .collect();
@@ -1179,10 +1228,7 @@ fn render_braille_mini(
     lines.push(Line::from(vec![
         Span::styled(price_str, Style::default().fg(t.text_secondary)),
         Span::raw(" "),
-        Span::styled(
-            format!("{:+.1}%", gain),
-            Style::default().fg(gain_color),
-        ),
+        Span::styled(format!("{:+.1}%", gain), Style::default().fg(gain_color)),
     ]));
 
     let paragraph = Paragraph::new(lines);
@@ -1305,12 +1351,7 @@ fn braille_char(v0: usize, v1: usize, row: usize, dots_per_row: usize) -> char {
 /// Compute braille bit pattern for a single-dot overlay line (SMA).
 /// Unlike braille_bits which fills from bottom, this only lights the dot
 /// at exactly the SMA value position — producing a thin line overlay.
-fn braille_dot_bits(
-    sv0: Option<usize>,
-    sv1: Option<usize>,
-    row: usize,
-    dots_per_row: usize,
-) -> u8 {
+fn braille_dot_bits(sv0: Option<usize>, sv1: Option<usize>, row: usize, dots_per_row: usize) -> u8 {
     let row_base = row * dots_per_row;
     let row_top = row_base + dots_per_row;
     let mut bits: u8 = 0;
@@ -1432,10 +1473,7 @@ pub fn render_braille_lines<'a>(
     let sma_normalized: Vec<(Vec<Option<usize>>, Color)> = sma_overlays
         .iter()
         .map(|(sma_raw, color)| {
-            let sma_f64: Vec<f64> = sma_raw
-                .iter()
-                .map(|v| v.unwrap_or(f64::NAN))
-                .collect();
+            let sma_f64: Vec<f64> = sma_raw.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
             let resampled_sma = resample(&sma_f64, sample_count);
             let norm: Vec<Option<usize>> = resampled_sma
                 .iter()
@@ -1511,7 +1549,8 @@ pub fn render_braille_lines<'a>(
             for (j, c) in label.chars().enumerate() {
                 let span_idx = label_offset + j;
                 if span_idx < spans.len() {
-                    spans[span_idx] = Span::styled(String::from(c), Style::default().fg(t.text_muted));
+                    spans[span_idx] =
+                        Span::styled(String::from(c), Style::default().fg(t.text_muted));
                 }
             }
         }
@@ -1520,7 +1559,8 @@ pub fn render_braille_lines<'a>(
             for (j, c) in label.chars().enumerate() {
                 let span_idx = label_offset + j;
                 if span_idx < spans.len() {
-                    spans[span_idx] = Span::styled(String::from(c), Style::default().fg(t.text_muted));
+                    spans[span_idx] =
+                        Span::styled(String::from(c), Style::default().fg(t.text_muted));
                 }
             }
         }
@@ -1602,13 +1642,8 @@ mod tests {
 
     #[test]
     fn test_build_volume_line_scaling() {
-        let volumes: Vec<Option<u64>> = vec![
-            Some(100),
-            Some(500),
-            Some(1000),
-            Some(750),
-            Some(250),
-        ];
+        let volumes: Vec<Option<u64>> =
+            vec![Some(100), Some(500), Some(1000), Some(750), Some(250)];
         let t = theme::midnight();
         let line = build_volume_line(&volumes, 5, &t);
         // Max volume (1000) should be █ (level 7), min non-zero should be ▁ (level 0-1)
@@ -1628,12 +1663,40 @@ mod tests {
     #[test]
     fn test_compute_ratio_has_no_volume() {
         let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(500_000), open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: Some(600_000), open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: Some(500_000),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(200),
+                volume: Some(600_000),
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: Some(300_000), open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: Some(400_000), open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(50),
+                volume: Some(300_000),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(100),
+                volume: Some(400_000),
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 2);
@@ -1743,14 +1806,56 @@ mod tests {
     #[test]
     fn test_compute_ratio_basic() {
         let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(150), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(200),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(150),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(75), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(50),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(75),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 3);
@@ -1762,14 +1867,49 @@ mod tests {
     #[test]
     fn test_compute_ratio_skips_missing_dates() {
         let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(300), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(200),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(300),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(50), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(50),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
             // no 2025-01-02
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 2); // only matching dates
@@ -1779,12 +1919,22 @@ mod tests {
 
     #[test]
     fn test_compute_ratio_skips_zero_denominator() {
-        let num = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-        ];
-        let den = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(0), volume: None, open: None, high: None, low: None },
-        ];
+        let num = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(100),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
+        let den = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(0),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
         let result = compute_ratio(&num, &den);
         assert_eq!(result.len(), 0);
     }
@@ -1792,9 +1942,14 @@ mod tests {
     #[test]
     fn test_compute_ratio_empty_inputs() {
         let empty: Vec<HistoryRecord> = vec![];
-        let non_empty = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-        ];
+        let non_empty = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(100),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
         assert!(compute_ratio(&empty, &non_empty).is_empty());
         assert!(compute_ratio(&non_empty, &empty).is_empty());
         assert!(compute_ratio(&empty, &empty).is_empty());
@@ -1875,11 +2030,48 @@ mod tests {
     fn test_crosshair_record_mapping() {
         // Given a chart width of 10, sample_count = 20,
         // and 5 records, crosshair at column 5 should map to record ~2
-        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(120), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-04".into(), close: dec!(130), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-05".into(), close: dec!(140), volume: None, open: None, high: None, low: None }];
+        let records = [
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(120),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-04".into(),
+                close: dec!(130),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-05".into(),
+                close: dec!(140),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
         let chart_width = 10;
         let sample_count = chart_width * 2; // 20
         let crosshair_col = 5;
@@ -1892,8 +2084,24 @@ mod tests {
 
     #[test]
     fn test_crosshair_record_mapping_rightmost() {
-        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None }];
+        let records = [
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(200),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
         let chart_width = 10;
         let sample_count = chart_width * 2;
         let crosshair_col = chart_width - 1; // rightmost
@@ -1905,8 +2113,24 @@ mod tests {
 
     #[test]
     fn test_crosshair_record_mapping_leftmost() {
-        let records = [HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(200), volume: None, open: None, high: None, low: None }];
+        let records = [
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(200),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+        ];
         let chart_width = 10;
         let sample_count = chart_width * 2;
         let crosshair_col = 0; // leftmost
@@ -1953,7 +2177,12 @@ mod tests {
         let near_line = area_fill_bg(15, 15, 2, 16, line_color, surface);
         // Near-line should be brighter (more shifted toward line_color)
         if let (Color::Rgb(br, _, _), Color::Rgb(nr, _, _)) = (bottom, near_line) {
-            assert!(nr >= br, "Near-line fill ({}) should be >= bottom fill ({})", nr, br);
+            assert!(
+                nr >= br,
+                "Near-line fill ({}) should be >= bottom fill ({})",
+                nr,
+                br
+            );
         } else {
             panic!("Expected Rgb colors");
         }
@@ -2019,7 +2248,9 @@ mod tests {
                 assert!(
                     (diff_upper - diff_lower).abs() < 1e-10,
                     "Bands not symmetric at index {}: upper_diff={}, lower_diff={}",
-                    i, diff_upper, diff_lower
+                    i,
+                    diff_upper,
+                    diff_lower
                 );
             }
         }
@@ -2087,10 +2318,10 @@ mod tests {
             date: "2026-01-01".into(),
             close: dec!(100),
             volume: None,
-                open: None,
-                high: None,
-                low: None,
-            }];
+            open: None,
+            high: None,
+            low: None,
+        }];
         let lines = render_braille_lines(&records, 40, 6, &t);
         assert!(lines.is_empty(), "Should return empty for < 2 records");
     }
@@ -2099,8 +2330,22 @@ mod tests {
     fn test_render_braille_lines_too_narrow() {
         let t = theme::midnight();
         let records = vec![
-            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2026-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-02".into(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let lines = render_braille_lines(&records, 2, 6, &t);
         assert!(lines.is_empty(), "Should return empty for width < 4");
@@ -2123,36 +2368,89 @@ mod tests {
         let chart_height = 6;
         let lines = render_braille_lines(&records, 40, chart_height, &t);
         // Should have chart_height braille rows + 1 stats line
-        assert_eq!(lines.len(), chart_height + 1, "Expected {} lines, got {}", chart_height + 1, lines.len());
+        assert_eq!(
+            lines.len(),
+            chart_height + 1,
+            "Expected {} lines, got {}",
+            chart_height + 1,
+            lines.len()
+        );
     }
 
     #[test]
     fn test_render_braille_lines_stats_line_contains_price() {
         let t = theme::midnight();
         let records = vec![
-            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-02".into(), close: dec!(120), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-03".into(), close: dec!(130), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2026-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-02".into(),
+                close: dec!(120),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-03".into(),
+                close: dec!(130),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let lines = render_braille_lines(&records, 40, 4, &t);
         // Last line is the stats line, should contain the last price
-        let stats_text: String = lines.last().unwrap().spans.iter()
+        let stats_text: String = lines
+            .last()
+            .unwrap()
+            .spans
+            .iter()
             .map(|s| s.content.as_ref())
             .collect();
-        assert!(stats_text.contains("130"), "Stats line should contain last price: {}", stats_text);
+        assert!(
+            stats_text.contains("130"),
+            "Stats line should contain last price: {}",
+            stats_text
+        );
     }
 
     #[test]
     fn test_render_braille_lines_has_left_padding() {
         let t = theme::midnight();
         let records = vec![
-            HistoryRecord { date: "2026-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2026-01-02".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2026-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2026-01-02".into(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         let lines = render_braille_lines(&records, 20, 4, &t);
         // First span of each braille row should be "  " (left padding)
         for line in &lines[..lines.len() - 1] {
-            assert_eq!(line.spans[0].content.as_ref(), "  ", "Braille rows should have 2-space left padding");
+            assert_eq!(
+                line.spans[0].content.as_ref(),
+                "  ",
+                "Braille rows should have 2-space left padding"
+            );
         }
     }
 
@@ -2173,11 +2471,22 @@ mod tests {
         }
         let lines = render_braille_lines(&records, 50, 6, &t);
         // Stats line should contain SMA legend
-        let stats_text: String = lines.last().unwrap().spans.iter()
+        let stats_text: String = lines
+            .last()
+            .unwrap()
+            .spans
+            .iter()
             .map(|s| s.content.as_ref())
             .collect();
-        assert!(stats_text.contains("SMA20"), "Stats should show SMA20 legend: {}", stats_text);
-        assert!(stats_text.contains("SMA50"), "Stats should show SMA50 legend: {}", stats_text);
+        assert!(
+            stats_text.contains("SMA20"),
+            "Stats should show SMA20 legend: {}",
+            stats_text
+        );
+        assert!(
+            stats_text.contains("SMA50"),
+            "Stats should show SMA50 legend: {}",
+            stats_text
+        );
     }
-
 }

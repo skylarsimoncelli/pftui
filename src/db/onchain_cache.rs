@@ -13,9 +13,9 @@ use crate::db::query;
 /// A cached on-chain metric.
 #[derive(Debug, Clone)]
 pub struct OnchainMetric {
-    pub metric: String,   // e.g., "exchange_net_flow", "whale_tx", "hash_rate"
-    pub date: String,     // YYYY-MM-DD
-    pub value: String,    // Stored as string for decimal precision
+    pub metric: String,           // e.g., "exchange_net_flow", "whale_tx", "hash_rate"
+    pub date: String,             // YYYY-MM-DD
+    pub value: String,            // Stored as string for decimal precision
     pub metadata: Option<String>, // JSON for additional fields
     pub fetched_at: String,
 }
@@ -53,11 +53,7 @@ pub fn upsert_metric_backend(backend: &BackendConnection, metric: &OnchainMetric
 /// Get a specific metric for a given date.
 ///
 /// Returns None if not cached or if stale (>24 hours old for historical, >1 hour for current).
-pub fn get_metric(
-    conn: &Connection,
-    metric: &str,
-    date: &str,
-) -> Result<Option<OnchainMetric>> {
+pub fn get_metric(conn: &Connection, metric: &str, date: &str) -> Result<Option<OnchainMetric>> {
     let mut stmt = conn.prepare(
         "SELECT metric, date, value, metadata, fetched_at
          FROM onchain_cache
@@ -204,19 +200,20 @@ fn upsert_metric_postgres(pool: &PgPool, metric: &OnchainMetric) -> Result<()> {
 
 fn get_metric_postgres(pool: &PgPool, metric: &str, date: &str) -> Result<Option<OnchainMetric>> {
     ensure_table_postgres(pool)?;
-        let row: Option<(String, String, String, Option<String>, String)> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as(
-            "SELECT metric, date, value, metadata, fetched_at::text
+    let row: Option<(String, String, String, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT metric, date, value, metadata, fetched_at::text
              FROM onchain_cache
              WHERE metric = $1
                AND date = $2
                AND fetched_at > NOW() - INTERVAL '24 hours'",
-        )
-        .bind(metric)
-        .bind(date)
-        .fetch_optional(pool)
-        .await
-    })?;
+            )
+            .bind(metric)
+            .bind(date)
+            .fetch_optional(pool)
+            .await
+        })?;
     Ok(row.map(|r| OnchainMetric {
         metric: r.0,
         date: r.1,
@@ -232,19 +229,20 @@ fn get_metrics_by_type_postgres(
     limit: usize,
 ) -> Result<Vec<OnchainMetric>> {
     ensure_table_postgres(pool)?;
-        let rows: Vec<(String, String, String, Option<String>, String)> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as(
-            "SELECT metric, date, value, metadata, fetched_at::text
+    let rows: Vec<(String, String, String, Option<String>, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT metric, date, value, metadata, fetched_at::text
              FROM onchain_cache
              WHERE metric = $1
              ORDER BY date DESC
              LIMIT $2",
-        )
-        .bind(metric)
-        .bind(limit as i64)
-        .fetch_all(pool)
-        .await
-    })?;
+            )
+            .bind(metric)
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await
+        })?;
 
     Ok(rows
         .into_iter()
@@ -260,7 +258,7 @@ fn get_metrics_by_type_postgres(
 
 fn prune_old_metrics_postgres(pool: &PgPool) -> Result<usize> {
     ensure_table_postgres(pool)?;
-        let deleted = crate::db::pg_runtime::block_on(async {
+    let deleted = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM onchain_cache WHERE date < TO_CHAR(NOW() - INTERVAL '90 days', 'YYYY-MM-DD')")
             .execute(pool)
             .await
@@ -281,10 +279,10 @@ mod tests {
     #[test]
     fn test_upsert_and_get_metric() {
         let conn = setup_test_db();
-        
+
         // Use current timestamp to avoid TTL expiry
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         let metric = OnchainMetric {
             metric: "exchange_net_flow".to_string(),
             date: "2026-03-06".to_string(),
@@ -294,10 +292,10 @@ mod tests {
         };
 
         upsert_metric(&conn, &metric).unwrap();
-        
+
         let retrieved = get_metric(&conn, "exchange_net_flow", "2026-03-06").unwrap();
         assert!(retrieved.is_some());
-        
+
         let m = retrieved.unwrap();
         assert_eq!(m.value, "-1250.5");
         assert!(m.metadata.is_some());
@@ -306,7 +304,7 @@ mod tests {
     #[test]
     fn test_get_metrics_by_type() {
         let conn = setup_test_db();
-        
+
         for i in 1..=5 {
             let metric = OnchainMetric {
                 metric: "hash_rate".to_string(),
@@ -326,7 +324,7 @@ mod tests {
     #[test]
     fn test_prune_old_metrics() {
         let conn = setup_test_db();
-        
+
         // Insert old metric
         let old = OnchainMetric {
             metric: "test".to_string(),
@@ -336,7 +334,7 @@ mod tests {
             fetched_at: "2025-01-01T00:00:00Z".to_string(),
         };
         upsert_metric(&conn, &old).unwrap();
-        
+
         let deleted = prune_old_metrics(&conn).unwrap();
         assert_eq!(deleted, 1);
     }

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use crate::models::price::{HistoryRecord, PriceQuote};
 use anyhow::{bail, Result};
 use rust_decimal::Decimal;
-use crate::models::price::{HistoryRecord, PriceQuote};
 
 pub fn ticker_to_coingecko_id(ticker: &str) -> Option<&'static str> {
     match ticker.to_uppercase().as_str() {
@@ -144,7 +144,7 @@ fn parse_price_response(
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             });
         }
     }

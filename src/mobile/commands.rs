@@ -246,9 +246,7 @@ pub fn revoke_token(config: &Config, prefix: &str, json_output: bool) -> Result<
         .api_tokens
         .iter()
         .enumerate()
-        .filter(|(_, token)| {
-            token.name.contains(prefix) || token.prefix.contains(prefix)
-        })
+        .filter(|(_, token)| token.name.contains(prefix) || token.prefix.contains(prefix))
         .map(|(idx, _)| idx)
         .collect();
 
@@ -277,13 +275,15 @@ pub fn revoke_token(config: &Config, prefix: &str, json_output: bool) -> Result<
                 }))?
             );
         } else {
-            println!(
-                "Multiple tokens match '{}'. Be more specific:",
-                prefix
-            );
+            println!("Multiple tokens match '{}'. Be more specific:", prefix);
             for idx in &matching {
                 let token = &config.mobile.api_tokens[*idx];
-                println!("  {} [{}] {}", token.name, format_permission(token.permission), token.prefix);
+                println!(
+                    "  {} [{}] {}",
+                    token.name,
+                    format_permission(token.permission),
+                    token.prefix
+                );
             }
         }
         return Ok(());
@@ -344,7 +344,9 @@ fn ensure_tls_material(bind: &str) -> Result<(PathBuf, PathBuf)> {
     // Generate certificate with 2-year validity
     let key_pair = KeyPair::generate()?;
     let mut params = CertificateParams::new(names)?;
-    params.distinguished_name.push(DnType::CommonName, "pftui mobile API");
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "pftui mobile API");
     let now = OffsetDateTime::now_utc();
     params.not_before = now;
     params.not_after = now + time::Duration::days(730); // 2 years

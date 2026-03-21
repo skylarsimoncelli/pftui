@@ -25,16 +25,27 @@ pub fn run(
         "list" => run_list(backend, json),
         "show" => run_show(backend, config, name, json),
         "remove" => run_remove(backend, name),
-        _ => bail!("Unknown action '{}'. Use: create, list, show, remove", action),
+        _ => bail!(
+            "Unknown action '{}'. Use: create, list, show, remove",
+            action
+        ),
     }
 }
 
-fn run_create(backend: &BackendConnection, name: Option<&str>, symbols: Option<&str>) -> Result<()> {
+fn run_create(
+    backend: &BackendConnection,
+    name: Option<&str>,
+    symbols: Option<&str>,
+) -> Result<()> {
     let group_name = normalize_name(name)?;
     let members = parse_symbols(symbols)?;
     groups::create_group_backend(backend, &group_name)?;
     groups::set_group_members_backend(backend, &group_name, &members)?;
-    println!("Saved group '{}' with {} symbols.", group_name, members.len());
+    println!(
+        "Saved group '{}' with {} symbols.",
+        group_name,
+        members.len()
+    );
     Ok(())
 }
 
@@ -49,7 +60,8 @@ fn run_list(backend: &BackendConnection, json: bool) -> Result<()> {
         let out: Vec<_> = rows
             .iter()
             .map(|g| {
-                let members = groups::get_group_members_backend(backend, &g.name).unwrap_or_default();
+                let members =
+                    groups::get_group_members_backend(backend, &g.name).unwrap_or_default();
                 serde_json::json!({
                     "name": g.name,
                     "created_at": g.created_at,
@@ -148,7 +160,10 @@ fn run_show(
     println!("P&L: {:+.2} ({:+.2}%)", gain, gain_pct);
     println!("1D P&L: {:+.2}", daily_pnl.round_dp(2));
     println!();
-    println!("{:<12} {:>10} {:>10} {:>10}", "Symbol", "Alloc%", "Value", "Gain%");
+    println!(
+        "{:<12} {:>10} {:>10} {:>10}",
+        "Symbol", "Alloc%", "Value", "Gain%"
+    );
     println!("{}", "─".repeat(48));
     for p in &group_positions {
         println!(
@@ -200,10 +215,7 @@ fn normalize_name(name: Option<&str>) -> Result<String> {
     Ok(name.to_lowercase())
 }
 
-fn load_positions(
-    backend: &BackendConnection,
-    config: &Config,
-) -> Result<Vec<Position>> {
+fn load_positions(backend: &BackendConnection, config: &Config) -> Result<Vec<Position>> {
     let prices: HashMap<String, Decimal> = get_all_cached_prices_backend(backend)?
         .into_iter()
         .map(|q| (q.symbol, q.price))

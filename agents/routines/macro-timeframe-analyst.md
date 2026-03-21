@@ -15,6 +15,8 @@ Generational cycle theory. Four turnings repeat: High → Awakening → Unraveli
 ## Inputs
 
 ```bash
+pftui analytics situation --json
+pftui analytics synthesis --json
 pftui analytics macro --json
 pftui analytics macro metrics US --json
 pftui analytics macro metrics China --json
@@ -30,6 +32,8 @@ pftui data sovereign --json                        # CB gold reserves, govt BTC 
 pftui data economy --json                          # macro indicators with surprise detection
 pftui data cot --json                              # COT positioning extremes (structural signal)
 ```
+
+Use `situation` and `synthesis` to see how structural context is already flowing into the live stack before updating the deepest layer.
 
 Read STRUCTURAL.md for qualitative framework context.
 

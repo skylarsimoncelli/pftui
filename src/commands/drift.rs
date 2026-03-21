@@ -9,7 +9,7 @@ use crate::models::position::compute_positions;
 
 pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     let targets = db::allocation_targets::list_targets_backend(backend)?;
-    
+
     if targets.is_empty() {
         if json {
             println!("[]");
@@ -20,20 +20,20 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 
     let txs = db::transactions::list_transactions_backend(backend)?;
-    
+
     let cached = get_all_cached_prices_backend(backend)?;
     let mut prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|quote| (quote.symbol, quote.price))
         .collect();
-    
+
     // Ensure cash assets price at 1.0
     for tx in &txs {
         if tx.category == crate::models::asset::AssetCategory::Cash {
             prices.insert(tx.symbol.clone(), Decimal::ONE);
         }
     }
-    
+
     let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let positions = compute_positions(&txs, &prices, &fx_rates);
 
@@ -67,16 +67,17 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
 
     if json {
         // Format percentages to 2 decimal places for JSON output.
-        let formatted_data: Vec<DriftRowJson> = drift_data.iter().map(|row| {
-            DriftRowJson {
+        let formatted_data: Vec<DriftRowJson> = drift_data
+            .iter()
+            .map(|row| DriftRowJson {
                 symbol: row.symbol.clone(),
                 target_pct: round_decimal_2(row.target_pct),
                 actual_pct: round_decimal_2(row.actual_pct),
                 drift: round_decimal_2(row.drift),
                 drift_band: round_decimal_2(row.drift_band),
                 over_band: row.over_band,
-            }
-        }).collect();
+            })
+            .collect();
         println!("{}", serde_json::to_string_pretty(&formatted_data)?);
     } else {
         println!(
@@ -95,12 +96,7 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
             // Format to 2 decimal places for display
             println!(
                 "{:<10} {:>10.2} {:>10.2} {:>10.2} {:>10.2}  {}",
-                row.symbol,
-                row.target_pct,
-                row.actual_pct,
-                row.drift,
-                row.drift_band,
-                status
+                row.symbol, row.target_pct, row.actual_pct, row.drift, row.drift_band, status
             );
         }
 

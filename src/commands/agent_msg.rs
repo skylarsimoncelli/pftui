@@ -414,21 +414,61 @@ mod tests {
     fn test_bulk_ack_multiple_messages() {
         let backend = setup_backend();
         let id1 = agent_messages::send_message_backend(
-            &backend, "agent-a", Some("agent-b"), None, "msg1", None, None, None, None,
+            &backend,
+            "agent-a",
+            Some("agent-b"),
+            None,
+            "msg1",
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let id2 = agent_messages::send_message_backend(
-            &backend, "agent-a", Some("agent-b"), None, "msg2", None, None, None, None,
+            &backend,
+            "agent-a",
+            Some("agent-b"),
+            None,
+            "msg2",
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let id3 = agent_messages::send_message_backend(
-            &backend, "agent-a", Some("agent-b"), None, "msg3", None, None, None, None,
+            &backend,
+            "agent-a",
+            Some("agent-b"),
+            None,
+            "msg3",
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
 
         run(
-            &backend, "ack", None, &[], None, &[id1, id2, id3],
-            None, None, None, None, None, None, None, false, None, None, None, false,
+            &backend,
+            "ack",
+            None,
+            &[],
+            None,
+            &[id1, id2, id3],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+            false,
         )
         .unwrap();
     }
@@ -437,14 +477,38 @@ mod tests {
     fn test_bulk_ack_json_output() {
         let backend = setup_backend();
         let id1 = agent_messages::send_message_backend(
-            &backend, "agent-a", Some("agent-b"), None, "msg1", None, None, None, None,
+            &backend,
+            "agent-a",
+            Some("agent-b"),
+            None,
+            "msg1",
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
 
         // Should not error
         run(
-            &backend, "ack", None, &[], None, &[id1],
-            None, None, None, None, None, None, None, false, None, None, None, true,
+            &backend,
+            "ack",
+            None,
+            &[],
+            None,
+            &[id1],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+            true,
         )
         .unwrap();
     }
@@ -453,8 +517,24 @@ mod tests {
     fn test_ack_empty_ids_fails() {
         let backend = setup_backend();
         let result = run(
-            &backend, "ack", None, &[], None, &[],
-            None, None, None, None, None, None, None, false, None, None, None, false,
+            &backend,
+            "ack",
+            None,
+            &[],
+            None,
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+            false,
         );
         assert!(result.is_err());
     }
@@ -463,14 +543,38 @@ mod tests {
     fn test_ack_legacy_single_id() {
         let backend = setup_backend();
         let id = agent_messages::send_message_backend(
-            &backend, "agent-a", Some("agent-b"), None, "msg", None, None, None, None,
+            &backend,
+            "agent-a",
+            Some("agent-b"),
+            None,
+            "msg",
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
 
         // Legacy path: single id through the old Option parameter, empty ids slice
         run(
-            &backend, "ack", None, &[], Some(id), &[],
-            None, None, None, None, None, None, None, false, None, None, None, false,
+            &backend,
+            "ack",
+            None,
+            &[],
+            Some(id),
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+            false,
         )
         .unwrap();
     }

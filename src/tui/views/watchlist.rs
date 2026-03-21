@@ -30,7 +30,10 @@ fn compute_proximity(current: Decimal, target: Decimal, direction: &str) -> (Dec
 /// Render a proximity bar as colored spans.
 fn proximity_spans(dist_pct: Decimal, hit: bool, t: &theme::Theme) -> Vec<Span<'static>> {
     if hit {
-        vec![Span::styled("🎯 HIT".to_string(), Style::default().fg(t.gain_green).bold())]
+        vec![Span::styled(
+            "🎯 HIT".to_string(),
+            Style::default().fg(t.gain_green).bold(),
+        )]
     } else {
         let f: f64 = dist_pct.to_string().parse().unwrap_or(0.0);
         let color = if f < 3.0 {
@@ -40,7 +43,10 @@ fn proximity_spans(dist_pct: Decimal, hit: bool, t: &theme::Theme) -> Vec<Span<'
         } else {
             t.gain_green // far away — green (safe)
         };
-        vec![Span::styled(format!("{:.1}%", f), Style::default().fg(color))]
+        vec![Span::styled(
+            format!("{:.1}%", f),
+            Style::default().fg(color),
+        )]
     }
 }
 
@@ -151,10 +157,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         .iter()
         .enumerate()
         .map(|(i, entry)| {
-            let cat: AssetCategory = entry
-                .category
-                .parse()
-                .unwrap_or(AssetCategory::Equity);
+            let cat: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
             let cat_color = t.category_color(cat);
 
             let row_bg = if i == app.watchlist_selected_index {
@@ -222,9 +225,17 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                                     _ => "",
                                 };
                                 let arrow_color = if arrow == " ▲" {
-                                    if rsi_val > 60.0 { t.loss_red } else { t.text_secondary }
+                                    if rsi_val > 60.0 {
+                                        t.loss_red
+                                    } else {
+                                        t.text_secondary
+                                    }
                                 } else if arrow == " ▼" {
-                                    if rsi_val < 40.0 { t.gain_green } else { t.text_secondary }
+                                    if rsi_val < 40.0 {
+                                        t.gain_green
+                                    } else {
+                                        t.text_secondary
+                                    }
                                 } else {
                                     t.text_muted
                                 };
@@ -239,16 +250,12 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                                     ),
                                 ]))
                             }
-                            None => Cell::from(Span::styled(
-                                "---",
-                                Style::default().fg(t.text_muted),
-                            )),
+                            None => {
+                                Cell::from(Span::styled("---", Style::default().fg(t.text_muted)))
+                            }
                         }
                     }
-                    _ => Cell::from(Span::styled(
-                        "---",
-                        Style::default().fg(t.text_muted),
-                    )),
+                    _ => Cell::from(Span::styled("---", Style::default().fg(t.text_muted))),
                 }
             };
 
@@ -283,16 +290,12 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                                     Style::default().fg(sma50_color),
                                 ))
                             }
-                            None => Cell::from(Span::styled(
-                                "---",
-                                Style::default().fg(t.text_muted),
-                            )),
+                            None => {
+                                Cell::from(Span::styled("---", Style::default().fg(t.text_muted)))
+                            }
                         }
                     }
-                    _ => Cell::from(Span::styled(
-                        "---",
-                        Style::default().fg(t.text_muted),
-                    )),
+                    _ => Cell::from(Span::styled("---", Style::default().fg(t.text_muted))),
                 }
             };
 
@@ -311,10 +314,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                             let spans = proximity_spans(dist_pct, hit, t);
                             Cell::from(Line::from(spans))
                         } else {
-                            Cell::from(Span::styled(
-                                "---",
-                                Style::default().fg(t.text_muted),
-                            ))
+                            Cell::from(Span::styled("---", Style::default().fg(t.text_muted)))
                         };
                         (target, prox)
                     } else {
@@ -361,9 +361,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 cells.push(cell);
             }
 
-            Row::new(cells)
-            .style(Style::default().bg(row_bg))
-            .height(1)
+            Row::new(cells).style(Style::default().bg(row_bg)).height(1)
         })
         .collect();
 
@@ -437,7 +435,10 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(vec![
             Span::styled("Group:  ", Style::default().fg(t.text_secondary)),
-            Span::styled(format!("Group {}", app.watchlist_active_group), Style::default().fg(t.text_primary)),
+            Span::styled(
+                format!("Group {}", app.watchlist_active_group),
+                Style::default().fg(t.text_primary),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Target: ", Style::default().fg(t.text_secondary)),
@@ -455,9 +456,15 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
             ),
         ]),
         Line::from(""),
-        Line::from(Span::styled("Recent headlines", Style::default().fg(t.text_secondary).bold())),
+        Line::from(Span::styled(
+            "Recent headlines",
+            Style::default().fg(t.text_secondary).bold(),
+        )),
         if related_news.is_empty() {
-            Line::from(Span::styled("No related cached headlines", Style::default().fg(t.text_muted)))
+            Line::from(Span::styled(
+                "No related cached headlines",
+                Style::default().fg(t.text_muted),
+            ))
         } else {
             Line::from(Span::styled(
                 format!("{} cached items", related_news.len()),
@@ -465,7 +472,10 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
             ))
         },
         Line::from(""),
-        Line::from(Span::styled("Actions", Style::default().fg(t.text_secondary).bold())),
+        Line::from(Span::styled(
+            "Actions",
+            Style::default().fg(t.text_secondary).bold(),
+        )),
         Line::from("t edit target"),
         Line::from("a create alert"),
         Line::from("c open chart"),
@@ -496,18 +506,18 @@ pub fn yahoo_symbol_for(symbol: &str, category: AssetCategory) -> String {
 fn compute_change_pct(app: &App, yahoo_symbol: &str) -> Option<Decimal> {
     // Get current price from cache
     let current_price = app.prices.get(yahoo_symbol)?;
-    
+
     // Get yesterday's close from history
     let history = app.price_history.get(yahoo_symbol)?;
     if history.is_empty() {
         return None;
     }
-    
+
     let prev_close = history[0].close;
     if prev_close == dec!(0) {
         return None;
     }
-    
+
     Some((current_price - prev_close) / prev_close * dec!(100))
 }
 
@@ -528,10 +538,7 @@ mod tests {
 
     #[test]
     fn yahoo_symbol_for_crypto() {
-        assert_eq!(
-            yahoo_symbol_for("BTC", AssetCategory::Crypto),
-            "BTC-USD"
-        );
+        assert_eq!(yahoo_symbol_for("BTC", AssetCategory::Crypto), "BTC-USD");
     }
 
     #[test]
@@ -544,18 +551,12 @@ mod tests {
 
     #[test]
     fn yahoo_symbol_for_equity() {
-        assert_eq!(
-            yahoo_symbol_for("AAPL", AssetCategory::Equity),
-            "AAPL"
-        );
+        assert_eq!(yahoo_symbol_for("AAPL", AssetCategory::Equity), "AAPL");
     }
 
     #[test]
     fn yahoo_symbol_for_commodity() {
-        assert_eq!(
-            yahoo_symbol_for("GC=F", AssetCategory::Commodity),
-            "GC=F"
-        );
+        assert_eq!(yahoo_symbol_for("GC=F", AssetCategory::Commodity), "GC=F");
     }
 
     #[test]

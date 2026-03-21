@@ -167,12 +167,10 @@ fn list_signals_postgres(
 
 fn prune_signals_postgres(pool: &PgPool, hours: i64) -> Result<u64> {
     let result = crate::db::pg_runtime::block_on(async {
-        sqlx::query(
-            "DELETE FROM technical_signals WHERE detected_at < NOW() - $1::INTERVAL",
-        )
-        .bind(format!("{} hours", hours))
-        .execute(pool)
-        .await
+        sqlx::query("DELETE FROM technical_signals WHERE detected_at < NOW() - $1::INTERVAL")
+            .bind(format!("{} hours", hours))
+            .execute(pool)
+            .await
     })?;
     Ok(result.rows_affected())
 }
@@ -243,7 +241,15 @@ mod tests {
         description: &'a str,
         timeframe: &'a str,
     ) -> NewSignal<'a> {
-        NewSignal { symbol, signal_type, direction, severity, trigger_price, description, timeframe }
+        NewSignal {
+            symbol,
+            signal_type,
+            direction,
+            severity,
+            trigger_price,
+            description,
+            timeframe,
+        }
     }
 
     #[test]
@@ -251,7 +257,15 @@ mod tests {
         let conn = setup_db();
         let id = add_signal(
             &conn,
-            &sig("AAPL", "rsi_overbought", "bearish", "notable", Some(195.0), "RSI 14 crossed above 70 (currently 74.2)", "1d"),
+            &sig(
+                "AAPL",
+                "rsi_overbought",
+                "bearish",
+                "notable",
+                Some(195.0),
+                "RSI 14 crossed above 70 (currently 74.2)",
+                "1d",
+            ),
         )
         .unwrap();
         assert!(id > 0);
@@ -266,8 +280,32 @@ mod tests {
     #[test]
     fn list_filters_by_symbol() {
         let conn = setup_db();
-        add_signal(&conn, &sig("AAPL", "rsi_overbought", "bearish", "notable", None, "test", "1d")).unwrap();
-        add_signal(&conn, &sig("BTC", "macd_bull_cross", "bullish", "notable", None, "test", "1d")).unwrap();
+        add_signal(
+            &conn,
+            &sig(
+                "AAPL",
+                "rsi_overbought",
+                "bearish",
+                "notable",
+                None,
+                "test",
+                "1d",
+            ),
+        )
+        .unwrap();
+        add_signal(
+            &conn,
+            &sig(
+                "BTC",
+                "macd_bull_cross",
+                "bullish",
+                "notable",
+                None,
+                "test",
+                "1d",
+            ),
+        )
+        .unwrap();
 
         let aapl = list_signals(&conn, Some("AAPL"), None, None).unwrap();
         assert_eq!(aapl.len(), 1);
@@ -280,8 +318,32 @@ mod tests {
     #[test]
     fn list_filters_by_signal_type() {
         let conn = setup_db();
-        add_signal(&conn, &sig("AAPL", "rsi_overbought", "bearish", "notable", None, "test", "1d")).unwrap();
-        add_signal(&conn, &sig("AAPL", "macd_bull_cross", "bullish", "notable", None, "test", "1d")).unwrap();
+        add_signal(
+            &conn,
+            &sig(
+                "AAPL",
+                "rsi_overbought",
+                "bearish",
+                "notable",
+                None,
+                "test",
+                "1d",
+            ),
+        )
+        .unwrap();
+        add_signal(
+            &conn,
+            &sig(
+                "AAPL",
+                "macd_bull_cross",
+                "bullish",
+                "notable",
+                None,
+                "test",
+                "1d",
+            ),
+        )
+        .unwrap();
 
         let rsi = list_signals(&conn, None, Some("rsi_overbought"), None).unwrap();
         assert_eq!(rsi.len(), 1);
@@ -292,7 +354,19 @@ mod tests {
         let conn = setup_db();
         for i in 0..5 {
             let sym = format!("SYM{}", i);
-            add_signal(&conn, &sig(&sym, "rsi_overbought", "bearish", "notable", None, "test", "1d")).unwrap();
+            add_signal(
+                &conn,
+                &sig(
+                    &sym,
+                    "rsi_overbought",
+                    "bearish",
+                    "notable",
+                    None,
+                    "test",
+                    "1d",
+                ),
+            )
+            .unwrap();
         }
 
         let limited = list_signals(&conn, None, None, Some(3)).unwrap();

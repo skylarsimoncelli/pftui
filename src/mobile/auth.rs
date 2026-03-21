@@ -196,10 +196,7 @@ pub async fn auth_middleware(
 
     // Check rate limiting before processing auth
     if state.is_rate_limited(client_ip).await {
-        eprintln!(
-            "[mobile-api] Auth rejected (rate limited): {}",
-            client_ip
-        );
+        eprintln!("[mobile-api] Auth rejected (rate limited): {}", client_ip);
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {

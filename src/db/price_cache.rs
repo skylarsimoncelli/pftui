@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
@@ -8,7 +8,11 @@ use crate::db::query;
 use crate::models::price::PriceQuote;
 
 #[allow(dead_code)]
-pub fn get_cached_price(conn: &Connection, symbol: &str, currency: &str) -> Result<Option<PriceQuote>> {
+pub fn get_cached_price(
+    conn: &Connection,
+    symbol: &str,
+    currency: &str,
+) -> Result<Option<PriceQuote>> {
     let mut stmt = conn.prepare(
         "SELECT symbol, price, currency, fetched_at, source, previous_close FROM price_cache
          WHERE symbol = ?1 AND currency = ?2",
@@ -23,7 +27,8 @@ pub fn get_cached_price(conn: &Connection, symbol: &str, currency: &str) -> Resu
             pre_market_price: None,
             post_market_price: None,
             post_market_change_percent: None,
-            previous_close: row.get::<_, Option<String>>(5)?
+            previous_close: row
+                .get::<_, Option<String>>(5)?
                 .and_then(|s| s.parse().ok()),
         })
     })?;
@@ -68,7 +73,8 @@ pub fn get_all_cached_prices(conn: &Connection) -> Result<Vec<PriceQuote>> {
             pre_market_price: None,
             post_market_price: None,
             post_market_change_percent: None,
-            previous_close: row.get::<_, Option<String>>(5)?
+            previous_close: row
+                .get::<_, Option<String>>(5)?
                 .and_then(|s| s.parse().ok()),
         })
     })?;
@@ -101,7 +107,11 @@ pub fn upsert_price_backend(backend: &BackendConnection, quote: &PriceQuote) -> 
 }
 
 pub fn get_all_cached_prices_backend(backend: &BackendConnection) -> Result<Vec<PriceQuote>> {
-    query::dispatch(backend, get_all_cached_prices, get_all_cached_prices_postgres)
+    query::dispatch(
+        backend,
+        get_all_cached_prices,
+        get_all_cached_prices_postgres,
+    )
 }
 
 fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
@@ -120,11 +130,9 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         // Ensure column exists on older tables
-        sqlx::query(
-            "ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS previous_close NUMERIC",
-        )
-        .execute(pool)
-        .await?;
+        sqlx::query("ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS previous_close NUMERIC")
+            .execute(pool)
+            .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
@@ -146,7 +154,11 @@ fn price_quote_from_row(row: PriceCacheRow) -> PriceQuote {
     }
 }
 
-fn get_cached_price_postgres(pool: &PgPool, symbol: &str, currency: &str) -> Result<Option<PriceQuote>> {
+fn get_cached_price_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    currency: &str,
+) -> Result<Option<PriceQuote>> {
     ensure_tables_postgres(pool)?;
     let row: Option<PriceCacheRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(

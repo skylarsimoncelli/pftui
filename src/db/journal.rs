@@ -206,7 +206,10 @@ pub fn update_entry(
     status: Option<&str>,
 ) -> Result<()> {
     if let Some(c) = content {
-        conn.execute("UPDATE journal SET content = ? WHERE id = ?", params![c, id])?;
+        conn.execute(
+            "UPDATE journal SET content = ? WHERE id = ?",
+            params![c, id],
+        )?;
     }
     if let Some(s) = status {
         conn.execute("UPDATE journal SET status = ? WHERE id = ?", params![s, id])?;
@@ -525,7 +528,10 @@ fn get_all_tags_postgres(pool: &PgPool) -> Result<Vec<(String, usize)>> {
         .fetch_all(pool)
         .await
     })?;
-    Ok(rows.into_iter().map(|(tag, count)| (tag, count as usize)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(tag, count)| (tag, count as usize))
+        .collect())
 }
 
 fn get_stats_postgres(pool: &PgPool) -> Result<JournalStats> {

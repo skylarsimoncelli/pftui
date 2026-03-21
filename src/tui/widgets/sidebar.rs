@@ -2,7 +2,9 @@ use ratatui::prelude::*;
 use rust_decimal_macros::dec;
 
 use crate::app::{is_privacy_view, App};
-use crate::tui::widgets::{allocation_bars, portfolio_sparkline, portfolio_stats, regime_assets, regime_bar};
+use crate::tui::widgets::{
+    allocation_bars, portfolio_sparkline, portfolio_stats, regime_assets, regime_bar,
+};
 
 /// Renders the portfolio overview panel: value summary, allocation bars,
 /// portfolio sparkline chart, key portfolio stats, and regime health bar.
@@ -31,7 +33,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         let assets_height = regime_assets::compute_height(app);
         let show_assets = show_regime && assets_height > 0;
 
-        if show_regime && show_assets && area.height > alloc_height + stats_height + regime_height + assets_height + 10 {
+        if show_regime
+            && show_assets
+            && area.height > alloc_height + stats_height + regime_height + assets_height + 10
+        {
             // Full layout with regime + asset suggestions
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -83,10 +88,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             // Tight layout: alloc bars + sparkline (not enough room for stats/regime)
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(alloc_height),
-                    Constraint::Min(10),
-                ])
+                .constraints([Constraint::Length(alloc_height), Constraint::Min(10)])
                 .split(area);
 
             allocation_bars::render(frame, chunks[0], app);

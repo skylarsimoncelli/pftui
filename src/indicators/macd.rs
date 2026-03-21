@@ -219,7 +219,9 @@ mod tests {
 
     #[test]
     fn histogram_equals_macd_minus_signal() {
-        let prices: Vec<f64> = (0..60).map(|i| 100.0 + (i as f64 * 0.1).sin() * 10.0).collect();
+        let prices: Vec<f64> = (0..60)
+            .map(|i| 100.0 + (i as f64 * 0.1).sin() * 10.0)
+            .collect();
         let macd = compute_macd(&prices, 12, 26, 9);
         for val in macd.iter().flatten() {
             assert!(

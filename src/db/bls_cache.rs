@@ -234,26 +234,29 @@ fn is_cache_fresh_postgres(pool: &PgPool, series_id: &str, max_age_days: i64) ->
 }
 
 fn get_latest_bls_data_postgres(pool: &PgPool, series_id: &str) -> Result<Option<BlsDataPoint>> {
-        let row: Option<(String, i32, String, String, String)> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as(
-            "SELECT series_id, year, period, value, date
+    let row: Option<(String, i32, String, String, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT series_id, year, period, value, date
              FROM bls_cache
              WHERE series_id = $1
              ORDER BY date DESC
              LIMIT 1",
-        )
-        .bind(series_id)
-        .fetch_optional(pool)
-        .await
-    })?;
+            )
+            .bind(series_id)
+            .fetch_optional(pool)
+            .await
+        })?;
 
-    Ok(row.map(|(series_id, year, period, value_str, date_str)| BlsDataPoint {
-        series_id,
-        year,
-        period,
-        value: Decimal::from_str(&value_str).unwrap_or_default(),
-        date: NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").unwrap_or_default(),
-    }))
+    Ok(row.map(
+        |(series_id, year, period, value_str, date_str)| BlsDataPoint {
+            series_id,
+            year,
+            period,
+            value: Decimal::from_str(&value_str).unwrap_or_default(),
+            date: NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").unwrap_or_default(),
+        },
+    ))
 }
 
 #[cfg(test)]

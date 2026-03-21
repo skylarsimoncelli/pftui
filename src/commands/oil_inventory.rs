@@ -10,7 +10,6 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::data::eia::{self, EIA_SERIES};
 
-
 #[derive(Debug, Serialize)]
 struct InventoryRow {
     series: String,
@@ -136,10 +135,7 @@ fn print_table(rows: &[InventoryRow]) {
         }
 
         if let Some(avg) = row.five_year_avg_kb {
-            println!(
-                "    5-year avg:    {} kb",
-                format_with_commas(avg)
-            );
+            println!("    5-year avg:    {} kb", format_with_commas(avg));
         }
 
         if let (Some(dev), Some(pct)) = (row.deviation_from_avg_kb, row.deviation_from_avg_pct) {
@@ -156,8 +152,7 @@ fn print_table(rows: &[InventoryRow]) {
 }
 
 fn normalize_key(name: &str) -> String {
-    name.to_lowercase()
-        .replace([' ', '-'], "_")
+    name.to_lowercase().replace([' ', '-'], "_")
 }
 
 fn format_with_commas(n: f64) -> String {
@@ -200,8 +195,14 @@ mod tests {
 
     #[test]
     fn normalize_key_produces_snake_case() {
-        assert_eq!(normalize_key("Commercial Crude Inventories"), "commercial_crude_inventories");
-        assert_eq!(normalize_key("Strategic Petroleum Reserve"), "strategic_petroleum_reserve");
+        assert_eq!(
+            normalize_key("Commercial Crude Inventories"),
+            "commercial_crude_inventories"
+        );
+        assert_eq!(
+            normalize_key("Strategic Petroleum Reserve"),
+            "strategic_petroleum_reserve"
+        );
     }
 
     #[test]

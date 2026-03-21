@@ -11,19 +11,14 @@ pub struct PredictionHistoryRecord {
     #[allow(dead_code)] // Used in Markets tab sparkline rendering
     pub id: String,
     #[allow(dead_code)] // Used in Markets tab sparkline rendering
-    pub date: String,         // YYYY-MM-DD
+    pub date: String, // YYYY-MM-DD
     pub probability: f64,
 }
 
 /// Insert a daily probability snapshot for a prediction market.
 /// Uses INSERT OR REPLACE to handle duplicate date snapshots.
 #[allow(dead_code)] // Used by refresh integration (F17.3+) and batch_insert_history
-pub fn insert_history(
-    conn: &Connection,
-    id: &str,
-    date: &str,
-    probability: f64,
-) -> Result<()> {
+pub fn insert_history(conn: &Connection, id: &str, date: &str, probability: f64) -> Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO predictions_history (id, date, probability)
          VALUES (?, ?, ?)",
@@ -150,7 +145,11 @@ fn insert_history_postgres(pool: &PgPool, id: &str, date: &str, probability: f64
     Ok(())
 }
 
-fn get_history_postgres(pool: &PgPool, id: &str, days: usize) -> Result<Vec<PredictionHistoryRecord>> {
+fn get_history_postgres(
+    pool: &PgPool,
+    id: &str,
+    days: usize,
+) -> Result<Vec<PredictionHistoryRecord>> {
     ensure_table_postgres(pool)?;
     let rows: Vec<(String, String, f64)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(

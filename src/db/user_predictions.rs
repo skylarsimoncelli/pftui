@@ -88,7 +88,10 @@ fn ensure_prediction_columns(conn: &Connection) -> Result<()> {
             .unwrap_or(0)
             > 0;
         if !exists {
-            conn.execute(&format!("ALTER TABLE user_predictions ADD COLUMN {} {}", col, ty), [])?;
+            conn.execute(
+                &format!("ALTER TABLE user_predictions ADD COLUMN {} {}", col, ty),
+                [],
+            )?;
         }
     }
     Ok(())
@@ -116,24 +119,32 @@ fn ensure_prediction_columns_postgres(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_user_predictions_outcome ON user_predictions(outcome)")
-            .execute(pool)
-            .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_user_predictions_symbol ON user_predictions(symbol)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_user_predictions_outcome ON user_predictions(outcome)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_user_predictions_symbol ON user_predictions(symbol)",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS timeframe TEXT NOT NULL DEFAULT 'medium'")
             .execute(pool)
             .await?;
-        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS source_agent TEXT")
             .execute(pool)
             .await?;
-        sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS resolution_criteria TEXT")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS resolution_criteria TEXT",
+        )
+        .execute(pool)
+        .await?;
         sqlx::query("ALTER TABLE user_predictions ADD COLUMN IF NOT EXISTS lesson TEXT")
             .execute(pool)
             .await?;
@@ -255,7 +266,8 @@ fn compute_stats(items: &[UserPrediction]) -> ConvictionStats {
     }
 
     if s.scored > 0 {
-        s.hit_rate_pct = ((s.correct as f64) + 0.5 * (s.partial as f64)) / (s.scored as f64) * 100.0;
+        s.hit_rate_pct =
+            ((s.correct as f64) + 0.5 * (s.partial as f64)) / (s.scored as f64) * 100.0;
     }
 
     s

@@ -13,7 +13,7 @@ pub const SUPPORTED_CURRENCIES: &[&str] = &["GBP", "EUR", "CAD", "AUD", "JPY", "
 /// Example: GBP rate of 1.27 means £1 = $1.27 USD.
 pub async fn fetch_all_fx_rates() -> Result<HashMap<String, Decimal>> {
     let mut rates = HashMap::new();
-    
+
     // USD to USD is always 1.0
     rates.insert("USD".to_string(), dec!(1));
 
@@ -45,21 +45,18 @@ async fn fetch_fx_rate(from_currency: &str) -> Result<Decimal> {
     let response = provider.get_latest_quotes(&pair, "1d").await?;
     let quote = response.last_quote()?;
     let rate = Decimal::try_from(quote.close)?;
-    
+
     if rate <= dec!(0) {
         anyhow::bail!("Invalid FX rate for {}: {}", pair, rate);
     }
-    
+
     Ok(rate)
 }
 
 /// Fetch historical FX rates for a given currency to USD.
 /// Returns a map of date string (YYYY-MM-DD) → FX rate.
 #[allow(dead_code)]
-pub async fn fetch_fx_history(
-    from_currency: &str,
-    days: u32,
-) -> Result<HashMap<String, Decimal>> {
+pub async fn fetch_fx_history(from_currency: &str, days: u32) -> Result<HashMap<String, Decimal>> {
     if from_currency == "USD" {
         // No conversion needed for USD
         let mut rates = HashMap::new();

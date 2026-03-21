@@ -58,7 +58,10 @@ pub fn upsert_reading(conn: &Connection, reading: &SentimentReading) -> Result<(
     Ok(())
 }
 
-pub fn upsert_reading_backend(backend: &BackendConnection, reading: &SentimentReading) -> Result<()> {
+pub fn upsert_reading_backend(
+    backend: &BackendConnection,
+    reading: &SentimentReading,
+) -> Result<()> {
     query::dispatch(
         backend,
         |conn| upsert_reading(conn, reading),
@@ -197,7 +200,7 @@ fn upsert_reading_postgres(pool: &PgPool, reading: &SentimentReading) -> Result<
 }
 
 fn get_latest_postgres(pool: &PgPool, index_type: &str) -> Result<Option<SentimentReading>> {
-        let row: Option<(String, i64, String, i64, String)> = crate::db::pg_runtime::block_on(async {
+    let row: Option<(String, i64, String, i64, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT index_type, value, classification, timestamp, fetched_at::text
              FROM sentiment_cache
@@ -218,7 +221,7 @@ fn get_latest_postgres(pool: &PgPool, index_type: &str) -> Result<Option<Sentime
 }
 
 fn get_history_postgres(pool: &PgPool, index_type: &str, days: u32) -> Result<Vec<(String, u8)>> {
-        let rows: Vec<(String, i64)> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<(String, i64)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT date, value
              FROM sentiment_history
@@ -235,7 +238,7 @@ fn get_history_postgres(pool: &PgPool, index_type: &str, days: u32) -> Result<Ve
 }
 
 fn prune_old_postgres(pool: &PgPool, days: u32) -> Result<usize> {
-        let pruned = crate::db::pg_runtime::block_on(async {
+    let pruned = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "DELETE FROM sentiment_history
              WHERE date < TO_CHAR(NOW() - ($1 * INTERVAL '1 day'), 'YYYY-MM-DD')",
@@ -303,7 +306,7 @@ mod tests {
     #[test]
     fn test_get_history() {
         let conn = setup_test_db();
-        
+
         // Insert readings for 3 consecutive days
         for i in 0..3 {
             let day = chrono::Utc::now() - chrono::Duration::days(i);
@@ -324,7 +327,7 @@ mod tests {
     #[test]
     fn test_prune_old() {
         let conn = setup_test_db();
-        
+
         // Insert old reading (40 days ago)
         let old = chrono::Utc::now() - chrono::Duration::days(40);
         let reading = SentimentReading {

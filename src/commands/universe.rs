@@ -56,16 +56,13 @@ pub fn add(symbol: &str, group: &str, json: bool) -> Result<()> {
     let mut config = load_config()?;
     let upper = symbol.to_uppercase();
 
-    let symbols = config
-        .tracked_universe
-        .group_mut(group)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Unknown group '{}'. Valid groups: {}",
-                group,
-                TrackedUniverse::group_names().join(", ")
-            )
-        })?;
+    let symbols = config.tracked_universe.group_mut(group).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Unknown group '{}'. Valid groups: {}",
+            group,
+            TrackedUniverse::group_names().join(", ")
+        )
+    })?;
 
     if symbols.iter().any(|s| s.eq_ignore_ascii_case(&upper)) {
         if json {
@@ -106,16 +103,13 @@ pub fn remove(symbol: &str, group: &str, json: bool) -> Result<()> {
     let mut config = load_config()?;
     let upper = symbol.to_uppercase();
 
-    let symbols = config
-        .tracked_universe
-        .group_mut(group)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Unknown group '{}'. Valid groups: {}",
-                group,
-                TrackedUniverse::group_names().join(", ")
-            )
-        })?;
+    let symbols = config.tracked_universe.group_mut(group).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Unknown group '{}'. Valid groups: {}",
+            group,
+            TrackedUniverse::group_names().join(", ")
+        )
+    })?;
 
     let before = symbols.len();
     symbols.retain(|s| !s.eq_ignore_ascii_case(&upper));

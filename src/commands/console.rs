@@ -8,8 +8,8 @@ use clap::CommandFactory;
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
-use rustyline::history::DefaultHistory;
 use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{
     Cmd, ConditionalEventHandler, Config, Context as RustyContext, Editor, Event, EventContext,
@@ -297,7 +297,11 @@ fn browser_entries(node: &ConsoleNode, filter: Option<&str>) -> Vec<BrowserEntry
         .collect();
     entries.sort_by_key(|entry| {
         (
-            Reverse(score_match(filter.unwrap_or(""), &entry.name, &entry.description)),
+            Reverse(score_match(
+                filter.unwrap_or(""),
+                &entry.name,
+                &entry.description,
+            )),
             entry.name.clone(),
         )
     });
@@ -343,7 +347,10 @@ fn build_console_tree(command: clap::Command) -> ConsoleNode {
             if let Some(short) = arg.get_short() {
                 names.push(format!("-{short}"));
             }
-            let description = arg.get_help().map(|text| text.to_string()).unwrap_or_default();
+            let description = arg
+                .get_help()
+                .map(|text| text.to_string())
+                .unwrap_or_default();
             ConsoleOption {
                 name: names.join(", "),
                 description,
@@ -362,7 +369,10 @@ fn build_console_tree(command: clap::Command) -> ConsoleNode {
 fn find_node<'a>(root: &'a ConsoleNode, path: &[String]) -> Option<&'a ConsoleNode> {
     let mut node = root;
     for segment in path {
-        node = node.subcommands.iter().find(|child| child.name == *segment)?;
+        node = node
+            .subcommands
+            .iter()
+            .find(|child| child.name == *segment)?;
     }
     Some(node)
 }
@@ -374,7 +384,10 @@ fn resolve_navigation_path(node: &ConsoleNode, tokens: &[String]) -> Option<Vec<
         if token.starts_with('-') {
             return None;
         }
-        let child = current.subcommands.iter().find(|candidate| candidate.name == *token)?;
+        let child = current
+            .subcommands
+            .iter()
+            .find(|candidate| candidate.name == *token)?;
         path.push(token.clone());
         current = child;
     }
@@ -460,7 +473,12 @@ fn browser_entries_for_completion(node: &ConsoleNode, filter: &str) -> Vec<Brows
             description: entry.description.clone(),
         })
         .collect();
-    entries.sort_by_key(|entry| (Reverse(score_match_name_only(filter, &entry.name)), entry.name.clone()));
+    entries.sort_by_key(|entry| {
+        (
+            Reverse(score_match_name_only(filter, &entry.name)),
+            entry.name.clone(),
+        )
+    });
     entries
 }
 
@@ -474,7 +492,12 @@ fn option_entries_for_completion(node: &ConsoleNode, filter: &str) -> Vec<Browse
             description: entry.description.clone(),
         })
         .collect();
-    entries.sort_by_key(|entry| (Reverse(score_match_name_only(filter, &entry.name)), entry.name.clone()));
+    entries.sort_by_key(|entry| {
+        (
+            Reverse(score_match_name_only(filter, &entry.name)),
+            entry.name.clone(),
+        )
+    });
     entries
 }
 
@@ -502,13 +525,7 @@ impl ConsoleHelper {
 }
 
 impl ConditionalEventHandler for EmptyBackspaceHandler {
-    fn handle(
-        &self,
-        evt: &Event,
-        _n: usize,
-        _positive: bool,
-        ctx: &EventContext,
-    ) -> Option<Cmd> {
+    fn handle(&self, evt: &Event, _n: usize, _positive: bool, ctx: &EventContext) -> Option<Cmd> {
         if matches!(evt, Event::KeySeq(keys) if keys.len() == 1 && keys[0] == KeyEvent(KeyCode::Backspace, Modifiers::NONE))
             && ctx.line().is_empty()
             && ctx.pos() == 0
@@ -540,11 +557,9 @@ mod tests {
             .iter()
             .find(|node| node.name == "analytics")
             .unwrap();
-        let path = resolve_navigation_path(
-            analytics,
-            &[String::from("macro"), String::from("regime")],
-        )
-        .unwrap();
+        let path =
+            resolve_navigation_path(analytics, &[String::from("macro"), String::from("regime")])
+                .unwrap();
         assert_eq!(path, vec!["macro", "regime"]);
     }
 

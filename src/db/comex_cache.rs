@@ -13,13 +13,13 @@ use crate::db::query;
 /// A cached COMEX inventory record.
 #[derive(Debug, Clone)]
 pub struct ComexCacheEntry {
-    pub symbol: String,       // GC=F or SI=F
-    pub date: String,          // YYYY-MM-DD
-    pub registered: f64,       // Registered stocks (troy oz)
-    pub eligible: f64,         // Eligible stocks (troy oz)
-    pub total: f64,            // Total (registered + eligible)
-    pub reg_ratio: f64,        // Registered / Total (%)
-    pub fetched_at: String,    // ISO 8601 timestamp
+    pub symbol: String,     // GC=F or SI=F
+    pub date: String,       // YYYY-MM-DD
+    pub registered: f64,    // Registered stocks (troy oz)
+    pub eligible: f64,      // Eligible stocks (troy oz)
+    pub total: f64,         // Total (registered + eligible)
+    pub reg_ratio: f64,     // Registered / Total (%)
+    pub fetched_at: String, // ISO 8601 timestamp
 }
 
 /// Upsert a COMEX inventory record into the cache.
@@ -50,7 +50,10 @@ pub fn upsert_inventory(conn: &Connection, entry: &ComexCacheEntry) -> Result<()
     Ok(())
 }
 
-pub fn upsert_inventory_backend(backend: &BackendConnection, entry: &ComexCacheEntry) -> Result<()> {
+pub fn upsert_inventory_backend(
+    backend: &BackendConnection,
+    entry: &ComexCacheEntry,
+) -> Result<()> {
     query::dispatch(
         backend,
         |conn| upsert_inventory(conn, entry),
@@ -68,7 +71,10 @@ pub fn upsert_inventories(conn: &Connection, entries: &[ComexCacheEntry]) -> Res
     Ok(())
 }
 
-pub fn upsert_inventories_backend(backend: &BackendConnection, entries: &[ComexCacheEntry]) -> Result<()> {
+pub fn upsert_inventories_backend(
+    backend: &BackendConnection,
+    entries: &[ComexCacheEntry],
+) -> Result<()> {
     query::dispatch(
         backend,
         |conn| upsert_inventories(conn, entries),
@@ -273,18 +279,19 @@ fn upsert_inventories_postgres(pool: &PgPool, entries: &[ComexCacheEntry]) -> Re
 
 fn get_latest_inventory_postgres(pool: &PgPool, symbol: &str) -> Result<Option<ComexCacheEntry>> {
     ensure_table_postgres(pool)?;
-        let row: Option<(String, String, f64, f64, f64, f64, String)> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as(
-            "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
+    let row: Option<(String, String, f64, f64, f64, f64, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
              FROM comex_cache
              WHERE symbol = $1
              ORDER BY date DESC
              LIMIT 1",
-        )
-        .bind(symbol)
-        .fetch_optional(pool)
-        .await
-    })?;
+            )
+            .bind(symbol)
+            .fetch_optional(pool)
+            .await
+        })?;
     Ok(row.map(|r| ComexCacheEntry {
         symbol: r.0,
         date: r.1,
@@ -302,19 +309,20 @@ fn get_inventory_history_postgres(
     days: usize,
 ) -> Result<Vec<ComexCacheEntry>> {
     ensure_table_postgres(pool)?;
-        let rows: Vec<(String, String, f64, f64, f64, f64, String)> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as(
-            "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
+    let rows: Vec<(String, String, f64, f64, f64, f64, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
              FROM comex_cache
              WHERE symbol = $1
              ORDER BY date DESC
              LIMIT $2",
-        )
-        .bind(symbol)
-        .bind(days as i64)
-        .fetch_all(pool)
-        .await
-    })?;
+            )
+            .bind(symbol)
+            .bind(days as i64)
+            .fetch_all(pool)
+            .await
+        })?;
 
     Ok(rows
         .into_iter()
@@ -336,19 +344,20 @@ fn get_previous_inventory_postgres(
     current_date: &str,
 ) -> Result<Option<ComexCacheEntry>> {
     ensure_table_postgres(pool)?;
-        let row: Option<(String, String, f64, f64, f64, f64, String)> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as(
-            "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
+    let row: Option<(String, String, f64, f64, f64, f64, String)> =
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT symbol, date, registered, eligible, total, reg_ratio, fetched_at::text
              FROM comex_cache
              WHERE symbol = $1 AND date < $2
              ORDER BY date DESC
              LIMIT 1",
-        )
-        .bind(symbol)
-        .bind(current_date)
-        .fetch_optional(pool)
-        .await
-    })?;
+            )
+            .bind(symbol)
+            .bind(current_date)
+            .fetch_optional(pool)
+            .await
+        })?;
 
     Ok(row.map(|r| ComexCacheEntry {
         symbol: r.0,
@@ -364,7 +373,7 @@ fn get_previous_inventory_postgres(
 fn has_fresh_data_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_table_postgres(pool)?;
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let exists: Option<i64> = crate::db::pg_runtime::block_on(async {
+    let exists: Option<i64> = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT 1 FROM comex_cache WHERE symbol = $1 AND date = $2 LIMIT 1")
             .bind(symbol)
             .bind(today)

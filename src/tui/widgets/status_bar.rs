@@ -58,11 +58,7 @@ fn context_hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("r", "Refresh"),
             (":", "Cmd"),
         ],
-        ViewMode::Analytics => vec![
-            ("+/-", "Shock"),
-            ("0", "Reset"),
-            (":", "Cmd"),
-        ],
+        ViewMode::Analytics => vec![("+/-", "Shock"), ("0", "Reset"), (":", "Cmd")],
         ViewMode::News => vec![
             ("Enter", "Preview"),
             ("o", "Open"),
@@ -91,7 +87,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Pulsing live indicator
     let dot_color = if app.prices_live {
-        theme::pulse_color(t.live_green, t.surface_0, app.tick_count, theme::PULSE_PERIOD)
+        theme::pulse_color(
+            t.live_green,
+            t.surface_0,
+            app.tick_count,
+            theme::PULSE_PERIOD,
+        )
     } else {
         t.stale_yellow
     };
@@ -115,7 +116,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(" ⚠ Delete ", Style::default().fg(t.loss_red).bold()),
             Span::styled(&confirm.symbol, Style::default().fg(t.text_accent).bold()),
             Span::styled(
-                format!("? ({} transaction{})", confirm.tx_count, if confirm.tx_count == 1 { "" } else { "s" }),
+                format!(
+                    "? ({} transaction{})",
+                    confirm.tx_count,
+                    if confirm.tx_count == 1 { "" } else { "s" }
+                ),
                 Style::default().fg(t.text_primary),
             ),
             Span::styled("  [y]", Style::default().fg(t.key_hint).bold()),
@@ -157,7 +162,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         };
         if type_active {
             form_spans.push(Span::styled("[", Style::default().fg(t.text_accent)));
-            form_spans.push(Span::styled(type_label, Style::default().fg(type_color).bold()));
+            form_spans.push(Span::styled(
+                type_label,
+                Style::default().fg(type_color).bold(),
+            ));
             form_spans.push(Span::styled("]", Style::default().fg(t.text_accent)));
         } else {
             form_spans.push(Span::styled(type_label, Style::default().fg(type_color)));
@@ -168,11 +176,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let qty_active = form.active_field == TxFormField::Quantity;
         form_spans.push(Span::styled("Qty:", Style::default().fg(t.text_muted)));
         if qty_active {
-            form_spans.push(Span::styled(&form.quantity_input, Style::default().fg(t.text_primary)));
+            form_spans.push(Span::styled(
+                &form.quantity_input,
+                Style::default().fg(t.text_primary),
+            ));
             form_spans.push(Span::styled("█", Style::default().fg(t.text_accent)));
         } else {
-            let qty_display = if form.quantity_input.is_empty() { "—" } else { &form.quantity_input };
-            form_spans.push(Span::styled(qty_display, Style::default().fg(t.text_secondary)));
+            let qty_display = if form.quantity_input.is_empty() {
+                "—"
+            } else {
+                &form.quantity_input
+            };
+            form_spans.push(Span::styled(
+                qty_display,
+                Style::default().fg(t.text_secondary),
+            ));
         }
         form_spans.push(Span::styled(" ", Style::default()));
 
@@ -180,11 +198,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let price_active = form.active_field == TxFormField::PricePer;
         form_spans.push(Span::styled("@$", Style::default().fg(t.text_muted)));
         if price_active {
-            form_spans.push(Span::styled(&form.price_input, Style::default().fg(t.text_primary)));
+            form_spans.push(Span::styled(
+                &form.price_input,
+                Style::default().fg(t.text_primary),
+            ));
             form_spans.push(Span::styled("█", Style::default().fg(t.text_accent)));
         } else {
-            let price_display = if form.price_input.is_empty() { "—" } else { &form.price_input };
-            form_spans.push(Span::styled(price_display, Style::default().fg(t.text_secondary)));
+            let price_display = if form.price_input.is_empty() {
+                "—"
+            } else {
+                &form.price_input
+            };
+            form_spans.push(Span::styled(
+                price_display,
+                Style::default().fg(t.text_secondary),
+            ));
         }
         form_spans.push(Span::styled(" ", Style::default()));
 
@@ -192,10 +220,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let date_active = form.active_field == TxFormField::Date;
         form_spans.push(Span::styled("Date:", Style::default().fg(t.text_muted)));
         if date_active {
-            form_spans.push(Span::styled(&form.date_input, Style::default().fg(t.text_primary)));
+            form_spans.push(Span::styled(
+                &form.date_input,
+                Style::default().fg(t.text_primary),
+            ));
             form_spans.push(Span::styled("█", Style::default().fg(t.text_accent)));
         } else {
-            form_spans.push(Span::styled(&form.date_input, Style::default().fg(t.text_secondary)));
+            form_spans.push(Span::styled(
+                &form.date_input,
+                Style::default().fg(t.text_secondary),
+            ));
         }
 
         // Hints
@@ -208,7 +242,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
         // Error display
         if let Some(ref err) = form.error {
-            form_spans.push(Span::styled(format!("  ⚠ {err}"), Style::default().fg(t.loss_red)));
+            form_spans.push(Span::styled(
+                format!("  ⚠ {err}"),
+                Style::default().fg(t.loss_red),
+            ));
         }
 
         let form_line = Line::from(form_spans);
@@ -244,21 +281,33 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
         spans.push(sep.clone());
         spans.push(Span::styled("[/]", Style::default().fg(t.key_hint)));
-        spans.push(Span::styled("Search", Style::default().fg(t.text_secondary)));
+        spans.push(Span::styled(
+            "Search",
+            Style::default().fg(t.text_secondary),
+        ));
         spans.push(sep.clone());
         spans.push(Span::styled("[:]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Cmd", Style::default().fg(t.text_secondary)));
-        spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
+        spans.push(Span::styled(
+            filter_text,
+            Style::default().fg(t.text_secondary),
+        ));
     } else {
         spans.push(Span::styled("[?]", Style::default().fg(t.key_hint)));
         spans.push(Span::styled("Help", Style::default().fg(t.text_secondary)));
         for (key, label) in context_hints(app) {
             spans.push(sep.clone());
-            spans.push(Span::styled(format!("[{key}]"), Style::default().fg(t.key_hint)));
+            spans.push(Span::styled(
+                format!("[{key}]"),
+                Style::default().fg(t.key_hint),
+            ));
             spans.push(Span::styled(label, Style::default().fg(t.text_secondary)));
         }
         if !filter_text.is_empty() && matches!(app.view_mode, ViewMode::Positions) {
-            spans.push(Span::styled(filter_text, Style::default().fg(t.text_secondary)));
+            spans.push(Span::styled(
+                filter_text,
+                Style::default().fg(t.text_secondary),
+            ));
         }
     }
 
@@ -287,18 +336,28 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         if age < 300 {
             spans.push(Span::styled(" ⚠ ", Style::default().fg(t.stale_yellow)));
             // Truncate long error messages for the status bar
-            let display_err = if err.len() > 50 { &err[..50] } else { err.as_str() };
-            spans.push(Span::styled(display_err, Style::default().fg(t.stale_yellow)));
+            let display_err = if err.len() > 50 {
+                &err[..50]
+            } else {
+                err.as_str()
+            };
+            spans.push(Span::styled(
+                display_err,
+                Style::default().fg(t.stale_yellow),
+            ));
         }
     }
-
 
     // Keystroke echo — flash last key for ~0.3s (18 ticks at 60fps)
     if !app.last_key_display.is_empty() {
         let key_age = app.tick_count.saturating_sub(app.last_key_tick);
         if key_age < 18 {
             // Fade from text_secondary to text_muted over the display period
-            let fade_color = if key_age < 9 { t.text_secondary } else { t.text_muted };
+            let fade_color = if key_age < 9 {
+                t.text_secondary
+            } else {
+                t.text_muted
+            };
             spans.push(Span::styled(
                 format!(" [{}]", app.last_key_display),
                 Style::default().fg(fade_color),
@@ -311,7 +370,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled("⚠", Style::default().fg(t.loss_red)));
         spans.push(Span::raw(" "));
         spans.push(Span::styled(
-            format!("{} alert{}", app.triggered_alert_count, if app.triggered_alert_count == 1 { "" } else { "s" }),
+            format!(
+                "{} alert{}",
+                app.triggered_alert_count,
+                if app.triggered_alert_count == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ),
             Style::default().fg(t.loss_red).bold(),
         ));
         spans.push(Span::raw(" "));
@@ -326,7 +393,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let refresh_color = theme::pulse_color(t.text_accent, t.text_muted, app.tick_count, 30);
         spans.push(Span::styled("↻", Style::default().fg(refresh_color)));
         spans.push(Span::raw(" "));
-        spans.push(Span::styled("Refreshing...", Style::default().fg(t.text_secondary)));
+        spans.push(Span::styled(
+            "Refreshing...",
+            Style::default().fg(t.text_secondary),
+        ));
     }
 
     spans.push(Span::raw("  "));
@@ -379,7 +449,10 @@ mod tests {
         let toast_tick: u64 = 100;
         let current_tick: u64 = 120;
         let age = current_tick.saturating_sub(toast_tick);
-        assert!(age < theme::THEME_TOAST_DURATION, "toast should be visible shortly after cycle");
+        assert!(
+            age < theme::THEME_TOAST_DURATION,
+            "toast should be visible shortly after cycle"
+        );
 
         // Toast should be invisible after THEME_TOAST_DURATION ticks
         let current_tick_expired: u64 = toast_tick + theme::THEME_TOAST_DURATION;
@@ -398,19 +471,31 @@ mod tests {
         let age = current_tick.saturating_sub(toast_tick);
         // Guard: toast_tick must be > 0 for display
         let should_show = toast_tick > 0 && age < theme::THEME_TOAST_DURATION;
-        assert!(!should_show, "toast should not show on initial state (tick=0)");
+        assert!(
+            !should_show,
+            "toast should not show on initial state (tick=0)"
+        );
     }
 
     #[test]
     fn test_theme_toast_fade_phases() {
         // First half: full accent color
         let fade_progress_early = 0.2_f32;
-        assert!(fade_progress_early < 0.5, "early progress should be in first (bright) phase");
+        assert!(
+            fade_progress_early < 0.5,
+            "early progress should be in first (bright) phase"
+        );
 
         // Second half: fading to muted
         let fade_progress_late = 0.8_f32;
-        assert!(fade_progress_late >= 0.5, "late progress should be in second (fading) phase");
+        assert!(
+            fade_progress_late >= 0.5,
+            "late progress should be in second (fading) phase"
+        );
         let fade = (fade_progress_late - 0.5) * 2.0;
-        assert!((0.0..=1.0).contains(&fade), "fade factor should be in 0.0..=1.0 range");
+        assert!(
+            (0.0..=1.0).contains(&fade),
+            "fade factor should be in 0.0..=1.0 range"
+        );
     }
 }

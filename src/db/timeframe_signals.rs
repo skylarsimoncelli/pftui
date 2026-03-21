@@ -57,8 +57,26 @@ pub fn add_signal_backend(
 ) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| add_signal(conn, signal_type, layers_json, assets_json, description, severity),
-        |pool| add_signal_postgres(pool, signal_type, layers_json, assets_json, description, severity),
+        |conn| {
+            add_signal(
+                conn,
+                signal_type,
+                layers_json,
+                assets_json,
+                description,
+                severity,
+            )
+        },
+        |pool| {
+            add_signal_postgres(
+                pool,
+                signal_type,
+                layers_json,
+                assets_json,
+                description,
+                severity,
+            )
+        },
     )
 }
 

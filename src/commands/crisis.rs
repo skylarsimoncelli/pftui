@@ -8,16 +8,14 @@ use crate::db::price_history::get_history_backend;
 use crate::price::yahoo;
 
 const REQUIRED: &[&str] = &[
-    "CL=F",   // WTI
-    "BZ=F",   // Brent
-    "^VIX",   // Volatility
-    "GC=F",   // Gold
+    "CL=F",     // WTI
+    "BZ=F",     // Brent
+    "^VIX",     // Volatility
+    "GC=F",     // Gold
     "DX-Y.NYB", // DXY
-    "JPY=X",  // USDJPY
-    "ITA",    // Defense ETF
-    "LMT",
-    "RTX",
-    "PLTR",
+    "JPY=X",    // USDJPY
+    "ITA",      // Defense ETF
+    "LMT", "RTX", "PLTR",
 ];
 
 pub fn run(backend: &BackendConnection, json: bool, cached_only: bool) -> Result<()> {
@@ -119,8 +117,16 @@ fn day_change_pct(backend: &BackendConnection, symbol: &str) -> Option<f64> {
     if history.len() < 2 {
         return None;
     }
-    let y = history[history.len() - 2].close.to_string().parse::<f64>().ok()?;
-    let p = history[history.len() - 1].close.to_string().parse::<f64>().ok()?;
+    let y = history[history.len() - 2]
+        .close
+        .to_string()
+        .parse::<f64>()
+        .ok()?;
+    let p = history[history.len() - 1]
+        .close
+        .to_string()
+        .parse::<f64>()
+        .ok()?;
     if y == 0.0 {
         return None;
     }

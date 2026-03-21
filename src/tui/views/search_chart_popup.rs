@@ -18,7 +18,9 @@ pub struct SearchChartPopupState {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
-    let Some(state) = &app.search_chart_popup else { return };
+    let Some(state) = &app.search_chart_popup else {
+        return;
+    };
     let t = &app.theme;
     let symbol = &state.symbol;
 
@@ -62,7 +64,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(5), Constraint::Min(6)])
         .split(inner);
 
-    let history = app.price_history.get(symbol).map(|h| h.as_slice()).unwrap_or(&[]);
+    let history = app
+        .price_history
+        .get(symbol)
+        .map(|h| h.as_slice())
+        .unwrap_or(&[]);
     let current_price = app.prices.get(symbol).copied();
 
     let summary = build_summary_lines(symbol, current_price, history, app);
@@ -78,20 +84,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             .filter(|msg| msg.contains(symbol) && msg.starts_with("History "))
             .cloned();
         let loading_line = if let Some(err) = history_error {
-            Line::from(Span::styled(
-                err,
-                Style::default().fg(t.loss_red),
-            ))
+            Line::from(Span::styled(err, Style::default().fg(t.loss_red)))
         } else {
             Line::from(Span::styled(
                 format!("Loading chart data for {}...", symbol),
                 Style::default().fg(t.text_muted),
             ))
         };
-        frame.render_widget(
-            Paragraph::new(loading_line),
-            layout[1],
-        );
+        frame.render_widget(Paragraph::new(loading_line), layout[1]);
         return;
     }
 
@@ -128,8 +128,12 @@ fn build_summary_lines<'a>(
     ]));
 
     if history.len() >= 2 {
-        let latest = current_price.unwrap_or_else(|| history.last().map(|h| h.close).unwrap_or(dec!(0)));
-        let prev = history.get(history.len() - 2).map(|h| h.close).unwrap_or(dec!(0));
+        let latest =
+            current_price.unwrap_or_else(|| history.last().map(|h| h.close).unwrap_or(dec!(0)));
+        let prev = history
+            .get(history.len() - 2)
+            .map(|h| h.close)
+            .unwrap_or(dec!(0));
         if prev > dec!(0) {
             let pct = ((latest - prev) / prev) * dec!(100);
             let color = if pct > dec!(0) {

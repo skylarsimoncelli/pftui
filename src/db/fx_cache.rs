@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
-use rust_decimal::Decimal;
 use rusqlite::Connection;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::str::FromStr;
 
@@ -82,7 +82,7 @@ pub fn get_all_fx_rates(conn: &Connection) -> Result<std::collections::HashMap<S
 
     for row in rows {
         let (currency, rate_str, fetched_at_str) = row?;
-        
+
         // Check freshness
         if let Ok(fetched_at) = chrono::DateTime::parse_from_rfc3339(&fetched_at_str) {
             let age = now.signed_duration_since(fetched_at.with_timezone(&Utc));
@@ -184,14 +184,14 @@ mod tests {
     #[test]
     fn test_upsert_and_get_fx_rate() {
         let conn = setup_test_db();
-        
+
         // Insert GBP rate
         upsert_fx_rate(&conn, "GBP", dec!(1.27)).unwrap();
-        
+
         // Retrieve it
         let rate = get_fx_rate(&conn, "GBP").unwrap();
         assert_eq!(rate, Some(dec!(1.27)));
-        
+
         // Update it
         upsert_fx_rate(&conn, "GBP", dec!(1.28)).unwrap();
         let rate = get_fx_rate(&conn, "GBP").unwrap();
@@ -208,11 +208,11 @@ mod tests {
     #[test]
     fn test_get_all_fx_rates() {
         let conn = setup_test_db();
-        
+
         upsert_fx_rate(&conn, "GBP", dec!(1.27)).unwrap();
         upsert_fx_rate(&conn, "EUR", dec!(1.08)).unwrap();
         upsert_fx_rate(&conn, "CAD", dec!(0.72)).unwrap();
-        
+
         let rates = get_all_fx_rates(&conn).unwrap();
         assert_eq!(rates.len(), 3);
         assert_eq!(rates.get("GBP"), Some(&dec!(1.27)));

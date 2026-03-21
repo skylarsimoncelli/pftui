@@ -151,10 +151,7 @@ fn backfill_symbols(
 
                 if ohlcv_records.is_empty() {
                     if human_output {
-                        println!(
-                            "skipped (fetched {} rows but none had OHLCV)",
-                            count
-                        );
+                        println!("skipped (fetched {} rows but none had OHLCV)", count);
                     }
                     results.push(SymbolBackfillResult {
                         symbol: sym_status.symbol.clone(),
@@ -170,8 +167,7 @@ fn backfill_symbols(
                     continue;
                 }
 
-                match upsert_history_backend(backend, &sym_status.symbol, "yahoo", &ohlcv_records)
-                {
+                match upsert_history_backend(backend, &sym_status.symbol, "yahoo", &ohlcv_records) {
                     Ok(()) => {
                         if human_output {
                             println!("✅ {} rows with OHLCV", ohlcv_count);

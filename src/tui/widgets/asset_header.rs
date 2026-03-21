@@ -23,7 +23,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let cat_color = t.category_color(pos.category);
 
     let header_border_color = if app.prices_live {
-        theme::pulse_color(t.border_active, t.border_inactive, app.tick_count, theme::PULSE_PERIOD_BORDER)
+        theme::pulse_color(
+            t.border_active,
+            t.border_inactive,
+            app.tick_count,
+            theme::PULSE_PERIOD_BORDER,
+        )
     } else {
         t.border_active
     };
@@ -65,12 +70,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .map(format_price)
         .unwrap_or_else(|| "---".to_string());
 
-    let mut price_spans = vec![
-        Span::styled(
-            format!("{} {}", price_str, pos.currency),
-            Style::default().fg(t.text_primary).bold(),
-        ),
-    ];
+    let mut price_spans = vec![Span::styled(
+        format!("{} {}", price_str, pos.currency),
+        Style::default().fg(t.text_primary).bold(),
+    )];
 
     if !privacy {
         if let Some(gain_pct) = pos.gain_pct {

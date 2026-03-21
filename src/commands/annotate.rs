@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
-use crate::db::backend::BackendConnection;
 use crate::db::annotations::{self, Annotation};
+use crate::db::backend::BackendConnection;
 
 pub struct AnnotateArgs<'a> {
     pub symbol: Option<&'a str>,
@@ -24,7 +24,9 @@ pub fn run(backend: &BackendConnection, args: AnnotateArgs<'_>) -> Result<()> {
         .symbol
         .map(|s| s.trim().to_uppercase())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("Missing symbol. Usage: pftui annotate SYMBOL --thesis \"...\""))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("Missing symbol. Usage: pftui annotate SYMBOL --thesis \"...\"")
+        })?;
 
     if args.remove {
         let removed = annotations::remove_annotation_backend(backend, &symbol)?;
@@ -106,7 +108,14 @@ fn run_show(backend: &BackendConnection, symbol: &str, json: bool) -> Result<()>
     }
 
     println!("Annotation: {}", ann.symbol);
-    println!("  Thesis: {}", if ann.thesis.is_empty() { "(empty)" } else { &ann.thesis });
+    println!(
+        "  Thesis: {}",
+        if ann.thesis.is_empty() {
+            "(empty)"
+        } else {
+            &ann.thesis
+        }
+    );
     println!(
         "  Invalidation: {}",
         ann.invalidation.as_deref().unwrap_or("—")
@@ -115,10 +124,7 @@ fn run_show(backend: &BackendConnection, symbol: &str, json: bool) -> Result<()>
         "  Review date: {}",
         ann.review_date.as_deref().unwrap_or("—")
     );
-    println!(
-        "  Target: {}",
-        ann.target_price.as_deref().unwrap_or("—")
-    );
+    println!("  Target: {}", ann.target_price.as_deref().unwrap_or("—"));
     println!("  Updated: {}", ann.updated_at);
     Ok(())
 }
@@ -161,7 +167,10 @@ fn run_list(backend: &BackendConnection, json: bool) -> Result<()> {
         } else {
             a.thesis
         };
-        println!("{:<10}  {:<12}  {:<10}  {}", a.symbol, review, target, thesis);
+        println!(
+            "{:<10}  {:<12}  {:<10}  {}",
+            a.symbol, review, target, thesis
+        );
     }
     Ok(())
 }

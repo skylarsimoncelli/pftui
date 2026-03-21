@@ -84,11 +84,7 @@ pub fn get_cached_worldbank_data(
     countries: &[&str],
     indicator: &str,
 ) -> Result<Vec<WorldBankDataPoint>> {
-    let placeholders = countries
-        .iter()
-        .map(|_| "?")
-        .collect::<Vec<_>>()
-        .join(",");
+    let placeholders = countries.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
     let query = format!(
         "SELECT country_code, country_name, indicator_code, indicator_name, year, value
@@ -213,8 +209,14 @@ pub fn get_latest_indicators(conn: &Connection) -> Result<Vec<WorldBankDataPoint
     Ok(result)
 }
 
-pub fn get_latest_indicators_backend(backend: &BackendConnection) -> Result<Vec<WorldBankDataPoint>> {
-    query::dispatch(backend, get_latest_indicators, get_latest_indicators_postgres)
+pub fn get_latest_indicators_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<WorldBankDataPoint>> {
+    query::dispatch(
+        backend,
+        get_latest_indicators,
+        get_latest_indicators_postgres,
+    )
 }
 
 fn get_latest_indicators_postgres(pool: &PgPool) -> Result<Vec<WorldBankDataPoint>> {

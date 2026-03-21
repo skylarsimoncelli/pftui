@@ -97,8 +97,7 @@ pub fn run(days: u16, fund_filter: Option<String>, json: bool) -> Result<()> {
             } else {
                 println!(
                     "No data for fund '{}' in the last {} days.",
-                    fund_name,
-                    days
+                    fund_name, days
                 );
             }
             return Ok(());
@@ -145,11 +144,7 @@ pub fn run(days: u16, fund_filter: Option<String>, json: bool) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         // Human-readable output
-        println!(
-            "BTC ETF Flows — {} to {}",
-            cutoff_str,
-            today_str
-        );
+        println!("BTC ETF Flows — {} to {}", cutoff_str, today_str);
         println!();
 
         // Group by date for daily totals
@@ -173,12 +168,7 @@ pub fn run(days: u16, fund_filter: Option<String>, json: bool) -> Result<()> {
 
             for date in &dates {
                 let (btc, usd) = daily_totals[date];
-                println!(
-                    "{:<12} {:>15.2} {:>18.2}",
-                    date,
-                    btc,
-                    usd
-                );
+                println!("{:<12} {:>15.2} {:>18.2}", date, btc, usd);
             }
             println!();
         }
@@ -192,16 +182,16 @@ pub fn run(days: u16, fund_filter: Option<String>, json: bool) -> Result<()> {
         } else {
             println!("Fund Detail:");
         }
-        println!("{:<12} {:<10} {:>15} {:>18}", "Date", "Fund", "BTC Flow", "USD Flow");
+        println!(
+            "{:<12} {:<10} {:>15} {:>18}",
+            "Date", "Fund", "BTC Flow", "USD Flow"
+        );
         println!("{}", "-".repeat(58));
 
         for flow in fund_data {
             println!(
                 "{:<12} {:<10} {:>15.2} {:>18.2}",
-                flow.date,
-                flow.fund,
-                flow.net_flow_btc,
-                flow.net_flow_usd
+                flow.date, flow.fund, flow.net_flow_btc, flow.net_flow_usd
             );
         }
     }

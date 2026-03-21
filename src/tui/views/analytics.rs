@@ -27,7 +27,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .border_style(Style::default().fg(app.theme.border_subtle))
         .style(Style::default().bg(app.theme.surface_0));
     frame.render_widget(main, area);
-    let inner = area.inner(Margin { horizontal: 1, vertical: 1 });
+    let inner = area.inner(Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
     if inner.height < 8 {
         return;
     }
@@ -104,12 +107,7 @@ fn render_risk_panel(frame: &mut Frame, area: Rect, app: &App, metrics: &risk::R
     frame.render_widget(p, area);
 }
 
-fn render_concentration_panel(
-    frame: &mut Frame,
-    area: Rect,
-    app: &App,
-    hhi: Option<Decimal>,
-) {
+fn render_concentration_panel(frame: &mut Frame, area: Rect, app: &App, hhi: Option<Decimal>) {
     let mut weighted: Vec<(String, Decimal)> = app
         .positions
         .iter()
@@ -160,7 +158,11 @@ fn render_scenarios_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     app.page_table_area = Some(area);
     let mut lines: Vec<Line<'static>> = Vec::new();
     for (idx, (_, label)) in SCENARIOS.iter().enumerate() {
-        let marker = if idx == app.analytics_selected_index { ">" } else { " " };
+        let marker = if idx == app.analytics_selected_index {
+            ">"
+        } else {
+            " "
+        };
         lines.push(Line::from(format!("{marker} {}", label)));
     }
     lines.push(Line::from(""));
@@ -222,7 +224,9 @@ fn render_projection_panel(frame: &mut Frame, area: Rect, app: &App) {
         None => {
             lines.push(Line::from("Projected Value: N/A"));
             if app.portfolio_mode == PortfolioMode::Percentage {
-                lines.push(Line::from("Percentage mode uses target weights; no quantity-based projection."));
+                lines.push(Line::from(
+                    "Percentage mode uses target weights; no quantity-based projection.",
+                ));
             }
         }
     }
@@ -305,11 +309,7 @@ fn render_impact_panel(frame: &mut Frame, area: Rect, app: &App) {
             Some((pos.symbol.clone(), delta_pct))
         })
         .collect();
-    impacts.sort_by(|a, b| {
-        b.1.abs()
-            .cmp(&a.1.abs())
-            .then_with(|| a.0.cmp(&b.0))
-    });
+    impacts.sort_by(|a, b| b.1.abs().cmp(&a.1.abs()).then_with(|| a.0.cmp(&b.0)));
 
     let mut lines = vec![
         Line::from(format!("Scenario impact ranking for {}", label)),
@@ -370,10 +370,7 @@ fn projected_value(app: &App, overrides: &HashMap<String, Decimal>) -> Option<De
         let px = if pos.category == AssetCategory::Cash {
             dec!(1)
         } else {
-            overrides
-                .get(&pos.symbol)
-                .copied()
-                .or(pos.current_price)?
+            overrides.get(&pos.symbol).copied().or(pos.current_price)?
         };
         total += px * pos.quantity;
     }

@@ -146,7 +146,9 @@ impl AuthState {
     }
 
     fn lock_sessions(&self) -> Result<RwLockWriteGuard<'_, HashMap<String, Session>>, AuthFailure> {
-        self.sessions.try_write().map_err(|_| AuthFailure::InvalidSession)
+        self.sessions
+            .try_write()
+            .map_err(|_| AuthFailure::InvalidSession)
     }
 
     fn prune_expired_sessions(&self, sessions: &mut HashMap<String, Session>) {
@@ -255,9 +257,7 @@ pub async fn login(
     }
 
     let session = state.create_session();
-    let mut sessions = state
-        .lock_sessions()
-        .map_err(auth_failure_response)?;
+    let mut sessions = state.lock_sessions().map_err(auth_failure_response)?;
     state.prune_expired_sessions(&mut sessions);
     sessions.insert(session.session_id.clone(), session.clone());
     drop(sessions);
@@ -288,7 +288,11 @@ pub async fn logout(
     req: Request,
 ) -> (HeaderMap, Json<LogoutResponse>) {
     if state.enabled {
-        if let Some(cookie_header) = req.headers().get(header::COOKIE).and_then(|v| v.to_str().ok()) {
+        if let Some(cookie_header) = req
+            .headers()
+            .get(header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+        {
             if let Some(session_id) = extract_cookie(cookie_header, SESSION_COOKIE_NAME) {
                 let mut sessions = match state.lock_sessions() {
                     Ok(guard) => guard,
@@ -364,9 +368,7 @@ pub async fn get_csrf(
     }))
 }
 
-pub fn auth_failure_response(
-    failure: AuthFailure,
-) -> (StatusCode, Json<AuthErrorResponse>) {
+pub fn auth_failure_response(failure: AuthFailure) -> (StatusCode, Json<AuthErrorResponse>) {
     let (status, code, message, relogin_required) = match failure {
         AuthFailure::MissingSession => (
             StatusCode::UNAUTHORIZED,
@@ -417,7 +419,10 @@ fn new_token(prefix: &str) -> String {
 }
 
 fn is_mutating(method: &Method) -> bool {
-    matches!(*method, Method::POST | Method::PUT | Method::PATCH | Method::DELETE)
+    matches!(
+        *method,
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+    )
 }
 
 fn extract_cookie(cookie_header: &str, name: &str) -> Option<String> {
@@ -444,8 +449,7 @@ mod tests {
         http::Request as HttpRequest,
         middleware,
         routing::{get, post},
-        Json as AxumJson,
-        Router,
+        Json as AxumJson, Router,
     };
     use serde_json::{json, Value};
     use tower::ServiceExt;
@@ -557,11 +561,7 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(set_cookie.contains("pftui_session="));
-        let session_cookie = set_cookie
-            .split(';')
-            .next()
-            .unwrap()
-            .to_string();
+        let session_cookie = set_cookie.split(';').next().unwrap().to_string();
 
         let session = app
             .clone()

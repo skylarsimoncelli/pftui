@@ -780,7 +780,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -796,7 +796,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -1073,8 +1073,12 @@ mod tests {
             ..default_args()
         };
         run_ack(&backend, &args).unwrap();
-        let a1 = alerts_db::get_alert_backend(&backend, id1).unwrap().unwrap();
-        let a2 = alerts_db::get_alert_backend(&backend, id2).unwrap().unwrap();
+        let a1 = alerts_db::get_alert_backend(&backend, id1)
+            .unwrap()
+            .unwrap();
+        let a2 = alerts_db::get_alert_backend(&backend, id2)
+            .unwrap()
+            .unwrap();
         assert_eq!(a1.status, AlertStatus::Acknowledged);
         assert_eq!(a2.status, AlertStatus::Acknowledged);
     }
@@ -1118,9 +1122,13 @@ mod tests {
         };
         // Should succeed (partial) — id1 acked, id2 error
         run_ack(&backend, &args).unwrap();
-        let a1 = alerts_db::get_alert_backend(&backend, id1).unwrap().unwrap();
+        let a1 = alerts_db::get_alert_backend(&backend, id1)
+            .unwrap()
+            .unwrap();
         assert_eq!(a1.status, AlertStatus::Acknowledged);
-        let a2 = alerts_db::get_alert_backend(&backend, id2).unwrap().unwrap();
+        let a2 = alerts_db::get_alert_backend(&backend, id2)
+            .unwrap()
+            .unwrap();
         assert_eq!(a2.status, AlertStatus::Armed); // still armed
     }
 

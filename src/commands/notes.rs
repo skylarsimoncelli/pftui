@@ -62,7 +62,10 @@ pub fn run(
             } else {
                 println!("Daily notes ({}):", rows.len());
                 for row in rows {
-                    println!("  #{} [{}:{}] {}", row.id, row.date, row.section, row.content);
+                    println!(
+                        "  #{} [{}:{}] {}",
+                        row.id, row.date, row.section, row.content
+                    );
                 }
             }
         }
@@ -81,7 +84,10 @@ pub fn run(
             } else {
                 println!("Search results for '{}' ({}):", query, rows.len());
                 for row in rows {
-                    println!("  #{} [{}:{}] {}", row.id, row.date, row.section, row.content);
+                    println!(
+                        "  #{} [{}:{}] {}",
+                        row.id, row.date, row.section, row.content
+                    );
                 }
             }
         }
@@ -90,13 +96,19 @@ pub fn run(
             let note_id = id.ok_or_else(|| anyhow::anyhow!("--id required for remove"))?;
             daily_notes::remove_note_backend(backend, note_id)?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&json!({ "removed": note_id }))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({ "removed": note_id }))?
+                );
             } else {
                 println!("Removed note #{}", note_id);
             }
         }
 
-        _ => bail!("unknown notes action '{}'. Valid: add, list, search, remove", action),
+        _ => bail!(
+            "unknown notes action '{}'. Valid: add, list, search, remove",
+            action
+        ),
     }
 
     Ok(())
@@ -108,15 +120,31 @@ mod tests {
 
     #[test]
     fn test_validate_section_accepts_all_valid() {
-        for section in &["market", "decisions", "system", "analysis", "events", "general", "alert"] {
-            assert!(validate_section(section).is_ok(), "section '{}' should be valid", section);
+        for section in &[
+            "market",
+            "decisions",
+            "system",
+            "analysis",
+            "events",
+            "general",
+            "alert",
+        ] {
+            assert!(
+                validate_section(section).is_ok(),
+                "section '{}' should be valid",
+                section
+            );
         }
     }
 
     #[test]
     fn test_validate_section_rejects_invalid() {
         for section in &["alerts", "foo", "trading", ""] {
-            assert!(validate_section(section).is_err(), "section '{}' should be invalid", section);
+            assert!(
+                validate_section(section).is_err(),
+                "section '{}' should be invalid",
+                section
+            );
         }
     }
 }

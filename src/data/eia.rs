@@ -96,8 +96,13 @@ pub fn fetch_series(api_key: &str, series_id: &str, limit: usize) -> Result<Vec<
         .text()
         .map_err(|e| anyhow!("EIA API response read failed: {}", e))?;
 
-    let envelope: EiaApiResponse = serde_json::from_str(&resp_text)
-        .map_err(|e| anyhow!("Failed to parse EIA response: {} (body: {})", e, &resp_text[..resp_text.len().min(200)]))?;
+    let envelope: EiaApiResponse = serde_json::from_str(&resp_text).map_err(|e| {
+        anyhow!(
+            "Failed to parse EIA response: {} (body: {})",
+            e,
+            &resp_text[..resp_text.len().min(200)]
+        )
+    })?;
 
     let body = envelope
         .response

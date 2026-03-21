@@ -776,9 +776,8 @@ fn run_pipeline(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from);
-    let fred_due = plan.fred
-        && fred_api_key_str.is_some()
-        && fred_needs_refresh(backend).unwrap_or(true);
+    let fred_due =
+        plan.fred && fred_api_key_str.is_some() && fred_needs_refresh(backend).unwrap_or(true);
     let worldbank_due = plan.worldbank && worldbank_needs_refresh(backend).unwrap_or(true);
     let comex_due = plan.comex && comex_needs_refresh(backend).unwrap_or(true);
 
@@ -806,7 +805,10 @@ fn run_pipeline(
                 return None;
             }
             let start = Instant::now();
-            Some((predictions::fetch_polymarket_predictions().await, start.elapsed()))
+            Some((
+                predictions::fetch_polymarket_predictions().await,
+                start.elapsed(),
+            ))
         };
 
         let sentiment_fut = async {
@@ -999,35 +1001,102 @@ fn run_pipeline(
     // ── Layer 0: Store async-fetched results ───────────────────────────
 
     // Predictions
-    store_predictions_result(backend, verbose, predictions_due, plan.predictions, predictions_data, &mut dag_result);
+    store_predictions_result(
+        backend,
+        verbose,
+        predictions_due,
+        plan.predictions,
+        predictions_data,
+        &mut dag_result,
+    );
 
     // FedWatch (synchronous fetch — not parallelized due to scraping nature)
-    store_fedwatch_result(backend, config, verbose, fedwatch_due, plan.fedwatch, fedwatch_previous.as_ref(), &mut dag_result);
+    store_fedwatch_result(
+        backend,
+        config,
+        verbose,
+        fedwatch_due,
+        plan.fedwatch,
+        fedwatch_previous.as_ref(),
+        &mut dag_result,
+    );
     maybe_report_fedwatch_conflict(backend, verbose);
 
     // Sentiment
-    store_sentiment_result(backend, verbose, sentiment_due, plan.sentiment, sentiment_data, &mut dag_result);
+    store_sentiment_result(
+        backend,
+        verbose,
+        sentiment_due,
+        plan.sentiment,
+        sentiment_data,
+        &mut dag_result,
+    );
 
     // News (RSS + Brave)
-    store_news_result(backend, verbose, rss_refresh, brave_refresh, plan.news_rss || plan.news_brave, rss_data, brave_news_data, &mut dag_result);
+    store_news_result(
+        backend,
+        verbose,
+        rss_refresh,
+        brave_refresh,
+        plan.news_rss || plan.news_brave,
+        rss_data,
+        brave_news_data,
+        &mut dag_result,
+    );
 
     // COT (synchronous — uses reqwest::blocking internally)
     store_cot_result(backend, verbose, cot_due, plan.cot, &mut dag_result);
 
     // Calendar
-    store_calendar_result(backend, verbose, calendar_due, plan.calendar, calendar_data, &rt, &mut dag_result);
+    store_calendar_result(
+        backend,
+        verbose,
+        calendar_due,
+        plan.calendar,
+        calendar_data,
+        &rt,
+        &mut dag_result,
+    );
 
     // Economy
-    store_economy_result(backend, verbose, plan.economy, economy_data, &mut dag_result);
+    store_economy_result(
+        backend,
+        verbose,
+        plan.economy,
+        economy_data,
+        &mut dag_result,
+    );
 
     // FRED
-    store_fred_result(backend, verbose, fred_due, plan.fred, fred_api_key_str.is_some(), fred_data, &mut dag_result);
+    store_fred_result(
+        backend,
+        verbose,
+        fred_due,
+        plan.fred,
+        fred_api_key_str.is_some(),
+        fred_data,
+        &mut dag_result,
+    );
 
     // BLS
-    store_bls_result(backend, verbose, bls_due, plan.bls, bls_data, &mut dag_result);
+    store_bls_result(
+        backend,
+        verbose,
+        bls_due,
+        plan.bls,
+        bls_data,
+        &mut dag_result,
+    );
 
     // World Bank
-    store_worldbank_result(backend, verbose, worldbank_due, plan.worldbank, worldbank_data, &mut dag_result);
+    store_worldbank_result(
+        backend,
+        verbose,
+        worldbank_due,
+        plan.worldbank,
+        worldbank_data,
+        &mut dag_result,
+    );
 
     // COMEX (synchronous)
     store_comex_result(backend, verbose, comex_due, plan.comex, &mut dag_result);
@@ -1151,12 +1220,20 @@ fn run_pipeline(
         dag_result.add(SourceResult {
             name: "prices".to_string(),
             label: "Prices".to_string(),
-            status: if fetched_count > 0 { SourceStatus::Ok } else { SourceStatus::Failed },
+            status: if fetched_count > 0 {
+                SourceStatus::Ok
+            } else {
+                SourceStatus::Failed
+            },
             items_updated: Some(fetched_count),
             duration_ms: price_start.elapsed().as_millis() as u64,
             reason: None,
             age_minutes: None,
-            error: if errors.is_empty() { None } else { Some(format!("{} fetch errors", errors.len())) },
+            error: if errors.is_empty() {
+                None
+            } else {
+                Some(format!("{} fetch errors", errors.len()))
+            },
             detail: None,
         });
 
@@ -1478,7 +1555,10 @@ fn store_predictions_result(
     verbose: bool,
     due: bool,
     in_plan: bool,
-    data: Option<(Result<Vec<crate::data::predictions::PredictionMarket>>, Duration)>,
+    data: Option<(
+        Result<Vec<crate::data::predictions::PredictionMarket>>,
+        Duration,
+    )>,
     dag_result: &mut RefreshResult,
 ) {
     if due {
@@ -1495,18 +1575,27 @@ fn store_predictions_result(
                                 status: SourceStatus::Ok,
                                 items_updated: Some(count),
                                 duration_ms: elapsed.as_millis() as u64,
-                                reason: None, age_minutes: None, error: None, detail: None,
+                                reason: None,
+                                age_minutes: None,
+                                error: None,
+                                detail: None,
                             });
                         }
                         Err(e) => {
-                            info_ln!(verbose, "⚠ Predictions fetched ({} markets) but cache write failed: {}", count, e);
+                            info_ln!(
+                                verbose,
+                                "⚠ Predictions fetched ({} markets) but cache write failed: {}",
+                                count,
+                                e
+                            );
                             dag_result.add(SourceResult {
                                 name: "predictions".to_string(),
                                 label: "Predictions (Polymarket)".to_string(),
                                 status: SourceStatus::Failed,
                                 items_updated: None,
                                 duration_ms: elapsed.as_millis() as u64,
-                                reason: None, age_minutes: None,
+                                reason: None,
+                                age_minutes: None,
                                 error: Some(format!("cache write failed: {}", e)),
                                 detail: None,
                             });
@@ -1521,7 +1610,8 @@ fn store_predictions_result(
                         status: SourceStatus::Failed,
                         items_updated: None,
                         duration_ms: elapsed.as_millis() as u64,
-                        reason: None, age_minutes: None,
+                        reason: None,
+                        age_minutes: None,
                         error: Some(e.to_string()),
                         detail: None,
                     });
@@ -1534,8 +1624,12 @@ fn store_predictions_result(
             name: "predictions".to_string(),
             label: "Predictions (Polymarket)".to_string(),
             status: SourceStatus::Skipped,
-            items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ Predictions (cadence deferred)");
@@ -1543,8 +1637,12 @@ fn store_predictions_result(
             name: "predictions".to_string(),
             label: "Predictions (Polymarket)".to_string(),
             status: SourceStatus::Deferred,
-            items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -1592,14 +1690,19 @@ fn store_fedwatch_result(
                             status: SourceStatus::Ok,
                             items_updated: Some(1),
                             duration_ms: fw_start.elapsed().as_millis() as u64,
-                            reason: None, age_minutes: None, error: None, detail: None,
+                            reason: None,
+                            age_minutes: None,
+                            error: None,
+                            detail: None,
                         });
                     }
                     Err(e) => {
                         info_ln!(
                             verbose,
                             "⚠ FedWatch fetched ({}, {:.1}% no-change) but cache write failed: {}",
-                            entry.source_label, entry.no_change_pct, e
+                            entry.source_label,
+                            entry.no_change_pct,
+                            e
                         );
                         dag_result.add(SourceResult {
                             name: "fedwatch".to_string(),
@@ -1607,7 +1710,8 @@ fn store_fedwatch_result(
                             status: SourceStatus::Failed,
                             items_updated: None,
                             duration_ms: fw_start.elapsed().as_millis() as u64,
-                            reason: None, age_minutes: None,
+                            reason: None,
+                            age_minutes: None,
                             error: Some(format!("cache write failed: {}", e)),
                             detail: None,
                         });
@@ -1622,7 +1726,8 @@ fn store_fedwatch_result(
                     status: SourceStatus::Failed,
                     items_updated: None,
                     duration_ms: fw_start.elapsed().as_millis() as u64,
-                    reason: None, age_minutes: None,
+                    reason: None,
+                    age_minutes: None,
                     error: Some(e.to_string()),
                     detail: None,
                 });
@@ -1631,16 +1736,28 @@ fn store_fedwatch_result(
     } else if in_plan {
         info_ln!(verbose, "⊘ FedWatch (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "fedwatch".to_string(), label: "FedWatch".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "fedwatch".to_string(),
+            label: "FedWatch".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ FedWatch (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "fedwatch".to_string(), label: "FedWatch".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "fedwatch".to_string(),
+            label: "FedWatch".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -1650,7 +1767,11 @@ fn store_sentiment_result(
     verbose: bool,
     due: bool,
     in_plan: bool,
-    data: Option<(Result<crate::data::sentiment::SentimentIndex>, Result<crate::data::sentiment::SentimentIndex>, Duration)>,
+    data: Option<(
+        Result<crate::data::sentiment::SentimentIndex>,
+        Result<crate::data::sentiment::SentimentIndex>,
+        Duration,
+    )>,
     dag_result: &mut RefreshResult,
 ) {
     if due {
@@ -1684,30 +1805,52 @@ fn store_sentiment_result(
             dag_result.add(SourceResult {
                 name: "sentiment".to_string(),
                 label: "Sentiment (Fear & Greed)".to_string(),
-                status: if count > 0 { SourceStatus::Ok } else { SourceStatus::Failed },
+                status: if count > 0 {
+                    SourceStatus::Ok
+                } else {
+                    SourceStatus::Failed
+                },
                 items_updated: Some(count),
                 duration_ms: elapsed.as_millis() as u64,
-                reason: None, age_minutes: None, error: None, detail: None,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: None,
             });
         }
     } else if in_plan {
         info_ln!(verbose, "⊘ Sentiment (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "sentiment".to_string(), label: "Sentiment (Fear & Greed)".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "sentiment".to_string(),
+            label: "Sentiment (Fear & Greed)".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ Sentiment (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "sentiment".to_string(), label: "Sentiment (Fear & Greed)".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "sentiment".to_string(),
+            label: "Sentiment (Fear & Greed)".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
 
-type BraveNewsData = Option<(Vec<(String, Result<Vec<crate::data::brave::BraveNewsResult>>)>, Duration)>;
+type BraveNewsData = Option<(
+    Vec<(String, Result<Vec<crate::data::brave::BraveNewsResult>>)>,
+    Duration,
+)>;
 
 #[allow(clippy::too_many_arguments)]
 fn store_news_result(
@@ -1734,10 +1877,19 @@ fn store_news_result(
                     for item in &results {
                         let source = item.source.as_deref().unwrap_or("Brave");
                         if news_cache::insert_news_with_source_type_backend(
-                            backend, &item.title, &item.url, source, "brave",
-                            None, "markets", chrono::Utc::now().timestamp(),
-                            Some(&item.description), &item.extra_snippets,
-                        ).is_ok() {
+                            backend,
+                            &item.title,
+                            &item.url,
+                            source,
+                            "brave",
+                            None,
+                            "markets",
+                            chrono::Utc::now().timestamp(),
+                            Some(&item.description),
+                            &item.extra_snippets,
+                        )
+                        .is_ok()
+                        {
                             inserted += 1;
                             brave_inserted += 1;
                         }
@@ -1763,9 +1915,19 @@ fn store_news_result(
                 rss::NewsCategory::Markets => "markets",
             };
             if news_cache::insert_news_with_source_type_backend(
-                backend, &item.title, &item.url, &item.source, "rss",
-                None, category_str, item.published_at, None, &[],
-            ).is_ok() {
+                backend,
+                &item.title,
+                &item.url,
+                &item.source,
+                "rss",
+                None,
+                category_str,
+                item.published_at,
+                None,
+                &[],
+            )
+            .is_ok()
+            {
                 inserted += 1;
             }
         }
@@ -1773,9 +1935,19 @@ fn store_news_result(
 
     if brave_refresh || rss_refresh {
         if brave_refresh && rss_refresh {
-            info_ln!(verbose, "✓ News ({} articles from {} Brave queries + RSS)", inserted, brave_query_count);
+            info_ln!(
+                verbose,
+                "✓ News ({} articles from {} Brave queries + RSS)",
+                inserted,
+                brave_query_count
+            );
         } else if brave_refresh {
-            info_ln!(verbose, "✓ News ({} articles from {} Brave queries)", brave_inserted, brave_query_count);
+            info_ln!(
+                verbose,
+                "✓ News ({} articles from {} Brave queries)",
+                brave_inserted,
+                brave_query_count
+            );
         } else {
             info_ln!(verbose, "✓ News ({} articles via RSS)", inserted);
         }
@@ -1785,21 +1957,36 @@ fn store_news_result(
             status: SourceStatus::Ok,
             items_updated: Some(inserted),
             duration_ms: news_elapsed.as_millis() as u64,
-            reason: None, age_minutes: None, error: None, detail: None,
+            reason: None,
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else if in_plan {
         info_ln!(verbose, "⊘ News (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "news".to_string(), label: "News".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "news".to_string(),
+            label: "News".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ News (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "news".to_string(), label: "News".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "news".to_string(),
+            label: "News".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -1845,37 +2032,62 @@ fn store_cot_result(
             }
         }
         if contracts_updated > 0 {
-            info_ln!(verbose, "✓ COT ({} contracts, {} reports cached)", contracts_updated, reports_upserted);
+            info_ln!(
+                verbose,
+                "✓ COT ({} contracts, {} reports cached)",
+                contracts_updated,
+                reports_upserted
+            );
             dag_result.add(SourceResult {
-                name: "cot".to_string(), label: "COT (CFTC)".to_string(),
+                name: "cot".to_string(),
+                label: "COT (CFTC)".to_string(),
                 status: SourceStatus::Ok,
                 items_updated: Some(reports_upserted),
                 duration_ms: cot_start.elapsed().as_millis() as u64,
-                reason: None, age_minutes: None, error: None, detail: None,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: None,
             });
         } else {
             info_ln!(verbose, "✗ COT (all failed)");
             dag_result.add(SourceResult {
-                name: "cot".to_string(), label: "COT (CFTC)".to_string(),
-                status: SourceStatus::Failed, items_updated: None,
+                name: "cot".to_string(),
+                label: "COT (CFTC)".to_string(),
+                status: SourceStatus::Failed,
+                items_updated: None,
                 duration_ms: cot_start.elapsed().as_millis() as u64,
-                reason: None, age_minutes: None,
-                error: Some("all contracts failed".to_string()), detail: None,
+                reason: None,
+                age_minutes: None,
+                error: Some("all contracts failed".to_string()),
+                detail: None,
             });
         }
     } else if in_plan {
         info_ln!(verbose, "⊘ COT (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "cot".to_string(), label: "COT (CFTC)".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "cot".to_string(),
+            label: "COT (CFTC)".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ COT (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "cot".to_string(), label: "COT (CFTC)".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "cot".to_string(),
+            label: "COT (CFTC)".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -1895,27 +2107,41 @@ fn store_calendar_result(
                 Ok(events) => {
                     for event in &events {
                         let _ = calendar_cache::upsert_event_backend(
-                            backend, &event.date, &event.name, &event.impact,
-                            event.previous.as_deref(), event.forecast.as_deref(),
-                            &event.event_type, event.symbol.as_deref(),
+                            backend,
+                            &event.date,
+                            &event.name,
+                            &event.impact,
+                            event.previous.as_deref(),
+                            event.forecast.as_deref(),
+                            &event.event_type,
+                            event.symbol.as_deref(),
                         );
                     }
                     info_ln!(verbose, "✓ Calendar ({} events)", events.len());
                     dag_result.add(SourceResult {
-                        name: "calendar".to_string(), label: "Calendar".to_string(),
-                        status: SourceStatus::Ok, items_updated: Some(events.len()),
+                        name: "calendar".to_string(),
+                        label: "Calendar".to_string(),
+                        status: SourceStatus::Ok,
+                        items_updated: Some(events.len()),
                         duration_ms: elapsed.as_millis() as u64,
-                        reason: None, age_minutes: None, error: None, detail: None,
+                        reason: None,
+                        age_minutes: None,
+                        error: None,
+                        detail: None,
                     });
                 }
                 Err(e) => {
                     info_ln!(verbose, "✗ Calendar (failed: {})", e);
                     dag_result.add(SourceResult {
-                        name: "calendar".to_string(), label: "Calendar".to_string(),
-                        status: SourceStatus::Failed, items_updated: None,
+                        name: "calendar".to_string(),
+                        label: "Calendar".to_string(),
+                        status: SourceStatus::Failed,
+                        items_updated: None,
                         duration_ms: elapsed.as_millis() as u64,
-                        reason: None, age_minutes: None,
-                        error: Some(e.to_string()), detail: None,
+                        reason: None,
+                        age_minutes: None,
+                        error: Some(e.to_string()),
+                        detail: None,
                     });
                 }
             }
@@ -1923,16 +2149,28 @@ fn store_calendar_result(
     } else if in_plan {
         info_ln!(verbose, "⊘ Calendar (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "calendar".to_string(), label: "Calendar".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "calendar".to_string(),
+            label: "Calendar".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ Calendar (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "calendar".to_string(), label: "Calendar".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "calendar".to_string(),
+            label: "Calendar".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -1941,7 +2179,11 @@ fn store_economy_result(
     backend: &BackendConnection,
     verbose: bool,
     in_plan: bool,
-    data: Option<(Result<Vec<crate::data::economic::EconomicReading>>, bool, Duration)>,
+    data: Option<(
+        Result<Vec<crate::data::economic::EconomicReading>>,
+        bool,
+        Duration,
+    )>,
     dag_result: &mut RefreshResult,
 ) {
     if in_plan {
@@ -1965,23 +2207,36 @@ fn store_economy_result(
                     if used_brave {
                         info_ln!(verbose, "✓ Economy ({} indicators via Brave)", items.len());
                     } else {
-                        info_ln!(verbose, "✓ Economy ({} indicators via BLS fallback)", items.len());
+                        info_ln!(
+                            verbose,
+                            "✓ Economy ({} indicators via BLS fallback)",
+                            items.len()
+                        );
                     }
                     dag_result.add(SourceResult {
-                        name: "economy".to_string(), label: "Economy".to_string(),
-                        status: SourceStatus::Ok, items_updated: Some(items.len()),
+                        name: "economy".to_string(),
+                        label: "Economy".to_string(),
+                        status: SourceStatus::Ok,
+                        items_updated: Some(items.len()),
                         duration_ms: elapsed.as_millis() as u64,
-                        reason: None, age_minutes: None, error: None, detail: None,
+                        reason: None,
+                        age_minutes: None,
+                        error: None,
+                        detail: None,
                     });
                 }
                 Err(e) => {
                     info_ln!(verbose, "✗ Economy (failed: {})", e);
                     dag_result.add(SourceResult {
-                        name: "economy".to_string(), label: "Economy".to_string(),
-                        status: SourceStatus::Failed, items_updated: None,
+                        name: "economy".to_string(),
+                        label: "Economy".to_string(),
+                        status: SourceStatus::Failed,
+                        items_updated: None,
                         duration_ms: elapsed.as_millis() as u64,
-                        reason: None, age_minutes: None,
-                        error: Some(e.to_string()), detail: None,
+                        reason: None,
+                        age_minutes: None,
+                        error: Some(e.to_string()),
+                        detail: None,
                     });
                 }
             }
@@ -1989,15 +2244,27 @@ fn store_economy_result(
     } else {
         info_ln!(verbose, "⊘ Economy (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "economy".to_string(), label: "Economy".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "economy".to_string(),
+            label: "Economy".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-type FredFetchData = Option<(Vec<(&'static str, Result<Vec<crate::data::fred::FredObservation>>)>, Duration)>;
+type FredFetchData = Option<(
+    Vec<(
+        &'static str,
+        Result<Vec<crate::data::fred::FredObservation>>,
+    )>,
+    Duration,
+)>;
 
 fn store_fred_result(
     backend: &BackendConnection,
@@ -2011,9 +2278,15 @@ fn store_fred_result(
     if !has_key {
         info_ln!(verbose, "⊘ FRED (no API key configured)");
         dag_result.add(SourceResult {
-            name: "fred".to_string(), label: "FRED".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("no API key".to_string()), age_minutes: None, error: None, detail: None,
+            name: "fred".to_string(),
+            label: "FRED".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("no API key".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
         return;
     }
@@ -2058,27 +2331,49 @@ fn store_fred_result(
                     }
                 }
             }
-            info_ln!(verbose, "✓ FRED ({} series, {} surprise events)", updated, surprise_count);
+            info_ln!(
+                verbose,
+                "✓ FRED ({} series, {} surprise events)",
+                updated,
+                surprise_count
+            );
             dag_result.add(SourceResult {
-                name: "fred".to_string(), label: "FRED".to_string(),
-                status: SourceStatus::Ok, items_updated: Some(updated),
+                name: "fred".to_string(),
+                label: "FRED".to_string(),
+                status: SourceStatus::Ok,
+                items_updated: Some(updated),
                 duration_ms: elapsed.as_millis() as u64,
-                reason: None, age_minutes: None, error: None, detail: None,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: None,
             });
         }
     } else if in_plan {
         info_ln!(verbose, "⊘ FRED (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "fred".to_string(), label: "FRED".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "fred".to_string(),
+            label: "FRED".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ FRED (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "fred".to_string(), label: "FRED".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "fred".to_string(),
+            label: "FRED".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -2098,30 +2393,43 @@ fn store_bls_result(
                     if bls_cache::upsert_bls_data_backend(backend, &series_data).is_ok() {
                         info_ln!(verbose, "✓ BLS ({} series)", series_data.len());
                         dag_result.add(SourceResult {
-                            name: "bls".to_string(), label: "BLS".to_string(),
-                            status: SourceStatus::Ok, items_updated: Some(series_data.len()),
+                            name: "bls".to_string(),
+                            label: "BLS".to_string(),
+                            status: SourceStatus::Ok,
+                            items_updated: Some(series_data.len()),
                             duration_ms: elapsed.as_millis() as u64,
-                            reason: None, age_minutes: None, error: None, detail: None,
+                            reason: None,
+                            age_minutes: None,
+                            error: None,
+                            detail: None,
                         });
                     } else {
                         info_ln!(verbose, "✗ BLS (cache write failed)");
                         dag_result.add(SourceResult {
-                            name: "bls".to_string(), label: "BLS".to_string(),
-                            status: SourceStatus::Failed, items_updated: None,
+                            name: "bls".to_string(),
+                            label: "BLS".to_string(),
+                            status: SourceStatus::Failed,
+                            items_updated: None,
                             duration_ms: elapsed.as_millis() as u64,
-                            reason: None, age_minutes: None,
-                            error: Some("cache write failed".to_string()), detail: None,
+                            reason: None,
+                            age_minutes: None,
+                            error: Some("cache write failed".to_string()),
+                            detail: None,
                         });
                     }
                 }
                 Err(e) => {
                     info_ln!(verbose, "✗ BLS (failed: {})", e);
                     dag_result.add(SourceResult {
-                        name: "bls".to_string(), label: "BLS".to_string(),
-                        status: SourceStatus::Failed, items_updated: None,
+                        name: "bls".to_string(),
+                        label: "BLS".to_string(),
+                        status: SourceStatus::Failed,
+                        items_updated: None,
                         duration_ms: elapsed.as_millis() as u64,
-                        reason: None, age_minutes: None,
-                        error: Some(e.to_string()), detail: None,
+                        reason: None,
+                        age_minutes: None,
+                        error: Some(e.to_string()),
+                        detail: None,
                     });
                 }
             }
@@ -2129,16 +2437,28 @@ fn store_bls_result(
     } else if in_plan {
         info_ln!(verbose, "⊘ BLS (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "bls".to_string(), label: "BLS".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "bls".to_string(),
+            label: "BLS".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ BLS (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "bls".to_string(), label: "BLS".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "bls".to_string(),
+            label: "BLS".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -2148,40 +2468,57 @@ fn store_worldbank_result(
     verbose: bool,
     due: bool,
     in_plan: bool,
-    data: Option<(Result<Vec<crate::data::worldbank::WorldBankDataPoint>>, Duration)>,
+    data: Option<(
+        Result<Vec<crate::data::worldbank::WorldBankDataPoint>>,
+        Duration,
+    )>,
     dag_result: &mut RefreshResult,
 ) {
     if due {
         if let Some((result, elapsed)) = data {
             match result {
                 Ok(indicators) => {
-                    if worldbank_cache::upsert_worldbank_data_backend(backend, &indicators).is_ok() {
+                    if worldbank_cache::upsert_worldbank_data_backend(backend, &indicators).is_ok()
+                    {
                         info_ln!(verbose, "✓ World Bank ({} indicators)", indicators.len());
                         dag_result.add(SourceResult {
-                            name: "worldbank".to_string(), label: "World Bank".to_string(),
-                            status: SourceStatus::Ok, items_updated: Some(indicators.len()),
+                            name: "worldbank".to_string(),
+                            label: "World Bank".to_string(),
+                            status: SourceStatus::Ok,
+                            items_updated: Some(indicators.len()),
                             duration_ms: elapsed.as_millis() as u64,
-                            reason: None, age_minutes: None, error: None, detail: None,
+                            reason: None,
+                            age_minutes: None,
+                            error: None,
+                            detail: None,
                         });
                     } else {
                         info_ln!(verbose, "✗ World Bank (cache write failed)");
                         dag_result.add(SourceResult {
-                            name: "worldbank".to_string(), label: "World Bank".to_string(),
-                            status: SourceStatus::Failed, items_updated: None,
+                            name: "worldbank".to_string(),
+                            label: "World Bank".to_string(),
+                            status: SourceStatus::Failed,
+                            items_updated: None,
                             duration_ms: elapsed.as_millis() as u64,
-                            reason: None, age_minutes: None,
-                            error: Some("cache write failed".to_string()), detail: None,
+                            reason: None,
+                            age_minutes: None,
+                            error: Some("cache write failed".to_string()),
+                            detail: None,
                         });
                     }
                 }
                 Err(e) => {
                     info_ln!(verbose, "✗ World Bank (failed: {})", e);
                     dag_result.add(SourceResult {
-                        name: "worldbank".to_string(), label: "World Bank".to_string(),
-                        status: SourceStatus::Failed, items_updated: None,
+                        name: "worldbank".to_string(),
+                        label: "World Bank".to_string(),
+                        status: SourceStatus::Failed,
+                        items_updated: None,
                         duration_ms: elapsed.as_millis() as u64,
-                        reason: None, age_minutes: None,
-                        error: Some(e.to_string()), detail: None,
+                        reason: None,
+                        age_minutes: None,
+                        error: Some(e.to_string()),
+                        detail: None,
                     });
                 }
             }
@@ -2189,16 +2526,28 @@ fn store_worldbank_result(
     } else if in_plan {
         info_ln!(verbose, "⊘ World Bank (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "worldbank".to_string(), label: "World Bank".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "worldbank".to_string(),
+            label: "World Bank".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ World Bank (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "worldbank".to_string(), label: "World Bank".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "worldbank".to_string(),
+            label: "World Bank".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -2233,34 +2582,55 @@ fn store_comex_result(
         if count > 0 {
             info_ln!(verbose, "✓ COMEX ({} metals)", count);
             dag_result.add(SourceResult {
-                name: "comex".to_string(), label: "COMEX".to_string(),
-                status: SourceStatus::Ok, items_updated: Some(count),
+                name: "comex".to_string(),
+                label: "COMEX".to_string(),
+                status: SourceStatus::Ok,
+                items_updated: Some(count),
                 duration_ms: comex_start.elapsed().as_millis() as u64,
-                reason: None, age_minutes: None, error: None, detail: None,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: None,
             });
         } else {
             info_ln!(verbose, "✗ COMEX (all failed)");
             dag_result.add(SourceResult {
-                name: "comex".to_string(), label: "COMEX".to_string(),
-                status: SourceStatus::Failed, items_updated: None,
+                name: "comex".to_string(),
+                label: "COMEX".to_string(),
+                status: SourceStatus::Failed,
+                items_updated: None,
                 duration_ms: comex_start.elapsed().as_millis() as u64,
-                reason: None, age_minutes: None,
-                error: Some("all metals failed".to_string()), detail: None,
+                reason: None,
+                age_minutes: None,
+                error: Some("all metals failed".to_string()),
+                detail: None,
             });
         }
     } else if in_plan {
         info_ln!(verbose, "⊘ COMEX (fresh, skipping)");
         dag_result.add(SourceResult {
-            name: "comex".to_string(), label: "COMEX".to_string(),
-            status: SourceStatus::Skipped, items_updated: None, duration_ms: 0,
-            reason: Some("fresh".to_string()), age_minutes: None, error: None, detail: None,
+            name: "comex".to_string(),
+            label: "COMEX".to_string(),
+            status: SourceStatus::Skipped,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("fresh".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     } else {
         info_ln!(verbose, "⊘ COMEX (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "comex".to_string(), label: "COMEX".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "comex".to_string(),
+            label: "COMEX".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }
@@ -2283,12 +2653,15 @@ fn store_onchain_result(
                     metric: "network".to_string(),
                     date: today,
                     value: metrics.hash_rate.to_string(),
-                    metadata: Some(serde_json::json!({
-                        "difficulty": metrics.difficulty,
-                        "blocks_24h": metrics.blocks_24h,
-                        "mempool_size": metrics.mempool_size,
-                        "avg_fee_sat_b": metrics.avg_fee_sat_b,
-                    }).to_string()),
+                    metadata: Some(
+                        serde_json::json!({
+                            "difficulty": metrics.difficulty,
+                            "blocks_24h": metrics.blocks_24h,
+                            "mempool_size": metrics.mempool_size,
+                            "avg_fee_sat_b": metrics.avg_fee_sat_b,
+                        })
+                        .to_string(),
+                    ),
                     fetched_at: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = onchain_cache::upsert_metric_backend(backend, &metric);
@@ -2303,23 +2676,26 @@ fn store_onchain_result(
                     metric: "exchange_reserve_proxy_btc".to_string(),
                     date: snapshot.date.clone(),
                     value: snapshot.reserve_btc.to_string(),
-                    metadata: Some(serde_json::json!({
-                        "reserve_usd": snapshot.reserve_usd,
-                        "tracked_wallets": snapshot.tracked_wallets,
-                        "exchange_labels": snapshot.exchange_labels,
-                        "flow_7d_btc": snapshot.net_flow_7d_btc,
-                        "flow_30d_btc": snapshot.net_flow_30d_btc,
-                        "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
-                            serde_json::json!({
-                                "label": entry.label,
-                                "balance_btc": entry.balance_btc,
-                                "balance_usd": entry.balance_usd,
-                                "wallets": entry.wallets,
-                                "flow_7d_btc": entry.flow_7d_btc,
-                                "flow_30d_btc": entry.flow_30d_btc,
-                            })
-                        }).collect::<Vec<_>>(),
-                    }).to_string()),
+                    metadata: Some(
+                        serde_json::json!({
+                            "reserve_usd": snapshot.reserve_usd,
+                            "tracked_wallets": snapshot.tracked_wallets,
+                            "exchange_labels": snapshot.exchange_labels,
+                            "flow_7d_btc": snapshot.net_flow_7d_btc,
+                            "flow_30d_btc": snapshot.net_flow_30d_btc,
+                            "top_exchanges": snapshot.top_exchanges.iter().map(|entry| {
+                                serde_json::json!({
+                                    "label": entry.label,
+                                    "balance_btc": entry.balance_btc,
+                                    "balance_usd": entry.balance_usd,
+                                    "wallets": entry.wallets,
+                                    "flow_7d_btc": entry.flow_7d_btc,
+                                    "flow_30d_btc": entry.flow_30d_btc,
+                                })
+                            }).collect::<Vec<_>>(),
+                        })
+                        .to_string(),
+                    ),
                     fetched_at: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = onchain_cache::upsert_metric_backend(backend, &metric);
@@ -2336,10 +2712,13 @@ fn store_onchain_result(
                         metric: format!("etf_flow_{}", flow.fund),
                         date: flow.date.clone(),
                         value: flow.net_flow_btc.to_string(),
-                        metadata: Some(serde_json::json!({
-                            "fund": flow.fund,
-                            "net_flow_usd": flow.net_flow_usd,
-                        }).to_string()),
+                        metadata: Some(
+                            serde_json::json!({
+                                "fund": flow.fund,
+                                "net_flow_usd": flow.net_flow_usd,
+                            })
+                            .to_string(),
+                        ),
                         fetched_at: fetched_at.clone(),
                     };
                     let _ = onchain_cache::upsert_metric_backend(backend, &metric);
@@ -2353,19 +2732,29 @@ fn store_onchain_result(
             Ok(stats) => {
                 let fetched_at = chrono::Utc::now().to_rfc3339();
                 let metrics = [
-                    ("largest_transactions_24h_btc", stats.largest_transactions_24h_btc.to_string(),
-                     serde_json::json!({
-                        "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
-                        "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
-                     })),
-                    ("active_addresses_24h", stats.active_addresses_24h.to_string(), serde_json::json!({})),
-                    ("wealth_distribution_top10_pct", stats.top_10_share_pct.to_string(),
-                     serde_json::json!({
-                        "top_100_share_pct": stats.top_100_share_pct,
-                        "top_1000_share_pct": stats.top_1000_share_pct,
-                        "top_10000_share_pct": stats.top_10000_share_pct,
-                        "top_100_richest_btc": stats.top_100_richest_btc,
-                     })),
+                    (
+                        "largest_transactions_24h_btc",
+                        stats.largest_transactions_24h_btc.to_string(),
+                        serde_json::json!({
+                           "largest_transactions_24h_usd": stats.largest_transactions_24h_usd,
+                           "largest_transactions_24h_share_pct": stats.largest_transactions_24h_share_pct,
+                        }),
+                    ),
+                    (
+                        "active_addresses_24h",
+                        stats.active_addresses_24h.to_string(),
+                        serde_json::json!({}),
+                    ),
+                    (
+                        "wealth_distribution_top10_pct",
+                        stats.top_10_share_pct.to_string(),
+                        serde_json::json!({
+                           "top_100_share_pct": stats.top_100_share_pct,
+                           "top_1000_share_pct": stats.top_1000_share_pct,
+                           "top_10000_share_pct": stats.top_10000_share_pct,
+                           "top_100_richest_btc": stats.top_100_richest_btc,
+                        }),
+                    ),
                 ];
                 for (name, value, metadata) in metrics {
                     let metric = crate::db::onchain_cache::OnchainMetric {
@@ -2385,28 +2774,46 @@ fn store_onchain_result(
         if !onchain_ok_parts.is_empty() {
             info_ln!(verbose, "✓ On-chain ({})", onchain_ok_parts.join(" + "));
             dag_result.add(SourceResult {
-                name: "onchain".to_string(), label: "On-chain".to_string(),
+                name: "onchain".to_string(),
+                label: "On-chain".to_string(),
                 status: SourceStatus::Ok,
                 items_updated: Some(onchain_ok_parts.len()),
                 duration_ms: onchain_start.elapsed().as_millis() as u64,
-                reason: None, age_minutes: None, error: None, detail: None,
+                reason: None,
+                age_minutes: None,
+                error: None,
+                detail: None,
             });
         } else {
-            info_ln!(verbose, "✗ On-chain (failed: {})", onchain_errors.join("; "));
+            info_ln!(
+                verbose,
+                "✗ On-chain (failed: {})",
+                onchain_errors.join("; ")
+            );
             dag_result.add(SourceResult {
-                name: "onchain".to_string(), label: "On-chain".to_string(),
-                status: SourceStatus::Failed, items_updated: None,
+                name: "onchain".to_string(),
+                label: "On-chain".to_string(),
+                status: SourceStatus::Failed,
+                items_updated: None,
                 duration_ms: onchain_start.elapsed().as_millis() as u64,
-                reason: None, age_minutes: None,
-                error: Some(onchain_errors.join("; ")), detail: None,
+                reason: None,
+                age_minutes: None,
+                error: Some(onchain_errors.join("; ")),
+                detail: None,
             });
         }
     } else {
         info_ln!(verbose, "⊘ On-chain (cadence deferred)");
         dag_result.add(SourceResult {
-            name: "onchain".to_string(), label: "On-chain".to_string(),
-            status: SourceStatus::Deferred, items_updated: None, duration_ms: 0,
-            reason: Some("cadence deferred".to_string()), age_minutes: None, error: None, detail: None,
+            name: "onchain".to_string(),
+            label: "On-chain".to_string(),
+            status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
         });
     }
 }

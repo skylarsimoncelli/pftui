@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::str::FromStr;
 
@@ -75,7 +75,10 @@ pub fn list_targets(conn: &Connection) -> Result<Vec<AllocationTarget>> {
 }
 
 pub fn remove_target(conn: &Connection, symbol: &str) -> Result<()> {
-    conn.execute("DELETE FROM allocation_targets WHERE symbol = ?1", params![symbol])?;
+    conn.execute(
+        "DELETE FROM allocation_targets WHERE symbol = ?1",
+        params![symbol],
+    )?;
     Ok(())
 }
 
@@ -93,7 +96,10 @@ pub fn set_target_backend(
 }
 
 #[allow(dead_code)]
-pub fn get_target_backend(backend: &BackendConnection, symbol: &str) -> Result<Option<AllocationTarget>> {
+pub fn get_target_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+) -> Result<Option<AllocationTarget>> {
     query::dispatch(
         backend,
         |conn| get_target(conn, symbol),
@@ -159,7 +165,7 @@ fn set_target_postgres(
 #[allow(dead_code)]
 fn get_target_postgres(pool: &PgPool, symbol: &str) -> Result<Option<AllocationTarget>> {
     ensure_tables_postgres(pool)?;
-        let row: Option<(String, String, String, String)> = crate::db::pg_runtime::block_on(async {
+    let row: Option<(String, String, String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, target_pct::TEXT, drift_band_pct::TEXT, updated_at::text
              FROM allocation_targets
@@ -179,7 +185,7 @@ fn get_target_postgres(pool: &PgPool, symbol: &str) -> Result<Option<AllocationT
 
 fn list_targets_postgres(pool: &PgPool) -> Result<Vec<AllocationTarget>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<(String, String, String, String)> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<(String, String, String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, target_pct::TEXT, drift_band_pct::TEXT, updated_at::text
              FROM allocation_targets

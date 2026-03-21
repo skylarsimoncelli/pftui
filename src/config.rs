@@ -287,12 +287,7 @@ impl TrackedUniverse {
 }
 
 fn default_universe_indices() -> Vec<String> {
-    vec![
-        "SPY".into(),
-        "QQQ".into(),
-        "DIA".into(),
-        "IWM".into(),
-    ]
+    vec!["SPY".into(), "QQQ".into(), "DIA".into(), "IWM".into()]
 }
 
 fn default_universe_sectors() -> Vec<String> {

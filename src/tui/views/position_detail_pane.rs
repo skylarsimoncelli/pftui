@@ -86,10 +86,7 @@ fn render_transactions_section(frame: &mut Frame, area: Rect, app: &App, symbol:
         let price = format!("${:.2}", tx.price_per);
         let date = &tx.date[5..10]; // MM-DD
 
-        let line = format!(
-            "{} {} {} @ {} {}",
-            date, tx_type, qty, price, tx.symbol
-        );
+        let line = format!("{} {} {} @ {} {}", date, tx_type, qty, price, tx.symbol);
         lines.push(Line::from(line).style(Style::default().fg(app.theme.text_primary)));
     }
 

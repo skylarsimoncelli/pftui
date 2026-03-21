@@ -24,7 +24,6 @@ impl AssetCategory {
             AssetCategory::Fund,
         ]
     }
-
 }
 
 impl fmt::Display for AssetCategory {
@@ -55,4 +54,3 @@ impl std::str::FromStr for AssetCategory {
         }
     }
 }
-

@@ -18,6 +18,6 @@ pub mod scan_builder;
 pub mod search_chart_popup;
 pub mod search_overlay;
 pub mod transactions;
+pub mod watchlist;
 pub mod watchlist_add_popup;
 pub mod watchlist_target_popup;
-pub mod watchlist;

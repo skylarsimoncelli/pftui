@@ -40,8 +40,8 @@ pub fn compute_bollinger(
             Some(mean) => {
                 let start = i + 1 - period;
                 let window = &values[start..=i];
-                let variance = window.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
-                    / period as f64;
+                let variance =
+                    window.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / period as f64;
                 let stddev = variance.sqrt();
                 let upper = mean + multiplier * stddev;
                 let lower = mean - multiplier * stddev;
@@ -97,7 +97,9 @@ mod tests {
 
     #[test]
     fn bollinger_symmetry() {
-        let data: Vec<f64> = (1..=30).map(|i| 50.0 + (i as f64 * 0.5).sin() * 3.0).collect();
+        let data: Vec<f64> = (1..=30)
+            .map(|i| 50.0 + (i as f64 * 0.5).sin() * 3.0)
+            .collect();
         let bb = compute_bollinger(&data, 20, 2.0);
         for b in bb.iter().flatten() {
             let upper_dist = b.upper - b.middle;

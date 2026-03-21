@@ -43,7 +43,10 @@ struct PolymarketResponse {
 /// This is a blocking call — run in a background thread if called from TUI.
 pub fn fetch_markets(category_filter: Option<&str>, limit: usize) -> Result<Vec<PredictionMarket>> {
     let limit = limit.min(100);
-    let mut url = format!("https://gamma-api.polymarket.com/markets?closed=false&active=true&limit={}", limit);
+    let mut url = format!(
+        "https://gamma-api.polymarket.com/markets?closed=false&active=true&limit={}",
+        limit
+    );
 
     if let Some(cat) = category_filter {
         url.push_str(&format!("&category={}", cat));

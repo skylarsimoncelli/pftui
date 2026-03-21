@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
@@ -51,10 +51,7 @@ pub fn list_allocations(conn: &Connection) -> Result<Vec<Allocation>> {
                 .get::<_, String>(2)?
                 .parse()
                 .unwrap_or(AssetCategory::Equity),
-            allocation_pct: row
-                .get::<_, String>(3)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            allocation_pct: row.get::<_, String>(3)?.parse().unwrap_or(Decimal::ZERO),
             created_at: row.get(4)?,
         })
     })?;
@@ -72,20 +69,15 @@ pub fn delete_all_allocations(conn: &Connection) -> Result<()> {
 }
 
 pub fn count_allocations(conn: &Connection) -> Result<i64> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM portfolio_allocations",
-        [],
-        |r| r.get(0),
-    )?;
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM portfolio_allocations", [], |r| {
+        r.get(0)
+    })?;
     Ok(count)
 }
 
-pub fn get_unique_allocation_symbols(
-    conn: &Connection,
-) -> Result<Vec<(String, AssetCategory)>> {
-    let mut stmt = conn.prepare(
-        "SELECT symbol, category FROM portfolio_allocations ORDER BY symbol",
-    )?;
+pub fn get_unique_allocation_symbols(conn: &Connection) -> Result<Vec<(String, AssetCategory)>> {
+    let mut stmt =
+        conn.prepare("SELECT symbol, category FROM portfolio_allocations ORDER BY symbol")?;
     let rows = stmt.query_map([], |row| {
         let symbol: String = row.get(0)?;
         let cat: String = row.get(1)?;
@@ -153,7 +145,7 @@ fn allocation_from_row(row: AllocationRow) -> Allocation {
 #[allow(dead_code)]
 fn list_allocations_postgres(pool: &PgPool) -> Result<Vec<Allocation>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<AllocationRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<AllocationRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, allocation_pct::TEXT, created_at::text
              FROM portfolio_allocations
@@ -172,7 +164,7 @@ fn insert_allocation_postgres(
     pct: Decimal,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-        let id: i64 = crate::db::pg_runtime::block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO portfolio_allocations (symbol, category, allocation_pct)
              VALUES ($1, $2, $3::NUMERIC)
@@ -192,7 +184,7 @@ fn insert_allocation_postgres(
 
 fn count_allocations_postgres(pool: &PgPool) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-        let count: i64 = crate::db::pg_runtime::block_on(async {
+    let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM portfolio_allocations")
             .fetch_one(pool)
             .await
@@ -200,11 +192,9 @@ fn count_allocations_postgres(pool: &PgPool) -> Result<i64> {
     Ok(count)
 }
 
-fn get_unique_allocation_symbols_postgres(
-    pool: &PgPool,
-) -> Result<Vec<(String, AssetCategory)>> {
+fn get_unique_allocation_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCategory)>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, category
              FROM portfolio_allocations

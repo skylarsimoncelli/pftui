@@ -116,8 +116,7 @@ pub async fn fetch_feed(feed: &RssFeed) -> Result<Vec<NewsItem>> {
         .text()
         .await?;
 
-    let rss: Rss = quick_xml::de::from_str(&body)
-        .context("Failed to parse RSS XML")?;
+    let rss: Rss = quick_xml::de::from_str(&body).context("Failed to parse RSS XML")?;
 
     let mut items = Vec::new();
     for item in rss.channel.item {

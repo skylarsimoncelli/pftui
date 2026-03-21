@@ -75,7 +75,10 @@ pub fn run_list(
     )?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({ "entries": entries }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "entries": entries }))?
+        );
     } else {
         if entries.is_empty() {
             println!("No journal entries found.");
@@ -123,10 +126,14 @@ pub fn run_search(
         None
     };
 
-    let entries = journal::search_entries_backend(backend, query, since_timestamp.as_deref(), limit)?;
+    let entries =
+        journal::search_entries_backend(backend, query, since_timestamp.as_deref(), limit)?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({ "entries": entries }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "entries": entries }))?
+        );
     } else {
         if entries.is_empty() {
             println!("No journal entries found matching '{}'.", query);
@@ -182,7 +189,10 @@ pub fn run_remove(backend: &BackendConnection, id: i64, json_output: bool) -> Re
     journal::remove_entry_backend(backend, id)?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({ "removed": id }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "removed": id }))?
+        );
     } else {
         println!("Removed journal entry #{}", id);
     }
@@ -194,7 +204,10 @@ pub fn run_tags(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let tags = journal::get_all_tags_backend(backend)?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&json!({ "tags": tags }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "tags": tags }))?
+        );
     } else {
         if tags.is_empty() {
             println!("No tags found.");

@@ -21,9 +21,8 @@ struct DetectedSignal {
 /// Called during `pftui data refresh` after technical snapshots are stored.
 /// Prunes signals older than 72 hours to prevent unbounded growth.
 pub fn generate_signals(backend: &BackendConnection) -> Result<usize> {
-    let snapshots = crate::db::technical_snapshots::list_latest_snapshots_backend(
-        backend, "1d", None,
-    )?;
+    let snapshots =
+        crate::db::technical_snapshots::list_latest_snapshots_backend(backend, "1d", None)?;
     if snapshots.is_empty() {
         return Ok(0);
     }
@@ -205,10 +204,7 @@ fn derive_signals(snap: &TechnicalSnapshotRecord) -> Vec<DetectedSignal> {
                 direction: "bullish",
                 severity: "notable",
                 trigger_price: snap.range_52w_high,
-                description: format!(
-                    "Near 52-week high ({:.1}% of range)",
-                    position
-                ),
+                description: format!("Near 52-week high ({:.1}% of range)", position),
             });
         } else if position <= 5.0 {
             signals.push(DetectedSignal {
@@ -216,10 +212,7 @@ fn derive_signals(snap: &TechnicalSnapshotRecord) -> Vec<DetectedSignal> {
                 direction: "bearish",
                 severity: "notable",
                 trigger_price: snap.range_52w_low,
-                description: format!(
-                    "Near 52-week low ({:.1}% of range)",
-                    position
-                ),
+                description: format!("Near 52-week low ({:.1}% of range)", position),
             });
         }
     }
@@ -281,11 +274,7 @@ fn derive_signals(snap: &TechnicalSnapshotRecord) -> Vec<DetectedSignal> {
 }
 
 /// Check if a signal of this type for this symbol already exists within the last 6 hours.
-fn is_duplicate(
-    existing: &[TechnicalSignalRecord],
-    symbol: &str,
-    signal_type: &str,
-) -> bool {
+fn is_duplicate(existing: &[TechnicalSignalRecord], symbol: &str, signal_type: &str) -> bool {
     let cutoff = chrono::Utc::now() - chrono::Duration::hours(6);
     existing.iter().any(|s| {
         s.symbol == symbol && s.signal_type == signal_type && {

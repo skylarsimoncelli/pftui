@@ -1,15 +1,20 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
 use crate::db::query;
 use crate::models::price::HistoryRecord;
 
-pub fn upsert_history(conn: &Connection, symbol: &str, source: &str, records: &[HistoryRecord]) -> Result<()> {
+pub fn upsert_history(
+    conn: &Connection,
+    symbol: &str,
+    source: &str,
+    records: &[HistoryRecord],
+) -> Result<()> {
     let mut stmt = conn.prepare(
         "INSERT INTO price_history (symbol, date, close, source, volume, open, high, low)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
@@ -26,7 +31,16 @@ pub fn upsert_history(conn: &Connection, symbol: &str, source: &str, records: &[
         let open_str = rec.open.map(|v| v.to_string());
         let high_str = rec.high.map(|v| v.to_string());
         let low_str = rec.low.map(|v| v.to_string());
-        stmt.execute(params![symbol, rec.date, rec.close.to_string(), source, volume_str, open_str, high_str, low_str])?;
+        stmt.execute(params![
+            symbol,
+            rec.date,
+            rec.close.to_string(),
+            source,
+            volume_str,
+            open_str,
+            high_str,
+            low_str
+        ])?;
     }
     Ok(())
 }
@@ -92,10 +106,11 @@ pub fn get_prices_at_date(
     Ok(result)
 }
 
-pub fn get_all_symbols_history(conn: &Connection, limit: u32) -> Result<Vec<(String, Vec<HistoryRecord>)>> {
-    let mut sym_stmt = conn.prepare(
-        "SELECT DISTINCT symbol FROM price_history",
-    )?;
+pub fn get_all_symbols_history(
+    conn: &Connection,
+    limit: u32,
+) -> Result<Vec<(String, Vec<HistoryRecord>)>> {
+    let mut sym_stmt = conn.prepare("SELECT DISTINCT symbol FROM price_history")?;
     let symbols: Vec<String> = sym_stmt
         .query_map([], |row| row.get(0))?
         .filter_map(|r| r.ok())
@@ -315,7 +330,14 @@ fn upsert_history_postgres(
     Ok(())
 }
 
-type HistoryRow = (String, String, Option<String>, Option<String>, Option<String>, Option<String>);
+type HistoryRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 fn history_record_from_row(row: HistoryRow) -> HistoryRecord {
     let volume = row.2.and_then(|v| v.parse::<u64>().ok());
@@ -412,9 +434,30 @@ mod tests {
     fn test_upsert_and_get() {
         let conn = open_in_memory();
         let records = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(1_000_000), open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: Some(1_500_000), open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(103), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: Some(1_000_000),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(105),
+                volume: Some(1_500_000),
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(103),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
 
@@ -430,10 +473,24 @@ mod tests {
     #[test]
     fn test_upsert_overwrites() {
         let conn = open_in_memory();
-        let r1 = vec![HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(500_000), open: None, high: None, low: None }];
+        let r1 = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(100),
+            volume: Some(500_000),
+            open: None,
+            high: None,
+            low: None,
+        }];
         upsert_history(&conn, "AAPL", "yahoo", &r1).unwrap();
 
-        let r2 = vec![HistoryRecord { date: "2025-01-01".into(), close: dec!(200), volume: Some(750_000), open: None, high: None, low: None }];
+        let r2 = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(200),
+            volume: Some(750_000),
+            open: None,
+            high: None,
+            low: None,
+        }];
         upsert_history(&conn, "AAPL", "yahoo", &r2).unwrap();
 
         let fetched = get_history(&conn, "AAPL", 90).unwrap();
@@ -445,10 +502,24 @@ mod tests {
     #[test]
     fn test_upsert_preserves_volume_when_null() {
         let conn = open_in_memory();
-        let r1 = vec![HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: Some(500_000), open: None, high: None, low: None }];
+        let r1 = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(100),
+            volume: Some(500_000),
+            open: None,
+            high: None,
+            low: None,
+        }];
         upsert_history(&conn, "AAPL", "yahoo", &r1).unwrap();
 
-        let r2 = vec![HistoryRecord { date: "2025-01-01".into(), close: dec!(105), volume: None, open: None, high: None, low: None }];
+        let r2 = vec![HistoryRecord {
+            date: "2025-01-01".into(),
+            close: dec!(105),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
         upsert_history(&conn, "AAPL", "yahoo", &r2).unwrap();
 
         let fetched = get_history(&conn, "AAPL", 90).unwrap();
@@ -460,9 +531,30 @@ mod tests {
     fn test_get_price_at_date_exact() {
         let conn = open_in_memory();
         let records = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-02".into(), close: dec!(105), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-02".into(),
+                close: dec!(105),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
 
@@ -474,8 +566,22 @@ mod tests {
     fn test_get_price_at_date_falls_back() {
         let conn = open_in_memory();
         let records = vec![
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-            HistoryRecord { date: "2025-01-03".into(), close: dec!(110), volume: None, open: None, high: None, low: None },
+            HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(100),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
+            HistoryRecord {
+                date: "2025-01-03".into(),
+                close: dec!(110),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            },
         ];
         upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
 
@@ -487,9 +593,14 @@ mod tests {
     #[test]
     fn test_get_price_at_date_no_data() {
         let conn = open_in_memory();
-        let records = vec![
-            HistoryRecord { date: "2025-01-05".into(), close: dec!(100), volume: None, open: None, high: None, low: None },
-        ];
+        let records = vec![HistoryRecord {
+            date: "2025-01-05".into(),
+            close: dec!(100),
+            volume: None,
+            open: None,
+            high: None,
+            low: None,
+        }];
         upsert_history(&conn, "AAPL", "yahoo", &records).unwrap();
 
         // All data is after Jan 2 — no result
@@ -500,12 +611,34 @@ mod tests {
     #[test]
     fn test_get_prices_at_date_multiple() {
         let conn = open_in_memory();
-        upsert_history(&conn, "AAPL", "yahoo", &[
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(150), volume: None, open: None, high: None, low: None },
-        ]).unwrap();
-        upsert_history(&conn, "BTC", "coingecko", &[
-            HistoryRecord { date: "2025-01-01".into(), close: dec!(42000), volume: None, open: None, high: None, low: None },
-        ]).unwrap();
+        upsert_history(
+            &conn,
+            "AAPL",
+            "yahoo",
+            &[HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(150),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        )
+        .unwrap();
+        upsert_history(
+            &conn,
+            "BTC",
+            "coingecko",
+            &[HistoryRecord {
+                date: "2025-01-01".into(),
+                close: dec!(42000),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            }],
+        )
+        .unwrap();
 
         let symbols = vec!["AAPL".to_string(), "BTC".to_string(), "MISSING".to_string()];
         let prices = get_prices_at_date(&conn, &symbols, "2025-01-01").unwrap();

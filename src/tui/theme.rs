@@ -49,7 +49,6 @@ pub const SORT_FLASH_DURATION: u64 = 30; // ~0.5s at 60fps — sort indicator fl
 
 // ---- Theme struct ----
 
-
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Theme {
@@ -226,34 +225,34 @@ pub fn catppuccin() -> Theme {
 pub fn nord() -> Theme {
     Theme {
         name: "nord",
-        surface_0: Color::Rgb(36, 40, 52),       // darker base for more depth
-        surface_1: Color::Rgb(46, 52, 64),        // original base becomes panel interior
-        surface_1_alt: Color::Rgb(50, 56, 70),    // subtle stripe
-        surface_2: Color::Rgb(59, 66, 82),        // header/status
-        surface_3: Color::Rgb(76, 86, 106),       // selected row — brighter jump
+        surface_0: Color::Rgb(36, 40, 52), // darker base for more depth
+        surface_1: Color::Rgb(46, 52, 64), // original base becomes panel interior
+        surface_1_alt: Color::Rgb(50, 56, 70), // subtle stripe
+        surface_2: Color::Rgb(59, 66, 82), // header/status
+        surface_3: Color::Rgb(76, 86, 106), // selected row — brighter jump
         border_active: Color::Rgb(136, 192, 208), // nord frost cyan — keep
-        border_inactive: Color::Rgb(67, 76, 94),  // slightly dimmer for contrast
+        border_inactive: Color::Rgb(67, 76, 94), // slightly dimmer for contrast
         border_accent: Color::Rgb(163, 190, 240), // brighter blue accent
         border_subtle: Color::Rgb(50, 56, 70),
-        text_primary: Color::Rgb(242, 244, 248),  // brighter white for contrast
-        text_secondary: Color::Rgb(200, 208, 220),// clearer secondary
-        text_muted: Color::Rgb(110, 120, 140),    // more visible muted
+        text_primary: Color::Rgb(242, 244, 248), // brighter white for contrast
+        text_secondary: Color::Rgb(200, 208, 220), // clearer secondary
+        text_muted: Color::Rgb(110, 120, 140),   // more visible muted
         text_accent: Color::Rgb(136, 192, 208),
-        gain_green: Color::Rgb(145, 210, 130),    // more saturated, brighter green
-        loss_red: Color::Rgb(210, 85, 95),        // more vivid red
+        gain_green: Color::Rgb(145, 210, 130), // more saturated, brighter green
+        loss_red: Color::Rgb(210, 85, 95),     // more vivid red
         neutral: Color::Rgb(200, 208, 220),
         live_green: Color::Rgb(145, 210, 130),
-        stale_yellow: Color::Rgb(240, 210, 130),  // warmer, brighter
+        stale_yellow: Color::Rgb(240, 210, 130), // warmer, brighter
         key_hint: Color::Rgb(240, 210, 130),
         chart_line: Color::Rgb(136, 192, 208),
         chart_grad_low: Color::Rgb(210, 85, 95),
         chart_grad_mid: Color::Rgb(240, 210, 130),
         chart_grad_high: Color::Rgb(145, 210, 130),
         cat_equity: Color::Rgb(129, 161, 193),
-        cat_crypto: Color::Rgb(220, 140, 100),    // warmer, more saturated
+        cat_crypto: Color::Rgb(220, 140, 100), // warmer, more saturated
         cat_forex: Color::Rgb(145, 210, 130),
         cat_commodity: Color::Rgb(240, 210, 130),
-        cat_fund: Color::Rgb(190, 140, 185),      // more vivid purple
+        cat_fund: Color::Rgb(190, 140, 185), // more vivid purple
         cat_cash: Color::Rgb(200, 208, 220),
     }
 }
@@ -263,26 +262,26 @@ pub fn nord() -> Theme {
 pub fn dracula() -> Theme {
     Theme {
         name: "dracula",
-        surface_0: Color::Rgb(30, 28, 44),       // deeper, more purple-tinted base
-        surface_1: Color::Rgb(40, 38, 58),        // purple-dark panel
-        surface_1_alt: Color::Rgb(36, 34, 52),    // stripe
-        surface_2: Color::Rgb(50, 46, 70),        // richer purple header
-        surface_3: Color::Rgb(65, 58, 90),        // vivid purple selection
+        surface_0: Color::Rgb(30, 28, 44), // deeper, more purple-tinted base
+        surface_1: Color::Rgb(40, 38, 58), // purple-dark panel
+        surface_1_alt: Color::Rgb(36, 34, 52), // stripe
+        surface_2: Color::Rgb(50, 46, 70), // richer purple header
+        surface_3: Color::Rgb(65, 58, 90), // vivid purple selection
         border_active: Color::Rgb(200, 150, 255), // brighter purple
         border_inactive: Color::Rgb(90, 80, 140), // purple-tinted inactive
         border_accent: Color::Rgb(255, 100, 200), // hot pink accent
         border_subtle: Color::Rgb(50, 46, 70),
         text_primary: Color::Rgb(250, 250, 245),
-        text_secondary: Color::Rgb(180, 175, 210),// purple-tinted secondary
-        text_muted: Color::Rgb(100, 95, 140),     // purple muted
-        text_accent: Color::Rgb(200, 150, 255),   // bright purple
-        gain_green: Color::Rgb(80, 255, 130),     // punchy green
-        loss_red: Color::Rgb(255, 70, 80),        // vivid red
+        text_secondary: Color::Rgb(180, 175, 210), // purple-tinted secondary
+        text_muted: Color::Rgb(100, 95, 140),      // purple muted
+        text_accent: Color::Rgb(200, 150, 255),    // bright purple
+        gain_green: Color::Rgb(80, 255, 130),      // punchy green
+        loss_red: Color::Rgb(255, 70, 80),         // vivid red
         neutral: Color::Rgb(180, 175, 210),
         live_green: Color::Rgb(80, 255, 130),
         stale_yellow: Color::Rgb(245, 250, 140),
         key_hint: Color::Rgb(245, 250, 140),
-        chart_line: Color::Rgb(130, 230, 255),    // bright cyan
+        chart_line: Color::Rgb(130, 230, 255), // bright cyan
         chart_grad_low: Color::Rgb(255, 70, 80),
         chart_grad_mid: Color::Rgb(245, 250, 140),
         chart_grad_high: Color::Rgb(80, 255, 130),
@@ -300,31 +299,31 @@ pub fn dracula() -> Theme {
 pub fn solarized() -> Theme {
     Theme {
         name: "solarized",
-        surface_0: Color::Rgb(0, 36, 46),        // slightly darker base for depth
-        surface_1: Color::Rgb(0, 43, 54),         // canonical solarized base03
-        surface_1_alt: Color::Rgb(3, 48, 60),     // subtle stripe
-        surface_2: Color::Rgb(7, 54, 66),          // canonical base02
-        surface_3: Color::Rgb(20, 72, 85),         // brighter selection
-        border_active: Color::Rgb(42, 161, 232),   // brighter blue for punch
+        surface_0: Color::Rgb(0, 36, 46), // slightly darker base for depth
+        surface_1: Color::Rgb(0, 43, 54), // canonical solarized base03
+        surface_1_alt: Color::Rgb(3, 48, 60), // subtle stripe
+        surface_2: Color::Rgb(7, 54, 66), // canonical base02
+        surface_3: Color::Rgb(20, 72, 85), // brighter selection
+        border_active: Color::Rgb(42, 161, 232), // brighter blue for punch
         border_inactive: Color::Rgb(75, 100, 108), // slightly dimmer
-        border_accent: Color::Rgb(120, 120, 210),  // brighter violet
+        border_accent: Color::Rgb(120, 120, 210), // brighter violet
         border_subtle: Color::Rgb(7, 54, 66),
-        text_primary: Color::Rgb(245, 240, 225),   // slightly brighter
+        text_primary: Color::Rgb(245, 240, 225), // slightly brighter
         text_secondary: Color::Rgb(160, 175, 175), // clearer
         text_muted: Color::Rgb(88, 110, 117),
         text_accent: Color::Rgb(42, 161, 232),
-        gain_green: Color::Rgb(150, 175, 0),       // brighter, more saturated
-        loss_red: Color::Rgb(235, 55, 52),          // slightly brighter
+        gain_green: Color::Rgb(150, 175, 0), // brighter, more saturated
+        loss_red: Color::Rgb(235, 55, 52),   // slightly brighter
         neutral: Color::Rgb(160, 175, 175),
         live_green: Color::Rgb(150, 175, 0),
-        stale_yellow: Color::Rgb(200, 150, 0),     // richer gold
+        stale_yellow: Color::Rgb(200, 150, 0), // richer gold
         key_hint: Color::Rgb(200, 150, 0),
         chart_line: Color::Rgb(42, 161, 232),
         chart_grad_low: Color::Rgb(235, 55, 52),
         chart_grad_mid: Color::Rgb(200, 150, 0),
         chart_grad_high: Color::Rgb(150, 175, 0),
         cat_equity: Color::Rgb(42, 161, 232),
-        cat_crypto: Color::Rgb(215, 85, 30),       // brighter orange
+        cat_crypto: Color::Rgb(215, 85, 30), // brighter orange
         cat_forex: Color::Rgb(150, 175, 0),
         cat_commodity: Color::Rgb(200, 150, 0),
         cat_fund: Color::Rgb(120, 120, 210),
@@ -338,35 +337,35 @@ pub fn solarized() -> Theme {
 pub fn gruvbox() -> Theme {
     Theme {
         name: "gruvbox",
-        surface_0: Color::Rgb(28, 28, 28),       // gruvbox hard dark bg
-        surface_1: Color::Rgb(40, 40, 40),        // standard bg
-        surface_1_alt: Color::Rgb(36, 36, 36),    // stripe
-        surface_2: Color::Rgb(50, 48, 47),        // header
-        surface_3: Color::Rgb(70, 65, 60),        // selection
-        border_active: Color::Rgb(250, 189, 47),  // bright yellow — signature gruvbox
-        border_inactive: Color::Rgb(90, 82, 75),  // dimmer
-        border_accent: Color::Rgb(254, 128, 25),  // bright orange accent
+        surface_0: Color::Rgb(28, 28, 28), // gruvbox hard dark bg
+        surface_1: Color::Rgb(40, 40, 40), // standard bg
+        surface_1_alt: Color::Rgb(36, 36, 36), // stripe
+        surface_2: Color::Rgb(50, 48, 47), // header
+        surface_3: Color::Rgb(70, 65, 60), // selection
+        border_active: Color::Rgb(250, 189, 47), // bright yellow — signature gruvbox
+        border_inactive: Color::Rgb(90, 82, 75), // dimmer
+        border_accent: Color::Rgb(254, 128, 25), // bright orange accent
         border_subtle: Color::Rgb(50, 48, 47),
-        text_primary: Color::Rgb(251, 241, 199),  // gruvbox fg0 (bright cream)
-        text_secondary: Color::Rgb(213, 196, 161),// gruvbox fg2
-        text_muted: Color::Rgb(124, 111, 100),    // gruvbox gray
-        text_accent: Color::Rgb(250, 189, 47),    // bright yellow
-        gain_green: Color::Rgb(184, 187, 38),     // gruvbox bright green
-        loss_red: Color::Rgb(251, 73, 52),        // gruvbox bright red
+        text_primary: Color::Rgb(251, 241, 199), // gruvbox fg0 (bright cream)
+        text_secondary: Color::Rgb(213, 196, 161), // gruvbox fg2
+        text_muted: Color::Rgb(124, 111, 100),   // gruvbox gray
+        text_accent: Color::Rgb(250, 189, 47),   // bright yellow
+        gain_green: Color::Rgb(184, 187, 38),    // gruvbox bright green
+        loss_red: Color::Rgb(251, 73, 52),       // gruvbox bright red
         neutral: Color::Rgb(213, 196, 161),
         live_green: Color::Rgb(184, 187, 38),
         stale_yellow: Color::Rgb(250, 189, 47),
         key_hint: Color::Rgb(250, 189, 47),
-        chart_line: Color::Rgb(142, 192, 124),    // gruvbox bright aqua-green
+        chart_line: Color::Rgb(142, 192, 124), // gruvbox bright aqua-green
         chart_grad_low: Color::Rgb(251, 73, 52),
         chart_grad_mid: Color::Rgb(250, 189, 47),
         chart_grad_high: Color::Rgb(184, 187, 38),
-        cat_equity: Color::Rgb(131, 165, 152),    // gruvbox aqua
-        cat_crypto: Color::Rgb(254, 128, 25),     // bright orange
-        cat_forex: Color::Rgb(184, 187, 38),      // bright green
-        cat_commodity: Color::Rgb(250, 189, 47),  // bright yellow
-        cat_fund: Color::Rgb(211, 134, 155),      // gruvbox pink
-        cat_cash: Color::Rgb(213, 196, 161),      // warm cream
+        cat_equity: Color::Rgb(131, 165, 152),   // gruvbox aqua
+        cat_crypto: Color::Rgb(254, 128, 25),    // bright orange
+        cat_forex: Color::Rgb(184, 187, 38),     // bright green
+        cat_commodity: Color::Rgb(250, 189, 47), // bright yellow
+        cat_fund: Color::Rgb(211, 134, 155),     // gruvbox pink
+        cat_cash: Color::Rgb(213, 196, 161),     // warm cream
     }
 }
 
@@ -375,35 +374,35 @@ pub fn gruvbox() -> Theme {
 pub fn inferno() -> Theme {
     Theme {
         name: "inferno",
-        surface_0: Color::Rgb(10, 8, 6),       // near-black with warm undertone
-        surface_1: Color::Rgb(20, 14, 10),      // very dark brown
-        surface_1_alt: Color::Rgb(25, 17, 12),  // slightly lighter for striping
-        surface_2: Color::Rgb(35, 22, 14),      // dark ember
-        surface_3: Color::Rgb(55, 30, 18),      // smoldering coal
-        border_active: Color::Rgb(235, 140, 40),   // bright amber
-        border_inactive: Color::Rgb(80, 45, 25),   // dim ember
-        border_accent: Color::Rgb(255, 180, 50),   // hot gold
-        border_subtle: Color::Rgb(45, 28, 16),     // barely visible warmth
-        text_primary: Color::Rgb(245, 230, 210),   // warm white
+        surface_0: Color::Rgb(10, 8, 6), // near-black with warm undertone
+        surface_1: Color::Rgb(20, 14, 10), // very dark brown
+        surface_1_alt: Color::Rgb(25, 17, 12), // slightly lighter for striping
+        surface_2: Color::Rgb(35, 22, 14), // dark ember
+        surface_3: Color::Rgb(55, 30, 18), // smoldering coal
+        border_active: Color::Rgb(235, 140, 40), // bright amber
+        border_inactive: Color::Rgb(80, 45, 25), // dim ember
+        border_accent: Color::Rgb(255, 180, 50), // hot gold
+        border_subtle: Color::Rgb(45, 28, 16), // barely visible warmth
+        text_primary: Color::Rgb(245, 230, 210), // warm white
         text_secondary: Color::Rgb(180, 150, 120), // warm gray
-        text_muted: Color::Rgb(100, 75, 55),       // dark warm gray
-        text_accent: Color::Rgb(255, 160, 40),     // fire orange
-        gain_green: Color::Rgb(255, 180, 30),      // golden glow (gains = hot)
-        loss_red: Color::Rgb(180, 40, 30),         // smoldering red
+        text_muted: Color::Rgb(100, 75, 55), // dark warm gray
+        text_accent: Color::Rgb(255, 160, 40), // fire orange
+        gain_green: Color::Rgb(255, 180, 30), // golden glow (gains = hot)
+        loss_red: Color::Rgb(180, 40, 30), // smoldering red
         neutral: Color::Rgb(180, 150, 120),
         live_green: Color::Rgb(255, 180, 30),
         stale_yellow: Color::Rgb(200, 130, 40),
         key_hint: Color::Rgb(255, 200, 80),
-        chart_line: Color::Rgb(245, 130, 35),      // flame orange
-        chart_grad_low: Color::Rgb(120, 20, 15),   // deep ember
-        chart_grad_mid: Color::Rgb(235, 140, 40),  // amber
+        chart_line: Color::Rgb(245, 130, 35),     // flame orange
+        chart_grad_low: Color::Rgb(120, 20, 15),  // deep ember
+        chart_grad_mid: Color::Rgb(235, 140, 40), // amber
         chart_grad_high: Color::Rgb(255, 220, 60), // white-hot gold
-        cat_equity: Color::Rgb(235, 130, 40),      // amber
-        cat_crypto: Color::Rgb(255, 80, 30),       // hot red-orange
-        cat_forex: Color::Rgb(255, 200, 60),       // gold
-        cat_commodity: Color::Rgb(200, 100, 30),   // copper
-        cat_fund: Color::Rgb(180, 70, 50),         // dark flame
-        cat_cash: Color::Rgb(180, 160, 130),       // warm ash
+        cat_equity: Color::Rgb(235, 130, 40),     // amber
+        cat_crypto: Color::Rgb(255, 80, 30),      // hot red-orange
+        cat_forex: Color::Rgb(255, 200, 60),      // gold
+        cat_commodity: Color::Rgb(200, 100, 30),  // copper
+        cat_fund: Color::Rgb(180, 70, 50),        // dark flame
+        cat_cash: Color::Rgb(180, 160, 130),      // warm ash
     }
 }
 
@@ -412,35 +411,35 @@ pub fn inferno() -> Theme {
 pub fn neon() -> Theme {
     Theme {
         name: "neon",
-        surface_0: Color::Rgb(8, 8, 18),        // deep void blue-black
-        surface_1: Color::Rgb(14, 14, 28),       // dark navy
-        surface_1_alt: Color::Rgb(18, 16, 34),   // slight purple tint
-        surface_2: Color::Rgb(24, 20, 42),       // dark purple
-        surface_3: Color::Rgb(38, 30, 60),       // medium purple
-        border_active: Color::Rgb(255, 50, 180),    // hot pink
-        border_inactive: Color::Rgb(60, 40, 90),    // muted purple
-        border_accent: Color::Rgb(0, 230, 255),     // electric cyan
-        border_subtle: Color::Rgb(30, 25, 50),      // subtle purple
-        text_primary: Color::Rgb(235, 235, 255),    // cool white
-        text_secondary: Color::Rgb(160, 150, 200),  // lavender
-        text_muted: Color::Rgb(80, 70, 120),        // dim purple
-        text_accent: Color::Rgb(0, 230, 255),       // cyan
-        gain_green: Color::Rgb(0, 255, 160),        // neon green-cyan
-        loss_red: Color::Rgb(255, 50, 100),         // hot pink-red
+        surface_0: Color::Rgb(8, 8, 18),       // deep void blue-black
+        surface_1: Color::Rgb(14, 14, 28),     // dark navy
+        surface_1_alt: Color::Rgb(18, 16, 34), // slight purple tint
+        surface_2: Color::Rgb(24, 20, 42),     // dark purple
+        surface_3: Color::Rgb(38, 30, 60),     // medium purple
+        border_active: Color::Rgb(255, 50, 180), // hot pink
+        border_inactive: Color::Rgb(60, 40, 90), // muted purple
+        border_accent: Color::Rgb(0, 230, 255), // electric cyan
+        border_subtle: Color::Rgb(30, 25, 50), // subtle purple
+        text_primary: Color::Rgb(235, 235, 255), // cool white
+        text_secondary: Color::Rgb(160, 150, 200), // lavender
+        text_muted: Color::Rgb(80, 70, 120),   // dim purple
+        text_accent: Color::Rgb(0, 230, 255),  // cyan
+        gain_green: Color::Rgb(0, 255, 160),   // neon green-cyan
+        loss_red: Color::Rgb(255, 50, 100),    // hot pink-red
         neutral: Color::Rgb(160, 150, 200),
         live_green: Color::Rgb(0, 255, 160),
         stale_yellow: Color::Rgb(255, 220, 50),
         key_hint: Color::Rgb(255, 220, 50),
-        chart_line: Color::Rgb(0, 200, 255),         // bright cyan
-        chart_grad_low: Color::Rgb(255, 30, 80),     // hot pink
-        chart_grad_mid: Color::Rgb(180, 50, 255),    // electric purple
-        chart_grad_high: Color::Rgb(0, 255, 160),    // neon green
-        cat_equity: Color::Rgb(0, 180, 255),         // sky cyan
-        cat_crypto: Color::Rgb(255, 50, 180),        // hot pink
-        cat_forex: Color::Rgb(0, 255, 160),          // neon green
-        cat_commodity: Color::Rgb(255, 220, 50),     // electric yellow
-        cat_fund: Color::Rgb(180, 50, 255),          // purple
-        cat_cash: Color::Rgb(160, 160, 200),         // muted lavender
+        chart_line: Color::Rgb(0, 200, 255),      // bright cyan
+        chart_grad_low: Color::Rgb(255, 30, 80),  // hot pink
+        chart_grad_mid: Color::Rgb(180, 50, 255), // electric purple
+        chart_grad_high: Color::Rgb(0, 255, 160), // neon green
+        cat_equity: Color::Rgb(0, 180, 255),      // sky cyan
+        cat_crypto: Color::Rgb(255, 50, 180),     // hot pink
+        cat_forex: Color::Rgb(0, 255, 160),       // neon green
+        cat_commodity: Color::Rgb(255, 220, 50),  // electric yellow
+        cat_fund: Color::Rgb(180, 50, 255),       // purple
+        cat_cash: Color::Rgb(160, 160, 200),      // muted lavender
     }
 }
 
@@ -449,35 +448,35 @@ pub fn neon() -> Theme {
 pub fn hacker() -> Theme {
     Theme {
         name: "hacker",
-        surface_0: Color::Rgb(4, 8, 4),         // near-black with green tint
-        surface_1: Color::Rgb(8, 16, 8),         // very dark green
-        surface_1_alt: Color::Rgb(10, 20, 10),   // slightly lighter
-        surface_2: Color::Rgb(14, 28, 14),       // dark green
-        surface_3: Color::Rgb(22, 44, 22),       // medium dark green
-        border_active: Color::Rgb(0, 200, 0),      // bright terminal green
-        border_inactive: Color::Rgb(0, 70, 0),     // dim green
-        border_accent: Color::Rgb(0, 255, 0),      // full green
-        border_subtle: Color::Rgb(0, 35, 0),       // barely visible green
-        text_primary: Color::Rgb(0, 220, 0),       // classic green
-        text_secondary: Color::Rgb(0, 160, 0),     // medium green
-        text_muted: Color::Rgb(0, 90, 0),          // dim green
-        text_accent: Color::Rgb(0, 255, 0),        // bright green
-        gain_green: Color::Rgb(0, 255, 80),        // bright green with slight cyan
-        loss_red: Color::Rgb(180, 0, 0),           // the one red (losses stand out)
+        surface_0: Color::Rgb(4, 8, 4),  // near-black with green tint
+        surface_1: Color::Rgb(8, 16, 8), // very dark green
+        surface_1_alt: Color::Rgb(10, 20, 10), // slightly lighter
+        surface_2: Color::Rgb(14, 28, 14), // dark green
+        surface_3: Color::Rgb(22, 44, 22), // medium dark green
+        border_active: Color::Rgb(0, 200, 0), // bright terminal green
+        border_inactive: Color::Rgb(0, 70, 0), // dim green
+        border_accent: Color::Rgb(0, 255, 0), // full green
+        border_subtle: Color::Rgb(0, 35, 0), // barely visible green
+        text_primary: Color::Rgb(0, 220, 0), // classic green
+        text_secondary: Color::Rgb(0, 160, 0), // medium green
+        text_muted: Color::Rgb(0, 90, 0), // dim green
+        text_accent: Color::Rgb(0, 255, 0), // bright green
+        gain_green: Color::Rgb(0, 255, 80), // bright green with slight cyan
+        loss_red: Color::Rgb(180, 0, 0), // the one red (losses stand out)
         neutral: Color::Rgb(0, 160, 0),
         live_green: Color::Rgb(0, 255, 80),
-        stale_yellow: Color::Rgb(0, 180, 0),       // yellow → green to stay on-brand
+        stale_yellow: Color::Rgb(0, 180, 0), // yellow → green to stay on-brand
         key_hint: Color::Rgb(0, 255, 0),
-        chart_line: Color::Rgb(0, 200, 40),         // terminal green
-        chart_grad_low: Color::Rgb(180, 0, 0),      // red (only non-green color)
-        chart_grad_mid: Color::Rgb(0, 150, 0),      // mid green
-        chart_grad_high: Color::Rgb(0, 255, 80),    // bright green
-        cat_equity: Color::Rgb(0, 200, 60),         // green
-        cat_crypto: Color::Rgb(0, 255, 120),        // bright green-cyan
-        cat_forex: Color::Rgb(0, 180, 0),           // medium green
-        cat_commodity: Color::Rgb(0, 220, 40),      // yellow-green
-        cat_fund: Color::Rgb(0, 160, 80),           // teal-green
-        cat_cash: Color::Rgb(0, 130, 0),            // muted green
+        chart_line: Color::Rgb(0, 200, 40),      // terminal green
+        chart_grad_low: Color::Rgb(180, 0, 0),   // red (only non-green color)
+        chart_grad_mid: Color::Rgb(0, 150, 0),   // mid green
+        chart_grad_high: Color::Rgb(0, 255, 80), // bright green
+        cat_equity: Color::Rgb(0, 200, 60),      // green
+        cat_crypto: Color::Rgb(0, 255, 120),     // bright green-cyan
+        cat_forex: Color::Rgb(0, 180, 0),        // medium green
+        cat_commodity: Color::Rgb(0, 220, 40),   // yellow-green
+        cat_fund: Color::Rgb(0, 160, 80),        // teal-green
+        cat_cash: Color::Rgb(0, 130, 0),         // muted green
     }
 }
 
@@ -486,35 +485,35 @@ pub fn hacker() -> Theme {
 pub fn pastel() -> Theme {
     Theme {
         name: "pastel",
-        surface_0: Color::Rgb(42, 40, 45),      // warm dark gray with slight purple
-        surface_1: Color::Rgb(50, 48, 54),       // slightly lighter
-        surface_1_alt: Color::Rgb(54, 52, 58),   // alt stripe
-        surface_2: Color::Rgb(62, 60, 68),       // header/status
-        surface_3: Color::Rgb(75, 72, 82),       // selected row
-        border_active: Color::Rgb(160, 180, 210),   // soft blue
-        border_inactive: Color::Rgb(85, 82, 95),    // muted purple-gray
-        border_accent: Color::Rgb(200, 160, 190),   // soft pink
-        border_subtle: Color::Rgb(58, 56, 64),      // subtle divider
-        text_primary: Color::Rgb(225, 220, 230),    // warm white with lavender tint
-        text_secondary: Color::Rgb(170, 165, 180),  // muted lavender
-        text_muted: Color::Rgb(110, 105, 120),      // dim purple-gray
-        text_accent: Color::Rgb(170, 195, 225),     // soft sky blue
-        gain_green: Color::Rgb(140, 200, 160),      // muted sage green
-        loss_red: Color::Rgb(210, 130, 140),         // soft rose
+        surface_0: Color::Rgb(42, 40, 45), // warm dark gray with slight purple
+        surface_1: Color::Rgb(50, 48, 54), // slightly lighter
+        surface_1_alt: Color::Rgb(54, 52, 58), // alt stripe
+        surface_2: Color::Rgb(62, 60, 68), // header/status
+        surface_3: Color::Rgb(75, 72, 82), // selected row
+        border_active: Color::Rgb(160, 180, 210), // soft blue
+        border_inactive: Color::Rgb(85, 82, 95), // muted purple-gray
+        border_accent: Color::Rgb(200, 160, 190), // soft pink
+        border_subtle: Color::Rgb(58, 56, 64), // subtle divider
+        text_primary: Color::Rgb(225, 220, 230), // warm white with lavender tint
+        text_secondary: Color::Rgb(170, 165, 180), // muted lavender
+        text_muted: Color::Rgb(110, 105, 120), // dim purple-gray
+        text_accent: Color::Rgb(170, 195, 225), // soft sky blue
+        gain_green: Color::Rgb(140, 200, 160), // muted sage green
+        loss_red: Color::Rgb(210, 130, 140), // soft rose
         neutral: Color::Rgb(170, 165, 180),
         live_green: Color::Rgb(140, 200, 160),
-        stale_yellow: Color::Rgb(220, 195, 140),    // soft gold
+        stale_yellow: Color::Rgb(220, 195, 140), // soft gold
         key_hint: Color::Rgb(220, 195, 140),
-        chart_line: Color::Rgb(150, 180, 215),       // soft periwinkle
-        chart_grad_low: Color::Rgb(210, 130, 140),   // soft rose
-        chart_grad_mid: Color::Rgb(220, 195, 140),   // soft gold
-        chart_grad_high: Color::Rgb(140, 200, 160),  // soft sage
-        cat_equity: Color::Rgb(150, 180, 215),       // periwinkle
-        cat_crypto: Color::Rgb(215, 165, 130),       // soft peach
-        cat_forex: Color::Rgb(140, 200, 160),        // sage
-        cat_commodity: Color::Rgb(220, 195, 140),    // soft gold
-        cat_fund: Color::Rgb(185, 155, 200),         // soft lilac
-        cat_cash: Color::Rgb(175, 170, 185),         // neutral lavender
+        chart_line: Color::Rgb(150, 180, 215), // soft periwinkle
+        chart_grad_low: Color::Rgb(210, 130, 140), // soft rose
+        chart_grad_mid: Color::Rgb(220, 195, 140), // soft gold
+        chart_grad_high: Color::Rgb(140, 200, 160), // soft sage
+        cat_equity: Color::Rgb(150, 180, 215), // periwinkle
+        cat_crypto: Color::Rgb(215, 165, 130), // soft peach
+        cat_forex: Color::Rgb(140, 200, 160),  // sage
+        cat_commodity: Color::Rgb(220, 195, 140), // soft gold
+        cat_fund: Color::Rgb(185, 155, 200),   // soft lilac
+        cat_cash: Color::Rgb(175, 170, 185),   // neutral lavender
     }
 }
 
@@ -523,35 +522,35 @@ pub fn pastel() -> Theme {
 pub fn miasma() -> Theme {
     Theme {
         name: "miasma",
-        surface_0: Color::Rgb(22, 16, 14),      // dark burgundy-brown
-        surface_1: Color::Rgb(30, 22, 18),       // warm dark brown
-        surface_1_alt: Color::Rgb(35, 25, 20),   // slightly lighter
-        surface_2: Color::Rgb(42, 30, 24),       // medium brown
-        surface_3: Color::Rgb(58, 40, 30),       // warm brown highlight
-        border_active: Color::Rgb(180, 130, 70),    // dusty gold
-        border_inactive: Color::Rgb(75, 55, 40),    // dim brown
-        border_accent: Color::Rgb(200, 110, 60),    // warm orange
-        border_subtle: Color::Rgb(48, 34, 26),      // barely visible
-        text_primary: Color::Rgb(220, 200, 175),    // warm parchment
-        text_secondary: Color::Rgb(165, 140, 115),  // dusty tan
-        text_muted: Color::Rgb(100, 80, 65),        // dark dusty
-        text_accent: Color::Rgb(210, 155, 80),      // muted gold
-        gain_green: Color::Rgb(145, 165, 75),        // olive green
-        loss_red: Color::Rgb(170, 60, 50),           // deep burgundy-red
+        surface_0: Color::Rgb(22, 16, 14), // dark burgundy-brown
+        surface_1: Color::Rgb(30, 22, 18), // warm dark brown
+        surface_1_alt: Color::Rgb(35, 25, 20), // slightly lighter
+        surface_2: Color::Rgb(42, 30, 24), // medium brown
+        surface_3: Color::Rgb(58, 40, 30), // warm brown highlight
+        border_active: Color::Rgb(180, 130, 70), // dusty gold
+        border_inactive: Color::Rgb(75, 55, 40), // dim brown
+        border_accent: Color::Rgb(200, 110, 60), // warm orange
+        border_subtle: Color::Rgb(48, 34, 26), // barely visible
+        text_primary: Color::Rgb(220, 200, 175), // warm parchment
+        text_secondary: Color::Rgb(165, 140, 115), // dusty tan
+        text_muted: Color::Rgb(100, 80, 65), // dark dusty
+        text_accent: Color::Rgb(210, 155, 80), // muted gold
+        gain_green: Color::Rgb(145, 165, 75), // olive green
+        loss_red: Color::Rgb(170, 60, 50), // deep burgundy-red
         neutral: Color::Rgb(165, 140, 115),
         live_green: Color::Rgb(145, 165, 75),
-        stale_yellow: Color::Rgb(190, 150, 60),     // aged gold
+        stale_yellow: Color::Rgb(190, 150, 60), // aged gold
         key_hint: Color::Rgb(210, 170, 80),
-        chart_line: Color::Rgb(200, 140, 65),         // dusty orange
-        chart_grad_low: Color::Rgb(150, 45, 40),     // deep burgundy
-        chart_grad_mid: Color::Rgb(200, 150, 60),    // dusty gold
-        chart_grad_high: Color::Rgb(145, 175, 75),   // olive green
-        cat_equity: Color::Rgb(170, 130, 75),         // warm amber
-        cat_crypto: Color::Rgb(200, 100, 55),         // rusty orange
-        cat_forex: Color::Rgb(145, 165, 75),          // olive
-        cat_commodity: Color::Rgb(200, 160, 60),      // aged gold
-        cat_fund: Color::Rgb(150, 90, 80),            // dusty rose
-        cat_cash: Color::Rgb(160, 145, 125),          // warm stone
+        chart_line: Color::Rgb(200, 140, 65),     // dusty orange
+        chart_grad_low: Color::Rgb(150, 45, 40),  // deep burgundy
+        chart_grad_mid: Color::Rgb(200, 150, 60), // dusty gold
+        chart_grad_high: Color::Rgb(145, 175, 75), // olive green
+        cat_equity: Color::Rgb(170, 130, 75),     // warm amber
+        cat_crypto: Color::Rgb(200, 100, 55),     // rusty orange
+        cat_forex: Color::Rgb(145, 165, 75),      // olive
+        cat_commodity: Color::Rgb(200, 160, 60),  // aged gold
+        cat_fund: Color::Rgb(150, 90, 80),        // dusty rose
+        cat_cash: Color::Rgb(160, 145, 125),      // warm stone
     }
 }
 
@@ -603,18 +602,10 @@ pub fn gain_intensity_color(theme: &Theme, gain_pct: f64) -> Color {
     let abs_pct = gain_pct.abs();
     if gain_pct > 0.0 {
         let t = (abs_pct / 20.0).min(1.0) as f32;
-        lerp_color(
-            Color::Rgb(30, 100, 60),
-            theme.gain_green,
-            t,
-        )
+        lerp_color(Color::Rgb(30, 100, 60), theme.gain_green, t)
     } else if gain_pct < 0.0 {
         let t = (abs_pct / 20.0).min(1.0) as f32;
-        lerp_color(
-            Color::Rgb(120, 40, 40),
-            theme.loss_red,
-            t,
-        )
+        lerp_color(Color::Rgb(120, 40, 40), theme.loss_red, t)
     } else {
         theme.neutral
     }
@@ -650,8 +641,8 @@ pub fn render_section_header(frame: &mut Frame, area: Rect, label: &str, theme: 
     let fill_span = Span::styled(fill, Style::default().fg(theme.border_subtle));
 
     let line = Line::from(vec![prefix_span, label_span, fill_span]);
-    let paragraph = ratatui::widgets::Paragraph::new(line)
-        .style(Style::default().bg(theme.surface_2));
+    let paragraph =
+        ratatui::widgets::Paragraph::new(line).style(Style::default().bg(theme.surface_2));
     frame.render_widget(paragraph, area);
 }
 
@@ -796,7 +787,10 @@ mod tests {
     fn pulse_intensity_range() {
         for tick in 0..PULSE_PERIOD {
             let val = pulse_intensity(tick, PULSE_PERIOD);
-            assert!((0.29..=1.01).contains(&val), "pulse_intensity({tick}) = {val}");
+            assert!(
+                (0.29..=1.01).contains(&val),
+                "pulse_intensity({tick}) = {val}"
+            );
         }
     }
 
@@ -805,16 +799,34 @@ mod tests {
         // PULSE_PERIOD_BORDER (2s at 60fps) should also stay in valid range
         for tick in 0..PULSE_PERIOD_BORDER {
             let val = pulse_intensity(tick, PULSE_PERIOD_BORDER);
-            assert!((0.29..=1.01).contains(&val), "pulse_intensity({tick}, BORDER) = {val}");
+            assert!(
+                (0.29..=1.01).contains(&val),
+                "pulse_intensity({tick}, BORDER) = {val}"
+            );
         }
     }
 
     #[test]
     fn pulse_border_period_produces_variation() {
         // Border pulse should produce distinct colors at quarter-phase points
-        let c1 = pulse_color(Color::Rgb(100, 200, 255), Color::Rgb(50, 50, 50), 0, PULSE_PERIOD_BORDER);
-        let c2 = pulse_color(Color::Rgb(100, 200, 255), Color::Rgb(50, 50, 50), PULSE_PERIOD_BORDER / 4, PULSE_PERIOD_BORDER);
-        let c3 = pulse_color(Color::Rgb(100, 200, 255), Color::Rgb(50, 50, 50), PULSE_PERIOD_BORDER / 2, PULSE_PERIOD_BORDER);
+        let c1 = pulse_color(
+            Color::Rgb(100, 200, 255),
+            Color::Rgb(50, 50, 50),
+            0,
+            PULSE_PERIOD_BORDER,
+        );
+        let c2 = pulse_color(
+            Color::Rgb(100, 200, 255),
+            Color::Rgb(50, 50, 50),
+            PULSE_PERIOD_BORDER / 4,
+            PULSE_PERIOD_BORDER,
+        );
+        let c3 = pulse_color(
+            Color::Rgb(100, 200, 255),
+            Color::Rgb(50, 50, 50),
+            PULSE_PERIOD_BORDER / 2,
+            PULSE_PERIOD_BORDER,
+        );
         // Quarter-phase (tick 30) should be near peak, half-phase (tick 60) should be near trough
         assert_ne!(c1, c2, "pulse should vary at quarter period");
         assert_ne!(c2, c3, "pulse should vary at half period");
@@ -1078,8 +1090,7 @@ mod tests {
                 render_popup_shadow(frame, popup, area, &theme);
 
                 // Right shadow should be at x=13 (5+8), rows 3..7 (y+1 to y+height+1)
-                let shadow_color =
-                    lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+                let shadow_color = lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
                 for row in 3..7 {
                     let cell = frame.buffer_mut().cell_mut(Position::new(13, row)).unwrap();
                     assert_eq!(
@@ -1107,8 +1118,7 @@ mod tests {
                 render_popup_shadow(frame, popup, area, &theme);
 
                 // Bottom shadow should be at y=6 (2+4), cols 6..14 (x+1 to x+width+1)
-                let shadow_color =
-                    lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+                let shadow_color = lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
                 for col in 6..14 {
                     let cell = frame.buffer_mut().cell_mut(Position::new(col, 6)).unwrap();
                     assert_eq!(
@@ -1168,8 +1178,16 @@ mod tests {
                         text.push_str(cell.symbol());
                     }
                 }
-                assert!(text.contains("POSITIONS"), "header should contain label, got: '{}'", text);
-                assert!(text.contains("──"), "header should contain rule chars, got: '{}'", text);
+                assert!(
+                    text.contains("POSITIONS"),
+                    "header should contain label, got: '{}'",
+                    text
+                );
+                assert!(
+                    text.contains("──"),
+                    "header should contain rule chars, got: '{}'",
+                    text
+                );
             })
             .unwrap();
     }
@@ -1191,8 +1209,10 @@ mod tests {
                 // Check that cells have the surface_2 background
                 let buf = frame.buffer_mut();
                 if let Some(cell) = buf.cell(Position::new(5, 0)) {
-                    assert_eq!(cell.bg, theme.surface_2,
-                        "section header should use surface_2 background");
+                    assert_eq!(
+                        cell.bg, theme.surface_2,
+                        "section header should use surface_2 background"
+                    );
                 }
             })
             .unwrap();
@@ -1251,8 +1271,10 @@ mod tests {
                 // The last cell should have surface_2 bg (the fill extends to the edge)
                 let buf = frame.buffer_mut();
                 if let Some(cell) = buf.cell(Position::new(49, 0)) {
-                    assert_eq!(cell.bg, theme.surface_2,
-                        "section header fill should reach the right edge");
+                    assert_eq!(
+                        cell.bg, theme.surface_2,
+                        "section header fill should reach the right edge"
+                    );
                 }
             })
             .unwrap();
@@ -1273,8 +1295,7 @@ mod tests {
                 let popup = Rect::new(5, 2, 8, 4);
                 render_popup_shadow(frame, popup, area, &theme);
 
-                let shadow_color =
-                    lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
+                let shadow_color = lerp_color(theme.surface_0, Color::Rgb(0, 0, 0), SHADOW_OPACITY);
 
                 // Top-left corner of popup (5, 2) should NOT have shadow
                 let cell = frame.buffer_mut().cell_mut(Position::new(5, 2)).unwrap();

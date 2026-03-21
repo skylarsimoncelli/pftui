@@ -16,7 +16,10 @@ fn return_pct(start: Decimal, end: Decimal) -> Option<Decimal> {
 }
 
 /// Find the snapshot closest to (but not after) a target date.
-fn snapshot_at_or_before<'a>(snapshots: &'a [PortfolioSnapshot], target: &str) -> Option<&'a PortfolioSnapshot> {
+fn snapshot_at_or_before<'a>(
+    snapshots: &'a [PortfolioSnapshot],
+    target: &str,
+) -> Option<&'a PortfolioSnapshot> {
     // Snapshots are in ascending order. Find the last one <= target.
     snapshots.iter().rev().find(|s| s.date.as_str() <= target)
 }
@@ -24,7 +27,10 @@ fn snapshot_at_or_before<'a>(snapshots: &'a [PortfolioSnapshot], target: &str) -
 /// Find the snapshot for period-based returns (MTD, QTD, YTD).
 /// Prefer the first snapshot on/after period start (true period start anchor).
 /// If none exists yet, fall back to the latest snapshot before period start.
-fn snapshot_for_period<'a>(snapshots: &'a [PortfolioSnapshot], period_start: &str) -> Option<&'a PortfolioSnapshot> {
+fn snapshot_for_period<'a>(
+    snapshots: &'a [PortfolioSnapshot],
+    period_start: &str,
+) -> Option<&'a PortfolioSnapshot> {
     // Prefer first snapshot inside the period.
     if let Some(snap) = snapshots.iter().find(|s| s.date.as_str() >= period_start) {
         return Some(snap);
@@ -86,7 +92,14 @@ pub fn run(
     }
 
     // Default: show standard period returns (1D, 1W, 1M, MTD, QTD, YTD, since inception)
-    print_standard_returns(&all_snapshots, latest, earliest, &today, config, vs_benchmark)
+    print_standard_returns(
+        &all_snapshots,
+        latest,
+        earliest,
+        &today,
+        config,
+        vs_benchmark,
+    )
 }
 
 fn validate_date(date: &str) -> Result<()> {
@@ -110,9 +123,15 @@ fn print_standard_returns(
     let current_value = latest.total_value;
 
     // Compute period start dates
-    let d1 = (*today - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
-    let w1 = (*today - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
-    let m1 = (*today - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
+    let d1 = (*today - chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let w1 = (*today - chrono::Duration::days(7))
+        .format("%Y-%m-%d")
+        .to_string();
+    let m1 = (*today - chrono::Duration::days(30))
+        .format("%Y-%m-%d")
+        .to_string();
     let mtd = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
         .unwrap_or(*today)
         .format("%Y-%m-%d")
@@ -158,10 +177,7 @@ fn print_standard_returns(
     );
     println!();
 
-    println!(
-        "  {:<16} {:>12} {:>18}",
-        "Period", "Return", "Change"
-    );
+    println!("  {:<16} {:>12} {:>18}", "Period", "Return", "Change");
     println!("  {}", "─".repeat(48));
 
     let periods: Vec<(&str, Option<Decimal>)> = vec![
@@ -188,7 +204,13 @@ fn print_standard_returns(
     println!();
     let unavailable: Vec<&str> = periods
         .iter()
-        .filter_map(|(label, start_val)| if start_val.is_none() { Some(*label) } else { None })
+        .filter_map(|(label, start_val)| {
+            if start_val.is_none() {
+                Some(*label)
+            } else {
+                None
+            }
+        })
         .collect();
     if !unavailable.is_empty() {
         println!(
@@ -200,7 +222,10 @@ fn print_standard_returns(
     }
 
     // Value composition
-    println!("  Invested: {:.2}    Cash: {:.2}", latest.invested_value, latest.cash_value);
+    println!(
+        "  Invested: {:.2}    Cash: {:.2}",
+        latest.invested_value, latest.cash_value
+    );
 
     Ok(())
 }
@@ -222,9 +247,18 @@ fn print_since(
 
             println!("Performance since {} → {}", snap.date, latest.date);
             println!();
-            println!("  Start Value:   {:.2} {}", snap.total_value, config.base_currency);
-            println!("  Current Value: {:.2} {}", current_value, config.base_currency);
-            println!("  Change:        {}", fmt_dollar(Some(change), &config.base_currency));
+            println!(
+                "  Start Value:   {:.2} {}",
+                snap.total_value, config.base_currency
+            );
+            println!(
+                "  Current Value: {:.2} {}",
+                current_value, config.base_currency
+            );
+            println!(
+                "  Change:        {}",
+                fmt_dollar(Some(change), &config.base_currency)
+            );
             println!("  Return:        {}", fmt_return(ret));
 
             // Show intermediate snapshots if available
@@ -274,7 +308,10 @@ fn print_since(
         }
         None => {
             println!("No snapshots found on or before {}.", since_date);
-            println!("Earliest snapshot: {}", snapshots.first().map(|s| s.date.as_str()).unwrap_or("none"));
+            println!(
+                "Earliest snapshot: {}",
+                snapshots.first().map(|s| s.date.as_str()).unwrap_or("none")
+            );
         }
     }
 
@@ -297,15 +334,14 @@ fn print_period_series(
 
     println!(
         "  {:<12} {:>14} {:>10}",
-        "Period", format!("Value ({})", config.base_currency), "Return"
+        "Period",
+        format!("Value ({})", config.base_currency),
+        "Return"
     );
     println!("  {}", "─".repeat(40));
 
     for (label, snap) in &grouped {
-        println!(
-            "  {:<12} {:>14.2} {:>10}",
-            label, snap.total_value, "—"
-        );
+        println!("  {:<12} {:>14.2} {:>10}", label, snap.total_value, "—");
     }
 
     // Show period-over-period returns
@@ -331,7 +367,10 @@ fn print_period_series(
 }
 
 fn group_daily(snapshots: &[PortfolioSnapshot]) -> Vec<(String, PortfolioSnapshot)> {
-    snapshots.iter().map(|s| (s.date.clone(), s.clone())).collect()
+    snapshots
+        .iter()
+        .map(|s| (s.date.clone(), s.clone()))
+        .collect()
 }
 
 fn group_weekly(snapshots: &[PortfolioSnapshot]) -> Vec<(String, PortfolioSnapshot)> {
@@ -388,9 +427,15 @@ fn print_json(
     let current_value = latest.total_value;
 
     // Build standard period returns
-    let d1 = (*today - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
-    let w1 = (*today - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
-    let m1 = (*today - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
+    let d1 = (*today - chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let w1 = (*today - chrono::Duration::days(7))
+        .format("%Y-%m-%d")
+        .to_string();
+    let m1 = (*today - chrono::Duration::days(30))
+        .format("%Y-%m-%d")
+        .to_string();
     let ytd = NaiveDate::from_ymd_opt(today.year(), 1, 1)
         .unwrap_or(*today)
         .format("%Y-%m-%d")
@@ -702,7 +747,7 @@ mod tests {
     fn test_snapshot_db_functions() {
         let conn = crate::db::open_in_memory();
 
-        use crate::db::snapshots::{upsert_portfolio_snapshot, get_portfolio_snapshots_since};
+        use crate::db::snapshots::{get_portfolio_snapshots_since, upsert_portfolio_snapshot};
 
         upsert_portfolio_snapshot(&conn, "2026-02-01", dec!(100000), dec!(20000), dec!(80000))
             .unwrap();

@@ -54,12 +54,26 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Strong line
     if !suggestions.strong.is_empty() {
-        lines.push(build_asset_line("▲", &suggestions.strong, t, inner.width, true, privacy));
+        lines.push(build_asset_line(
+            "▲",
+            &suggestions.strong,
+            t,
+            inner.width,
+            true,
+            privacy,
+        ));
     }
 
     // Weak line
     if !suggestions.weak.is_empty() {
-        lines.push(build_asset_line("▼", &suggestions.weak, t, inner.width, false, privacy));
+        lines.push(build_asset_line(
+            "▼",
+            &suggestions.weak,
+            t,
+            inner.width,
+            false,
+            privacy,
+        ));
     }
 
     // Alignment line (if we have positions and room)
@@ -99,10 +113,7 @@ fn build_asset_line<'a>(
 
     if privacy {
         return Line::from(vec![
-            Span::styled(
-                format!("{} ", icon),
-                Style::default().fg(color).bold(),
-            ),
+            Span::styled(format!("{} ", icon), Style::default().fg(color).bold()),
             Span::styled("••••••", Style::default().fg(t.text_muted)),
         ]);
     }
@@ -139,10 +150,7 @@ fn build_alignment_line<'a>(
         t.text_muted
     };
 
-    Line::from(Span::styled(
-        truncated,
-        Style::default().fg(color).italic(),
-    ))
+    Line::from(Span::styled(truncated, Style::default().fg(color).italic()))
 }
 
 /// Join items with commas, truncating with "…" if they don't fit.
@@ -219,11 +227,19 @@ mod tests {
         ];
         let result = super::truncate_list_owned(&items, 25);
         let char_count = result.chars().count();
-        assert!(char_count <= 25, "result too long: {} ({} chars)", result, char_count);
+        assert!(
+            char_count <= 25,
+            "result too long: {} ({} chars)",
+            result,
+            char_count
+        );
         assert!(result.contains("Gold"));
         // Not all items should fit — at least one is dropped
-        assert!(!result.contains("Utilities"),
-            "all items shouldn't fit in 25 chars: {}", result);
+        assert!(
+            !result.contains("Utilities"),
+            "all items shouldn't fit in 25 chars: {}",
+            result
+        );
     }
 
     #[test]
@@ -236,7 +252,12 @@ mod tests {
         ];
         let result = super::truncate_list_owned(&items, 16);
         let char_count = result.chars().count();
-        assert!(char_count <= 16, "too long: {} ({} chars)", result, char_count);
+        assert!(
+            char_count <= 16,
+            "too long: {} ({} chars)",
+            result,
+            char_count
+        );
         assert!(result.contains("Gold"));
         assert!(result.ends_with('…'), "expected ellipsis: {}", result);
     }

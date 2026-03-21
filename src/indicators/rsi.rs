@@ -48,11 +48,7 @@ pub fn compute_rsi(prices: &[f64], period: usize) -> Vec<Option<f64>> {
     let pf = period as f64;
     for i in period..changes.len() {
         let ch = changes[i];
-        let (gain, loss) = if ch > 0.0 {
-            (ch, 0.0)
-        } else {
-            (0.0, ch.abs())
-        };
+        let (gain, loss) = if ch > 0.0 { (ch, 0.0) } else { (0.0, ch.abs()) };
         avg_gain = (avg_gain * (pf - 1.0) + gain) / pf;
         avg_loss = (avg_loss * (pf - 1.0) + loss) / pf;
         result[i + 1] = Some(rsi_from_avgs(avg_gain, avg_loss));
@@ -145,7 +141,11 @@ mod tests {
             prices.push(40.0 + i as f64);
         }
         for i in 0..15 {
-            prices.push(if i % 2 == 0 { 55.0 - i as f64 * 0.3 } else { 54.0 + i as f64 * 0.2 });
+            prices.push(if i % 2 == 0 {
+                55.0 - i as f64 * 0.3
+            } else {
+                54.0 + i as f64 * 0.2
+            });
         }
         let rsi = compute_rsi(&prices, 14);
 

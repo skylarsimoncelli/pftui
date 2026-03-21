@@ -96,7 +96,8 @@ fn render_table(
             Row::new(vec![
                 Cell::from(time_line),
                 Cell::from(entry.source.clone()).style(Style::default().fg(t.text_secondary)),
-                Cell::from(entry.category.clone()).style(Style::default().fg(category_color(entry, t))),
+                Cell::from(entry.category.clone())
+                    .style(Style::default().fg(category_color(entry, t))),
                 Cell::from(headline).style(Style::default().fg(t.text_primary)),
             ])
             .style(Style::default().bg(row_bg))
@@ -159,7 +160,10 @@ fn render_context_panel(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(t.border_inactive))
-        .title(Span::styled(" News Context ", Style::default().fg(t.text_accent).bold()));
+        .title(Span::styled(
+            " News Context ",
+            Style::default().fg(t.text_accent).bold(),
+        ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -174,15 +178,24 @@ fn render_context_panel(
             selected.description.clone()
         }),
         Line::raw(""),
-        Line::styled("Related symbols", Style::default().fg(t.text_secondary).bold()),
+        Line::styled(
+            "Related symbols",
+            Style::default().fg(t.text_secondary).bold(),
+        ),
     ];
     if symbols.is_empty() {
-        lines.push(Line::styled("None detected", Style::default().fg(t.text_muted)));
+        lines.push(Line::styled(
+            "None detected",
+            Style::default().fg(t.text_muted),
+        ));
     } else {
         lines.push(Line::raw(symbols.join(", ")));
     }
     lines.push(Line::raw(""));
-    lines.push(Line::styled("Workflow", Style::default().fg(t.text_secondary).bold()));
+    lines.push(Line::styled(
+        "Workflow",
+        Style::default().fg(t.text_secondary).bold(),
+    ));
     lines.push(Line::raw("J create journal entry from article"));
     lines.push(Line::raw("A add first detected symbol to watchlist"));
     lines.push(Line::raw("o open original URL"));

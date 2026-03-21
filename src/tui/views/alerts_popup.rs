@@ -3,13 +3,13 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
-use crate::app::App;
 use crate::alerts::engine::check_alerts_backend_only;
 use crate::alerts::AlertStatus;
+use crate::app::App;
 
 pub fn render(frame: &mut Frame, app: &App) {
     let t = &app.theme;
-    
+
     // Load alert check results
     let results = if let Some(backend) = app.open_backend() {
         check_alerts_backend_only(&backend).unwrap_or_default()
@@ -44,22 +44,17 @@ pub fn render(frame: &mut Frame, app: &App) {
         let empty_text = Paragraph::new("No alerts configured.\n\nUse `pftui alert add` to create price/allocation/indicator alerts.")
             .style(Style::default().fg(t.text_secondary))
             .alignment(Alignment::Center);
-        let empty_area = Rect::new(
-            inner.x,
-            inner.y + inner.height / 3,
-            inner.width,
-            3,
-        );
+        let empty_area = Rect::new(inner.x, inner.y + inner.height / 3, inner.width, 3);
         frame.render_widget(empty_text, empty_area);
         return;
     }
 
     // Build alert list items
     let mut items: Vec<ListItem> = Vec::new();
-    
+
     for result in &results {
         let alert = &result.rule;
-        
+
         // Status icon and color
         let (status_icon, status_color) = match alert.status {
             AlertStatus::Armed => ("🟢", t.gain_green),
@@ -69,7 +64,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
         // Rule text
         let rule_text = &alert.rule_text;
-        
+
         // Current value and distance
         let value_text = if let Some(current) = result.current_value {
             if let Some(dist) = result.distance_pct {
@@ -93,10 +88,13 @@ pub fn render(frame: &mut Frame, app: &App) {
             Span::raw(" "),
             Span::styled(rule_text, Style::default().fg(t.text_primary).bold()),
         ];
-        
+
         // Add value info on same line if space permits
         if inner.width > 80 {
-            spans.push(Span::styled(value_text, Style::default().fg(t.text_secondary)));
+            spans.push(Span::styled(
+                value_text,
+                Style::default().fg(t.text_secondary),
+            ));
         }
 
         let line = Line::from(spans);
@@ -105,19 +103,29 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     // Render scrollable list
     let visible_height = inner.height.saturating_sub(2) as usize; // Leave room for help footer
-    let scroll_offset = app.alerts_scroll.min(items.len().saturating_sub(visible_height));
-    
-    let list_area = Rect::new(inner.x, inner.y, inner.width, inner.height.saturating_sub(1));
-    
+    let scroll_offset = app
+        .alerts_scroll
+        .min(items.len().saturating_sub(visible_height));
+
+    let list_area = Rect::new(
+        inner.x,
+        inner.y,
+        inner.width,
+        inner.height.saturating_sub(1),
+    );
+
     // Render with manual offset (since we don't use StatefulWidget)
     let visible_items: Vec<ListItem> = if items.len() > visible_height {
-        items.into_iter().skip(scroll_offset).take(visible_height).collect()
+        items
+            .into_iter()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .collect()
     } else {
         items
     };
-    
-    let visible_list = List::new(visible_items)
-        .style(Style::default().bg(t.surface_1));
+
+    let visible_list = List::new(visible_items).style(Style::default().bg(t.surface_1));
     frame.render_widget(visible_list, list_area);
 
     // Help footer
@@ -127,7 +135,12 @@ pub fn render(frame: &mut Frame, app: &App) {
         Span::styled("[Esc]", Style::default().fg(t.key_hint)),
         Span::styled(" Close", Style::default().fg(t.text_secondary)),
     ]);
-    let help_area = Rect::new(inner.x, inner.y + inner.height.saturating_sub(1), inner.width, 1);
+    let help_area = Rect::new(
+        inner.x,
+        inner.y + inner.height.saturating_sub(1),
+        inner.width,
+        1,
+    );
     let help_widget = Paragraph::new(help_line)
         .alignment(Alignment::Center)
         .style(Style::default().bg(t.surface_2).fg(t.text_secondary));

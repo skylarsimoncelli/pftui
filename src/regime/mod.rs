@@ -160,7 +160,11 @@ fn signal_direction(
         Some((pct, latest_f)) => {
             let rising = pct > 0.0;
             let score: i8 = if invert {
-                if rising { -1 } else { 1 }
+                if rising {
+                    -1
+                } else {
+                    1
+                }
             } else if rising {
                 1
             } else {
@@ -256,7 +260,11 @@ fn signal_ratio_direction(
     let rising = latest_ratio > past_ratio;
 
     let score: i8 = if invert {
-        if rising { -1 } else { 1 }
+        if rising {
+            -1
+        } else {
+            1
+        }
     } else if rising {
         1
     } else {
@@ -579,17 +587,33 @@ mod tests {
         let mut history = HashMap::new();
         // Anti-correlated: when A goes up, B goes down, alternating.
         let prices_a: Vec<f64> = (0..25)
-            .map(|i| if i % 2 == 0 { 100.0 + i as f64 } else { 100.0 - i as f64 })
+            .map(|i| {
+                if i % 2 == 0 {
+                    100.0 + i as f64
+                } else {
+                    100.0 - i as f64
+                }
+            })
             .collect();
         let prices_b: Vec<f64> = (0..25)
-            .map(|i| if i % 2 == 0 { 100.0 - i as f64 } else { 100.0 + i as f64 })
+            .map(|i| {
+                if i % 2 == 0 {
+                    100.0 - i as f64
+                } else {
+                    100.0 + i as f64
+                }
+            })
             .collect();
         history.insert("BTC-USD".to_string(), make_history(&prices_a));
         history.insert("^GSPC".to_string(), make_history(&prices_b));
 
         let corr = compute_correlation(&history, "BTC-USD", "^GSPC", 20);
         assert!(corr.is_some());
-        assert!(corr.unwrap() < -0.5, "expected negative correlation, got {}", corr.unwrap());
+        assert!(
+            corr.unwrap() < -0.5,
+            "expected negative correlation, got {}",
+            corr.unwrap()
+        );
     }
 
     #[test]
@@ -651,7 +675,11 @@ mod tests {
         let regime = compute_regime(&prices, &history);
         assert!(regime.has_data());
         // Should be mostly or fully risk-on
-        assert!(regime.total >= 5, "Expected risk-on, got total={}", regime.total);
+        assert!(
+            regime.total >= 5,
+            "Expected risk-on, got total={}",
+            regime.total
+        );
     }
 
     #[test]

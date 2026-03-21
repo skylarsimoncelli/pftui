@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 #[cfg(test)]
 use rusqlite::Connection;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 use crate::cli::SummaryGroupBy;
 use crate::config::{Config, PortfolioMode};
@@ -18,7 +18,10 @@ use crate::models::position::{compute_positions, compute_positions_from_allocati
 /// Validate a date string is YYYY-MM-DD format and represents a real date.
 fn validate_date(date: &str) -> Result<()> {
     if chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err() {
-        bail!("Invalid date '{}': expected YYYY-MM-DD format (e.g. 2026-02-28)", date);
+        bail!(
+            "Invalid date '{}': expected YYYY-MM-DD format (e.g. 2026-02-28)",
+            date
+        );
     }
     Ok(())
 }
@@ -35,7 +38,10 @@ pub fn run(
     let today = chrono::Utc::now().date_naive();
     let target = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
     if target > today {
-        bail!("Date '{}' is in the future. Historical data is only available for past dates.", date);
+        bail!(
+            "Date '{}' is in the future. Historical data is only available for past dates.",
+            date
+        );
     }
 
     match config.portfolio_mode {
@@ -217,13 +223,11 @@ fn print_grouped_by_category(positions: &[Position], config: &Config) -> Result<
 
     let mut groups: HashMap<AssetCategory, CategoryGroup> = HashMap::new();
     for pos in positions {
-        let group = groups
-            .entry(pos.category)
-            .or_insert_with(|| CategoryGroup {
-                value: dec!(0),
-                cost: dec!(0),
-                symbols: Vec::new(),
-            });
+        let group = groups.entry(pos.category).or_insert_with(|| CategoryGroup {
+            value: dec!(0),
+            cost: dec!(0),
+            symbols: Vec::new(),
+        });
         if let Some(v) = pos.current_value {
             group.value += v;
         }
@@ -465,18 +469,18 @@ mod tests {
                     date: "2025-06-01".into(),
                     close: dec!(180),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
                 HistoryRecord {
                     date: "2025-06-15".into(),
                     close: dec!(190),
                     volume: None,
-                open: None,
-                high: None,
-                low: None,
-            },
+                    open: None,
+                    high: None,
+                    low: None,
+                },
             ],
         )
         .unwrap();
@@ -557,7 +561,12 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, &config, "2025-06-01", Some(&SummaryGroupBy::Category));
+        let result = run(
+            &backend,
+            &config,
+            "2025-06-01",
+            Some(&SummaryGroupBy::Category),
+        );
         assert!(result.is_ok());
     }
 
@@ -662,8 +671,14 @@ mod tests {
             .filter(|tx| tx.category == AssetCategory::Cash || tx.date.as_str() <= "2025-06-01")
             .collect();
         assert_eq!(txs_at_date.len(), 2, "Both AAPL and USD should be included");
-        assert!(txs_at_date.iter().any(|t| t.symbol == "USD"), "Cash must be present");
-        assert!(txs_at_date.iter().any(|t| t.symbol == "AAPL"), "Equity must be present");
+        assert!(
+            txs_at_date.iter().any(|t| t.symbol == "USD"),
+            "Cash must be present"
+        );
+        assert!(
+            txs_at_date.iter().any(|t| t.symbol == "AAPL"),
+            "Equity must be present"
+        );
     }
 
     #[test]

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 #[cfg(test)]
 use rusqlite::Connection;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 use crate::config::{Config, PortfolioMode};
 use crate::db::allocations::list_allocations_backend;
@@ -50,10 +50,8 @@ fn format_with_commas(value: Decimal, dp: u32) -> String {
 
 pub fn run(backend: &BackendConnection, config: &Config, json: bool) -> Result<()> {
     let cached = get_all_cached_prices_backend(backend)?;
-    let prices: HashMap<String, Decimal> = cached
-        .into_iter()
-        .map(|q| (q.symbol, q.price))
-        .collect();
+    let prices: HashMap<String, Decimal> =
+        cached.into_iter().map(|q| (q.symbol, q.price)).collect();
 
     match config.portfolio_mode {
         PortfolioMode::Full => run_full(backend, config, &prices, json),
@@ -92,15 +90,9 @@ fn run_full(
         return Ok(());
     }
 
-    let total_value: Decimal = positions
-        .iter()
-        .filter_map(|p| p.current_value)
-        .sum();
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
 
-    let total_cost: Decimal = positions
-        .iter()
-        .map(|p| p.total_cost)
-        .sum();
+    let total_cost: Decimal = positions.iter().map(|p| p.total_cost).sum();
 
     let total_gain = total_value - total_cost;
     let total_gain_pct = if total_cost > dec!(0) {
@@ -114,13 +106,15 @@ fn run_full(
         .filter(|p| p.current_price.is_some())
         .count();
     let total_count = positions.len();
-    
+
     if json {
         let value_f64: f64 = total_value.to_string().parse().unwrap_or(0.0);
         let change_abs_f64: f64 = total_gain.to_string().parse().unwrap_or(0.0);
         let change_pct_f64: f64 = total_gain_pct.to_string().parse().unwrap_or(0.0);
-        println!("{{\"value\": {:.2}, \"change_pct\": {:.2}, \"change_abs\": {:.2}}}", 
-            value_f64, change_pct_f64, change_abs_f64);
+        println!(
+            "{{\"value\": {:.2}, \"change_pct\": {:.2}, \"change_abs\": {:.2}}}",
+            value_f64, change_pct_f64, change_abs_f64
+        );
         return Ok(());
     }
 
@@ -202,7 +196,7 @@ fn run_percentage(
         }
         return Ok(());
     }
-    
+
     if json {
         // In percentage mode, we don't have absolute value, just allocations
         let alloc_data: Vec<_> = positions.iter().map(|p| {
@@ -363,12 +357,12 @@ mod tests {
                 currency: "USD".to_string(),
                 source: "test".to_string(),
                 fetched_at: "2025-01-15T00:00:00Z".to_string(),
-            
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
-                    previous_close: None,
-        },
+
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: None,
+            },
         )
         .unwrap();
 

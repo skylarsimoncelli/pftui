@@ -51,7 +51,9 @@ fn compute_change_pct(
 
     let today = Utc::now().date_naive();
     // Fetch more history to survive multi-day stale-close duplication (weekends, holidays).
-    let history = get_history_backend(backend, symbol, 10).ok().unwrap_or_default();
+    let history = get_history_backend(backend, symbol, 10)
+        .ok()
+        .unwrap_or_default();
     let prev_close = previous_close_from_history(&history, today, current)
         .or_else(|| {
             // Fallback: explicit yesterday lookup
@@ -316,10 +318,7 @@ pub fn run(
             .iter()
             .map(|m| {
                 let f: f64 = m.change_pct.to_string().parse().unwrap_or(0.0);
-                let sym_signals = signal_map
-                    .get(&m.symbol)
-                    .cloned()
-                    .unwrap_or_default();
+                let sym_signals = signal_map.get(&m.symbol).cloned().unwrap_or_default();
                 let mut obj = serde_json::json!({
                     "symbol": m.symbol,
                     "name": m.name,
@@ -507,7 +506,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();

@@ -60,7 +60,10 @@ pub fn get_all_predictions(conn: &Connection) -> Result<Vec<PredictionMarket>> {
 }
 
 /// Retrieve predictions filtered by category.
-pub fn get_predictions_by_category(conn: &Connection, category: &str) -> Result<Vec<PredictionMarket>> {
+pub fn get_predictions_by_category(
+    conn: &Connection,
+    category: &str,
+) -> Result<Vec<PredictionMarket>> {
     let mut stmt = conn.prepare(
         "SELECT market_id, question, outcome_yes_price, outcome_no_price, volume, category, end_date
          FROM prediction_cache

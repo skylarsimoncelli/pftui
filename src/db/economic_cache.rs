@@ -4,8 +4,8 @@
 //! (for sparklines/trends). Aggressive caching — FRED data rarely changes intraday.
 
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
@@ -40,7 +40,10 @@ pub fn upsert_observation(conn: &Connection, obs: &EconomicObservation) -> Resul
     Ok(())
 }
 
-pub fn upsert_observation_backend(backend: &BackendConnection, obs: &EconomicObservation) -> Result<()> {
+pub fn upsert_observation_backend(
+    backend: &BackendConnection,
+    obs: &EconomicObservation,
+) -> Result<()> {
     query::dispatch(
         backend,
         |conn| upsert_observation(conn, obs),
@@ -81,9 +84,7 @@ pub fn get_latest(conn: &Connection, series_id: &str) -> Result<Option<EconomicO
         Ok(EconomicObservation {
             series_id: row.get(0)?,
             date: row.get(1)?,
-            value: row.get::<_, String>(2)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            value: row.get::<_, String>(2)?.parse().unwrap_or(Decimal::ZERO),
             fetched_at: row.get(3)?,
         })
     })?;
@@ -122,9 +123,7 @@ pub fn get_history(
         Ok(EconomicObservation {
             series_id: row.get(0)?,
             date: row.get(1)?,
-            value: row.get::<_, String>(2)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            value: row.get::<_, String>(2)?.parse().unwrap_or(Decimal::ZERO),
             fetched_at: row.get(3)?,
         })
     })?;
@@ -168,9 +167,7 @@ pub fn get_all_latest(conn: &Connection) -> Result<Vec<EconomicObservation>> {
         Ok(EconomicObservation {
             series_id: row.get(0)?,
             date: row.get(1)?,
-            value: row.get::<_, String>(2)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            value: row.get::<_, String>(2)?.parse().unwrap_or(Decimal::ZERO),
             fetched_at: row.get(3)?,
         })
     })?;
@@ -204,11 +201,7 @@ pub fn delete_series_backend(backend: &BackendConnection, series_id: &str) -> Re
 
 /// Count total cached observations.
 pub fn count_observations(conn: &Connection) -> Result<u64> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM economic_cache",
-        [],
-        |row| row.get(0),
-    )?;
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM economic_cache", [], |row| row.get(0))?;
     Ok(count as u64)
 }
 
@@ -296,7 +289,7 @@ fn to_observation(row: EconRow) -> EconomicObservation {
 
 fn get_latest_postgres(pool: &PgPool, series_id: &str) -> Result<Option<EconomicObservation>> {
     ensure_tables_postgres(pool)?;
-        let row: Option<EconRow> = crate::db::pg_runtime::block_on(async {
+    let row: Option<EconRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT series_id, date, value, fetched_at::text
              FROM economic_cache
@@ -311,9 +304,13 @@ fn get_latest_postgres(pool: &PgPool, series_id: &str) -> Result<Option<Economic
     Ok(row.map(to_observation))
 }
 
-fn get_history_postgres(pool: &PgPool, series_id: &str, limit: u32) -> Result<Vec<EconomicObservation>> {
+fn get_history_postgres(
+    pool: &PgPool,
+    series_id: &str,
+    limit: u32,
+) -> Result<Vec<EconomicObservation>> {
     ensure_tables_postgres(pool)?;
-        let mut rows: Vec<EconRow> = crate::db::pg_runtime::block_on(async {
+    let mut rows: Vec<EconRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT series_id, date, value, fetched_at::text
              FROM economic_cache
@@ -332,7 +329,7 @@ fn get_history_postgres(pool: &PgPool, series_id: &str, limit: u32) -> Result<Ve
 
 fn get_all_latest_postgres(pool: &PgPool) -> Result<Vec<EconomicObservation>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<EconRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<EconRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT e.series_id, e.date, e.value, e.fetched_at::text
              FROM economic_cache e
@@ -352,7 +349,7 @@ fn get_all_latest_postgres(pool: &PgPool) -> Result<Vec<EconomicObservation>> {
 
 fn delete_series_postgres(pool: &PgPool, series_id: &str) -> Result<u64> {
     ensure_tables_postgres(pool)?;
-        let result = crate::db::pg_runtime::block_on(async {
+    let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM economic_cache WHERE series_id = $1")
             .bind(series_id)
             .execute(pool)
@@ -363,7 +360,7 @@ fn delete_series_postgres(pool: &PgPool, series_id: &str) -> Result<u64> {
 
 fn count_observations_postgres(pool: &PgPool) -> Result<u64> {
     ensure_tables_postgres(pool)?;
-        let count: i64 = crate::db::pg_runtime::block_on(async {
+    let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM economic_cache")
             .fetch_one(pool)
             .await

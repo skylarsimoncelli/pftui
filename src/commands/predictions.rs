@@ -93,7 +93,10 @@ fn market_matches_selector(market: &PredictionMarket, selector: CategorySelector
     match selector {
         CategorySelector::Exact(c) => market.category == c,
         CategorySelector::Finance => {
-            matches!(market.category, MarketCategory::Economics | MarketCategory::Crypto)
+            matches!(
+                market.category,
+                MarketCategory::Economics | MarketCategory::Crypto
+            )
         }
         CategorySelector::Macro => matches!(
             market.category,
@@ -134,7 +137,10 @@ fn print_table(markets: &[PredictionMarket]) {
         cat = cat_width,
         vol = vol_width,
     );
-    println!("{}", "─".repeat(max_question_width + prob_width + cat_width + vol_width + 6));
+    println!(
+        "{}",
+        "─".repeat(max_question_width + prob_width + cat_width + vol_width + 6)
+    );
 
     // Print rows
     for market in markets {

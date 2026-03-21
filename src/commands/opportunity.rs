@@ -93,7 +93,10 @@ pub fn run(
             }
         }
 
-        _ => bail!("unknown opportunity action '{}'. Valid: add, list, stats", action),
+        _ => bail!(
+            "unknown opportunity action '{}'. Valid: add, list, stats",
+            action
+        ),
     }
 
     Ok(())

@@ -2,8 +2,8 @@ use anyhow::{bail, Result};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-use crate::db::backend::BackendConnection;
 use crate::db::allocation_targets;
+use crate::db::backend::BackendConnection;
 
 pub fn run(
     backend: &BackendConnection,

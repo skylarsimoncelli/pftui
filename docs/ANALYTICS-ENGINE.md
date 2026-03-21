@@ -4,6 +4,16 @@
 
 pftui's Analytics Engine is a multi-timeframe intelligence system that processes market data across four distinct time horizons. Each layer operates on different data sources, different update frequencies, and produces different kinds of actionable signals.
 
+As of the F53-F58 architecture work, the engine also exposes canonical server-owned analytics products that sit above the raw timeframe layers. These are the shared contracts consumed by CLI, web, mobile, and later the AI layer:
+
+- `pftui analytics situation --json` — canonical "what matters now" payload
+- `pftui analytics deltas --json` — server-owned change radar across monitoring windows
+- `pftui analytics catalysts --json` — ranked upcoming event pressure and countdowns
+- `pftui analytics impact --json` — portfolio-aware exposure ranking
+- `pftui analytics opportunities --json` — high-alignment non-held ideas
+- `pftui analytics synthesis --json` — cross-timeframe alignment, divergence, and constraints
+- `pftui analytics narrative --json` — machine-readable recap and analytical memory
+
 This is pftui's core differentiator: no other retail tool offers structured multi-timeframe analysis where each layer feeds into the layers above and below it.
 
 ```
@@ -154,6 +164,107 @@ trend_asset_impact   — which assets/sectors each trend favours/hurts
 
 **The Analytics Engine's job is to keep all four layers coherent.** When they're aligned (Macro bullish gold + High bullish commodities + Medium bullish on war scenario + Low showing gold breakout), that's a high-conviction signal. When they diverge (Macro bullish gold but Low showing gold breakdown), that's a signal to investigate — either the low-timeframe is noise, or the higher-timeframe thesis is wrong.
 
+## Canonical Analytics Products
+
+These contracts are where pftui now turns raw layer state into reusable intelligence. The design goal is simple: the hard ranking, delta detection, cross-timeframe reasoning, and portfolio-aware interpretation should live in Rust/Postgres, not be recomputed independently in every client or prompt.
+
+### Situation
+
+`pftui analytics situation --json`
+
+Answers:
+- what matters now
+- why it matters
+- how severe it is
+- which assets and portfolio exposures are affected
+
+Core output:
+- headline / subtitle
+- summary stats
+- `watch_now[]`
+- `portfolio_impacts[]`
+- `risk_matrix[]`
+
+### Deltas
+
+`pftui analytics deltas --json [--since last-refresh|close|24h|7d]`
+
+Answers:
+- what changed
+- when it changed
+- how material it is
+
+Core output:
+- persisted `situation_snapshots`
+- ranked `change_radar[]`
+- change windows for last refresh, prior close, 24h, and 7d
+
+### Catalysts
+
+`pftui analytics catalysts --json [--window today|tomorrow|week]`
+
+Answers:
+- what is coming next
+- how soon it lands
+- why it matters to scenarios and the portfolio
+
+Core output:
+- `CatalystEvent`
+- countdown bucket
+- significance
+- affected assets
+- scenario / prediction linkage
+
+### Impact And Opportunities
+
+`pftui analytics impact --json`
+`pftui analytics opportunities --json`
+
+Answers:
+- why current developments matter to the existing book
+- what strong opportunities exist outside it
+
+Core output:
+- evidence chains from scenarios, trends, signals, catalysts, and convictions
+- held/watchlist exposure ranking
+- non-held opportunity ranking
+
+### Synthesis
+
+`pftui analytics synthesis --json`
+
+Answers:
+- where timeframes agree
+- where they disagree
+- which higher-layer constraints dominate
+- what deserves watching tomorrow
+
+Core output:
+- strongest alignment
+- highest-confidence divergence
+- constraint flows
+- unresolved tensions
+- watch-tomorrow candidates
+
+### Narrative
+
+`pftui analytics narrative --json`
+
+Answers:
+- what the system believes now versus recently
+- which scenario / conviction / trend shifts matter
+- what lessons and surprises should persist as analytical memory
+
+Core output:
+- recap events
+- scenario shifts
+- conviction shifts
+- trend changes
+- prediction scorecard summary
+- surprises
+- lessons
+- catalyst outcomes
+
 ---
 
 ## Implementation Roadmap
@@ -193,6 +304,28 @@ Automated detection of alignment and divergence across timeframes.
 - Website section: multi-timeframe diagram, explanation
 - AGENTS.md: how agents use each timeframe layer
 - PRODUCT-VISION.md update
+
+### Phase 6: Rust-First Intelligence Layer (shipped in F53-F58)
+
+This phase moved a major part of the "intelligence" surface out of prompts and client-side heuristics into native analytics products:
+
+- Situation engine
+- Delta engine
+- Catalyst engine
+- Portfolio impact and opportunities engine
+- Cross-timeframe synthesis engine
+- Narrative state and structured recap layer
+
+The remaining AI-layer work is now primarily:
+- judgment
+- escalation
+- prose synthesis
+- deep external research
+
+Not:
+- ranking raw priorities from scratch
+- recomputing what changed
+- rebuilding the same cross-timeframe synthesis in every prompt
 
 ---
 

@@ -12,14 +12,12 @@ use crate::db::price_cache::get_all_cached_prices_backend;
 use crate::db::transactions::list_transactions_backend;
 use crate::models::position::{compute_positions, compute_positions_from_allocations};
 
-pub fn run(
-    backend: &BackendConnection,
-    config: &Config,
-    scenario: &str,
-    json: bool,
-) -> Result<()> {
+pub fn run(backend: &BackendConnection, config: &Config, scenario: &str, json: bool) -> Result<()> {
     let preset = parse_preset(scenario).ok_or_else(|| {
-        anyhow!("Unknown scenario '{}'. Try: Oil $100, BTC 40k, Gold $6000, 2008 GFC, 1973 Oil Crisis", scenario)
+        anyhow!(
+            "Unknown scenario '{}'. Try: Oil $100, BTC 40k, Gold $6000, 2008 GFC, 1973 Oil Crisis",
+            scenario
+        )
     })?;
 
     let prices: HashMap<String, Decimal> = get_all_cached_prices_backend(backend)?
@@ -60,7 +58,10 @@ pub fn run(
     };
 
     let base_total: Decimal = base_positions.iter().filter_map(|p| p.current_value).sum();
-    let stressed_total: Decimal = stressed_positions.iter().filter_map(|p| p.current_value).sum();
+    let stressed_total: Decimal = stressed_positions
+        .iter()
+        .filter_map(|p| p.current_value)
+        .sum();
     let delta = stressed_total - base_total;
     let delta_pct = if base_total > dec!(0) {
         (delta / base_total) * dec!(100)
@@ -83,8 +84,14 @@ pub fn run(
 
     println!("Stress Test: {}\n", scenario);
     println!("Base Total:     {:.2} {}", base_total, config.base_currency);
-    println!("Stressed Total: {:.2} {}", stressed_total, config.base_currency);
-    println!("Delta:          {:+.2} {} ({:+.2}%)", delta, config.base_currency, delta_pct);
+    println!(
+        "Stressed Total: {:.2} {}",
+        stressed_total, config.base_currency
+    );
+    println!(
+        "Delta:          {:+.2} {} ({:+.2}%)",
+        delta, config.base_currency, delta_pct
+    );
     println!();
     println!("Overrides:");
     for (sym, px) in overrides {

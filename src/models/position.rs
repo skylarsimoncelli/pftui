@@ -75,7 +75,7 @@ pub fn compute_positions(
         } else {
             prices.get(symbol.as_str()).copied()
         };
-        
+
         // Apply FX conversion if currency is non-USD
         let (native_currency, fx_rate, current_value) = if currency != "USD" {
             if let Some(rate) = fx_rates.get(&currency) {
@@ -91,7 +91,7 @@ pub fn compute_positions(
             let value = current_price.map(|p| p * qty);
             (None, None, value)
         };
-        
+
         let gain = current_value.map(|v| v - total_cost);
         let gain_pct = if total_cost > dec!(0) {
             gain.map(|g| (g / total_cost) * dec!(100))
@@ -118,10 +118,7 @@ pub fn compute_positions(
     }
 
     // Compute allocation percentages
-    let total_value: Decimal = positions
-        .iter()
-        .filter_map(|p| p.current_value)
-        .sum();
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
 
     if total_value > dec!(0) {
         for pos in &mut positions {
@@ -247,10 +244,7 @@ mod tests {
         let positions = compute_positions(&txs, &prices, &fx_rates);
 
         assert_eq!(positions.len(), 2);
-        let total_alloc: Decimal = positions
-            .iter()
-            .filter_map(|p| p.allocation_pct)
-            .sum();
+        let total_alloc: Decimal = positions.iter().filter_map(|p| p.allocation_pct).sum();
         assert_eq!(total_alloc, dec!(100));
     }
 }
