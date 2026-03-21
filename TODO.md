@@ -1,29 +1,24 @@
-# TODO — pftui
+# TODO - pftui
 
 > Pick highest-priority unclaimed item. Remove when done. Update CHANGELOG.md.
 
 ---
 
-## P0 — Critical
+## P0 - Critical
 
 _(none)_
 
-## P1 — Always-On Analytics Engine
+## P1 - Always-On Analytics Engine
 
 _(none)_
 
-## P2 — Coverage And Agent Consumption
+## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Scenario probability tracking in data sources** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands for faster narrative shift detection. Could auto-inject active scenario probabilities into `analytics summary` and `analytics low` output. (`src/commands/scenario.rs`, `src/commands/summary.rs`)
+- [Feedback] **Scenario probability tracking in data sources** - Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands for faster narrative shift detection. Could auto-inject active scenario probabilities into `analytics summary` and `analytics low` output. (`src/commands/scenario.rs`, `src/commands/summary.rs`)
 
-## P3 — Long Term
+## P3 - Long Term
 
-- **Integrate native narrative/situation analytics into `agents/routines/` prompts** — Update the multi-timeframe analyst and delivery routines so they consume the new Rust/Postgres-native analytics products instead of re-deriving the same logic in prompt text. Scope:
-  1. Review `low-timeframe-analyst.md`, `medium-timeframe-analyst.md`, `high-timeframe-analyst.md`, `macro-timeframe-analyst.md`, `morning-brief.md`, and `evening-analysis.md`
-  2. Replace prompt-internal recap / “what changed” / cross-timeframe synthesis / portfolio-impact / catalyst-ranking steps with calls to `pftui analytics situation --json`, `pftui analytics deltas --json`, `pftui analytics catalysts --json`, `pftui analytics impact --json`, `pftui analytics opportunities --json`, `pftui analytics synthesis --json`, and `pftui analytics narrative --json` where appropriate
-  3. Keep the routines focused on judgment, escalation, and prose synthesis, not recomputing facts already owned by the analytics layer
-  4. Update routine examples and handoff contracts so analysts reference canonical payload fields rather than vague prompt lore
-  5. Verify the revised routines still preserve the multi-timeframe operating model while reducing AI-side duplicated reasoning
+- ~~**Integrate native analytics into routines**~~ — DONE (commit `109fd67`). All 6 routines now consume situation, deltas, catalysts, impact, opportunities, synthesis, narrative where relevant.
 
 ---
 
@@ -45,16 +40,16 @@ _(none)_
 - 34 commits since v0.14.0 tag: journal alert section (#107), mobile API runtime fix (#112), plausibility guard (#99), partial_cmp fix (#92)
 - Tests: 1505 passing (up from 1495 at v0.14.0 release), clippy clean
 - Evening Analyst recovering: 45/55 → 65/72 after P0 fixes landed
-- Medium-Timeframe Analyst big jump: 70/75 → 85/90 — data coverage dramatically improved
+- Medium-Timeframe Analyst big jump: 70/75 → 85/90 - data coverage dramatically improved
 - BTC 224K% anomaly fixed via plausibility guard (±500% cap, PR #99)
-- `journal notes --section alert` added (PR #107) — alert-investigator feedback resolved
-- `score-batch` already exists but Evening Analyst didn't find it — discoverability issue, not missing feature
+- `journal notes --section alert` added (PR #107) - alert-investigator feedback resolved
+- `score-batch` already exists but Evening Analyst didn't find it - discoverability issue, not missing feature
 
 **Top 3 priorities based on feedback:**
-1. **P1: CLI discoverability** — `analytics conviction list` fails, `score-batch` undiscoverable. Evening Analyst (lowest scorer) directly impacted.
-2. **P2: Scenario probability tracking** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands.
-3. **P3: Integrate native analytics into agent routines** — Replace prompt-internal recap/synthesis with canonical analytics CLI calls.
+1. **P1: CLI discoverability** - `analytics conviction list` fails, `score-batch` undiscoverable. Evening Analyst (lowest scorer) directly impacted.
+2. **P2: Scenario probability tracking** - Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands.
+3. **P3: Integrate native analytics into agent routines** - Replace prompt-internal recap/synthesis with canonical analytics CLI calls.
 
 **Release status:** v0.14.0 is current release. 34 post-release commits (feedback entries, 3 code fixes). Next release (v0.14.1 or v0.15.0) gated on resolving remaining P1/P2 items. No P0 bugs.
 
-**GitHub stars:** 4 — Homebrew Core requires 50+.
+**GitHub stars:** 4 - Homebrew Core requires 50+.
