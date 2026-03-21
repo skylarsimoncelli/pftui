@@ -1,5 +1,6 @@
 pub mod catalysts;
 pub mod deltas;
+pub mod impact;
 pub mod levels;
 pub mod risk;
 pub mod scenarios;

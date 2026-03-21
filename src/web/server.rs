@@ -17,11 +17,11 @@ use tower_http::cors::{Any, CorsLayer};
 
 use super::api::{
     delete_alert, delete_journal, delete_transaction, delete_watchlist, get_alerts,
-    get_asset_detail, get_catalysts, get_chart_data, get_deltas, get_home_tab, get_journal,
-    get_macro, get_news, get_performance, get_portfolio, get_positions, get_search, get_situation,
-    get_summary, get_transactions, get_ui_config, get_watchlist, patch_journal, patch_transaction,
-    post_alert, post_alert_ack, post_alert_rearm, post_journal, post_transaction, post_watchlist,
-    set_home_tab, set_theme, AppState,
+    get_asset_detail, get_catalysts, get_chart_data, get_deltas, get_home_tab, get_impact,
+    get_journal, get_macro, get_news, get_opportunities, get_performance, get_portfolio,
+    get_positions, get_search, get_situation, get_summary, get_transactions, get_ui_config,
+    get_watchlist, patch_journal, patch_transaction, post_alert, post_alert_ack, post_alert_rearm,
+    post_journal, post_transaction, post_watchlist, set_home_tab, set_theme, AppState,
 };
 use super::auth::{auth_middleware, get_csrf, get_session, login, logout, AuthState};
 use crate::commands;
@@ -78,6 +78,8 @@ pub async fn run_server(
         .route("/situation", get(get_situation))
         .route("/deltas", get(get_deltas))
         .route("/catalysts", get(get_catalysts))
+        .route("/impact", get(get_impact))
+        .route("/opportunities", get(get_opportunities))
         .route("/ui-config", get(get_ui_config))
         .route("/stream", get(get_stream))
         .route("/home-tab", get(get_home_tab))

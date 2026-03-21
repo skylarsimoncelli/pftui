@@ -38,6 +38,8 @@ struct DashboardPayload: Decodable {
     let situation: SituationPayload
     let deltas: DeltasPayload
     let catalysts: CatalystsPayload
+    let impact: ImpactPayload
+    let opportunities: OpportunitiesPayload
 }
 
 struct SituationPayload: Decodable {
@@ -80,6 +82,31 @@ struct CatalystEventPayload: Decodable, Identifiable {
     let macroSignificance: Int
     let score: Int
     let detail: String
+}
+
+struct ImpactPayload: Decodable {
+    let generatedAt: String
+    let exposures: [AssetInsightPayload]
+}
+
+struct OpportunitiesPayload: Decodable {
+    let generatedAt: String
+    let opportunities: [AssetInsightPayload]
+}
+
+struct AssetInsightPayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let held: Bool
+    let watchlist: Bool
+    let allocationPct: String?
+    let currentValue: String?
+    let consensus: String
+    let score: Int
+    let severity: String
+    let summary: String
+    let evidenceChain: [String]
 }
 
 struct SituationStatPayload: Decodable, Identifiable {

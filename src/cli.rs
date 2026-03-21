@@ -2110,6 +2110,14 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    Impact {
+        #[arg(long)]
+        json: bool,
+    },
+    Opportunities {
+        #[arg(long)]
+        json: bool,
+    },
     Low {
         #[arg(long)]
         json: bool,

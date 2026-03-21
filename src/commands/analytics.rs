@@ -8,6 +8,7 @@ use std::collections::{BTreeSet, HashMap};
 use crate::alerts::AlertStatus;
 use crate::analytics::catalysts;
 use crate::analytics::deltas;
+use crate::analytics::impact;
 use crate::analytics::levels::nearest_actionable_levels;
 use crate::analytics::situation;
 use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
@@ -614,6 +615,8 @@ pub fn run(
         "situation" => run_situation(backend, json_output),
         "deltas" => run_deltas(backend, value, json_output),
         "catalysts" => run_catalysts(backend, value, json_output),
+        "impact" => run_impact(backend, json_output),
+        "opportunities" => run_opportunities(backend, json_output),
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
         "high" => run_high(backend, json_output),
@@ -649,7 +652,7 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
@@ -1797,6 +1800,52 @@ fn run_catalysts(
                 println!(
                     "- [{}] {} — {} | {} | assets: {}",
                     item.significance, item.time, item.title, item.countdown_bucket, assets
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_impact(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let report = impact::build_impact_report_backend(backend)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Portfolio Impact");
+        println!("════════════════════════════════════════════════════════════════");
+        if report.exposures.is_empty() {
+            println!("No exposure signals found.");
+        } else {
+            for item in &report.exposures {
+                println!(
+                    "- [{}] {} — {} ({})",
+                    item.severity, item.symbol, item.summary, item.consensus
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_opportunities(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let report = impact::build_opportunities_report_backend(backend)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Opportunities");
+        println!("════════════════════════════════════════════════════════════════");
+        if report.opportunities.is_empty() {
+            println!("No non-held opportunities found.");
+        } else {
+            for item in &report.opportunities {
+                println!(
+                    "- [{}] {} — {} ({})",
+                    item.severity, item.symbol, item.summary, item.consensus
                 );
             }
         }
@@ -3174,6 +3223,26 @@ mod tests {
         assert!(
             result.is_ok(),
             "run_catalysts should not error: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn impact_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_impact(&backend, true);
+        assert!(result.is_ok(), "run_impact should not error: {:?}", result);
+    }
+
+    #[test]
+    fn opportunities_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_opportunities(&backend, true);
+        assert!(
+            result.is_ok(),
+            "run_opportunities should not error: {:?}",
             result
         );
     }

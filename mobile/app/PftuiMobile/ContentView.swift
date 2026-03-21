@@ -162,6 +162,7 @@ struct HomeView: View {
     @AppStorage("pftui.mobile.home.showWatchlist") private var showWatchlist = true
     @AppStorage("pftui.mobile.home.showSystem") private var showSystem = false
     @AppStorage("pftui.mobile.home.showNews") private var showNews = false
+    @AppStorage("pftui.mobile.home.showOpportunities") private var showOpportunities = true
 
     var body: some View {
         ScrollView {
@@ -190,15 +191,29 @@ struct HomeView: View {
                         }
                     }
 
-                    if !dashboard.situation.portfolioImpacts.isEmpty {
+                    if !dashboard.impact.exposures.isEmpty {
                         CollapsibleCardSection(
                             title: "Portfolio Impact",
-                            subtitle: "What matters to current exposure",
+                            subtitle: "Held and watched exposure ranked by evidence",
                             isExpanded: $showFocus
                         ) {
                             VStack(spacing: 12) {
-                                ForEach(dashboard.situation.portfolioImpacts.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
-                                    insightRow(insight)
+                                ForEach(dashboard.impact.exposures.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                    assetInsightRow(insight)
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.opportunities.opportunities.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Opportunities",
+                            subtitle: "High-alignment non-held ideas",
+                            isExpanded: $showOpportunities
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(dashboard.opportunities.opportunities.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                    assetInsightRow(insight)
                                 }
                             }
                         }
@@ -493,6 +508,48 @@ struct HomeView: View {
                 Text(insight.detail)
                     .foregroundStyle(MobilePalette.textSecondary)
                     .font(.caption)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private func assetInsightRow(_ insight: AssetInsightPayload) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(insightColor(insight.severity))
+                .frame(width: 10, height: 10)
+                .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(insight.symbol)
+                            .foregroundStyle(MobilePalette.textPrimary)
+                            .font(.subheadline.weight(.semibold))
+                        Text(insight.summary)
+                            .foregroundStyle(MobilePalette.textSecondary)
+                            .font(.caption)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(insight.score)")
+                            .foregroundStyle(insightColor(insight.severity))
+                            .font(.caption.weight(.bold))
+                        Text(insight.consensus.uppercased())
+                            .foregroundStyle(MobilePalette.textSecondary)
+                            .font(.caption2.weight(.semibold))
+                    }
+                }
+
+                if let firstEvidence = insight.evidenceChain.first {
+                    Text(firstEvidence)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                        .font(.caption)
+                }
             }
         }
         .padding(12)

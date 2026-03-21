@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add portfolio impact and opportunities engine
+
+- What: added native `analytics impact --json` and `analytics opportunities --json` backed by a shared Rust exposure engine. The new layer ranks held/watchlist exposure separately from non-held ideas, with evidence chains built from convictions, trend impacts, active scenarios, technical signals, and upcoming catalysts. Exposed the same outputs through the mobile dashboard/mobile API and new web API endpoints so Situation Room can show real book-aware impact and idea flow instead of only generic watch-now items.
+- Why: pftui needed to answer two different questions from one canonical analytics layer: “what matters to my current book?” and “what high-alignment opportunity am I missing?”
+- Files: `src/analytics/impact.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics impact --json`; `cargo run -- analytics opportunities --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-21 — feat: add native catalyst engine and Situation Room event feed
 
 - What: added a new Rust-native `analytics catalysts --json` surface that turns calendar events into ranked `CatalystEvent` objects with windowing (`today`, `tomorrow`, `week`), countdown buckets, significance, affected-asset inference, portfolio relevance, and scenario/prediction linkages. Exposed the same report through the web API (`/api/catalysts`) and the mobile dashboard/mobile API, and replaced the mobile Situation Room’s generic catalyst/news block with a server-owned upcoming catalyst feed while keeping headline flow available as a separate module.

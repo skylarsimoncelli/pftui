@@ -23,7 +23,10 @@ use crate::analytics::levels::{
     nearest_actionable_levels, select_actionable_level, ActionableLevelPair,
 };
 use crate::analytics::{
-    catalysts::CatalystReport, deltas::SituationDeltaReport, situation::SituationSnapshot,
+    catalysts::CatalystReport,
+    deltas::SituationDeltaReport,
+    impact::{ImpactReport, OpportunitiesReport},
+    situation::SituationSnapshot,
 };
 
 fn get_price_map_backend(
@@ -2480,6 +2483,47 @@ pub async fn get_catalysts(
             format!("Failed to build catalyst report: {}", e),
         )
     })?;
+
+    Ok(Json(report))
+}
+
+pub async fn get_impact(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ImpactReport>, (StatusCode, String)> {
+    let backend = state.get_backend().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let report = crate::analytics::impact::build_impact_report_backend(&backend).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to build impact report: {}", e),
+        )
+    })?;
+
+    Ok(Json(report))
+}
+
+pub async fn get_opportunities(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<OpportunitiesReport>, (StatusCode, String)> {
+    let backend = state.get_backend().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let report =
+        crate::analytics::impact::build_opportunities_report_backend(&backend).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to build opportunities report: {}", e),
+            )
+        })?;
 
     Ok(Json(report))
 }

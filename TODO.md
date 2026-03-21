@@ -58,6 +58,8 @@ _(none)_
 
 ### F56: Portfolio Impact And Opportunity Engine
 
+> Status: shipped on `feat/situation-engine` / PR #121 follow-up. Native `analytics impact` and `analytics opportunities` now rank held/watchlist exposure and non-held ideas from shared evidence chains built from convictions, trends, scenarios, technical signals, and catalysts, and those outputs are reused by the mobile Situation Room and web API.
+
 > Vision fit: pftui should understand the user’s book and discover important opportunities outside it. That is what turns it into an intelligence system instead of a passive tracker.
 >
 > Actionable scope:
