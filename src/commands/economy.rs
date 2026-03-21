@@ -26,12 +26,17 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
                 let (unit, display_name) = indicator_metadata(&r.indicator);
                 // Check if FRED has a more authoritative value for this indicator
                 let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations);
-                let (final_value, source, confidence) = if let Some((fval, fred_date)) = fred_override {
-                    // FRED is more authoritative; use it
-                    (fval.to_string(), "fred".to_string(), confidence_for_fred_date(&fred_date))
-                } else {
-                    (r.value.to_string(), r.source.clone(), r.confidence.clone())
-                };
+                let (final_value, source, confidence) =
+                    if let Some((fval, fred_date)) = fred_override {
+                        // FRED is more authoritative; use it
+                        (
+                            fval.to_string(),
+                            "fred".to_string(),
+                            confidence_for_fred_date(&fred_date),
+                        )
+                    } else {
+                        (r.value.to_string(), r.source.clone(), r.confidence.clone())
+                    };
 
                 let disc = discrepancies.iter().find(|d| d.indicator == r.indicator);
                 let mut obj = serde_json::json!({
@@ -136,8 +141,10 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
             println!(
                 "  {} — {} ({}) vs {} ({}) — diff {:.1}%",
                 display_name(&d.indicator),
-                d.preferred_source, d.preferred_value,
-                d.other_source, d.other_value,
+                d.preferred_source,
+                d.preferred_value,
+                d.other_source,
+                d.other_value,
                 d.diff_pct
             );
         }
@@ -185,8 +192,7 @@ fn detect_fred_discrepancies(
                 let diff_abs = (row.value - obs.value).abs();
                 let denominator = obs.value.abs();
                 if denominator > Decimal::ZERO {
-                    let diff_pct =
-                        (diff_abs * Decimal::from(100)) / denominator;
+                    let diff_pct = (diff_abs * Decimal::from(100)) / denominator;
                     // Flag differences > 0.5%
                     if diff_pct > Decimal::new(5, 1) {
                         discrepancies.push(Discrepancy {

@@ -267,12 +267,16 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
         )
         .execute(pool)
         .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_opportunity_cost_date ON opportunity_cost(date)")
-            .execute(pool)
-            .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_opportunity_cost_asset ON opportunity_cost(asset)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_opportunity_cost_date ON opportunity_cost(date)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_opportunity_cost_asset ON opportunity_cost(asset)",
+        )
+        .execute(pool)
+        .await?;
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())

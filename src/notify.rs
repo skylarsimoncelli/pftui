@@ -8,10 +8,7 @@ use std::process::Command;
 pub fn send_notification(title: &str, body: &str) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        let status = Command::new("notify-send")
-            .arg(title)
-            .arg(body)
-            .status();
+        let status = Command::new("notify-send").arg(title).arg(body).status();
 
         match status {
             Ok(s) if s.success() => Ok(()),
@@ -28,10 +25,7 @@ pub fn send_notification(title: &str, body: &str) -> Result<()> {
             title.replace('"', "\\\"")
         );
 
-        let status = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .status();
+        let status = Command::new("osascript").arg("-e").arg(&script).status();
 
         match status {
             Ok(s) if s.success() => Ok(()),

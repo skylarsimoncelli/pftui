@@ -20,11 +20,7 @@ pub struct WatchlistEntry {
 }
 
 /// Add a symbol to the watchlist. Uses ON CONFLICT to upsert.
-pub fn add_to_watchlist(
-    conn: &Connection,
-    symbol: &str,
-    category: AssetCategory,
-) -> Result<i64> {
+pub fn add_to_watchlist(conn: &Connection, symbol: &str, category: AssetCategory) -> Result<i64> {
     add_to_watchlist_in_group(conn, symbol, category, 1)
 }
 
@@ -35,7 +31,11 @@ pub fn add_to_watchlist_in_group(
     category: AssetCategory,
     group_id: i64,
 ) -> Result<i64> {
-    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
+    let gid = if (1..=3).contains(&group_id) {
+        group_id
+    } else {
+        1
+    };
     conn.execute(
         "INSERT INTO watchlist (symbol, category, group_id)
          VALUES (?1, ?2, ?3)
@@ -98,7 +98,11 @@ pub fn list_watchlist(conn: &Connection) -> Result<Vec<WatchlistEntry>> {
 
 /// List watchlist entries for a specific group.
 pub fn list_watchlist_by_group(conn: &Connection, group_id: i64) -> Result<Vec<WatchlistEntry>> {
-    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
+    let gid = if (1..=3).contains(&group_id) {
+        group_id
+    } else {
+        1
+    };
     let mut stmt = conn.prepare(
         "SELECT id, symbol, category, group_id, added_at, target_price, target_direction
          FROM watchlist WHERE group_id = ?1 ORDER BY added_at DESC",
@@ -124,9 +128,7 @@ pub fn list_watchlist_by_group(conn: &Connection, group_id: i64) -> Result<Vec<W
 /// Get unique symbols and their categories from the watchlist.
 #[allow(dead_code)]
 pub fn get_watchlist_symbols(conn: &Connection) -> Result<Vec<(String, AssetCategory)>> {
-    let mut stmt = conn.prepare(
-        "SELECT symbol, category FROM watchlist ORDER BY symbol",
-    )?;
+    let mut stmt = conn.prepare("SELECT symbol, category FROM watchlist ORDER BY symbol")?;
     let rows = stmt.query_map([], |row| {
         let symbol: String = row.get(0)?;
         let cat: String = row.get(1)?;
@@ -217,7 +219,11 @@ pub fn list_watchlist_by_group_backend(
 pub fn get_watchlist_symbols_backend(
     backend: &BackendConnection,
 ) -> Result<Vec<(String, AssetCategory)>> {
-    query::dispatch(backend, get_watchlist_symbols, get_watchlist_symbols_postgres)
+    query::dispatch(
+        backend,
+        get_watchlist_symbols,
+        get_watchlist_symbols_postgres,
+    )
 }
 
 #[allow(dead_code)]
@@ -256,8 +262,12 @@ fn add_to_watchlist_postgres(
     group_id: i64,
 ) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
-        let id: i64 = crate::db::pg_runtime::block_on(async {
+    let gid = if (1..=3).contains(&group_id) {
+        group_id
+    } else {
+        1
+    };
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO watchlist (symbol, category, group_id)
              VALUES ($1, $2, $3)
@@ -282,7 +292,7 @@ fn set_watchlist_target_postgres(
     target_direction: Option<&str>,
 ) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let rows = crate::db::pg_runtime::block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE watchlist
              SET target_price = $1, target_direction = $2
@@ -299,7 +309,7 @@ fn set_watchlist_target_postgres(
 
 fn remove_from_watchlist_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let rows = crate::db::pg_runtime::block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM watchlist WHERE UPPER(symbol) = UPPER($1)")
             .bind(symbol)
             .execute(pool)
@@ -309,7 +319,15 @@ fn remove_from_watchlist_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
 }
 
 #[allow(dead_code)]
-type WatchlistRow = (i64, String, String, i64, String, Option<String>, Option<String>);
+type WatchlistRow = (
+    i64,
+    String,
+    String,
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+);
 
 #[allow(dead_code)]
 fn watchlist_entry_from_row(row: WatchlistRow) -> WatchlistEntry {
@@ -327,7 +345,7 @@ fn watchlist_entry_from_row(row: WatchlistRow) -> WatchlistEntry {
 #[allow(dead_code)]
 fn list_watchlist_postgres(pool: &PgPool) -> Result<Vec<WatchlistEntry>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<WatchlistRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<WatchlistRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, group_id, added_at::text, target_price, target_direction
              FROM watchlist
@@ -342,8 +360,12 @@ fn list_watchlist_postgres(pool: &PgPool) -> Result<Vec<WatchlistEntry>> {
 #[allow(dead_code)]
 fn list_watchlist_by_group_postgres(pool: &PgPool, group_id: i64) -> Result<Vec<WatchlistEntry>> {
     ensure_tables_postgres(pool)?;
-    let gid = if (1..=3).contains(&group_id) { group_id } else { 1 };
-        let rows: Vec<WatchlistRow> = crate::db::pg_runtime::block_on(async {
+    let gid = if (1..=3).contains(&group_id) {
+        group_id
+    } else {
+        1
+    };
+    let rows: Vec<WatchlistRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, group_id, added_at::text, target_price, target_direction
              FROM watchlist
@@ -360,7 +382,7 @@ fn list_watchlist_by_group_postgres(pool: &PgPool, group_id: i64) -> Result<Vec<
 #[allow(dead_code)]
 fn get_watchlist_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCategory)>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as("SELECT symbol, category FROM watchlist ORDER BY symbol")
             .fetch_all(pool)
             .await
@@ -373,7 +395,7 @@ fn get_watchlist_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCat
 
 fn is_watched_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let count: i64 = crate::db::pg_runtime::block_on(async {
+    let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM watchlist WHERE UPPER(symbol) = UPPER($1)")
             .bind(symbol)
             .fetch_one(pool)

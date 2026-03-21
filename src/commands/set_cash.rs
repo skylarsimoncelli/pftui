@@ -10,9 +10,9 @@ use crate::models::transaction::{NewTransaction, TxType};
 
 /// Common cash currency symbols that should be recognized.
 const KNOWN_CASH: &[&str] = &[
-    "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "SEK", "NOK",
-    "DKK", "SGD", "HKD", "KRW", "CNY", "INR", "BRL", "MXN", "ZAR", "PLN",
-    "CZK", "HUF", "TRY", "THB", "TWD", "ILS", "AED", "SAR",
+    "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "SEK", "NOK", "DKK", "SGD", "HKD",
+    "KRW", "CNY", "INR", "BRL", "MXN", "ZAR", "PLN", "CZK", "HUF", "TRY", "THB", "TWD", "ILS",
+    "AED", "SAR",
 ];
 
 /// Delete all transactions for a given symbol.
@@ -38,7 +38,10 @@ pub fn run(backend: &BackendConnection, symbol: &str, amount: &str) -> Result<()
     }
 
     let amount: Decimal = amount.parse().map_err(|_| {
-        anyhow::anyhow!("Invalid amount: '{}'. Expected a number (e.g. 45000, 12500.50)", amount)
+        anyhow::anyhow!(
+            "Invalid amount: '{}'. Expected a number (e.g. 45000, 12500.50)",
+            amount
+        )
     })?;
 
     if amount < Decimal::ZERO {
@@ -58,7 +61,10 @@ pub fn run(backend: &BackendConnection, symbol: &str, amount: &str) -> Result<()
 
     if amount == Decimal::ZERO {
         if deleted > 0 {
-            println!("Cleared {} position ({} transaction(s) removed).", symbol, deleted);
+            println!(
+                "Cleared {} position ({} transaction(s) removed).",
+                symbol, deleted
+            );
         } else {
             println!("No existing {} position to clear.", symbol);
         }

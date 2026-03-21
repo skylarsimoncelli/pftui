@@ -229,7 +229,9 @@ fn print_terminal(cells: &[HeatCell]) {
         println!();
     }
 
-    println!("Legend: green = gain, red = loss, gray = flat. Larger tiles = larger absolute move.\n");
+    println!(
+        "Legend: green = gain, red = loss, gray = flat. Larger tiles = larger absolute move.\n"
+    );
 }
 
 fn print_json(cells: &[HeatCell]) -> Result<()> {
@@ -247,7 +249,10 @@ fn print_json(cells: &[HeatCell]) -> Result<()> {
         .collect();
 
     out.insert("heatmap".to_string(), serde_json::Value::Array(payload));
-    println!("{}", serde_json::to_string_pretty(&serde_json::Value::Object(out))?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::Value::Object(out))?
+    );
     Ok(())
 }
 

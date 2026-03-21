@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
@@ -86,7 +86,19 @@ pub fn get_all_backend(backend: &BackendConnection) -> Result<Vec<EconomicDataEn
 
 fn get_all_postgres(pool: &PgPool) -> Result<Vec<EconomicDataEntry>> {
     let rows = crate::db::pg_runtime::block_on(async {
-        sqlx::query_as::<_, (String, String, Option<String>, Option<String>, String, String, String, String)>(
+        sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                String,
+                String,
+                String,
+                String,
+            ),
+        >(
             "SELECT indicator, value, previous, change, source_url,
                     COALESCE(source, 'unknown'), COALESCE(confidence, 'medium'), fetched_at
              FROM economic_data
@@ -98,16 +110,20 @@ fn get_all_postgres(pool: &PgPool) -> Result<Vec<EconomicDataEntry>> {
 
     Ok(rows
         .into_iter()
-        .map(|(indicator, value, previous, change, source_url, source, confidence, fetched_at)| EconomicDataEntry {
-            indicator,
-            value: value.parse().unwrap_or(Decimal::ZERO),
-            previous: previous.and_then(|v| v.parse().ok()),
-            change: change.and_then(|v| v.parse().ok()),
-            source_url,
-            source,
-            confidence,
-            fetched_at,
-        })
+        .map(
+            |(indicator, value, previous, change, source_url, source, confidence, fetched_at)| {
+                EconomicDataEntry {
+                    indicator,
+                    value: value.parse().unwrap_or(Decimal::ZERO),
+                    previous: previous.and_then(|v| v.parse().ok()),
+                    change: change.and_then(|v| v.parse().ok()),
+                    source_url,
+                    source,
+                    confidence,
+                    fetched_at,
+                }
+            },
+        )
         .collect())
 }
 

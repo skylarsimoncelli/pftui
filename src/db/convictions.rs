@@ -193,7 +193,10 @@ pub fn get_changes(conn: &Connection, days: usize) -> Result<Vec<ConvictionChang
     Ok(changes)
 }
 
-pub fn get_changes_backend(backend: &BackendConnection, days: usize) -> Result<Vec<ConvictionChange>> {
+pub fn get_changes_backend(
+    backend: &BackendConnection,
+    days: usize,
+) -> Result<Vec<ConvictionChange>> {
     query::dispatch(
         backend,
         |conn| get_changes(conn, days),

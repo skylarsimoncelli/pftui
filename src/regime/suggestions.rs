@@ -56,13 +56,7 @@ const RISK_ON_WEAK: &[&str] = &[
 ];
 
 /// Categories that historically perform well in risk-off regimes.
-const RISK_OFF_STRONG: &[&str] = &[
-    "Gold",
-    "Silver",
-    "Treasuries",
-    "USD",
-    "Utilities",
-];
+const RISK_OFF_STRONG: &[&str] = &["Gold", "Silver", "Treasuries", "USD", "Utilities"];
 
 /// Categories that historically perform poorly in risk-off regimes.
 const RISK_OFF_WEAK: &[&str] = &[
@@ -74,10 +68,7 @@ const RISK_OFF_WEAK: &[&str] = &[
 ];
 
 /// Compute regime-based asset suggestions.
-pub fn compute_suggestions(
-    regime: &RegimeScore,
-    positions: &[Position],
-) -> RegimeSuggestions {
+pub fn compute_suggestions(regime: &RegimeScore, positions: &[Position]) -> RegimeSuggestions {
     if !regime.has_data() {
         return RegimeSuggestions {
             strong: Vec::new(),
@@ -109,18 +100,8 @@ pub fn compute_suggestions(
     let alignment = compute_alignment(regime, positions);
 
     // Build portfolio-aware suggestions
-    let strong = build_portfolio_aware_suggestions(
-        generic_strong,
-        positions,
-        regime.total,
-        true,
-    );
-    let weak = build_portfolio_aware_suggestions(
-        generic_weak,
-        positions,
-        regime.total,
-        false,
-    );
+    let strong = build_portfolio_aware_suggestions(generic_strong, positions, regime.total, true);
+    let weak = build_portfolio_aware_suggestions(generic_weak, positions, regime.total, false);
 
     RegimeSuggestions {
         strong,
@@ -143,10 +124,7 @@ fn build_portfolio_aware_suggestions(
     }
 
     // Compute total portfolio value
-    let total_value: Decimal = positions
-        .iter()
-        .filter_map(|p| p.current_value)
-        .sum();
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
 
     if total_value <= dec!(0) {
         return generic_suggestions.iter().map(|s| s.to_string()).collect();
@@ -156,7 +134,9 @@ fn build_portfolio_aware_suggestions(
     let mut category_holdings: HashMap<AssetCategory, (Vec<&Position>, Decimal)> = HashMap::new();
     for pos in positions {
         if let Some(val) = pos.current_value {
-            let entry = category_holdings.entry(pos.category).or_insert((Vec::new(), dec!(0)));
+            let entry = category_holdings
+                .entry(pos.category)
+                .or_insert((Vec::new(), dec!(0)));
             entry.0.push(pos);
             entry.1 += val;
         }
@@ -178,14 +158,15 @@ fn build_portfolio_aware_suggestions(
         if let Some(cat) = category_match {
             if let Some((holdings, cat_value)) = category_holdings.get(&cat) {
                 let cat_pct = ((cat_value * dec!(100)) / total_value).round();
-                
+
                 // Only show holdings if they're regime-aligned
                 let aligned = holdings.iter().any(|p| {
-                    category_regime_class(p.category, regime_total) == if is_strong {
-                        RegimeClass::Strong
-                    } else {
-                        RegimeClass::Weak
-                    }
+                    category_regime_class(p.category, regime_total)
+                        == if is_strong {
+                            RegimeClass::Strong
+                        } else {
+                            RegimeClass::Weak
+                        }
                 });
 
                 if aligned && cat_pct >= dec!(1) {
@@ -265,18 +246,12 @@ enum RegimeClass {
 }
 
 /// Compute how the user's portfolio aligns with the current regime.
-fn compute_alignment(
-    regime: &RegimeScore,
-    positions: &[Position],
-) -> Option<PortfolioAlignment> {
+fn compute_alignment(regime: &RegimeScore, positions: &[Position]) -> Option<PortfolioAlignment> {
     if positions.is_empty() {
         return None;
     }
 
-    let total_value: Decimal = positions
-        .iter()
-        .filter_map(|p| p.current_value)
-        .sum();
+    let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
 
     if total_value <= dec!(0) {
         return None;
@@ -304,7 +279,10 @@ fn compute_alignment(
     let weak_pct = (weak_value * dec!(100)) / total_value;
 
     let summary = if strong_pct > dec!(50) {
-        format!("{}% in regime-favored assets — well positioned", strong_pct.round())
+        format!(
+            "{}% in regime-favored assets — well positioned",
+            strong_pct.round()
+        )
     } else if weak_pct > dec!(50) {
         format!("{}% in regime-headwind assets — exposed", weak_pct.round())
     } else {
@@ -358,7 +336,10 @@ mod tests {
     fn risk_on_suggests_growth() {
         let regime = make_regime(7, 9);
         let suggestions = compute_suggestions(&regime, &[]);
-        assert!(suggestions.strong.iter().any(|s| s.contains("Growth stocks")));
+        assert!(suggestions
+            .strong
+            .iter()
+            .any(|s| s.contains("Growth stocks")));
         assert!(suggestions.strong.iter().any(|s| s.contains("Crypto")));
         assert!(suggestions.weak.iter().any(|s| s.contains("Gold")));
         assert!(suggestions.weak.iter().any(|s| s.contains("Treasuries")));

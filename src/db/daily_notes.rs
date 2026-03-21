@@ -196,7 +196,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
 
 fn add_note_postgres(pool: &PgPool, date: &str, section: &str, content: &str) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-        let id: i64 = crate::db::pg_runtime::block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO daily_notes (date, section, content)
              VALUES ($1, $2, $3)
@@ -218,7 +218,7 @@ fn list_notes_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<DailyNote>> {
     ensure_tables_postgres(pool)?;
-        let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
+    let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, section, content, created_at::text
              FROM daily_notes
@@ -246,7 +246,7 @@ fn search_notes_postgres(
     limit: Option<usize>,
 ) -> Result<Vec<DailyNote>> {
     ensure_tables_postgres(pool)?;
-        let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
+    let mut rows: Vec<DailyNoteRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, section, content, created_at::text
              FROM daily_notes

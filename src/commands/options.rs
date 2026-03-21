@@ -110,7 +110,10 @@ async fn fetch_chain(symbol: &str, expiry_ts: Option<i64>) -> Result<OptionsChai
             symbol, ts
         )
     } else {
-        format!("https://query2.finance.yahoo.com/v7/finance/options/{}", symbol)
+        format!(
+            "https://query2.finance.yahoo.com/v7/finance/options/{}",
+            symbol
+        )
     };
 
     let client = reqwest::Client::builder()
@@ -188,8 +191,18 @@ fn print_terminal(chain: &OptionsChain, limit: usize) {
     }
     println!();
 
-    print_side("Calls (closest strikes to spot)", &chain.calls, limit, chain.underlying_price);
-    print_side("Puts  (closest strikes to spot)", &chain.puts, limit, chain.underlying_price);
+    print_side(
+        "Calls (closest strikes to spot)",
+        &chain.calls,
+        limit,
+        chain.underlying_price,
+    );
+    print_side(
+        "Puts  (closest strikes to spot)",
+        &chain.puts,
+        limit,
+        chain.underlying_price,
+    );
 }
 
 fn print_json(chain: &OptionsChain, limit: usize) -> Result<()> {

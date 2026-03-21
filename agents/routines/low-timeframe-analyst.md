@@ -16,6 +16,9 @@ You run 3x daily. Detect which run this is and adjust:
 1. Refresh and read your layer:
 ```bash
 pftui data refresh
+pftui analytics situation --json
+pftui analytics deltas --json --since last-refresh
+pftui analytics catalysts --json --window today
 pftui portfolio brief --json
 pftui analytics movers --json
 pftui analytics macro regime current --json
@@ -26,6 +29,8 @@ pftui analytics scan --load big-gainers --json
 pftui analytics scan --load big-losers --json
 pftui analytics scan --load risk-check --json
 ```
+
+Prefer the canonical analytics payloads for prioritization. Use raw feeds like movers, alerts, and scans to investigate and enrich what `situation` and `deltas` already surfaced.
 
 2. Check guidance from Evening Analyst:
 ```bash

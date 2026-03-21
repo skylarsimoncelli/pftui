@@ -133,7 +133,6 @@ pftui portfolio watchlist remove TSLA
 pftui portfolio target set AAPL --target 15  # Target allocation %
 pftui portfolio rebalance --json             # Suggested trades to hit targets
 pftui analytics alerts add "BTC above 100000"
-pftui journal entry add "Gold thesis validated by CPI" --tag macro
 pftui system config list --json           # List all config fields
 pftui system config set brave_api_key <key>  # Set Brave Search API key
 ```
@@ -294,11 +293,32 @@ Signals flow upward through the layers. A correlation break in LOW gets escalate
 When all four layers agree on an asset, that is the highest conviction signal in the system. When they diverge, that divergence is the investigation worth doing.
 
 ```bash
-pftui analytics summary                    # All four layers in one view
-pftui analytics alignment --symbol GC=F    # Per-asset cross-timeframe consensus
-pftui journal scenario add "Recession" --probability 30
-pftui analytics trends add "AI Disruption" --direction accelerating
-pftui analytics macro cycles --json
+pftui analytics correlations compute --store --period 30d      # Compute and persist live correlations
+pftui analytics correlations history BTC SPY --period 30d --limit 30 --json
+pftui analytics macro regime current --json                    # Current automated regime classification
+pftui analytics macro regime transitions --limit 20 --json     # Recent regime change points
+pftui analytics macro --json                                   # Long-cycle macro dashboard
+pftui analytics macro outcomes --json                          # Structural outcome probabilities
+pftui analytics trends dashboard --json                        # Active high-timeframe trends
+pftui analytics trends impact add --trend "AI Disruption" --symbol NVDA --impact bullish
+pftui analytics summary --json                                 # Unified four-layer analytics snapshot
+pftui analytics situation --json                               # Canonical Situation Room payload
+pftui analytics deltas --json                                  # What changed: last refresh, close, 24h, 7d
+pftui analytics catalysts --json                               # Ranked upcoming catalysts with countdowns
+pftui analytics impact --json                                  # What matters to your current book
+pftui analytics opportunities --json                           # High-alignment non-held opportunities
+pftui analytics synthesis --json                               # Alignment, divergence, constraints, watch tomorrow
+pftui analytics alignment --symbol GC=F --json                 # Per-asset cross-timeframe consensus
+pftui analytics divergence --json                              # Cross-layer disagreement table
+pftui analytics digest --from low-agent --json                 # Role-aware handoff payload
+pftui analytics recap --date yesterday --json                  # Chronological recap for a given day
+pftui analytics narrative --json                               # Structured analytical memory and recap state
+pftui analytics gaps --json                                    # Freshness / missing-table checks
+pftui analytics signals --json                                 # All signals
+pftui analytics signals --source technical --json              # Technical signals only
+pftui analytics signals --source timeframe --json              # Cross-timeframe signals only
+pftui analytics signals --source technical --symbol BTC-USD --json
+pftui analytics technicals --symbol BTC-USD --json             # Persisted technical snapshot(s)
 ```
 
 See the full documentation: [docs/ANALYTICS-ENGINE.md](docs/ANALYTICS-ENGINE.md)
@@ -321,8 +341,19 @@ Every feature in pftui has a CLI command with `--json` output. Agents use the sa
 
 ```bash
 pftui data refresh && pftui portfolio brief --json        # Agent gets full portfolio state
+pftui journal entry add "Gold thesis validated by CPI" --tag macro
+pftui journal entry list --json
+pftui journal entry search "gold thesis" --json
+pftui journal scenario add "Recession" --probability 30
 pftui journal scenario update "Stagflation" --probability 35 --notes "Sticky inflation + growth slowdown"
-pftui journal conviction set GC=F --score 4 --notes "War + BRICS + CB buying"
+pftui journal scenario signal add "Yield curve reinversion" --scenario "Recession"
+pftui journal scenario history "Stagflation" --limit 20 --json
+pftui journal prediction add "Gold outperforms equities into Q2" --symbol GC=F --conviction high --timeframe medium
+pftui journal prediction score --id 42 --outcome correct --lesson "Rates rollovers mattered more than expected"
+pftui journal prediction stats --json
+pftui journal prediction scorecard --date yesterday --timeframe low --json
+pftui journal notes add "Fed hold keeps real-rate pressure elevated" --section market
+pftui journal notes search "real-rate pressure" --since 2026-03-01 --json
 pftui agent message send "Gold alignment: all 4 layers bullish" --from morning-agent --layer cross
 ```
 

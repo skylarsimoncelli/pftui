@@ -27,7 +27,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .border_style(Style::default().fg(t.border_accent))
         .style(Style::default().bg(t.surface_2))
         .title(Span::styled(
-            format!(" ◆ Add Watchlist Item (Group {}) ", app.watchlist_active_group),
+            format!(
+                " ◆ Add Watchlist Item (Group {}) ",
+                app.watchlist_active_group
+            ),
             Style::default().fg(t.text_accent).bold(),
         ))
         .title(
@@ -48,7 +51,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let input_area = Rect::new(inner.x, inner.y, inner.width, 1);
     let sep_area = Rect::new(inner.x, inner.y + 1, inner.width, 1);
-    let results_area = Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2));
+    let results_area = Rect::new(
+        inner.x,
+        inner.y + 2,
+        inner.width,
+        inner.height.saturating_sub(2),
+    );
 
     let cursor_char = if app.tick_count % 30 < 15 { "▏" } else { " " };
     let input_line = Line::from(vec![
@@ -105,11 +113,24 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let mut lines = Vec::with_capacity(visible);
     for (idx, result) in results.iter().enumerate().skip(scroll_offset).take(visible) {
-        let row_bg = if idx == selected { t.surface_3 } else { t.surface_2 };
+        let row_bg = if idx == selected {
+            t.surface_3
+        } else {
+            t.surface_2
+        };
         let marker = if idx == selected { "▸" } else { " " };
-        let status = if result.in_watchlist { "○" } else if result.in_portfolio { "◆" } else { " " };
+        let status = if result.in_watchlist {
+            "○"
+        } else if result.in_portfolio {
+            "◆"
+        } else {
+            " "
+        };
         let line = Line::from(vec![
-            Span::styled(format!("{marker}{status} "), Style::default().fg(t.text_accent).bg(row_bg)),
+            Span::styled(
+                format!("{marker}{status} "),
+                Style::default().fg(t.text_accent).bg(row_bg),
+            ),
             Span::styled(
                 format!("{:<8}", result.symbol),
                 Style::default().fg(t.text_primary).bg(row_bg).bold(),

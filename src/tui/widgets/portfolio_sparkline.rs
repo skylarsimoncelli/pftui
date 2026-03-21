@@ -29,13 +29,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             Constraint::Min(8),    // Chart area
         ])
         .split(area);
-    
+
     // Render timeframe selector bar and store click targets
     render_timeframe_selector(frame, chunks[0], app);
-    
+
     // Now borrow theme and other fields (after mutable borrow above is done)
     let t = &app.theme;
-    
+
     // Render chart in the remaining space
     let chart_area = chunks[1];
     let timeframe_days = app.sparkline_timeframe.days() as usize;
@@ -59,7 +59,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let tf_label = app.sparkline_timeframe.label();
     let csym = crate::config::currency_symbol(&app.base_currency);
     let title = if let Some((_, latest)) = history.last() {
-        format!(" Portfolio {}  {} ", tf_label, format_compact_value(*latest, csym))
+        format!(
+            " Portfolio {}  {} ",
+            tf_label,
+            format_compact_value(*latest, csym)
+        )
     } else {
         format!(" Portfolio {} ", tf_label)
     };
@@ -102,7 +106,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         crate::app::ChangeTimeframe::YearToDate => "1Y",
     };
     // Reserve lines: 1 separator + gain rows (up to 2 lines for timeframes)
-    let gain_lines = build_gain_lines(&timeframe_gains, inner.width as usize, t, csym, active_label);
+    let gain_lines = build_gain_lines(
+        &timeframe_gains,
+        inner.width as usize,
+        t,
+        csym,
+        active_label,
+    );
     let reserved_lines = 1 + gain_lines.len(); // separator + gain display
 
     let chart_height = inner.height.saturating_sub(reserved_lines as u16) as usize;
@@ -217,7 +227,10 @@ struct TimeframeGain<'a> {
 
 /// Compute gains for each timeframe period by looking back N entries in history.
 /// Each entry is roughly one trading day.
-fn compute_timeframe_gains<'a>(history: &[(String, Decimal)], periods: &[(&'a str, usize)]) -> Vec<TimeframeGain<'a>> {
+fn compute_timeframe_gains<'a>(
+    history: &[(String, Decimal)],
+    periods: &[(&'a str, usize)],
+) -> Vec<TimeframeGain<'a>> {
     if history.is_empty() {
         return Vec::new();
     }
@@ -245,7 +258,13 @@ fn compute_timeframe_gains<'a>(history: &[(String, Decimal)], periods: &[(&'a st
 /// Build styled gain/loss lines that fit within the given width.
 /// Tries to fit all timeframes on one line; wraps to two if needed.
 /// The active_label timeframe is highlighted with bold text.
-fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tui::theme::Theme, csym: &str, active_label: &str) -> Vec<Line<'a>> {
+fn build_gain_lines<'a>(
+    gains: &[TimeframeGain<'_>],
+    width: usize,
+    t: &crate::tui::theme::Theme,
+    csym: &str,
+    active_label: &str,
+) -> Vec<Line<'a>> {
     if gains.is_empty() {
         return vec![Line::from(Span::styled(
             "No period data yet",
@@ -256,7 +275,7 @@ fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tu
     let mut items: Vec<Vec<Span<'a>>> = Vec::new();
     for g in gains {
         let is_active = g.label == active_label;
-        
+
         let change_color = if g.pct > dec!(0) {
             t.gain_green
         } else if g.pct < dec!(0) {
@@ -265,7 +284,13 @@ fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tu
             t.neutral
         };
 
-        let arrow = if g.pct > dec!(0) { "▲" } else if g.pct < dec!(0) { "▼" } else { "─" };
+        let arrow = if g.pct > dec!(0) {
+            "▲"
+        } else if g.pct < dec!(0) {
+            "▼"
+        } else {
+            "─"
+        };
         let change_str = format_compact_change(g.change, csym);
         let pct_str = format!("{:+.1}%", g.pct);
 
@@ -289,18 +314,9 @@ fn build_gain_lines<'a>(gains: &[TimeframeGain<'_>], width: usize, t: &crate::tu
         };
 
         items.push(vec![
-            Span::styled(
-                format!("{} ", g.label),
-                label_style,
-            ),
-            Span::styled(
-                format!("{}{} ", arrow, change_str),
-                value_style,
-            ),
-            Span::styled(
-                pct_str,
-                pct_style,
-            ),
+            Span::styled(format!("{} ", g.label), label_style),
+            Span::styled(format!("{}{} ", arrow, change_str), value_style),
+            Span::styled(pct_str, pct_style),
         ]);
     }
 
@@ -425,13 +441,13 @@ fn format_compact_short(f: f64) -> String {
 /// Stores click target coordinates in app.timeframe_selector_buttons.
 fn render_timeframe_selector(frame: &mut Frame, area: Rect, app: &mut App) {
     use crate::app::ChangeTimeframe;
-    
+
     let t = &app.theme;
-    
+
     // Store the row for click detection
     app.timeframe_selector_row = Some(area.y);
     app.timeframe_selector_buttons.clear();
-    
+
     // All available timeframes
     let timeframes = [
         ChangeTimeframe::OneHour,
@@ -440,44 +456,45 @@ fn render_timeframe_selector(frame: &mut Frame, area: Rect, app: &mut App) {
         ChangeTimeframe::ThirtyDay,
         ChangeTimeframe::YearToDate,
     ];
-    
+
     let mut spans = Vec::new();
     let mut col = area.x;
-    
+
     // Add spacing before first button
     spans.push(Span::raw("  "));
     col += 2;
-    
+
     for (i, &tf) in timeframes.iter().enumerate() {
         let is_active = app.change_timeframe == tf;
         let label = tf.label();
-        
+
         // Button format: [ 24h ] with spacing
         let button_text = format!("[ {} ]", label);
         let button_width = button_text.len() as u16;
-        
+
         // Store click target (column range for this button)
         let col_start = col;
         let col_end = col + button_width - 1;
-        app.timeframe_selector_buttons.push((tf, (col_start, col_end)));
-        
+        app.timeframe_selector_buttons
+            .push((tf, (col_start, col_end)));
+
         // Style: active = bold + accent color, inactive = secondary
         let style = if is_active {
             Style::default().fg(t.text_accent).bold()
         } else {
             Style::default().fg(t.text_secondary)
         };
-        
+
         spans.push(Span::styled(button_text, style));
         col += button_width;
-        
+
         // Add spacing between buttons (except after last)
         if i < timeframes.len() - 1 {
             spans.push(Span::raw(" "));
             col += 1;
         }
     }
-    
+
     let line = Line::from(spans);
     let paragraph = Paragraph::new(line).style(Style::default().bg(t.surface_1));
     frame.render_widget(paragraph, area);
@@ -614,9 +631,8 @@ mod tests {
     #[test]
     fn test_compute_timeframe_gains_with_larger_periods() {
         // Test that 6M and 1Y periods work when there's enough data
-        let periods_1y: &[(&str, usize)] = &[
-            ("1D", 1), ("1W", 7), ("1M", 30), ("3M", 90), ("6M", 180),
-        ];
+        let periods_1y: &[(&str, usize)] =
+            &[("1D", 1), ("1W", 7), ("1M", 30), ("3M", 90), ("6M", 180)];
         let mut history = Vec::new();
         for i in 0..200 {
             let val = dec!(10000) + Decimal::from(i) * dec!(50);

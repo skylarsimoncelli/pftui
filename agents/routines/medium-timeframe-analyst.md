@@ -11,6 +11,10 @@ You care about: will the central bank cut or hold? Is the geopolitical situation
 ## Inputs
 
 ```bash
+pftui analytics situation --json
+pftui analytics deltas --json --since 24h
+pftui analytics catalysts --json --window week
+pftui analytics impact --json
 pftui analytics medium --json
 pftui journal scenario list --json
 pftui journal conviction list --json
@@ -20,6 +24,8 @@ pftui agent message list --to medium-agent --unacked
 pftui analytics macro regime current --json
 pftui portfolio brief --json
 ```
+
+Use these canonical payloads as your starting frame. Your job is to update probabilities and explain cause-and-effect chains, not to reconstruct the ranked situation model from scratch.
 
 Read the user profile and portfolio files for conviction state and allocation context.
 

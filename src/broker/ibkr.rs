@@ -70,10 +70,7 @@ impl BrokerProvider for IbkrProvider {
             .timeout(std::time::Duration::from_secs(10))
             .build()?;
         let resp = client
-            .get(format!(
-                "{}/v1/api/iserver/auth/status",
-                self.gateway_url
-            ))
+            .get(format!("{}/v1/api/iserver/auth/status", self.gateway_url))
             .send()?;
         if resp.status().is_success() {
             Ok(())
@@ -109,10 +106,7 @@ impl BrokerProvider for IbkrProvider {
         let positions: Vec<IbkrPortfolioPosition> = resp.json()?;
         let mut result = Vec::new();
         for p in positions {
-            let symbol = p
-                .ticker
-                .or(p.contract_desc)
-                .unwrap_or_default();
+            let symbol = p.ticker.or(p.contract_desc).unwrap_or_default();
             if symbol.is_empty() {
                 continue;
             }

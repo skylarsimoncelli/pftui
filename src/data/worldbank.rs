@@ -115,10 +115,7 @@ pub async fn fetch_worldbank_indicator(
         let item: WorldBankDataItem = serde_json::from_value(item_value.clone())
             .context("Failed to parse World Bank data item")?;
 
-        let year = item
-            .date
-            .parse::<i32>()
-            .context("Failed to parse year")?;
+        let year = item.date.parse::<i32>().context("Failed to parse year")?;
 
         let value = item.value.and_then(|v| {
             // Convert to Decimal, rounding to 2 decimal places

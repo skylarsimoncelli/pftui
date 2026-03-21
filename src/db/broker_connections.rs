@@ -39,7 +39,10 @@ pub fn upsert_broker_connection(
     Ok(id)
 }
 
-pub fn get_broker_connection(conn: &Connection, broker_name: &str) -> Result<Option<BrokerConnection>> {
+pub fn get_broker_connection(
+    conn: &Connection,
+    broker_name: &str,
+) -> Result<Option<BrokerConnection>> {
     let mut stmt = conn.prepare(
         "SELECT id, broker_name, account_id, label, last_sync_at, sync_status, sync_error, created_at
          FROM broker_connections WHERE broker_name = ?1",
@@ -125,11 +128,9 @@ pub fn get_broker_connection_backend(
 pub fn list_broker_connections_backend(
     backend: &BackendConnection,
 ) -> Result<Vec<BrokerConnection>> {
-    query::dispatch(
-        backend,
-        list_broker_connections,
-        |_pool| anyhow::bail!("Broker connections not yet supported on Postgres"),
-    )
+    query::dispatch(backend, list_broker_connections, |_pool| {
+        anyhow::bail!("Broker connections not yet supported on Postgres")
+    })
 }
 
 pub fn delete_broker_connection_backend(

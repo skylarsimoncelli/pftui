@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
@@ -60,7 +60,10 @@ pub fn list_transactions(conn: &Connection) -> Result<Vec<Transaction>> {
         Ok(Transaction {
             id: row.get(0)?,
             symbol: row.get(1)?,
-            category: row.get::<_, String>(2)?.parse().unwrap_or(AssetCategory::Equity),
+            category: row
+                .get::<_, String>(2)?
+                .parse()
+                .unwrap_or(AssetCategory::Equity),
             tx_type: row.get::<_, String>(3)?.parse().unwrap_or(TxType::Buy),
             quantity: row.get::<_, String>(4)?.parse().unwrap_or(Decimal::ZERO),
             price_per: row.get::<_, String>(5)?.parse().unwrap_or(Decimal::ZERO),
@@ -86,7 +89,10 @@ pub fn get_transaction(conn: &Connection, id: i64) -> Result<Option<Transaction>
         Ok(Transaction {
             id: row.get(0)?,
             symbol: row.get(1)?,
-            category: row.get::<_, String>(2)?.parse().unwrap_or(AssetCategory::Equity),
+            category: row
+                .get::<_, String>(2)?
+                .parse()
+                .unwrap_or(AssetCategory::Equity),
             tx_type: row.get::<_, String>(3)?.parse().unwrap_or(TxType::Buy),
             quantity: row.get::<_, String>(4)?.parse().unwrap_or(Decimal::ZERO),
             price_per: row.get::<_, String>(5)?.parse().unwrap_or(Decimal::ZERO),
@@ -103,18 +109,13 @@ pub fn get_transaction(conn: &Connection, id: i64) -> Result<Option<Transaction>
 }
 
 pub fn count_transactions(conn: &Connection) -> Result<i64> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions",
-        [],
-        |r| r.get(0),
-    )?;
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))?;
     Ok(count)
 }
 
 pub fn get_unique_symbols(conn: &Connection) -> Result<Vec<(String, AssetCategory)>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT symbol, category FROM transactions ORDER BY symbol",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT symbol, category FROM transactions ORDER BY symbol")?;
     let rows = stmt.query_map([], |row| {
         let symbol: String = row.get(0)?;
         let cat: String = row.get(1)?;
@@ -155,7 +156,10 @@ pub fn update_transaction_backend(
     )
 }
 
-pub fn get_transaction_backend(backend: &BackendConnection, id: i64) -> Result<Option<Transaction>> {
+pub fn get_transaction_backend(
+    backend: &BackendConnection,
+    id: i64,
+) -> Result<Option<Transaction>> {
     query::dispatch(
         backend,
         |conn| get_transaction(conn, id),
@@ -172,7 +176,9 @@ pub fn count_transactions_backend(backend: &BackendConnection) -> Result<i64> {
     query::dispatch(backend, count_transactions, count_transactions_postgres)
 }
 
-pub fn get_unique_symbols_backend(backend: &BackendConnection) -> Result<Vec<(String, AssetCategory)>> {
+pub fn get_unique_symbols_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<(String, AssetCategory)>> {
     query::dispatch(backend, get_unique_symbols, get_unique_symbols_postgres)
 }
 
@@ -201,7 +207,7 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
 
 fn insert_transaction_postgres(pool: &PgPool, tx: &NewTransaction) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-        let id: i64 = crate::db::pg_runtime::block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO transactions (symbol, category, tx_type, quantity, price_per, currency, date, notes)
              VALUES ($1, $2, $3, $4::NUMERIC, $5::NUMERIC, $6, $7, $8)
@@ -223,7 +229,7 @@ fn insert_transaction_postgres(pool: &PgPool, tx: &NewTransaction) -> Result<i64
 
 fn delete_transaction_postgres(pool: &PgPool, id: i64) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let rows = crate::db::pg_runtime::block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM transactions WHERE id = $1")
             .bind(id)
             .execute(pool)
@@ -234,7 +240,7 @@ fn delete_transaction_postgres(pool: &PgPool, id: i64) -> Result<bool> {
 
 fn update_transaction_postgres(pool: &PgPool, id: i64, tx: &NewTransaction) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let rows = crate::db::pg_runtime::block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query(
             "UPDATE transactions
              SET symbol = $1, category = $2, tx_type = $3, quantity = $4::NUMERIC, price_per = $5::NUMERIC, currency = $6, date = $7, notes = $8
@@ -285,7 +291,7 @@ fn tx_from_row(r: TxRow) -> Transaction {
 
 fn list_transactions_postgres(pool: &PgPool) -> Result<Vec<Transaction>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<TxRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<TxRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
              FROM transactions
@@ -299,7 +305,7 @@ fn list_transactions_postgres(pool: &PgPool) -> Result<Vec<Transaction>> {
 
 fn get_transaction_postgres(pool: &PgPool, id: i64) -> Result<Option<Transaction>> {
     ensure_tables_postgres(pool)?;
-        let row: Option<TxRow> = crate::db::pg_runtime::block_on(async {
+    let row: Option<TxRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, symbol, category, tx_type, quantity::TEXT, price_per::TEXT, currency, date, notes, created_at::text
              FROM transactions
@@ -314,7 +320,7 @@ fn get_transaction_postgres(pool: &PgPool, id: i64) -> Result<Option<Transaction
 
 fn count_transactions_postgres(pool: &PgPool) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-        let count: i64 = crate::db::pg_runtime::block_on(async {
+    let count: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM transactions")
             .fetch_one(pool)
             .await
@@ -324,7 +330,7 @@ fn count_transactions_postgres(pool: &PgPool) -> Result<i64> {
 
 fn get_unique_symbols_postgres(pool: &PgPool) -> Result<Vec<(String, AssetCategory)>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT DISTINCT symbol, category
              FROM transactions

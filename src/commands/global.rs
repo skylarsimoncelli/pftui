@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::data::worldbank::{
-    COUNTRY_BRAZIL, COUNTRY_CHINA, COUNTRY_EU, COUNTRY_INDIA, COUNTRY_RUSSIA,
-    COUNTRY_SOUTH_AFRICA, COUNTRY_UK, COUNTRY_US, INDICATOR_CURRENT_ACCOUNT, INDICATOR_DEBT_GDP,
-    INDICATOR_GDP_GROWTH, INDICATOR_RESERVES,
+    COUNTRY_BRAZIL, COUNTRY_CHINA, COUNTRY_EU, COUNTRY_INDIA, COUNTRY_RUSSIA, COUNTRY_SOUTH_AFRICA,
+    COUNTRY_UK, COUNTRY_US, INDICATOR_CURRENT_ACCOUNT, INDICATOR_DEBT_GDP, INDICATOR_GDP_GROWTH,
+    INDICATOR_RESERVES,
 };
 use crate::db::backend::BackendConnection;
 use crate::db::worldbank_cache;
@@ -71,9 +71,7 @@ fn print_json(data: &[crate::data::worldbank::WorldBankDataPoint]) -> Result<()>
     let mut countries_map: HashMap<String, Map<String, Value>> = HashMap::new();
 
     for point in data {
-        let country_entry = countries_map
-            .entry(point.country_code.clone())
-            .or_default();
+        let country_entry = countries_map.entry(point.country_code.clone()).or_default();
 
         let value_json = if let Some(val) = point.value {
             json!({
@@ -161,19 +159,13 @@ fn print_terminal(data: &[crate::data::worldbank::WorldBankDataPoint]) -> Result
 
             if let Some(p) = gdp_growth {
                 if let Some(val) = p.value {
-                    println!(
-                        "│ │  GDP Growth:        {:>8.2}%  ({})",
-                        val, p.year
-                    );
+                    println!("│ │  GDP Growth:        {:>8.2}%  ({})", val, p.year);
                 }
             }
 
             if let Some(p) = debt_gdp {
                 if let Some(val) = p.value {
-                    println!(
-                        "│ │  Debt/GDP:          {:>8.2}%  ({})",
-                        val, p.year
-                    );
+                    println!("│ │  Debt/GDP:          {:>8.2}%  ({})", val, p.year);
                 }
             }
 
@@ -191,10 +183,7 @@ fn print_terminal(data: &[crate::data::worldbank::WorldBankDataPoint]) -> Result
                 if let Some(val) = p.value {
                     // Convert to trillions for readability
                     let trillions = val / rust_decimal::Decimal::new(1_000_000_000_000, 0);
-                    println!(
-                        "│ │  Reserves:          ${:>7.2}T  ({})",
-                        trillions, p.year
-                    );
+                    println!("│ │  Reserves:          ${:>7.2}T  ({})", trillions, p.year);
                 }
             }
 

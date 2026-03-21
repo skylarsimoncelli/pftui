@@ -62,7 +62,10 @@ pub fn set_group_members(conn: &Connection, group_name: &str, symbols: &[String]
         "INSERT INTO groups (name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
         params![group_name],
     )?;
-    tx.execute("DELETE FROM group_members WHERE group_name = ?1", params![group_name])?;
+    tx.execute(
+        "DELETE FROM group_members WHERE group_name = ?1",
+        params![group_name],
+    )?;
     for sym in symbols {
         tx.execute(
             "INSERT INTO group_members (group_name, symbol) VALUES (?1, ?2)",
@@ -86,14 +89,16 @@ pub fn set_group_members_backend(
 }
 
 pub fn get_group_members(conn: &Connection, group_name: &str) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT symbol FROM group_members WHERE group_name = ?1 ORDER BY symbol ASC",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT symbol FROM group_members WHERE group_name = ?1 ORDER BY symbol ASC")?;
     let rows = stmt.query_map(params![group_name], |row| row.get(0))?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
-pub fn get_group_members_backend(backend: &BackendConnection, group_name: &str) -> Result<Vec<String>> {
+pub fn get_group_members_backend(
+    backend: &BackendConnection,
+    group_name: &str,
+) -> Result<Vec<String>> {
     query::dispatch(
         backend,
         |conn| get_group_members(conn, group_name),
@@ -142,7 +147,7 @@ fn create_group_postgres(pool: &PgPool, name: &str) -> Result<()> {
 
 fn remove_group_postgres(pool: &PgPool, name: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let result = crate::db::pg_runtime::block_on(async {
+    let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM groups WHERE name = $1")
             .bind(name)
             .execute(pool)
@@ -153,7 +158,7 @@ fn remove_group_postgres(pool: &PgPool, name: &str) -> Result<bool> {
 
 fn list_groups_postgres(pool: &PgPool) -> Result<Vec<GroupRow>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<(String, String)> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as("SELECT name, created_at::text FROM groups ORDER BY name ASC")
             .fetch_all(pool)
             .await
@@ -194,7 +199,7 @@ fn set_group_members_postgres(pool: &PgPool, group_name: &str, symbols: &[String
 
 fn get_group_members_postgres(pool: &PgPool, group_name: &str) -> Result<Vec<String>> {
     ensure_tables_postgres(pool)?;
-        let rows = crate::db::pg_runtime::block_on(async {
+    let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar::<_, String>(
             "SELECT symbol
              FROM group_members

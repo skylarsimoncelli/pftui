@@ -180,12 +180,18 @@ mod tests {
 
     #[test]
     fn color_to_ansi_fg_rgb() {
-        assert_eq!(color_to_ansi_fg(Color::Rgb(255, 0, 128)), Some("38;2;255;0;128".to_string()));
+        assert_eq!(
+            color_to_ansi_fg(Color::Rgb(255, 0, 128)),
+            Some("38;2;255;0;128".to_string())
+        );
     }
 
     #[test]
     fn color_to_ansi_fg_indexed() {
-        assert_eq!(color_to_ansi_fg(Color::Indexed(42)), Some("38;5;42".to_string()));
+        assert_eq!(
+            color_to_ansi_fg(Color::Indexed(42)),
+            Some("38;5;42".to_string())
+        );
     }
 
     #[test]
@@ -195,7 +201,10 @@ mod tests {
 
     #[test]
     fn color_to_ansi_bg_rgb() {
-        assert_eq!(color_to_ansi_bg(Color::Rgb(10, 20, 30)), Some("48;2;10;20;30".to_string()));
+        assert_eq!(
+            color_to_ansi_bg(Color::Rgb(10, 20, 30)),
+            Some("48;2;10;20;30".to_string())
+        );
     }
 
     #[test]

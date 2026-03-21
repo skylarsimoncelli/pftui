@@ -10,12 +10,8 @@ use crate::config::{Config, DatabaseBackend};
 
 #[derive(Debug)]
 pub enum BackendConnection {
-    Sqlite {
-        conn: Connection,
-    },
-    Postgres {
-        pool: PgPool,
-    },
+    Sqlite { conn: Connection },
+    Postgres { pool: PgPool },
 }
 
 impl BackendConnection {
@@ -38,9 +34,9 @@ impl BackendConnection {
     /// For SQLite this is unsupported since the mobile API requires Postgres.
     pub fn clone_for_server(&self) -> Result<Self> {
         match self {
-            BackendConnection::Postgres { pool } => Ok(BackendConnection::Postgres {
-                pool: pool.clone(),
-            }),
+            BackendConnection::Postgres { pool } => {
+                Ok(BackendConnection::Postgres { pool: pool.clone() })
+            }
             BackendConnection::Sqlite { .. } => {
                 anyhow::bail!("Mobile API server requires the Postgres backend")
             }
@@ -83,13 +79,13 @@ pub fn open_from_config(config: &Config, sqlite_path: &Path) -> Result<BackendCo
             let connect_timeout =
                 Duration::from_secs(config.effective_postgres_connect_timeout_secs());
             let pool = crate::db::pg_runtime::block_on(async {
-                    PgPoolOptions::new()
-                        .max_connections(max_connections)
-                        .acquire_timeout(connect_timeout)
-                        .connect(url)
-                        .await
-                })
-                .context("Failed to connect to PostgreSQL using database_url")?;
+                PgPoolOptions::new()
+                    .max_connections(max_connections)
+                    .acquire_timeout(connect_timeout)
+                    .connect(url)
+                    .await
+            })
+            .context("Failed to connect to PostgreSQL using database_url")?;
             if !config.effective_postgres_read_only() {
                 crate::db::postgres_schema::run_migrations(&pool)
                     .context("Failed to run PostgreSQL schema migrations")?;

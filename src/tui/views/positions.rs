@@ -124,7 +124,7 @@ pub fn compute_period_change_pct(
     timeframe: crate::app::ChangeTimeframe,
 ) -> Option<Decimal> {
     use crate::app::ChangeTimeframe;
-    
+
     let history = app.price_history.get(symbol)?;
     if history.is_empty() {
         return None;
@@ -137,10 +137,8 @@ pub fn compute_period_change_pct(
         ChangeTimeframe::YearToDate => {
             // Find the first record of current year
             let current_year = chrono::Utc::now().format("%Y").to_string();
-            let year_start = history
-                .iter()
-                .find(|r| r.date.starts_with(&current_year))?;
-            
+            let year_start = history.iter().find(|r| r.date.starts_with(&current_year))?;
+
             if year_start.close == dec!(0) {
                 return None;
             }
@@ -149,7 +147,7 @@ pub fn compute_period_change_pct(
         _ => {
             // For other timeframes, look back N days
             let lookback = timeframe.lookback_days()?;
-            
+
             if history.len() < 2 {
                 return None;
             }
@@ -158,7 +156,7 @@ pub fn compute_period_change_pct(
             // History is sorted by date (oldest to newest)
             let target_idx = history.len().saturating_sub(lookback as usize);
             let base_record = &history[target_idx];
-            
+
             if base_record.close == dec!(0) {
                 return None;
             }
@@ -172,7 +170,7 @@ pub fn compute_period_change_pct(
 pub fn format_value(value: Decimal) -> String {
     let val_f64: f64 = value.to_string().parse().unwrap_or(0.0);
     let abs_val = val_f64.abs();
-    
+
     if abs_val >= 1_000_000.0 {
         format!("${:.1}M", val_f64 / 1_000_000.0)
     } else if abs_val >= 10_000.0 {
@@ -266,10 +264,18 @@ fn build_rsi_spans<'a>(t: &'a theme::Theme, records: &[HistoryRecord]) -> Line<'
 
     let arrow_color = if arrow == " ▲" {
         // RSI rising — could be moving toward overbought
-        if current > 60.0 { t.loss_red } else { t.text_secondary }
+        if current > 60.0 {
+            t.loss_red
+        } else {
+            t.text_secondary
+        }
     } else if arrow == " ▼" {
         // RSI falling — could be moving toward oversold
-        if current < 40.0 { t.gain_green } else { t.text_secondary }
+        if current < 40.0 {
+            t.gain_green
+        } else {
+            t.text_secondary
+        }
     } else {
         t.text_muted
     };
@@ -286,7 +292,9 @@ fn build_rsi_spans<'a>(t: &'a theme::Theme, records: &[HistoryRecord]) -> Line<'
 fn row_background(app: &App, row_index: usize) -> Color {
     let t = &app.theme;
     if row_index == app.selected_index {
-        let elapsed = app.tick_count.saturating_sub(app.last_selection_change_tick);
+        let elapsed = app
+            .tick_count
+            .saturating_sub(app.last_selection_change_tick);
         if elapsed < theme::SELECTION_FLASH_DURATION && app.last_selection_change_tick > 0 {
             // Lerp from border_accent (flash) toward surface_3 (steady)
             let progress = elapsed as f32 / theme::SELECTION_FLASH_DURATION as f32;
@@ -304,7 +312,11 @@ fn row_background(app: &App, row_index: usize) -> Color {
 /// Build a category divider row for insertion between position groups.
 /// Produces a thin separator like "─── Crypto ───" spanning the first column,
 /// with empty cells for the remaining columns.
-fn category_divider_row(category: AssetCategory, t: &theme::Theme, col_count: usize) -> Row<'static> {
+fn category_divider_row(
+    category: AssetCategory,
+    t: &theme::Theme,
+    col_count: usize,
+) -> Row<'static> {
     let label = format!("{}", category);
     let cap_label = capitalize_category(&label);
     let divider_text = format!("─── {} ───", cap_label);
@@ -329,7 +341,9 @@ struct CategoryAggregate {
     total_cost: Decimal,
 }
 
-fn compute_category_aggregates(positions: &[crate::models::position::Position]) -> HashMap<AssetCategory, CategoryAggregate> {
+fn compute_category_aggregates(
+    positions: &[crate::models::position::Position],
+) -> HashMap<AssetCategory, CategoryAggregate> {
     let mut out: HashMap<AssetCategory, CategoryAggregate> = HashMap::new();
     for pos in positions {
         let entry = out.entry(pos.category).or_default();
@@ -424,7 +438,7 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
 
     // New column layout: Asset, Price, 24h (or active timeframe), Day$, P&L, Value, Alloc%, RSI, Trend
     let timeframe_label = app.change_timeframe.label();
-    
+
     let mut header_cells = vec![
         Cell::from("Asset"),
         Cell::from("Price"),
@@ -434,23 +448,21 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
         Cell::from("Value"),
         Cell::from("Alloc%"),
     ];
-    
+
     if app.show_drift_columns {
         header_cells.push(Cell::from("Target"));
         header_cells.push(Cell::from("Drift"));
         header_cells.push(Cell::from("Status"));
     }
-    
-    header_cells.extend(vec![
-        Cell::from("RSI"),
-        Cell::from("Trend"),
-    ]);
+
+    header_cells.extend(vec![Cell::from("RSI"), Cell::from("Trend")]);
 
     let header = Row::new(header_cells)
         .style(Style::default().fg(t.text_secondary).bold())
         .height(1);
 
-    let grouped_by_category = app.show_sector_grouping || matches!(app.sort_field, SortField::Category);
+    let grouped_by_category =
+        app.show_sector_grouping || matches!(app.sort_field, SortField::Category);
     let col_count = if app.show_drift_columns { 12 } else { 9 };
     let mut rows: Vec<Row> = Vec::new();
     let category_aggregates = if app.show_sector_grouping {
@@ -482,206 +494,218 @@ fn render_full_table(frame: &mut Frame, area: Rect, app: &mut App) {
             last_category = Some(pos.category);
         }
 
-            let cat_color = t.category_color(pos.category);
+        let cat_color = t.category_color(pos.category);
 
-            let row_bg = row_background(app, i);
+        let row_bg = row_background(app, i);
 
-            let style = Style::default().bg(row_bg);
+        let style = Style::default().bg(row_bg);
 
-            let marker = if i == app.selected_index {
-                Span::styled("▎", Style::default().fg(t.border_active))
-            } else {
-                Span::raw(" ")
-            };
-            let asset_text = if pos.name.is_empty() {
-                pos.symbol.clone()
-            } else {
-                format!("{} {}", pos.name, pos.symbol)
-            };
-            let has_overdue_review = overdue_symbols.contains(&pos.symbol.to_uppercase());
-            let cat_dot = Span::styled("●", Style::default().fg(cat_color));
-            let mut asset_spans = vec![
-                marker,
-                cat_dot,
-                Span::raw(" "),
-                Span::styled(asset_text, Style::default().fg(t.text_primary)),
-            ];
-            if has_overdue_review {
-                asset_spans.push(Span::raw(" "));
-                asset_spans.push(Span::styled("⏰", Style::default().fg(t.stale_yellow).bold()));
+        let marker = if i == app.selected_index {
+            Span::styled("▎", Style::default().fg(t.border_active))
+        } else {
+            Span::raw(" ")
+        };
+        let asset_text = if pos.name.is_empty() {
+            pos.symbol.clone()
+        } else {
+            format!("{} {}", pos.name, pos.symbol)
+        };
+        let has_overdue_review = overdue_symbols.contains(&pos.symbol.to_uppercase());
+        let cat_dot = Span::styled("●", Style::default().fg(cat_color));
+        let mut asset_spans = vec![
+            marker,
+            cat_dot,
+            Span::raw(" "),
+            Span::styled(asset_text, Style::default().fg(t.text_primary)),
+        ];
+        if has_overdue_review {
+            asset_spans.push(Span::raw(" "));
+            asset_spans.push(Span::styled(
+                "⏰",
+                Style::default().fg(t.stale_yellow).bold(),
+            ));
+        }
+        let asset_line = Line::from(asset_spans);
+
+        // Price flash with direction
+        let (price_style, flash_direction) = match app.price_flash_ticks.get(&pos.symbol) {
+            Some(&(flash_tick, direction))
+                if app.tick_count.saturating_sub(flash_tick) < theme::FLASH_DURATION =>
+            {
+                let bg = match direction {
+                    PriceFlashDirection::Up => t.gain_green,
+                    PriceFlashDirection::Down => t.loss_red,
+                    PriceFlashDirection::Same => t.text_accent,
+                };
+                (
+                    Style::default().fg(t.surface_0).bg(bg).bold(),
+                    Some(direction),
+                )
             }
-            let asset_line = Line::from(asset_spans);
+            _ => (Style::default().fg(t.text_primary), None),
+        };
 
-            // Price flash with direction
-            let (price_style, flash_direction) = match app.price_flash_ticks.get(&pos.symbol) {
-                Some(&(flash_tick, direction))
-                    if app.tick_count.saturating_sub(flash_tick) < theme::FLASH_DURATION =>
-                {
-                    let bg = match direction {
-                        PriceFlashDirection::Up => t.gain_green,
-                        PriceFlashDirection::Down => t.loss_red,
-                        PriceFlashDirection::Same => t.text_accent,
+        let mini_sparkline_spans = build_sparkline_spans(
+            t,
+            app.price_history
+                .get(&pos.symbol)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+            3,
+        );
+
+        let _sparkline_spans = build_sparkline_spans(
+            t,
+            app.price_history
+                .get(&pos.symbol)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+            7,
+        );
+
+        // Period change % using active timeframe
+        let period_change = compute_period_change_pct(app, &pos.symbol, app.change_timeframe);
+        let period_change_f: f64 = period_change
+            .unwrap_or(dec!(0))
+            .to_string()
+            .parse()
+            .unwrap_or(0.0);
+        let period_change_color = theme::gain_intensity_color(t, period_change_f);
+
+        // Position value (price × quantity)
+        let position_value = pos.current_price.map(|p| p * pos.quantity);
+        let value_text = position_value
+            .map(format_value)
+            .unwrap_or_else(|| "---".to_string());
+        let day_pnl = compute_day_pnl_dollars(app, &pos.symbol, pos.quantity, pos.current_price);
+        let day_pnl_color = match day_pnl {
+            Some(v) if v > Decimal::ZERO => t.gain_green,
+            Some(v) if v < Decimal::ZERO => t.loss_red,
+            Some(_) => t.text_muted,
+            None => t.text_muted,
+        };
+
+        // RSI indicator
+        let rsi_line = build_rsi_spans(
+            t,
+            app.price_history
+                .get(&pos.symbol)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+        );
+
+        // Trend sparkline matching active timeframe
+        // For now, use the full sparkline (7 bars). Future enhancement: adjust based on timeframe.
+        let trend_sparkline_spans = build_sparkline_spans(
+            t,
+            app.price_history
+                .get(&pos.symbol)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+            7,
+        );
+
+        // New column order: Asset, Price, timeframe%, Day$, P&L, Value, Alloc%, RSI, Trend
+        let mut row_cells = vec![
+            Cell::from(asset_line),
+            Cell::from(Line::from({
+                let mut spans = vec![];
+                // Currency indicator for non-USD positions
+                if let Some(ref curr) = pos.native_currency {
+                    let symbol = match curr.as_str() {
+                        "GBP" => "£",
+                        "EUR" => "€",
+                        "JPY" => "¥",
+                        "CAD" => "C$",
+                        "AUD" => "A$",
+                        "CHF" => "₣",
+                        _ => curr.as_str(),
                     };
-                    (
-                        Style::default().fg(t.surface_0).bg(bg).bold(),
-                        Some(direction),
-                    )
+                    spans.push(Span::styled(
+                        symbol,
+                        Style::default().fg(app.theme.text_muted),
+                    ));
                 }
-                _ => (Style::default().fg(t.text_primary), None),
-            };
+                let price_text = format_price_opt(pos.current_price);
+                let price_spans = match flash_direction {
+                    Some(PriceFlashDirection::Up) => vec![
+                        Span::styled(price_text, price_style),
+                        Span::styled(" ▲", price_style),
+                    ],
+                    Some(PriceFlashDirection::Down) => vec![
+                        Span::styled(price_text, price_style),
+                        Span::styled(" ▼", price_style),
+                    ],
+                    _ => vec![Span::styled(price_text, price_style)],
+                };
+                spans.extend(price_spans);
+                if !mini_sparkline_spans.is_empty() {
+                    spans.push(Span::raw(" "));
+                    spans.extend(mini_sparkline_spans);
+                }
+                spans
+            })),
+            Cell::from(format_change_pct(period_change))
+                .style(Style::default().fg(period_change_color)),
+            Cell::from(format_signed_value(day_pnl)).style(Style::default().fg(day_pnl_color)),
+            Cell::from(build_gain_bar_spans(t, pos.gain_pct, 8)),
+            Cell::from(value_text).style(Style::default().fg(t.text_primary)),
+            Cell::from(format_alloc_pct(pos.allocation_pct))
+                .style(Style::default().fg(t.text_secondary)),
+        ];
 
-            let mini_sparkline_spans = build_sparkline_spans(
-                t,
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-                3,
-            );
+        // Add drift columns if enabled
+        if app.show_drift_columns {
+            use rust_decimal::Decimal;
+            if let Some(target) = app.allocation_targets.get(&pos.symbol) {
+                let actual_pct = pos.allocation_pct.unwrap_or(dec!(0));
+                let target_pct = target.target_pct;
+                let drift = actual_pct - target_pct;
+                let abs_drift = drift.abs();
+                let over_band = abs_drift > target.drift_band_pct;
 
-            let _sparkline_spans = build_sparkline_spans(
-                t,
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-                7,
-            );
-
-            // Period change % using active timeframe
-            let period_change = compute_period_change_pct(app, &pos.symbol, app.change_timeframe);
-            let period_change_f: f64 = period_change
-                .unwrap_or(dec!(0))
-                .to_string()
-                .parse()
-                .unwrap_or(0.0);
-            let period_change_color = theme::gain_intensity_color(t, period_change_f);
-
-            // Position value (price × quantity)
-            let position_value = pos.current_price.map(|p| p * pos.quantity);
-            let value_text = position_value.map(format_value).unwrap_or_else(|| "---".to_string());
-            let day_pnl = compute_day_pnl_dollars(app, &pos.symbol, pos.quantity, pos.current_price);
-            let day_pnl_color = match day_pnl {
-                Some(v) if v > Decimal::ZERO => t.gain_green,
-                Some(v) if v < Decimal::ZERO => t.loss_red,
-                Some(_) => t.text_muted,
-                None => t.text_muted,
-            };
-
-            // RSI indicator
-            let rsi_line = build_rsi_spans(
-                t,
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-            );
-
-            // Trend sparkline matching active timeframe
-            // For now, use the full sparkline (7 bars). Future enhancement: adjust based on timeframe.
-            let trend_sparkline_spans = build_sparkline_spans(
-                t,
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-                7,
-            );
-
-            // New column order: Asset, Price, timeframe%, Day$, P&L, Value, Alloc%, RSI, Trend
-            let mut row_cells = vec![
-                Cell::from(asset_line),
-                Cell::from(Line::from({
-                    let mut spans = vec![];
-                    // Currency indicator for non-USD positions
-                    if let Some(ref curr) = pos.native_currency {
-                        let symbol = match curr.as_str() {
-                            "GBP" => "£",
-                            "EUR" => "€",
-                            "JPY" => "¥",
-                            "CAD" => "C$",
-                            "AUD" => "A$",
-                            "CHF" => "₣",
-                            _ => curr.as_str(),
-                        };
-                        spans.push(Span::styled(symbol, Style::default().fg(app.theme.text_muted)));
-                    }
-                    let price_text = format_price_opt(pos.current_price);
-                    let price_spans = match flash_direction {
-                        Some(PriceFlashDirection::Up) => vec![
-                            Span::styled(price_text, price_style),
-                            Span::styled(" ▲", price_style),
-                        ],
-                        Some(PriceFlashDirection::Down) => vec![
-                            Span::styled(price_text, price_style),
-                            Span::styled(" ▼", price_style),
-                        ],
-                        _ => vec![Span::styled(price_text, price_style)],
-                    };
-                    spans.extend(price_spans);
-                    if !mini_sparkline_spans.is_empty() {
-                        spans.push(Span::raw(" "));
-                        spans.extend(mini_sparkline_spans);
-                    }
-                    spans
-                })),
-                Cell::from(format_change_pct(period_change))
-                    .style(Style::default().fg(period_change_color)),
-                Cell::from(format_signed_value(day_pnl))
-                    .style(Style::default().fg(day_pnl_color)),
-                Cell::from(build_gain_bar_spans(t, pos.gain_pct, 8)),
-                Cell::from(value_text)
-                    .style(Style::default().fg(t.text_primary)),
-                Cell::from(format_alloc_pct(pos.allocation_pct))
-                    .style(Style::default().fg(t.text_secondary)),
-            ];
-
-            // Add drift columns if enabled
-            if app.show_drift_columns {
-                use rust_decimal::Decimal;
-                if let Some(target) = app.allocation_targets.get(&pos.symbol) {
-                    let actual_pct = pos.allocation_pct.unwrap_or(dec!(0));
-                    let target_pct = target.target_pct;
-                    let drift = actual_pct - target_pct;
-                    let abs_drift = drift.abs();
-                    let over_band = abs_drift > target.drift_band_pct;
-                    
-                    let drift_color = if over_band {
-                        if drift > Decimal::ZERO {
-                            t.gain_green
-                        } else {
-                            t.loss_red
-                        }
+                let drift_color = if over_band {
+                    if drift > Decimal::ZERO {
+                        t.gain_green
                     } else {
-                        t.text_muted
-                    };
-                    
-                    let status_char = if over_band {
-                        if drift > Decimal::ZERO { "▲" } else { "▼" }
-                    } else {
-                        "✓"
-                    };
-                    let status_color = if over_band { drift_color } else { t.gain_green };
-                    
-                    row_cells.push(Cell::from(format!("{:.1}%", target_pct))
-                        .style(Style::default().fg(t.text_secondary)));
-                    row_cells.push(Cell::from(format!("{:+.1}%", drift))
-                        .style(Style::default().fg(drift_color)));
-                    row_cells.push(Cell::from(status_char)
-                        .style(Style::default().fg(status_color)));
+                        t.loss_red
+                    }
                 } else {
-                    row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
-                    row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
-                    row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
-                }
+                    t.text_muted
+                };
+
+                let status_char = if over_band {
+                    if drift > Decimal::ZERO {
+                        "▲"
+                    } else {
+                        "▼"
+                    }
+                } else {
+                    "✓"
+                };
+                let status_color = if over_band { drift_color } else { t.gain_green };
+
+                row_cells.push(
+                    Cell::from(format!("{:.1}%", target_pct))
+                        .style(Style::default().fg(t.text_secondary)),
+                );
+                row_cells.push(
+                    Cell::from(format!("{:+.1}%", drift)).style(Style::default().fg(drift_color)),
+                );
+                row_cells.push(Cell::from(status_char).style(Style::default().fg(status_color)));
+            } else {
+                row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
+                row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
+                row_cells.push(Cell::from("---").style(Style::default().fg(t.text_muted)));
             }
+        }
 
-            row_cells.extend(vec![
-                Cell::from(rsi_line),
-                Cell::from(Line::from(trend_sparkline_spans)),
-            ]);
+        row_cells.extend(vec![
+            Cell::from(rsi_line),
+            Cell::from(Line::from(trend_sparkline_spans)),
+        ]);
 
-            rows.push(Row::new(row_cells).style(style));
+        rows.push(Row::new(row_cells).style(style));
     }
 
     // New column layout: Asset, Price, timeframe%, Day$, P&L, Value, Alloc%, [drift cols], RSI, Trend
@@ -736,7 +760,8 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &mut App) {
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
 
-    let grouped_by_category = app.show_sector_grouping || matches!(app.sort_field, SortField::Category);
+    let grouped_by_category =
+        app.show_sector_grouping || matches!(app.sort_field, SortField::Category);
     let privacy_col_count = 6;
     let mut rows: Vec<Row> = Vec::new();
     let category_aggregates = if app.show_sector_grouping {
@@ -758,7 +783,12 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &mut App) {
             if last_category != Some(pos.category) {
                 if let Some(aggregates) = &category_aggregates {
                     let agg = aggregates.get(&pos.category).copied().unwrap_or_default();
-                    rows.push(category_summary_row(pos.category, agg, t, privacy_col_count));
+                    rows.push(category_summary_row(
+                        pos.category,
+                        agg,
+                        t,
+                        privacy_col_count,
+                    ));
                 } else {
                     rows.push(category_divider_row(pos.category, t, privacy_col_count));
                 }
@@ -766,64 +796,68 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &mut App) {
             last_category = Some(pos.category);
         }
 
-            let cat_color = t.category_color(pos.category);
+        let cat_color = t.category_color(pos.category);
 
-            let row_bg = row_background(app, i);
+        let row_bg = row_background(app, i);
 
-            let style = Style::default().bg(row_bg);
+        let style = Style::default().bg(row_bg);
 
-            let marker = if i == app.selected_index {
-                Span::styled("▎", Style::default().fg(t.border_active))
-            } else {
-                Span::raw(" ")
-            };
-            let asset_text = if pos.name.is_empty() {
-                pos.symbol.clone()
-            } else {
-                format!("{} {}", pos.name, pos.symbol)
-            };
-            let has_overdue_review = overdue_symbols.contains(&pos.symbol.to_uppercase());
-            let cat_dot = Span::styled("●", Style::default().fg(cat_color));
-            let mut asset_spans = vec![
-                marker,
-                cat_dot,
-                Span::raw(" "),
-                Span::styled(asset_text, Style::default().fg(t.text_primary)),
-            ];
-            if has_overdue_review {
-                asset_spans.push(Span::raw(" "));
-                asset_spans.push(Span::styled("⏰", Style::default().fg(t.stale_yellow).bold()));
-            }
-            let asset_line = Line::from(asset_spans);
+        let marker = if i == app.selected_index {
+            Span::styled("▎", Style::default().fg(t.border_active))
+        } else {
+            Span::raw(" ")
+        };
+        let asset_text = if pos.name.is_empty() {
+            pos.symbol.clone()
+        } else {
+            format!("{} {}", pos.name, pos.symbol)
+        };
+        let has_overdue_review = overdue_symbols.contains(&pos.symbol.to_uppercase());
+        let cat_dot = Span::styled("●", Style::default().fg(cat_color));
+        let mut asset_spans = vec![
+            marker,
+            cat_dot,
+            Span::raw(" "),
+            Span::styled(asset_text, Style::default().fg(t.text_primary)),
+        ];
+        if has_overdue_review {
+            asset_spans.push(Span::raw(" "));
+            asset_spans.push(Span::styled(
+                "⏰",
+                Style::default().fg(t.stale_yellow).bold(),
+            ));
+        }
+        let asset_line = Line::from(asset_spans);
 
-            let sparkline_spans = build_sparkline_spans(
-                t,
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-                7,
-            );
+        let sparkline_spans = build_sparkline_spans(
+            t,
+            app.price_history
+                .get(&pos.symbol)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+            7,
+        );
 
-            // Period change % using active timeframe (privacy-safe — percentage only)
-            let period_change = compute_period_change_pct(app, &pos.symbol, app.change_timeframe);
-            let period_change_f: f64 = period_change
-                .unwrap_or(dec!(0))
-                .to_string()
-                .parse()
-                .unwrap_or(0.0);
-            let period_change_color = theme::gain_intensity_color(t, period_change_f);
+        // Period change % using active timeframe (privacy-safe — percentage only)
+        let period_change = compute_period_change_pct(app, &pos.symbol, app.change_timeframe);
+        let period_change_f: f64 = period_change
+            .unwrap_or(dec!(0))
+            .to_string()
+            .parse()
+            .unwrap_or(0.0);
+        let period_change_color = theme::gain_intensity_color(t, period_change_f);
 
-            // RSI indicator (privacy-safe — derived from public price data)
-            let rsi_line = build_rsi_spans(
-                t,
-                app.price_history
-                    .get(&pos.symbol)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
-            );
+        // RSI indicator (privacy-safe — derived from public price data)
+        let rsi_line = build_rsi_spans(
+            t,
+            app.price_history
+                .get(&pos.symbol)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+        );
 
-            rows.push(Row::new(vec![
+        rows.push(
+            Row::new(vec![
                 Cell::from(asset_line),
                 Cell::from(format_price_opt(pos.current_price))
                     .style(Style::default().fg(t.text_primary)),
@@ -834,7 +868,8 @@ fn render_privacy_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 Cell::from(rsi_line),
                 Cell::from(Line::from(sparkline_spans)),
             ])
-            .style(style));
+            .style(style),
+        );
     }
 
     // Privacy table: Asset, Price, timeframe%, Alloc%, RSI, Trend
@@ -886,25 +921,36 @@ fn render_table(
         base_title.to_string()
     };
 
-    let is_active_panel = !(app.selected_position().is_some() && app.terminal_width >= crate::tui::ui::COMPACT_WIDTH);
-    let border_color = positions_border_color(is_active_panel, app.prices_live, t.border_active, t.border_inactive, app.tick_count);
+    let is_active_panel =
+        !(app.selected_position().is_some() && app.terminal_width >= crate::tui::ui::COMPACT_WIDTH);
+    let border_color = positions_border_color(
+        is_active_panel,
+        app.prices_live,
+        t.border_active,
+        t.border_inactive,
+        app.tick_count,
+    );
 
     let table = Table::new(rows, widths)
         .header(header)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_set(if is_active_panel { crate::tui::theme::BORDER_ACTIVE } else { crate::tui::theme::BORDER_INACTIVE })
+                .border_set(if is_active_panel {
+                    crate::tui::theme::BORDER_ACTIVE
+                } else {
+                    crate::tui::theme::BORDER_INACTIVE
+                })
                 .border_style(Style::default().fg(border_color))
                 .style(Style::default().bg(t.surface_1))
-                .title(Span::styled(title, Style::default().fg(t.text_primary).bold()))
+                .title(Span::styled(
+                    title,
+                    Style::default().fg(t.text_primary).bold(),
+                ))
                 .title_alignment(Alignment::Left)
                 .title(
-                    Line::from(Span::styled(
-                        sort_indicator,
-                        sort_style,
-                    ))
-                    .alignment(Alignment::Right),
+                    Line::from(Span::styled(sort_indicator, sort_style))
+                        .alignment(Alignment::Right),
                 ),
         )
         .row_highlight_style(Style::default().bg(t.surface_3));
@@ -1057,9 +1103,7 @@ fn build_gain_bar_spans<'a>(
 }
 
 fn format_price_opt(price: Option<Decimal>) -> String {
-    price
-        .map(format_price)
-        .unwrap_or_else(|| "---".to_string())
+    price.map(format_price).unwrap_or_else(|| "---".to_string())
 }
 
 fn format_price(v: Decimal) -> String {
@@ -1097,7 +1141,12 @@ fn positions_border_color(
     tick_count: u64,
 ) -> Color {
     if is_active_panel && prices_live {
-        theme::pulse_color(border_active, border_inactive, tick_count, theme::PULSE_PERIOD_BORDER)
+        theme::pulse_color(
+            border_active,
+            border_inactive,
+            tick_count,
+            theme::PULSE_PERIOD_BORDER,
+        )
     } else if is_active_panel {
         border_active
     } else {
@@ -1230,7 +1279,10 @@ mod tests {
 
     fn make_test_app_with_history(symbol: &str, prices: &[&str]) -> crate::app::App {
         let config = crate::config::Config::default();
-        let mut app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_change_pct.db"));
+        let mut app = crate::app::App::new(
+            &config,
+            std::path::PathBuf::from("/tmp/pftui_test_change_pct.db"),
+        );
         let records: Vec<HistoryRecord> = prices
             .iter()
             .enumerate()
@@ -1290,7 +1342,10 @@ mod tests {
     #[test]
     fn compute_change_pct_no_history() {
         let config = crate::config::Config::default();
-        let app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_no_hist.db"));
+        let app = crate::app::App::new(
+            &config,
+            std::path::PathBuf::from("/tmp/pftui_test_no_hist.db"),
+        );
         let result = compute_change_pct(&app, "AAPL");
         assert!(result.is_none());
     }
@@ -1319,7 +1374,10 @@ mod tests {
     #[test]
     fn compute_day_pnl_dollars_no_history() {
         let config = crate::config::Config::default();
-        let app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_day_pnl.db"));
+        let app = crate::app::App::new(
+            &config,
+            std::path::PathBuf::from("/tmp/pftui_test_day_pnl.db"),
+        );
         let result = compute_day_pnl_dollars(&app, "AAPL", dec!(10), Some(dec!(110)));
         assert!(result.is_none());
     }
@@ -1361,8 +1419,13 @@ mod tests {
             assert_eq!(r30, ra, "at peak intensity, color should equal active");
         }
         // Trough (tick 90) should be closer to inactive
-        if let (Color::Rgb(r90, _, _), Color::Rgb(ri, _, _), Color::Rgb(ra, _, _)) = (c90, inactive, active) {
-            assert!(r90 >= ri && r90 <= ra, "trough color should be between inactive and active");
+        if let (Color::Rgb(r90, _, _), Color::Rgb(ri, _, _), Color::Rgb(ra, _, _)) =
+            (c90, inactive, active)
+        {
+            assert!(
+                r90 >= ri && r90 <= ra,
+                "trough color should be between inactive and active"
+            );
             assert!(r90 < ra, "trough should be less than full active");
         }
     }
@@ -1385,10 +1448,22 @@ mod tests {
         let active = Color::Rgb(100, 200, 255);
         let inactive = Color::Rgb(50, 50, 50);
         // When not the active panel, always inactive — regardless of prices_live or tick
-        assert_eq!(positions_border_color(false, true, active, inactive, 0), inactive);
-        assert_eq!(positions_border_color(false, true, active, inactive, 60), inactive);
-        assert_eq!(positions_border_color(false, false, active, inactive, 0), inactive);
-        assert_eq!(positions_border_color(false, false, active, inactive, 99), inactive);
+        assert_eq!(
+            positions_border_color(false, true, active, inactive, 0),
+            inactive
+        );
+        assert_eq!(
+            positions_border_color(false, true, active, inactive, 60),
+            inactive
+        );
+        assert_eq!(
+            positions_border_color(false, false, active, inactive, 0),
+            inactive
+        );
+        assert_eq!(
+            positions_border_color(false, false, active, inactive, 99),
+            inactive
+        );
     }
 }
 
@@ -1418,17 +1493,25 @@ mod mini_sparkline_tests {
         let spans = build_sparkline_spans(&t, &history, 3);
         assert_eq!(spans.len(), 3, "mini sparkline should have 3 chars");
         // Ascending prices: chars should increase
-        assert!(spans[0].content.as_ref() <= spans[2].content.as_ref(),
-            "ascending prices should produce ascending sparkline");
+        assert!(
+            spans[0].content.as_ref() <= spans[2].content.as_ref(),
+            "ascending prices should produce ascending sparkline"
+        );
     }
 
     #[test]
     fn test_mini_sparkline_uses_last_three_of_many() {
         let t = crate::tui::theme::theme_by_name("midnight");
         // 10 records, mini sparkline should use only the last 3
-        let history = make_history(&["50", "60", "70", "80", "90", "100", "200", "300", "100", "110"]);
+        let history = make_history(&[
+            "50", "60", "70", "80", "90", "100", "200", "300", "100", "110",
+        ]);
         let spans = build_sparkline_spans(&t, &history, 3);
-        assert_eq!(spans.len(), 3, "should produce exactly 3 chars from long history");
+        assert_eq!(
+            spans.len(),
+            3,
+            "should produce exactly 3 chars from long history"
+        );
     }
 
     #[test]
@@ -1437,14 +1520,21 @@ mod mini_sparkline_tests {
         let history = make_history(&["100", "110"]);
         let spans = build_sparkline_spans(&t, &history, 3);
         // Should produce 2 chars (as many as available, up to 3)
-        assert_eq!(spans.len(), 2, "should produce chars equal to available history");
+        assert_eq!(
+            spans.len(),
+            2,
+            "should produce chars equal to available history"
+        );
     }
 
     #[test]
     fn test_mini_sparkline_empty_history() {
         let t = crate::tui::theme::theme_by_name("midnight");
         let spans = build_sparkline_spans(&t, &[], 3);
-        assert!(spans.is_empty(), "empty history should produce no sparkline");
+        assert!(
+            spans.is_empty(),
+            "empty history should produce no sparkline"
+        );
     }
 
     #[test]
@@ -1463,9 +1553,16 @@ mod mini_sparkline_tests {
 mod selection_flash_tests {
     use super::*;
 
-    fn make_app_with_selection(selected: usize, tick_count: u64, last_change_tick: u64) -> crate::app::App {
+    fn make_app_with_selection(
+        selected: usize,
+        tick_count: u64,
+        last_change_tick: u64,
+    ) -> crate::app::App {
         let config = crate::config::Config::default();
-        let mut app = crate::app::App::new(&config, std::path::PathBuf::from("/tmp/pftui_test_sel_flash.db"));
+        let mut app = crate::app::App::new(
+            &config,
+            std::path::PathBuf::from("/tmp/pftui_test_sel_flash.db"),
+        );
         app.selected_index = selected;
         app.tick_count = tick_count;
         app.last_selection_change_tick = last_change_tick;
@@ -1477,7 +1574,10 @@ mod selection_flash_tests {
         // Immediately after selection change (elapsed=0), color should be border_accent
         let app = make_app_with_selection(2, 100, 100);
         let bg = row_background(&app, 2);
-        assert_eq!(bg, app.theme.border_accent, "at elapsed=0, selected row should be border_accent");
+        assert_eq!(
+            bg, app.theme.border_accent,
+            "at elapsed=0, selected row should be border_accent"
+        );
     }
 
     #[test]
@@ -1485,7 +1585,10 @@ mod selection_flash_tests {
         // After SELECTION_FLASH_DURATION ticks, color should be surface_3
         let app = make_app_with_selection(2, 100 + theme::SELECTION_FLASH_DURATION, 100);
         let bg = row_background(&app, 2);
-        assert_eq!(bg, app.theme.surface_3, "after flash duration, selected row should be surface_3");
+        assert_eq!(
+            bg, app.theme.surface_3,
+            "after flash duration, selected row should be surface_3"
+        );
     }
 
     #[test]
@@ -1495,8 +1598,14 @@ mod selection_flash_tests {
         let app = make_app_with_selection(2, 100 + midpoint, 100);
         let bg = row_background(&app, 2);
         // Should differ from both endpoints
-        assert_ne!(bg, app.theme.border_accent, "midpoint should not be full accent");
-        assert_ne!(bg, app.theme.surface_3, "midpoint should not be full surface_3");
+        assert_ne!(
+            bg, app.theme.border_accent,
+            "midpoint should not be full accent"
+        );
+        assert_ne!(
+            bg, app.theme.surface_3,
+            "midpoint should not be full surface_3"
+        );
     }
 
     #[test]
@@ -1505,8 +1614,14 @@ mod selection_flash_tests {
         let app = make_app_with_selection(2, 100, 100);
         let bg_even = row_background(&app, 0);
         let bg_odd = row_background(&app, 1);
-        assert_eq!(bg_even, app.theme.surface_1, "even non-selected row should be surface_1");
-        assert_eq!(bg_odd, app.theme.surface_1_alt, "odd non-selected row should be surface_1_alt");
+        assert_eq!(
+            bg_even, app.theme.surface_1,
+            "even non-selected row should be surface_1"
+        );
+        assert_eq!(
+            bg_odd, app.theme.surface_1_alt,
+            "odd non-selected row should be surface_1_alt"
+        );
     }
 
     #[test]
@@ -1514,7 +1629,10 @@ mod selection_flash_tests {
         // When last_selection_change_tick is 0 (initial state), no flash even if elapsed is small
         let app = make_app_with_selection(0, 5, 0);
         let bg = row_background(&app, 0);
-        assert_eq!(bg, app.theme.surface_3, "initial state should not trigger flash");
+        assert_eq!(
+            bg, app.theme.surface_3,
+            "initial state should not trigger flash"
+        );
     }
 
     #[test]
@@ -1522,7 +1640,10 @@ mod selection_flash_tests {
         // Long after the flash, color should be solid surface_3
         let app = make_app_with_selection(1, 1000, 100);
         let bg = row_background(&app, 1);
-        assert_eq!(bg, app.theme.surface_3, "well past flash duration, should be surface_3");
+        assert_eq!(
+            bg, app.theme.surface_3,
+            "well past flash duration, should be surface_3"
+        );
     }
 }
 
@@ -1540,7 +1661,11 @@ mod category_dot_tests {
             let dot = Span::styled("●", Style::default().fg(expected_color));
             assert_eq!(dot.content, "●");
             if let Some(fg) = dot.style.fg {
-                assert_eq!(fg, expected_color, "dot color should match category_color for {:?}", cat);
+                assert_eq!(
+                    fg, expected_color,
+                    "dot color should match category_color for {:?}",
+                    cat
+                );
             }
         }
     }
@@ -1570,7 +1695,11 @@ mod category_dot_tests {
             Span::styled(asset_text.clone(), Style::default().fg(t.text_primary)),
         ]);
 
-        assert_eq!(asset_line.spans.len(), 4, "asset line should have 4 spans: marker, dot, space, text");
+        assert_eq!(
+            asset_line.spans.len(),
+            4,
+            "asset line should have 4 spans: marker, dot, space, text"
+        );
         assert_eq!(asset_line.spans[0].content, "▎");
         assert_eq!(asset_line.spans[1].content, "●");
         assert_eq!(asset_line.spans[2].content, " ");
@@ -1684,7 +1813,10 @@ mod gain_bar_tests {
         // +10.0% at scale 20% = 4 chars of bar
         // The first chars should have a bg color set
         let chars_with_bg = line.spans.iter().filter(|s| s.style.bg.is_some()).count();
-        assert!(chars_with_bg > 0, "positive gain should have spans with bar background");
+        assert!(
+            chars_with_bg > 0,
+            "positive gain should have spans with bar background"
+        );
     }
 
     #[test]
@@ -1693,7 +1825,10 @@ mod gain_bar_tests {
         let line = build_gain_bar_spans(&t, Some(dec!(-15)), 8);
         // -15.0% at scale 20% = 6 chars of bar
         let chars_with_bg = line.spans.iter().filter(|s| s.style.bg.is_some()).count();
-        assert!(chars_with_bg > 0, "negative gain should have spans with bar background");
+        assert!(
+            chars_with_bg > 0,
+            "negative gain should have spans with bar background"
+        );
     }
 
     #[test]
@@ -1703,8 +1838,12 @@ mod gain_bar_tests {
         let large = build_gain_bar_spans(&t, Some(dec!(-15)), 8);
         let small_bg = small.spans.iter().filter(|s| s.style.bg.is_some()).count();
         let large_bg = large.spans.iter().filter(|s| s.style.bg.is_some()).count();
-        assert!(large_bg > small_bg,
-            "larger loss should have more bar coverage: {} vs {}", large_bg, small_bg);
+        assert!(
+            large_bg > small_bg,
+            "larger loss should have more bar coverage: {} vs {}",
+            large_bg,
+            small_bg
+        );
     }
 
     #[test]
@@ -1713,7 +1852,11 @@ mod gain_bar_tests {
         let line = build_gain_bar_spans(&t, Some(dec!(12.5)), 8);
         // Collect all text content from spans
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.starts_with("+12.5%"), "bar should preserve gain text, got: '{}'", text);
+        assert!(
+            text.starts_with("+12.5%"),
+            "bar should preserve gain text, got: '{}'",
+            text
+        );
     }
 }
 
@@ -1905,11 +2048,16 @@ mod rsi_indicator_tests {
         let line = build_rsi_spans(&t, &records);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         // RSI should be between 30 and 70
-        let rsi_val: f64 = text.split_whitespace().next()
+        let rsi_val: f64 = text
+            .split_whitespace()
+            .next()
             .and_then(|s| s.replace(['▲', '▼'], "").parse().ok())
             .unwrap_or(0.0);
-        assert!((30.0..=70.0).contains(&rsi_val),
-            "Expected neutral RSI (30-70), got: {}", rsi_val);
+        assert!(
+            (30.0..=70.0).contains(&rsi_val),
+            "Expected neutral RSI (30-70), got: {}",
+            rsi_val
+        );
         // Should use text_secondary (not red or green)
         assert_eq!(line.spans[0].style.fg, Some(t.text_secondary));
     }

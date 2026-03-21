@@ -51,7 +51,11 @@ pub fn run(backend: &BackendConnection, json: bool, cached_only: bool) -> Result
     println!("  WTI (CL=F):   {}", fmt_opt_money(wti));
     println!("  Brent (BZ=F): {}", fmt_opt_money(brent));
     println!("  Spread:       {}", fmt_opt_signed(spread, "$"));
-    println!("  RSI(14):      WTI {} | Brent {}", fmt_opt_num(rsi_wti), fmt_opt_num(rsi_brent));
+    println!(
+        "  RSI(14):      WTI {} | Brent {}",
+        fmt_opt_num(rsi_wti),
+        fmt_opt_num(rsi_brent)
+    );
     println!();
     println!("  OPEC+ context:");
     print_headline_list(&headlines.opec);

@@ -43,10 +43,7 @@ pub fn build_results(app: &App, query: &str) -> Vec<SearchResult> {
                 }
             };
             let in_portfolio = app.positions.iter().any(|p| p.symbol == symbol);
-            let in_watchlist = app
-                .watchlist_entries
-                .iter()
-                .any(|w| w.symbol == symbol);
+            let in_watchlist = app.watchlist_entries.iter().any(|w| w.symbol == symbol);
             let price = app.prices.get(symbol).copied();
 
             // Compute day change % from price history if available
@@ -199,7 +196,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Compute scroll offset so selected item is visible
     let visible = results_height as usize;
-    let selected = app.search_overlay_selected.min(result_count.saturating_sub(1));
+    let selected = app
+        .search_overlay_selected
+        .min(result_count.saturating_sub(1));
     let scroll_offset = if selected >= visible {
         selected - visible + 1
     } else {
@@ -236,12 +235,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
         // Day change display
         let (change_str, change_color) = match result.day_change_pct {
-            Some(pct) if pct > Decimal::ZERO => {
-                (format!("+{pct:.1}%"), t.gain_green)
-            }
-            Some(pct) if pct < Decimal::ZERO => {
-                (format!("{pct:.1}%"), t.loss_red)
-            }
+            Some(pct) if pct > Decimal::ZERO => (format!("+{pct:.1}%"), t.gain_green),
+            Some(pct) if pct < Decimal::ZERO => (format!("{pct:.1}%"), t.loss_red),
             Some(_) => ("0.0%".to_string(), t.text_muted),
             None => ("".to_string(), t.text_muted),
         };
@@ -253,10 +248,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let price_width = 10;
         let change_width = 8;
         let range_width = 18;
-        let name_width = (inner.width as usize)
-            .saturating_sub(2 + sym_width + cat_width + price_width + change_width + range_width + 2);
+        let name_width = (inner.width as usize).saturating_sub(
+            2 + sym_width + cat_width + price_width + change_width + range_width + 2,
+        );
 
-        let row_bg = if is_selected { t.surface_3 } else { t.surface_2 };
+        let row_bg = if is_selected {
+            t.surface_3
+        } else {
+            t.surface_2
+        };
 
         let truncated_name = if result.name.len() > name_width {
             format!("{}…", &result.name[..name_width.saturating_sub(1)])

@@ -77,33 +77,40 @@ async fn fetch_fx_history(
 /// Fetch FX rate from frankfurter.app API (free, no key required).
 /// Returns rate to convert from_currency → USD.
 async fn fetch_fx_rate_frankfurter(from_currency: &str) -> Result<Decimal> {
-    let url = format!("https://api.frankfurter.app/latest?from={}&to=USD", from_currency);
-    
+    let url = format!(
+        "https://api.frankfurter.app/latest?from={}&to=USD",
+        from_currency
+    );
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
-    
+
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
         anyhow::bail!("Frankfurter API returned {}", resp.status());
     }
-    
+
     let json: serde_json::Value = resp.json().await?;
     let rate_val = json["rates"]["USD"]
         .as_f64()
         .ok_or_else(|| anyhow::anyhow!("Frankfurter API missing USD rate"))?;
-    
+
     let rate = Decimal::try_from(rate_val)?;
     if rate <= dec!(0) {
-        anyhow::bail!("Invalid FX rate from Frankfurter for {}: {}", from_currency, rate);
+        anyhow::bail!(
+            "Invalid FX rate from Frankfurter for {}: {}",
+            from_currency,
+            rate
+        );
     }
-    
+
     Ok(rate)
 }
 
 pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
     let yahoo_sym = normalize_yahoo_symbol(symbol);
-    
+
     // Special handling for FX pairs that Yahoo often gets wrong
     if uses_frankfurter_fallback(symbol) {
         let currency = match symbol.strip_suffix("=X") {
@@ -122,7 +129,7 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
                 } else {
                     anyhow::bail!("Invalid FX rate")
                 };
-                
+
                 return Ok(PriceQuote {
                     symbol: symbol.to_string(),
                     price: inverse_rate,
@@ -140,15 +147,16 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
             }
         }
     }
-    
+
     let provider = yahoo::YahooConnector::new()?;
     let response = provider.get_latest_quotes(&yahoo_sym, "1d").await?;
     let quote = response.last_quote()?;
 
     let mut price = Decimal::try_from(quote.close)?;
-    
+
     // Check if Yahoo returned a bogus 1.0 for FX pairs
-    if (symbol.ends_with("=X") || symbol.contains("USD")) && (price - dec!(1.0)).abs() < dec!(0.001) {
+    if (symbol.ends_with("=X") || symbol.contains("USD")) && (price - dec!(1.0)).abs() < dec!(0.001)
+    {
         // Try fallback
         if let Some(currency) = symbol.strip_suffix("=X") {
             if let Ok(rate) = fetch_fx_rate_frankfurter(currency).await {
@@ -156,7 +164,7 @@ pub async fn fetch_price(symbol: &str) -> Result<PriceQuote> {
             }
         }
     }
-    
+
     let now = chrono::Utc::now().to_rfc3339();
 
     // Check if the security trades in a non-USD currency and convert
@@ -216,10 +224,7 @@ struct ChartExtras {
 /// Fetch chart extras (previous close, pre/post market) from Yahoo Finance v8 API.
 /// `previous_close` (chartPreviousClose) is available for ALL symbols.
 /// Pre/post market prices are only meaningful for US equities.
-async fn fetch_chart_extras(
-    symbol: &str,
-    _provider: &yahoo::YahooConnector,
-) -> ChartExtras {
+async fn fetch_chart_extras(symbol: &str, _provider: &yahoo::YahooConnector) -> ChartExtras {
     let default = ChartExtras {
         pre_market_price: None,
         post_market_price: None,
@@ -256,7 +261,8 @@ async fn fetch_chart_extras(
     };
 
     // Extract fields from the meta section
-    let meta = match json.get("chart")
+    let meta = match json
+        .get("chart")
         .and_then(|c| c.get("result"))
         .and_then(|r| r.get(0))
         .and_then(|r0| r0.get("meta"))
@@ -266,7 +272,8 @@ async fn fetch_chart_extras(
     };
 
     // previousClose / chartPreviousClose — available for all symbols
-    let previous_close = meta.get("chartPreviousClose")
+    let previous_close = meta
+        .get("chartPreviousClose")
         .or_else(|| meta.get("previousClose"))
         .and_then(|v| v.as_f64())
         .and_then(|p| Decimal::try_from(p).ok())
@@ -315,9 +322,7 @@ pub async fn fetch_history(symbol: &str, days: u32) -> Result<Vec<HistoryRecord>
     let now = time::OffsetDateTime::now_utc();
     let start = now - time::Duration::days(days as i64);
 
-    let response = provider
-        .get_quote_history(&yahoo_sym, start, now)
-        .await?;
+    let response = provider.get_quote_history(&yahoo_sym, start, now).await?;
 
     // Check if the security trades in a non-USD currency
     let currency = response

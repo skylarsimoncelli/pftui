@@ -236,4 +236,3 @@ mod tests {
         assert!(metrics.herfindahl_index.is_some());
     }
 }
-

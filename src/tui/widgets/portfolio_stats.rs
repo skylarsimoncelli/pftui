@@ -148,11 +148,7 @@ fn build_sparkline<'a>(app: &App, t: &crate::tui::theme::Theme) -> Line<'a> {
         .iter()
         .rev()
         .take(30)
-        .map(|(_, val)| {
-            val.to_string()
-                .parse::<f64>()
-                .unwrap_or(0.0)
-        })
+        .map(|(_, val)| val.to_string().parse::<f64>().unwrap_or(0.0))
         .rev()
         .collect();
 
@@ -218,10 +214,7 @@ fn build_performer_line<'a>(
     let pct_str = format!("{}{:.1}%", sign, pct.round_dp(1));
 
     Line::from(vec![
-        Span::styled(
-            format!("{}: ", prefix),
-            Style::default().fg(t.text_muted),
-        ),
+        Span::styled(format!("{}: ", prefix), Style::default().fg(t.text_muted)),
         Span::styled(
             format!("{} ", symbol),
             Style::default().fg(t.text_primary).bold(),
@@ -317,7 +310,9 @@ fn compute_performance_metrics(app: &App) -> PerformanceMetrics {
 
     // 1D: value 1 day ago
     let day_1 = if history.len() >= 2 {
-        let yesterday = history.get(history.len().saturating_sub(2)).map(|(_, v)| *v);
+        let yesterday = history
+            .get(history.len().saturating_sub(2))
+            .map(|(_, v)| *v);
         pct_return(yesterday)
     } else {
         None

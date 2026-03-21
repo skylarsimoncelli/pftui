@@ -219,6 +219,76 @@ Response includes:
   - `predictions` (top cached prediction markets)
 - `meta.*`
 
+### `GET /situation`
+Status: `implemented`
+Canonical Situation Room payload shared with mobile and CLI.
+
+Response includes:
+- `headline`
+- `subtitle`
+- `summary_stats`
+- `watch_now`
+- `portfolio_impacts`
+- `risk_matrix`
+
+### `GET /deltas`
+Status: `implemented`
+Server-owned change radar over persisted situation snapshots.
+
+Query:
+- `since`: `last-refresh|close|24h|7d`
+
+Response includes:
+- `window`
+- `baseline_at`
+- `current_at`
+- `change_radar`
+
+### `GET /catalysts`
+Status: `implemented`
+Ranked catalyst/event feed.
+
+Query:
+- `window`: `today|tomorrow|week`
+
+Response includes:
+- `events`
+- `window`
+- `generated_at`
+
+### `GET /impact`
+Status: `implemented`
+Portfolio-aware exposure ranking for held and watched assets.
+
+### `GET /opportunities`
+Status: `implemented`
+High-alignment non-held opportunities from the shared analytics evidence chain.
+
+### `GET /synthesis`
+Status: `implemented`
+Cross-timeframe synthesis contract.
+
+Response includes:
+- `strongest_alignment`
+- `highest_confidence_divergence`
+- `constraint_flows`
+- `unresolved_tensions`
+- `watch_tomorrow`
+
+### `GET /narrative`
+Status: `implemented`
+Structured recap and analytical memory payload.
+
+Response includes:
+- `recap`
+- `scenario_shifts`
+- `conviction_shifts`
+- `trend_changes`
+- `scorecard`
+- `surprises`
+- `lessons`
+- `catalyst_outcomes`
+
 ### `GET /alerts`
 Status: `implemented`
 Alert list for alerts view.

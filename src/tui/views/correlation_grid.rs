@@ -61,17 +61,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 }
             }
 
-            Row::new(cells).height(1).style(Style::default().bg(t.surface_1))
+            Row::new(cells)
+                .height(1)
+                .style(Style::default().bg(t.surface_1))
         })
         .collect();
 
     let mut widths = vec![Constraint::Length(8)];
     widths.extend((0..symbols.len()).map(|_| Constraint::Length(6)));
 
-    let title = format!(
-        " Correlation Grid (M: 7d/30d/90d, now {}) ",
-        window.label()
-    );
+    let title = format!(" Correlation Grid (M: 7d/30d/90d, now {}) ", window.label());
     let table = Table::new(rows, widths)
         .header(header)
         .column_spacing(1)
@@ -80,7 +79,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_set(crate::tui::theme::BORDER_ACTIVE)
                 .border_style(Style::default().fg(t.border_inactive))
-                .title(Span::styled(title, Style::default().fg(t.text_accent).bold()))
+                .title(Span::styled(
+                    title,
+                    Style::default().fg(t.text_accent).bold(),
+                ))
                 .style(Style::default().bg(t.surface_0)),
         );
 
@@ -118,7 +120,12 @@ fn build_symbol_set() -> Vec<(String, String)> {
     symbols
 }
 
-fn latest_correlation(app: &App, symbol_a: &str, symbol_b: &str, window_days: usize) -> Option<f64> {
+fn latest_correlation(
+    app: &App,
+    symbol_a: &str,
+    symbol_b: &str,
+    window_days: usize,
+) -> Option<f64> {
     let history_a = app.price_history.get(symbol_a)?;
     let history_b = app.price_history.get(symbol_b)?;
     let min_len = history_a.len().min(history_b.len());
@@ -144,7 +151,11 @@ fn correlation_bg(t: &theme::Theme, corr: f64) -> Color {
         return t.surface_1;
     }
     let intensity = (corr.abs() as f32).min(1.0) * 0.22;
-    let target = if corr >= 0.0 { t.gain_green } else { t.loss_red };
+    let target = if corr >= 0.0 {
+        t.gain_green
+    } else {
+        t.loss_red
+    };
     theme::lerp_color(t.surface_1, target, intensity)
 }
 

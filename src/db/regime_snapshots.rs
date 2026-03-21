@@ -56,7 +56,17 @@ pub fn store_regime(
         "INSERT INTO regime_snapshots
          (regime, confidence, drivers, vix, dxy, yield_10y, oil, gold, btc)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        params![regime, confidence, drivers_json, vix, dxy, yield_10y, oil, gold, btc],
+        params![
+            regime,
+            confidence,
+            drivers_json,
+            vix,
+            dxy,
+            yield_10y,
+            oil,
+            gold,
+            btc
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }

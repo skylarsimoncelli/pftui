@@ -12,24 +12,78 @@ pub struct CommandPaletteEntry {
 }
 
 const COMMANDS: &[CommandPaletteEntry] = &[
-    CommandPaletteEntry { command: "help", description: "Open help overlay" },
-    CommandPaletteEntry { command: "refresh", description: "Fetch latest market data" },
-    CommandPaletteEntry { command: "theme next", description: "Cycle to next theme" },
-    CommandPaletteEntry { command: "split toggle", description: "Toggle split detail pane" },
-    CommandPaletteEntry { command: "layout compact", description: "Set compact workspace layout" },
-    CommandPaletteEntry { command: "layout split", description: "Set split workspace layout" },
-    CommandPaletteEntry { command: "layout analyst", description: "Set analyst workspace layout" },
-    CommandPaletteEntry { command: "view positions", description: "Switch to Positions view" },
-    CommandPaletteEntry { command: "view transactions", description: "Switch to Transactions view" },
-    CommandPaletteEntry { command: "view markets", description: "Switch to Markets view" },
-    CommandPaletteEntry { command: "view economy", description: "Switch to Economy view" },
-    CommandPaletteEntry { command: "view watchlist", description: "Switch to Watchlist view" },
-    CommandPaletteEntry { command: "view analytics", description: "Switch to Analytics view" },
-    CommandPaletteEntry { command: "view news", description: "Switch to News view" },
-    CommandPaletteEntry { command: "view journal", description: "Switch to Journal view" },
-    CommandPaletteEntry { command: "onboarding", description: "Open onboarding tour" },
-    CommandPaletteEntry { command: "scan", description: "Open interactive scan builder" },
-    CommandPaletteEntry { command: "quit", description: "Exit pftui" },
+    CommandPaletteEntry {
+        command: "help",
+        description: "Open help overlay",
+    },
+    CommandPaletteEntry {
+        command: "refresh",
+        description: "Fetch latest market data",
+    },
+    CommandPaletteEntry {
+        command: "theme next",
+        description: "Cycle to next theme",
+    },
+    CommandPaletteEntry {
+        command: "split toggle",
+        description: "Toggle split detail pane",
+    },
+    CommandPaletteEntry {
+        command: "layout compact",
+        description: "Set compact workspace layout",
+    },
+    CommandPaletteEntry {
+        command: "layout split",
+        description: "Set split workspace layout",
+    },
+    CommandPaletteEntry {
+        command: "layout analyst",
+        description: "Set analyst workspace layout",
+    },
+    CommandPaletteEntry {
+        command: "view positions",
+        description: "Switch to Positions view",
+    },
+    CommandPaletteEntry {
+        command: "view transactions",
+        description: "Switch to Transactions view",
+    },
+    CommandPaletteEntry {
+        command: "view markets",
+        description: "Switch to Markets view",
+    },
+    CommandPaletteEntry {
+        command: "view economy",
+        description: "Switch to Economy view",
+    },
+    CommandPaletteEntry {
+        command: "view watchlist",
+        description: "Switch to Watchlist view",
+    },
+    CommandPaletteEntry {
+        command: "view analytics",
+        description: "Switch to Analytics view",
+    },
+    CommandPaletteEntry {
+        command: "view news",
+        description: "Switch to News view",
+    },
+    CommandPaletteEntry {
+        command: "view journal",
+        description: "Switch to Journal view",
+    },
+    CommandPaletteEntry {
+        command: "onboarding",
+        description: "Open onboarding tour",
+    },
+    CommandPaletteEntry {
+        command: "scan",
+        description: "Open interactive scan builder",
+    },
+    CommandPaletteEntry {
+        command: "quit",
+        description: "Exit pftui",
+    },
 ];
 
 pub fn matching_commands(query: &str) -> Vec<&'static CommandPaletteEntry> {
@@ -61,7 +115,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(4), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(4),
+            Constraint::Length(1),
+        ])
         .split(popup_area);
 
     let input = Paragraph::new(format!(":{}", app.command_palette_input)).block(

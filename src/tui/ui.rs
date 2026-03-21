@@ -49,9 +49,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(widgets::header::header_height(app)),  // header (dynamic: 3 with ticker, 2 without)
-            Constraint::Min(5),    // main content
-            Constraint::Length(2), // status bar
+            Constraint::Length(widgets::header::header_height(app)), // header (dynamic: 3 with ticker, 2 without)
+            Constraint::Min(5),                                      // main content
+            Constraint::Length(2),                                   // status bar
         ])
         .split(size);
 
@@ -134,10 +134,7 @@ fn render_positions_layout(frame: &mut Frame, area: Rect, app: &mut App) {
     if app.split_pane_open {
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(70),
-                Constraint::Percentage(30),
-            ])
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
             .split(area);
 
         // Top: normal positions layout
@@ -194,10 +191,7 @@ fn render_positions_layout_normal(frame: &mut Frame, area: Rect, app: &mut App) 
     // Split preset (or Analyst on non-ultra-wide): two-column default layout.
     let h_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(57),
-            Constraint::Percentage(43),
-        ])
+        .constraints([Constraint::Percentage(57), Constraint::Percentage(43)])
         .split(area);
 
     render_left_pane(frame, h_chunks[0], app);
@@ -217,7 +211,7 @@ fn render_left_pane(frame: &mut Frame, area: Rect, app: &mut App) {
             .constraints([
                 Constraint::Length(theme::SECTION_HEADER_HEIGHT), // section header
                 Constraint::Min(5),                               // positions table
-                Constraint::Length(overview_height),               // portfolio overview
+                Constraint::Length(overview_height),              // portfolio overview
             ])
             .split(area);
 

@@ -89,11 +89,19 @@ pub fn compute_snapshot(
     // OHLCV-aware ATR computation (F48 step 2)
     let highs: Vec<Option<f64>> = history
         .iter()
-        .map(|row| row.high.as_ref().and_then(|d| d.to_string().parse::<f64>().ok()))
+        .map(|row| {
+            row.high
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+        })
         .collect();
     let lows: Vec<Option<f64>> = history
         .iter()
-        .map(|row| row.low.as_ref().and_then(|d| d.to_string().parse::<f64>().ok()))
+        .map(|row| {
+            row.low
+                .as_ref()
+                .and_then(|d| d.to_string().parse::<f64>().ok())
+        })
         .collect();
 
     let atr_series = compute_atr(&highs, &lows, &closes, 14);
@@ -109,7 +117,12 @@ pub fn compute_snapshot(
 
     // Range expansion: current ATR > 1.5x the 20-period simple average of ATR
     let range_expansion = if atr_series.len() >= 20 {
-        let recent_atrs: Vec<f64> = atr_series.iter().rev().take(20).filter_map(|v| *v).collect();
+        let recent_atrs: Vec<f64> = atr_series
+            .iter()
+            .rev()
+            .take(20)
+            .filter_map(|v| *v)
+            .collect();
         if recent_atrs.len() >= 2 {
             let atr_avg = recent_atrs.iter().sum::<f64>() / recent_atrs.len() as f64;
             atr_14.map(|current| current > atr_avg * 1.5)
@@ -283,7 +296,10 @@ mod tests {
         let history = build_ohlcv_history(60);
         let snapshot = compute_snapshot("AAPL", DEFAULT_TIMEFRAME, &history).unwrap();
 
-        assert!(snapshot.atr_14.is_some(), "ATR should be computed from OHLCV");
+        assert!(
+            snapshot.atr_14.is_some(),
+            "ATR should be computed from OHLCV"
+        );
         let atr = snapshot.atr_14.unwrap();
         assert!(atr > 0.0, "ATR must be positive");
 
@@ -291,7 +307,10 @@ mod tests {
         let ratio = snapshot.atr_ratio.unwrap();
         assert!(ratio > 0.0, "ATR ratio must be positive");
 
-        assert!(snapshot.day_range_ratio.is_some(), "Day range ratio should be computed from OHLCV");
+        assert!(
+            snapshot.day_range_ratio.is_some(),
+            "Day range ratio should be computed from OHLCV"
+        );
     }
 
     #[test]
@@ -301,9 +320,15 @@ mod tests {
         let snapshot = compute_snapshot("AAPL", DEFAULT_TIMEFRAME, &history).unwrap();
 
         // ATR still computes from close-to-close changes
-        assert!(snapshot.atr_14.is_some(), "ATR should still compute from close-only data");
+        assert!(
+            snapshot.atr_14.is_some(),
+            "ATR should still compute from close-only data"
+        );
         // Day range ratio requires OHLCV, should be None
-        assert!(snapshot.day_range_ratio.is_none(), "Day range ratio requires OHLCV");
+        assert!(
+            snapshot.day_range_ratio.is_none(),
+            "Day range ratio requires OHLCV"
+        );
     }
 
     #[test]

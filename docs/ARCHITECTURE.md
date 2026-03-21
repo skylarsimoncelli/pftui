@@ -69,8 +69,11 @@ Use `read --offset N --limit M` to read specific line ranges instead of full fil
 
 ## Module Index
 
+### Analytics Layer
+`analytics/situation.rs` (canonical Situation Room payload) · `analytics/deltas.rs` (server-owned change radar) · `analytics/catalysts.rs` (ranked event pressure and countdowns) · `analytics/impact.rs` (portfolio impact + opportunities) · `analytics/synthesis.rs` (cross-timeframe alignment/divergence/constraints) · `analytics/narrative.rs` (structured recap + analytical memory)
+
 ### Data Layer
-`db/schema.rs` (migrations) · `db/transactions.rs` (CRUD) · `db/price_cache.rs` (spot cache) · `db/price_history.rs` (daily history, merge) · `db/technical_snapshots.rs` (persisted technical state) · `db/technical_levels.rs` (market structure levels: support, resistance, MA, swing, range) · `db/technical_signals.rs` (precomputed per-symbol signals: RSI, MACD cross, SMA reclaim, BB squeeze, volume, 52W) · `db/allocations.rs` (% mode) · `db/watchlist.rs`
+`db/schema.rs` (migrations) · `db/transactions.rs` (CRUD) · `db/price_cache.rs` (spot cache) · `db/price_history.rs` (daily history, merge) · `db/technical_snapshots.rs` (persisted technical state) · `db/technical_levels.rs` (market structure levels: support, resistance, MA, swing, range) · `db/technical_signals.rs` (precomputed per-symbol signals: RSI, MACD cross, SMA reclaim, BB squeeze, volume, 52W) · `db/allocations.rs` (% mode) · `db/watchlist.rs` · `db/situation_snapshots.rs` (persisted situation baselines for delta analysis) · `db/narrative_snapshots.rs` (structured recap and analytical memory)
 
 ### Models
 `models/position.rs` (Position, compute_positions) · `models/transaction.rs` (Transaction, TxType) · `models/asset.rs` (AssetCategory, PriceProvider) · `models/asset_names.rs` (130+ symbols, infer_category, search) · `models/price.rs` (PriceQuote, HistoryRecord)
@@ -101,6 +104,23 @@ Color conventions: RSI >70 = red (overbought), <30 = green (oversold), 30-70 = n
 
 ### CLI Commands
 `commands/setup.rs` (wizard) · `commands/summary.rs` (--group-by, --period, --what-if) · `commands/export.rs` (JSON/CSV) · `commands/import.rs` (replace/merge) · `commands/history.rs` (--date) · `commands/brief.rs` · `commands/demo.rs` · `commands/snapshot.rs` · `commands/watchlist_cli.rs` · `commands/set_cash.rs` · `commands/refresh.rs` · `commands/daemon.rs` (always-on scheduler + heartbeat) · `commands/status.rs` (source freshness + daemon health) · `commands/value.rs`
+
+### Shared Intelligence Contract
+
+The current architecture is intentionally server-owned for higher-order analytics:
+
+- CLI exposes canonical analytics payloads
+- mobile server reuses the same Rust structs
+- web API reuses the same Rust structs
+- agents should consume those payloads rather than rebuilding them
+
+If you are deciding whether logic belongs in Swift/JS/prompt code or in Rust, bias toward Rust when the logic defines:
+
+- ranked priorities
+- delta detection
+- cross-timeframe interpretation
+- portfolio impact
+- durable analytical memory
 
 ## Key Patterns
 

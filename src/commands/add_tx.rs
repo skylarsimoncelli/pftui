@@ -58,7 +58,10 @@ pub fn run(
         None => prompt("Price per unit")?.parse()?,
     };
     if price_per <= Decimal::ZERO {
-        bail!("Price per unit must be greater than zero (got {})", price_per);
+        bail!(
+            "Price per unit must be greater than zero (got {})",
+            price_per
+        );
     }
 
     let date = match date {
@@ -71,7 +74,11 @@ pub fn run(
         Some(_) => None,
         None => {
             let n = prompt("Notes (optional, press Enter to skip)")?;
-            if n.is_empty() { None } else { Some(n) }
+            if n.is_empty() {
+                None
+            } else {
+                Some(n)
+            }
         }
     };
 
@@ -87,6 +94,9 @@ pub fn run(
     };
 
     let id = insert_transaction_backend(backend, &tx)?;
-    println!("Added transaction #{}: {} {} {} @ {}", id, tx_type, quantity, symbol, price_per);
+    println!(
+        "Added transaction #{}: {} {} {} @ {}",
+        id, tx_type, quantity, symbol, price_per
+    );
     Ok(())
 }

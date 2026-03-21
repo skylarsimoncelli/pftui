@@ -14,7 +14,7 @@ pub struct CalendarEvent {
     pub impact: String, // "high", "medium", "low"
     pub previous: Option<String>,
     pub forecast: Option<String>,
-    pub event_type: String, // "economic" or "earnings"
+    pub event_type: String,     // "economic" or "earnings"
     pub symbol: Option<String>, // for earnings events
     pub fetched_at: String,
 }
@@ -30,7 +30,7 @@ pub fn upsert_event(
     forecast: Option<&str>,
     event_type: &str,
     symbol: Option<&str>,
-    ) -> Result<i64> {
+) -> Result<i64> {
     conn.execute(
         "INSERT INTO calendar_events (date, name, impact, previous, forecast, event_type, symbol)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -57,8 +57,16 @@ pub fn upsert_event_backend(
 ) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| upsert_event(conn, date, name, impact, previous, forecast, event_type, symbol),
-        |pool| upsert_event_postgres(pool, date, name, impact, previous, forecast, event_type, symbol),
+        |conn| {
+            upsert_event(
+                conn, date, name, impact, previous, forecast, event_type, symbol,
+            )
+        },
+        |pool| {
+            upsert_event_postgres(
+                pool, date, name, impact, previous, forecast, event_type, symbol,
+            )
+        },
     )
 }
 
@@ -176,7 +184,17 @@ pub fn delete_old_events_backend(backend: &BackendConnection, before_date: &str)
     )
 }
 
-type CalendarRow = (i64, String, String, String, Option<String>, Option<String>, String, Option<String>, String);
+type CalendarRow = (
+    i64,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+);
 
 #[allow(clippy::too_many_arguments)]
 fn upsert_event_postgres(
@@ -213,7 +231,11 @@ fn upsert_event_postgres(
     Ok(id)
 }
 
-fn get_upcoming_events_postgres(pool: &PgPool, from_date: &str, limit: usize) -> Result<Vec<CalendarEvent>> {
+fn get_upcoming_events_postgres(
+    pool: &PgPool,
+    from_date: &str,
+    limit: usize,
+) -> Result<Vec<CalendarEvent>> {
     let rows: Vec<CalendarRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT id, date, name, impact, previous, forecast, event_type, symbol, fetched_at::text
@@ -302,7 +324,7 @@ mod tests {
     #[test]
     fn test_upsert_and_get_events() {
         let conn = setup_test_db();
-        
+
         upsert_event(
             &conn,
             "2026-03-07",
@@ -324,9 +346,29 @@ mod tests {
     #[test]
     fn test_get_by_impact() {
         let conn = setup_test_db();
-        
-        upsert_event(&conn, "2026-03-07", "NFP", "high", None, None, "economic", None).unwrap();
-        upsert_event(&conn, "2026-03-08", "PPI", "medium", None, None, "economic", None).unwrap();
+
+        upsert_event(
+            &conn,
+            "2026-03-07",
+            "NFP",
+            "high",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
+        upsert_event(
+            &conn,
+            "2026-03-08",
+            "PPI",
+            "medium",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
 
         let high_events = get_events_by_impact(&conn, "2026-03-01", "high", 10).unwrap();
         assert_eq!(high_events.len(), 1);
@@ -336,9 +378,29 @@ mod tests {
     #[test]
     fn test_delete_old_events() {
         let conn = setup_test_db();
-        
-        upsert_event(&conn, "2026-02-01", "Old Event", "low", None, None, "economic", None).unwrap();
-        upsert_event(&conn, "2026-03-07", "New Event", "high", None, None, "economic", None).unwrap();
+
+        upsert_event(
+            &conn,
+            "2026-02-01",
+            "Old Event",
+            "low",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
+        upsert_event(
+            &conn,
+            "2026-03-07",
+            "New Event",
+            "high",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
 
         let deleted = delete_old_events(&conn, "2026-03-01").unwrap();
         assert_eq!(deleted, 1);

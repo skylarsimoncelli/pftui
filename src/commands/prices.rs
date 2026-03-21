@@ -116,11 +116,7 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         }
 
         let name = resolve_name(sym);
-        let display_name = if name.is_empty() {
-            sym.clone()
-        } else {
-            name
-        };
+        let display_name = if name.is_empty() { sym.clone() } else { name };
 
         // Look up price: try canonical symbol first, then Yahoo-mapped crypto
         let quote = price_map.get(sym).or_else(|| {
@@ -175,7 +171,12 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    let sym_w = rows.iter().map(|r| r.symbol.len()).max().unwrap_or(6).max(6);
+    let sym_w = rows
+        .iter()
+        .map(|r| r.symbol.len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
     let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
     let price_w = rows
         .iter()
@@ -258,8 +259,8 @@ fn format_pct_opt(v: Option<Decimal>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::open_in_memory;
     use crate::db::backend::BackendConnection;
+    use crate::db::open_in_memory;
 
     fn to_backend(conn: rusqlite::Connection) -> BackendConnection {
         BackendConnection::Sqlite { conn }
@@ -302,7 +303,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -318,7 +319,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();

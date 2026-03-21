@@ -112,11 +112,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 /// Compute the allocation change direction and magnitude.
 /// Returns `Some((diff, is_up))` if the change is significant (>= 0.1pp),
 /// or `None` if no previous data or change is negligible.
-fn allocation_change(
-    cat: AssetCategory,
-    current_pct: f64,
-    app: &App,
-) -> Option<f64> {
+fn allocation_change(cat: AssetCategory, current_pct: f64, app: &App) -> Option<f64> {
     let prev_dec = app.prev_day_cat_allocations.get(&cat)?;
     let prev: f64 = prev_dec.to_string().parse().unwrap_or(0.0);
     let diff = current_pct - prev;
@@ -218,10 +214,7 @@ fn fractional_bar_with_label(
         }
         spans.push(Span::styled(pct_label, label_style));
         if pad_right > 0 {
-            spans.push(Span::styled(
-                "█".repeat(pad_right),
-                Style::default().fg(fg),
-            ));
+            spans.push(Span::styled("█".repeat(pad_right), Style::default().fg(fg)));
         }
     } else if full_cells > 0 {
         spans.push(Span::styled(

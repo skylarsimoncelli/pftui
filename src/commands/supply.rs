@@ -202,9 +202,21 @@ fn get_or_fetch_inventory(
 fn print_inventory(inv: &SupplyOutput) {
     println!("{}  ({})", inv.metal, inv.symbol);
     println!("  Date:           {}", inv.date);
-    println!("  Registered:     {} {}", format_with_commas(inv.registered), inv.unit);
-    println!("  Eligible:       {} {}", format_with_commas(inv.eligible), inv.unit);
-    println!("  Total:          {} {}", format_with_commas(inv.total), inv.unit);
+    println!(
+        "  Registered:     {} {}",
+        format_with_commas(inv.registered),
+        inv.unit
+    );
+    println!(
+        "  Eligible:       {} {}",
+        format_with_commas(inv.eligible),
+        inv.unit
+    );
+    println!(
+        "  Total:          {} {}",
+        format_with_commas(inv.total),
+        inv.unit
+    );
     println!("  Reg Ratio:      {:.1}%", inv.reg_ratio);
 }
 

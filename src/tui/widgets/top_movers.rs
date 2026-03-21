@@ -54,8 +54,7 @@ fn compute_movers(app: &App) -> Vec<(AssetCategory, Mover)> {
         if let Some(records) = app.price_history.get(&pos.symbol) {
             if let Some(prev_close) = prev_close_from_history(records, &today, current_price) {
                 if prev_close > dec!(0) {
-                    let change_pct =
-                        ((current_price - prev_close) / prev_close) * dec!(100);
+                    let change_pct = ((current_price - prev_close) / prev_close) * dec!(100);
                     // Plausibility guard: skip anomalous changes from corrupt price data
                     if crate::models::price::is_plausible_daily_change(change_pct) {
                         result.push((
@@ -126,11 +125,7 @@ fn group_by_category(movers: &[(AssetCategory, Mover)]) -> Vec<(AssetCategory, V
 
     // Sort each group by absolute change descending
     for group in map.values_mut() {
-        group.sort_by(|a, b| {
-            b.change_pct
-                .abs()
-                .cmp(&a.change_pct.abs())
-        });
+        group.sort_by(|a, b| b.change_pct.abs().cmp(&a.change_pct.abs()));
     }
 
     let mut result = Vec::new();
@@ -346,10 +341,10 @@ mod tests {
             date: "2026-03-03".into(),
             close: dec!(100),
             volume: None,
-                open: None,
-                high: None,
-                low: None,
-            }];
+            open: None,
+            high: None,
+            low: None,
+        }];
         // Single record that IS today — no previous close available
         let prev = prev_close_from_history(&records, "2026-03-03", dec!(100));
         assert_eq!(prev, None);

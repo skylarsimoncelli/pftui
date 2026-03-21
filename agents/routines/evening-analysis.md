@@ -24,6 +24,13 @@ This is your memory. Read how your thinking evolved over the past week. What the
 
 3. Read full analytics state:
 ```bash
+pftui analytics situation --json
+pftui analytics deltas --json --since 24h
+pftui analytics catalysts --json --window week
+pftui analytics impact --json
+pftui analytics opportunities --json
+pftui analytics synthesis --json
+pftui analytics narrative --json
 pftui analytics summary --json
 pftui analytics alignment --json
 pftui analytics divergence --json
@@ -37,6 +44,8 @@ pftui journal prediction scorecard --date today --json
 pftui journal prediction list --json
 pftui journal notes list --json
 ```
+
+Treat these canonical payloads as the baseline shared intelligence contract. Your unique value is not recomputing them; it is resolving tensions, doing deeper research, and deciding what the human should understand or act on.
 
 4. Read user profile and portfolio for conviction state and allocation context.
 

@@ -304,16 +304,21 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let watchlist_json = get_watchlist_json(conn, &prices, &hist_1d, &technicals_data)?;
 
     // Technical signals for mover context and brief summary
-    let recent_signals = crate::db::technical_signals::list_signals(conn, None, None, Some(100))
-        .unwrap_or_default();
+    let recent_signals =
+        crate::db::technical_signals::list_signals(conn, None, None, Some(100)).unwrap_or_default();
     let signal_map = build_signal_map(&recent_signals);
     let technical_signals_json = signals_to_json(&recent_signals);
 
     // Top movers (held positions)
     let movers_json = get_movers_json(&positions, &hist_1d, &signal_map);
     let watchlist_symbols: Vec<String> = watchlist_json.iter().map(|w| w.symbol.clone()).collect();
-    let market_movers_json =
-        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &signal_map);
+    let market_movers_json = get_market_movers_json(
+        &positions,
+        &watchlist_symbols,
+        &prices,
+        &hist_1d,
+        &signal_map,
+    );
 
     // Macro data (if available)
     let macro_data = get_macro_json(conn).ok();
@@ -507,8 +512,13 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
 
     let movers_json = get_movers_json(&positions, &hist_1d, &signal_map);
     let watchlist_symbols: Vec<String> = watchlist_json.iter().map(|w| w.symbol.clone()).collect();
-    let market_movers_json =
-        get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &signal_map);
+    let market_movers_json = get_market_movers_json(
+        &positions,
+        &watchlist_symbols,
+        &prices,
+        &hist_1d,
+        &signal_map,
+    );
     let macro_data = get_macro_json_backend(backend).ok();
     let alerts_json = get_alerts_json_backend(backend);
     let drift_json = get_drift_json_backend(backend).ok();
@@ -915,10 +925,7 @@ fn get_movers_json(
     movers
         .into_iter()
         .map(|(symbol, name, pct)| {
-            let signals = signal_map
-                .get(&symbol)
-                .cloned()
-                .unwrap_or_default();
+            let signals = signal_map.get(&symbol).cloned().unwrap_or_default();
             MoverJson {
                 symbol,
                 name,
@@ -968,10 +975,7 @@ fn get_market_movers_json(
     movers
         .into_iter()
         .map(|(symbol, name, pct)| {
-            let signals = signal_map
-                .get(&symbol)
-                .cloned()
-                .unwrap_or_default();
+            let signals = signal_map.get(&symbol).cloned().unwrap_or_default();
             MoverJson {
                 symbol,
                 name,
@@ -2908,7 +2912,10 @@ mod tests {
     fn pct_change_rejects_anomalous_values() {
         // Corrupt previous close near zero → absurd percentage (e.g. 224,632%)
         let result = pct_change(dec!(84000), dec!(37));
-        assert_eq!(result, None, "Should reject >500% change as implausible data");
+        assert_eq!(
+            result, None,
+            "Should reject >500% change as implausible data"
+        );
     }
 
     #[test]
@@ -3005,7 +3012,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -3022,7 +3029,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -3058,7 +3065,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -3075,7 +3082,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -3208,7 +3215,13 @@ mod tests {
         hist_1d.insert("TSLA".to_string(), dec!(200));
 
         let empty_signals: HashMap<String, Vec<String>> = HashMap::new();
-        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &empty_signals);
+        let movers = get_market_movers_json(
+            &positions,
+            &watchlist_symbols,
+            &prices,
+            &hist_1d,
+            &empty_signals,
+        );
         assert!(!movers.iter().any(|m| m.symbol == "AAPL"));
         assert!(movers.iter().any(|m| m.symbol == "NVDA"));
         assert!(movers.iter().any(|m| m.symbol == "TSLA"));
@@ -3244,7 +3257,13 @@ mod tests {
         hist_1d.insert("SPY".to_string(), dec!(100));
 
         let empty_signals: HashMap<String, Vec<String>> = HashMap::new();
-        let movers = get_market_movers_json(&positions, &watchlist_symbols, &prices, &hist_1d, &empty_signals);
+        let movers = get_market_movers_json(
+            &positions,
+            &watchlist_symbols,
+            &prices,
+            &hist_1d,
+            &empty_signals,
+        );
         assert_eq!(movers.first().map(|m| m.symbol.as_str()), Some("NVDA"));
         assert_eq!(movers.get(1).map(|m| m.symbol.as_str()), Some("TSLA"));
     }
@@ -3410,7 +3429,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();

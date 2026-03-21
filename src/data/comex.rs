@@ -42,12 +42,12 @@ pub struct ComexMetal {
 /// COMEX warehouse inventory snapshot.
 #[derive(Debug, Clone)]
 pub struct ComexInventory {
-    pub symbol: String,       // GC=F or SI=F
-    pub date: String,          // YYYY-MM-DD
-    pub registered: f64,       // Registered stocks (troy oz)
-    pub eligible: f64,         // Eligible stocks (troy oz)
-    pub total: f64,            // Total (registered + eligible)
-    pub reg_ratio: f64,        // Registered / Total (%)
+    pub symbol: String,  // GC=F or SI=F
+    pub date: String,    // YYYY-MM-DD
+    pub registered: f64, // Registered stocks (troy oz)
+    pub eligible: f64,   // Eligible stocks (troy oz)
+    pub total: f64,      // Total (registered + eligible)
+    pub reg_ratio: f64,  // Registered / Total (%)
 }
 
 impl ComexInventory {

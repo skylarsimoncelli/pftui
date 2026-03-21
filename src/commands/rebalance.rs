@@ -10,7 +10,7 @@ use crate::models::position::compute_positions;
 
 pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     let targets = db::allocation_targets::list_targets_backend(backend)?;
-    
+
     if targets.is_empty() {
         if json {
             println!("{{\"error\": \"No allocation targets set\"}}");
@@ -21,25 +21,25 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     }
 
     let txs = db::transactions::list_transactions_backend(backend)?;
-    
+
     let cached = get_all_cached_prices_backend(backend)?;
     let mut prices: HashMap<String, Decimal> = cached
         .into_iter()
         .map(|quote| (quote.symbol, quote.price))
         .collect();
-    
+
     // Ensure cash assets price at 1.0
     for tx in &txs {
         if tx.category == crate::models::asset::AssetCategory::Cash {
             prices.insert(tx.symbol.clone(), Decimal::ONE);
         }
     }
-    
+
     let fx_rates = crate::db::fx_cache::get_all_fx_rates_backend(backend).unwrap_or_default();
     let positions = compute_positions(&txs, &prices, &fx_rates);
 
     let total_value: Decimal = positions.iter().filter_map(|p| p.current_value).sum();
-    
+
     if total_value <= Decimal::ZERO {
         if json {
             println!("{{\"error\": \"Portfolio value is zero\"}}");
@@ -117,7 +117,10 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         }
 
         let total_to_move: Decimal = rebalance_actions.iter().map(|a| a.diff_value).sum();
-        println!("\nTotal capital to rebalance: ${:.2}", total_to_move / dec!(2)); // Divide by 2 because buy+sell are double-counted
+        println!(
+            "\nTotal capital to rebalance: ${:.2}",
+            total_to_move / dec!(2)
+        ); // Divide by 2 because buy+sell are double-counted
         println!("Portfolio value: ${:.2}", total_value);
     }
 

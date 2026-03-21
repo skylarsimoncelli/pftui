@@ -161,8 +161,32 @@ pub fn add_trend_backend(
 ) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| add_trend(conn, name, timeframe, direction, conviction, category, description, asset_impact, key_signal),
-        |pool| add_trend_postgres(pool, name, timeframe, direction, conviction, category, description, asset_impact, key_signal),
+        |conn| {
+            add_trend(
+                conn,
+                name,
+                timeframe,
+                direction,
+                conviction,
+                category,
+                description,
+                asset_impact,
+                key_signal,
+            )
+        },
+        |pool| {
+            add_trend_postgres(
+                pool,
+                name,
+                timeframe,
+                direction,
+                conviction,
+                category,
+                description,
+                asset_impact,
+                key_signal,
+            )
+        },
     )
 }
 
@@ -189,7 +213,10 @@ pub fn list_trends(
     sql.push_str(" ORDER BY updated_at DESC");
 
     let mut stmt = conn.prepare(&sql)?;
-    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
     let rows = stmt.query_map(&params_refs[..], Trend::from_row)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
@@ -293,7 +320,10 @@ pub fn update_trend(
     );
     params_vec.push(name.to_string());
 
-    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
     conn.execute(&sql, &params_refs[..])?;
     Ok(())
 }
@@ -377,8 +407,28 @@ pub fn update_trend_backend(
 ) -> Result<()> {
     query::dispatch(
         backend,
-        |conn| update_trend(conn, name, direction, conviction, description, key_signal, status),
-        |pool| update_trend_postgres(pool, name, direction, conviction, description, key_signal, status),
+        |conn| {
+            update_trend(
+                conn,
+                name,
+                direction,
+                conviction,
+                description,
+                key_signal,
+                status,
+            )
+        },
+        |pool| {
+            update_trend_postgres(
+                pool,
+                name,
+                direction,
+                conviction,
+                description,
+                key_signal,
+                status,
+            )
+        },
     )
 }
 
@@ -442,7 +492,11 @@ pub fn add_evidence_backend(
     )
 }
 
-pub fn list_evidence(conn: &Connection, trend_id: i64, limit: Option<usize>) -> Result<Vec<TrendEvidence>> {
+pub fn list_evidence(
+    conn: &Connection,
+    trend_id: i64,
+    limit: Option<usize>,
+) -> Result<Vec<TrendEvidence>> {
     let sql = if let Some(lim) = limit {
         format!(
             "SELECT id, trend_id, date, evidence, direction_impact, source, created_at
@@ -460,7 +514,11 @@ pub fn list_evidence(conn: &Connection, trend_id: i64, limit: Option<usize>) -> 
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
-fn list_evidence_postgres(pool: &PgPool, trend_id: i64, limit: Option<usize>) -> Result<Vec<TrendEvidence>> {
+fn list_evidence_postgres(
+    pool: &PgPool,
+    trend_id: i64,
+    limit: Option<usize>,
+) -> Result<Vec<TrendEvidence>> {
     crate::db::pg_runtime::block_on(async {
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT id, trend_id, date, evidence, direction_impact, source, created_at::text
@@ -491,7 +549,11 @@ fn list_evidence_postgres(pool: &PgPool, trend_id: i64, limit: Option<usize>) ->
     .map_err(Into::into)
 }
 
-pub fn list_evidence_backend(backend: &BackendConnection, trend_id: i64, limit: Option<usize>) -> Result<Vec<TrendEvidence>> {
+pub fn list_evidence_backend(
+    backend: &BackendConnection,
+    trend_id: i64,
+    limit: Option<usize>,
+) -> Result<Vec<TrendEvidence>> {
     query::dispatch(
         backend,
         |conn| list_evidence(conn, trend_id, limit),
@@ -595,7 +657,10 @@ fn list_asset_impacts_postgres(pool: &PgPool, trend_id: i64) -> Result<Vec<Trend
     .map_err(Into::into)
 }
 
-pub fn list_asset_impacts_backend(backend: &BackendConnection, trend_id: i64) -> Result<Vec<TrendAssetImpact>> {
+pub fn list_asset_impacts_backend(
+    backend: &BackendConnection,
+    trend_id: i64,
+) -> Result<Vec<TrendAssetImpact>> {
     query::dispatch(
         backend,
         |conn| list_asset_impacts(conn, trend_id),
@@ -603,7 +668,10 @@ pub fn list_asset_impacts_backend(backend: &BackendConnection, trend_id: i64) ->
     )
 }
 
-pub fn get_impacts_for_symbol(conn: &Connection, symbol: &str) -> Result<Vec<(Trend, TrendAssetImpact)>> {
+pub fn get_impacts_for_symbol(
+    conn: &Connection,
+    symbol: &str,
+) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     let mut stmt = conn.prepare(
         "SELECT t.id, t.name, t.timeframe, t.direction, t.conviction, t.category, t.description, t.asset_impact, t.key_signal, t.status, t.created_at, t.updated_at,
                 i.id, i.trend_id, i.symbol, i.impact, i.mechanism, i.timeframe, i.updated_at
@@ -682,7 +750,10 @@ fn list_all_impacts(conn: &Connection) -> Result<Vec<(Trend, TrendAssetImpact)>>
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
-fn get_impacts_for_symbol_postgres(pool: &PgPool, symbol: &str) -> Result<Vec<(Trend, TrendAssetImpact)>> {
+fn get_impacts_for_symbol_postgres(
+    pool: &PgPool,
+    symbol: &str,
+) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     crate::db::pg_runtime::block_on(async {
         let rows = sqlx::query(
             "SELECT t.id, t.name, t.timeframe, t.direction, t.conviction, t.category, t.description, t.asset_impact, t.key_signal, t.status, t.created_at::text, t.updated_at::text,
@@ -776,7 +847,10 @@ fn list_all_impacts_postgres(pool: &PgPool) -> Result<Vec<(Trend, TrendAssetImpa
     .map_err(Into::into)
 }
 
-pub fn get_impacts_for_symbol_backend(backend: &BackendConnection, symbol: &str) -> Result<Vec<(Trend, TrendAssetImpact)>> {
+pub fn get_impacts_for_symbol_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     query::dispatch(
         backend,
         |conn| get_impacts_for_symbol(conn, symbol),
@@ -784,6 +858,8 @@ pub fn get_impacts_for_symbol_backend(backend: &BackendConnection, symbol: &str)
     )
 }
 
-pub fn list_all_impacts_backend(backend: &BackendConnection) -> Result<Vec<(Trend, TrendAssetImpact)>> {
+pub fn list_all_impacts_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<(Trend, TrendAssetImpact)>> {
     query::dispatch(backend, list_all_impacts, list_all_impacts_postgres)
 }

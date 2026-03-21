@@ -22,7 +22,10 @@ pub fn compute_true_range(
     let mut tr = Vec::with_capacity(closes.len());
 
     for i in 0..closes.len() {
-        match (highs.get(i).copied().flatten(), lows.get(i).copied().flatten()) {
+        match (
+            highs.get(i).copied().flatten(),
+            lows.get(i).copied().flatten(),
+        ) {
             (Some(high), Some(low)) => {
                 if i == 0 {
                     tr.push(Some(high - low));

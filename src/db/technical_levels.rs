@@ -11,7 +11,7 @@ use crate::db::query;
 pub struct TechnicalLevelRecord {
     pub id: Option<i64>,
     pub symbol: String,
-    pub level_type: String,    // support, resistance, sma_20, sma_50, sma_200, swing_high, swing_low, range_52w_high, range_52w_low, bb_upper, bb_lower, gap_fill
+    pub level_type: String, // support, resistance, sma_20, sma_50, sma_200, swing_high, swing_low, range_52w_high, range_52w_low, bb_upper, bb_lower, gap_fill
     pub price: f64,
     pub strength: f64,         // 0.0-1.0 confidence
     pub source_method: String, // pivot, moving_average, swing, range, bollinger, gap
@@ -46,7 +46,11 @@ const SELECT_COLUMNS_PG: &str =
 // SQLite
 // ---------------------------------------------------------------------------
 
-pub fn upsert_levels(conn: &Connection, symbol: &str, levels: &[TechnicalLevelRecord]) -> Result<()> {
+pub fn upsert_levels(
+    conn: &Connection,
+    symbol: &str,
+    levels: &[TechnicalLevelRecord],
+) -> Result<()> {
     // Delete previous levels for this symbol then insert fresh set
     conn.execute(
         "DELETE FROM technical_levels WHERE symbol = ?1",
@@ -71,10 +75,7 @@ pub fn upsert_levels(conn: &Connection, symbol: &str, levels: &[TechnicalLevelRe
     Ok(())
 }
 
-pub fn get_levels_for_symbol(
-    conn: &Connection,
-    symbol: &str,
-) -> Result<Vec<TechnicalLevelRecord>> {
+pub fn get_levels_for_symbol(conn: &Connection, symbol: &str) -> Result<Vec<TechnicalLevelRecord>> {
     let sql = format!(
         "SELECT {SELECT_COLUMNS} FROM technical_levels WHERE symbol = ?1 ORDER BY price ASC"
     );
@@ -91,9 +92,8 @@ pub fn list_all_levels(
     conn: &Connection,
     limit: Option<usize>,
 ) -> Result<Vec<TechnicalLevelRecord>> {
-    let sql = format!(
-        "SELECT {SELECT_COLUMNS} FROM technical_levels ORDER BY symbol ASC, price ASC"
-    );
+    let sql =
+        format!("SELECT {SELECT_COLUMNS} FROM technical_levels ORDER BY symbol ASC, price ASC");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], TechnicalLevelRecord::from_sqlite_row)?;
     let mut out = Vec::new();
@@ -162,7 +162,11 @@ fn row_to_record_pg(row: &sqlx::postgres::PgRow) -> TechnicalLevelRecord {
     }
 }
 
-fn upsert_levels_postgres(pool: &PgPool, symbol: &str, levels: &[TechnicalLevelRecord]) -> Result<()> {
+fn upsert_levels_postgres(
+    pool: &PgPool,
+    symbol: &str,
+    levels: &[TechnicalLevelRecord],
+) -> Result<()> {
     crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM technical_levels WHERE symbol = $1")
             .bind(symbol)
@@ -224,7 +228,12 @@ mod tests {
     use super::*;
     use crate::db::open_in_memory;
 
-    fn sample_level(symbol: &str, level_type: &str, price: f64, strength: f64) -> TechnicalLevelRecord {
+    fn sample_level(
+        symbol: &str,
+        level_type: &str,
+        price: f64,
+        strength: f64,
+    ) -> TechnicalLevelRecord {
         TechnicalLevelRecord {
             id: None,
             symbol: symbol.to_string(),
@@ -258,11 +267,26 @@ mod tests {
     #[test]
     fn upsert_does_not_affect_other_symbols() {
         let conn = open_in_memory();
-        upsert_levels(&conn, "AAPL", &[sample_level("AAPL", "support", 150.0, 0.8)]).unwrap();
-        upsert_levels(&conn, "BTC", &[sample_level("BTC", "resistance", 100000.0, 0.9)]).unwrap();
+        upsert_levels(
+            &conn,
+            "AAPL",
+            &[sample_level("AAPL", "support", 150.0, 0.8)],
+        )
+        .unwrap();
+        upsert_levels(
+            &conn,
+            "BTC",
+            &[sample_level("BTC", "resistance", 100000.0, 0.9)],
+        )
+        .unwrap();
 
         // Replace AAPL levels
-        upsert_levels(&conn, "AAPL", &[sample_level("AAPL", "sma_200", 160.0, 1.0)]).unwrap();
+        upsert_levels(
+            &conn,
+            "AAPL",
+            &[sample_level("AAPL", "sma_200", 160.0, 1.0)],
+        )
+        .unwrap();
 
         assert_eq!(get_levels_for_symbol(&conn, "AAPL").unwrap().len(), 1);
         assert_eq!(get_levels_for_symbol(&conn, "BTC").unwrap().len(), 1);
@@ -280,12 +304,7 @@ mod tests {
             ],
         )
         .unwrap();
-        upsert_levels(
-            &conn,
-            "AAPL",
-            &[sample_level("AAPL", "sma_50", 170.0, 1.0)],
-        )
-        .unwrap();
+        upsert_levels(&conn, "AAPL", &[sample_level("AAPL", "sma_50", 170.0, 1.0)]).unwrap();
 
         let all = list_all_levels(&conn, None).unwrap();
         assert_eq!(all.len(), 3);

@@ -94,7 +94,10 @@ pub fn list(conn: &Connection, symbol: Option<&str>) -> Result<Vec<DividendEntry
     Ok(out)
 }
 
-pub fn list_backend(backend: &BackendConnection, symbol: Option<&str>) -> Result<Vec<DividendEntry>> {
+pub fn list_backend(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+) -> Result<Vec<DividendEntry>> {
     query::dispatch(
         backend,
         |conn| list(conn, symbol),
@@ -136,7 +139,16 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-type DividendRow = (i64, String, String, String, Option<String>, String, Option<String>, String);
+type DividendRow = (
+    i64,
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+);
 
 fn to_entry(r: DividendRow) -> DividendEntry {
     DividendEntry {
@@ -153,7 +165,7 @@ fn to_entry(r: DividendRow) -> DividendEntry {
 
 fn add_postgres(pool: &PgPool, entry: &NewDividendEntry) -> Result<i64> {
     ensure_tables_postgres(pool)?;
-        let id: i64 = crate::db::pg_runtime::block_on(async {
+    let id: i64 = crate::db::pg_runtime::block_on(async {
         sqlx::query_scalar(
             "INSERT INTO dividends (symbol, amount_per_share, currency, ex_date, pay_date, notes)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -173,7 +185,7 @@ fn add_postgres(pool: &PgPool, entry: &NewDividendEntry) -> Result<i64> {
 
 fn list_postgres(pool: &PgPool, symbol: Option<&str>) -> Result<Vec<DividendEntry>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<DividendRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<DividendRow> = crate::db::pg_runtime::block_on(async {
         if let Some(sym) = symbol {
             sqlx::query_as(
                 "SELECT id, symbol, amount_per_share, currency, ex_date, pay_date, notes, created_at::text
@@ -199,7 +211,7 @@ fn list_postgres(pool: &PgPool, symbol: Option<&str>) -> Result<Vec<DividendEntr
 
 fn remove_postgres(pool: &PgPool, id: i64) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let result = crate::db::pg_runtime::block_on(async {
+    let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM dividends WHERE id = $1")
             .bind(id)
             .execute(pool)

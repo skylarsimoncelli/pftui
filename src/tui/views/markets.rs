@@ -31,32 +31,137 @@ pub struct MarketItem {
 pub fn market_symbols() -> Vec<MarketItem> {
     vec![
         // Indices
-        MarketItem { symbol: "SPX".into(), name: "S&P 500".into(), category: AssetCategory::Equity, yahoo_symbol: "^GSPC".into() },
-        MarketItem { symbol: "NDX".into(), name: "Nasdaq 100".into(), category: AssetCategory::Equity, yahoo_symbol: "^NDX".into() },
-        MarketItem { symbol: "DJI".into(), name: "Dow Jones".into(), category: AssetCategory::Equity, yahoo_symbol: "^DJI".into() },
-        MarketItem { symbol: "RUT".into(), name: "Russell 2000".into(), category: AssetCategory::Equity, yahoo_symbol: "^RUT".into() },
-        MarketItem { symbol: "VIX".into(), name: "CBOE Volatility".into(), category: AssetCategory::Equity, yahoo_symbol: "^VIX".into() },
+        MarketItem {
+            symbol: "SPX".into(),
+            name: "S&P 500".into(),
+            category: AssetCategory::Equity,
+            yahoo_symbol: "^GSPC".into(),
+        },
+        MarketItem {
+            symbol: "NDX".into(),
+            name: "Nasdaq 100".into(),
+            category: AssetCategory::Equity,
+            yahoo_symbol: "^NDX".into(),
+        },
+        MarketItem {
+            symbol: "DJI".into(),
+            name: "Dow Jones".into(),
+            category: AssetCategory::Equity,
+            yahoo_symbol: "^DJI".into(),
+        },
+        MarketItem {
+            symbol: "RUT".into(),
+            name: "Russell 2000".into(),
+            category: AssetCategory::Equity,
+            yahoo_symbol: "^RUT".into(),
+        },
+        MarketItem {
+            symbol: "VIX".into(),
+            name: "CBOE Volatility".into(),
+            category: AssetCategory::Equity,
+            yahoo_symbol: "^VIX".into(),
+        },
         // Commodities
-        MarketItem { symbol: "Gold".into(), name: "Gold Futures".into(), category: AssetCategory::Commodity, yahoo_symbol: "GC=F".into() },
-        MarketItem { symbol: "Silver".into(), name: "Silver Futures".into(), category: AssetCategory::Commodity, yahoo_symbol: "SI=F".into() },
-        MarketItem { symbol: "Oil".into(), name: "Crude Oil (WTI)".into(), category: AssetCategory::Commodity, yahoo_symbol: "CL=F".into() },
-        MarketItem { symbol: "NatGas".into(), name: "Natural Gas".into(), category: AssetCategory::Commodity, yahoo_symbol: "NG=F".into() },
+        MarketItem {
+            symbol: "Gold".into(),
+            name: "Gold Futures".into(),
+            category: AssetCategory::Commodity,
+            yahoo_symbol: "GC=F".into(),
+        },
+        MarketItem {
+            symbol: "Silver".into(),
+            name: "Silver Futures".into(),
+            category: AssetCategory::Commodity,
+            yahoo_symbol: "SI=F".into(),
+        },
+        MarketItem {
+            symbol: "Oil".into(),
+            name: "Crude Oil (WTI)".into(),
+            category: AssetCategory::Commodity,
+            yahoo_symbol: "CL=F".into(),
+        },
+        MarketItem {
+            symbol: "NatGas".into(),
+            name: "Natural Gas".into(),
+            category: AssetCategory::Commodity,
+            yahoo_symbol: "NG=F".into(),
+        },
         // Crypto
-        MarketItem { symbol: "BTC".into(), name: "Bitcoin".into(), category: AssetCategory::Crypto, yahoo_symbol: "BTC-USD".into() },
-        MarketItem { symbol: "ETH".into(), name: "Ethereum".into(), category: AssetCategory::Crypto, yahoo_symbol: "ETH-USD".into() },
-        MarketItem { symbol: "SOL".into(), name: "Solana".into(), category: AssetCategory::Crypto, yahoo_symbol: "SOL-USD".into() },
+        MarketItem {
+            symbol: "BTC".into(),
+            name: "Bitcoin".into(),
+            category: AssetCategory::Crypto,
+            yahoo_symbol: "BTC-USD".into(),
+        },
+        MarketItem {
+            symbol: "ETH".into(),
+            name: "Ethereum".into(),
+            category: AssetCategory::Crypto,
+            yahoo_symbol: "ETH-USD".into(),
+        },
+        MarketItem {
+            symbol: "SOL".into(),
+            name: "Solana".into(),
+            category: AssetCategory::Crypto,
+            yahoo_symbol: "SOL-USD".into(),
+        },
         // Forex
-        MarketItem { symbol: "DXY".into(), name: "Dollar Index".into(), category: AssetCategory::Forex, yahoo_symbol: "DX-Y.NYB".into() },
-        MarketItem { symbol: "EUR".into(), name: "Euro / USD".into(), category: AssetCategory::Forex, yahoo_symbol: "EURUSD=X".into() },
-        MarketItem { symbol: "GBP".into(), name: "Pound / USD".into(), category: AssetCategory::Forex, yahoo_symbol: "GBPUSD=X".into() },
-        MarketItem { symbol: "JPY".into(), name: "USD / Yen".into(), category: AssetCategory::Forex, yahoo_symbol: "JPY=X".into() },
+        MarketItem {
+            symbol: "DXY".into(),
+            name: "Dollar Index".into(),
+            category: AssetCategory::Forex,
+            yahoo_symbol: "DX-Y.NYB".into(),
+        },
+        MarketItem {
+            symbol: "EUR".into(),
+            name: "Euro / USD".into(),
+            category: AssetCategory::Forex,
+            yahoo_symbol: "EURUSD=X".into(),
+        },
+        MarketItem {
+            symbol: "GBP".into(),
+            name: "Pound / USD".into(),
+            category: AssetCategory::Forex,
+            yahoo_symbol: "GBPUSD=X".into(),
+        },
+        MarketItem {
+            symbol: "JPY".into(),
+            name: "USD / Yen".into(),
+            category: AssetCategory::Forex,
+            yahoo_symbol: "JPY=X".into(),
+        },
         // Bonds & Credit
-        MarketItem { symbol: "10Y".into(), name: "10-Year Treasury".into(), category: AssetCategory::Fund, yahoo_symbol: "^TNX".into() },
-        MarketItem { symbol: "2Y".into(), name: "2-Year Treasury".into(), category: AssetCategory::Fund, yahoo_symbol: "^IRX".into() },
-        MarketItem { symbol: "HYG".into(), name: "High Yield Bond ETF".into(), category: AssetCategory::Fund, yahoo_symbol: "HYG".into() },
-        MarketItem { symbol: "LQD".into(), name: "Inv Grade Bond ETF".into(), category: AssetCategory::Fund, yahoo_symbol: "LQD".into() },
+        MarketItem {
+            symbol: "10Y".into(),
+            name: "10-Year Treasury".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "^TNX".into(),
+        },
+        MarketItem {
+            symbol: "2Y".into(),
+            name: "2-Year Treasury".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "^IRX".into(),
+        },
+        MarketItem {
+            symbol: "HYG".into(),
+            name: "High Yield Bond ETF".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "HYG".into(),
+        },
+        MarketItem {
+            symbol: "LQD".into(),
+            name: "Inv Grade Bond ETF".into(),
+            category: AssetCategory::Fund,
+            yahoo_symbol: "LQD".into(),
+        },
         // Metals & Industrial
-        MarketItem { symbol: "Copper".into(), name: "Copper Futures".into(), category: AssetCategory::Commodity, yahoo_symbol: "HG=F".into() },
+        MarketItem {
+            symbol: "Copper".into(),
+            name: "Copper Futures".into(),
+            category: AssetCategory::Commodity,
+            yahoo_symbol: "HG=F".into(),
+        },
     ]
 }
 
@@ -104,108 +209,99 @@ fn render_markets_table(frame: &mut Frame, area: Rect, app: &mut App) {
         let col_widths = [6, 12, 8, 10, 7, 5, 6, 2];
         skeleton::skeleton_rows(t, app.tick_count, &col_widths, 8)
     } else {
-    items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let cat_color = t.category_color(item.category);
+        items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let cat_color = t.category_color(item.category);
 
-            // Look up the live price from the app's price map
-            let price = app.prices.get(&item.yahoo_symbol).copied();
-            let price_str = match price {
-                Some(p) => format_price(p),
-                None => "---".to_string(),
-            };
+                // Look up the live price from the app's price map
+                let price = app.prices.get(&item.yahoo_symbol).copied();
+                let price_str = match price {
+                    Some(p) => format_price(p),
+                    None => "---".to_string(),
+                };
 
-            // Compute daily change % from history
-            let day_change = compute_change_pct(app, &item.yahoo_symbol);
-            let day_f = day_change
-                .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0))
-                .unwrap_or(0.0);
-            let (day_str, day_color) = match day_change {
-                Some(pct) => {
-                    let f: f64 = pct.to_string().parse().unwrap_or(0.0);
-                    let color = theme::gain_intensity_color(t, f);
-                    (format!("{:+.2}%", f), color)
-                }
-                None => ("---".to_string(), t.text_muted),
-            };
+                // Compute daily change % from history
+                let day_change = compute_change_pct(app, &item.yahoo_symbol);
+                let day_f = day_change
+                    .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0))
+                    .unwrap_or(0.0);
+                let (day_str, day_color) = match day_change {
+                    Some(pct) => {
+                        let f: f64 = pct.to_string().parse().unwrap_or(0.0);
+                        let color = theme::gain_intensity_color(t, f);
+                        (format!("{:+.2}%", f), color)
+                    }
+                    None => ("---".to_string(), t.text_muted),
+                };
 
-            // Heat-map row background: tint the row based on daily change magnitude
-            let row_bg = if i == app.markets_selected_index {
-                t.surface_3
-            } else {
-                let base = if i % 2 == 0 { t.surface_1 } else { t.surface_0 };
-                if day_change.is_some() {
-                    heatmap_tint(base, day_f, t)
+                // Heat-map row background: tint the row based on daily change magnitude
+                let row_bg = if i == app.markets_selected_index {
+                    t.surface_3
                 } else {
-                    base
-                }
-            };
+                    let base = if i % 2 == 0 { t.surface_1 } else { t.surface_0 };
+                    if day_change.is_some() {
+                        heatmap_tint(base, day_f, t)
+                    } else {
+                        base
+                    }
+                };
 
-            // Build 7-day mini sparkline
-            let sparkline_cell = build_mini_sparkline(app, &item.yahoo_symbol, t);
+                // Build 7-day mini sparkline
+                let sparkline_cell = build_mini_sparkline(app, &item.yahoo_symbol, t);
 
-            // Compute 7-day momentum %
-            let momentum = compute_7d_momentum(app, &item.yahoo_symbol);
-            let (mom_str, mom_color) = match momentum {
-                Some(pct) => {
-                    let f: f64 = pct.to_string().parse().unwrap_or(0.0);
-                    let color = theme::gain_intensity_color(t, f);
-                    (format!("{:+.1}%", f), color)
-                }
-                None => ("---".to_string(), t.text_muted),
-            };
+                // Compute 7-day momentum %
+                let momentum = compute_7d_momentum(app, &item.yahoo_symbol);
+                let (mom_str, mom_color) = match momentum {
+                    Some(pct) => {
+                        let f: f64 = pct.to_string().parse().unwrap_or(0.0);
+                        let color = theme::gain_intensity_color(t, f);
+                        (format!("{:+.1}%", f), color)
+                    }
+                    None => ("---".to_string(), t.text_muted),
+                };
 
-            // Compute COT signal
-            let cot_signal = compute_cot_signal(app, &item.yahoo_symbol);
+                // Compute COT signal
+                let cot_signal = compute_cot_signal(app, &item.yahoo_symbol);
 
-            Row::new(vec![
-                Cell::from(Span::styled(
-                    item.symbol.clone(),
-                    Style::default().fg(t.text_primary).bold(),
-                )),
-                Cell::from(Span::styled(
-                    item.name.clone(),
-                    Style::default().fg(t.text_secondary),
-                )),
-                Cell::from(Span::styled(
-                    format!("{}", item.category),
-                    Style::default().fg(cat_color),
-                )),
-                Cell::from(Span::styled(
-                    price_str,
-                    Style::default().fg(t.text_primary),
-                )),
-                Cell::from(Span::styled(
-                    day_str,
-                    Style::default().fg(day_color),
-                )),
-                sparkline_cell,
-                Cell::from(Span::styled(
-                    mom_str,
-                    Style::default().fg(mom_color),
-                )),
-                Cell::from(Span::styled(
-                    cot_signal,
-                    Style::default().fg(t.text_primary),
-                )),
-            ])
-            .style(Style::default().bg(row_bg))
-            .height(1)
-        })
-        .collect()
+                Row::new(vec![
+                    Cell::from(Span::styled(
+                        item.symbol.clone(),
+                        Style::default().fg(t.text_primary).bold(),
+                    )),
+                    Cell::from(Span::styled(
+                        item.name.clone(),
+                        Style::default().fg(t.text_secondary),
+                    )),
+                    Cell::from(Span::styled(
+                        format!("{}", item.category),
+                        Style::default().fg(cat_color),
+                    )),
+                    Cell::from(Span::styled(price_str, Style::default().fg(t.text_primary))),
+                    Cell::from(Span::styled(day_str, Style::default().fg(day_color))),
+                    sparkline_cell,
+                    Cell::from(Span::styled(mom_str, Style::default().fg(mom_color))),
+                    Cell::from(Span::styled(
+                        cot_signal,
+                        Style::default().fg(t.text_primary),
+                    )),
+                ])
+                .style(Style::default().bg(row_bg))
+                .height(1)
+            })
+            .collect()
     };
 
     let widths = [
-        Constraint::Length(8),   // Symbol
-        Constraint::Min(14),     // Name
-        Constraint::Length(10),  // Category
-        Constraint::Length(12),  // Price
-        Constraint::Length(9),   // Day %
-        Constraint::Length(7),   // 7D sparkline
-        Constraint::Length(8),   // 7D %
-        Constraint::Length(4),   // COT
+        Constraint::Length(8),  // Symbol
+        Constraint::Min(14),    // Name
+        Constraint::Length(10), // Category
+        Constraint::Length(12), // Price
+        Constraint::Length(9),  // Day %
+        Constraint::Length(7),  // 7D sparkline
+        Constraint::Length(8),  // 7D %
+        Constraint::Length(4),  // COT
     ];
 
     let table = Table::new(rows, widths)
@@ -238,7 +334,10 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(t.border_inactive))
-        .title(Span::styled(" Selected Market ", Style::default().fg(t.text_accent).bold()));
+        .title(Span::styled(
+            " Selected Market ",
+            Style::default().fg(t.text_accent).bold(),
+        ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -303,19 +402,23 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Build a mini sparkline cell from the last 7 days of price history.
 /// Returns a Cell containing colored braille characters showing the trend.
-fn build_mini_sparkline<'a>(
-    app: &App,
-    yahoo_symbol: &str,
-    theme: &'a theme::Theme,
-) -> Cell<'a> {
+fn build_mini_sparkline<'a>(app: &App, yahoo_symbol: &str, theme: &'a theme::Theme) -> Cell<'a> {
     let history = match app.price_history.get(yahoo_symbol) {
         Some(h) if h.len() >= 2 => h,
-        _ => return Cell::from(Span::styled("  ---  ", Style::default().fg(theme.text_muted))),
+        _ => {
+            return Cell::from(Span::styled(
+                "  ---  ",
+                Style::default().fg(theme.text_muted),
+            ))
+        }
     };
 
     let spans = build_sparkline_spans(theme, history, SPARKLINE_DAYS);
     if spans.is_empty() {
-        Cell::from(Span::styled("  ---  ", Style::default().fg(theme.text_muted)))
+        Cell::from(Span::styled(
+            "  ---  ",
+            Style::default().fg(theme.text_muted),
+        ))
     } else {
         Cell::from(Line::from(spans))
     }
@@ -419,10 +522,7 @@ fn compute_cot_signal(app: &App, yahoo_symbol: &str) -> String {
     };
 
     // Check for extreme positioning (>2 std devs from mean)
-    let mm_nets: Vec<f64> = history
-        .iter()
-        .map(|r| r.managed_money_net as f64)
-        .collect();
+    let mm_nets: Vec<f64> = history.iter().map(|r| r.managed_money_net as f64).collect();
     if mm_nets.is_empty() {
         return String::new();
     }
@@ -443,7 +543,7 @@ fn compute_cot_signal(app: &App, yahoo_symbol: &str) -> String {
     // Check alignment with price trend
     // Get 7-day price momentum
     let price_momentum = compute_7d_momentum(app, yahoo_symbol);
-    
+
     // Get managed money WoW change
     let mm_change = if history.len() >= 2 {
         let prev = &history[1];
@@ -456,7 +556,7 @@ fn compute_cot_signal(app: &App, yahoo_symbol: &str) -> String {
         (Some(price_pct), mm_delta) => {
             let price_up = price_pct > dec!(0);
             let mm_up = mm_delta > 0;
-            
+
             if price_up == mm_up {
                 "🟢".to_string() // Aligned
             } else {
@@ -516,10 +616,10 @@ fn format_price(p: Decimal) -> String {
 fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let backend = app.open_backend();
-    
+
     // Use prediction markets already loaded in app state
     let predictions = &app.prediction_markets;
-    
+
     let header = Row::new(vec![
         Cell::from("Question"),
         Cell::from("Prob"),
@@ -529,7 +629,7 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .style(Style::default().fg(t.text_secondary).bold())
     .height(1);
-    
+
     let rows: Vec<Row> = if predictions.is_empty() {
         // Show skeleton or empty state
         let col_widths = [40, 6, 6, 12, 8];
@@ -542,7 +642,7 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
                 // Format probability as percentage
                 let prob_pct = pred.probability * 100.0;
                 let prob_str = format!("{:.0}%", prob_pct);
-                
+
                 // Get 30-day history for sparkline
                 let history = if let Some(ref backend) = backend {
                     crate::db::predictions_history::get_history_backend(backend, &pred.id, 30)
@@ -550,7 +650,7 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
                 } else {
                     vec![]
                 };
-                
+
                 // Compute 30-day change
                 let change_str = if history.len() >= 2 {
                     let oldest = history.last().unwrap().probability;
@@ -560,10 +660,10 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
                 } else {
                     "---".to_string()
                 };
-                
+
                 // Build sparkline from history
                 let sparkline_cell = build_prediction_sparkline(t, &history);
-                
+
                 // Category color
                 let cat_color = match pred.category {
                     crate::data::predictions::MarketCategory::Crypto => t.cat_crypto,
@@ -572,7 +672,7 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
                     crate::data::predictions::MarketCategory::AI => t.cat_equity,
                     crate::data::predictions::MarketCategory::Other => t.text_muted,
                 };
-                
+
                 // Probability color: green >60%, red <40%, yellow 40-60%
                 let prob_color = if prob_pct > 60.0 {
                     t.gain_green
@@ -581,7 +681,7 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
                 } else {
                     t.text_secondary
                 };
-                
+
                 Row::new(vec![
                     Cell::from(Span::styled(
                         truncate_question(&pred.question, 40),
@@ -605,29 +705,27 @@ fn render_predictions_panel(frame: &mut Frame, area: Rect, app: &App) {
             })
             .collect()
     };
-    
+
     let widths = [
-        Constraint::Min(40),     // Question
-        Constraint::Length(6),   // Probability
-        Constraint::Length(6),   // Change
-        Constraint::Length(12),  // Sparkline
-        Constraint::Length(8),   // Category
+        Constraint::Min(40),    // Question
+        Constraint::Length(6),  // Probability
+        Constraint::Length(6),  // Change
+        Constraint::Length(12), // Sparkline
+        Constraint::Length(8),  // Category
     ];
-    
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_set(crate::tui::theme::BORDER_ACTIVE)
-                .border_style(Style::default().fg(t.border_inactive))
-                .title(Span::styled(
-                    " Prediction Markets ",
-                    Style::default().fg(t.text_accent).bold(),
-                ))
-                .style(Style::default().bg(t.surface_0)),
-        );
-    
+
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_set(crate::tui::theme::BORDER_ACTIVE)
+            .border_style(Style::default().fg(t.border_inactive))
+            .title(Span::styled(
+                " Prediction Markets ",
+                Style::default().fg(t.text_accent).bold(),
+            ))
+            .style(Style::default().bg(t.surface_0)),
+    );
+
     frame.render_widget(table, area);
 }
 
@@ -637,27 +735,30 @@ fn build_prediction_sparkline<'a>(
     history: &[crate::db::predictions_history::PredictionHistoryRecord],
 ) -> Cell<'a> {
     if history.len() < 2 {
-        return Cell::from(Span::styled("   ---   ", Style::default().fg(theme.text_muted)));
+        return Cell::from(Span::styled(
+            "   ---   ",
+            Style::default().fg(theme.text_muted),
+        ));
     }
-    
+
     // Reverse history so it's oldest to newest
     let mut sorted: Vec<_> = history.iter().collect();
     sorted.reverse();
-    
+
     // Extract probabilities
     let probs: Vec<f64> = sorted.iter().map(|r| r.probability).collect();
-    
+
     // Find min/max for normalization
     let min = probs.iter().cloned().fold(f64::INFINITY, f64::min);
     let max = probs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    
+
     let range = max - min;
     if range < 0.01 {
         // Flat line
         let chars: String = "━".repeat(10);
         return Cell::from(Span::styled(chars, Style::default().fg(theme.text_muted)));
     }
-    
+
     // Build sparkline characters
     let chars: String = probs
         .iter()
@@ -667,7 +768,7 @@ fn build_prediction_sparkline<'a>(
             SPARKLINE_CHARS[idx.min(SPARKLINE_CHARS.len() - 1)]
         })
         .collect();
-    
+
     // Color based on trend (green if rising, red if falling)
     let trend_color = if probs.last() > probs.first() {
         theme.gain_green
@@ -676,7 +777,7 @@ fn build_prediction_sparkline<'a>(
     } else {
         theme.text_secondary
     };
-    
+
     Cell::from(Span::styled(chars, Style::default().fg(trend_color)))
 }
 
@@ -781,10 +882,10 @@ mod tests {
             date: "2026-03-01".into(),
             close: dec!(100),
             volume: None,
-                open: None,
-                high: None,
-                low: None,
-            }];
+            open: None,
+            high: None,
+            low: None,
+        }];
         let spans = build_sparkline_spans(&t, &records, 7);
         assert_eq!(spans.len(), 1);
     }

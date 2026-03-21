@@ -148,17 +148,21 @@ pub fn run(backend: &BackendConnection, _config: &Config, json: bool) -> Result<
         };
 
         let tech = compute_technicals(backend, symbol);
-        sector_data.push((symbol.to_string(), name.to_string(), price, day_change_pct, tech));
+        sector_data.push((
+            symbol.to_string(),
+            name.to_string(),
+            price,
+            day_change_pct,
+            tech,
+        ));
     }
 
     // Sort by day change descending (strongest first)
-    sector_data.sort_by(|a, b| {
-        match (a.3, b.3) {
-            (Some(ac), Some(bc)) => bc.partial_cmp(&ac).unwrap_or(std::cmp::Ordering::Equal),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        }
+    sector_data.sort_by(|a, b| match (a.3, b.3) {
+        (Some(ac), Some(bc)) => bc.partial_cmp(&ac).unwrap_or(std::cmp::Ordering::Equal),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     });
 
     if json {
@@ -181,10 +185,16 @@ fn print_json(data: &[(String, String, Decimal, Option<Decimal>, Technicals)]) -
         let mut entry = Map::new();
         entry.insert("symbol".into(), json!(symbol));
         entry.insert("name".into(), json!(name));
-        entry.insert("price".into(), json!(price.to_string().parse::<f64>().unwrap_or(0.0)));
+        entry.insert(
+            "price".into(),
+            json!(price.to_string().parse::<f64>().unwrap_or(0.0)),
+        );
 
         if let Some(chg) = day_chg {
-            entry.insert("day_change_pct".into(), json!(chg.to_string().parse::<f64>().unwrap_or(0.0)));
+            entry.insert(
+                "day_change_pct".into(),
+                json!(chg.to_string().parse::<f64>().unwrap_or(0.0)),
+            );
         }
 
         if tech.rsi.is_some() || tech.macd_histogram.is_some() {

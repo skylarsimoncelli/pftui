@@ -29,8 +29,9 @@ pub fn run(
                 });
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&error_json)
-                        .unwrap_or_else(|_| r#"{"articles":[],"error":"serialization failed"}"#.to_string())
+                    serde_json::to_string_pretty(&error_json).unwrap_or_else(|_| {
+                        r#"{"articles":[],"error":"serialization failed"}"#.to_string()
+                    })
                 );
                 eprintln!("warning: news query failed: {err:#}");
                 return Ok(());
@@ -80,7 +81,10 @@ fn print_table(entries: &[NewsEntry]) {
         source = source_width,
         time = time_width,
     );
-    println!("{}", "─".repeat(title_width + source_width + time_width + 4));
+    println!(
+        "{}",
+        "─".repeat(title_width + source_width + time_width + 4)
+    );
 
     // Print rows
     for entry in entries {
@@ -108,8 +112,7 @@ fn print_table(entries: &[NewsEntry]) {
 
 /// Format Unix timestamp as relative time or date string.
 fn format_timestamp(ts: i64) -> String {
-    let dt = chrono::DateTime::from_timestamp(ts, 0)
-        .unwrap_or_else(chrono::Utc::now);
+    let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap_or_else(chrono::Utc::now);
     let now = chrono::Utc::now();
     let diff = now.signed_duration_since(dt);
 

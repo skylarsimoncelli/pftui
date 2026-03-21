@@ -41,6 +41,14 @@ MACRO (weekly)  ──┘         └── WATCH TOMORROW ──► LOW
 
 **Database-first.** All analytical data lives in PostgreSQL via pftui CLI. No shared markdown files for quantitative data. Agents read structured JSON from `--json` flags.
 
+**Rust-first analytics.** The preferred operating model is now:
+
+- pftui computes canonical situation, delta, catalyst, impact, synthesis, and narrative payloads
+- agents consume those payloads
+- agents add judgment, external context, and communication
+
+Do not rebuild "what matters now" or "what changed" entirely inside prompts if a native analytics command already provides it.
+
 ## Setup
 
 These routines are designed for use with [OpenClaw](https://github.com/openclaw/openclaw) cron jobs, but work with any agent orchestration system that can:
@@ -76,3 +84,15 @@ These routines use the full pftui analytics engine:
 - Use `pftui journal notes add ... --section market` for market-close logs. Do not use `--section eod` (invalid section).
 - Run all `pftui` write-back commands (predictions, notes, agent-msg, scenario/conviction updates) before sending Telegram/chat briefs.
 - For notable market-close moves, send explicit handoff messaging to the evening planner flow (`pftui agent message send ... --from market-close --to evening-planner`).
+
+## Canonical Analytics Inputs
+
+These commands should be preferred when the routine needs ranked, reusable analytics state:
+
+- `pftui analytics situation --json`
+- `pftui analytics deltas --json`
+- `pftui analytics catalysts --json`
+- `pftui analytics impact --json`
+- `pftui analytics opportunities --json`
+- `pftui analytics synthesis --json`
+- `pftui analytics narrative --json`

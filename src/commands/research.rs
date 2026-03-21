@@ -15,7 +15,11 @@ pub fn run(
     let key = cfg
         .brave_api_key
         .filter(|k| !k.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("Brave API key is required. Set with: pftui config set brave_api_key <key>"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Brave API key is required. Set with: pftui config set brave_api_key <key>"
+            )
+        })?;
 
     let query = resolve_query(query, &preset)?;
 

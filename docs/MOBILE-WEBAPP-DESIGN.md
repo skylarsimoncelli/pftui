@@ -10,23 +10,26 @@
 
 ### Mobile Use Case
 
-pftui's mobile webapp is **NOT** trying to be a full-featured Bloomberg Terminal in your pocket. That's a trap. The mobile use case is fundamentally different:
+pftui's mobile/web mobile surface is **NOT** trying to replicate the desktop TUI one-for-one. The mobile use case is different.
 
-**Primary:** **Quick portfolio pulse check** — "How am I doing today?" in under 5 seconds. Standing in line at the grocery store. Walking between meetings. Lying in bed at 6am before work. The user wants to know: total value, daily P&L, what moved, any alerts. That's it.
+The original design center here was "quick portfolio pulse check." That is no longer sufficient on its own. The product direction now includes a denser **Situation Room** model: mobile should still be fast and glanceable, but it should also act as a serious remote monitoring client for pftui's server-owned analytics layer.
 
-**Secondary:** **Tactical research** — User is away from their desk and needs to look up a price, check a chart, or verify a position before making a decision. "Should I sell this position now or wait?" They need the data, not the full analytical environment.
+**Primary:** **Situation monitoring** — "What matters right now, what changed, what is coming next, and what matters to my book?" in one scan.
+
+**Secondary:** **Quick portfolio pulse check** — total value, daily P&L, movers, alerts, and source/system freshness in under a few seconds.
+
+**Tertiary:** **Tactical research** — User is away from their desk and needs to check a chart, verify a position, inspect catalysts, or understand a cross-timeframe shift.
 
 **Tertiary (post-MVP):** **Lightweight data entry** — Add a quick transaction while traveling. Mark a journal entry with a voice memo. Set a watchlist target. NOT building a full transaction editor on mobile — that's desktop work.
 
-**What mobile is NOT:**
-- Full portfolio rebalancing UI (too complex)
-- Deep multi-asset correlation analysis (wrong form factor)
-- Regime signal tuning (power user, desktop-only feature)
-- Transaction import/export flows (file management on mobile is painful)
+**What mobile should still avoid:**
+- complex transaction import/export flows
+- deep admin/configuration surfaces that belong on desktop
+- duplicating analytics logic client-side when the server can own it
 
 ### Relationship to TUI
 
-**Companion, not replacement.** The TUI is the power tool for serious analysis. The webapp is the quick-check dashboard.
+**Companion, not replacement.** The TUI is still the deepest power tool. The mobile surface is the remote intelligence console.
 
 Think of it like:
 - **TUI** = Bloomberg Terminal at your desk
@@ -152,6 +155,20 @@ The user maintains ONE portfolio database (SQLite on their machine or cloud-sync
 
 ---
 
+### Current Product Direction
+
+The mobile product now assumes a server-owned analytics contract:
+
+- Situation
+- Deltas / Change Radar
+- Catalysts
+- Portfolio Impact
+- Opportunities
+- Synthesis
+- Narrative
+
+That means the preferred frontend architecture is the one that maximizes reuse of shared Rust payloads and minimizes client-only intelligence logic.
+
 ### Recommendation: **Option A (PWA)** with a future path to Option D if demand is high
 
 **Why PWA wins:**
@@ -175,6 +192,22 @@ The user maintains ONE portfolio database (SQLite on their machine or cloud-sync
 ---
 
 ## 3. Mobile UX Design
+
+## 3a. Updated UX Direction
+
+The mobile UX should be treated as a high-density monitoring console, not a thin quote app. The main design objective is:
+
+- fast scanability
+- high information density
+- zero duplicate analytics logic in the client
+- customization through layout, pinning, density modes, and collapsible sections
+
+Core mobile sections should map directly onto server-owned analytics products:
+
+- Situation Room
+- Analytics / Synthesis
+- Markets / Watchlist
+- System / Server Health
 
 ### Navigation: Bottom Tab Bar (iOS-style)
 

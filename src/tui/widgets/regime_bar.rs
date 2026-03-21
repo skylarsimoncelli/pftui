@@ -27,10 +27,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             .borders(Borders::ALL)
             .border_set(theme::BORDER_INACTIVE)
             .border_style(Style::default().fg(t.border_inactive))
-            .title(Span::styled(
-                " Regime ",
-                Style::default().fg(t.text_muted),
-            ))
+            .title(Span::styled(" Regime ", Style::default().fg(t.text_muted)))
             .style(Style::default().bg(t.surface_1));
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -106,9 +103,8 @@ fn build_gauge_line<'a>(regime: &RegimeScore, t: &'a Theme, width: u16) -> Line<
     // Build gauge: filled + empty blocks
     // Map total (-9..+9) to 0..gauge_width
     let max_signals = 9i8;
-    let normalized = ((regime.total as f32 + max_signals as f32)
-        / (2.0 * max_signals as f32))
-        .clamp(0.0, 1.0);
+    let normalized =
+        ((regime.total as f32 + max_signals as f32) / (2.0 * max_signals as f32)).clamp(0.0, 1.0);
     let filled = (normalized * gauge_width as f32).round() as usize;
     let empty = gauge_width.saturating_sub(filled);
 
@@ -169,10 +165,7 @@ fn build_signal_line<'a>(regime: &RegimeScore, t: &'a Theme, max_width: u16) -> 
             t.loss_red
         };
 
-        spans.push(Span::styled(
-            label.to_string(),
-            Style::default().fg(color),
-        ));
+        spans.push(Span::styled(label.to_string(), Style::default().fg(color)));
         current_width += label.len();
     }
 
@@ -198,15 +191,51 @@ mod tests {
     fn make_regime(total: i8, active: u8) -> RegimeScore {
         RegimeScore {
             signals: vec![
-                RegimeSignal { name: "VIX level", label: "VIX 15.0✓".into(), score: 1 },
-                RegimeSignal { name: "VIX dir", label: "VIX 15.0↓".into(), score: 1 },
-                RegimeSignal { name: "10Y dir", label: "10Y 4.5↑".into(), score: 1 },
-                RegimeSignal { name: "2Y-10Y", label: "2s10s +0.50".into(), score: 1 },
-                RegimeSignal { name: "DXY dir", label: "DXY 97.9↓".into(), score: 1 },
-                RegimeSignal { name: "Au/SPX", label: "Au/SPX↓".into(), score: 1 },
-                RegimeSignal { name: "BTC/SPX", label: "BTC/SPX 0.85".into(), score: 1 },
-                RegimeSignal { name: "HY sprd", label: "HY sprd↑".into(), score: 1 },
-                RegimeSignal { name: "Cu/Au", label: "Cu/Au↑".into(), score: 1 },
+                RegimeSignal {
+                    name: "VIX level",
+                    label: "VIX 15.0✓".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "VIX dir",
+                    label: "VIX 15.0↓".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "10Y dir",
+                    label: "10Y 4.5↑".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "2Y-10Y",
+                    label: "2s10s +0.50".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "DXY dir",
+                    label: "DXY 97.9↓".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "Au/SPX",
+                    label: "Au/SPX↓".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "BTC/SPX",
+                    label: "BTC/SPX 0.85".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "HY sprd",
+                    label: "HY sprd↑".into(),
+                    score: 1,
+                },
+                RegimeSignal {
+                    name: "Cu/Au",
+                    label: "Cu/Au↑".into(),
+                    score: 1,
+                },
             ],
             total,
             active_count: active,
@@ -224,7 +253,11 @@ mod tests {
         let regime = make_regime(5, 9);
         let line = build_gauge_line(&regime, &t, 60);
         let text: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(text.contains("RISK-ON"), "gauge should show RISK-ON: {}", text);
+        assert!(
+            text.contains("RISK-ON"),
+            "gauge should show RISK-ON: {}",
+            text
+        );
     }
 
     #[test]
@@ -242,7 +275,11 @@ mod tests {
         let regime = make_regime(7, 9);
         let line = build_signal_line(&regime, &t, 80);
         let text: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(text.contains("VIX"), "signal line should contain VIX: {}", text);
+        assert!(
+            text.contains("VIX"),
+            "signal line should contain VIX: {}",
+            text
+        );
     }
 
     #[test]

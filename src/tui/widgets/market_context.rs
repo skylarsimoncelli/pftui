@@ -81,9 +81,10 @@ fn render_top_movers(frame: &mut Frame, area: Rect, app: &App) {
     movers.sort_by(|a, b| b.change_pct.abs().cmp(&a.change_pct.abs()));
     movers.truncate(3);
 
-    let mut lines = vec![Line::from(vec![
-        Span::styled("TOP MOVERS ", Style::default().fg(app.theme.text_secondary)),
-    ])];
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "TOP MOVERS ",
+        Style::default().fg(app.theme.text_secondary),
+    )])];
 
     for mover in movers {
         let color = if mover.change_pct > dec!(0) {
@@ -141,7 +142,8 @@ fn compute_movers(app: &App) -> Vec<Mover> {
     // Watchlist
     for entry in &app.watchlist_entries {
         if let Some(current) = app.prices.get(&entry.symbol) {
-            if let Some(change_pct) = compute_watchlist_change(&entry.symbol, *current, &today, app) {
+            if let Some(change_pct) = compute_watchlist_change(&entry.symbol, *current, &today, app)
+            {
                 result.push(Mover {
                     symbol: entry.symbol.clone(),
                     change_pct,
@@ -176,7 +178,12 @@ fn compute_daily_change(pos: &Position, today: &str, app: &App) -> Option<Decima
     }
 }
 
-fn compute_watchlist_change(symbol: &str, current: Decimal, today: &str, app: &App) -> Option<Decimal> {
+fn compute_watchlist_change(
+    symbol: &str,
+    current: Decimal,
+    today: &str,
+    app: &App,
+) -> Option<Decimal> {
     if current <= dec!(0) {
         return None;
     }
@@ -276,7 +283,10 @@ fn build_contextual_macro_lines(pos: &Position, app: &App) -> Vec<Line<'static>>
             if let Some(spy) = app.prices.get("SPY") {
                 lines.push(Line::from(vec![
                     Span::styled("SPY ", Style::default().fg(app.theme.text_muted)),
-                    Span::styled(format!("{:.2}", spy), Style::default().fg(app.theme.text_primary)),
+                    Span::styled(
+                        format!("{:.2}", spy),
+                        Style::default().fg(app.theme.text_primary),
+                    ),
                 ]));
             }
         }
@@ -327,7 +337,10 @@ fn render_fear_greed(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(vec![
             Span::styled("Crypto ", Style::default().fg(app.theme.text_muted)),
             Span::styled(format!("{} ", value), Style::default().fg(color)),
-            Span::styled(classification, Style::default().fg(app.theme.text_secondary)),
+            Span::styled(
+                classification,
+                Style::default().fg(app.theme.text_secondary),
+            ),
         ]));
     }
 
@@ -337,7 +350,10 @@ fn render_fear_greed(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(vec![
             Span::styled("Stocks ", Style::default().fg(app.theme.text_muted)),
             Span::styled(format!("{} ", value), Style::default().fg(color)),
-            Span::styled(classification, Style::default().fg(app.theme.text_secondary)),
+            Span::styled(
+                classification,
+                Style::default().fg(app.theme.text_secondary),
+            ),
         ]));
     }
 
@@ -354,11 +370,11 @@ fn render_fear_greed(frame: &mut Frame, area: Rect, app: &App) {
 
 fn fng_color(value: u8, app: &App) -> Color {
     match value {
-        0..=24 => app.theme.loss_red,     // Extreme fear
+        0..=24 => app.theme.loss_red,      // Extreme fear
         25..=44 => app.theme.stale_yellow, // Fear
-        45..=55 => app.theme.text_muted, // Neutral
+        45..=55 => app.theme.text_muted,   // Neutral
         56..=74 => app.theme.stale_yellow, // Greed
-        75..=100 => app.theme.gain_green, // Extreme greed
+        75..=100 => app.theme.gain_green,  // Extreme greed
         _ => app.theme.text_muted,
     }
 }
@@ -392,7 +408,10 @@ fn render_next_event(frame: &mut Frame, area: Rect, app: &App) {
 
         let name = truncate(&event.name, (area.width as usize).saturating_sub(10));
         lines.push(Line::from(vec![
-            Span::styled(format!("{} ", time_str), Style::default().fg(app.theme.text_accent)),
+            Span::styled(
+                format!("{} ", time_str),
+                Style::default().fg(app.theme.text_accent),
+            ),
             Span::styled(name, Style::default().fg(app.theme.text_primary)),
         ]));
     } else {

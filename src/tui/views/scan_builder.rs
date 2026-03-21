@@ -44,7 +44,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             .border_set(crate::tui::theme::BORDER_POPUP)
             .border_style(Style::default().fg(t.border_accent))
             .style(Style::default().bg(t.surface_2))
-            .title(Span::styled(title, Style::default().fg(t.text_accent).bold())),
+            .title(Span::styled(
+                title,
+                Style::default().fg(t.text_accent).bold(),
+            )),
     );
     frame.render_widget(expr_widget, chunks[0]);
 
@@ -83,7 +86,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     };
     let input_value = match app.scan_builder_mode {
         ScanBuilderMode::Edit => app.scan_builder_clause_input.clone(),
-        ScanBuilderMode::SaveName | ScanBuilderMode::LoadName => app.scan_builder_name_input.clone(),
+        ScanBuilderMode::SaveName | ScanBuilderMode::LoadName => {
+            app.scan_builder_name_input.clone()
+        }
     };
     let input = Paragraph::new(input_value).block(
         Block::default()
@@ -106,7 +111,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(msg, chunks[3]);
 
     let hints = match app.scan_builder_mode {
-        ScanBuilderMode::Edit => "a/Enter add  r remove  s save  l load  c clear  ↑/↓ select  Esc close",
+        ScanBuilderMode::Edit => {
+            "a/Enter add  r remove  s save  l load  c clear  ↑/↓ select  Esc close"
+        }
         ScanBuilderMode::SaveName => "Enter save  Esc cancel",
         ScanBuilderMode::LoadName => "Enter load  Esc cancel",
     };

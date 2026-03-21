@@ -151,7 +151,11 @@ pub fn run(
                 None => None,
             };
             let rows = user_predictions::list_predictions_backend(
-                backend, filter, symbol, resolved_timeframe.as_deref(), limit,
+                backend,
+                filter,
+                symbol,
+                resolved_timeframe.as_deref(),
+                limit,
             )?;
 
             if json_output {
@@ -230,7 +234,11 @@ pub fn run(
             };
             let target_date = parse_date_filter(date)?;
             let mut rows = user_predictions::list_predictions_backend(
-                backend, filter, symbol, resolved_timeframe.as_deref(), limit,
+                backend,
+                filter,
+                symbol,
+                resolved_timeframe.as_deref(),
+                limit,
             )?;
             if let Some(d) = target_date {
                 rows.retain(|row| {

@@ -14,6 +14,9 @@ pftui analytics trends list --json
 ## Inputs
 
 ```bash
+pftui analytics situation --json
+pftui analytics impact --json
+pftui analytics opportunities --json
 pftui analytics high --json
 pftui analytics trends list --json
 pftui analytics trends evidence-list --json
@@ -21,6 +24,8 @@ pftui journal conviction list --json
 pftui journal prediction list --json
 pftui agent message list --to high-agent --unacked
 ```
+
+Use `impact` and `opportunities` to anchor where structural trends already intersect the current book and where strong non-held ideas are emerging.
 
 Read the user profile for structural views. Read STRUCTURAL.md for the macro framework context.
 

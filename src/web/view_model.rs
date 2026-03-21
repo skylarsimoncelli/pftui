@@ -87,15 +87,19 @@ pub fn market_overview_symbols() -> Vec<SymbolSpec> {
 /// Shared economy sections contract for web and TUI.
 pub fn economy_sections() -> Vec<EconomySectionSpec> {
     let items = economy::economy_symbols();
-    let groups: [(
-        economy::EconomyGroup,
-        &str,
-        &str,
-    ); 4] = [
+    let groups: [(economy::EconomyGroup, &str, &str); 4] = [
         (economy::EconomyGroup::Yields, "yields", "Yields"),
         (economy::EconomyGroup::Currency, "currency", "Currency"),
-        (economy::EconomyGroup::Commodities, "commodities", "Commodities"),
-        (economy::EconomyGroup::Volatility, "volatility", "Volatility"),
+        (
+            economy::EconomyGroup::Commodities,
+            "commodities",
+            "Commodities",
+        ),
+        (
+            economy::EconomyGroup::Volatility,
+            "volatility",
+            "Volatility",
+        ),
     ];
 
     groups
@@ -258,11 +262,7 @@ pub fn apply_transaction_filters(
         .collect()
 }
 
-pub fn sort_transactions(
-    txs: &mut [Transaction],
-    sort_by: TxSortField,
-    sort_order: SortOrder,
-) {
+pub fn sort_transactions(txs: &mut [Transaction], sort_by: TxSortField, sort_order: SortOrder) {
     txs.sort_by(|a, b| {
         let ord = match sort_by {
             TxSortField::Date => a.date.cmp(&b.date).then(a.id.cmp(&b.id)),
@@ -304,7 +304,14 @@ mod tests {
     use crate::models::asset::AssetCategory;
     use crate::models::transaction::TxType;
 
-    fn sample_tx(id: i64, symbol: &str, tx_type: TxType, qty: i64, price: i64, date: &str) -> Transaction {
+    fn sample_tx(
+        id: i64,
+        symbol: &str,
+        tx_type: TxType,
+        qty: i64,
+        price: i64,
+        date: &str,
+    ) -> Transaction {
         Transaction {
             id,
             symbol: symbol.to_string(),
@@ -321,7 +328,8 @@ mod tests {
 
     #[test]
     fn watchlist_proximity_hit() {
-        let (dist, hit) = compute_watchlist_proximity(Some(dec!(120)), Some(dec!(100)), Some("above"));
+        let (dist, hit) =
+            compute_watchlist_proximity(Some(dec!(120)), Some(dec!(100)), Some("above"));
         assert!(hit);
         assert!(dist.is_some());
     }

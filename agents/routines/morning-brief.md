@@ -20,6 +20,11 @@ Use this pre-digested intelligence. Don't redo their work.
 
 2. Read current state:
 ```bash
+pftui analytics situation --json
+pftui analytics deltas --json --since close
+pftui analytics catalysts --json --window today
+pftui analytics impact --json
+pftui analytics opportunities --json
 pftui analytics summary --json
 pftui analytics alignment --json
 pftui analytics recap --date yesterday --json
@@ -29,6 +34,8 @@ pftui journal prediction scorecard --date yesterday --json
 pftui journal prediction list --filter pending --json
 pftui journal conviction list --json
 ```
+
+Lead from the canonical analytics outputs. The morning brief should summarize the shared situation model, not rebuild it from raw data unless something is missing or suspect.
 
 3. Read user profile and portfolio for conviction state and allocation context.
 

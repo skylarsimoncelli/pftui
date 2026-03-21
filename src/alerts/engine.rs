@@ -80,8 +80,7 @@ pub fn check_alerts_backend(
     let mut results = Vec::new();
 
     for alert in all_alerts {
-        let result =
-            check_single_alert_backend(backend, &alert, &price_map, default_cooldown)?;
+        let result = check_single_alert_backend(backend, &alert, &price_map, default_cooldown)?;
         results.push(result);
     }
 
@@ -109,8 +108,7 @@ pub fn check_alerts_backend_only(backend: &BackendConnection) -> Result<Vec<Aler
     let default_cooldown = load_default_cooldown();
     let mut results = Vec::new();
     for alert in all_alerts {
-        let result =
-            check_single_alert_backend(backend, &alert, &price_map, default_cooldown)?;
+        let result = check_single_alert_backend(backend, &alert, &price_map, default_cooldown)?;
         results.push(result);
     }
     Ok(results)
@@ -159,7 +157,8 @@ fn finalize_sqlite_alert_result(
     default_cooldown: i64,
 ) -> Result<AlertCheckResult> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let newly_triggered = should_log_trigger(conn, alert, evaluation.is_triggered, default_cooldown)?;
+    let newly_triggered =
+        should_log_trigger(conn, alert, evaluation.is_triggered, default_cooldown)?;
     if newly_triggered {
         let trigger_json = evaluation.trigger_data.to_string();
         triggered_alerts::add_triggered_alert(conn, alert.id, &now, &trigger_json)?;
@@ -1392,7 +1391,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -1408,7 +1407,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -1682,7 +1681,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -1750,7 +1749,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -1847,7 +1846,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -1907,7 +1906,7 @@ mod tests {
                 pre_market_price: None,
                 post_market_price: None,
                 post_market_change_percent: None,
-                    previous_close: None,
+                previous_close: None,
             },
         )
         .unwrap();
@@ -1988,15 +1987,18 @@ mod tests {
         // First check with default_cooldown=30 → should trigger
         let price_map: HashMap<String, Decimal> =
             [("GC=F".to_string(), Decimal::from(5600))].into();
-        let result =
-            check_single_alert_sqlite(conn, &alerts::get_alert(conn, id).unwrap().unwrap(), &price_map, 30)
-                .unwrap();
+        let result = check_single_alert_sqlite(
+            conn,
+            &alerts::get_alert(conn, id).unwrap().unwrap(),
+            &price_map,
+            30,
+        )
+        .unwrap();
         assert!(result.newly_triggered);
 
         // Second check immediately → should be suppressed by the 30-minute default cooldown
         let alert = alerts::get_alert(conn, id).unwrap().unwrap();
-        let result2 =
-            check_single_alert_sqlite(conn, &alert, &price_map, 30).unwrap();
+        let result2 = check_single_alert_sqlite(conn, &alert, &price_map, 30).unwrap();
         assert!(!result2.newly_triggered);
     }
 
@@ -2036,8 +2038,7 @@ mod tests {
 
         // Second trigger immediately → should also fire (no cooldown)
         let alert = alerts::get_alert(conn, id).unwrap().unwrap();
-        let result2 =
-            check_single_alert_sqlite(conn, &alert, &price_map, 0).unwrap();
+        let result2 = check_single_alert_sqlite(conn, &alert, &price_map, 0).unwrap();
         assert!(result2.newly_triggered);
     }
 }

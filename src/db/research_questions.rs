@@ -44,7 +44,10 @@ pub fn add_question(conn: &Connection, question: &str, key_signal: Option<&str>)
     Ok(conn.last_insert_rowid())
 }
 
-pub fn list_questions(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<ResearchQuestion>> {
+pub fn list_questions(
+    conn: &Connection,
+    status_filter: Option<&str>,
+) -> Result<Vec<ResearchQuestion>> {
     let query = if let Some(status) = status_filter {
         format!(
             "SELECT id, question, evidence_tilt, key_signal, evidence, first_raised, last_updated, status, resolution
@@ -223,7 +226,10 @@ fn add_question_postgres(pool: &PgPool, question: &str, key_signal: Option<&str>
     Ok(id)
 }
 
-fn list_questions_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result<Vec<ResearchQuestion>> {
+fn list_questions_postgres(
+    pool: &PgPool,
+    status_filter: Option<&str>,
+) -> Result<Vec<ResearchQuestion>> {
     let rows: Vec<QuestionRow> = if let Some(status) = status_filter {
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(

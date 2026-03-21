@@ -423,15 +423,22 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     app.header_tab_hitboxes.clear();
     let spans_width =
         |spans: &[Span<'static>]| spans.iter().map(|s| s.content.chars().count() as u16).sum();
-    let push_tab =
-        |spans: &mut Vec<Span<'static>>, app: &mut App, key: &str, label: &str, style, view_mode| {
-            spans.push(Span::raw(" "));
-            let start = spans_width(spans);
-            spans.push(Span::styled(key.to_string(), Style::default().fg(t.key_hint)));
-            spans.push(Span::styled(label.to_string(), style));
-            let end = spans_width(spans);
-            app.header_tab_hitboxes.push((start, end, view_mode));
-        };
+    let push_tab = |spans: &mut Vec<Span<'static>>,
+                    app: &mut App,
+                    key: &str,
+                    label: &str,
+                    style,
+                    view_mode| {
+        spans.push(Span::raw(" "));
+        let start = spans_width(spans);
+        spans.push(Span::styled(
+            key.to_string(),
+            Style::default().fg(t.key_hint),
+        ));
+        spans.push(Span::styled(label.to_string(), style));
+        let end = spans_width(spans);
+        app.header_tab_hitboxes.push((start, end, view_mode));
+    };
 
     let pos_style = if matches!(app.view_mode, ViewMode::Positions) {
         Style::default().fg(t.text_primary).bold().underlined()
@@ -456,7 +463,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         } else {
             Style::default().fg(t.text_muted)
         };
-        push_tab(&mut spans, app, "[2]", "Tx", tx_style, ViewMode::Transactions);
+        push_tab(
+            &mut spans,
+            app,
+            "[2]",
+            "Tx",
+            tx_style,
+            ViewMode::Transactions,
+        );
     }
 
     // Markets tab — always visible

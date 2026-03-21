@@ -34,15 +34,15 @@ pub fn run(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else if dry_run {
-            println!(
-                "Dry run for '{}': parsed {}, would insert {}, skipped {}",
-                path, report.parsed, report.inserted, report.skipped
-            );
-        } else {
-            println!(
-                "Migration from '{}': parsed {}, inserted {}, skipped {}",
-                path, report.parsed, report.inserted, report.skipped
-            );
+        println!(
+            "Dry run for '{}': parsed {}, would insert {}, skipped {}",
+            path, report.parsed, report.inserted, report.skipped
+        );
+    } else {
+        println!(
+            "Migration from '{}': parsed {}, inserted {}, skipped {}",
+            path, report.parsed, report.inserted, report.skipped
+        );
     }
     Ok(())
 }
@@ -272,7 +272,10 @@ fn extract_inline_meta(content: &str) -> (InlineMeta, String) {
     for part in content.split_whitespace() {
         if part.starts_with('[') && part.ends_with(']') && part.len() > 2 {
             let raw = &part[1..part.len() - 1];
-            let (k, v) = raw.split_once(':').or_else(|| raw.split_once('=')).unwrap_or(("", ""));
+            let (k, v) = raw
+                .split_once(':')
+                .or_else(|| raw.split_once('='))
+                .unwrap_or(("", ""));
             let key = k.trim().to_lowercase();
             let val = v.trim();
             if val.is_empty() {

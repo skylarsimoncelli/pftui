@@ -130,9 +130,9 @@ pub fn fetch_latest_report(cftc_code: &str) -> Result<CotReport> {
         .json()
         .map_err(|e| anyhow!("Failed to parse CFTC response: {}", e))?;
 
-    let record = resp.first().ok_or_else(|| {
-        anyhow!("No COT data found for contract code {}", cftc_code)
-    })?;
+    let record = resp
+        .first()
+        .ok_or_else(|| anyhow!("No COT data found for contract code {}", cftc_code))?;
 
     parse_record(record)
 }
@@ -157,9 +157,7 @@ pub fn fetch_historical_reports(cftc_code: &str, weeks: usize) -> Result<Vec<Cot
         .json()
         .map_err(|e| anyhow!("Failed to parse CFTC response: {}", e))?;
 
-    resp.iter()
-        .map(parse_record)
-        .collect::<Result<Vec<_>>>()
+    resp.iter().map(parse_record).collect::<Result<Vec<_>>>()
 }
 
 /// Parse a Socrata API record into CotReport.

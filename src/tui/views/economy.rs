@@ -50,25 +50,105 @@ impl std::fmt::Display for EconomyGroup {
 pub fn economy_symbols() -> Vec<EconomyItem> {
     vec![
         // Treasury Yields
-        EconomyItem { symbol: "2Y".into(), name: "2-Year Treasury Yield".into(), group: EconomyGroup::Yields, yahoo_symbol: "^IRX".into() },
-        EconomyItem { symbol: "5Y".into(), name: "5-Year Treasury Yield".into(), group: EconomyGroup::Yields, yahoo_symbol: "^FVX".into() },
-        EconomyItem { symbol: "10Y".into(), name: "10-Year Treasury Yield".into(), group: EconomyGroup::Yields, yahoo_symbol: "^TNX".into() },
-        EconomyItem { symbol: "30Y".into(), name: "30-Year Treasury Yield".into(), group: EconomyGroup::Yields, yahoo_symbol: "^TYX".into() },
+        EconomyItem {
+            symbol: "2Y".into(),
+            name: "2-Year Treasury Yield".into(),
+            group: EconomyGroup::Yields,
+            yahoo_symbol: "^IRX".into(),
+        },
+        EconomyItem {
+            symbol: "5Y".into(),
+            name: "5-Year Treasury Yield".into(),
+            group: EconomyGroup::Yields,
+            yahoo_symbol: "^FVX".into(),
+        },
+        EconomyItem {
+            symbol: "10Y".into(),
+            name: "10-Year Treasury Yield".into(),
+            group: EconomyGroup::Yields,
+            yahoo_symbol: "^TNX".into(),
+        },
+        EconomyItem {
+            symbol: "30Y".into(),
+            name: "30-Year Treasury Yield".into(),
+            group: EconomyGroup::Yields,
+            yahoo_symbol: "^TYX".into(),
+        },
         // Currency
-        EconomyItem { symbol: "DXY".into(), name: "US Dollar Index".into(), group: EconomyGroup::Currency, yahoo_symbol: "DX-Y.NYB".into() },
-        EconomyItem { symbol: "EUR".into(), name: "Euro / USD".into(), group: EconomyGroup::Currency, yahoo_symbol: "EURUSD=X".into() },
-        EconomyItem { symbol: "GBP".into(), name: "Pound / USD".into(), group: EconomyGroup::Currency, yahoo_symbol: "GBPUSD=X".into() },
-        EconomyItem { symbol: "JPY".into(), name: "USD / Yen".into(), group: EconomyGroup::Currency, yahoo_symbol: "JPY=X".into() },
-        EconomyItem { symbol: "CNY".into(), name: "USD / Yuan".into(), group: EconomyGroup::Currency, yahoo_symbol: "CNY=X".into() },
+        EconomyItem {
+            symbol: "DXY".into(),
+            name: "US Dollar Index".into(),
+            group: EconomyGroup::Currency,
+            yahoo_symbol: "DX-Y.NYB".into(),
+        },
+        EconomyItem {
+            symbol: "EUR".into(),
+            name: "Euro / USD".into(),
+            group: EconomyGroup::Currency,
+            yahoo_symbol: "EURUSD=X".into(),
+        },
+        EconomyItem {
+            symbol: "GBP".into(),
+            name: "Pound / USD".into(),
+            group: EconomyGroup::Currency,
+            yahoo_symbol: "GBPUSD=X".into(),
+        },
+        EconomyItem {
+            symbol: "JPY".into(),
+            name: "USD / Yen".into(),
+            group: EconomyGroup::Currency,
+            yahoo_symbol: "JPY=X".into(),
+        },
+        EconomyItem {
+            symbol: "CNY".into(),
+            name: "USD / Yuan".into(),
+            group: EconomyGroup::Currency,
+            yahoo_symbol: "CNY=X".into(),
+        },
         // Commodities
-        EconomyItem { symbol: "Gold".into(), name: "Gold Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "GC=F".into() },
-        EconomyItem { symbol: "Silver".into(), name: "Silver Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "SI=F".into() },
-        EconomyItem { symbol: "Oil".into(), name: "Crude Oil WTI".into(), group: EconomyGroup::Commodities, yahoo_symbol: "CL=F".into() },
-        EconomyItem { symbol: "Brent".into(), name: "Crude Oil Brent".into(), group: EconomyGroup::Commodities, yahoo_symbol: "BZ=F".into() },
-        EconomyItem { symbol: "Copper".into(), name: "Copper Futures".into(), group: EconomyGroup::Commodities, yahoo_symbol: "HG=F".into() },
-        EconomyItem { symbol: "NatGas".into(), name: "Natural Gas".into(), group: EconomyGroup::Commodities, yahoo_symbol: "NG=F".into() },
+        EconomyItem {
+            symbol: "Gold".into(),
+            name: "Gold Futures".into(),
+            group: EconomyGroup::Commodities,
+            yahoo_symbol: "GC=F".into(),
+        },
+        EconomyItem {
+            symbol: "Silver".into(),
+            name: "Silver Futures".into(),
+            group: EconomyGroup::Commodities,
+            yahoo_symbol: "SI=F".into(),
+        },
+        EconomyItem {
+            symbol: "Oil".into(),
+            name: "Crude Oil WTI".into(),
+            group: EconomyGroup::Commodities,
+            yahoo_symbol: "CL=F".into(),
+        },
+        EconomyItem {
+            symbol: "Brent".into(),
+            name: "Crude Oil Brent".into(),
+            group: EconomyGroup::Commodities,
+            yahoo_symbol: "BZ=F".into(),
+        },
+        EconomyItem {
+            symbol: "Copper".into(),
+            name: "Copper Futures".into(),
+            group: EconomyGroup::Commodities,
+            yahoo_symbol: "HG=F".into(),
+        },
+        EconomyItem {
+            symbol: "NatGas".into(),
+            name: "Natural Gas".into(),
+            group: EconomyGroup::Commodities,
+            yahoo_symbol: "NG=F".into(),
+        },
         // Volatility
-        EconomyItem { symbol: "VIX".into(), name: "CBOE Volatility Index".into(), group: EconomyGroup::Volatility, yahoo_symbol: "^VIX".into() },
+        EconomyItem {
+            symbol: "VIX".into(),
+            name: "CBOE Volatility Index".into(),
+            group: EconomyGroup::Volatility,
+            yahoo_symbol: "^VIX".into(),
+        },
     ]
 }
 
@@ -110,8 +190,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let right = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8),  // selected indicator
-            Constraint::Length(9),  // BLS indicators panel
+            Constraint::Length(8), // selected indicator
+            Constraint::Length(9), // BLS indicators panel
             Constraint::Percentage(25),
             Constraint::Length(7),
             Constraint::Length(11), // Calendar panel: 7 days + header + borders
@@ -228,7 +308,10 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(date_str, Style::default().fg(t.text_muted)),
         ]));
     } else {
-        lines.push(Line::from(Span::styled("CPI: ---", Style::default().fg(t.text_muted))));
+        lines.push(Line::from(Span::styled(
+            "CPI: ---",
+            Style::default().fg(t.text_muted),
+        )));
     }
 
     // Unemployment Rate
@@ -249,7 +332,10 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(date_str, Style::default().fg(t.text_muted)),
         ]));
     } else {
-        lines.push(Line::from(Span::styled("Unemp Rate: ---", Style::default().fg(t.text_muted))));
+        lines.push(Line::from(Span::styled(
+            "Unemp Rate: ---",
+            Style::default().fg(t.text_muted),
+        )));
     }
 
     // NFP (Nonfarm Payrolls)
@@ -272,7 +358,10 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(date_str, Style::default().fg(t.text_muted)),
         ]));
     } else {
-        lines.push(Line::from(Span::styled("NFP: ---", Style::default().fg(t.text_muted))));
+        lines.push(Line::from(Span::styled(
+            "NFP: ---",
+            Style::default().fg(t.text_muted),
+        )));
     }
 
     // Average Hourly Earnings / PPI
@@ -288,12 +377,18 @@ fn render_bls_indicators(frame: &mut Frame, area: Rect, app: &App) {
         let earn_str = format!("${:.2}", earn.value);
         let date_str = format!(" ({})", earn.date.format("%b %Y"));
         lines.push(Line::from(vec![
-            Span::styled("Avg Hrly Earnings ", Style::default().fg(t.text_secondary).bold()),
+            Span::styled(
+                "Avg Hrly Earnings ",
+                Style::default().fg(t.text_secondary).bold(),
+            ),
             Span::styled(earn_str, Style::default().fg(t.text_primary)),
             Span::styled(date_str, Style::default().fg(t.text_muted)),
         ]));
     } else {
-        lines.push(Line::from(Span::styled("Avg Hrly Earnings: ---", Style::default().fg(t.text_muted))));
+        lines.push(Line::from(Span::styled(
+            "Avg Hrly Earnings: ---",
+            Style::default().fg(t.text_muted),
+        )));
     }
 
     // Note about data refresh
@@ -349,7 +444,10 @@ fn render_top_strip(frame: &mut Frame, area: Rect, app: &App) {
 
     for (i, (label, yahoo_sym)) in indicators.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled("  │  ", Style::default().fg(t.border_inactive)));
+            spans.push(Span::styled(
+                "  │  ",
+                Style::default().fg(t.border_inactive),
+            ));
         }
         spans.push(Span::styled(
             format!("{label} "),
@@ -366,10 +464,7 @@ fn render_top_strip(frame: &mut Frame, area: Rect, app: &App) {
             Some(p) => format_value(p, group),
             None => "---".into(),
         };
-        spans.push(Span::styled(
-            val_str,
-            Style::default().fg(t.text_primary),
-        ));
+        spans.push(Span::styled(val_str, Style::default().fg(t.text_primary)));
 
         // Day change
         let change = compute_change_pct(app, yahoo_sym);
@@ -520,23 +615,14 @@ fn render_macro_table(frame: &mut Frame, area: Rect, app: &mut App) {
                     format!("{}", item.group),
                     Style::default().fg(group_color),
                 )),
-                Cell::from(Span::styled(
-                    price_str,
-                    Style::default().fg(t.text_primary),
-                )),
-                Cell::from(Span::styled(
-                    change_str,
-                    Style::default().fg(change_color),
-                )),
+                Cell::from(Span::styled(price_str, Style::default().fg(t.text_primary))),
+                Cell::from(Span::styled(change_str, Style::default().fg(change_color))),
                 sparkline_cell,
                 Cell::from(Span::styled(
                     momentum_str,
                     Style::default().fg(momentum_color),
                 )),
-                Cell::from(Span::styled(
-                    arrow,
-                    Style::default().fg(arrow_color),
-                )),
+                Cell::from(Span::styled(arrow, Style::default().fg(arrow_color))),
             ])
             .style(Style::default().bg(row_bg))
             .height(1),
@@ -600,10 +686,7 @@ fn yield_curve_label(state: &YieldCurveState, t: &theme::Theme) -> (String, Colo
             "  Yield Curve: FLAT  2Y-10Y ~0bps".to_string(),
             t.text_accent,
         ),
-        YieldCurveState::Unknown => (
-            "  Yield Curve: ---".to_string(),
-            t.text_muted,
-        ),
+        YieldCurveState::Unknown => ("  Yield Curve: ---".to_string(), t.text_muted),
     }
 }
 
@@ -656,10 +739,7 @@ fn render_yield_curve_chart(frame: &mut Frame, area: Rect, app: &App) {
     if available.len() < 2 {
         let msg = "Waiting for yield data...";
         let msg_line = Line::from(Span::styled(msg, Style::default().fg(t.text_muted)));
-        frame.render_widget(
-            Paragraph::new(msg_line).alignment(Alignment::Center),
-            inner,
-        );
+        frame.render_widget(Paragraph::new(msg_line).alignment(Alignment::Center), inner);
         return;
     }
 
@@ -704,11 +784,7 @@ fn render_yield_curve_chart(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     // Determine Y range with some padding
-    let y_min = curve_values
-        .iter()
-        .cloned()
-        .fold(f64::INFINITY, f64::min)
-        - 0.1;
+    let y_min = curve_values.iter().cloned().fold(f64::INFINITY, f64::min) - 0.1;
     let y_max = curve_values
         .iter()
         .cloned()
@@ -791,10 +867,7 @@ fn render_yield_curve_chart(frame: &mut Frame, area: Rect, app: &App) {
             Some(v) => format!("{label} {v:.2}%"),
             None => format!("{label} ---"),
         };
-        label_spans.push(Span::styled(
-            val_str,
-            Style::default().fg(t.text_secondary),
-        ));
+        label_spans.push(Span::styled(val_str, Style::default().fg(t.text_secondary)));
     }
     frame.render_widget(
         Paragraph::new(Line::from(label_spans)),
@@ -847,8 +920,8 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
         .flatten();
 
     // Fetch 30-day history for sparklines
-    let crypto_history = crate::db::sentiment_cache::get_history_backend(&backend, "crypto", 30)
-        .unwrap_or_default();
+    let crypto_history =
+        crate::db::sentiment_cache::get_history_backend(&backend, "crypto", 30).unwrap_or_default();
     let trad_history = crate::db::sentiment_cache::get_history_backend(&backend, "traditional", 30)
         .unwrap_or_default();
 
@@ -856,10 +929,11 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     // Crypto F&G
     lines.push(Line::from(""));
-    let mut crypto_line = vec![
-        Span::styled("  Crypto F&G: ", Style::default().fg(t.text_secondary)),
-    ];
-    
+    let mut crypto_line = vec![Span::styled(
+        "  Crypto F&G: ",
+        Style::default().fg(t.text_secondary),
+    )];
+
     if let Some(sentiment) = crypto_sentiment {
         let classification_color = sentiment_color(&sentiment.classification, t);
         crypto_line.push(Span::styled(
@@ -870,7 +944,7 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
             sentiment.classification.clone(),
             Style::default().fg(classification_color).italic(),
         ));
-        
+
         // Add sparkline
         if !crypto_history.is_empty() {
             crypto_line.push(Span::styled("  ", Style::default()));
@@ -878,16 +952,20 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
             crypto_line.extend(sparkline);
         }
     } else {
-        crypto_line.push(Span::styled("---", Style::default().fg(t.text_muted).italic()));
+        crypto_line.push(Span::styled(
+            "---",
+            Style::default().fg(t.text_muted).italic(),
+        ));
     }
     lines.push(Line::from(crypto_line));
 
     // Traditional F&G
     lines.push(Line::from(""));
-    let mut trad_line = vec![
-        Span::styled("  TradFi F&G: ", Style::default().fg(t.text_secondary)),
-    ];
-    
+    let mut trad_line = vec![Span::styled(
+        "  TradFi F&G: ",
+        Style::default().fg(t.text_secondary),
+    )];
+
     if let Some(sentiment) = trad_sentiment {
         let classification_color = sentiment_color(&sentiment.classification, t);
         trad_line.push(Span::styled(
@@ -898,7 +976,7 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
             sentiment.classification.clone(),
             Style::default().fg(classification_color).italic(),
         ));
-        
+
         // Add sparkline
         if !trad_history.is_empty() {
             trad_line.push(Span::styled("  ", Style::default()));
@@ -906,7 +984,10 @@ fn render_sentiment_panel(frame: &mut Frame, area: Rect, app: &App) {
             trad_line.extend(sparkline);
         }
     } else {
-        trad_line.push(Span::styled("---", Style::default().fg(t.text_muted).italic()));
+        trad_line.push(Span::styled(
+            "---",
+            Style::default().fg(t.text_muted).italic(),
+        ));
     }
     lines.push(Line::from(trad_line));
 
@@ -965,19 +1046,20 @@ fn render_calendar_panel(frame: &mut Frame, area: Rect, app: &App) {
         };
 
         // Parse date for countdown
-        let countdown = if let Ok(event_date) = chrono::NaiveDate::parse_from_str(&event.date, "%Y-%m-%d") {
-            let now = chrono::Utc::now().date_naive();
-            let days_until = (event_date - now).num_days();
-            if days_until == 0 {
-                "Today".to_string()
-            } else if days_until == 1 {
-                "1d".to_string()
+        let countdown =
+            if let Ok(event_date) = chrono::NaiveDate::parse_from_str(&event.date, "%Y-%m-%d") {
+                let now = chrono::Utc::now().date_naive();
+                let days_until = (event_date - now).num_days();
+                if days_until == 0 {
+                    "Today".to_string()
+                } else if days_until == 1 {
+                    "1d".to_string()
+                } else {
+                    format!("{}d", days_until)
+                }
             } else {
-                format!("{}d", days_until)
-            }
-        } else {
-            "---".to_string()
-        };
+                "---".to_string()
+            };
 
         // Truncate event name to fit width (leave ~15 chars for date/countdown/impact)
         let max_name_len = (inner.width as usize).saturating_sub(20);
@@ -1161,19 +1243,23 @@ fn trend_arrow(momentum: Option<Decimal>, t: &theme::Theme) -> (String, Color) {
 }
 
 /// Build a mini sparkline cell from the last N days of price history.
-fn build_mini_sparkline<'a>(
-    app: &App,
-    yahoo_symbol: &str,
-    theme: &'a theme::Theme,
-) -> Cell<'a> {
+fn build_mini_sparkline<'a>(app: &App, yahoo_symbol: &str, theme: &'a theme::Theme) -> Cell<'a> {
     let history = match app.price_history.get(yahoo_symbol) {
         Some(h) if h.len() >= 2 => h,
-        _ => return Cell::from(Span::styled("  ---  ", Style::default().fg(theme.text_muted))),
+        _ => {
+            return Cell::from(Span::styled(
+                "  ---  ",
+                Style::default().fg(theme.text_muted),
+            ))
+        }
     };
 
     let spans = build_sparkline_spans(theme, history, SPARKLINE_DAYS);
     if spans.is_empty() {
-        Cell::from(Span::styled("  ---  ", Style::default().fg(theme.text_muted)))
+        Cell::from(Span::styled(
+            "  ---  ",
+            Style::default().fg(theme.text_muted),
+        ))
     } else {
         Cell::from(Line::from(spans))
     }
@@ -1326,7 +1412,7 @@ fn build_sentiment_sparkline<'a>(
                 0.5
             };
             let idx = (position * 7.0).round() as usize;
-            
+
             // Color: red (fear) -> yellow (neutral) -> green (greed)
             let color = if *v < 25.0 {
                 theme.loss_red
@@ -1544,10 +1630,22 @@ mod tests {
 
     #[test]
     fn category_for_group_mapping() {
-        assert_eq!(category_for_group(EconomyGroup::Yields), AssetCategory::Fund);
-        assert_eq!(category_for_group(EconomyGroup::Currency), AssetCategory::Forex);
-        assert_eq!(category_for_group(EconomyGroup::Commodities), AssetCategory::Commodity);
-        assert_eq!(category_for_group(EconomyGroup::Volatility), AssetCategory::Equity);
+        assert_eq!(
+            category_for_group(EconomyGroup::Yields),
+            AssetCategory::Fund
+        );
+        assert_eq!(
+            category_for_group(EconomyGroup::Currency),
+            AssetCategory::Forex
+        );
+        assert_eq!(
+            category_for_group(EconomyGroup::Commodities),
+            AssetCategory::Commodity
+        );
+        assert_eq!(
+            category_for_group(EconomyGroup::Volatility),
+            AssetCategory::Equity
+        );
     }
 
     // --- Yield curve tests ---

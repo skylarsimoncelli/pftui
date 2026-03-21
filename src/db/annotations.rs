@@ -36,7 +36,10 @@ pub fn get_annotation(conn: &Connection, symbol: &str) -> Result<Option<Annotati
     Ok(item)
 }
 
-pub fn get_annotation_backend(backend: &BackendConnection, symbol: &str) -> Result<Option<Annotation>> {
+pub fn get_annotation_backend(
+    backend: &BackendConnection,
+    symbol: &str,
+) -> Result<Option<Annotation>> {
     query::dispatch(
         backend,
         |conn| get_annotation(conn, symbol),
@@ -128,7 +131,14 @@ fn ensure_tables_postgres(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-type AnnRow = (String, String, Option<String>, Option<String>, Option<String>, String);
+type AnnRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
 
 fn to_annotation(r: AnnRow) -> Annotation {
     Annotation {
@@ -143,7 +153,7 @@ fn to_annotation(r: AnnRow) -> Annotation {
 
 fn get_annotation_postgres(pool: &PgPool, symbol: &str) -> Result<Option<Annotation>> {
     ensure_tables_postgres(pool)?;
-        let row: Option<AnnRow> = crate::db::pg_runtime::block_on(async {
+    let row: Option<AnnRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, thesis, invalidation, review_date, target_price, updated_at::text
              FROM annotations
@@ -158,7 +168,7 @@ fn get_annotation_postgres(pool: &PgPool, symbol: &str) -> Result<Option<Annotat
 
 fn list_annotations_postgres(pool: &PgPool) -> Result<Vec<Annotation>> {
     ensure_tables_postgres(pool)?;
-        let rows: Vec<AnnRow> = crate::db::pg_runtime::block_on(async {
+    let rows: Vec<AnnRow> = crate::db::pg_runtime::block_on(async {
         sqlx::query_as(
             "SELECT symbol, thesis, invalidation, review_date, target_price, updated_at::text
              FROM annotations
@@ -197,7 +207,7 @@ fn upsert_annotation_postgres(pool: &PgPool, ann: &Annotation) -> Result<()> {
 
 fn remove_annotation_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_tables_postgres(pool)?;
-        let result = crate::db::pg_runtime::block_on(async {
+    let result = crate::db::pg_runtime::block_on(async {
         sqlx::query("DELETE FROM annotations WHERE symbol = $1")
             .bind(symbol)
             .execute(pool)

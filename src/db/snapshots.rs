@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
@@ -114,10 +114,7 @@ pub fn upsert_position_snapshot_backend(
 
 /// Get portfolio snapshots for the last N days, ordered by date ascending.
 #[allow(dead_code)] // Infrastructure for F10.2+ (performance CLI, TUI panel)
-pub fn get_portfolio_snapshots(
-    conn: &Connection,
-    limit: usize,
-) -> Result<Vec<PortfolioSnapshot>> {
+pub fn get_portfolio_snapshots(conn: &Connection, limit: usize) -> Result<Vec<PortfolioSnapshot>> {
     let mut stmt = conn.prepare(
         "SELECT date, total_value, cash_value, invested_value, snapshot_at
          FROM portfolio_snapshots
@@ -127,18 +124,9 @@ pub fn get_portfolio_snapshots(
     let rows = stmt.query_map(params![limit as i64], |row| {
         Ok(PortfolioSnapshot {
             date: row.get(0)?,
-            total_value: row
-                .get::<_, String>(1)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            cash_value: row
-                .get::<_, String>(2)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            invested_value: row
-                .get::<_, String>(3)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            total_value: row.get::<_, String>(1)?.parse().unwrap_or(Decimal::ZERO),
+            cash_value: row.get::<_, String>(2)?.parse().unwrap_or(Decimal::ZERO),
+            invested_value: row.get::<_, String>(3)?.parse().unwrap_or(Decimal::ZERO),
             snapshot_at: row.get(4)?,
         })
     })?;
@@ -163,18 +151,9 @@ pub fn get_position_snapshots_for_date(
         Ok(PositionSnapshot {
             date: row.get(0)?,
             symbol: row.get(1)?,
-            quantity: row
-                .get::<_, String>(2)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            price: row
-                .get::<_, String>(3)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            value: row
-                .get::<_, String>(4)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            quantity: row.get::<_, String>(2)?.parse().unwrap_or(Decimal::ZERO),
+            price: row.get::<_, String>(3)?.parse().unwrap_or(Decimal::ZERO),
+            value: row.get::<_, String>(4)?.parse().unwrap_or(Decimal::ZERO),
         })
     })?;
     Ok(rows.filter_map(|r| r.ok()).collect())
@@ -183,9 +162,8 @@ pub fn get_position_snapshots_for_date(
 /// Get the most recent snapshot date, if any.
 #[allow(dead_code)]
 pub fn latest_snapshot_date(conn: &Connection) -> Result<Option<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT date FROM portfolio_snapshots ORDER BY date DESC LIMIT 1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT date FROM portfolio_snapshots ORDER BY date DESC LIMIT 1")?;
     let mut rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     match rows.next() {
         Some(row) => Ok(Some(row?)),
@@ -208,18 +186,9 @@ pub fn get_portfolio_snapshots_since(
     let rows = stmt.query_map(params![since_date], |row| {
         Ok(PortfolioSnapshot {
             date: row.get(0)?,
-            total_value: row
-                .get::<_, String>(1)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            cash_value: row
-                .get::<_, String>(2)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            invested_value: row
-                .get::<_, String>(3)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            total_value: row.get::<_, String>(1)?.parse().unwrap_or(Decimal::ZERO),
+            cash_value: row.get::<_, String>(2)?.parse().unwrap_or(Decimal::ZERO),
+            invested_value: row.get::<_, String>(3)?.parse().unwrap_or(Decimal::ZERO),
             snapshot_at: row.get(4)?,
         })
     })?;
@@ -236,25 +205,18 @@ pub fn get_all_portfolio_snapshots(conn: &Connection) -> Result<Vec<PortfolioSna
     let rows = stmt.query_map([], |row| {
         Ok(PortfolioSnapshot {
             date: row.get(0)?,
-            total_value: row
-                .get::<_, String>(1)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            cash_value: row
-                .get::<_, String>(2)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
-            invested_value: row
-                .get::<_, String>(3)?
-                .parse()
-                .unwrap_or(Decimal::ZERO),
+            total_value: row.get::<_, String>(1)?.parse().unwrap_or(Decimal::ZERO),
+            cash_value: row.get::<_, String>(2)?.parse().unwrap_or(Decimal::ZERO),
+            invested_value: row.get::<_, String>(3)?.parse().unwrap_or(Decimal::ZERO),
             snapshot_at: row.get(4)?,
         })
     })?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
-pub fn get_all_portfolio_snapshots_backend(backend: &BackendConnection) -> Result<Vec<PortfolioSnapshot>> {
+pub fn get_all_portfolio_snapshots_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<PortfolioSnapshot>> {
     query::dispatch(
         backend,
         get_all_portfolio_snapshots,
@@ -347,11 +309,8 @@ fn upsert_position_snapshot_postgres(
 /// Count total portfolio snapshots.
 #[allow(dead_code)]
 pub fn snapshot_count(conn: &Connection) -> Result<i64> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM portfolio_snapshots",
-        [],
-        |r| r.get(0),
-    )?;
+    let count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM portfolio_snapshots", [], |r| r.get(0))?;
     Ok(count)
 }
 
@@ -431,8 +390,15 @@ mod tests {
         let conn = open_in_memory();
         upsert_position_snapshot(&conn, "2026-03-04", "AAPL", dec!(10), dec!(195), dec!(1950))
             .unwrap();
-        upsert_position_snapshot(&conn, "2026-03-04", "BTC", dec!(1.5), dec!(84000), dec!(126000))
-            .unwrap();
+        upsert_position_snapshot(
+            &conn,
+            "2026-03-04",
+            "BTC",
+            dec!(1.5),
+            dec!(84000),
+            dec!(126000),
+        )
+        .unwrap();
 
         let snaps = get_position_snapshots_for_date(&conn, "2026-03-04").unwrap();
         assert_eq!(snaps.len(), 2);
@@ -466,10 +432,7 @@ mod tests {
         upsert_portfolio_snapshot(&conn, "2026-03-04", dec!(102000), dec!(20000), dec!(82000))
             .unwrap();
 
-        assert_eq!(
-            latest_snapshot_date(&conn).unwrap().unwrap(),
-            "2026-03-04"
-        );
+        assert_eq!(latest_snapshot_date(&conn).unwrap().unwrap(), "2026-03-04");
     }
 
     #[test]

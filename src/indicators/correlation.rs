@@ -151,7 +151,7 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let b = vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]; // b = 2*a
         let corr = compute_rolling_correlation(&a, &b, 5);
-        
+
         assert!(corr[0..5].iter().all(|c| c.is_none()));
         for c in corr.iter().skip(5).flatten() {
             assert!((c - 1.0).abs() < 0.01, "expected ~1.0, got {}", c);
@@ -165,7 +165,7 @@ mod tests {
         let a = vec![1.0, 2.0, 1.5, 2.5, 2.0, 3.0, 2.5, 3.5];
         let b = vec![8.0, 7.0, 7.5, 6.5, 7.0, 6.0, 6.5, 5.5];
         let corr = compute_rolling_correlation(&a, &b, 5);
-        
+
         // With alternating up/down movements, we should see negative correlation
         for c in corr.iter().skip(5).flatten() {
             assert!(c < &0.0, "expected negative correlation, got {}", c);
@@ -178,9 +178,12 @@ mod tests {
         let a = vec![5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0];
         let b = vec![1.0, 2.0, 1.5, 2.5, 1.0, 3.0, 1.0, 2.0];
         let corr = compute_rolling_correlation(&a, &b, 5);
-        
+
         // All returns for `a` are 0, so correlation is undefined (should be None)
-        assert!(corr.iter().skip(5).all(|c| c.is_none()), "expected None for zero-variance series");
+        assert!(
+            corr.iter().skip(5).all(|c| c.is_none()),
+            "expected None for zero-variance series"
+        );
     }
 
     #[test]
@@ -215,13 +218,13 @@ mod tests {
         // Last 10 values: both rise steadily together (correlated)
         let mut a = vec![];
         let mut b = vec![];
-        
+
         // First half: a rises, b alternates
         for i in 0..12 {
             a.push(i as f64);
             b.push(if i % 2 == 0 { 10.0 } else { 11.0 });
         }
-        
+
         // Second half: both rise together
         for i in 12..24 {
             a.push(i as f64);
@@ -241,9 +244,12 @@ mod tests {
         let b = vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0];
 
         let breaks = detect_correlation_breaks(&a, &b, 3, 5, 0.3);
-        
+
         // Perfect correlation throughout — no breaks
-        assert!(breaks.iter().all(|b| b.is_none()), "expected no breaks in perfectly correlated series");
+        assert!(
+            breaks.iter().all(|b| b.is_none()),
+            "expected no breaks in perfectly correlated series"
+        );
     }
 
     #[test]

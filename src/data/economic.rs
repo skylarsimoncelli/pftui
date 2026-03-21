@@ -95,17 +95,12 @@ pub fn fred_to_indicator(series_id: &str) -> Option<&'static str> {
 /// 3. Returns the winning readings along with any discrepancies found
 ///
 /// `fred_readings` should be pre-mapped from FRED series IDs to indicator names.
-pub fn reconcile(
-    readings: Vec<EconomicReading>,
-) -> (Vec<EconomicReading>, Vec<SourceDiscrepancy>) {
+pub fn reconcile(readings: Vec<EconomicReading>) -> (Vec<EconomicReading>, Vec<SourceDiscrepancy>) {
     use std::collections::HashMap;
 
     let mut by_indicator: HashMap<String, Vec<EconomicReading>> = HashMap::new();
     for r in readings {
-        by_indicator
-            .entry(r.indicator.clone())
-            .or_default()
-            .push(r);
+        by_indicator.entry(r.indicator.clone()).or_default().push(r);
     }
 
     let mut winners = Vec::new();
@@ -151,9 +146,15 @@ pub fn reconcile(
 
 const ECONOMIC_QUERIES: &[(&str, &str)] = &[
     ("cpi", "latest US CPI inflation rate"),
-    ("unemployment_rate", "latest US unemployment rate nonfarm payrolls"),
+    (
+        "unemployment_rate",
+        "latest US unemployment rate nonfarm payrolls",
+    ),
     ("nfp", "latest US unemployment rate nonfarm payrolls"),
-    ("pmi_manufacturing", "latest ISM manufacturing PMI services PMI"),
+    (
+        "pmi_manufacturing",
+        "latest ISM manufacturing PMI services PMI",
+    ),
     ("pmi_services", "latest ISM manufacturing PMI services PMI"),
     ("fed_funds_rate", "latest FOMC federal funds rate"),
     ("initial_jobless_claims", "latest US initial jobless claims"),
@@ -296,7 +297,9 @@ fn extract_decimal_like(text: &str) -> Option<Decimal> {
 
 fn extract_integer_like(text: &str) -> Option<Decimal> {
     for token in text.split_whitespace() {
-        let t = token.trim_matches(|c: char| ".;:()[]{}".contains(c)).replace(',', "");
+        let t = token
+            .trim_matches(|c: char| ".;:()[]{}".contains(c))
+            .replace(',', "");
         if let Ok(v) = Decimal::from_str(&t) {
             if v > Decimal::ZERO {
                 return Some(v);
@@ -324,7 +327,10 @@ mod tests {
 
     #[test]
     fn parses_percent_like() {
-        assert_eq!(extract_percent_like("CPI rose 3.2% year-over-year"), Some(dec!(3.2)));
+        assert_eq!(
+            extract_percent_like("CPI rose 3.2% year-over-year"),
+            Some(dec!(3.2))
+        );
     }
 
     #[test]
@@ -387,7 +393,11 @@ mod tests {
 
     #[test]
     fn extract_value_filters_implausible() {
-        assert!(extract_value("pmi_manufacturing", "ISM PMI fell in 2025 outlook uncertain").is_none());
+        assert!(extract_value(
+            "pmi_manufacturing",
+            "ISM PMI fell in 2025 outlook uncertain"
+        )
+        .is_none());
         assert_eq!(
             extract_value("cpi", "CPI rose 3.2% year-over-year"),
             Some(dec!(3.2))
@@ -520,4 +530,3 @@ mod tests {
         assert_eq!(fred_to_indicator("BOGUS"), None);
     }
 }
-

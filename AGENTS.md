@@ -137,6 +137,12 @@ Cross-timeframe signal detection (alignment/divergence/transition) computed duri
 | `pftui analytics trends dashboard --json` | Show active high-timeframe trends with direction/conviction |
 | `pftui analytics trends impact add --trend \"NAME\" --symbol SYM --impact bullish|bearish|neutral` | Map a trend's asset-level impact |
 | `pftui analytics summary --json` | Unified 4-layer analytics snapshot (low/medium/high/macro + top signal) |
+| `pftui analytics situation --json` | Canonical Situation Room payload: headline, summary stats, watch-now priorities, portfolio impacts, risk matrix |
+| `pftui analytics deltas --json [--since last-refresh|close|24h|7d]` | Server-owned change radar showing what changed across key monitoring windows |
+| `pftui analytics catalysts --json [--window today|tomorrow|week]` | Ranked upcoming catalyst feed with countdowns, significance, and portfolio/scenario linkage |
+| `pftui analytics impact --json` | Rank current holdings/watchlist by exposure to active signals, scenarios, trends, and catalysts |
+| `pftui analytics opportunities --json` | Rank high-alignment non-held opportunities from the same analytics evidence chain |
+| `pftui analytics synthesis --json` | Cross-timeframe synthesis: alignment, divergence, constraint flows, unresolved tensions, watch-tomorrow |
 | `pftui analytics alignment --symbol SYM --json` | Per-asset cross-timeframe alignment matrix |
 | `pftui analytics divergence --json` | Cross-layer disagreement table for conflicting signals |
 | `pftui analytics digest --from low-agent --json` | Role-aware summary payload for agent handoffs |

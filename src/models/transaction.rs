@@ -28,7 +28,10 @@ impl std::str::FromStr for TxType {
         match s.to_lowercase().as_str() {
             "buy" => Ok(TxType::Buy),
             "sell" => Ok(TxType::Sell),
-            _ => Err(anyhow::anyhow!("Unknown tx type: {} (expected buy or sell)", s)),
+            _ => Err(anyhow::anyhow!(
+                "Unknown tx type: {} (expected buy or sell)",
+                s
+            )),
         }
     }
 }

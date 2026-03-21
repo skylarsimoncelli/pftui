@@ -109,7 +109,10 @@ pub fn run_add(
         );
     } else {
         println!("Broker {} configured (id: {})", broker, id);
-        println!("Run `pftui portfolio broker sync {}` to import positions.", broker);
+        println!(
+            "Run `pftui portfolio broker sync {}` to import positions.",
+            broker
+        );
     }
     Ok(())
 }
@@ -143,27 +146,62 @@ pub fn run_list(backend: &BackendConnection, json_out: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<14} {:<12} {:<12} {:<22} CREDENTIAL", "BROKER", "STATUS", "LABEL", "LAST SYNC");
+    println!(
+        "{:<14} {:<12} {:<12} {:<22} CREDENTIAL",
+        "BROKER", "STATUS", "LABEL", "LAST SYNC"
+    );
     println!("{}", "-".repeat(76));
     for c in &connections {
         let cred_status = match c.broker_name.as_str() {
             "trading212" => {
-                if config.brokers.trading212_api_key.is_some() { "configured" } else { "missing" }
+                if config.brokers.trading212_api_key.is_some() {
+                    "configured"
+                } else {
+                    "missing"
+                }
             }
             "ibkr" => {
-                if config.brokers.ibkr_account_id.is_some() { "configured" } else { "auto-detect" }
+                if config.brokers.ibkr_account_id.is_some() {
+                    "configured"
+                } else {
+                    "auto-detect"
+                }
             }
             "binance" => {
-                if config.brokers.binance_api_key.is_some() && config.brokers.binance_secret_key.is_some() { "configured" } else { "missing" }
+                if config.brokers.binance_api_key.is_some()
+                    && config.brokers.binance_secret_key.is_some()
+                {
+                    "configured"
+                } else {
+                    "missing"
+                }
             }
             "kraken" => {
-                if config.brokers.kraken_api_key.is_some() && config.brokers.kraken_private_key.is_some() { "configured" } else { "missing" }
+                if config.brokers.kraken_api_key.is_some()
+                    && config.brokers.kraken_private_key.is_some()
+                {
+                    "configured"
+                } else {
+                    "missing"
+                }
             }
             "coinbase" => {
-                if config.brokers.coinbase_api_key.is_some() && config.brokers.coinbase_api_secret.is_some() { "configured" } else { "missing" }
+                if config.brokers.coinbase_api_key.is_some()
+                    && config.brokers.coinbase_api_secret.is_some()
+                {
+                    "configured"
+                } else {
+                    "missing"
+                }
             }
             "crypto-com" => {
-                if config.brokers.crypto_com_api_key.is_some() && config.brokers.crypto_com_secret_key.is_some() { "configured" } else { "missing" }
+                if config.brokers.crypto_com_api_key.is_some()
+                    && config.brokers.crypto_com_secret_key.is_some()
+                {
+                    "configured"
+                } else {
+                    "missing"
+                }
             }
             _ => "n/a",
         };
@@ -246,7 +284,10 @@ pub fn run_sync(
         let connections = broker_connections::list_broker_connections_backend(backend)?;
         if connections.is_empty() {
             if json_out {
-                println!("{}", json!({"status": "error", "message": "No brokers configured"}));
+                println!(
+                    "{}",
+                    json!({"status": "error", "message": "No brokers configured"})
+                );
             } else {
                 println!("No brokers configured. Add one first with: pftui portfolio broker add <BROKER>");
             }
@@ -266,7 +307,10 @@ pub fn run_sync(
         // Ensure connection exists
         let conn = broker_connections::get_broker_connection_backend(backend, &broker_name)?;
         if conn.is_none() {
-            let msg = format!("Broker {} is not configured. Run: pftui portfolio broker add {}", broker_name, broker_name);
+            let msg = format!(
+                "Broker {} is not configured. Run: pftui portfolio broker add {}",
+                broker_name, broker_name
+            );
             if json_out {
                 all_results.push(json!({"broker": broker_name, "status": "error", "message": msg}));
             } else {
@@ -280,9 +324,15 @@ pub fn run_sync(
             Ok(p) => p,
             Err(e) => {
                 let msg = format!("{}", e);
-                broker_connections::update_sync_status_backend(backend, &broker_name, "error", Some(&msg))?;
+                broker_connections::update_sync_status_backend(
+                    backend,
+                    &broker_name,
+                    "error",
+                    Some(&msg),
+                )?;
                 if json_out {
-                    all_results.push(json!({"broker": broker_name, "status": "error", "message": msg}));
+                    all_results
+                        .push(json!({"broker": broker_name, "status": "error", "message": msg}));
                 } else {
                     println!("[{}] Error: {}", broker_name, msg);
                 }
@@ -293,7 +343,12 @@ pub fn run_sync(
         // Check availability
         if let Err(e) = provider.is_available() {
             let msg = format!("Broker not reachable: {}", e);
-            broker_connections::update_sync_status_backend(backend, &broker_name, "error", Some(&msg))?;
+            broker_connections::update_sync_status_backend(
+                backend,
+                &broker_name,
+                "error",
+                Some(&msg),
+            )?;
             if json_out {
                 all_results.push(json!({"broker": broker_name, "status": "error", "message": msg}));
             } else {
@@ -307,9 +362,15 @@ pub fn run_sync(
             Ok(p) => p,
             Err(e) => {
                 let msg = format!("Failed to fetch positions: {}", e);
-                broker_connections::update_sync_status_backend(backend, &broker_name, "error", Some(&msg))?;
+                broker_connections::update_sync_status_backend(
+                    backend,
+                    &broker_name,
+                    "error",
+                    Some(&msg),
+                )?;
                 if json_out {
-                    all_results.push(json!({"broker": broker_name, "status": "error", "message": msg}));
+                    all_results
+                        .push(json!({"broker": broker_name, "status": "error", "message": msg}));
                 } else {
                     println!("[{}] {}", broker_name, msg);
                 }
@@ -341,7 +402,11 @@ pub fn run_sync(
                     "count": positions.len(),
                 }));
             } else {
-                println!("[{}] Dry run — {} positions would be synced:", broker_name, positions.len());
+                println!(
+                    "[{}] Dry run — {} positions would be synced:",
+                    broker_name,
+                    positions.len()
+                );
                 for p in &positions {
                     println!(
                         "  {} {} @ {} {}",
@@ -445,13 +510,23 @@ mod tests {
 
     #[test]
     fn broker_tag_format() {
-        assert_eq!(broker::broker_tag(BrokerKind::Trading212), "[broker:trading212]");
+        assert_eq!(
+            broker::broker_tag(BrokerKind::Trading212),
+            "[broker:trading212]"
+        );
         assert_eq!(broker::broker_tag(BrokerKind::Ibkr), "[broker:ibkr]");
     }
 
     #[test]
     fn broker_kind_display_roundtrip() {
-        for kind in [BrokerKind::Trading212, BrokerKind::Ibkr, BrokerKind::Binance, BrokerKind::Kraken, BrokerKind::Coinbase, BrokerKind::CryptoCom] {
+        for kind in [
+            BrokerKind::Trading212,
+            BrokerKind::Ibkr,
+            BrokerKind::Binance,
+            BrokerKind::Kraken,
+            BrokerKind::Coinbase,
+            BrokerKind::CryptoCom,
+        ] {
             let s = kind.to_string();
             let parsed: BrokerKind = s.parse().unwrap();
             assert_eq!(parsed, kind);
@@ -490,11 +565,9 @@ mod tests {
         insert_transaction_backend(&backend, &tx2).unwrap();
 
         // Delete broker-tagged transactions
-        let deleted = broker_connections::delete_broker_transactions_backend(
-            &backend,
-            "[broker:trading212]",
-        )
-        .unwrap();
+        let deleted =
+            broker_connections::delete_broker_transactions_backend(&backend, "[broker:trading212]")
+                .unwrap();
         assert_eq!(deleted, 1);
     }
 

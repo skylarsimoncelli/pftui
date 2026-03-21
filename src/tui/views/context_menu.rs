@@ -48,10 +48,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         let label = action.label();
         let is_selected = i == menu.selected;
         let style = if is_selected {
-            Style::default()
-                .fg(t.surface_0)
-                .bg(t.text_accent)
-                .bold()
+            Style::default().fg(t.surface_0).bg(t.text_accent).bold()
         } else {
             Style::default().fg(t.text_primary).bg(t.surface_2)
         };

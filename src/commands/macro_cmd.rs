@@ -11,8 +11,8 @@ use rust_decimal_macros::dec;
 
 use crate::config::Config;
 use crate::data::fred;
-use crate::db::economic_cache;
 use crate::db::backend::BackendConnection;
+use crate::db::economic_cache;
 use crate::db::price_cache::{get_all_cached_prices_backend, upsert_price_backend};
 use crate::db::price_history::{get_history_backend, upsert_history_backend};
 use crate::indicators::{compute_macd, compute_rsi, compute_sma};
@@ -166,7 +166,12 @@ fn backfill_symbol_history(
 }
 
 /// Run the macro dashboard command.
-pub fn run(backend: &BackendConnection, _config: &Config, json: bool, cached_only: bool) -> Result<()> {
+pub fn run(
+    backend: &BackendConnection,
+    _config: &Config,
+    json: bool,
+    cached_only: bool,
+) -> Result<()> {
     // Build price map from cached data (yahoo symbol -> price)
     let all_prices = get_all_cached_prices_backend(backend)?;
     let mut price_map: HashMap<String, Decimal> = all_prices
@@ -185,10 +190,11 @@ pub fn run(backend: &BackendConnection, _config: &Config, json: bool, cached_onl
     backfill_symbol_history(backend, "BZ=F", 50, 180, cached_only)?;
 
     // Build FRED data map (series_id -> latest observation)
-    let fred_data: HashMap<String, (Decimal, String)> = economic_cache::get_all_latest_backend(backend)?
-        .into_iter()
-        .map(|obs| (obs.series_id.clone(), (obs.value, obs.date)))
-        .collect();
+    let fred_data: HashMap<String, (Decimal, String)> =
+        economic_cache::get_all_latest_backend(backend)?
+            .into_iter()
+            .map(|obs| (obs.series_id.clone(), (obs.value, obs.date)))
+            .collect();
 
     if json {
         print_json(&price_map, &fred_data, backend)?;
@@ -213,7 +219,10 @@ fn print_json(
     for (key, symbol, unit) in MARKET_INDICATORS {
         if let Some(price) = prices.get(*symbol) {
             let mut entry = Map::new();
-            entry.insert("value".into(), json!(price.to_string().parse::<f64>().unwrap_or(0.0)));
+            entry.insert(
+                "value".into(),
+                json!(price.to_string().parse::<f64>().unwrap_or(0.0)),
+            );
             entry.insert("unit".into(), json!(unit));
 
             // Add technical indicators
@@ -254,7 +263,10 @@ fn print_json(
     for (key, series_id) in fred_indicators {
         if let Some((value, date)) = fred.get(*series_id) {
             let mut entry = Map::new();
-            entry.insert("value".into(), json!(value.to_string().parse::<f64>().unwrap_or(0.0)));
+            entry.insert(
+                "value".into(),
+                json!(value.to_string().parse::<f64>().unwrap_or(0.0)),
+            );
             entry.insert("date".into(), json!(date));
             if let Some(meta) = fred::series_by_id(series_id) {
                 entry.insert("unit".into(), json!(meta.unit));
@@ -270,9 +282,7 @@ fn print_json(
     // Gold/silver ratio
     if let (Some(gold), Some(silver)) = (prices.get("GC=F"), prices.get("SI=F")) {
         if *silver > dec!(0) {
-            let ratio = gold
-                .checked_div(*silver)
-                .unwrap_or(Decimal::ZERO);
+            let ratio = gold.checked_div(*silver).unwrap_or(Decimal::ZERO);
             derived.insert("gold_silver_ratio".into(), json!({
                 "value": ratio.round_dp(1).to_string().parse::<f64>().unwrap_or(0.0),
                 "context": if ratio > dec!(80) { "gold_strong" } else if ratio < dec!(60) { "silver_strong" } else { "normal" }
@@ -294,10 +304,7 @@ fn print_json(
     // Copper/gold ratio (scaled ×1000)
     if let (Some(copper), Some(gold)) = (prices.get("HG=F"), prices.get("GC=F")) {
         if *gold > dec!(0) {
-            let ratio = copper
-                .checked_div(*gold)
-                .unwrap_or(Decimal::ZERO)
-                * dec!(1000);
+            let ratio = copper.checked_div(*gold).unwrap_or(Decimal::ZERO) * dec!(1000);
             derived.insert("copper_gold_ratio".into(), json!({
                 "value": ratio.round_dp(2).to_string().parse::<f64>().unwrap_or(0.0),
                 "context": if ratio > dec!(2) { "growth" } else if ratio < dec!(1.2) { "caution" } else { "steady" }
@@ -334,10 +341,13 @@ fn print_json(
         } else {
             "converged"
         };
-        derived.insert("wti_brent_spread".into(), json!({
-            "value": spread.round_dp(2).to_string().parse::<f64>().unwrap_or(0.0),
-            "context": context
-        }));
+        derived.insert(
+            "wti_brent_spread".into(),
+            json!({
+                "value": spread.round_dp(2).to_string().parse::<f64>().unwrap_or(0.0),
+                "context": context
+            }),
+        );
     }
 
     if !derived.is_empty() {
@@ -382,9 +392,7 @@ fn print_terminal(
         let spread_bps = (val * dec!(100)).round_dp(0);
         println!(
             "  {:<22} {:>10}bps  (FRED, {})",
-            "10Y-2Y Spread",
-            spread_bps,
-            date
+            "10Y-2Y Spread", spread_bps, date
         );
     }
     if let Some((val, date)) = fred.get("DGS10") {
@@ -497,10 +505,7 @@ fn print_terminal(
 }
 
 /// Compact key-indicators strip at the top.
-fn print_key_strip(
-    prices: &HashMap<String, Decimal>,
-    fred: &HashMap<String, (Decimal, String)>,
-) {
+fn print_key_strip(prices: &HashMap<String, Decimal>, fred: &HashMap<String, (Decimal, String)>) {
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(p) = prices.get("DX-Y.NYB") {
@@ -548,7 +553,7 @@ fn print_indicator_row(
             let prev = hist[hist.len() - 2].close;
             if prev != Decimal::ZERO {
                 let change_pct = ((*price - prev) / prev * dec!(100)).round_dp(2);
-                
+
                 // Sanity check: reject obviously corrupt data (>100% daily moves)
                 if change_pct.abs() > dec!(100) {
                     String::new()
@@ -658,10 +663,7 @@ fn print_derived_metrics(
     // Copper/Gold ratio (×1000)
     if let (Some(copper), Some(gold)) = (prices.get("HG=F"), prices.get("GC=F")) {
         if *gold > dec!(0) {
-            let ratio = copper
-                .checked_div(*gold)
-                .unwrap_or(Decimal::ZERO)
-                * dec!(1000);
+            let ratio = copper.checked_div(*gold).unwrap_or(Decimal::ZERO) * dec!(1000);
             let context = if ratio > dec!(2) {
                 "Growth"
             } else if ratio < dec!(1.2) {
@@ -691,9 +693,7 @@ fn print_derived_metrics(
         };
         println!(
             "  {:<22} {:>8}bps    Yield Curve: {}",
-            "10Y-2Y Spread",
-            spread_bps,
-            status
+            "10Y-2Y Spread", spread_bps, status
         );
     }
 
@@ -773,12 +773,12 @@ mod tests {
                     currency: "USD".to_string(),
                     source: "test".to_string(),
                     fetched_at: "2026-03-04T00:00:00Z".to_string(),
-                
-            pre_market_price: None,
-            post_market_price: None,
-            post_market_change_percent: None,
+
+                    pre_market_price: None,
+                    post_market_price: None,
+                    post_market_change_percent: None,
                     previous_close: None,
-        },
+                },
             )
             .unwrap();
         }
