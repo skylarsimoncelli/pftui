@@ -70,6 +70,7 @@ body {
 
 /* ===== HERO SECTION ===== */
 .hero {
+    min-height: 100vh;
     display: flex;
     align-items: center;
     padding: var(--spacing-xl) 0;
@@ -283,7 +284,7 @@ body {
     padding: var(--spacing-md);
     font-family: var(--font-mono);
     font-size: clamp(0.66rem, 0.78vw, 0.95rem);
-    height: auto;
+    height: 260px;
     background: var(--bg-primary);
     text-align: left;
     line-height: 1.45;
