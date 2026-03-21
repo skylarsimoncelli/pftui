@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — Fix: mobile API server tokio runtime panic (#112)
+
+- What: Fixed "Cannot start a runtime from within a runtime" panic in `pftui system mobile serve`. The mobile server now receives the pre-opened `BackendConnection` from `main.rs` instead of opening its own, and uses the existing `pg_runtime` instead of creating a new tokio runtime. Added `BackendConnection::clone_for_server()` for cheap PgPool cloning, and `MobileAppState` with `Mutex<BackendConnection>` for thread-safe handler sharing.
+- Why: Every request handler called DB functions that use `pg_runtime::block_on()`, but the server was running inside a separate `tokio::Runtime::new().block_on()` — nesting runtimes causes a panic.
+- Files: `src/db/backend.rs`, `src/main.rs`, `src/mobile/server.rs`
+- Tests: `cargo test` — 1505 pass; `cargo clippy --all-targets -- -D warnings` clean
+
 ### 2026-03-21 — Add 'alert' as valid journal notes section (#107)
 
 - What: Added `alert` to the list of valid sections for `journal notes add --section`. Agents investigating alerts can now log findings under a dedicated `alert` section rather than falling back to `general`.
