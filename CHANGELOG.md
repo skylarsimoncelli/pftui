@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: turn the mobile home screen into a situation room
+
+- What: reoriented the first mobile tab around a Situation Room concept instead of a generic home screen. Added ranked “Watch Now” insights, portfolio-impact summaries, a situation-led hero, and persistent customization for high-density module visibility. Updated the primary tab label and top-of-app flow so the mobile client feels more like an intelligence console than a generic dashboard shell.
+- Why: the app already exposed strong raw analytics, but it still needed explicit synthesis to align with the product vision. This pass pushes the phone experience toward “what matters now” and “why it matters to this portfolio” rather than forcing the user to infer that from separate cards.
+- Files: `mobile/app/PftuiMobile/ContentView.swift`, `CHANGELOG.md`
+- Tests: `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-20 — feat: add dense mobile command center + system management surfaces
 
 - What: pushed the iOS client further toward a true remote control surface for pftui. Added a dedicated System tab with connection state, runtime metadata, backend/database health, daemon cadence, source freshness, and per-screen density controls. Expanded the mobile server payload to expose pftui version, backend/runtime mode, database health checks, sync timestamps, and daemon execution details. Reworked the Home and Analytics tabs into denser command-center views with collapsible sections, layout profiles, portfolio concentration, timeframe stack, and faster top-level scan paths.

@@ -116,7 +116,7 @@ struct DashboardShellView: View {
                 HomeView()
             }
             .tabItem {
-                Label("Home", systemImage: "waveform.path.ecg")
+                Label("Situation", systemImage: "scope")
             }
             .tag(0)
 
@@ -152,12 +152,14 @@ struct HomeView: View {
     @EnvironmentObject private var store: MobileStore
     @AppStorage("pftui.mobile.maskValues") private var maskValues = false
     @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
-    @State private var showTimeframes = true
-    @State private var showConcentration = true
-    @State private var showPulse = true
-    @State private var showWatchlist = true
-    @State private var showSystem = false
-    @State private var showNews = false
+    @AppStorage("pftui.mobile.home.showSituation") private var showSituation = true
+    @AppStorage("pftui.mobile.home.showFocus") private var showFocus = true
+    @AppStorage("pftui.mobile.home.showTimeframes") private var showTimeframes = true
+    @AppStorage("pftui.mobile.home.showConcentration") private var showConcentration = true
+    @AppStorage("pftui.mobile.home.showPulse") private var showPulse = true
+    @AppStorage("pftui.mobile.home.showWatchlist") private var showWatchlist = true
+    @AppStorage("pftui.mobile.home.showSystem") private var showSystem = false
+    @AppStorage("pftui.mobile.home.showNews") private var showNews = false
 
     var body: some View {
         ScrollView {
@@ -165,14 +167,40 @@ struct HomeView: View {
                 topBar(maskValues: $maskValues)
 
                 heroCard(
-                    title: masked(store.portfolio?.totalValue?.raw),
-                    subtitle: "Remote Portfolio",
-                    detail: "\(store.portfolio?.positionCount ?? 0) positions"
+                    title: situationTitle,
+                    subtitle: "Situation Room",
+                    detail: situationSubtitle
                 )
 
                 if let dashboard = store.dashboard {
                     signalSummaryCard(monitoring: dashboard.monitoring)
                     commandDeckCard(dashboard: dashboard)
+
+                    CollapsibleCardSection(
+                        title: "Watch Now",
+                        subtitle: "Ranked anomalies and state shifts",
+                        isExpanded: $showSituation
+                    ) {
+                        VStack(spacing: 12) {
+                            ForEach(situationInsights(dashboard: dashboard).prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                insightRow(insight)
+                            }
+                        }
+                    }
+
+                    if !portfolioImpactInsights(dashboard: dashboard).isEmpty {
+                        CollapsibleCardSection(
+                            title: "Portfolio Impact",
+                            subtitle: "What matters to current exposure",
+                            isExpanded: $showFocus
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(portfolioImpactInsights(dashboard: dashboard).prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                    insightRow(insight)
+                                }
+                            }
+                        }
+                    }
 
                     if let analytics = store.analytics, !analytics.timeframes.isEmpty {
                         CollapsibleCardSection(
@@ -290,7 +318,7 @@ struct HomeView: View {
             .padding(16)
         }
         .background(MobilePalette.bgPrimary)
-        .navigationTitle("Monitor")
+        .navigationTitle("Situation")
     }
 
     @ViewBuilder
@@ -390,6 +418,36 @@ struct HomeView: View {
     }
 
     @ViewBuilder
+    private func insightRow(_ insight: SituationInsight) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(insightColor(insight.severity))
+                .frame(width: 10, height: 10)
+                .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top) {
+                    Text(insight.title)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(insight.value)
+                        .foregroundStyle(insightColor(insight.severity))
+                        .font(.caption.weight(.bold))
+                }
+
+                Text(insight.detail)
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.caption)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
     private func timeframeChip(_ timeframe: TimeframePayload) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -469,6 +527,104 @@ struct HomeView: View {
     private func masked(_ value: String?) -> String {
         guard !maskValues else { return "••••" }
         return value ?? "—"
+    }
+
+    private var situationTitle: String {
+        if let latest = store.dashboard?.monitoring.latestTimeframeSignal {
+            return prettySignal(latest.signalType)
+        }
+        if let regime = store.analytics?.regime?.regime {
+            return regime.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+        return masked(store.portfolio?.totalValue?.raw)
+    }
+
+    private var situationSubtitle: String {
+        if let latest = store.dashboard?.monitoring.latestTimeframeSignal {
+            return latest.description
+        }
+        return "\(store.portfolio?.positionCount ?? 0) positions • \(store.dashboard?.monitoring.system.server.pftuiVersion ?? "offline")"
+    }
+
+    private func situationInsights(dashboard: DashboardPayload) -> [SituationInsight] {
+        var items: [SituationInsight] = []
+
+        if let latest = dashboard.monitoring.latestTimeframeSignal {
+            items.append(
+                SituationInsight(
+                    title: prettySignal(latest.signalType),
+                    detail: latest.description,
+                    value: latest.severity.capitalized,
+                    severity: severityRank(latest.severity)
+                )
+            )
+        }
+
+        if let strongestPulse = dashboard.monitoring.marketPulse.max(by: {
+            abs(changeValue($0.dayChangePct?.raw)) < abs(changeValue($1.dayChangePct?.raw))
+        }) {
+            items.append(
+                SituationInsight(
+                    title: "\(strongestPulse.symbol) is leading the tape",
+                    detail: strongestPulse.name,
+                    value: strongestPulse.dayChangePct?.raw ?? strongestPulse.value?.raw ?? "—",
+                    severity: abs(changeValue(strongestPulse.dayChangePct?.raw)) >= 2.5 ? .critical : .elevated
+                )
+            )
+        }
+
+        if dashboard.monitoring.triggeredAlertCount > 0 {
+            items.append(
+                SituationInsight(
+                    title: "\(dashboard.monitoring.triggeredAlertCount) live alerts need triage",
+                    detail: "Triggered rules are active across the current monitoring stack.",
+                    value: "Alert",
+                    severity: .critical
+                )
+            )
+        }
+
+        if dashboard.monitoring.system.database.staleSources > 0 {
+            items.append(
+                SituationInsight(
+                    title: "\(dashboard.monitoring.system.database.staleSources) stale data sources",
+                    detail: "Operational trust is degraded until the slow feeds refresh.",
+                    value: "Ops",
+                    severity: .elevated
+                )
+            )
+        }
+
+        if let regime = dashboard.analytics.regime {
+            items.append(
+                SituationInsight(
+                    title: "Regime: \(regime.regime.replacingOccurrences(of: "_", with: " ").capitalized)",
+                    detail: regime.drivers.prefix(2).joined(separator: " • "),
+                    value: regime.confidence.map { "\(Int($0 * 100))%" } ?? "—",
+                    severity: .normal
+                )
+            )
+        }
+
+        return items.sorted { $0.severity.rawValue > $1.severity.rawValue }
+    }
+
+    private func portfolioImpactInsights(dashboard: DashboardPayload) -> [SituationInsight] {
+        let positions = dashboard.portfolio.positions
+        return positions
+            .sorted { abs(changeValue($0.dayChangePct?.raw)) > abs(changeValue($1.dayChangePct?.raw)) }
+            .prefix(6)
+            .map { position in
+                let allocation = position.allocationPct?.raw ?? "—"
+                let change = position.dayChangePct?.raw ?? "—"
+                let impact = abs(changeValue(position.dayChangePct?.raw)) >= 3 ? SituationSeverity.elevated : .normal
+                return SituationInsight(
+                    title: position.symbol,
+                    detail: "\(position.name) • \(allocation) allocation",
+                    value: change,
+                    severity: impact
+                )
+            }
     }
 }
 
@@ -748,6 +904,9 @@ struct SystemView: View {
     @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
     @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
     @AppStorage("pftui.mobile.systemDensity") private var systemDensity = "dense"
+    @AppStorage("pftui.mobile.home.showSituation") private var showSituationModule = true
+    @AppStorage("pftui.mobile.home.showFocus") private var showFocusModule = true
+    @AppStorage("pftui.mobile.home.showNews") private var showNewsModule = false
     @State private var showDisplay = true
     @State private var showConnection = true
     @State private var showServer = true
@@ -773,6 +932,12 @@ struct SystemView: View {
                         densityPicker(title: "Home", selection: $homeDensity)
                         densityPicker(title: "Analytics", selection: $analyticsDensity)
                         densityPicker(title: "System", selection: $systemDensity)
+                        Toggle("Situation brief", isOn: $showSituationModule)
+                            .tint(MobilePalette.accent)
+                        Toggle("Portfolio impact", isOn: $showFocusModule)
+                            .tint(MobilePalette.accent)
+                        Toggle("Catalyst/news module", isOn: $showNewsModule)
+                            .tint(MobilePalette.accent)
                     }
                 }
 
@@ -1157,6 +1322,20 @@ struct FlowTagList: View {
     }
 }
 
+struct SituationInsight: Identifiable {
+    let id = UUID()
+    let title: String
+    let detail: String
+    let value: String
+    let severity: SituationSeverity
+}
+
+enum SituationSeverity: Int {
+    case normal = 1
+    case elevated = 2
+    case critical = 3
+}
+
 @ViewBuilder
 private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     content()
@@ -1321,6 +1500,17 @@ private func correlationColor(_ value: Double) -> Color {
     return MobilePalette.accent
 }
 
+private func insightColor(_ severity: SituationSeverity) -> Color {
+    switch severity {
+    case .normal:
+        return MobilePalette.accent
+    case .elevated:
+        return MobilePalette.amber
+    case .critical:
+        return MobilePalette.red
+    }
+}
+
 private func formatNumber(_ value: Double?) -> String {
     guard let value else { return "—" }
     if value >= 1000 {
@@ -1330,6 +1520,25 @@ private func formatNumber(_ value: Double?) -> String {
         return String(format: "%.1f", value)
     }
     return String(format: "%.2f", value)
+}
+
+private func changeValue(_ raw: String?) -> Double {
+    guard let raw else { return 0 }
+    let cleaned = raw.replacingOccurrences(of: "%", with: "")
+        .replacingOccurrences(of: "+", with: "")
+        .trimmingCharacters(in: .whitespaces)
+    return Double(cleaned) ?? 0
+}
+
+private func severityRank(_ raw: String) -> SituationSeverity {
+    switch raw.lowercased() {
+    case "critical":
+        return .critical
+    case "warning", "notable", "elevated":
+        return .elevated
+    default:
+        return .normal
+    }
 }
 
 private func percentageValue(_ raw: String?) -> Double {
