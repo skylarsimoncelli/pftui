@@ -284,7 +284,7 @@ body {
     padding: var(--spacing-md);
     font-family: var(--font-mono);
     font-size: clamp(0.66rem, 0.78vw, 0.95rem);
-    height: 240px;
+    height: auto;
     background: var(--bg-primary);
     text-align: left;
     line-height: 1.45;
