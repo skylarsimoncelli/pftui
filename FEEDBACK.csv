@@ -46,3 +46,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-21,alert-investigator,85,90,routine,low,No active alerts found. System monitoring functioning properly.
 2026-03-21,alert-investigator,85,82,alerts,normal,Successfully identified market stress patterns (big-gainers scan oscillating due to mixed precious metals bounce vs tech/uranium selloff). Good correlation analysis and regime detection.
 2026-03-21,alert-investigator,85,80,analytics,info,Alert system caught SMCI -33% crash due to DOJ indictments. Scan alerts effective but frequent noise.
+2026-03-21 19:12,alert-investigator,85,82,monitoring,info,"Investigated SCAN:BIG-GAINERS intermittent alerts - found individual stock moves (SEDG +13%) within broader risk-off regime. Appropriate action taken, system functioning correctly."
