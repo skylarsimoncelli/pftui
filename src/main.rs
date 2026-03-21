@@ -805,11 +805,14 @@ fn main() -> Result<()> {
                     }
                 },
                 cli::MobileCommand::Serve => {
-                    let runtime = tokio::runtime::Runtime::new()?;
-                    runtime.block_on(async {
-                        mobile::server::run_server(db_path.to_string_lossy().to_string(), config)
-                            .await
-                    })
+                    // Clone the backend connection for the server so we don't
+                    // move `backend` (it is used by the flush() epilogue).
+                    // PgPool is cheap to clone (Arc internally); for SQLite we
+                    // open a second connection since Connection is not Clone.
+                    let server_backend = backend.clone_for_server()?;
+                    crate::db::pg_runtime::block_on(
+                        mobile::server::run_server(server_backend, config),
+                    )
                 }
             },
             cli::SystemCommand::Universe { command } => match command {
