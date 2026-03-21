@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — Add 'alert' as valid journal notes section (#107)
+
+- What: Added `alert` to the list of valid sections for `journal notes add --section`. Agents investigating alerts can now log findings under a dedicated `alert` section rather than falling back to `general`.
+- Why: Alert-investigator agent reported `journal notes add --section alert` failing with invalid section error. The section was a natural fit that was simply missing from the allowlist.
+- Files: `src/commands/notes.rs`
+- Tests: `cargo test` — 1505 pass (+2 new: section validation unit tests); `cargo clippy` clean
+
 ### 2026-03-20 — fix: Plausibility guard for daily change percentages (#99)
 
 - What: Added bounds checking (±500% max) on all daily change percentage calculations. Anomalous values from corrupt price data (e.g. 224,000% BTC change from near-zero previous close) are now filtered out as `None` across all surfaces: movers CLI, brief CLI, header ticker, market context widget, and top movers widget. New shared utility `is_plausible_daily_change()` in `models::price`.
