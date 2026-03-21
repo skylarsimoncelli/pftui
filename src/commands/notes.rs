@@ -7,9 +7,9 @@ use crate::db::daily_notes;
 
 fn validate_section(section: &str) -> Result<()> {
     match section {
-        "market" | "decisions" | "system" | "analysis" | "events" | "general" => Ok(()),
+        "market" | "decisions" | "system" | "analysis" | "events" | "general" | "alert" => Ok(()),
         _ => bail!(
-            "invalid section '{}'. Valid: market, decisions, system, analysis, events, general",
+            "invalid section '{}'. Valid: market, decisions, system, analysis, events, general, alert",
             section
         ),
     }
@@ -100,4 +100,23 @@ pub fn run(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_section_accepts_all_valid() {
+        for section in &["market", "decisions", "system", "analysis", "events", "general", "alert"] {
+            assert!(validate_section(section).is_ok(), "section '{}' should be valid", section);
+        }
+    }
+
+    #[test]
+    fn test_validate_section_rejects_invalid() {
+        for section in &["alerts", "foo", "trading", ""] {
+            assert!(validate_section(section).is_err(), "section '{}' should be invalid", section);
+        }
+    }
 }
