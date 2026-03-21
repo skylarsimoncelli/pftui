@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: surface scenario probabilities in `analytics low` and `analytics summary`
+
+- What: injected active scenario probabilities into `analytics low` and `analytics summary` output. Both JSON and text modes now include all active scenarios with name, probability, status, and updated_at. `analytics low` gains a new `scenario_probabilities` array (JSON) and Scenario Context section (text). `analytics summary` gains a `scenario_probabilities` array (JSON) alongside the existing `top_scenario` field, and the text MEDIUM section now lists all active scenarios instead of just the top one.
+- Why: Low-Timeframe Analyst feedback — agents need scenario probabilities visible in the commands they already call, without requiring a separate `analytics medium` or `analytics scenario list` call. Enables faster narrative shift detection when probabilities move between refreshes.
+- Files: `src/commands/analytics.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1566 pass, +2 new); `cargo clippy -- -D warnings` (clean)
+
 ### 2026-03-21 — feat: add `analytics correlations breaks` command with configurable thresholds and alert seeding
 
 - What: added `pftui analytics correlations breaks` subcommand that lists pairs whose short-term (7d) vs long-term (90d) rolling correlation has diverged beyond a configurable threshold. Defaults to 0.30 delta. Supports `--threshold` for custom sensitivity, `--limit` for result count, `--seed-alerts` to auto-create recurring `technical` correlation_break alerts for each detected break pair (with deduplication), `--cooldown` for alert cooldown, and `--json` for agent consumption. Results are sorted by absolute break delta descending (biggest divergences first).

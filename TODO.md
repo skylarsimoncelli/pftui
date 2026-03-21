@@ -14,7 +14,7 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Scenario probability tracking in data sources** - Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands for faster narrative shift detection. Could auto-inject active scenario probabilities into `analytics summary` and `analytics low` output. (`src/commands/scenario.rs`, `src/commands/summary.rs`)
+_(none)_
 
 ## P3 - Long Term
 
