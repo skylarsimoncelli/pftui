@@ -40,6 +40,7 @@ struct DashboardPayload: Decodable {
     let catalysts: CatalystsPayload
     let impact: ImpactPayload
     let opportunities: OpportunitiesPayload
+    let narrative: NarrativePayload
     let synthesis: SynthesisPayload
 }
 
@@ -93,6 +94,128 @@ struct ImpactPayload: Decodable {
 struct OpportunitiesPayload: Decodable {
     let generatedAt: String
     let opportunities: [AssetInsightPayload]
+}
+
+struct NarrativePayload: Decodable {
+    let generatedAt: String
+    let requestedDate: String
+    let sourceDate: String
+    let headline: String
+    let subtitle: String
+    let coverageNote: String?
+    let recap: NarrativeRecapPayload
+    let scenarioShifts: [ScenarioShiftPayload]
+    let convictionChanges: [ConvictionShiftPayload]
+    let trendChanges: [TrendShiftPayload]
+    let predictionScorecard: PredictionScorecardPayload
+    let surprises: [NarrativeInsightPayload]
+    let lessons: [LessonPayload]
+    let catalystOutcomes: [CatalystOutcomePayload]
+}
+
+struct NarrativeRecapPayload: Decodable {
+    let date: String
+    let note: String?
+    let events: [NarrativeRecapEventPayload]
+    let count: Int
+}
+
+struct NarrativeRecapEventPayload: Decodable, Identifiable {
+    var id: String { "\(at)-\(eventType)-\(source)" }
+    let at: String
+    let eventType: String
+    let source: String
+    let summary: String
+}
+
+struct ScenarioShiftPayload: Decodable, Identifiable {
+    var id: String { "\(name)-\(updatedAt)" }
+    let name: String
+    let previousProbability: Double
+    let currentProbability: Double
+    let deltaPct: Double
+    let driver: String?
+    let updatedAt: String
+    let severity: String
+}
+
+struct ConvictionShiftPayload: Decodable, Identifiable {
+    var id: String { "\(symbol)-\(updatedAt)" }
+    let symbol: String
+    let name: String
+    let oldScore: Int
+    let newScore: Int
+    let delta: Int
+    let updatedAt: String
+    let notes: String?
+    let severity: String
+}
+
+struct TrendShiftPayload: Decodable, Identifiable {
+    var id: String { "\(name)-\(updatedAt)" }
+    let name: String
+    let timeframe: String
+    let direction: String
+    let conviction: String
+    let updatedAt: String
+    let latestEvidence: String?
+    let affectedAssets: [String]
+    let severity: String
+}
+
+struct PredictionScorecardPayload: Decodable {
+    let total: Int
+    let scored: Int
+    let pending: Int
+    let correct: Int
+    let partial: Int
+    let wrong: Int
+    let hitRatePct: Double
+    let recentResolutions: [PredictionResolutionPayload]
+}
+
+struct PredictionResolutionPayload: Decodable, Identifiable {
+    var id: Int { Int(self.rawId) }
+    private let rawId: Int64
+    let claim: String
+    let symbol: String?
+    let outcome: String
+    let lesson: String?
+    let scoredAt: String
+    let severity: String
+
+    private enum CodingKeys: String, CodingKey {
+        case rawId = "id"
+        case claim, symbol, outcome, lesson, scoredAt, severity
+    }
+}
+
+struct NarrativeInsightPayload: Decodable, Identifiable {
+    var id: String { "\(title)-\(value)" }
+    let title: String
+    let detail: String
+    let value: String
+    let severity: String
+}
+
+struct LessonPayload: Decodable, Identifiable {
+    var id: String { "\(title)-\(recordedAt)" }
+    let title: String
+    let detail: String
+    let symbol: String?
+    let recordedAt: String
+    let severity: String
+}
+
+struct CatalystOutcomePayload: Decodable, Identifiable {
+    var id: String { "\(date)-\(title)" }
+    let title: String
+    let date: String
+    let category: String
+    let linkedAssets: [String]
+    let outcome: String
+    let detail: String
+    let severity: String
 }
 
 struct AssetInsightPayload: Decodable, Identifiable {

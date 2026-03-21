@@ -155,6 +155,8 @@ struct HomeView: View {
     @AppStorage("pftui.mobile.home.showSituation") private var showSituation = true
     @AppStorage("pftui.mobile.home.showFocus") private var showFocus = true
     @AppStorage("pftui.mobile.home.showChanges") private var showChanges = true
+    @AppStorage("pftui.mobile.home.showNarrative") private var showNarrative = true
+    @AppStorage("pftui.mobile.home.showRecap") private var showRecap = true
     @AppStorage("pftui.mobile.home.showRisk") private var showRisk = true
     @AppStorage("pftui.mobile.home.showTimeframes") private var showTimeframes = true
     @AppStorage("pftui.mobile.home.showConcentration") private var showConcentration = true
@@ -228,6 +230,62 @@ struct HomeView: View {
                         VStack(spacing: 12) {
                             ForEach(dashboard.deltas.changeRadar.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
                                 insightRow(insight)
+                            }
+                        }
+                    }
+
+                    if !dashboard.narrative.surprises.isEmpty || !dashboard.narrative.scenarioShifts.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Narrative State",
+                            subtitle: dashboard.narrative.subtitle,
+                            isExpanded: $showNarrative
+                        ) {
+                            VStack(spacing: 12) {
+                                if let note = dashboard.narrative.coverageNote {
+                                    compactInsightCard(
+                                        title: dashboard.narrative.headline,
+                                        detail: note,
+                                        trailing: dashboard.narrative.sourceDate,
+                                        severity: "watch"
+                                    )
+                                }
+
+                                ForEach(dashboard.narrative.surprises.prefix(homeDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.title,
+                                        detail: item.detail,
+                                        trailing: item.value,
+                                        severity: item.severity
+                                    )
+                                }
+
+                                ForEach(dashboard.narrative.scenarioShifts.prefix(homeDensity == "dense" ? 2 : 3)) { item in
+                                    compactInsightCard(
+                                        title: item.name,
+                                        detail: item.driver ?? "Scenario probability repriced",
+                                        trailing: signedNumber(item.deltaPct),
+                                        severity: item.severity
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.narrative.recap.events.isEmpty || dashboard.narrative.recap.note != nil {
+                        CollapsibleCardSection(
+                            title: "Structured Recap",
+                            subtitle: dashboard.narrative.recap.note ?? dashboard.narrative.recap.date,
+                            isExpanded: $showRecap
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(dashboard.narrative.recap.events.prefix(homeDensity == "dense" ? 4 : 6)) { item in
+                                    compactRow(
+                                        title: item.summary,
+                                        subtitle: "\(prettySignal(item.eventType)) • \(item.source)",
+                                        trailing: shortTimestamp(item.at),
+                                        trailingColor: MobilePalette.textSecondary
+                                    )
+                                }
                             }
                         }
                     }
@@ -722,6 +780,10 @@ struct HomeView: View {
         return value ?? "—"
     }
 
+    private func signedNumber(_ value: Double) -> String {
+        value >= 0 ? String(format: "+%.1f", value) : String(format: "%.1f", value)
+    }
+
     private var situationTitle: String {
         if let latest = store.dashboard?.monitoring.latestTimeframeSignal {
             return prettySignal(latest.signalType)
@@ -796,9 +858,11 @@ struct AnalyticsView: View {
     @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
     @State private var showOverview = true
     @State private var showRegime = true
+    @State private var showNarrative = true
     @State private var showSentiment = true
     @State private var showCorrelations = true
     @State private var showPredictions = true
+    @State private var showScorecard = true
     @State private var showScores = true
 
     var body: some View {
@@ -844,6 +908,44 @@ struct AnalyticsView: View {
                                     analyticsStat(label: "Oil", value: formatNumber(regime.oil))
                                     analyticsStat(label: "Gold", value: formatNumber(regime.gold))
                                     analyticsStat(label: "BTC", value: formatNumber(regime.btc))
+                                }
+                            }
+                        }
+                    }
+
+                    if let narrative = store.dashboard?.narrative,
+                       !narrative.scenarioShifts.isEmpty || !narrative.convictionChanges.isEmpty || !narrative.trendChanges.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Narrative Memory",
+                            subtitle: narrative.headline,
+                            isExpanded: $showNarrative
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(narrative.scenarioShifts.prefix(analyticsDensity == "dense" ? 3 : 5)) { item in
+                                    compactInsightCard(
+                                        title: item.name,
+                                        detail: item.driver ?? "Probability repriced",
+                                        trailing: signedNumber(item.deltaPct),
+                                        severity: item.severity
+                                    )
+                                }
+
+                                ForEach(narrative.convictionChanges.prefix(analyticsDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.symbol,
+                                        detail: item.notes ?? "\(item.name) conviction moved from \(item.oldScore) to \(item.newScore)",
+                                        trailing: signedInteger(item.delta),
+                                        severity: item.severity
+                                    )
+                                }
+
+                                ForEach(narrative.trendChanges.prefix(analyticsDensity == "dense" ? 2 : 3)) { item in
+                                    compactInsightCard(
+                                        title: item.name,
+                                        detail: item.latestEvidence ?? "\(item.direction.capitalized) \(item.timeframe) trend refreshed",
+                                        trailing: item.conviction.uppercased(),
+                                        severity: item.severity
+                                    )
                                 }
                             }
                         }
@@ -904,6 +1006,41 @@ struct AnalyticsView: View {
                                             .foregroundStyle(MobilePalette.textSecondary)
                                             .font(.caption)
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    if let narrative = store.dashboard?.narrative {
+                        CollapsibleCardSection(
+                            title: "Prediction Scorecard",
+                            subtitle: "\(narrative.predictionScorecard.scored) scored • \(Int(narrative.predictionScorecard.hitRatePct.rounded()))% hit rate",
+                            isExpanded: $showScorecard
+                        ) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                                    analyticsStat(label: "Total", value: "\(narrative.predictionScorecard.total)")
+                                    analyticsStat(label: "Pending", value: "\(narrative.predictionScorecard.pending)")
+                                    analyticsStat(label: "Correct", value: "\(narrative.predictionScorecard.correct)")
+                                    analyticsStat(label: "Wrong", value: "\(narrative.predictionScorecard.wrong)")
+                                }
+
+                                ForEach(narrative.lessons.prefix(analyticsDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.symbol ?? "Lesson",
+                                        detail: item.detail,
+                                        trailing: shortTimestamp(item.recordedAt),
+                                        severity: item.severity
+                                    )
+                                }
+
+                                ForEach(narrative.catalystOutcomes.prefix(analyticsDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.title,
+                                        detail: item.detail,
+                                        trailing: item.outcome.replacingOccurrences(of: "-", with: " ").uppercased(),
+                                        severity: item.severity
+                                    )
                                 }
                             }
                         }
@@ -1009,6 +1146,42 @@ struct AnalyticsView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func compactInsightCard(title: String, detail: String, trailing: String, severity: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(insightColor(severity))
+                .frame(width: 10, height: 10)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top) {
+                    Text(title)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(trailing)
+                        .foregroundStyle(insightColor(severity))
+                        .font(.caption.weight(.bold))
+                }
+                Text(detail)
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.caption)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func signedNumber(_ value: Double) -> String {
+        value >= 0 ? String(format: "+%.1f", value) : String(format: "%.1f", value)
+    }
+
+    private func signedInteger(_ value: Int) -> String {
+        value >= 0 ? "+\(value)" : "\(value)"
     }
 }
 

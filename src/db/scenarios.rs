@@ -18,7 +18,15 @@ type ScenarioRow = (
     String,
     String,
 );
-type ScenarioSignalRow = (i64, i64, String, String, Option<String>, Option<String>, String);
+type ScenarioSignalRow = (
+    i64,
+    i64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scenario {
@@ -114,10 +122,7 @@ pub fn add_scenario(
     Ok(conn.last_insert_rowid())
 }
 
-pub fn list_scenarios(
-    conn: &Connection,
-    status_filter: Option<&str>,
-) -> Result<Vec<Scenario>> {
+pub fn list_scenarios(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<Scenario>> {
     let query = if let Some(status) = status_filter {
         format!(
             "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at, updated_at
@@ -212,8 +217,7 @@ pub fn update_scenario(
     let query = format!("UPDATE scenarios SET {} WHERE id = ?", updates.join(", "));
     params_vec.push(Box::new(id));
 
-    let params_refs: Vec<&dyn rusqlite::ToSql> =
-        params_vec.iter().map(|p| p.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
 
     conn.execute(&query, params_refs.as_slice())?;
     Ok(())
@@ -309,8 +313,7 @@ pub fn update_signal(
     );
     params_vec.push(Box::new(signal_id));
 
-    let params_refs: Vec<&dyn rusqlite::ToSql> =
-        params_vec.iter().map(|p| p.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
 
     conn.execute(&query, params_refs.as_slice())?;
     Ok(())
@@ -331,7 +334,7 @@ pub fn get_history(
             "SELECT id, scenario_id, probability, driver, recorded_at
              FROM scenario_history
              WHERE scenario_id = {}
-             ORDER BY recorded_at DESC
+             ORDER BY id DESC
              LIMIT {}",
             scenario_id, lim
         )
@@ -340,7 +343,7 @@ pub fn get_history(
             "SELECT id, scenario_id, probability, driver, recorded_at
              FROM scenario_history
              WHERE scenario_id = {}
-             ORDER BY recorded_at DESC",
+             ORDER BY id DESC",
             scenario_id
         )
     };
@@ -366,8 +369,28 @@ pub fn add_scenario_backend(
 ) -> Result<i64> {
     query::dispatch(
         backend,
-        |conn| add_scenario(conn, name, probability, description, asset_impact, triggers, precedent),
-        |pool| add_scenario_postgres(pool, name, probability, description, asset_impact, triggers, precedent),
+        |conn| {
+            add_scenario(
+                conn,
+                name,
+                probability,
+                description,
+                asset_impact,
+                triggers,
+                precedent,
+            )
+        },
+        |pool| {
+            add_scenario_postgres(
+                pool,
+                name,
+                probability,
+                description,
+                asset_impact,
+                triggers,
+                precedent,
+            )
+        },
     )
 }
 
@@ -572,10 +595,9 @@ fn add_scenario_postgres(
 
 fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result<Vec<Scenario>> {
     ensure_tables_postgres(pool)?;
-    let rows: Vec<ScenarioRow> =
-        if let Some(status) = status_filter {
-            crate::db::pg_runtime::block_on(async {
-                sqlx::query_as(
+    let rows: Vec<ScenarioRow> = if let Some(status) = status_filter {
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
                     "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
                      FROM scenarios
                      WHERE status = $1
@@ -584,18 +606,18 @@ fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result
                 .bind(status)
                 .fetch_all(pool)
                 .await
-            })?
-        } else {
-            crate::db::pg_runtime::block_on(async {
-                sqlx::query_as(
+        })?
+    } else {
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
                     "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
                      FROM scenarios
                      ORDER BY probability DESC",
                 )
                 .fetch_all(pool)
                 .await
-            })?
-        };
+        })?
+    };
 
     Ok(rows
         .into_iter()
@@ -616,9 +638,8 @@ fn list_scenarios_postgres(pool: &PgPool, status_filter: Option<&str>) -> Result
 
 fn get_scenario_by_name_postgres(pool: &PgPool, name: &str) -> Result<Option<Scenario>> {
     ensure_tables_postgres(pool)?;
-    let row: Option<ScenarioRow> =
-        crate::db::pg_runtime::block_on(async {
-            sqlx::query_as(
+    let row: Option<ScenarioRow> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
                 "SELECT id, name, probability, description, asset_impact, triggers, historical_precedent, status, created_at::text, updated_at::text
                  FROM scenarios
                  WHERE name = $1",
@@ -626,7 +647,7 @@ fn get_scenario_by_name_postgres(pool: &PgPool, name: &str) -> Result<Option<Sce
             .bind(name)
             .fetch_optional(pool)
             .await
-        })?;
+    })?;
     Ok(row.map(|r| Scenario {
         id: r.0,
         name: r.1,
@@ -742,33 +763,32 @@ fn list_signals_postgres(
     status_filter: Option<&str>,
 ) -> Result<Vec<ScenarioSignal>> {
     ensure_tables_postgres(pool)?;
-    let rows: Vec<ScenarioSignalRow> =
-        if let Some(status) = status_filter {
-            crate::db::pg_runtime::block_on(async {
-                sqlx::query_as(
-                    "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
+    let rows: Vec<ScenarioSignalRow> = if let Some(status) = status_filter {
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
                      FROM scenario_signals
                      WHERE scenario_id = $1 AND status = $2
                      ORDER BY updated_at DESC",
-                )
-                .bind(scenario_id)
-                .bind(status)
-                .fetch_all(pool)
-                .await
-            })?
-        } else {
-            crate::db::pg_runtime::block_on(async {
-                sqlx::query_as(
-                    "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
+            )
+            .bind(scenario_id)
+            .bind(status)
+            .fetch_all(pool)
+            .await
+        })?
+    } else {
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query_as(
+                "SELECT id, scenario_id, signal, status, evidence, source, updated_at::text
                      FROM scenario_signals
                      WHERE scenario_id = $1
                      ORDER BY updated_at DESC",
-                )
-                .bind(scenario_id)
-                .fetch_all(pool)
-                .await
-            })?
-        };
+            )
+            .bind(scenario_id)
+            .fetch_all(pool)
+            .await
+        })?
+    };
     Ok(rows
         .into_iter()
         .map(|r| ScenarioSignal {
@@ -830,10 +850,10 @@ fn get_history_postgres(
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, scenario_id, probability, driver, recorded_at::text
-                 FROM scenario_history
-                 WHERE scenario_id = $1
-                 ORDER BY recorded_at DESC
-                 LIMIT $2",
+             FROM scenario_history
+             WHERE scenario_id = $1
+             ORDER BY id DESC
+             LIMIT $2",
             )
             .bind(scenario_id)
             .bind(limit as i64)
@@ -844,9 +864,9 @@ fn get_history_postgres(
         crate::db::pg_runtime::block_on(async {
             sqlx::query_as(
                 "SELECT id, scenario_id, probability, driver, recorded_at::text
-                 FROM scenario_history
-                 WHERE scenario_id = $1
-                 ORDER BY recorded_at DESC",
+             FROM scenario_history
+             WHERE scenario_id = $1
+             ORDER BY id DESC",
             )
             .bind(scenario_id)
             .fetch_all(pool)
