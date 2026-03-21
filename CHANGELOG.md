@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add `data oil-premium` futures term structure command
+
+- What: added `pftui data oil-premium` command that fetches front-month and next-month WTI/Brent futures contracts from Yahoo Finance to compute contango/backwardation, WTI-Brent spread, annualised roll yield, and a structured war-premium signal. Automatic CME contract month resolution with continuous contract fallback. Four signal levels from SEVERE SUPPLY STRESS to CONTANGO. Full `--json` output for agent consumption.
+- Why: Medium-Timeframe Analyst (85/90 feedback score) requested physical oil vs futures premium data for war-time indicator and geopolitical regime analysis. TODO P2 item.
+- Files: `src/commands/oil_premium.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`
+- Tests: `cargo test` (1558 pass, +15 new); `cargo clippy -- -D warnings` (clean)
+
 ### 2026-03-21 — feat: add `change_1d` daily change field to scan system
 
 - What: added a `change_1d` (daily change percentage) field to the scan filter system. Computes `(price − previous_close) / previous_close × 100` from cached `PriceQuote.previous_close`. Available in both SQLite and Postgres paths. Aliases: `change`, `daily_change`, `change1d`. Shown in scan table output as `Chg1D%` column. Included in `--json` output. Enables precise scan queries like `change_1d > 5` (big daily gainers) or `change_1d < -5` (big daily losers) instead of relying on total `gain_pct` which triggered false positives during broad selloffs.

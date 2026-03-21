@@ -14,8 +14,6 @@ _(none)_
 
 ## P2 — Coverage And Agent Consumption
 
-- [Feedback] **Oil physical vs futures premium tracking** — Medium-Timeframe Analyst (85/90) needs physical oil spot vs front-month futures premium data for war-time indicator analysis. Add `data oil-premium` or extend existing `data oil-inventory` to include spot/futures spread. Critical for geopolitical regime analysis. (`src/commands/oil.rs` or new)
-
 - [Feedback] **Correlation break alerts** — Low-Timeframe Analyst wants alerts when historically correlated pairs diverge beyond N sigma. Could build on existing `analytics correlations` infrastructure. Add configurable thresholds and integrate with alert system. (`src/commands/correlations.rs`, `src/commands/alerts.rs`)
 
 - [Feedback] **Scenario probability tracking in data sources** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands for faster narrative shift detection. Could auto-inject active scenario probabilities into `analytics summary` and `analytics low` output. (`src/commands/scenario.rs`, `src/commands/summary.rs`)
@@ -56,8 +54,8 @@ _(none)_
 
 **Top 3 priorities based on feedback:**
 1. **P1: CLI discoverability** — `analytics conviction list` fails, `score-batch` undiscoverable. Evening Analyst (lowest scorer) directly impacted.
-2. **P2: Oil physical/futures premium** — Medium-Timeframe Analyst needs this for war-regime analysis (currently fastest-improving tester, would cement gains).
-3. **P2: Correlation break alerts** — Low-Timeframe Analyst wants sigma-based divergence alerts on historically linked pairs.
+2. **P2: Correlation break alerts** — Low-Timeframe Analyst wants sigma-based divergence alerts on historically linked pairs.
+3. **P2: Scenario probability tracking** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands.
 
 **Release status:** v0.14.0 is current release. 34 post-release commits (feedback entries, 3 code fixes). Next release (v0.14.1 or v0.15.0) gated on resolving remaining P1/P2 items. No P0 bugs.
 
