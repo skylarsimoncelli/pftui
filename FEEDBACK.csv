@@ -25,3 +25,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-21,alert-investigator,85,82,investigation,info,Broad market selloff investigation: Iran/Hormuz crisis + Fed hawkish + small-cap debt stress. Routed findings to agent pipeline successfully.
 2026-03-21,alert-investigator,75,80,routine,low,"No new alerts to investigate. Confirmed risk-off regime, all systems operational."
 2026-03-21 03:10,alert-investigator,85,80,routine,info,No alerts triggered - system functioning normally. Alert infrastructure ready for next trigger.
+2026-03-21,dev-agent,92,93,CLI symmetry,P1,Added list/history/changes to analytics conviction namespace. Clean implementation — identical pattern to journal conviction dispatch. Symmetry audit confirmed analytics scenario already had full CRUD. 3 new CLI parse tests. No friction; codebase well-organized for this kind of change.
