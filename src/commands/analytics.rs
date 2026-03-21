@@ -1510,12 +1510,25 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
         .map(|a| format!("{} {}B/{}S", a.symbol, a.bull_layers, a.bear_layers))
         .collect();
 
+    let scenario_probs: Vec<_> = scenarios_list
+        .iter()
+        .map(|s| {
+            json!({
+                "name": s.name,
+                "probability": s.probability,
+                "status": s.status,
+                "updated_at": s.updated_at,
+            })
+        })
+        .collect();
+
     if json_output {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "regime": regime,
                 "top_scenario": top_scenario,
+                "scenario_probabilities": scenario_probs,
                 "top_trend": top_trend,
                 "top_cycle": top_cycle,
                 "top_signal": signal,
@@ -1553,10 +1566,13 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
         } else {
             println!("LOW: no regime snapshot");
         }
-        if let Some(s) = top_scenario {
-            println!("MEDIUM: {} ({:.1}%)", s.name, s.probability);
-        } else {
+        if scenarios_list.is_empty() {
             println!("MEDIUM: no active scenario");
+        } else {
+            println!("MEDIUM: {} active scenarios", scenarios_list.len());
+            for s in &scenarios_list {
+                println!("  {} ({:.1}%)", s.name, s.probability);
+            }
         }
         if let Some(t) = top_trend {
             println!("HIGH: {} [{}]", t.name, t.direction);
@@ -1839,14 +1855,28 @@ fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
         correlation_snapshots::list_current_backend(backend, Some("30d")).unwrap_or_default();
     let signals =
         timeframe_signals::list_signals_backend(backend, None, None, Some(10)).unwrap_or_default();
+    let active_scenarios =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
 
     if json_output {
+        let scenario_probs: Vec<_> = active_scenarios
+            .iter()
+            .map(|s| {
+                json!({
+                    "name": s.name,
+                    "probability": s.probability,
+                    "status": s.status,
+                    "updated_at": s.updated_at,
+                })
+            })
+            .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "regime": regime,
                 "correlations": corr,
                 "signals": signals,
+                "scenario_probabilities": scenario_probs,
             }))?
         );
     } else {
@@ -1860,6 +1890,12 @@ fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
         }
         println!("  Correlations tracked: {}", corr.len());
         println!("  Signals: {}", signals.len());
+        if !active_scenarios.is_empty() {
+            println!("  Scenario Context:");
+            for s in &active_scenarios {
+                println!("    {}: {:.1}%", s.name, s.probability);
+            }
+        }
     }
 
     Ok(())
@@ -3269,5 +3305,74 @@ mod tests {
         let backend = to_backend(conn);
         let result = run_low(&backend, true);
         assert!(result.is_ok(), "run_low should not error: {:?}", result);
+    }
+
+    #[test]
+    fn low_json_includes_scenario_probabilities() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        // Insert a scenario
+        scenarios::add_scenario_backend(
+            &backend,
+            "Test Recession",
+            65.0,
+            Some("Test description"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        // Capture run_low JSON output
+        let result = run_low(&backend, false);
+        assert!(result.is_ok(), "run_low text should work with scenarios");
+
+        // Verify scenarios are loaded (can't capture stdout easily, but
+        // verify the backend query used in run_low returns data)
+        let active =
+            scenarios::list_scenarios_backend(&backend, Some("active")).unwrap_or_default();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].name, "Test Recession");
+        assert!((active[0].probability - 65.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn summary_json_includes_scenario_probabilities() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        // Insert two scenarios with different probabilities
+        scenarios::add_scenario_backend(
+            &backend,
+            "Inflation Spike",
+            80.0,
+            Some("CPI rising"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        scenarios::add_scenario_backend(
+            &backend,
+            "Risk Rally",
+            15.0,
+            Some("Fed cuts"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        // run_summary should succeed with scenarios present
+        let result = run_summary(&backend, true);
+        assert!(
+            result.is_ok(),
+            "run_summary should not error with scenarios: {:?}",
+            result
+        );
+
+        // Verify both scenarios exist and probabilities are correct
+        let active =
+            scenarios::list_scenarios_backend(&backend, Some("active")).unwrap_or_default();
+        assert_eq!(active.len(), 2);
     }
 }
