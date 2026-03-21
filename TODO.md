@@ -10,8 +10,6 @@ _(none)_
 
 ## P1 — Always-On Analytics Engine
 
-- [Feedback] **CLI alias: `analytics conviction list` → delegate to `journal conviction list`** — Evening Analyst tried `analytics conviction list` and got exit code 2. The `analytics conviction` namespace only has `set`. Add a `list` subcommand that delegates to the journal implementation, matching how `analytics scenario list` already works. Same for `analytics scenario` symmetry audit — ensure all CRUD verbs available in both namespaces. (`src/cli.rs`, `src/commands/conviction.rs`)
-
 - [Feedback] **`analytics recap --date today` returns empty when no events yet** — Evening Analyst reported empty results. If the date is today and no recap events exist yet, fall back to showing yesterday's recap with a note, or display a "no events recorded yet today" message instead of empty output. (`src/commands/recap.rs`)
 
 ## P2 — Coverage And Agent Consumption

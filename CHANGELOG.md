@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — Add list/history/changes to analytics conviction namespace (#118)
+
+- What: Added `list`, `history`, and `changes` subcommands to `analytics conviction`, delegating to the same `commands::conviction` functions used by `journal conviction`. This brings the analytics conviction namespace to full symmetry with analytics scenario, which already had complete CRUD.
+- Why: Evening Analyst tried `analytics conviction list` and got exit code 2 — the namespace only had `set`. CLI discoverability was the #1 feedback priority.
+- Files: `src/cli.rs`, `src/main.rs`
+- Tests: `cargo test` — 1511 pass (+3 new CLI parse tests); `cargo clippy --all-targets -- -D warnings` clean
+
 ### 2026-03-21 — Security: harden mobile API server (#117)
 
 - What: Comprehensive security hardening of the mobile API server based on audit findings.
