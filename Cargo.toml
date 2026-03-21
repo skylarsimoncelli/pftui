@@ -43,8 +43,10 @@ anyhow = "1"
 time = "0.3"
 axum = "0.8"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "fs"] }
+tower = { version = "0.5", features = ["limit"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace", "timeout"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tokio-util = "0.7"
 tokio-stream = "0.1"
 scraper = "0.22"

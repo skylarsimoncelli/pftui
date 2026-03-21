@@ -803,6 +803,12 @@ fn main() -> Result<()> {
                     cli::MobileTokenCommand::Generate { name, permission } => {
                         mobile::commands::generate_token(&config, &name, permission)
                     }
+                    cli::MobileTokenCommand::List { json } => {
+                        mobile::commands::list_tokens(&config, json)
+                    }
+                    cli::MobileTokenCommand::Revoke { prefix, json } => {
+                        mobile::commands::revoke_token(&config, &prefix, json)
+                    }
                 },
                 cli::MobileCommand::Serve => {
                     // Clone the backend connection for the server so we don't
