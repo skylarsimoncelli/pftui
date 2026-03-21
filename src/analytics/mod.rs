@@ -1,3 +1,4 @@
+pub mod catalysts;
 pub mod deltas;
 pub mod levels;
 pub mod risk;

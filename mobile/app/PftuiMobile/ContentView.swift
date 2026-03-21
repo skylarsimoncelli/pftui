@@ -321,14 +321,44 @@ struct HomeView: View {
                         }
                     }
 
-                    if !dashboard.monitoring.news.isEmpty {
+                    if !dashboard.catalysts.catalysts.isEmpty {
                         CollapsibleCardSection(
                             title: "Catalysts",
-                            subtitle: "Latest headlines",
+                            subtitle: "Upcoming events and countdowns",
                             isExpanded: $showNews
                         ) {
                             VStack(alignment: .leading, spacing: 14) {
-                                ForEach(dashboard.monitoring.news.prefix(homeDensity == "dense" ? 4 : 6)) { item in
+                                ForEach(dashboard.catalysts.catalysts.prefix(homeDensity == "dense" ? 4 : 6)) { item in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack(alignment: .top) {
+                                            Text(item.title)
+                                                .foregroundStyle(MobilePalette.textPrimary)
+                                                .font(.subheadline.weight(.semibold))
+                                            Spacer()
+                                            Text(item.countdownBucket.replacingOccurrences(of: "-", with: " ").uppercased())
+                                                .foregroundStyle(insightColor(item.significance))
+                                                .font(.caption.weight(.bold))
+                                        }
+                                        Text(item.detail)
+                                            .foregroundStyle(MobilePalette.textPrimary)
+                                            .font(.caption)
+                                        Text("\(item.time) • \(item.category.capitalized) • \(item.affectedAssets.prefix(3).joined(separator: ", "))")
+                                            .foregroundStyle(MobilePalette.textSecondary)
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.monitoring.news.isEmpty {
+                        CollapsibleCardSection(
+                            title: "News Flow",
+                            subtitle: "Latest headlines",
+                            isExpanded: .constant(homeDensity != "dense")
+                        ) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(dashboard.monitoring.news.prefix(homeDensity == "dense" ? 3 : 5)) { item in
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(item.title)
                                             .foregroundStyle(MobilePalette.textPrimary)
@@ -1463,11 +1493,11 @@ private func correlationColor(_ value: Double) -> Color {
 
 private func insightColor(_ severity: String) -> Color {
     switch severity.lowercased() {
-    case "normal":
+    case "normal", "low":
         return MobilePalette.accent
-    case "elevated", "warning":
+    case "elevated", "warning", "medium":
         return MobilePalette.amber
-    case "critical":
+    case "critical", "high":
         return MobilePalette.red
     default:
         return MobilePalette.accent

@@ -45,6 +45,8 @@ _(none)_
 
 ### F55: Catalyst Engine — Event Relevance And Countdown
 
+> Status: shipped on `feat/situation-engine` / PR #121 follow-up. Rust-native `analytics catalysts` now ranks upcoming events by countdown, macro significance, portfolio relevance, and scenario/prediction linkage, and the same feed is exposed to mobile and web.
+
 > Vision fit: pftui should identify what is coming next and why it matters to the portfolio and current regime, not just report what already happened.
 >
 > Actionable scope:

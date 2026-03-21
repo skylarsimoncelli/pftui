@@ -22,7 +22,9 @@ use rust_decimal_macros::dec;
 use crate::analytics::levels::{
     nearest_actionable_levels, select_actionable_level, ActionableLevelPair,
 };
-use crate::analytics::{deltas::SituationDeltaReport, situation::SituationSnapshot};
+use crate::analytics::{
+    catalysts::CatalystReport, deltas::SituationDeltaReport, situation::SituationSnapshot,
+};
 
 fn get_price_map_backend(
     backend: &crate::db::backend::BackendConnection,
@@ -2452,6 +2454,30 @@ pub async fn get_deltas(
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to build delta report: {}", e),
+        )
+    })?;
+
+    Ok(Json(report))
+}
+
+pub async fn get_catalysts(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<CatalystReport>, (StatusCode, String)> {
+    let backend = state.get_backend().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let report = crate::analytics::catalysts::build_report_backend(
+        &backend,
+        crate::analytics::catalysts::CatalystWindow::Week,
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to build catalyst report: {}", e),
         )
     })?;
 

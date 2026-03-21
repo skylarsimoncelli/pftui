@@ -37,6 +37,7 @@ struct DashboardPayload: Decodable {
     let monitoring: MonitoringPayload
     let situation: SituationPayload
     let deltas: DeltasPayload
+    let catalysts: CatalystsPayload
 }
 
 struct SituationPayload: Decodable {
@@ -55,6 +56,30 @@ struct DeltasPayload: Decodable {
     let baselineAt: String?
     let coverage: String
     let changeRadar: [SituationInsightPayload]
+}
+
+struct CatalystsPayload: Decodable {
+    let window: String
+    let label: String
+    let generatedAt: String
+    let catalysts: [CatalystEventPayload]
+}
+
+struct CatalystEventPayload: Decodable, Identifiable {
+    var id: String { "\(time)-\(title)" }
+    let title: String
+    let time: String
+    let source: String
+    let category: String
+    let significance: String
+    let countdownBucket: String
+    let affectedAssets: [String]
+    let linkedScenarios: [String]
+    let linkedPredictions: [String]
+    let portfolioRelevance: Int
+    let macroSignificance: Int
+    let score: Int
+    let detail: String
 }
 
 struct SituationStatPayload: Decodable, Identifiable {

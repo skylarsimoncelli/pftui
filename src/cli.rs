@@ -2104,6 +2104,12 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    Catalysts {
+        #[arg(long, default_value = "week")]
+        window: String,
+        #[arg(long)]
+        json: bool,
+    },
     Low {
         #[arg(long)]
         json: bool,

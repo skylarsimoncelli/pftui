@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add native catalyst engine and Situation Room event feed
+
+- What: added a new Rust-native `analytics catalysts --json` surface that turns calendar events into ranked `CatalystEvent` objects with windowing (`today`, `tomorrow`, `week`), countdown buckets, significance, affected-asset inference, portfolio relevance, and scenario/prediction linkages. Exposed the same report through the web API (`/api/catalysts`) and the mobile dashboard/mobile API, and replaced the mobile Situation Room’s generic catalyst/news block with a server-owned upcoming catalyst feed while keeping headline flow available as a separate module.
+- Why: Situation Room needs to answer “what is coming next and why does it matter?” from the analytics layer, not by dumping raw calendar rows or headlines into the client.
+- Files: `src/analytics/catalysts.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics catalysts --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-20 — feat: add native situation delta engine and server-owned change radar
 
 - What: added a new Rust-native `analytics deltas` surface backed by persisted `situation_snapshots`. The analytics layer now stores canonical situation snapshots server-side and can compute ranked `change_radar` deltas for `last-refresh`, `close`, `24h`, and `7d` windows. Delta detection currently covers timeframe score shifts, lead signal changes, alert load, source freshness, regime changes, sentiment moves, market-pulse repricing, scenario probability changes, conviction changes, and correlation shifts. Exposed the same report through the web API (`/api/deltas`) and the mobile dashboard/mobile API, and moved the iOS Change Radar off client-local previous-snapshot logic onto the shared backend contract. Also fixed the existing `PriceQuote.previous_close` test initializer break in `import.rs` so the full Rust test suite can compile again.

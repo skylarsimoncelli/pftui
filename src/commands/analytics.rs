@@ -6,6 +6,7 @@ use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::alerts::AlertStatus;
+use crate::analytics::catalysts;
 use crate::analytics::deltas;
 use crate::analytics::levels::nearest_actionable_levels;
 use crate::analytics::situation;
@@ -612,6 +613,7 @@ pub fn run(
         "summary" => run_summary(backend, json_output),
         "situation" => run_situation(backend, json_output),
         "deltas" => run_deltas(backend, value, json_output),
+        "catalysts" => run_catalysts(backend, value, json_output),
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
         "high" => run_high(backend, json_output),
@@ -647,7 +649,7 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
@@ -1762,6 +1764,41 @@ fn run_deltas(backend: &BackendConnection, since: Option<&str>, json_output: boo
                 "- [{}] {} — {} ({})",
                 item.severity, item.title, item.detail, item.value
             );
+        }
+    }
+
+    Ok(())
+}
+
+fn run_catalysts(
+    backend: &BackendConnection,
+    window: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let window = catalysts::CatalystWindow::parse(window)?;
+    let report = catalysts::build_report_backend(backend, window)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Catalysts");
+        println!("════════════════════════════════════════════════════════════════");
+        println!("Window: {}", report.label);
+        println!();
+        if report.catalysts.is_empty() {
+            println!("No catalysts found for this window.");
+        } else {
+            for item in &report.catalysts {
+                let assets = if item.affected_assets.is_empty() {
+                    "broad market".to_string()
+                } else {
+                    item.affected_assets.join(", ")
+                };
+                println!(
+                    "- [{}] {} — {} | {} | assets: {}",
+                    item.significance, item.time, item.title, item.countdown_bucket, assets
+                );
+            }
         }
     }
 
@@ -3127,6 +3164,18 @@ mod tests {
         let backend = to_backend(conn);
         let result = run_deltas(&backend, Some("last-refresh"), true);
         assert!(result.is_ok(), "run_deltas should not error: {:?}", result);
+    }
+
+    #[test]
+    fn catalysts_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_catalysts(&backend, Some("week"), true);
+        assert!(
+            result.is_ok(),
+            "run_catalysts should not error: {:?}",
+            result
+        );
     }
 
     #[test]
