@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add `analytics correlations breaks` command with configurable thresholds and alert seeding
+
+- What: added `pftui analytics correlations breaks` subcommand that lists pairs whose short-term (7d) vs long-term (90d) rolling correlation has diverged beyond a configurable threshold. Defaults to 0.30 delta. Supports `--threshold` for custom sensitivity, `--limit` for result count, `--seed-alerts` to auto-create recurring `technical` correlation_break alerts for each detected break pair (with deduplication), `--cooldown` for alert cooldown, and `--json` for agent consumption. Results are sorted by absolute break delta descending (biggest divergences first).
+- Why: Low-Timeframe Analyst (85-90 feedback score) and Alert Investigator both requested correlation break alerts for early regime detection. The existing correlation infrastructure computed break deltas but had no dedicated surface to list breaks or seed per-pair alerts with configurable thresholds. TODO P2 item resolved.
+- Files: `src/commands/correlations.rs` (new `run_breaks`, `compute_breaks_backend`, `CorrelationBreak` struct, 6 tests), `src/cli.rs` (new `Breaks` variant), `src/main.rs` (wiring), `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo test` (1564 pass, +6 new); `cargo clippy -- -D warnings` (clean)
+
 ### 2026-03-21 — feat: add `data oil-premium` futures term structure command
 
 - What: added `pftui data oil-premium` command that fetches front-month and next-month WTI/Brent futures contracts from Yahoo Finance to compute contango/backwardation, WTI-Brent spread, annualised roll yield, and a structured war-premium signal. Automatic CME contract month resolution with continuous contract fallback. Four signal levels from SEVERE SUPPLY STRESS to CONTANGO. Full `--json` output for agent consumption.

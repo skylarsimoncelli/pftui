@@ -1582,6 +1582,24 @@ pub enum AnalyticsCorrelationsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List pairs with correlation breaks (short-term vs long-term divergence beyond threshold)
+    Breaks {
+        /// Minimum absolute delta (|corr_7d − corr_90d|) to count as a break (default: 0.30)
+        #[arg(long, default_value = "0.30")]
+        threshold: f64,
+        /// Maximum number of break pairs to show
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Auto-create recurring technical correlation_break alerts for each detected break pair
+        #[arg(long = "seed-alerts")]
+        seed_alerts: bool,
+        /// Cooldown in minutes for seeded alerts (default: 240)
+        #[arg(long, default_value = "240")]
+        cooldown: i64,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

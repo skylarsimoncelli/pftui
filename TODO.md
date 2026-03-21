@@ -14,8 +14,6 @@ _(none)_
 
 ## P2 — Coverage And Agent Consumption
 
-- [Feedback] **Correlation break alerts** — Low-Timeframe Analyst wants alerts when historically correlated pairs diverge beyond N sigma. Could build on existing `analytics correlations` infrastructure. Add configurable thresholds and integrate with alert system. (`src/commands/correlations.rs`, `src/commands/alerts.rs`)
-
 - [Feedback] **Scenario probability tracking in data sources** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands for faster narrative shift detection. Could auto-inject active scenario probabilities into `analytics summary` and `analytics low` output. (`src/commands/scenario.rs`, `src/commands/summary.rs`)
 
 ## P3 — Long Term
@@ -54,8 +52,8 @@ _(none)_
 
 **Top 3 priorities based on feedback:**
 1. **P1: CLI discoverability** — `analytics conviction list` fails, `score-batch` undiscoverable. Evening Analyst (lowest scorer) directly impacted.
-2. **P2: Correlation break alerts** — Low-Timeframe Analyst wants sigma-based divergence alerts on historically linked pairs.
-3. **P2: Scenario probability tracking** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands.
+2. **P2: Scenario probability tracking** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands.
+3. **P3: Integrate native analytics into agent routines** — Replace prompt-internal recap/synthesis with canonical analytics CLI calls.
 
 **Release status:** v0.14.0 is current release. 34 post-release commits (feedback entries, 3 code fixes). Next release (v0.14.1 or v0.15.0) gated on resolving remaining P1/P2 items. No P0 bugs.
 
