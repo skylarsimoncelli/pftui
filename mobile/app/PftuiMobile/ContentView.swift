@@ -154,6 +154,8 @@ struct HomeView: View {
     @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
     @AppStorage("pftui.mobile.home.showSituation") private var showSituation = true
     @AppStorage("pftui.mobile.home.showFocus") private var showFocus = true
+    @AppStorage("pftui.mobile.home.showChanges") private var showChanges = true
+    @AppStorage("pftui.mobile.home.showRisk") private var showRisk = true
     @AppStorage("pftui.mobile.home.showTimeframes") private var showTimeframes = true
     @AppStorage("pftui.mobile.home.showConcentration") private var showConcentration = true
     @AppStorage("pftui.mobile.home.showPulse") private var showPulse = true
@@ -197,6 +199,32 @@ struct HomeView: View {
                             VStack(spacing: 12) {
                                 ForEach(portfolioImpactInsights(dashboard: dashboard).prefix(homeDensity == "dense" ? 4 : 6)) { insight in
                                     insightRow(insight)
+                                }
+                            }
+                        }
+                    }
+
+                    CollapsibleCardSection(
+                        title: "Change Radar",
+                        subtitle: "What changed since the last refresh",
+                        isExpanded: $showChanges
+                    ) {
+                        VStack(spacing: 12) {
+                            ForEach(changeRadarInsights(current: dashboard, previous: store.previousDashboard).prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                insightRow(insight)
+                            }
+                        }
+                    }
+
+                    if !riskMatrixSignals(dashboard: dashboard).isEmpty {
+                        CollapsibleCardSection(
+                            title: "Risk Matrix",
+                            subtitle: "Cross-asset stress map",
+                            isExpanded: $showRisk
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(riskMatrixSignals(dashboard: dashboard)) { signal in
+                                    riskRow(signal)
                                 }
                             }
                         }
@@ -448,6 +476,31 @@ struct HomeView: View {
     }
 
     @ViewBuilder
+    private func riskRow(_ signal: RiskMatrixSignal) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(signal.label)
+                    .foregroundStyle(MobilePalette.textPrimary)
+                    .font(.subheadline.weight(.semibold))
+                Text(signal.detail)
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.caption)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(signal.value)
+                    .foregroundStyle(insightColor(signal.severity))
+                    .font(.subheadline.weight(.bold))
+                StatusPill(text: signal.status)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
     private func timeframeChip(_ timeframe: TimeframePayload) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -625,6 +678,185 @@ struct HomeView: View {
                     severity: impact
                 )
             }
+    }
+
+    private func changeRadarInsights(current: DashboardPayload, previous: DashboardPayload?) -> [SituationInsight] {
+        guard let previous else {
+            return [
+                SituationInsight(
+                    title: "Baseline forming",
+                    detail: "Refresh once more and the app will start ranking state changes between snapshots.",
+                    value: "Warmup",
+                    severity: .normal
+                )
+            ]
+        }
+
+        var items: [SituationInsight] = []
+        let currentAverage = averageScore(current.analytics.timeframes)
+        let previousAverage = averageScore(previous.analytics.timeframes)
+        let averageDelta = currentAverage - previousAverage
+        if abs(averageDelta) >= 8 {
+            items.append(
+                SituationInsight(
+                    title: averageDelta > 0 ? "Risk tone improved" : "Risk tone weakened",
+                    detail: "Average timeframe score moved from \(Int(previousAverage)) to \(Int(currentAverage)).",
+                    value: signedNumber(averageDelta),
+                    severity: abs(averageDelta) >= 18 ? .critical : .elevated
+                )
+            )
+        }
+
+        let alertDelta = current.monitoring.triggeredAlertCount - previous.monitoring.triggeredAlertCount
+        if alertDelta != 0 {
+            items.append(
+                SituationInsight(
+                    title: alertDelta > 0 ? "Triggered alerts increased" : "Triggered alerts cooled",
+                    detail: "Alert load moved from \(previous.monitoring.triggeredAlertCount) to \(current.monitoring.triggeredAlertCount).",
+                    value: signedInt(alertDelta),
+                    severity: alertDelta > 0 ? .critical : .normal
+                )
+            )
+        }
+
+        let staleDelta = current.monitoring.system.database.staleSources - previous.monitoring.system.database.staleSources
+        if staleDelta != 0 {
+            items.append(
+                SituationInsight(
+                    title: staleDelta > 0 ? "Data trust worsened" : "Data freshness improved",
+                    detail: "Stale sources moved from \(previous.monitoring.system.database.staleSources) to \(current.monitoring.system.database.staleSources).",
+                    value: signedInt(staleDelta),
+                    severity: staleDelta > 0 ? .elevated : .normal
+                )
+            )
+        }
+
+        if current.analytics.regime?.regime != previous.analytics.regime?.regime,
+           let regime = current.analytics.regime?.regime {
+            items.append(
+                SituationInsight(
+                    title: "Regime shifted",
+                    detail: "The current market regime changed since the prior snapshot.",
+                    value: regime.replacingOccurrences(of: "_", with: " ").capitalized,
+                    severity: .critical
+                )
+            )
+        }
+
+        let previousPulse = Dictionary(uniqueKeysWithValues: previous.monitoring.marketPulse.map { ($0.symbol, $0) })
+        for item in current.monitoring.marketPulse {
+            guard let prior = previousPulse[item.symbol] else { continue }
+            let moveDelta = changeValue(item.dayChangePct?.raw) - changeValue(prior.dayChangePct?.raw)
+            if abs(moveDelta) >= 1.5 {
+                items.append(
+                    SituationInsight(
+                        title: "\(item.symbol) momentum re-priced",
+                        detail: item.name,
+                        value: signedNumber(moveDelta),
+                        severity: abs(moveDelta) >= 3 ? .critical : .elevated
+                    )
+                )
+            }
+        }
+
+        if let currentHeadline = current.monitoring.news.first?.title,
+           let previousHeadline = previous.monitoring.news.first?.title,
+           currentHeadline != previousHeadline {
+            items.append(
+                SituationInsight(
+                    title: "Lead catalyst changed",
+                    detail: currentHeadline,
+                    value: "News",
+                    severity: .normal
+                )
+            )
+        }
+
+        return items.isEmpty
+            ? [
+                SituationInsight(
+                    title: "No major deltas",
+                    detail: "The latest refresh did not materially change the system’s state.",
+                    value: "Stable",
+                    severity: .normal
+                )
+            ]
+            : items.sorted { $0.severity.rawValue > $1.severity.rawValue }
+    }
+
+    private func riskMatrixSignals(dashboard: DashboardPayload) -> [RiskMatrixSignal] {
+        var rows: [RiskMatrixSignal] = []
+
+        if let vix = marketMetric(dashboard.monitoring.marketPulse, matching: ["vix", "volatility"]) {
+            rows.append(
+                RiskMatrixSignal(
+                    label: "Volatility",
+                    detail: "Equity stress proxy",
+                    value: vix.display,
+                    status: vix.numeric >= 20 ? "warning" : "fresh",
+                    severity: vix.numeric >= 25 ? .critical : (vix.numeric >= 20 ? .elevated : .normal)
+                )
+            )
+        }
+
+        if let dxy = marketMetric(dashboard.monitoring.marketPulse, matching: ["dxy", "dollar"]) {
+            rows.append(
+                RiskMatrixSignal(
+                    label: "Dollar",
+                    detail: "Funding and global pressure",
+                    value: dxy.display,
+                    status: dxy.numeric >= 105 ? "warning" : "fresh",
+                    severity: dxy.numeric >= 106 ? .critical : (dxy.numeric >= 105 ? .elevated : .normal)
+                )
+            )
+        }
+
+        if let btc = marketMetric(dashboard.monitoring.marketPulse, matching: ["btc"]) {
+            rows.append(
+                RiskMatrixSignal(
+                    label: "Crypto Risk",
+                    detail: "High-beta sentiment read",
+                    value: btc.change ?? btc.display,
+                    status: changeValue(btc.change) <= -2.5 ? "warning" : "fresh",
+                    severity: changeValue(btc.change) <= -4 ? .critical : (changeValue(btc.change) <= -2.5 ? .elevated : .normal)
+                )
+            )
+        }
+
+        if let sentiment = dashboard.analytics.sentiment.first(where: { $0.indexType.lowercased() == "crypto" }) {
+            rows.append(
+                RiskMatrixSignal(
+                    label: "Crypto Sentiment",
+                    detail: sentiment.classification.capitalized,
+                    value: "\(sentiment.value)",
+                    status: sentiment.value <= 25 ? "warning" : "fresh",
+                    severity: sentiment.value <= 20 ? .critical : (sentiment.value <= 25 ? .elevated : .normal)
+                )
+            )
+        }
+
+        let macroScore = dashboard.analytics.timeframes.first(where: { $0.timeframe == "macro" })?.score ?? 0
+        rows.append(
+            RiskMatrixSignal(
+                label: "Macro Stack",
+                detail: "Long-cycle conviction",
+                value: String(format: "%.0f", macroScore),
+                status: macroScore < -15 ? "warning" : "fresh",
+                severity: macroScore < -35 ? .critical : (macroScore < -15 ? .elevated : .normal)
+            )
+        )
+
+        return rows
+    }
+
+    private func marketMetric(_ items: [MarketPulsePayload], matching terms: [String]) -> (display: String, numeric: Double, change: String?)? {
+        for item in items {
+            let haystack = "\(item.symbol) \(item.name)".lowercased()
+            if terms.contains(where: { haystack.contains($0) }) {
+                return (item.value?.raw ?? item.dayChangePct?.raw ?? "—", numericValue(item.value?.raw), item.dayChangePct?.raw)
+            }
+        }
+        return nil
     }
 }
 
@@ -906,6 +1138,8 @@ struct SystemView: View {
     @AppStorage("pftui.mobile.systemDensity") private var systemDensity = "dense"
     @AppStorage("pftui.mobile.home.showSituation") private var showSituationModule = true
     @AppStorage("pftui.mobile.home.showFocus") private var showFocusModule = true
+    @AppStorage("pftui.mobile.home.showChanges") private var showChangeModule = true
+    @AppStorage("pftui.mobile.home.showRisk") private var showRiskModule = true
     @AppStorage("pftui.mobile.home.showNews") private var showNewsModule = false
     @State private var showDisplay = true
     @State private var showConnection = true
@@ -935,6 +1169,10 @@ struct SystemView: View {
                         Toggle("Situation brief", isOn: $showSituationModule)
                             .tint(MobilePalette.accent)
                         Toggle("Portfolio impact", isOn: $showFocusModule)
+                            .tint(MobilePalette.accent)
+                        Toggle("Change radar", isOn: $showChangeModule)
+                            .tint(MobilePalette.accent)
+                        Toggle("Risk matrix", isOn: $showRiskModule)
                             .tint(MobilePalette.accent)
                         Toggle("Catalyst/news module", isOn: $showNewsModule)
                             .tint(MobilePalette.accent)
@@ -1330,6 +1568,15 @@ struct SituationInsight: Identifiable {
     let severity: SituationSeverity
 }
 
+struct RiskMatrixSignal: Identifiable {
+    let id = UUID()
+    let label: String
+    let detail: String
+    let value: String
+    let status: String
+    let severity: SituationSeverity
+}
+
 enum SituationSeverity: Int {
     case normal = 1
     case elevated = 2
@@ -1528,6 +1775,24 @@ private func changeValue(_ raw: String?) -> Double {
         .replacingOccurrences(of: "+", with: "")
         .trimmingCharacters(in: .whitespaces)
     return Double(cleaned) ?? 0
+}
+
+private func numericValue(_ raw: String?) -> Double {
+    guard let raw else { return 0 }
+    let cleaned = raw
+        .replacingOccurrences(of: "%", with: "")
+        .replacingOccurrences(of: "+", with: "")
+        .replacingOccurrences(of: ",", with: "")
+        .trimmingCharacters(in: .whitespaces)
+    return Double(cleaned) ?? 0
+}
+
+private func signedInt(_ value: Int) -> String {
+    value > 0 ? "+\(value)" : "\(value)"
+}
+
+private func signedNumber(_ value: Double) -> String {
+    value > 0 ? String(format: "+%.0f", value) : String(format: "%.0f", value)
 }
 
 private func severityRank(_ raw: String) -> SituationSeverity {

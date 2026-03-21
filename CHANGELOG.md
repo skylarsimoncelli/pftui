@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: add mobile change radar and cross-asset risk matrix
+
+- What: extended the Situation Room with a delta-aware monitoring layer. The app now keeps the previous dashboard snapshot in memory and uses it to surface a Change Radar: regime shifts, alert count changes, freshness changes, pulse re-pricing, headline changes, and aggregate score swings between refreshes. Added a compact Risk Matrix that translates existing market pulse, sentiment, and timeframe data into a phone-first stress dashboard for volatility, dollar pressure, crypto risk, and macro tone.
+- Why: the prior Situation Room pass improved synthesis, but it still lacked the most important operator question: “what changed?” This update pushes the app closer to a true intelligence console by making state transitions and stress conditions explicit instead of forcing the user to infer them from raw cards.
+- Files: `mobile/app/PftuiMobile/ContentView.swift`, `mobile/app/PftuiMobile/MobileAPI.swift`, `CHANGELOG.md`
+- Tests: `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-20 — feat: turn the mobile home screen into a situation room
 
 - What: reoriented the first mobile tab around a Situation Room concept instead of a generic home screen. Added ranked “Watch Now” insights, portfolio-impact summaries, a situation-led hero, and persistent customization for high-density module visibility. Updated the primary tab label and top-of-app flow so the mobile client feels more like an intelligence console than a generic dashboard shell.
