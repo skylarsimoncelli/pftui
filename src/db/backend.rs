@@ -33,6 +33,20 @@ impl BackendConnection {
         Ok(())
     }
 
+    /// Create a lightweight copy of the connection for the mobile API server.
+    /// `PgPool` is `Clone` (internally `Arc`-wrapped), so this is cheap.
+    /// For SQLite this is unsupported since the mobile API requires Postgres.
+    pub fn clone_for_server(&self) -> Result<Self> {
+        match self {
+            BackendConnection::Postgres { pool } => Ok(BackendConnection::Postgres {
+                pool: pool.clone(),
+            }),
+            BackendConnection::Sqlite { .. } => {
+                anyhow::bail!("Mobile API server requires the Postgres backend")
+            }
+        }
+    }
+
     pub fn sqlite_native(&self) -> Option<&Connection> {
         match self {
             BackendConnection::Sqlite { conn } => Some(conn),

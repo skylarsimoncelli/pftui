@@ -15,14 +15,25 @@ use serde::Serialize;
 use crate::alerts::AlertStatus;
 use crate::config::Config;
 use crate::db;
+use crate::db::backend::BackendConnection;
 use crate::mobile::auth::{auth_middleware, health, MobileAuthState};
 use crate::mobile::commands::certificate_fingerprint;
 use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
-use crate::web::{
-    api::{self, AppState},
-    view_model,
-};
+use crate::web::view_model;
+
+/// Shared state for the mobile API that holds a pre-opened database connection.
+/// This avoids calling `open_from_config` (which uses `pg_runtime::block_on`)
+/// from within async request handlers, preventing the "cannot start a runtime
+/// from within a runtime" panic.
+///
+/// We store the `BackendConnection` inside a `std::sync::Mutex` because SQLite's
+/// `Connection` is not `Send`. The mobile server only uses Postgres in practice,
+/// but this keeps the type system happy while allowing the same code paths.
+struct MobileAppState {
+    backend: std::sync::Mutex<BackendConnection>,
+    config: Config,
+}
 
 #[derive(Serialize)]
 pub struct MobilePortfolioResponse {
@@ -134,7 +145,7 @@ pub struct MobileSourceStatus {
     pub records: usize,
 }
 
-pub async fn run_server(db_path: String, config: Config) -> Result<()> {
+pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()> {
     let _ = CryptoProvider::install_default(rustls::crypto::ring::default_provider());
 
     if !config.mobile.enabled {
@@ -155,8 +166,8 @@ pub async fn run_server(db_path: String, config: Config) -> Result<()> {
         anyhow!("mobile.key_path is missing; re-run `pftui system mobile enable`")
     })?;
 
-    let app_state = Arc::new(AppState {
-        db_path,
+    let app_state = Arc::new(MobileAppState {
+        backend: std::sync::Mutex::new(backend),
         config: config.clone(),
     });
     let auth_state = Arc::new(MobileAuthState::new(
@@ -168,7 +179,7 @@ pub async fn run_server(db_path: String, config: Config) -> Result<()> {
         .route("/dashboard", get(get_dashboard))
         .route("/portfolio", get(get_portfolio))
         .route("/analytics", get(get_analytics))
-        .route("/ui-config", get(api::get_ui_config))
+        .route("/ui-config", get(get_ui_config_mobile))
         .with_state(app_state);
 
     let app = Router::new()
@@ -196,10 +207,12 @@ pub async fn run_server(db_path: String, config: Config) -> Result<()> {
 }
 
 async fn get_dashboard(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<MobileAppState>>,
 ) -> Result<Json<MobileDashboardResponse>, (StatusCode, String)> {
-    let backend = crate::db::backend::open_from_config(&state.config, Path::new(&state.db_path))
-        .map_err(internal_error)?;
+    let backend = state
+        .backend
+        .lock()
+        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
     let portfolio = portfolio_payload(&backend, &state.config).map_err(internal_error)?;
     let analytics = analytics_payload(&backend);
     let monitoring = monitoring_payload(&backend).map_err(internal_error)?;
@@ -213,21 +226,34 @@ async fn get_dashboard(
 }
 
 async fn get_portfolio(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<MobileAppState>>,
 ) -> Result<Json<MobilePortfolioResponse>, (StatusCode, String)> {
-    let backend = crate::db::backend::open_from_config(&state.config, Path::new(&state.db_path))
-        .map_err(internal_error)?;
+    let backend = state
+        .backend
+        .lock()
+        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
     Ok(Json(
         portfolio_payload(&backend, &state.config).map_err(internal_error)?,
     ))
 }
 
 async fn get_analytics(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<MobileAppState>>,
 ) -> Result<Json<MobileAnalyticsResponse>, (StatusCode, String)> {
-    let backend = crate::db::backend::open_from_config(&state.config, Path::new(&state.db_path))
-        .map_err(internal_error)?;
+    let backend = state
+        .backend
+        .lock()
+        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
     Ok(Json(analytics_payload(&backend)))
+}
+
+async fn get_ui_config_mobile(
+    State(state): State<Arc<MobileAppState>>,
+) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "base_currency": state.config.base_currency,
+        "theme": state.config.theme,
+    }))
 }
 
 fn portfolio_payload(
