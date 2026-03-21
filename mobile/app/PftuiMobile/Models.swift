@@ -35,6 +35,39 @@ struct DashboardPayload: Decodable {
     let portfolio: PortfolioPayload
     let analytics: AnalyticsPayload
     let monitoring: MonitoringPayload
+    let situation: SituationPayload
+}
+
+struct SituationPayload: Decodable {
+    let title: String
+    let subtitle: String
+    let summary: [SituationStatPayload]
+    let watchNow: [SituationInsightPayload]
+    let portfolioImpacts: [SituationInsightPayload]
+    let riskMatrix: [RiskSignalPayload]
+}
+
+struct SituationStatPayload: Decodable, Identifiable {
+    var id: String { label }
+    let label: String
+    let value: String
+}
+
+struct SituationInsightPayload: Decodable, Identifiable {
+    var id: String { "\(title)-\(value)" }
+    let title: String
+    let detail: String
+    let value: String
+    let severity: String
+}
+
+struct RiskSignalPayload: Decodable, Identifiable {
+    var id: String { label }
+    let label: String
+    let detail: String
+    let value: String
+    let status: String
+    let severity: String
 }
 
 struct PortfolioPayload: Decodable {
@@ -57,6 +90,10 @@ struct PositionPayload: Decodable, Identifiable {
 
 struct AnalyticsPayload: Decodable {
     let timeframes: [TimeframePayload]
+    let regime: RegimePayload?
+    let correlations: [CorrelationPayload]
+    let sentiment: [SentimentPayload]
+    let predictions: [PredictionPayload]
 }
 
 struct TimeframePayload: Decodable, Identifiable {
@@ -66,6 +103,43 @@ struct TimeframePayload: Decodable, Identifiable {
     let score: Double
     let summary: String?
     let updatedAt: String?
+}
+
+struct RegimePayload: Decodable {
+    let regime: String
+    let confidence: Double?
+    let drivers: [String]
+    let recordedAt: String
+    let vix: Double?
+    let dxy: Double?
+    let yield10y: Double?
+    let oil: Double?
+    let gold: Double?
+    let btc: Double?
+}
+
+struct CorrelationPayload: Decodable, Identifiable {
+    var id: String { "\(symbolA)-\(symbolB)-\(period)" }
+    let symbolA: String
+    let symbolB: String
+    let correlation: Double
+    let period: String
+    let recordedAt: String
+}
+
+struct SentimentPayload: Decodable, Identifiable {
+    var id: String { indexType }
+    let indexType: String
+    let value: Int
+    let classification: String
+    let updatedAt: String
+}
+
+struct PredictionPayload: Decodable, Identifiable {
+    var id: String { question }
+    let question: String
+    let probabilityPct: Double
+    let category: String
 }
 
 struct MonitoringPayload: Decodable {
@@ -114,14 +188,45 @@ struct NewsPayload: Decodable, Identifiable {
 }
 
 struct SystemSnapshotPayload: Decodable {
+    let server: ServerRuntimePayload
+    let database: DatabaseHealthPayload
     let daemon: DaemonPayload
     let sources: [SourceStatusPayload]
+}
+
+struct ServerRuntimePayload: Decodable {
+    let pftuiVersion: String
+    let backend: String
+    let portfolioMode: String
+    let databaseMode: String
+    let mobilePort: Int
+    let apiTokenCount: Int
+    let sessionTtlHours: Int
+}
+
+struct DatabaseHealthPayload: Decodable {
+    let status: String
+    let label: String
+    let integrity: String
+    let positions: Int
+    let transactions: Int
+    let watchlist: Int
+    let trackedPrices: Int
+    let staleSources: Int
+    let lastMarketSync: String?
+    let lastNewsSync: String?
 }
 
 struct DaemonPayload: Decodable {
     let running: Bool
     let status: String
+    let cycle: Int
     let lastHeartbeat: String?
+    let lastRefreshDurationSecs: Double?
+    let intervalSecs: Int
+    let taskCount: Int
+    let errorCount: Int
+    let tasks: [String]
 }
 
 struct SourceStatusPayload: Decodable, Identifiable {
