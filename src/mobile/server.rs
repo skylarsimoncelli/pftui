@@ -21,7 +21,7 @@ use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
 
 use crate::alerts::AlertStatus;
-use crate::analytics::situation;
+use crate::analytics::{deltas, situation};
 use crate::config::Config;
 use crate::db;
 use crate::db::backend::BackendConnection;
@@ -127,6 +127,7 @@ pub struct MobileDashboardResponse {
     pub analytics: MobileAnalyticsResponse,
     pub monitoring: MobileMonitoringResponse,
     pub situation: MobileSituationResponse,
+    pub deltas: deltas::SituationDeltaReport,
 }
 
 #[derive(Serialize)]
@@ -320,6 +321,7 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
         .route("/dashboard", get(get_dashboard))
         .route("/portfolio", get(get_portfolio))
         .route("/analytics", get(get_analytics))
+        .route("/deltas", get(get_deltas))
         .route("/ui-config", get(get_ui_config_mobile))
         .with_state(app_state);
 
@@ -369,6 +371,8 @@ async fn get_dashboard(
     let monitoring =
         monitoring_payload(&backend, &state.config, &state.db_path).map_err(internal_error)?;
     let situation = situation_payload(&portfolio, &analytics, &monitoring);
+    let deltas = deltas::build_report_backend(&backend, deltas::DeltaWindow::LastRefresh, true)
+        .map_err(internal_error)?;
 
     Ok(Json(MobileDashboardResponse {
         generated_at: Utc::now().to_rfc3339(),
@@ -376,6 +380,7 @@ async fn get_dashboard(
         analytics,
         monitoring,
         situation,
+        deltas,
     }))
 }
 
@@ -399,6 +404,19 @@ async fn get_analytics(
         .lock()
         .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
     Ok(Json(analytics_payload(&backend)))
+}
+
+async fn get_deltas(
+    State(state): State<Arc<MobileAppState>>,
+) -> Result<Json<deltas::SituationDeltaReport>, (StatusCode, String)> {
+    let backend = state
+        .backend
+        .lock()
+        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
+    Ok(Json(
+        deltas::build_report_backend(&backend, deltas::DeltaWindow::LastRefresh, true)
+            .map_err(internal_error)?,
+    ))
 }
 
 async fn get_ui_config_mobile(State(state): State<Arc<MobileAppState>>) -> Json<serde_json::Value> {
@@ -720,6 +738,9 @@ fn situation_payload(
             })
             .collect(),
         stale_sources: monitoring.system.database.stale_sources,
+        scenarios: Vec::new(),
+        convictions: Vec::new(),
+        correlations: Vec::new(),
     });
 
     MobileSituationResponse {

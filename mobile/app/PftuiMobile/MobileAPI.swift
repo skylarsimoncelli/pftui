@@ -6,7 +6,6 @@ import Security
 final class MobileStore: ObservableObject {
     @Published var connection: ConnectionSettings?
     @Published var dashboard: DashboardPayload?
-    @Published var previousDashboard: DashboardPayload?
     @Published var portfolio: PortfolioPayload?
     @Published var analytics: AnalyticsPayload?
     @Published var errorMessage: String?
@@ -47,7 +46,6 @@ final class MobileStore: ObservableObject {
     func disconnect() {
         connection = nil
         dashboard = nil
-        previousDashboard = nil
         portfolio = nil
         analytics = nil
         errorMessage = nil
@@ -65,7 +63,6 @@ final class MobileStore: ObservableObject {
 
         do {
             let payload: DashboardPayload = try await request(path: "/api/dashboard")
-            previousDashboard = dashboard
             dashboard = payload
             portfolio = payload.portfolio
             analytics = payload.analytics

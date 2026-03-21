@@ -14,6 +14,8 @@ _(none)_
 
 ### F53: Situation Engine — Canonical “What Matters Now” Layer
 
+> Status: shipped on `feat/situation-engine` / PR #121. The canonical situation contract now exists in Rust and is reused by CLI, mobile, and web.
+
 > Vision fit: the system should not depend on prompt text or client-side heuristics to decide what matters. One canonical market situation model should be computed in Rust/Postgres and reused everywhere.
 >
 > Product principle:
@@ -29,6 +31,8 @@ _(none)_
 > 5. Add deterministic ranking and empty-data tests
 
 ### F54: Delta Engine — “What Changed” As A Native Product
+
+> Status: shipped on `feat/situation-engine` / PR #121 follow-up. Server-owned `situation_snapshots`, `analytics deltas`, and shared `change_radar` API payloads are in place; future work can deepen coverage and persistence cadence.
 
 > Vision fit: monitoring is about state transitions, not just snapshots. The analytics layer should explicitly report what changed since the last refresh, prior close, 24h, and 7d.
 >

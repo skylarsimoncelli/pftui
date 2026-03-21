@@ -6,6 +6,7 @@ use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::alerts::AlertStatus;
+use crate::analytics::deltas;
 use crate::analytics::levels::nearest_actionable_levels;
 use crate::analytics::situation;
 use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
@@ -610,6 +611,7 @@ pub fn run(
         "signals" => run_signals(backend, symbol, signal_type, severity, limit, json_output),
         "summary" => run_summary(backend, json_output),
         "situation" => run_situation(backend, json_output),
+        "deltas" => run_deltas(backend, value, json_output),
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
         "high" => run_high(backend, json_output),
@@ -645,7 +647,7 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
@@ -1730,6 +1732,36 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
                     row.severity, row.label, row.detail, row.value
                 );
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_deltas(backend: &BackendConnection, since: Option<&str>, json_output: bool) -> Result<()> {
+    let window = deltas::DeltaWindow::parse(since)?;
+    let report = deltas::build_report_backend(backend, window, true)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Change Radar");
+        println!("════════════════════════════════════════════════════════════════");
+        println!(
+            "Window: {}  Coverage: {}",
+            report.label,
+            report.coverage.to_uppercase()
+        );
+        if let Some(baseline_at) = &report.baseline_at {
+            println!("Baseline: {}", baseline_at);
+        }
+        println!("Current: {}", report.current_at);
+        println!();
+        for item in &report.change_radar {
+            println!(
+                "- [{}] {} — {} ({})",
+                item.severity, item.title, item.detail, item.value
+            );
         }
     }
 
@@ -3087,6 +3119,14 @@ mod tests {
             "run_situation should not error: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn deltas_json_never_empty_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_deltas(&backend, Some("last-refresh"), true);
+        assert!(result.is_ok(), "run_deltas should not error: {:?}", result);
     }
 
     #[test]

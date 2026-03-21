@@ -2098,6 +2098,12 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    Deltas {
+        #[arg(long, default_value = "last-refresh")]
+        since: String,
+        #[arg(long)]
+        json: bool,
+    },
     Low {
         #[arg(long)]
         json: bool,

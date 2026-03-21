@@ -206,11 +206,11 @@ struct HomeView: View {
 
                     CollapsibleCardSection(
                         title: "Change Radar",
-                        subtitle: "What changed since the last refresh",
+                        subtitle: "Server-side changes since the \(dashboard.deltas.label)",
                         isExpanded: $showChanges
                     ) {
                         VStack(spacing: 12) {
-                            ForEach(changeRadarInsights(current: dashboard, previous: store.previousDashboard).prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                            ForEach(dashboard.deltas.changeRadar.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
                                 insightRow(insight)
                             }
                         }
@@ -595,109 +595,6 @@ struct HomeView: View {
         return "\(store.portfolio?.positionCount ?? 0) positions • \(store.dashboard?.monitoring.system.server.pftuiVersion ?? "offline")"
     }
 
-    private func changeRadarInsights(current: DashboardPayload, previous: DashboardPayload?) -> [SituationInsightPayload] {
-        guard let previous else {
-            return [
-                SituationInsightPayload(
-                    title: "Baseline forming",
-                    detail: "Refresh once more and the app will start ranking state changes between snapshots.",
-                    value: "Warmup",
-                    severity: "normal"
-                )
-            ]
-        }
-
-        var items: [SituationInsightPayload] = []
-        let currentAverage = averageScore(current.analytics.timeframes)
-        let previousAverage = averageScore(previous.analytics.timeframes)
-        let averageDelta = currentAverage - previousAverage
-        if abs(averageDelta) >= 8 {
-            items.append(
-                SituationInsightPayload(
-                    title: averageDelta > 0 ? "Risk tone improved" : "Risk tone weakened",
-                    detail: "Average timeframe score moved from \(Int(previousAverage)) to \(Int(currentAverage)).",
-                    value: signedNumber(averageDelta),
-                    severity: abs(averageDelta) >= 18 ? "critical" : "elevated"
-                )
-            )
-        }
-
-        let alertDelta = current.monitoring.triggeredAlertCount - previous.monitoring.triggeredAlertCount
-        if alertDelta != 0 {
-            items.append(
-                SituationInsightPayload(
-                    title: alertDelta > 0 ? "Triggered alerts increased" : "Triggered alerts cooled",
-                    detail: "Alert load moved from \(previous.monitoring.triggeredAlertCount) to \(current.monitoring.triggeredAlertCount).",
-                    value: signedInt(alertDelta),
-                    severity: alertDelta > 0 ? "critical" : "normal"
-                )
-            )
-        }
-
-        let staleDelta = current.monitoring.system.database.staleSources - previous.monitoring.system.database.staleSources
-        if staleDelta != 0 {
-            items.append(
-                SituationInsightPayload(
-                    title: staleDelta > 0 ? "Data trust worsened" : "Data freshness improved",
-                    detail: "Stale sources moved from \(previous.monitoring.system.database.staleSources) to \(current.monitoring.system.database.staleSources).",
-                    value: signedInt(staleDelta),
-                    severity: staleDelta > 0 ? "elevated" : "normal"
-                )
-            )
-        }
-
-        if current.analytics.regime?.regime != previous.analytics.regime?.regime,
-           let regime = current.analytics.regime?.regime {
-            items.append(
-                SituationInsightPayload(
-                    title: "Regime shifted",
-                    detail: "The current market regime changed since the prior snapshot.",
-                    value: regime.replacingOccurrences(of: "_", with: " ").capitalized,
-                    severity: "critical"
-                )
-            )
-        }
-
-        let previousPulse = Dictionary(uniqueKeysWithValues: previous.monitoring.marketPulse.map { ($0.symbol, $0) })
-        for item in current.monitoring.marketPulse {
-            guard let prior = previousPulse[item.symbol] else { continue }
-            let moveDelta = changeValue(item.dayChangePct?.raw) - changeValue(prior.dayChangePct?.raw)
-            if abs(moveDelta) >= 1.5 {
-                items.append(
-                    SituationInsightPayload(
-                        title: "\(item.symbol) momentum re-priced",
-                        detail: item.name,
-                        value: signedNumber(moveDelta),
-                        severity: abs(moveDelta) >= 3 ? "critical" : "elevated"
-                    )
-                )
-            }
-        }
-
-        if let currentHeadline = current.monitoring.news.first?.title,
-           let previousHeadline = previous.monitoring.news.first?.title,
-           currentHeadline != previousHeadline {
-            items.append(
-                SituationInsightPayload(
-                    title: "Lead catalyst changed",
-                    detail: currentHeadline,
-                    value: "News",
-                    severity: "normal"
-                )
-            )
-        }
-
-        return items.isEmpty
-            ? [
-                SituationInsightPayload(
-                    title: "No major deltas",
-                    detail: "The latest refresh did not materially change the system’s state.",
-                    value: "Stable",
-                    severity: "normal"
-                )
-            ]
-            : items.sorted { severityWeight($0.severity) > severityWeight($1.severity) }
-    }
 }
 
 struct PortfolioView: View {

@@ -140,6 +140,14 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (date, symbol)
         );
 
+        CREATE TABLE IF NOT EXISTS situation_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorded_at TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_situation_snapshots_recorded_at
+            ON situation_snapshots(recorded_at DESC);
+
         CREATE TABLE IF NOT EXISTS allocation_targets (
             symbol TEXT PRIMARY KEY,
             target_pct TEXT NOT NULL,
@@ -1006,9 +1014,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     // Migration: add source and confidence columns to economic_data
     let has_source: bool = conn
-        .prepare(
-            "SELECT COUNT(*) FROM pragma_table_info('economic_data') WHERE name = 'source'",
-        )?
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('economic_data') WHERE name = 'source'")?
         .query_row([], |row| row.get::<_, i64>(0))
         .unwrap_or(0)
         > 0;

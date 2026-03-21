@@ -22,7 +22,7 @@ use rust_decimal_macros::dec;
 use crate::analytics::levels::{
     nearest_actionable_levels, select_actionable_level, ActionableLevelPair,
 };
-use crate::analytics::situation::SituationSnapshot;
+use crate::analytics::{deltas::SituationDeltaReport, situation::SituationSnapshot};
 
 fn get_price_map_backend(
     backend: &crate::db::backend::BackendConnection,
@@ -2431,6 +2431,31 @@ pub async fn get_situation(
     })?;
 
     Ok(Json(snapshot))
+}
+
+pub async fn get_deltas(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<SituationDeltaReport>, (StatusCode, String)> {
+    let backend = state.get_backend().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let report = crate::analytics::deltas::build_report_backend(
+        &backend,
+        crate::analytics::deltas::DeltaWindow::LastRefresh,
+        true,
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to build delta report: {}", e),
+        )
+    })?;
+
+    Ok(Json(report))
 }
 
 fn color_to_hex(color: Color) -> String {

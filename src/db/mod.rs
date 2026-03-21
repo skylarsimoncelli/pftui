@@ -2,12 +2,12 @@ pub mod agent_messages;
 #[allow(dead_code)] // Infrastructure for F6 alert engine — consumed by F6.2+ (CLI, TUI, refresh)
 pub mod alerts;
 pub mod allocation_targets;
-pub mod broker_connections;
 pub mod allocations;
 pub mod annotations;
 pub mod backend;
 #[allow(dead_code)] // Infrastructure for F24.1+ consumers (BLS indicators, Economy tab)
 pub mod bls_cache;
+pub mod broker_connections;
 #[allow(dead_code)] // Infrastructure for F12.1+ consumers (calendar CLI, Economy tab)
 pub mod calendar_cache;
 pub mod chart_state;
@@ -52,6 +52,7 @@ pub mod scenarios;
 pub mod schema;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)
 pub mod sentiment_cache;
+pub mod situation_snapshots;
 pub mod snapshots;
 pub mod structural;
 pub mod technical_levels;

@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: add native situation delta engine and server-owned change radar
+
+- What: added a new Rust-native `analytics deltas` surface backed by persisted `situation_snapshots`. The analytics layer now stores canonical situation snapshots server-side and can compute ranked `change_radar` deltas for `last-refresh`, `close`, `24h`, and `7d` windows. Delta detection currently covers timeframe score shifts, lead signal changes, alert load, source freshness, regime changes, sentiment moves, market-pulse repricing, scenario probability changes, conviction changes, and correlation shifts. Exposed the same report through the web API (`/api/deltas`) and the mobile dashboard/mobile API, and moved the iOS Change Radar off client-local previous-snapshot logic onto the shared backend contract. Also fixed the existing `PriceQuote.previous_close` test initializer break in `import.rs` so the full Rust test suite can compile again.
+- Why: the Situation Room needed to answer “what changed?” from the analytics layer, not from SwiftUI memory. This turns change detection into a server-owned product that mobile, web, CLI, and later agent surfaces can all reuse consistently.
+- Files: `src/analytics/deltas.rs`, `src/analytics/situation.rs`, `src/db/situation_snapshots.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/MobileAPI.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `src/commands/import.rs`, `CHANGELOG.md`
+- Tests: `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics situation --json`; `cargo run -- analytics deltas --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-20 — feat: move situation synthesis into the mobile server contract
 
 - What: added a first-class server-side `situation` payload to the mobile dashboard API. The server now publishes a canonical situation title/subtitle, summary stats, ranked `watch_now` insights, portfolio impact items, and a risk matrix, all derived from the existing portfolio, analytics, and monitoring layers. The iOS app was simplified to consume that contract directly instead of duplicating the same synthesis logic in SwiftUI.

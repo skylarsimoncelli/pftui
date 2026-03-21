@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::alerts::AlertStatus;
@@ -65,7 +65,7 @@ pub struct CrossTimeframeState {
     pub severity: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SituationInputs {
     pub position_count: usize,
     pub positions: Vec<SituationPosition>,
@@ -77,9 +77,12 @@ pub struct SituationInputs {
     pub triggered_alert_count: usize,
     pub market_pulse: Vec<MarketPulseItem>,
     pub stale_sources: usize,
+    pub scenarios: Vec<ScenarioState>,
+    pub convictions: Vec<ConvictionState>,
+    pub correlations: Vec<CorrelationState>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SituationPosition {
     pub symbol: String,
     pub name: String,
@@ -88,7 +91,7 @@ pub struct SituationPosition {
     pub current_value: Option<Decimal>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeframeScore {
     pub timeframe: String,
     pub label: String,
@@ -97,7 +100,7 @@ pub struct TimeframeScore {
     pub updated_at: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegimeContext {
     pub regime: String,
     pub confidence: Option<f64>,
@@ -106,26 +109,46 @@ pub struct RegimeContext {
     pub dxy: Option<f64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SentimentGauge {
     pub index_type: String,
     pub value: u8,
     pub classification: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LatestSignal {
     pub signal_type: String,
     pub severity: String,
     pub description: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketPulseItem {
     pub symbol: String,
     pub name: String,
     pub value: Option<Decimal>,
     pub day_change_pct: Option<Decimal>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScenarioState {
+    pub name: String,
+    pub probability: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvictionState {
+    pub symbol: String,
+    pub score: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CorrelationState {
+    pub symbol_a: String,
+    pub symbol_b: String,
+    pub correlation: f64,
+    pub period: String,
 }
 
 pub fn build_snapshot_backend(backend: &BackendConnection) -> Result<SituationSnapshot> {
@@ -241,6 +264,32 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
             day_change_pct: day_change_pct_backend(backend, &spec.symbol),
         })
         .collect();
+    let scenarios = db::scenarios::list_scenarios_backend(backend, Some("active"))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| ScenarioState {
+            name: row.name,
+            probability: row.probability,
+        })
+        .collect();
+    let convictions = db::convictions::list_current_backend(backend)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| ConvictionState {
+            symbol: row.symbol,
+            score: row.score,
+        })
+        .collect();
+    let correlations = db::correlation_snapshots::list_current_backend(backend, Some("30d"))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| CorrelationState {
+            symbol_a: row.symbol_a,
+            symbol_b: row.symbol_b,
+            correlation: row.correlation,
+            period: row.period,
+        })
+        .collect();
 
     Ok(SituationInputs {
         position_count: positions.len(),
@@ -253,6 +302,9 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
         triggered_alert_count,
         market_pulse,
         stale_sources: count_stale_sources(backend),
+        scenarios,
+        convictions,
+        correlations,
     })
 }
 
@@ -762,6 +814,9 @@ mod tests {
             triggered_alert_count: 0,
             market_pulse: Vec::new(),
             stale_sources: 0,
+            scenarios: Vec::new(),
+            convictions: Vec::new(),
+            correlations: Vec::new(),
         });
 
         assert_eq!(snapshot.headline, "Situation Stable");
@@ -817,6 +872,9 @@ mod tests {
                 day_change_pct: Some(dec!(-4.6)),
             }],
             stale_sources: 1,
+            scenarios: Vec::new(),
+            convictions: Vec::new(),
+            correlations: Vec::new(),
         });
 
         assert!(!snapshot.watch_now.is_empty());
