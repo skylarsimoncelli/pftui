@@ -11,6 +11,7 @@ use crate::analytics::deltas;
 use crate::analytics::impact;
 use crate::analytics::levels::nearest_actionable_levels;
 use crate::analytics::situation;
+use crate::analytics::synthesis;
 use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
 use crate::db::backend::BackendConnection;
 use crate::db::{
@@ -617,6 +618,7 @@ pub fn run(
         "catalysts" => run_catalysts(backend, value, json_output),
         "impact" => run_impact(backend, json_output),
         "opportunities" => run_opportunities(backend, json_output),
+        "synthesis" => run_synthesis(backend, json_output),
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
         "high" => run_high(backend, json_output),
@@ -652,7 +654,7 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, synthesis, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
@@ -1847,6 +1849,34 @@ fn run_opportunities(backend: &BackendConnection, json_output: bool) -> Result<(
                     "- [{}] {} — {} ({})",
                     item.severity, item.symbol, item.summary, item.consensus
                 );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_synthesis(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let report = synthesis::build_report_backend(backend)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Cross-Timeframe Synthesis");
+        println!("════════════════════════════════════════════════════════════════");
+        if !report.strongest_alignment.is_empty() {
+            println!("Strongest alignment:");
+            for item in &report.strongest_alignment {
+                println!(
+                    "- {} {} ({:.0}%)",
+                    item.symbol, item.consensus, item.score_pct
+                );
+            }
+        }
+        if !report.highest_confidence_divergence.is_empty() {
+            println!("\nTop divergences:");
+            for item in &report.highest_confidence_divergence {
+                println!("- {} {}", item.symbol, item.summary);
             }
         }
     }
@@ -3243,6 +3273,18 @@ mod tests {
         assert!(
             result.is_ok(),
             "run_opportunities should not error: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn synthesis_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_synthesis(&backend, true);
+        assert!(
+            result.is_ok(),
+            "run_synthesis should not error: {:?}",
             result
         );
     }

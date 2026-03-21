@@ -71,6 +71,8 @@ _(none)_
 
 ### F57: Cross-Timeframe Synthesis Engine
 
+> Status: shipped on `feat/situation-engine` / PR #121 follow-up. Native `analytics synthesis` now computes strongest alignment, highest-confidence divergences, constraint flows, unresolved tensions, and watch-tomorrow candidates, with shared reuse through mobile and web.
+
 > Vision fit: “constraints flow downward, signals flow upward” should become a native analytics concept rather than prompt lore.
 >
 > Actionable scope:

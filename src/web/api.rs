@@ -27,6 +27,7 @@ use crate::analytics::{
     deltas::SituationDeltaReport,
     impact::{ImpactReport, OpportunitiesReport},
     situation::SituationSnapshot,
+    synthesis::SynthesisReport,
 };
 
 fn get_price_map_backend(
@@ -2524,6 +2525,26 @@ pub async fn get_opportunities(
                 format!("Failed to build opportunities report: {}", e),
             )
         })?;
+
+    Ok(Json(report))
+}
+
+pub async fn get_synthesis(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<SynthesisReport>, (StatusCode, String)> {
+    let backend = state.get_backend().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let report = crate::analytics::synthesis::build_report_backend(&backend).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to build synthesis report: {}", e),
+        )
+    })?;
 
     Ok(Json(report))
 }

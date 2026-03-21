@@ -163,6 +163,7 @@ struct HomeView: View {
     @AppStorage("pftui.mobile.home.showSystem") private var showSystem = false
     @AppStorage("pftui.mobile.home.showNews") private var showNews = false
     @AppStorage("pftui.mobile.home.showOpportunities") private var showOpportunities = true
+    @AppStorage("pftui.mobile.home.showSynthesis") private var showSynthesis = true
 
     var body: some View {
         ScrollView {
@@ -240,6 +241,34 @@ struct HomeView: View {
                             VStack(spacing: 12) {
                                 ForEach(dashboard.situation.riskMatrix) { signal in
                                     riskRow(signal)
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.synthesis.constraintFlows.isEmpty || !dashboard.synthesis.watchTomorrow.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Cross-Timeframe Synthesis",
+                            subtitle: "Constraints, divergences, and watch tomorrow",
+                            isExpanded: $showSynthesis
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(dashboard.synthesis.constraintFlows.prefix(homeDensity == "dense" ? 2 : 3)) { item in
+                                    compactInsightCard(
+                                        title: item.title,
+                                        detail: item.summary,
+                                        trailing: item.direction.uppercased(),
+                                        severity: item.severity
+                                    )
+                                }
+
+                                ForEach(dashboard.synthesis.watchTomorrow.prefix(homeDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.symbol,
+                                        detail: item.reason,
+                                        trailing: item.trigger,
+                                        severity: item.severity
+                                    )
                                 }
                             }
                         }
@@ -550,6 +579,34 @@ struct HomeView: View {
                         .foregroundStyle(MobilePalette.textPrimary)
                         .font(.caption)
                 }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private func compactInsightCard(title: String, detail: String, trailing: String, severity: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(insightColor(severity))
+                .frame(width: 10, height: 10)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top) {
+                    Text(title)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(trailing)
+                        .foregroundStyle(insightColor(severity))
+                        .font(.caption.weight(.bold))
+                }
+                Text(detail)
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.caption)
             }
         }
         .padding(12)

@@ -21,7 +21,7 @@ use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
 
 use crate::alerts::AlertStatus;
-use crate::analytics::{catalysts, deltas, impact, situation};
+use crate::analytics::{catalysts, deltas, impact, situation, synthesis};
 use crate::config::Config;
 use crate::db;
 use crate::db::backend::BackendConnection;
@@ -131,6 +131,7 @@ pub struct MobileDashboardResponse {
     pub catalysts: catalysts::CatalystReport,
     pub impact: impact::ImpactReport,
     pub opportunities: impact::OpportunitiesReport,
+    pub synthesis: synthesis::SynthesisReport,
 }
 
 #[derive(Serialize)]
@@ -328,6 +329,7 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
         .route("/catalysts", get(get_catalysts))
         .route("/impact", get(get_impact))
         .route("/opportunities", get(get_opportunities))
+        .route("/synthesis", get(get_synthesis))
         .route("/ui-config", get(get_ui_config_mobile))
         .with_state(app_state);
 
@@ -384,6 +386,7 @@ async fn get_dashboard(
     let impact = impact::build_impact_report_backend(&backend).map_err(internal_error)?;
     let opportunities =
         impact::build_opportunities_report_backend(&backend).map_err(internal_error)?;
+    let synthesis = synthesis::build_report_backend(&backend).map_err(internal_error)?;
 
     Ok(Json(MobileDashboardResponse {
         generated_at: Utc::now().to_rfc3339(),
@@ -395,6 +398,7 @@ async fn get_dashboard(
         catalysts,
         impact,
         opportunities,
+        synthesis,
     }))
 }
 
@@ -467,6 +471,18 @@ async fn get_opportunities(
         .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
     Ok(Json(
         impact::build_opportunities_report_backend(&backend).map_err(internal_error)?,
+    ))
+}
+
+async fn get_synthesis(
+    State(state): State<Arc<MobileAppState>>,
+) -> Result<Json<synthesis::SynthesisReport>, (StatusCode, String)> {
+    let backend = state
+        .backend
+        .lock()
+        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
+    Ok(Json(
+        synthesis::build_report_backend(&backend).map_err(internal_error)?,
     ))
 }
 

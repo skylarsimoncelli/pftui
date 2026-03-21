@@ -2118,6 +2118,10 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    Synthesis {
+        #[arg(long)]
+        json: bool,
+    },
     Low {
         #[arg(long)]
         json: bool,

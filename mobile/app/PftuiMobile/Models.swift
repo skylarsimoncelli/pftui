@@ -40,6 +40,7 @@ struct DashboardPayload: Decodable {
     let catalysts: CatalystsPayload
     let impact: ImpactPayload
     let opportunities: OpportunitiesPayload
+    let synthesis: SynthesisPayload
 }
 
 struct SituationPayload: Decodable {
@@ -107,6 +108,68 @@ struct AssetInsightPayload: Decodable, Identifiable {
     let severity: String
     let summary: String
     let evidenceChain: [String]
+}
+
+struct SynthesisPayload: Decodable {
+    let generatedAt: String
+    let strongestAlignment: [AlignmentStatePayload]
+    let highestConfidenceDivergence: [DivergenceStatePayload]
+    let constraintFlows: [ConstraintStatePayload]
+    let unresolvedTensions: [SynthesisNotePayload]
+    let watchTomorrow: [WatchTomorrowPayload]
+}
+
+struct AlignmentStatePayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let low: String
+    let medium: String
+    let high: String
+    let macroBias: String
+    let consensus: String
+    let scorePct: Double
+    let bullLayers: Int
+    let bearLayers: Int
+}
+
+struct DivergenceStatePayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let low: String
+    let medium: String
+    let high: String
+    let macroBias: String
+    let dominantSide: String
+    let disagreementPct: Double
+    let summary: String
+}
+
+struct ConstraintStatePayload: Decodable, Identifiable {
+    var id: String { "\(fromTimeframe)-\(toTimeframe)-\(title)" }
+    let title: String
+    let fromTimeframe: String
+    let toTimeframe: String
+    let direction: String
+    let severity: String
+    let summary: String
+}
+
+struct SynthesisNotePayload: Decodable, Identifiable {
+    var id: String { "\(title)-\(severity)" }
+    let title: String
+    let detail: String
+    let severity: String
+}
+
+struct WatchTomorrowPayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let reason: String
+    let trigger: String
+    let severity: String
 }
 
 struct SituationStatPayload: Decodable, Identifiable {

@@ -6,4 +6,5 @@ pub mod risk;
 pub mod scenarios;
 pub mod signals;
 pub mod situation;
+pub mod synthesis;
 pub mod technicals;

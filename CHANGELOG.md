@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add cross-timeframe synthesis engine
+
+- What: added native `analytics synthesis --json` with shared `SynthesisReport` output covering strongest alignment, highest-confidence divergence, timeframe-to-timeframe constraint flows, unresolved tensions, and watch-tomorrow candidates. Exposed the same synthesis contract through mobile and web APIs and added a dedicated Situation Room synthesis section so the app can show constraints and next-watch candidates instead of expecting the user to mentally reconcile alignment/divergence tables.
+- Why: “constraints flow downward, signals flow upward” needed to become a canonical analytics object rather than staying implicit in prompts or spread across separate CLI commands.
+- Files: `src/analytics/synthesis.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics synthesis --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-21 — feat: add portfolio impact and opportunities engine
 
 - What: added native `analytics impact --json` and `analytics opportunities --json` backed by a shared Rust exposure engine. The new layer ranks held/watchlist exposure separately from non-held ideas, with evidence chains built from convictions, trend impacts, active scenarios, technical signals, and upcoming catalysts. Exposed the same outputs through the mobile dashboard/mobile API and new web API endpoints so Situation Room can show real book-aware impact and idea flow instead of only generic watch-now items.
