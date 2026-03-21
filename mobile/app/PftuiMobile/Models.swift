@@ -36,6 +36,11 @@ struct DashboardPayload: Decodable {
     let analytics: AnalyticsPayload
     let monitoring: MonitoringPayload
     let situation: SituationPayload
+    let deltas: DeltasPayload
+    let catalysts: CatalystsPayload
+    let impact: ImpactPayload
+    let opportunities: OpportunitiesPayload
+    let synthesis: SynthesisPayload
 }
 
 struct SituationPayload: Decodable {
@@ -45,6 +50,126 @@ struct SituationPayload: Decodable {
     let watchNow: [SituationInsightPayload]
     let portfolioImpacts: [SituationInsightPayload]
     let riskMatrix: [RiskSignalPayload]
+}
+
+struct DeltasPayload: Decodable {
+    let window: String
+    let label: String
+    let currentAt: String
+    let baselineAt: String?
+    let coverage: String
+    let changeRadar: [SituationInsightPayload]
+}
+
+struct CatalystsPayload: Decodable {
+    let window: String
+    let label: String
+    let generatedAt: String
+    let catalysts: [CatalystEventPayload]
+}
+
+struct CatalystEventPayload: Decodable, Identifiable {
+    var id: String { "\(time)-\(title)" }
+    let title: String
+    let time: String
+    let source: String
+    let category: String
+    let significance: String
+    let countdownBucket: String
+    let affectedAssets: [String]
+    let linkedScenarios: [String]
+    let linkedPredictions: [String]
+    let portfolioRelevance: Int
+    let macroSignificance: Int
+    let score: Int
+    let detail: String
+}
+
+struct ImpactPayload: Decodable {
+    let generatedAt: String
+    let exposures: [AssetInsightPayload]
+}
+
+struct OpportunitiesPayload: Decodable {
+    let generatedAt: String
+    let opportunities: [AssetInsightPayload]
+}
+
+struct AssetInsightPayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let held: Bool
+    let watchlist: Bool
+    let allocationPct: String?
+    let currentValue: String?
+    let consensus: String
+    let score: Int
+    let severity: String
+    let summary: String
+    let evidenceChain: [String]
+}
+
+struct SynthesisPayload: Decodable {
+    let generatedAt: String
+    let strongestAlignment: [AlignmentStatePayload]
+    let highestConfidenceDivergence: [DivergenceStatePayload]
+    let constraintFlows: [ConstraintStatePayload]
+    let unresolvedTensions: [SynthesisNotePayload]
+    let watchTomorrow: [WatchTomorrowPayload]
+}
+
+struct AlignmentStatePayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let low: String
+    let medium: String
+    let high: String
+    let macroBias: String
+    let consensus: String
+    let scorePct: Double
+    let bullLayers: Int
+    let bearLayers: Int
+}
+
+struct DivergenceStatePayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let low: String
+    let medium: String
+    let high: String
+    let macroBias: String
+    let dominantSide: String
+    let disagreementPct: Double
+    let summary: String
+}
+
+struct ConstraintStatePayload: Decodable, Identifiable {
+    var id: String { "\(fromTimeframe)-\(toTimeframe)-\(title)" }
+    let title: String
+    let fromTimeframe: String
+    let toTimeframe: String
+    let direction: String
+    let severity: String
+    let summary: String
+}
+
+struct SynthesisNotePayload: Decodable, Identifiable {
+    var id: String { "\(title)-\(severity)" }
+    let title: String
+    let detail: String
+    let severity: String
+}
+
+struct WatchTomorrowPayload: Decodable, Identifiable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let reason: String
+    let trigger: String
+    let severity: String
 }
 
 struct SituationStatPayload: Decodable, Identifiable {

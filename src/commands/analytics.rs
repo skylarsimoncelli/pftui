@@ -6,15 +6,20 @@ use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::alerts::AlertStatus;
+use crate::analytics::catalysts;
+use crate::analytics::deltas;
+use crate::analytics::impact;
 use crate::analytics::levels::nearest_actionable_levels;
+use crate::analytics::situation;
+use crate::analytics::synthesis;
 use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
 use crate::db::backend::BackendConnection;
-use crate::db::{price_history, query};
 use crate::db::{
     agent_messages, alerts, convictions, correlation_snapshots, price_cache, regime_snapshots,
     research_questions, scenarios, structural, technical_levels, technical_snapshots, thesis,
     timeframe_signals, transactions, trends, user_predictions, watchlist,
 };
+use crate::db::{price_history, query};
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::{infer_category, resolve_name};
 use crate::models::position::compute_positions;
@@ -33,7 +38,9 @@ pub fn run_asset_intelligence(
     let category = infer_category(&sym);
 
     // --- Spot price ---
-    let spot = price_cache::get_cached_price_backend(backend, &sym, "USD").ok().flatten();
+    let spot = price_cache::get_cached_price_backend(backend, &sym, "USD")
+        .ok()
+        .flatten();
     let spot_price = spot.as_ref().map(|q| q.price);
     let spot_fetched_at = spot.as_ref().map(|q| q.fetched_at.clone());
     let spot_source = spot.as_ref().map(|q| q.source.clone());
@@ -42,8 +49,7 @@ pub fn run_asset_intelligence(
     let post_market_change_pct = spot.as_ref().and_then(|q| q.post_market_change_percent);
 
     // --- Price history (recent) ---
-    let history = price_history::get_history_backend(backend, &sym, 370)
-        .unwrap_or_default();
+    let history = price_history::get_history_backend(backend, &sym, 370).unwrap_or_default();
     let history_days = history.len();
     let oldest_date = history.first().map(|r| r.date.clone());
     let newest_date = history.last().map(|r| r.date.clone());
@@ -65,12 +71,12 @@ pub fn run_asset_intelligence(
     let latest_bar = history.last().cloned();
 
     // --- Technical snapshot ---
-    let snap_map = load_or_compute_snapshots_backend(backend, std::slice::from_ref(&sym), DEFAULT_TIMEFRAME);
+    let snap_map =
+        load_or_compute_snapshots_backend(backend, std::slice::from_ref(&sym), DEFAULT_TIMEFRAME);
     let snapshot = snap_map.get(&sym).cloned();
 
     // --- Key levels ---
-    let levels = technical_levels::get_levels_for_symbol_backend(backend, &sym)
-        .unwrap_or_default();
+    let levels = technical_levels::get_levels_for_symbol_backend(backend, &sym).unwrap_or_default();
     let nearest = spot_price.as_ref().and_then(|price| {
         let p = price.to_string().parse::<f64>().ok()?;
         let pair = nearest_actionable_levels(&levels, p);
@@ -82,15 +88,17 @@ pub fn run_asset_intelligence(
     });
 
     // --- Correlations involving this symbol ---
-    let all_correlations = correlation_snapshots::list_current_backend(backend, None)
-        .unwrap_or_default();
+    let all_correlations =
+        correlation_snapshots::list_current_backend(backend, None).unwrap_or_default();
     let relevant_correlations: Vec<_> = all_correlations
         .into_iter()
         .filter(|c| c.symbol_a.to_uppercase() == sym || c.symbol_b.to_uppercase() == sym)
         .collect();
 
     // --- Regime context ---
-    let regime = regime_snapshots::get_current_backend(backend).ok().flatten();
+    let regime = regime_snapshots::get_current_backend(backend)
+        .ok()
+        .flatten();
 
     // --- Alerts for this symbol ---
     let all_alerts = alerts::list_alerts_backend(backend).unwrap_or_default();
@@ -100,8 +108,8 @@ pub fn run_asset_intelligence(
         .collect();
 
     // --- Scenarios mentioning this symbol ---
-    let all_scenarios = scenarios::list_scenarios_backend(backend, Some("active"))
-        .unwrap_or_default();
+    let all_scenarios =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
     let relevant_scenarios: Vec<_> = all_scenarios
         .into_iter()
         .filter(|s| {
@@ -114,8 +122,7 @@ pub fn run_asset_intelligence(
         .collect();
 
     // --- Trends mentioning this symbol ---
-    let all_trends = trends::list_trends_backend(backend, Some("active"), None)
-        .unwrap_or_default();
+    let all_trends = trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default();
     let relevant_trends: Vec<_> = all_trends
         .into_iter()
         .filter(|t| {
@@ -134,15 +141,18 @@ pub fn run_asset_intelligence(
         prices_map.insert(sym.clone(), price);
     }
     let positions = compute_positions(&txs, &prices_map, &fx_rates);
-    let position = positions.into_iter().find(|p| p.symbol.to_uppercase() == sym);
+    let position = positions
+        .into_iter()
+        .find(|p| p.symbol.to_uppercase() == sym);
 
     // --- Watchlist entry ---
     let wl_entries = watchlist::list_watchlist_backend(backend).unwrap_or_default();
-    let wl_entry = wl_entries.into_iter().find(|w| w.symbol.to_uppercase() == sym);
+    let wl_entry = wl_entries
+        .into_iter()
+        .find(|w| w.symbol.to_uppercase() == sym);
 
     // --- Convictions for this symbol ---
-    let all_convictions = convictions::list_current_backend(backend)
-        .unwrap_or_default();
+    let all_convictions = convictions::list_current_backend(backend).unwrap_or_default();
     let symbol_convictions: Vec<_> = all_convictions
         .into_iter()
         .filter(|c| c.symbol.to_uppercase() == sym)
@@ -319,7 +329,13 @@ pub fn run_asset_intelligence(
         if let Some(price) = spot_price {
             print!("**Price:** {}", price);
             if let Some(pct) = daily_change_pct {
-                let arrow = if pct > dec!(0) { "▲" } else if pct < dec!(0) { "▼" } else { "—" };
+                let arrow = if pct > dec!(0) {
+                    "▲"
+                } else if pct < dec!(0) {
+                    "▼"
+                } else {
+                    "—"
+                };
                 print!("  {} {}%", arrow, pct);
             }
             println!();
@@ -342,28 +358,46 @@ pub fn run_asset_intelligence(
         if let Some(s) = &snapshot {
             println!("## Technicals ({})", s.timeframe);
             if let Some(rsi) = s.rsi_14 {
-                let signal = if rsi > 70.0 { "OVERBOUGHT" } else if rsi < 30.0 { "OVERSOLD" } else { "neutral" };
+                let signal = if rsi > 70.0 {
+                    "OVERBOUGHT"
+                } else if rsi < 30.0 {
+                    "OVERSOLD"
+                } else {
+                    "neutral"
+                };
                 println!("  RSI(14): {:.1} [{}]", rsi, signal);
             }
             if let (Some(macd), Some(sig), Some(hist)) = (s.macd, s.macd_signal, s.macd_histogram) {
                 println!("  MACD: {:.4}  Signal: {:.4}  Hist: {:.4}", macd, sig, hist);
             }
-            let smas = [("SMA(20)", s.sma_20, s.above_sma_20), ("SMA(50)", s.sma_50, s.above_sma_50), ("SMA(200)", s.sma_200, s.above_sma_200)];
+            let smas = [
+                ("SMA(20)", s.sma_20, s.above_sma_20),
+                ("SMA(50)", s.sma_50, s.above_sma_50),
+                ("SMA(200)", s.sma_200, s.above_sma_200),
+            ];
             for (label, val, above) in smas {
                 if let Some(v) = val {
-                    let pos = above.map(|a| if a { "above" } else { "below" }).unwrap_or("?");
+                    let pos = above
+                        .map(|a| if a { "above" } else { "below" })
+                        .unwrap_or("?");
                     println!("  {}: {:.2} [{}]", label, v, pos);
                 }
             }
             if let Some(pos) = s.range_52w_position {
-                println!("  52W range: {:.0}% (low: {}, high: {})",
+                println!(
+                    "  52W range: {:.0}% (low: {}, high: {})",
                     pos,
-                    s.range_52w_low.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "?".into()),
-                    s.range_52w_high.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "?".into()),
+                    s.range_52w_low
+                        .map(|v| format!("{:.2}", v))
+                        .unwrap_or_else(|| "?".into()),
+                    s.range_52w_high
+                        .map(|v| format!("{:.2}", v))
+                        .unwrap_or_else(|| "?".into()),
                 );
             }
             if let Some(regime) = &s.volume_regime {
-                println!("  Volume regime: {} (ratio: {:.2}x)",
+                println!(
+                    "  Volume regime: {} (ratio: {:.2}x)",
                     regime,
                     s.volume_ratio_20.unwrap_or(0.0),
                 );
@@ -376,10 +410,20 @@ pub fn run_asset_intelligence(
             println!("## Key Levels");
             if let Some(ref pair) = nearest {
                 if let Some(ref sup) = pair.support {
-                    println!("  Nearest support: {:.2} ({}, strength {:.0}%)", sup.price, sup.level_type, sup.strength * 100.0);
+                    println!(
+                        "  Nearest support: {:.2} ({}, strength {:.0}%)",
+                        sup.price,
+                        sup.level_type,
+                        sup.strength * 100.0
+                    );
                 }
                 if let Some(ref res) = pair.resistance {
-                    println!("  Nearest resistance: {:.2} ({}, strength {:.0}%)", res.price, res.level_type, res.strength * 100.0);
+                    println!(
+                        "  Nearest resistance: {:.2} ({}, strength {:.0}%)",
+                        res.price,
+                        res.level_type,
+                        res.strength * 100.0
+                    );
                 }
             }
             println!("  Total stored levels: {}", levels.len());
@@ -389,12 +433,18 @@ pub fn run_asset_intelligence(
         // Portfolio position
         if let Some(p) = &position {
             println!("## Portfolio Position");
-            println!("  Qty: {}  Avg cost: {}  Total cost: {}", p.quantity, p.avg_cost, p.total_cost);
+            println!(
+                "  Qty: {}  Avg cost: {}  Total cost: {}",
+                p.quantity, p.avg_cost, p.total_cost
+            );
             if let Some(val) = p.current_value {
                 println!("  Current value: {}", val);
             }
             if let Some(g) = p.gain {
-                let pct_str = p.gain_pct.map(|pct| format!(" ({}%)", pct.round_dp(2))).unwrap_or_default();
+                let pct_str = p
+                    .gain_pct
+                    .map(|pct| format!(" ({}%)", pct.round_dp(2)))
+                    .unwrap_or_default();
                 println!("  Unrealized P&L: {}{}", g, pct_str);
             }
             if let Some(a) = p.allocation_pct {
@@ -407,7 +457,11 @@ pub fn run_asset_intelligence(
         if let Some(w) = &wl_entry {
             println!("## Watchlist");
             if let Some(ref target) = w.target_price {
-                println!("  Target: {} {}", w.target_direction.as_deref().unwrap_or("at"), target);
+                println!(
+                    "  Target: {} {}",
+                    w.target_direction.as_deref().unwrap_or("at"),
+                    target
+                );
             }
             println!();
         }
@@ -425,7 +479,11 @@ pub fn run_asset_intelligence(
         if !relevant_correlations.is_empty() {
             println!("## Correlations");
             for c in &relevant_correlations {
-                let other = if c.symbol_a.to_uppercase() == sym { &c.symbol_b } else { &c.symbol_a };
+                let other = if c.symbol_a.to_uppercase() == sym {
+                    &c.symbol_b
+                } else {
+                    &c.symbol_a
+                };
                 println!("  {} ↔ {}: {:.2} ({})", sym, other, c.correlation, c.period);
             }
             println!();
@@ -433,7 +491,8 @@ pub fn run_asset_intelligence(
 
         // Regime
         if let Some(r) = &regime {
-            println!("## Current Regime: {} (confidence: {:.0}%)",
+            println!(
+                "## Current Regime: {} (confidence: {:.0}%)",
                 r.regime,
                 r.confidence.unwrap_or(0.0) * 100.0,
             );
@@ -447,7 +506,12 @@ pub fn run_asset_intelligence(
         if !relevant_scenarios.is_empty() {
             println!("## Related Scenarios ({})", relevant_scenarios.len());
             for s in &relevant_scenarios {
-                println!("  [{:.0}%] {} — {}", s.probability * 100.0, s.name, s.description.as_deref().unwrap_or(""));
+                println!(
+                    "  [{:.0}%] {} — {}",
+                    s.probability * 100.0,
+                    s.name,
+                    s.description.as_deref().unwrap_or("")
+                );
             }
             println!();
         }
@@ -456,7 +520,13 @@ pub fn run_asset_intelligence(
         if !relevant_trends.is_empty() {
             println!("## Related Trends ({})", relevant_trends.len());
             for t in &relevant_trends {
-                println!("  {} {} ({}) — {}", t.direction, t.name, t.conviction, t.description.as_deref().unwrap_or(""));
+                println!(
+                    "  {} {} ({}) — {}",
+                    t.direction,
+                    t.name,
+                    t.conviction,
+                    t.description.as_deref().unwrap_or("")
+                );
             }
             println!();
         }
@@ -465,19 +535,31 @@ pub fn run_asset_intelligence(
         if !symbol_convictions.is_empty() {
             println!("## Convictions");
             for c in &symbol_convictions {
-                println!("  {} score={} — {}", c.symbol, c.score, c.notes.as_deref().unwrap_or(""));
+                println!(
+                    "  {} score={} — {}",
+                    c.symbol,
+                    c.score,
+                    c.notes.as_deref().unwrap_or("")
+                );
             }
             println!();
         }
 
         // Freshness
         println!("## Freshness");
-        println!("  History: {} days{}", history_days,
+        println!(
+            "  History: {} days{}",
+            history_days,
             if oldest_date.is_some() && newest_date.is_some() {
-                format!(" ({} → {})", oldest_date.as_deref().unwrap_or("?"), newest_date.as_deref().unwrap_or("?"))
+                format!(
+                    " ({} → {})",
+                    oldest_date.as_deref().unwrap_or("?"),
+                    newest_date.as_deref().unwrap_or("?")
+                )
             } else {
                 String::new()
-            });
+            }
+        );
         if let Some(ref at) = spot_fetched_at {
             println!("  Price fetched: {}", at);
         }
@@ -531,6 +613,12 @@ pub fn run(
         "levels" => run_levels(backend, symbol, signal_type, limit, json_output),
         "signals" => run_signals(backend, symbol, signal_type, severity, limit, json_output),
         "summary" => run_summary(backend, json_output),
+        "situation" => run_situation(backend, json_output),
+        "deltas" => run_deltas(backend, value, json_output),
+        "catalysts" => run_catalysts(backend, value, json_output),
+        "impact" => run_impact(backend, json_output),
+        "opportunities" => run_opportunities(backend, json_output),
+        "synthesis" => run_synthesis(backend, json_output),
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
         "high" => run_high(backend, json_output),
@@ -566,7 +654,7 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, synthesis, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
@@ -1137,7 +1225,10 @@ fn run_gaps_symbol(backend: &BackendConnection, symbol: &str, json_output: bool)
         );
     } else {
         println!("OHLCV Data Quality — {}", sym);
-        println!("Date range: {} to {} ({} bars)", first_date, last_date, total_bars);
+        println!(
+            "Date range: {} to {} ({} bars)",
+            first_date, last_date, total_bars
+        );
         println!();
         println!("{:<10} {:>8} {:>8}", "Field", "Count", "Coverage");
         println!("{}", "─".repeat(30));
@@ -1145,8 +1236,18 @@ fn run_gaps_symbol(backend: &BackendConnection, symbol: &str, json_output: bool)
         println!("{:<10} {:>8} {:>7.1}%", "Open", has_open, pct(has_open));
         println!("{:<10} {:>8} {:>7.1}%", "High", has_high, pct(has_high));
         println!("{:<10} {:>8} {:>7.1}%", "Low", has_low, pct(has_low));
-        println!("{:<10} {:>8} {:>7.1}%", "Volume", has_volume, pct(has_volume));
-        println!("{:<10} {:>8} {:>7.1}%", "Full OHLCV", full_ohlcv, pct(full_ohlcv));
+        println!(
+            "{:<10} {:>8} {:>7.1}%",
+            "Volume",
+            has_volume,
+            pct(has_volume)
+        );
+        println!(
+            "{:<10} {:>8} {:>7.1}%",
+            "Full OHLCV",
+            full_ohlcv,
+            pct(full_ohlcv)
+        );
 
         if !date_gaps.is_empty() {
             println!("\nDate Gaps (>{} calendar days):", 3);
@@ -1397,12 +1498,8 @@ pub fn run_signals_combined(
 
     // Cross-timeframe signals
     let tf_signals = if show_timeframe {
-        let mut rows = timeframe_signals::list_signals_backend(
-            backend,
-            signal_type,
-            severity,
-            Some(lim),
-        )?;
+        let mut rows =
+            timeframe_signals::list_signals_backend(backend, signal_type, severity, Some(lim))?;
         if let Some(sym) = symbol {
             let needle = format!("\"{}\"", sym.to_uppercase());
             rows.retain(|r| r.assets.to_uppercase().contains(&needle));
@@ -1414,13 +1511,8 @@ pub fn run_signals_combined(
 
     // Per-symbol technical signals
     let tech_signals = if show_technical {
-        crate::db::technical_signals::list_signals_backend(
-            backend,
-            symbol,
-            signal_type,
-            Some(lim),
-        )
-        .unwrap_or_default()
+        crate::db::technical_signals::list_signals_backend(backend, symbol, signal_type, Some(lim))
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -1591,6 +1683,204 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
             println!("ALIGNMENT SIGNAL: [{}] {}", sig.severity, sig.description);
         }
     }
+    Ok(())
+}
+
+fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let snapshot = situation::build_snapshot_backend(backend)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    } else {
+        println!("Situation Room");
+        println!("════════════════════════════════════════════════════════════════");
+        println!("{}", snapshot.headline);
+        println!("{}", snapshot.subtitle);
+        println!();
+
+        if !snapshot.summary_stats.is_empty() {
+            let line = snapshot
+                .summary_stats
+                .iter()
+                .map(|stat| format!("{}: {}", stat.label, stat.value))
+                .collect::<Vec<_>>()
+                .join("  •  ");
+            println!("{line}");
+        }
+
+        if !snapshot.watch_now.is_empty() {
+            println!();
+            println!("WATCH NOW");
+            for item in snapshot.watch_now.iter().take(5) {
+                println!(
+                    "- [{}] {} — {} ({})",
+                    item.severity, item.title, item.detail, item.value
+                );
+            }
+        }
+
+        if !snapshot.portfolio_impacts.is_empty() {
+            println!();
+            println!("PORTFOLIO IMPACT");
+            for item in snapshot.portfolio_impacts.iter().take(5) {
+                println!(
+                    "- [{}] {} — {} ({})",
+                    item.severity, item.title, item.detail, item.value
+                );
+            }
+        }
+
+        if !snapshot.risk_matrix.is_empty() {
+            println!();
+            println!("RISK MATRIX");
+            for row in &snapshot.risk_matrix {
+                println!(
+                    "- [{}] {} — {} = {}",
+                    row.severity, row.label, row.detail, row.value
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_deltas(backend: &BackendConnection, since: Option<&str>, json_output: bool) -> Result<()> {
+    let window = deltas::DeltaWindow::parse(since)?;
+    let report = deltas::build_report_backend(backend, window, true)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Change Radar");
+        println!("════════════════════════════════════════════════════════════════");
+        println!(
+            "Window: {}  Coverage: {}",
+            report.label,
+            report.coverage.to_uppercase()
+        );
+        if let Some(baseline_at) = &report.baseline_at {
+            println!("Baseline: {}", baseline_at);
+        }
+        println!("Current: {}", report.current_at);
+        println!();
+        for item in &report.change_radar {
+            println!(
+                "- [{}] {} — {} ({})",
+                item.severity, item.title, item.detail, item.value
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn run_catalysts(
+    backend: &BackendConnection,
+    window: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let window = catalysts::CatalystWindow::parse(window)?;
+    let report = catalysts::build_report_backend(backend, window)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Catalysts");
+        println!("════════════════════════════════════════════════════════════════");
+        println!("Window: {}", report.label);
+        println!();
+        if report.catalysts.is_empty() {
+            println!("No catalysts found for this window.");
+        } else {
+            for item in &report.catalysts {
+                let assets = if item.affected_assets.is_empty() {
+                    "broad market".to_string()
+                } else {
+                    item.affected_assets.join(", ")
+                };
+                println!(
+                    "- [{}] {} — {} | {} | assets: {}",
+                    item.significance, item.time, item.title, item.countdown_bucket, assets
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_impact(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let report = impact::build_impact_report_backend(backend)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Portfolio Impact");
+        println!("════════════════════════════════════════════════════════════════");
+        if report.exposures.is_empty() {
+            println!("No exposure signals found.");
+        } else {
+            for item in &report.exposures {
+                println!(
+                    "- [{}] {} — {} ({})",
+                    item.severity, item.symbol, item.summary, item.consensus
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_opportunities(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let report = impact::build_opportunities_report_backend(backend)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Opportunities");
+        println!("════════════════════════════════════════════════════════════════");
+        if report.opportunities.is_empty() {
+            println!("No non-held opportunities found.");
+        } else {
+            for item in &report.opportunities {
+                println!(
+                    "- [{}] {} — {} ({})",
+                    item.severity, item.symbol, item.summary, item.consensus
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_synthesis(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let report = synthesis::build_report_backend(backend)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Cross-Timeframe Synthesis");
+        println!("════════════════════════════════════════════════════════════════");
+        if !report.strongest_alignment.is_empty() {
+            println!("Strongest alignment:");
+            for item in &report.strongest_alignment {
+                println!(
+                    "- {} {} ({:.0}%)",
+                    item.symbol, item.consensus, item.score_pct
+                );
+            }
+        }
+        if !report.highest_confidence_divergence.is_empty() {
+            println!("\nTop divergences:");
+            for item in &report.highest_confidence_divergence {
+                println!("- {} {}", item.symbol, item.summary);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -2936,12 +3226,80 @@ mod tests {
     }
 
     #[test]
+    fn situation_json_never_empty_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_situation(&backend, true);
+        assert!(
+            result.is_ok(),
+            "run_situation should not error: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn deltas_json_never_empty_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_deltas(&backend, Some("last-refresh"), true);
+        assert!(result.is_ok(), "run_deltas should not error: {:?}", result);
+    }
+
+    #[test]
+    fn catalysts_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_catalysts(&backend, Some("week"), true);
+        assert!(
+            result.is_ok(),
+            "run_catalysts should not error: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn impact_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_impact(&backend, true);
+        assert!(result.is_ok(), "run_impact should not error: {:?}", result);
+    }
+
+    #[test]
+    fn opportunities_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_opportunities(&backend, true);
+        assert!(
+            result.is_ok(),
+            "run_opportunities should not error: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn synthesis_json_never_errors_on_fresh_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_synthesis(&backend, true);
+        assert!(
+            result.is_ok(),
+            "run_synthesis should not error: {:?}",
+            result
+        );
+    }
+
+    #[test]
     fn divergence_json_never_empty_on_fresh_db() {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
         // run_divergence should succeed and not error out on an empty database
         let result = run_divergence(&backend, None, true);
-        assert!(result.is_ok(), "run_divergence should not error: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "run_divergence should not error: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -2949,7 +3307,11 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
         let result = run_alignment(&backend, None, true);
-        assert!(result.is_ok(), "run_alignment should not error: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "run_alignment should not error: {:?}",
+            result
+        );
     }
 
     #[test]

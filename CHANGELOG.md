@@ -3,6 +3,34 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add cross-timeframe synthesis engine
+
+- What: added native `analytics synthesis --json` with shared `SynthesisReport` output covering strongest alignment, highest-confidence divergence, timeframe-to-timeframe constraint flows, unresolved tensions, and watch-tomorrow candidates. Exposed the same synthesis contract through mobile and web APIs and added a dedicated Situation Room synthesis section so the app can show constraints and next-watch candidates instead of expecting the user to mentally reconcile alignment/divergence tables.
+- Why: “constraints flow downward, signals flow upward” needed to become a canonical analytics object rather than staying implicit in prompts or spread across separate CLI commands.
+- Files: `src/analytics/synthesis.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics synthesis --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
+### 2026-03-21 — feat: add portfolio impact and opportunities engine
+
+- What: added native `analytics impact --json` and `analytics opportunities --json` backed by a shared Rust exposure engine. The new layer ranks held/watchlist exposure separately from non-held ideas, with evidence chains built from convictions, trend impacts, active scenarios, technical signals, and upcoming catalysts. Exposed the same outputs through the mobile dashboard/mobile API and new web API endpoints so Situation Room can show real book-aware impact and idea flow instead of only generic watch-now items.
+- Why: pftui needed to answer two different questions from one canonical analytics layer: “what matters to my current book?” and “what high-alignment opportunity am I missing?”
+- Files: `src/analytics/impact.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics impact --json`; `cargo run -- analytics opportunities --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
+### 2026-03-21 — feat: add native catalyst engine and Situation Room event feed
+
+- What: added a new Rust-native `analytics catalysts --json` surface that turns calendar events into ranked `CatalystEvent` objects with windowing (`today`, `tomorrow`, `week`), countdown buckets, significance, affected-asset inference, portfolio relevance, and scenario/prediction linkages. Exposed the same report through the web API (`/api/catalysts`) and the mobile dashboard/mobile API, and replaced the mobile Situation Room’s generic catalyst/news block with a server-owned upcoming catalyst feed while keeping headline flow available as a separate module.
+- Why: Situation Room needs to answer “what is coming next and why does it matter?” from the analytics layer, not by dumping raw calendar rows or headlines into the client.
+- Files: `src/analytics/catalysts.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics catalysts --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
+### 2026-03-20 — feat: add native situation delta engine and server-owned change radar
+
+- What: added a new Rust-native `analytics deltas` surface backed by persisted `situation_snapshots`. The analytics layer now stores canonical situation snapshots server-side and can compute ranked `change_radar` deltas for `last-refresh`, `close`, `24h`, and `7d` windows. Delta detection currently covers timeframe score shifts, lead signal changes, alert load, source freshness, regime changes, sentiment moves, market-pulse repricing, scenario probability changes, conviction changes, and correlation shifts. Exposed the same report through the web API (`/api/deltas`) and the mobile dashboard/mobile API, and moved the iOS Change Radar off client-local previous-snapshot logic onto the shared backend contract. Also fixed the existing `PriceQuote.previous_close` test initializer break in `import.rs` so the full Rust test suite can compile again.
+- Why: the Situation Room needed to answer “what changed?” from the analytics layer, not from SwiftUI memory. This turns change detection into a server-owned product that mobile, web, CLI, and later agent surfaces can all reuse consistently.
+- Files: `src/analytics/deltas.rs`, `src/analytics/situation.rs`, `src/db/situation_snapshots.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/MobileAPI.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `src/commands/import.rs`, `CHANGELOG.md`
+- Tests: `cargo check`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics situation --json`; `cargo run -- analytics deltas --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-20 — feat: move situation synthesis into the mobile server contract
 
 - What: added a first-class server-side `situation` payload to the mobile dashboard API. The server now publishes a canonical situation title/subtitle, summary stats, ranked `watch_now` insights, portfolio impact items, and a risk matrix, all derived from the existing portfolio, analytics, and monitoring layers. The iOS app was simplified to consume that contract directly instead of duplicating the same synthesis logic in SwiftUI.

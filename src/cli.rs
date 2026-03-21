@@ -2094,6 +2094,34 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    Situation {
+        #[arg(long)]
+        json: bool,
+    },
+    Deltas {
+        #[arg(long, default_value = "last-refresh")]
+        since: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Catalysts {
+        #[arg(long, default_value = "week")]
+        window: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Impact {
+        #[arg(long)]
+        json: bool,
+    },
+    Opportunities {
+        #[arg(long)]
+        json: bool,
+    },
+    Synthesis {
+        #[arg(long)]
+        json: bool,
+    },
     Low {
         #[arg(long)]
         json: bool,
@@ -3447,8 +3475,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_signals_default_source_is_all() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "signals", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "signals", "--json"]).unwrap();
 
         let Some(Command::Analytics {
             command: AnalyticsCommand::Signals { source, json, .. },
@@ -3463,15 +3490,8 @@ mod tests {
 
     #[test]
     fn parse_analytics_gaps_with_symbol() {
-        let cli = Cli::try_parse_from([
-            "pftui",
-            "analytics",
-            "gaps",
-            "--symbol",
-            "AAPL",
-            "--json",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "gaps", "--symbol", "AAPL", "--json"])
+            .unwrap();
 
         let Some(Command::Analytics {
             command: AnalyticsCommand::Gaps { symbol, json },
@@ -3486,8 +3506,7 @@ mod tests {
 
     #[test]
     fn parse_analytics_gaps_without_symbol() {
-        let cli =
-            Cli::try_parse_from(["pftui", "analytics", "gaps", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["pftui", "analytics", "gaps", "--json"]).unwrap();
 
         let Some(Command::Analytics {
             command: AnalyticsCommand::Gaps { symbol, json },

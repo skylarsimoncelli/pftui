@@ -1,8 +1,8 @@
 use axum::{
     middleware,
+    response::sse::{Event, KeepAlive, Sse},
     routing::{delete, get, patch, post},
     Router,
-    response::sse::{Event, KeepAlive, Sse},
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -15,16 +15,17 @@ use tokio_stream::wrappers::IntervalStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::commands;
 use super::api::{
-    delete_alert, delete_watchlist, get_alerts, get_asset_detail, get_chart_data, get_home_tab,
-    delete_journal, delete_transaction, get_journal, get_macro, get_news, get_performance,
-    get_portfolio, get_positions, get_search, get_summary, get_transactions, get_ui_config,
-    get_watchlist, patch_journal, patch_transaction, post_alert, post_alert_ack,
+    delete_alert, delete_journal, delete_transaction, delete_watchlist, get_alerts,
+    get_asset_detail, get_catalysts, get_chart_data, get_deltas, get_home_tab, get_impact,
+    get_journal, get_macro, get_news, get_opportunities, get_performance, get_portfolio,
+    get_positions, get_search, get_situation, get_summary, get_synthesis, get_transactions,
+    get_ui_config, get_watchlist, patch_journal, patch_transaction, post_alert, post_alert_ack,
     post_alert_rearm, post_journal, post_transaction, post_watchlist, set_home_tab, set_theme,
     AppState,
 };
 use super::auth::{auth_middleware, get_csrf, get_session, login, logout, AuthState};
+use crate::commands;
 use crate::config::Config;
 use crate::data::rss::{self, NewsCategory, RssFeed};
 
@@ -75,6 +76,12 @@ pub async fn run_server(
         .route("/chart/{symbol}", get(get_chart_data))
         .route("/performance", get(get_performance))
         .route("/summary", get(get_summary))
+        .route("/situation", get(get_situation))
+        .route("/deltas", get(get_deltas))
+        .route("/catalysts", get(get_catalysts))
+        .route("/impact", get(get_impact))
+        .route("/opportunities", get(get_opportunities))
+        .route("/synthesis", get(get_synthesis))
         .route("/ui-config", get(get_ui_config))
         .route("/stream", get(get_stream))
         .route("/home-tab", get(get_home_tab))
@@ -102,11 +109,11 @@ pub async fn run_server(
         .with_state(auth_state);
 
     let addr: SocketAddr = format!("{}:{}", bind_addr, port).parse()?;
-    
+
     println!("🚀 pftui web dashboard starting...");
     println!("   Listening on http://{}", addr);
     println!("   Dashboard: http://{}:{}", bind_addr, port);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
@@ -208,7 +215,11 @@ async fn run_rss_ingest_loop(db_path: String, config: Config) {
 }
 
 fn normalize_interval(value: u64, fallback: u64) -> u64 {
-    if value == 0 { fallback } else { value }
+    if value == 0 {
+        fallback
+    } else {
+        value
+    }
 }
 
 fn parse_news_category(raw: &str) -> Option<NewsCategory> {

@@ -379,6 +379,21 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS situation_snapshots (
+                id BIGSERIAL PRIMARY KEY,
+                recorded_at TIMESTAMPTZ NOT NULL,
+                snapshot_json TEXT NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_situation_snapshots_recorded_at
+             ON situation_snapshots(recorded_at DESC)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS worldbank_cache (
                 country_code TEXT NOT NULL,
                 country_name TEXT NOT NULL,
@@ -778,11 +793,9 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         }
 
         // Migration: add previous_close to price_cache (movers P0 fix)
-        sqlx::query(
-            "ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS previous_close NUMERIC",
-        )
-        .execute(pool)
-        .await?;
+        sqlx::query("ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS previous_close NUMERIC")
+            .execute(pool)
+            .await?;
 
         Ok::<(), sqlx::Error>(())
     })?;

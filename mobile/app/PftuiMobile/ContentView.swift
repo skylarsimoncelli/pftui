@@ -162,6 +162,8 @@ struct HomeView: View {
     @AppStorage("pftui.mobile.home.showWatchlist") private var showWatchlist = true
     @AppStorage("pftui.mobile.home.showSystem") private var showSystem = false
     @AppStorage("pftui.mobile.home.showNews") private var showNews = false
+    @AppStorage("pftui.mobile.home.showOpportunities") private var showOpportunities = true
+    @AppStorage("pftui.mobile.home.showSynthesis") private var showSynthesis = true
 
     var body: some View {
         ScrollView {
@@ -190,15 +192,29 @@ struct HomeView: View {
                         }
                     }
 
-                    if !dashboard.situation.portfolioImpacts.isEmpty {
+                    if !dashboard.impact.exposures.isEmpty {
                         CollapsibleCardSection(
                             title: "Portfolio Impact",
-                            subtitle: "What matters to current exposure",
+                            subtitle: "Held and watched exposure ranked by evidence",
                             isExpanded: $showFocus
                         ) {
                             VStack(spacing: 12) {
-                                ForEach(dashboard.situation.portfolioImpacts.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
-                                    insightRow(insight)
+                                ForEach(dashboard.impact.exposures.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                    assetInsightRow(insight)
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.opportunities.opportunities.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Opportunities",
+                            subtitle: "High-alignment non-held ideas",
+                            isExpanded: $showOpportunities
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(dashboard.opportunities.opportunities.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                    assetInsightRow(insight)
                                 }
                             }
                         }
@@ -206,11 +222,11 @@ struct HomeView: View {
 
                     CollapsibleCardSection(
                         title: "Change Radar",
-                        subtitle: "What changed since the last refresh",
+                        subtitle: "Server-side changes since the \(dashboard.deltas.label)",
                         isExpanded: $showChanges
                     ) {
                         VStack(spacing: 12) {
-                            ForEach(changeRadarInsights(current: dashboard, previous: store.previousDashboard).prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                            ForEach(dashboard.deltas.changeRadar.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
                                 insightRow(insight)
                             }
                         }
@@ -225,6 +241,34 @@ struct HomeView: View {
                             VStack(spacing: 12) {
                                 ForEach(dashboard.situation.riskMatrix) { signal in
                                     riskRow(signal)
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.synthesis.constraintFlows.isEmpty || !dashboard.synthesis.watchTomorrow.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Cross-Timeframe Synthesis",
+                            subtitle: "Constraints, divergences, and watch tomorrow",
+                            isExpanded: $showSynthesis
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(dashboard.synthesis.constraintFlows.prefix(homeDensity == "dense" ? 2 : 3)) { item in
+                                    compactInsightCard(
+                                        title: item.title,
+                                        detail: item.summary,
+                                        trailing: item.direction.uppercased(),
+                                        severity: item.severity
+                                    )
+                                }
+
+                                ForEach(dashboard.synthesis.watchTomorrow.prefix(homeDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.symbol,
+                                        detail: item.reason,
+                                        trailing: item.trigger,
+                                        severity: item.severity
+                                    )
                                 }
                             }
                         }
@@ -321,14 +365,44 @@ struct HomeView: View {
                         }
                     }
 
-                    if !dashboard.monitoring.news.isEmpty {
+                    if !dashboard.catalysts.catalysts.isEmpty {
                         CollapsibleCardSection(
                             title: "Catalysts",
-                            subtitle: "Latest headlines",
+                            subtitle: "Upcoming events and countdowns",
                             isExpanded: $showNews
                         ) {
                             VStack(alignment: .leading, spacing: 14) {
-                                ForEach(dashboard.monitoring.news.prefix(homeDensity == "dense" ? 4 : 6)) { item in
+                                ForEach(dashboard.catalysts.catalysts.prefix(homeDensity == "dense" ? 4 : 6)) { item in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack(alignment: .top) {
+                                            Text(item.title)
+                                                .foregroundStyle(MobilePalette.textPrimary)
+                                                .font(.subheadline.weight(.semibold))
+                                            Spacer()
+                                            Text(item.countdownBucket.replacingOccurrences(of: "-", with: " ").uppercased())
+                                                .foregroundStyle(insightColor(item.significance))
+                                                .font(.caption.weight(.bold))
+                                        }
+                                        Text(item.detail)
+                                            .foregroundStyle(MobilePalette.textPrimary)
+                                            .font(.caption)
+                                        Text("\(item.time) • \(item.category.capitalized) • \(item.affectedAssets.prefix(3).joined(separator: ", "))")
+                                            .foregroundStyle(MobilePalette.textSecondary)
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !dashboard.monitoring.news.isEmpty {
+                        CollapsibleCardSection(
+                            title: "News Flow",
+                            subtitle: "Latest headlines",
+                            isExpanded: .constant(homeDensity != "dense")
+                        ) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(dashboard.monitoring.news.prefix(homeDensity == "dense" ? 3 : 5)) { item in
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(item.title)
                                             .foregroundStyle(MobilePalette.textPrimary)
@@ -472,6 +546,76 @@ struct HomeView: View {
     }
 
     @ViewBuilder
+    private func assetInsightRow(_ insight: AssetInsightPayload) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(insightColor(insight.severity))
+                .frame(width: 10, height: 10)
+                .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(insight.symbol)
+                            .foregroundStyle(MobilePalette.textPrimary)
+                            .font(.subheadline.weight(.semibold))
+                        Text(insight.summary)
+                            .foregroundStyle(MobilePalette.textSecondary)
+                            .font(.caption)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(insight.score)")
+                            .foregroundStyle(insightColor(insight.severity))
+                            .font(.caption.weight(.bold))
+                        Text(insight.consensus.uppercased())
+                            .foregroundStyle(MobilePalette.textSecondary)
+                            .font(.caption2.weight(.semibold))
+                    }
+                }
+
+                if let firstEvidence = insight.evidenceChain.first {
+                    Text(firstEvidence)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                        .font(.caption)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private func compactInsightCard(title: String, detail: String, trailing: String, severity: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(insightColor(severity))
+                .frame(width: 10, height: 10)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top) {
+                    Text(title)
+                        .foregroundStyle(MobilePalette.textPrimary)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(trailing)
+                        .foregroundStyle(insightColor(severity))
+                        .font(.caption.weight(.bold))
+                }
+                Text(detail)
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.caption)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MobilePalette.bgPrimary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
     private func riskRow(_ signal: RiskSignalPayload) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -595,109 +739,6 @@ struct HomeView: View {
         return "\(store.portfolio?.positionCount ?? 0) positions • \(store.dashboard?.monitoring.system.server.pftuiVersion ?? "offline")"
     }
 
-    private func changeRadarInsights(current: DashboardPayload, previous: DashboardPayload?) -> [SituationInsightPayload] {
-        guard let previous else {
-            return [
-                SituationInsightPayload(
-                    title: "Baseline forming",
-                    detail: "Refresh once more and the app will start ranking state changes between snapshots.",
-                    value: "Warmup",
-                    severity: "normal"
-                )
-            ]
-        }
-
-        var items: [SituationInsightPayload] = []
-        let currentAverage = averageScore(current.analytics.timeframes)
-        let previousAverage = averageScore(previous.analytics.timeframes)
-        let averageDelta = currentAverage - previousAverage
-        if abs(averageDelta) >= 8 {
-            items.append(
-                SituationInsightPayload(
-                    title: averageDelta > 0 ? "Risk tone improved" : "Risk tone weakened",
-                    detail: "Average timeframe score moved from \(Int(previousAverage)) to \(Int(currentAverage)).",
-                    value: signedNumber(averageDelta),
-                    severity: abs(averageDelta) >= 18 ? "critical" : "elevated"
-                )
-            )
-        }
-
-        let alertDelta = current.monitoring.triggeredAlertCount - previous.monitoring.triggeredAlertCount
-        if alertDelta != 0 {
-            items.append(
-                SituationInsightPayload(
-                    title: alertDelta > 0 ? "Triggered alerts increased" : "Triggered alerts cooled",
-                    detail: "Alert load moved from \(previous.monitoring.triggeredAlertCount) to \(current.monitoring.triggeredAlertCount).",
-                    value: signedInt(alertDelta),
-                    severity: alertDelta > 0 ? "critical" : "normal"
-                )
-            )
-        }
-
-        let staleDelta = current.monitoring.system.database.staleSources - previous.monitoring.system.database.staleSources
-        if staleDelta != 0 {
-            items.append(
-                SituationInsightPayload(
-                    title: staleDelta > 0 ? "Data trust worsened" : "Data freshness improved",
-                    detail: "Stale sources moved from \(previous.monitoring.system.database.staleSources) to \(current.monitoring.system.database.staleSources).",
-                    value: signedInt(staleDelta),
-                    severity: staleDelta > 0 ? "elevated" : "normal"
-                )
-            )
-        }
-
-        if current.analytics.regime?.regime != previous.analytics.regime?.regime,
-           let regime = current.analytics.regime?.regime {
-            items.append(
-                SituationInsightPayload(
-                    title: "Regime shifted",
-                    detail: "The current market regime changed since the prior snapshot.",
-                    value: regime.replacingOccurrences(of: "_", with: " ").capitalized,
-                    severity: "critical"
-                )
-            )
-        }
-
-        let previousPulse = Dictionary(uniqueKeysWithValues: previous.monitoring.marketPulse.map { ($0.symbol, $0) })
-        for item in current.monitoring.marketPulse {
-            guard let prior = previousPulse[item.symbol] else { continue }
-            let moveDelta = changeValue(item.dayChangePct?.raw) - changeValue(prior.dayChangePct?.raw)
-            if abs(moveDelta) >= 1.5 {
-                items.append(
-                    SituationInsightPayload(
-                        title: "\(item.symbol) momentum re-priced",
-                        detail: item.name,
-                        value: signedNumber(moveDelta),
-                        severity: abs(moveDelta) >= 3 ? "critical" : "elevated"
-                    )
-                )
-            }
-        }
-
-        if let currentHeadline = current.monitoring.news.first?.title,
-           let previousHeadline = previous.monitoring.news.first?.title,
-           currentHeadline != previousHeadline {
-            items.append(
-                SituationInsightPayload(
-                    title: "Lead catalyst changed",
-                    detail: currentHeadline,
-                    value: "News",
-                    severity: "normal"
-                )
-            )
-        }
-
-        return items.isEmpty
-            ? [
-                SituationInsightPayload(
-                    title: "No major deltas",
-                    detail: "The latest refresh did not materially change the system’s state.",
-                    value: "Stable",
-                    severity: "normal"
-                )
-            ]
-            : items.sorted { severityWeight($0.severity) > severityWeight($1.severity) }
-    }
 }
 
 struct PortfolioView: View {
@@ -1566,11 +1607,11 @@ private func correlationColor(_ value: Double) -> Color {
 
 private func insightColor(_ severity: String) -> Color {
     switch severity.lowercased() {
-    case "normal":
+    case "normal", "low":
         return MobilePalette.accent
-    case "elevated", "warning":
+    case "elevated", "warning", "medium":
         return MobilePalette.amber
-    case "critical":
+    case "critical", "high":
         return MobilePalette.red
     default:
         return MobilePalette.accent
