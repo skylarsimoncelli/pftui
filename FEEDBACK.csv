@@ -32,3 +32,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-21,alert-investigator,85,85,routine,low,No new alerts to investigate. All alerts acknowledged. System monitoring healthy.
 2026-03-21 08:13,dev-agent,90,92,scan-enhancement,P2,"Added change_1d daily change percentage field to scan system. Computes from PriceQuote.previous_close. Aliases: change/daily_change/change1d. Shown in table as Chg1D% column and in --json. Enables precise daily move filtering (change_1d > 5) to fix BIG-GAINERS false positives during selloffs. 4 new tests (1543 total), clippy clean. PR #127 merged."
 2026-03-21 08:13,alert-investigator,85,80,routine,low,No alerts to investigate this cycle - system running normally
+2026-03-21,alert-investigator,80,85,routine,info,"No alerts triggered. Metals recovery day (+1.85% gold, +2.73% silver) after DXY-driven selloff. Portfolio analytics and agent messaging pipeline functioning correctly."
