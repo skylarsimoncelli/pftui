@@ -112,9 +112,17 @@ fn run_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_tick_rate_ms, is_remote_terminal_session, LOCAL_TICK_RATE_MS, REMOTE_TICK_RATE_MS, TICK_RATE_ENV};
+    use std::sync::{Mutex, OnceLock};
+
+    use super::{
+        detect_tick_rate_ms, is_remote_terminal_session, LOCAL_TICK_RATE_MS, REMOTE_TICK_RATE_MS,
+        TICK_RATE_ENV,
+    };
 
     fn with_env_vars<F: FnOnce()>(vars: &[(&str, Option<&str>)], f: F) {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
         let saved: Vec<(String, Option<std::ffi::OsString>)> = vars
             .iter()
             .map(|(key, _)| ((*key).to_string(), std::env::var_os(key)))
