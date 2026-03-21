@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use rusqlite::Connection;
 
+use crate::alerts::AlertKind;
+use crate::db::alerts as db_alerts;
 use crate::db::allocations::get_unique_allocation_symbols;
 use crate::db::allocations::get_unique_allocation_symbols_backend;
 use crate::db::backend::BackendConnection;
@@ -445,6 +447,149 @@ pub fn compute_and_store_default_snapshots_backend(backend: &BackendConnection) 
     Ok(stored)
 }
 
+/// List correlation break pairs: where |corr_7d − corr_90d| >= threshold.
+/// Optionally seed recurring technical alerts for each break pair.
+pub fn run_breaks(
+    backend: &BackendConnection,
+    threshold: f64,
+    limit: usize,
+    seed_alerts: bool,
+    cooldown: i64,
+    json: bool,
+) -> Result<()> {
+    if threshold <= 0.0 || threshold > 1.0 {
+        anyhow::bail!("--threshold must be between 0.0 (exclusive) and 1.0 (inclusive)");
+    }
+
+    // Compute all pairs at 90d window (we need both 7d and 90d values)
+    let pairs = compute_breaks_backend(backend, threshold, limit)?;
+
+    if seed_alerts && !pairs.is_empty() {
+        let existing = db_alerts::list_alerts_backend(backend)?;
+        let mut seeded = 0usize;
+        for bp in &pairs {
+            let symbol_key = format!("{}:{}", bp.symbol_a, bp.symbol_b);
+            let already_exists = existing.iter().any(|a| {
+                a.kind == AlertKind::Technical
+                    && a.condition.as_deref() == Some("correlation_break")
+                    && (a.symbol == symbol_key
+                        || a.symbol == format!("{}:{}", bp.symbol_b, bp.symbol_a))
+            });
+            if already_exists {
+                continue;
+            }
+            let threshold_str = format!("{:.2}", threshold);
+            let rule_text = format!(
+                "Correlation break {}-{} (delta {:.2}, threshold {})",
+                bp.symbol_a, bp.symbol_b, bp.break_delta, threshold_str
+            );
+            db_alerts::add_alert_backend(
+                backend,
+                db_alerts::NewAlert {
+                    kind: "technical",
+                    symbol: &symbol_key,
+                    direction: "above",
+                    condition: Some("correlation_break"),
+                    threshold: &threshold_str,
+                    rule_text: &rule_text,
+                    recurring: true,
+                    cooldown_minutes: cooldown,
+                },
+            )?;
+            seeded += 1;
+        }
+        if !json {
+            println!("Seeded {} correlation break alerts.", seeded);
+        }
+    }
+
+    if json {
+        let output = serde_json::json!({
+            "threshold": threshold,
+            "breaks": pairs.iter().map(|bp| serde_json::json!({
+                "symbol_a": bp.symbol_a,
+                "symbol_b": bp.symbol_b,
+                "corr_7d": bp.corr_7d,
+                "corr_90d": bp.corr_90d,
+                "break_delta": bp.break_delta,
+            })).collect::<Vec<_>>(),
+            "count": pairs.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else if pairs.is_empty() {
+        println!(
+            "No correlation breaks detected at threshold {:.2}. All pairs are stable.",
+            threshold
+        );
+    } else {
+        println!("Correlation Breaks (|7d − 90d| ≥ {:.2})", threshold);
+        println!();
+        println!("{:<22} {:>8} {:>8} {:>10}", "Pair", "7d", "90d", "Break Δ");
+        println!("{}", "─".repeat(52));
+        for bp in &pairs {
+            let pair = format!("{}-{}", bp.symbol_a, bp.symbol_b);
+            println!(
+                "{:<22} {:>8} {:>8} {:>10}",
+                truncate(&pair, 22),
+                fmt_opt(bp.corr_7d),
+                fmt_opt(bp.corr_90d),
+                format!("{:+.2}", bp.break_delta),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// A pair whose short-term vs long-term correlation has diverged beyond threshold.
+#[derive(Debug, Clone)]
+pub struct CorrelationBreak {
+    pub symbol_a: String,
+    pub symbol_b: String,
+    pub corr_7d: Option<f64>,
+    pub corr_90d: Option<f64>,
+    pub break_delta: f64,
+}
+
+/// Compute correlation break pairs from fresh rolling correlations.
+pub fn compute_breaks_backend(
+    backend: &BackendConnection,
+    threshold: f64,
+    limit: usize,
+) -> Result<Vec<CorrelationBreak>> {
+    // Get all pairs — use 90 as primary window, high limit to see all pairs
+    let all_pairs = compute_pairs_backend(backend, 90, 500)?;
+    let mut breaks: Vec<CorrelationBreak> = all_pairs
+        .into_iter()
+        .filter_map(|p| match (p.corr_7d, p.corr_90d) {
+            (Some(c7), Some(c90)) => {
+                let delta = c7 - c90;
+                if delta.abs() >= threshold {
+                    Some(CorrelationBreak {
+                        symbol_a: p.symbol_a,
+                        symbol_b: p.symbol_b,
+                        corr_7d: Some(c7),
+                        corr_90d: Some(c90),
+                        break_delta: delta,
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    // Sort by absolute delta descending (biggest breaks first)
+    breaks.sort_by(|a, b| {
+        b.break_delta
+            .abs()
+            .partial_cmp(&a.break_delta.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    breaks.truncate(limit);
+    Ok(breaks)
+}
+
 fn print_pairs(
     held: HashSet<String>,
     pairs: Vec<PairCorrelation>,
@@ -640,5 +785,326 @@ fn truncate(s: &str, max: usize) -> String {
         format!("{}...", &s[..max - 3])
     } else {
         s[..max].to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::backend::BackendConnection;
+    use crate::db::open_in_memory;
+    use crate::db::price_history;
+    use crate::models::price::HistoryRecord;
+    use rust_decimal::Decimal;
+
+    /// Insert synthetic price history for a symbol: `count` days of
+    /// linearly ascending closes starting from `base_price`.
+    fn seed_history(conn: &rusqlite::Connection, symbol: &str, base_price: f64, count: usize) {
+        let base_date = chrono::NaiveDate::from_ymd_opt(2025, 10, 1).unwrap();
+        let records: Vec<HistoryRecord> = (0..count)
+            .map(|day| {
+                let price = base_price + day as f64;
+                HistoryRecord {
+                    date: (base_date + chrono::Duration::days(day as i64))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                    close: Decimal::from_str_exact(&format!("{price:.2}")).unwrap_or_default(),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                }
+            })
+            .collect();
+        price_history::upsert_history(conn, symbol, "test", &records).unwrap();
+    }
+
+    /// Seed a held position so the symbol shows up in correlation pair candidates.
+    fn seed_position(conn: &rusqlite::Connection, symbol: &str) {
+        crate::db::transactions::insert_transaction(
+            conn,
+            &crate::models::transaction::NewTransaction {
+                symbol: symbol.to_string(),
+                category: crate::models::asset::AssetCategory::Commodity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: Decimal::from(1),
+                price_per: Decimal::from(100),
+                currency: "USD".to_string(),
+                date: "2025-10-01".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_compute_breaks_empty_db() {
+        let backend = BackendConnection::Sqlite {
+            conn: open_in_memory(),
+        };
+        let breaks = compute_breaks_backend(&backend, 0.30, 20).unwrap();
+        assert!(breaks.is_empty());
+    }
+
+    #[test]
+    fn test_compute_breaks_no_divergence_returns_empty() {
+        let conn = open_in_memory();
+        // Two symbols with identical price series → correlation ≈ 1.0 at all windows → no break
+        seed_position(&conn, "AAA");
+        seed_history(&conn, "AAA", 100.0, 120);
+        seed_history(&conn, "SPY", 200.0, 120);
+        let backend = BackendConnection::Sqlite { conn };
+        let breaks = compute_breaks_backend(&backend, 0.30, 20).unwrap();
+        assert!(breaks.is_empty(), "Parallel series should have no break");
+    }
+
+    #[test]
+    fn test_compute_breaks_detects_divergence() {
+        let conn = open_in_memory();
+        seed_position(&conn, "DIV");
+        // DIV: ascending for 90 days then descending for 30 days (creates short/long divergence)
+        let base_date = chrono::NaiveDate::from_ymd_opt(2025, 7, 1).unwrap();
+        let records: Vec<HistoryRecord> = (0..120)
+            .map(|day| {
+                let price = if day < 90 {
+                    100.0 + day as f64
+                } else {
+                    190.0 - (day - 90) as f64 * 5.0
+                };
+                HistoryRecord {
+                    date: (base_date + chrono::Duration::days(day as i64))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                    close: Decimal::from_str_exact(&format!("{price:.2}")).unwrap_or_default(),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                }
+            })
+            .collect();
+        price_history::upsert_history(&conn, "DIV", "test", &records).unwrap();
+        // SPY: steady ascending
+        let spy: Vec<HistoryRecord> = (0..120)
+            .map(|day| HistoryRecord {
+                date: (base_date + chrono::Duration::days(day as i64))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+                close: Decimal::from_str_exact(&format!("{:.2}", 200.0 + day as f64))
+                    .unwrap_or_default(),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            })
+            .collect();
+        price_history::upsert_history(&conn, "SPY", "test", &spy).unwrap();
+        let backend = BackendConnection::Sqlite { conn };
+        // Low threshold to catch the divergence
+        let breaks = compute_breaks_backend(&backend, 0.10, 20).unwrap();
+        // The DIV-SPY pair should show a break since recent behavior flipped
+        assert!(
+            !breaks.is_empty(),
+            "Divergent series should produce a break"
+        );
+        assert!(breaks[0].break_delta.abs() >= 0.10);
+    }
+
+    #[test]
+    fn test_run_breaks_seed_alerts_creates_alerts() {
+        let conn = open_in_memory();
+        seed_position(&conn, "SEED");
+        // Create a pair with known divergence
+        let base_date = chrono::NaiveDate::from_ymd_opt(2025, 7, 1).unwrap();
+        let records: Vec<HistoryRecord> = (0..120)
+            .map(|day| {
+                let price = if day < 90 {
+                    100.0 + day as f64
+                } else {
+                    190.0 - (day - 90) as f64 * 5.0
+                };
+                HistoryRecord {
+                    date: (base_date + chrono::Duration::days(day as i64))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                    close: Decimal::from_str_exact(&format!("{price:.2}")).unwrap_or_default(),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                }
+            })
+            .collect();
+        price_history::upsert_history(&conn, "SEED", "test", &records).unwrap();
+        let spy: Vec<HistoryRecord> = (0..120)
+            .map(|day| HistoryRecord {
+                date: (base_date + chrono::Duration::days(day as i64))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+                close: Decimal::from_str_exact(&format!("{:.2}", 200.0 + day as f64))
+                    .unwrap_or_default(),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            })
+            .collect();
+        price_history::upsert_history(&conn, "SPY", "test", &spy).unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        // Run breaks with seed-alerts
+        run_breaks(&backend, 0.10, 20, true, 240, false).unwrap();
+
+        let alerts = db_alerts::list_alerts_backend(&backend).unwrap();
+        let corr_alerts: Vec<_> = alerts
+            .iter()
+            .filter(|a| a.condition.as_deref() == Some("correlation_break"))
+            .collect();
+        assert!(
+            !corr_alerts.is_empty(),
+            "Should have seeded correlation break alerts"
+        );
+        assert!(corr_alerts[0].recurring);
+        assert_eq!(corr_alerts[0].cooldown_minutes, 240);
+    }
+
+    #[test]
+    fn test_run_breaks_seed_alerts_no_duplicates() {
+        let conn = open_in_memory();
+        seed_position(&conn, "DUP");
+        let base_date = chrono::NaiveDate::from_ymd_opt(2025, 7, 1).unwrap();
+        let records: Vec<HistoryRecord> = (0..120)
+            .map(|day| {
+                let price = if day < 90 {
+                    100.0 + day as f64
+                } else {
+                    190.0 - (day - 90) as f64 * 5.0
+                };
+                HistoryRecord {
+                    date: (base_date + chrono::Duration::days(day as i64))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                    close: Decimal::from_str_exact(&format!("{price:.2}")).unwrap_or_default(),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                }
+            })
+            .collect();
+        price_history::upsert_history(&conn, "DUP", "test", &records).unwrap();
+        let spy: Vec<HistoryRecord> = (0..120)
+            .map(|day| HistoryRecord {
+                date: (base_date + chrono::Duration::days(day as i64))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+                close: Decimal::from_str_exact(&format!("{:.2}", 200.0 + day as f64))
+                    .unwrap_or_default(),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            })
+            .collect();
+        price_history::upsert_history(&conn, "SPY", "test", &spy).unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        // Seed twice — second run should not duplicate
+        run_breaks(&backend, 0.10, 20, true, 240, false).unwrap();
+        run_breaks(&backend, 0.10, 20, true, 240, false).unwrap();
+
+        let alerts = db_alerts::list_alerts_backend(&backend).unwrap();
+        let corr_alerts: Vec<_> = alerts
+            .iter()
+            .filter(|a| a.condition.as_deref() == Some("correlation_break"))
+            .collect();
+        // Each pair should appear at most once
+        let mut seen = HashSet::new();
+        for a in &corr_alerts {
+            let key = a.symbol.clone();
+            assert!(
+                seen.insert(key.clone()),
+                "Duplicate correlation break alert for {}",
+                key
+            );
+        }
+    }
+
+    #[test]
+    fn test_breaks_sorted_by_absolute_delta() {
+        let conn = open_in_memory();
+        seed_position(&conn, "BIG");
+        seed_position(&conn, "SML");
+        let base_date = chrono::NaiveDate::from_ymd_opt(2025, 7, 1).unwrap();
+
+        // BIG: strong reversal at day 90
+        let big: Vec<HistoryRecord> = (0..120)
+            .map(|day| {
+                let price = if day < 90 {
+                    100.0 + day as f64
+                } else {
+                    190.0 - (day - 90) as f64 * 10.0
+                };
+                HistoryRecord {
+                    date: (base_date + chrono::Duration::days(day as i64))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                    close: Decimal::from_str_exact(&format!("{price:.2}")).unwrap_or_default(),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                }
+            })
+            .collect();
+        price_history::upsert_history(&conn, "BIG", "test", &big).unwrap();
+
+        // SML: mild reversal at day 90
+        let sml: Vec<HistoryRecord> = (0..120)
+            .map(|day| {
+                let price = if day < 90 {
+                    100.0 + day as f64
+                } else {
+                    190.0 - (day - 90) as f64 * 2.0
+                };
+                HistoryRecord {
+                    date: (base_date + chrono::Duration::days(day as i64))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                    close: Decimal::from_str_exact(&format!("{price:.2}")).unwrap_or_default(),
+                    volume: None,
+                    open: None,
+                    high: None,
+                    low: None,
+                }
+            })
+            .collect();
+        price_history::upsert_history(&conn, "SML", "test", &sml).unwrap();
+
+        // SPY: steadily ascending
+        let spy: Vec<HistoryRecord> = (0..120)
+            .map(|day| HistoryRecord {
+                date: (base_date + chrono::Duration::days(day as i64))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+                close: Decimal::from_str_exact(&format!("{:.2}", 200.0 + day as f64))
+                    .unwrap_or_default(),
+                volume: None,
+                open: None,
+                high: None,
+                low: None,
+            })
+            .collect();
+        price_history::upsert_history(&conn, "SPY", "test", &spy).unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let breaks = compute_breaks_backend(&backend, 0.01, 50).unwrap();
+        // Results should be sorted by absolute delta descending
+        for window in breaks.windows(2) {
+            assert!(
+                window[0].break_delta.abs() >= window[1].break_delta.abs(),
+                "Breaks should be sorted by |delta| descending"
+            );
+        }
     }
 }

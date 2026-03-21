@@ -52,10 +52,26 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     let (front_month, front_year) = next_active_contract(now.month(), now.year() as u32);
     let (next_month, next_year) = following_contract(front_month, front_year);
 
-    let wti_front_sym = format!("CL{}{}.NYM", MONTH_CODES[front_month as usize - 1], format_year(front_year));
-    let wti_next_sym = format!("CL{}{}.NYM", MONTH_CODES[next_month as usize - 1], format_year(next_year));
-    let brent_front_sym = format!("BZ{}{}.NYM", MONTH_CODES[front_month as usize - 1], format_year(front_year));
-    let brent_next_sym = format!("BZ{}{}.NYM", MONTH_CODES[next_month as usize - 1], format_year(next_year));
+    let wti_front_sym = format!(
+        "CL{}{}.NYM",
+        MONTH_CODES[front_month as usize - 1],
+        format_year(front_year)
+    );
+    let wti_next_sym = format!(
+        "CL{}{}.NYM",
+        MONTH_CODES[next_month as usize - 1],
+        format_year(next_year)
+    );
+    let brent_front_sym = format!(
+        "BZ{}{}.NYM",
+        MONTH_CODES[front_month as usize - 1],
+        format_year(front_year)
+    );
+    let brent_next_sym = format!(
+        "BZ{}{}.NYM",
+        MONTH_CODES[next_month as usize - 1],
+        format_year(next_year)
+    );
 
     // Also grab continuous contracts as fallback
     let wti_cont = "CL=F";
@@ -137,19 +153,19 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        print_report(&report, &wti_front_label, &wti_next_label, &brent_front_label, &brent_next_label);
+        print_report(
+            &report,
+            &wti_front_label,
+            &wti_next_label,
+            &brent_front_label,
+            &brent_next_label,
+        );
     }
 
     Ok(())
 }
 
-fn print_report(
-    r: &OilPremiumReport,
-    wti_fl: &str,
-    wti_nl: &str,
-    brent_fl: &str,
-    brent_nl: &str,
-) {
+fn print_report(r: &OilPremiumReport, wti_fl: &str, wti_nl: &str, brent_fl: &str, brent_nl: &str) {
     println!("\nOil Futures Term Structure & Premium Analysis");
     println!("══════════════════════════════════════════════\n");
 
@@ -211,10 +227,7 @@ fn print_report(
     println!();
 }
 
-fn compute_term_structure(
-    front: Option<Decimal>,
-    next: Option<Decimal>,
-) -> TermStructure {
+fn compute_term_structure(front: Option<Decimal>, next: Option<Decimal>) -> TermStructure {
     match (front, next) {
         (Some(f), Some(n)) => {
             let spread = to_f64(f - n);
@@ -255,17 +268,9 @@ fn derive_signal(
 ) -> (String, String) {
     let wti_back = wti.structure == "BACKWARDATION";
     let brent_back = brent.structure == "BACKWARDATION";
-    let deep_back = wti
-        .spread_pct
-        .map(|p| p > 2.0)
-        .unwrap_or(false)
-        || brent
-            .spread_pct
-            .map(|p| p > 2.0)
-            .unwrap_or(false);
-    let wide_wb = wti_brent_spread
-        .map(|s| s.abs() > 5.0)
-        .unwrap_or(false);
+    let deep_back = wti.spread_pct.map(|p| p > 2.0).unwrap_or(false)
+        || brent.spread_pct.map(|p| p > 2.0).unwrap_or(false);
+    let wide_wb = wti_brent_spread.map(|s| s.abs() > 5.0).unwrap_or(false);
 
     if deep_back && wide_wb {
         (

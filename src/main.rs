@@ -732,9 +732,7 @@ fn main() -> Result<()> {
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }
-            cli::DataCommand::OilPremium { json } => {
-                commands::oil_premium::run(&backend, json)
-            }
+            cli::DataCommand::OilPremium { json } => commands::oil_premium::run(&backend, json),
             cli::DataCommand::Backfill { json } => commands::backfill::run(&backend, json),
         },
         Some(Command::System { command }) => match command {
@@ -2432,6 +2430,20 @@ fn main() -> Result<()> {
                     period.as_deref(),
                     false,
                     limit,
+                    json,
+                ),
+                Some(cli::AnalyticsCorrelationsCommand::Breaks {
+                    threshold,
+                    limit,
+                    seed_alerts,
+                    cooldown,
+                    json,
+                }) => commands::correlations::run_breaks(
+                    &backend,
+                    threshold,
+                    limit,
+                    seed_alerts,
+                    cooldown,
                     json,
                 ),
             },
