@@ -438,6 +438,13 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Oil futures term structure: contango/backwardation, WTI-Brent spread, war-premium signal
+    #[command(name = "oil-premium")]
+    OilPremium {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2554,6 +2561,32 @@ mod tests {
                 command: DataCommand::OilInventory { weeks, json },
             }) => {
                 assert_eq!(weeks, 52);
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_oil_premium_json() {
+        let cli = Cli::try_parse_from(["pftui", "data", "oil-premium", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::OilPremium { json },
+            }) => {
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_oil_premium_defaults() {
+        let cli = Cli::try_parse_from(["pftui", "data", "oil-premium"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::OilPremium { json },
+            }) => {
                 assert!(!json);
             }
             _ => panic!("unexpected parse result"),

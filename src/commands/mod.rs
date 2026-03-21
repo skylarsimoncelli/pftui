@@ -40,6 +40,7 @@ pub mod news;
 pub mod notes;
 pub mod oil;
 pub mod oil_inventory;
+pub mod oil_premium;
 pub mod onchain;
 pub mod opportunity;
 pub mod options;
