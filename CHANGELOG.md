@@ -3,6 +3,20 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — Security: harden mobile API server (#117)
+
+- What: Comprehensive security hardening of the mobile API server based on audit findings.
+  - **C-1:** Removed `seen_sessions` HashMap that stored raw bearer tokens in memory (DoS + credential leak). Replaced with SHA-256 hashed session cache populated only after successful Argon2 validation.
+  - **C-2:** TLS private key file now set to 0600 permissions on generation and on startup.
+  - **H-1:** Added per-IP auth rate limiting — after 10 failed attempts, escalating block (1m/5m/15m/60m). Auth failures logged to stderr with source IP (tokens never logged).
+  - **H-2:** Added concurrency limit (50 concurrent requests) and body size limit (1 MB) via Tower middleware.
+  - **M-1:** Error responses now return generic "Internal server error" to clients; real errors logged to stderr only.
+  - **M-2:** Added `pftui system mobile token list [--json]` and `pftui system mobile token revoke <prefix> [--json]` CLI commands.
+  - **M-3:** Certificate validity set to 2 years (was rcgen default). Uses explicit `CertificateParams`.
+  - **M-4:** Added request access logging via `tower_http::TraceLayer` (timestamp, endpoint, status, duration).
+- Files: `src/mobile/auth.rs`, `src/mobile/server.rs`, `src/mobile/commands.rs`, `src/cli.rs`, `src/main.rs`, `Cargo.toml`
+- Tests: `cargo test` — 1508 pass (+3 new: session cache, rate limit blocking, rate limit clearing); `cargo clippy --all-targets -- -D warnings` clean
+
 ### 2026-03-21 — Fix: mobile API server tokio runtime panic (#112)
 
 - What: Fixed "Cannot start a runtime from within a runtime" panic in `pftui system mobile serve`. The mobile server now receives the pre-opened `BackendConnection` from `main.rs` instead of opening its own, and uses the existing `pg_runtime` instead of creating a new tokio runtime. Added `BackendConnection::clone_for_server()` for cheap PgPool cloning, and `MobileAppState` with `Mutex<BackendConnection>` for thread-safe handler sharing.
