@@ -70,7 +70,6 @@ body {
 
 /* ===== HERO SECTION ===== */
 .hero {
-    min-height: 100vh;
     display: flex;
     align-items: center;
     padding: var(--spacing-xl) 0;
