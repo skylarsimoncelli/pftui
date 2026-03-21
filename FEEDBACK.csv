@@ -40,3 +40,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-21 12:14,alert-investigator,85,88,monitoring,info,No market alerts to investigate - all properly acknowledged. Identified cron timeout issue with low-timeframe-analyst (close) job and routed to agent pipeline for awareness. Agent messaging system working correctly.
 2026-03-21,alert-investigator,85,82,monitoring,none,"Routine alert investigation - no active alerts, system health good, portfolio aligned with risk-off regime"
 2026-03-21,alert-investigator,85,88,enhancement,P2,pftui worked well for portfolio brief and analytics data. Could benefit from better cron health integration to surface system issues directly in portfolio status. Agent messaging system functioned properly for routing findings.
+2026-03-21,alert-investigator,85,88,investigation,notable,Investigated SMCI crash (-33%) and Iran war developments. Clear catalysts identified. Risk-off signals working correctly.
