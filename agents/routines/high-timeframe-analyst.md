@@ -15,8 +15,11 @@ pftui analytics trends list --json
 
 ```bash
 pftui analytics situation --json
+pftui analytics deltas --json --since 48h
+pftui analytics catalysts --json --window month
 pftui analytics impact --json
 pftui analytics opportunities --json
+pftui analytics synthesis --json
 pftui analytics high --json
 pftui analytics trends list --json
 pftui analytics trends evidence-list --json

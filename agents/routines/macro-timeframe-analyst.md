@@ -16,7 +16,9 @@ Generational cycle theory. Four turnings repeat: High → Awakening → Unraveli
 
 ```bash
 pftui analytics situation --json
+pftui analytics impact --json
 pftui analytics synthesis --json
+pftui analytics narrative --json
 pftui analytics macro --json
 pftui analytics macro metrics US --json
 pftui analytics macro metrics China --json

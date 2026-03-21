@@ -15,6 +15,8 @@ pftui analytics situation --json
 pftui analytics deltas --json --since 24h
 pftui analytics catalysts --json --window week
 pftui analytics impact --json
+pftui analytics opportunities --json
+pftui analytics synthesis --json
 pftui analytics medium --json
 pftui journal scenario list --json
 pftui journal conviction list --json

@@ -19,6 +19,8 @@ pftui data refresh
 pftui analytics situation --json
 pftui analytics deltas --json --since last-refresh
 pftui analytics catalysts --json --window today
+pftui analytics impact --json
+pftui analytics synthesis --json
 pftui portfolio brief --json
 pftui analytics movers --json
 pftui analytics macro regime current --json

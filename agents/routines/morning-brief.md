@@ -25,6 +25,7 @@ pftui analytics deltas --json --since close
 pftui analytics catalysts --json --window today
 pftui analytics impact --json
 pftui analytics opportunities --json
+pftui analytics synthesis --json
 pftui analytics summary --json
 pftui analytics alignment --json
 pftui analytics recap --date yesterday --json
