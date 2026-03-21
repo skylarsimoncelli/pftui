@@ -22,16 +22,18 @@ use crate::models::asset::AssetCategory;
 use crate::models::position::{compute_positions, compute_positions_from_allocations, Position};
 use crate::web::view_model;
 
-/// Shared state for the mobile API that holds a pre-opened database connection.
-/// This avoids calling `open_from_config` (which uses `pg_runtime::block_on`)
-/// from within async request handlers, preventing the "cannot start a runtime
-/// from within a runtime" panic.
+/// Shared state for the mobile API server.
 ///
-/// We store the `BackendConnection` inside a `std::sync::Mutex` because SQLite's
-/// `Connection` is not `Send`. The mobile server only uses Postgres in practice,
-/// but this keeps the type system happy while allowing the same code paths.
+/// We store a `PgPool` directly (not `BackendConnection`) because:
+/// 1. The mobile API requires Postgres — SQLite is not supported.
+/// 2. PgPool is `Clone + Send + Sync`, making it safe to share across
+///    async handlers and move into `spawn_blocking` closures.
+/// 3. DB query functions use `pg_runtime::block_on()` internally, which
+///    panics if called from within a tokio runtime. By running DB work
+///    on the blocking thread pool via `spawn_blocking`, we avoid nesting
+///    runtimes.
 struct MobileAppState {
-    backend: std::sync::Mutex<BackendConnection>,
+    pool: sqlx::PgPool,
     config: Config,
 }
 
@@ -166,8 +168,12 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
         anyhow!("mobile.key_path is missing; re-run `pftui system mobile enable`")
     })?;
 
+    let pool = backend
+        .postgres_pool()
+        .ok_or_else(|| anyhow!("Mobile API server requires the Postgres backend"))?
+        .clone();
     let app_state = Arc::new(MobileAppState {
-        backend: std::sync::Mutex::new(backend),
+        pool,
         config: config.clone(),
     });
     let auth_state = Arc::new(MobileAuthState::new(
@@ -206,45 +212,55 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
     Ok(())
 }
 
+/// Run sync DB work on the blocking thread pool so that `pg_runtime::block_on`
+/// (used internally by every Postgres query function) does not nest inside the
+/// axum server's tokio runtime.
+async fn blocking_db<F, T>(state: &Arc<MobileAppState>, f: F) -> Result<T, (StatusCode, String)>
+where
+    F: FnOnce(&BackendConnection, &Config) -> Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    let pool = state.pool.clone();
+    let config = state.config.clone();
+    tokio::task::spawn_blocking(move || {
+        let backend = BackendConnection::Postgres { pool };
+        f(&backend, &config)
+    })
+    .await
+    .map_err(|e| internal_error(anyhow::anyhow!("task join error: {}", e)))?
+    .map_err(internal_error)
+}
+
 async fn get_dashboard(
     State(state): State<Arc<MobileAppState>>,
 ) -> Result<Json<MobileDashboardResponse>, (StatusCode, String)> {
-    let backend = state
-        .backend
-        .lock()
-        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
-    let portfolio = portfolio_payload(&backend, &state.config).map_err(internal_error)?;
-    let analytics = analytics_payload(&backend);
-    let monitoring = monitoring_payload(&backend).map_err(internal_error)?;
-
-    Ok(Json(MobileDashboardResponse {
-        generated_at: Utc::now().to_rfc3339(),
-        portfolio,
-        analytics,
-        monitoring,
-    }))
+    let resp = blocking_db(&state, |backend, config| {
+        let portfolio = portfolio_payload(backend, config)?;
+        let analytics = analytics_payload(backend);
+        let monitoring = monitoring_payload(backend)?;
+        Ok(MobileDashboardResponse {
+            generated_at: Utc::now().to_rfc3339(),
+            portfolio,
+            analytics,
+            monitoring,
+        })
+    })
+    .await?;
+    Ok(Json(resp))
 }
 
 async fn get_portfolio(
     State(state): State<Arc<MobileAppState>>,
 ) -> Result<Json<MobilePortfolioResponse>, (StatusCode, String)> {
-    let backend = state
-        .backend
-        .lock()
-        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
-    Ok(Json(
-        portfolio_payload(&backend, &state.config).map_err(internal_error)?,
-    ))
+    let resp = blocking_db(&state, portfolio_payload).await?;
+    Ok(Json(resp))
 }
 
 async fn get_analytics(
     State(state): State<Arc<MobileAppState>>,
 ) -> Result<Json<MobileAnalyticsResponse>, (StatusCode, String)> {
-    let backend = state
-        .backend
-        .lock()
-        .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
-    Ok(Json(analytics_payload(&backend)))
+    let resp = blocking_db(&state, |backend, _config| Ok(analytics_payload(backend))).await?;
+    Ok(Json(resp))
 }
 
 async fn get_ui_config_mobile(

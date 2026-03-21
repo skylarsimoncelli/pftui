@@ -807,12 +807,15 @@ fn main() -> Result<()> {
                 cli::MobileCommand::Serve => {
                     // Clone the backend connection for the server so we don't
                     // move `backend` (it is used by the flush() epilogue).
-                    // PgPool is cheap to clone (Arc internally); for SQLite we
-                    // open a second connection since Connection is not Clone.
+                    // PgPool is cheap to clone (Arc internally).
                     let server_backend = backend.clone_for_server()?;
-                    crate::db::pg_runtime::block_on(
-                        mobile::server::run_server(server_backend, config),
-                    )
+                    // The server needs its own tokio runtime for axum. DB query
+                    // functions use pg_runtime::block_on() internally, which
+                    // cannot be called from a tokio worker thread. The server
+                    // handlers use spawn_blocking() to run DB work on the
+                    // blocking thread pool, avoiding the nested-runtime panic.
+                    let runtime = tokio::runtime::Runtime::new()?;
+                    runtime.block_on(mobile::server::run_server(server_backend, config))
                 }
             },
             cli::SystemCommand::Universe { command } => match command {
