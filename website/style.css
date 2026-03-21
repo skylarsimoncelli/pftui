@@ -1135,7 +1135,6 @@ footer {
     }
     
     .terminal-body {
-        min-height: 300px;
         font-size: 0.76rem;
     }
 }
@@ -1175,7 +1174,6 @@ footer {
     
     .terminal-body {
         padding: var(--spacing-sm);
-        height: 280px;
         font-size: 0.8rem;
     }
     
@@ -1323,7 +1321,6 @@ footer {
     /* Terminal mockup */
     .terminal-body {
         padding: 0.75rem;
-        height: 240px;
         font-size: 0.7rem;
     }
     
@@ -1457,6 +1454,5 @@ footer {
     
     .terminal-body {
         font-size: 0.6rem;
-        height: 220px;
     }
 }
