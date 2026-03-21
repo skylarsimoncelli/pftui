@@ -292,7 +292,7 @@ Signals flow upward through the layers. A correlation break in LOW gets escalate
 
 When all four layers agree on an asset, that is the highest conviction signal in the system. When they diverge, that divergence is the investigation worth doing.
 
-On top of those four layers, pftui now exposes canonical analytics products that are shared across CLI, web, mobile, and later the agent layer:
+On top of those four layers, pftui provides a set of shared analytics products across CLI, web, mobile, and agent workflows:
 
 - `analytics situation` — what matters now
 - `analytics deltas` — what changed
@@ -302,7 +302,7 @@ On top of those four layers, pftui now exposes canonical analytics products that
 - `analytics synthesis` — where timeframes agree or conflict
 - `analytics narrative` — structured recap and analytical memory
 
-That architecture matters because the system no longer depends on client-side heuristics or prompt text to derive these answers independently in each surface. Rust + Postgres own the shared intelligence contract.
+These shared analytics contracts keep the product coherent across every surface: the same market situation, change radar, catalyst pressure, portfolio impact, cross-timeframe synthesis, and analytical memory appear wherever you access pftui.
 
 ```bash
 pftui analytics correlations compute --store --period 30d      # Compute and persist live correlations
