@@ -35,6 +35,39 @@ struct DashboardPayload: Decodable {
     let portfolio: PortfolioPayload
     let analytics: AnalyticsPayload
     let monitoring: MonitoringPayload
+    let situation: SituationPayload
+}
+
+struct SituationPayload: Decodable {
+    let title: String
+    let subtitle: String
+    let summary: [SituationStatPayload]
+    let watchNow: [SituationInsightPayload]
+    let portfolioImpacts: [SituationInsightPayload]
+    let riskMatrix: [RiskSignalPayload]
+}
+
+struct SituationStatPayload: Decodable, Identifiable {
+    var id: String { label }
+    let label: String
+    let value: String
+}
+
+struct SituationInsightPayload: Decodable, Identifiable {
+    var id: String { "\(title)-\(value)" }
+    let title: String
+    let detail: String
+    let value: String
+    let severity: String
+}
+
+struct RiskSignalPayload: Decodable, Identifiable {
+    var id: String { label }
+    let label: String
+    let detail: String
+    let value: String
+    let status: String
+    let severity: String
 }
 
 struct PortfolioPayload: Decodable {

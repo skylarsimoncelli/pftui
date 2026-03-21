@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-20 — feat: move situation synthesis into the mobile server contract
+
+- What: added a first-class server-side `situation` payload to the mobile dashboard API. The server now publishes a canonical situation title/subtitle, summary stats, ranked `watch_now` insights, portfolio impact items, and a risk matrix, all derived from the existing portfolio, analytics, and monitoring layers. The iOS app was simplified to consume that contract directly instead of duplicating the same synthesis logic in SwiftUI.
+- Why: the Situation Room was working, but the intelligence model still lived mostly in the client. This moves the product toward the right architecture: one analytics contract that can be reused by mobile, web, CLI, and future agent surfaces instead of one-off app-only logic.
+- Files: `src/mobile/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `CHANGELOG.md`
+- Tests: `swiftc -typecheck mobile/app/PftuiMobile/*.swift`; `cargo check`; `cargo test`; `cargo clippy -- -D warnings`
+
 ### 2026-03-20 — feat: add mobile change radar and cross-asset risk matrix
 
 - What: extended the Situation Room with a delta-aware monitoring layer. The app now keeps the previous dashboard snapshot in memory and uses it to surface a Change Radar: regime shifts, alert count changes, freshness changes, pulse re-pricing, headline changes, and aggregate score swings between refreshes. Added a compact Risk Matrix that translates existing market pulse, sentiment, and timeframe data into a phone-first stress dashboard for volatility, dollar pressure, crypto risk, and macro tone.
