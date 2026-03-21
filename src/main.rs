@@ -2950,6 +2950,21 @@ fn main() -> Result<()> {
                         json,
                     )
                 }
+                cli::AnalyticsConvictionCommand::List { json } => {
+                    commands::conviction::run_list(&backend, json)
+                }
+                cli::AnalyticsConvictionCommand::History {
+                    symbol,
+                    limit,
+                    json,
+                } => commands::conviction::run_history(&backend, &symbol, limit, json),
+                cli::AnalyticsConvictionCommand::Changes { days, json } => {
+                    let d = days
+                        .as_deref()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(7);
+                    commands::conviction::run_changes(&backend, d, json)
+                }
             },
         },
     };

@@ -2028,6 +2028,22 @@ pub enum AnalyticsConvictionCommand {
         #[arg(long)]
         json: bool,
     },
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    History {
+        symbol: String,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Changes {
+        days: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3677,6 +3693,84 @@ mod tests {
         assert_eq!(confidence, Some(0.7));
         assert_eq!(symbol.as_deref(), Some("BTC"));
         assert_eq!(source_agent.as_deref(), Some("evening-analyst"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_conviction_list_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "conviction", "list", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Conviction {
+                    command: AnalyticsConvictionCommand::List { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics conviction list command");
+        };
+
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_conviction_history() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "conviction",
+            "history",
+            "BTC",
+            "--limit",
+            "10",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Conviction {
+                    command:
+                        AnalyticsConvictionCommand::History {
+                            symbol,
+                            limit,
+                            json,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics conviction history command");
+        };
+
+        assert_eq!(symbol, "BTC");
+        assert_eq!(limit, Some(10));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_conviction_changes() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "conviction",
+            "changes",
+            "14",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Conviction {
+                    command: AnalyticsConvictionCommand::Changes { days, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics conviction changes command");
+        };
+
+        assert_eq!(days.as_deref(), Some("14"));
         assert!(json);
     }
 }
