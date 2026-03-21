@@ -265,7 +265,7 @@ Optional API keys unlock additional sources (Finnhub, FRED, Alpha Vantage). See 
 
 ### Database
 
-The database is not a passive store. It is the shared state layer that every other layer reads from and writes to. The aggregation engine writes price caches, sentiment data, and economic indicators. The analytics engine writes scenarios, convictions, and regime classifications. The AI layer writes agent messages, daily notes, and predictions. Every layer's output becomes queryable input for every other layer.
+The database is not a passive store. It is the shared state layer that every other layer reads from and writes to. The aggregation engine writes price caches, sentiment data, technical state, and economic indicators. The analytics engine writes scenarios, convictions, regime classifications, situation snapshots, deltas, and narrative state. The AI layer writes agent messages, daily notes, and predictions. Every layer's output becomes queryable input for every other layer.
 
 SQLite by default, PostgreSQL for production. Your choice. Both are first-class backends with full feature parity.
 
@@ -291,6 +291,18 @@ The core differentiator. Four intelligence layers operating simultaneously acros
 Signals flow upward through the layers. A correlation break in LOW gets escalated to MEDIUM, which investigates whether it represents a scenario shift. A scenario shift in MEDIUM feeds evidence to a HIGH trend. Context flows downward. MACRO's assessment of the current empire cycle stage constrains how MEDIUM weights its scenarios, which constrains how LOW interprets short-term moves.
 
 When all four layers agree on an asset, that is the highest conviction signal in the system. When they diverge, that divergence is the investigation worth doing.
+
+On top of those four layers, pftui now exposes canonical analytics products that are shared across CLI, web, mobile, and later the agent layer:
+
+- `analytics situation` — what matters now
+- `analytics deltas` — what changed
+- `analytics catalysts` — what is coming next
+- `analytics impact` — why it matters to the current book
+- `analytics opportunities` — what high-alignment ideas are outside the book
+- `analytics synthesis` — where timeframes agree or conflict
+- `analytics narrative` — structured recap and analytical memory
+
+That architecture matters because the system no longer depends on client-side heuristics or prompt text to derive these answers independently in each surface. Rust + Postgres own the shared intelligence contract.
 
 ```bash
 pftui analytics correlations compute --store --period 30d      # Compute and persist live correlations
