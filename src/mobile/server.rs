@@ -21,6 +21,7 @@ use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
 
 use crate::alerts::AlertStatus;
+use crate::analytics::situation;
 use crate::config::Config;
 use crate::db;
 use crate::db::backend::BackendConnection;
@@ -41,6 +42,7 @@ use crate::web::view_model;
 struct MobileAppState {
     backend: std::sync::Mutex<BackendConnection>,
     config: Config,
+    db_path: String,
 }
 
 #[derive(Serialize)]
@@ -129,12 +131,14 @@ pub struct MobileDashboardResponse {
 
 #[derive(Serialize)]
 pub struct MobileSituationResponse {
+    pub headline: String,
     pub title: String,
     pub subtitle: String,
     pub summary: Vec<MobileSituationStat>,
     pub watch_now: Vec<MobileSituationInsight>,
     pub portfolio_impacts: Vec<MobileSituationInsight>,
     pub risk_matrix: Vec<MobileRiskSignal>,
+    pub cross_timeframe: Vec<MobileCrossTimeframeState>,
 }
 
 #[derive(Serialize)]
@@ -157,6 +161,17 @@ pub struct MobileRiskSignal {
     pub detail: String,
     pub value: String,
     pub status: String,
+    pub severity: String,
+}
+
+#[derive(Serialize)]
+pub struct MobileCrossTimeframeState {
+    pub timeframe: String,
+    pub label: String,
+    pub score: f64,
+    pub bias: String,
+    pub summary: Option<String>,
+    pub updated_at: Option<String>,
     pub severity: String,
 }
 
@@ -294,6 +309,7 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
     let app_state = Arc::new(MobileAppState {
         backend: std::sync::Mutex::new(backend),
         config: config.clone(),
+        db_path: crate::db::default_db_path().display().to_string(),
     });
     let auth_state = Arc::new(MobileAuthState::new(
         config.mobile.api_tokens.clone(),
@@ -350,7 +366,8 @@ async fn get_dashboard(
         .map_err(|e| internal_error(anyhow::anyhow!("{}", e)))?;
     let portfolio = portfolio_payload(&backend, &state.config).map_err(internal_error)?;
     let analytics = analytics_payload(&backend);
-    let monitoring = monitoring_payload(&backend, &state.config, &state.db_path).map_err(internal_error)?;
+    let monitoring =
+        monitoring_payload(&backend, &state.config, &state.db_path).map_err(internal_error)?;
     let situation = situation_payload(&portfolio, &analytics, &monitoring);
 
     Ok(Json(MobileDashboardResponse {
@@ -384,9 +401,7 @@ async fn get_analytics(
     Ok(Json(analytics_payload(&backend)))
 }
 
-async fn get_ui_config_mobile(
-    State(state): State<Arc<MobileAppState>>,
-) -> Json<serde_json::Value> {
+async fn get_ui_config_mobile(State(state): State<Arc<MobileAppState>>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "base_currency": state.config.base_currency,
         "theme": state.config.theme,
@@ -642,57 +657,127 @@ fn situation_payload(
     analytics: &MobileAnalyticsResponse,
     monitoring: &MobileMonitoringResponse,
 ) -> MobileSituationResponse {
-    let average_score = average_timeframe_score(&analytics.timeframes);
-    let watch_now = situation_watch_now(analytics, monitoring, average_score);
-    let portfolio_impacts = situation_portfolio_impacts(portfolio);
-    let risk_matrix = situation_risk_matrix(analytics, monitoring);
-    let title = monitoring
-        .latest_timeframe_signal
-        .as_ref()
-        .map(|signal| pretty_signal(&signal.signal_type))
-        .or_else(|| {
-            analytics
-                .regime
-                .as_ref()
-                .map(|regime| pretty_signal(&regime.regime))
-        })
-        .unwrap_or_else(|| "Situation Stable".to_string());
-    let subtitle = monitoring
-        .latest_timeframe_signal
-        .as_ref()
-        .map(|signal| signal.description.clone())
-        .unwrap_or_else(|| {
-            format!(
-                "{} positions • {} tracked layers",
-                portfolio.position_count,
-                analytics.timeframes.len()
-            )
-        });
+    let snapshot = situation::build_snapshot(&situation::SituationInputs {
+        position_count: portfolio.position_count,
+        positions: portfolio
+            .positions
+            .iter()
+            .map(|position| situation::SituationPosition {
+                symbol: position.symbol.clone(),
+                name: position.name.clone(),
+                allocation_pct: position.allocation_pct,
+                day_change_pct: position.day_change_pct,
+                current_value: position.current_value,
+            })
+            .collect(),
+        timeframes: analytics
+            .timeframes
+            .iter()
+            .map(|row| situation::TimeframeScore {
+                timeframe: row.timeframe.clone(),
+                label: row.label.clone(),
+                score: row.score,
+                summary: row.summary.clone(),
+                updated_at: row.updated_at.clone(),
+            })
+            .collect(),
+        regime: analytics
+            .regime
+            .as_ref()
+            .map(|row| situation::RegimeContext {
+                regime: row.regime.clone(),
+                confidence: row.confidence,
+                drivers: row.drivers.clone(),
+                vix: row.vix,
+                dxy: row.dxy,
+            }),
+        sentiment: analytics
+            .sentiment
+            .iter()
+            .map(|row| situation::SentimentGauge {
+                index_type: row.index_type.clone(),
+                value: row.value,
+                classification: row.classification.clone(),
+            })
+            .collect(),
+        latest_timeframe_signal: monitoring.latest_timeframe_signal.as_ref().map(|signal| {
+            situation::LatestSignal {
+                signal_type: signal.signal_type.clone(),
+                severity: signal.severity.clone(),
+                description: signal.description.clone(),
+            }
+        }),
+        technical_signal_count: monitoring.technical_signal_count,
+        triggered_alert_count: monitoring.triggered_alert_count,
+        market_pulse: monitoring
+            .market_pulse
+            .iter()
+            .map(|item| situation::MarketPulseItem {
+                symbol: item.symbol.clone(),
+                name: item.name.clone(),
+                value: item.value,
+                day_change_pct: item.day_change_pct,
+            })
+            .collect(),
+        stale_sources: monitoring.system.database.stale_sources,
+    });
 
     MobileSituationResponse {
-        title,
-        subtitle,
-        summary: vec![
-            MobileSituationStat {
-                label: "Avg Score".to_string(),
-                value: format!("{:.0}", average_score),
-            },
-            MobileSituationStat {
-                label: "Alerts".to_string(),
-                value: monitoring.triggered_alert_count.to_string(),
-            },
-            MobileSituationStat {
-                label: "Tech Signals".to_string(),
-                value: monitoring.technical_signal_count.to_string(),
-            },
-            MobileSituationStat {
-                label: "Stale Sources".to_string(),
-                value: monitoring.system.database.stale_sources.to_string(),
-            },
-        ],
-        watch_now,
-        portfolio_impacts,
-        risk_matrix,
+        headline: snapshot.headline.clone(),
+        title: snapshot.headline,
+        subtitle: snapshot.subtitle,
+        summary: snapshot
+            .summary_stats
+            .into_iter()
+            .map(|stat| MobileSituationStat {
+                label: stat.label,
+                value: stat.value,
+            })
+            .collect(),
+        watch_now: snapshot
+            .watch_now
+            .into_iter()
+            .map(|item| MobileSituationInsight {
+                title: item.title,
+                detail: item.detail,
+                value: item.value,
+                severity: item.severity,
+            })
+            .collect(),
+        portfolio_impacts: snapshot
+            .portfolio_impacts
+            .into_iter()
+            .map(|item| MobileSituationInsight {
+                title: item.title,
+                detail: item.detail,
+                value: item.value,
+                severity: item.severity,
+            })
+            .collect(),
+        risk_matrix: snapshot
+            .risk_matrix
+            .into_iter()
+            .map(|row| MobileRiskSignal {
+                label: row.label,
+                detail: row.detail,
+                value: row.value,
+                status: row.status,
+                severity: row.severity,
+            })
+            .collect(),
+        cross_timeframe: snapshot
+            .cross_timeframe
+            .into_iter()
+            .map(|row| MobileCrossTimeframeState {
+                timeframe: row.timeframe,
+                label: row.label,
+                score: row.score,
+                bias: row.bias,
+                summary: row.summary,
+                updated_at: row.updated_at,
+                severity: row.severity,
+            })
+            .collect(),
     }
 }
 
@@ -785,7 +870,10 @@ fn system_snapshot(
     let watchlist = crate::db::watchlist::list_watchlist_backend(backend)
         .map(|rows| rows.len())
         .unwrap_or(0);
-    let stale_sources = sources.iter().filter(|source| source.status != "fresh").count();
+    let stale_sources = sources
+        .iter()
+        .filter(|source| source.status != "fresh")
+        .count();
     let integrity = database_integrity(backend);
     let database = MobileDatabaseHealth {
         status: database_health_status(&integrity, stale_sources),
@@ -917,289 +1005,6 @@ fn parse_timestamp(raw: &str) -> Option<DateTime<Utc>> {
 fn parse_driver_list(raw: Option<&str>) -> Vec<String> {
     raw.and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
         .unwrap_or_default()
-}
-
-fn pretty_signal(raw: &str) -> String {
-    raw.replace('_', " ")
-        .split_whitespace()
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn average_timeframe_score(timeframes: &[MobileTimeframeOutlook]) -> f64 {
-    if timeframes.is_empty() {
-        return 0.0;
-    }
-    timeframes.iter().map(|row| row.score).sum::<f64>() / timeframes.len() as f64
-}
-
-fn severity_weight(value: &str) -> i32 {
-    match value {
-        "critical" => 3,
-        "elevated" | "warning" => 2,
-        _ => 1,
-    }
-}
-
-fn situation_watch_now(
-    analytics: &MobileAnalyticsResponse,
-    monitoring: &MobileMonitoringResponse,
-    average_score: f64,
-) -> Vec<MobileSituationInsight> {
-    let mut items = Vec::new();
-
-    if let Some(signal) = &monitoring.latest_timeframe_signal {
-        items.push(MobileSituationInsight {
-            title: pretty_signal(&signal.signal_type),
-            detail: signal.description.clone(),
-            value: signal.severity.clone(),
-            severity: normalize_severity(&signal.severity).to_string(),
-        });
-    }
-
-    if let Some(regime) = &analytics.regime {
-        items.push(MobileSituationInsight {
-            title: format!("Regime: {}", pretty_signal(&regime.regime)),
-            detail: regime.drivers.iter().take(2).cloned().collect::<Vec<_>>().join(" • "),
-            value: regime
-                .confidence
-                .map(|value| format!("{}%", (value * 100.0).round() as i32))
-                .unwrap_or_else(|| "—".to_string()),
-            severity: "normal".to_string(),
-        });
-    }
-
-    if let Some(strongest) = monitoring.market_pulse.iter().max_by(|left, right| {
-        change_magnitude(right.day_change_pct).total_cmp(&change_magnitude(left.day_change_pct))
-    }) {
-        let change = strongest
-            .day_change_pct
-            .map(|value| value.round_dp(2).to_string())
-            .unwrap_or_else(|| strongest.value.map(|value| value.round_dp(2).to_string()).unwrap_or_else(|| "—".to_string()));
-        let severity = if change_magnitude(strongest.day_change_pct) >= 2.5 {
-            "critical"
-        } else {
-            "elevated"
-        };
-        items.push(MobileSituationInsight {
-            title: format!("{} is leading the tape", strongest.symbol),
-            detail: strongest.name.clone(),
-            value: change,
-            severity: severity.to_string(),
-        });
-    }
-
-    if monitoring.triggered_alert_count > 0 {
-        items.push(MobileSituationInsight {
-            title: format!("{} live alerts need triage", monitoring.triggered_alert_count),
-            detail: "Triggered rules are active in the current monitoring stack.".to_string(),
-            value: "alert".to_string(),
-            severity: "critical".to_string(),
-        });
-    }
-
-    if monitoring.system.database.stale_sources > 0 {
-        items.push(MobileSituationInsight {
-            title: format!(
-                "{} stale data sources",
-                monitoring.system.database.stale_sources
-            ),
-            detail: "Operational trust is degraded until the slow feeds refresh.".to_string(),
-            value: "ops".to_string(),
-            severity: "elevated".to_string(),
-        });
-    }
-
-    if average_score <= -15.0 {
-        items.push(MobileSituationInsight {
-            title: "Average timeframe tone is soft".to_string(),
-            detail: "Cross-layer analytics are leaning defensive.".to_string(),
-            value: format!("{average_score:.0}"),
-            severity: if average_score <= -35.0 {
-                "critical".to_string()
-            } else {
-                "elevated".to_string()
-            },
-        });
-    }
-
-    items.sort_by(|left, right| {
-        severity_weight(&right.severity)
-            .cmp(&severity_weight(&left.severity))
-            .then_with(|| left.title.cmp(&right.title))
-    });
-    items.truncate(6);
-    items
-}
-
-fn situation_portfolio_impacts(
-    portfolio: &MobilePortfolioResponse,
-) -> Vec<MobileSituationInsight> {
-    let mut items: Vec<_> = portfolio
-        .positions
-        .iter()
-        .map(|position| {
-            let day_change = position
-                .day_change_pct
-                .map(|value| value.round_dp(2).to_string())
-                .unwrap_or_else(|| "—".to_string());
-            let magnitude = position.day_change_pct.map(|value| value.abs()).unwrap_or(dec!(0));
-            let severity = if magnitude >= dec!(3) {
-                "elevated"
-            } else {
-                "normal"
-            };
-            (
-                change_magnitude(position.day_change_pct),
-                MobileSituationInsight {
-                    title: position.symbol.clone(),
-                    detail: format!(
-                        "{} • {} allocation",
-                        position.name,
-                        position
-                            .allocation_pct
-                            .map(|value| value.round_dp(2).to_string())
-                            .unwrap_or_else(|| "—".to_string())
-                    ),
-                    value: day_change,
-                    severity: severity.to_string(),
-                },
-            )
-        })
-        .collect();
-
-    items.sort_by(|left, right| right.0.total_cmp(&left.0));
-    items.truncate(6);
-    items.into_iter().map(|(_, item)| item).collect()
-}
-
-fn situation_risk_matrix(
-    analytics: &MobileAnalyticsResponse,
-    monitoring: &MobileMonitoringResponse,
-) -> Vec<MobileRiskSignal> {
-    let mut rows = Vec::new();
-
-    if let Some(regime) = &analytics.regime {
-        if let Some(vix) = regime.vix {
-            rows.push(MobileRiskSignal {
-                label: "Volatility".to_string(),
-                detail: "Equity stress proxy".to_string(),
-                value: format!("{vix:.1}"),
-                status: if vix >= 20.0 { "warning" } else { "fresh" }.to_string(),
-                severity: if vix >= 25.0 {
-                    "critical"
-                } else if vix >= 20.0 {
-                    "elevated"
-                } else {
-                    "normal"
-                }
-                .to_string(),
-            });
-        }
-        if let Some(dxy) = regime.dxy {
-            rows.push(MobileRiskSignal {
-                label: "Dollar".to_string(),
-                detail: "Funding and global pressure".to_string(),
-                value: format!("{dxy:.1}"),
-                status: if dxy >= 105.0 { "warning" } else { "fresh" }.to_string(),
-                severity: if dxy >= 106.0 {
-                    "critical"
-                } else if dxy >= 105.0 {
-                    "elevated"
-                } else {
-                    "normal"
-                }
-                .to_string(),
-            });
-        }
-    }
-
-    if let Some(item) = monitoring
-        .market_pulse
-        .iter()
-        .find(|item| item.symbol.contains("BTC") || item.name.to_lowercase().contains("bitcoin"))
-    {
-        let change = item
-            .day_change_pct
-            .map(|value| value.round_dp(2).to_string())
-            .unwrap_or_else(|| "—".to_string());
-        let move_pct = change_magnitude(item.day_change_pct);
-        rows.push(MobileRiskSignal {
-            label: "Crypto Risk".to_string(),
-            detail: "High-beta sentiment read".to_string(),
-            value: change,
-            status: if move_pct <= -2.5 { "warning" } else { "fresh" }.to_string(),
-            severity: if move_pct <= -4.0 {
-                "critical"
-            } else if move_pct <= -2.5 {
-                "elevated"
-            } else {
-                "normal"
-            }
-            .to_string(),
-        });
-    }
-
-    if let Some(sentiment) = analytics
-        .sentiment
-        .iter()
-        .find(|row| row.index_type.eq_ignore_ascii_case("crypto"))
-    {
-        rows.push(MobileRiskSignal {
-            label: "Crypto Sentiment".to_string(),
-            detail: pretty_signal(&sentiment.classification),
-            value: sentiment.value.to_string(),
-            status: if sentiment.value <= 25 { "warning" } else { "fresh" }.to_string(),
-            severity: if sentiment.value <= 20 {
-                "critical"
-            } else if sentiment.value <= 25 {
-                "elevated"
-            } else {
-                "normal"
-            }
-            .to_string(),
-        });
-    }
-
-    if let Some(macro_row) = analytics.timeframes.iter().find(|row| row.timeframe == "macro") {
-        rows.push(MobileRiskSignal {
-            label: "Macro Stack".to_string(),
-            detail: "Long-cycle conviction".to_string(),
-            value: format!("{:.0}", macro_row.score),
-            status: if macro_row.score < -15.0 { "warning" } else { "fresh" }.to_string(),
-            severity: if macro_row.score < -35.0 {
-                "critical"
-            } else if macro_row.score < -15.0 {
-                "elevated"
-            } else {
-                "normal"
-            }
-            .to_string(),
-        });
-    }
-
-    rows
-}
-
-fn normalize_severity(raw: &str) -> &'static str {
-    match raw.to_ascii_lowercase().as_str() {
-        "critical" => "critical",
-        "warning" | "notable" | "elevated" => "elevated",
-        _ => "normal",
-    }
-}
-
-fn change_magnitude(value: Option<Decimal>) -> f64 {
-    value
-        .and_then(|number| number.to_string().parse::<f64>().ok())
-        .unwrap_or(0.0)
 }
 
 fn backend_name(config: &Config) -> &'static str {

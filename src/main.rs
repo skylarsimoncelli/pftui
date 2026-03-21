@@ -732,9 +732,7 @@ fn main() -> Result<()> {
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }
-            cli::DataCommand::Backfill { json } => {
-                commands::backfill::run(&backend, json)
-            }
+            cli::DataCommand::Backfill { json } => commands::backfill::run(&backend, json),
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Daemon { command } => match command {
@@ -816,9 +814,10 @@ fn main() -> Result<()> {
                     // PgPool is cheap to clone (Arc internally); for SQLite we
                     // open a second connection since Connection is not Clone.
                     let server_backend = backend.clone_for_server()?;
-                    crate::db::pg_runtime::block_on(
-                        mobile::server::run_server(server_backend, config),
-                    )
+                    crate::db::pg_runtime::block_on(mobile::server::run_server(
+                        server_backend,
+                        config,
+                    ))
                 }
             },
             cli::SystemCommand::Universe { command } => match command {
@@ -1539,6 +1538,36 @@ fn main() -> Result<()> {
             cli::AnalyticsCommand::Summary { json } => commands::analytics::run(
                 &backend,
                 "summary",
+                None,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                json,
+            ),
+            cli::AnalyticsCommand::Situation { json } => commands::analytics::run(
+                &backend,
+                "situation",
                 None,
                 None,
                 None,

@@ -22,6 +22,7 @@ use rust_decimal_macros::dec;
 use crate::analytics::levels::{
     nearest_actionable_levels, select_actionable_level, ActionableLevelPair,
 };
+use crate::analytics::situation::SituationSnapshot;
 
 fn get_price_map_backend(
     backend: &crate::db::backend::BackendConnection,
@@ -2410,6 +2411,26 @@ pub async fn get_summary(
         top_movers: movers,
         meta: view_model::fresh_meta(60),
     }))
+}
+
+pub async fn get_situation(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<SituationSnapshot>, (StatusCode, String)> {
+    let backend = state.get_backend().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let snapshot = crate::analytics::situation::build_snapshot_backend(&backend).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to build situation snapshot: {}", e),
+        )
+    })?;
+
+    Ok(Json(snapshot))
 }
 
 fn color_to_hex(color: Color) -> String {
