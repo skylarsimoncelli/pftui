@@ -31,6 +31,7 @@ pub mod groups;
 pub mod journal;
 pub mod macro_events;
 pub mod mobile_timeframe_scores;
+pub mod narrative_snapshots;
 #[allow(dead_code)] // Infrastructure for F20.1+ consumers (News tab, CLI)
 pub mod news_cache;
 #[allow(dead_code)] // Infrastructure for F21.1+ consumers (on-chain panel, CLI)

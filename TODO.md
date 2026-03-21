@@ -10,8 +10,6 @@ _(none)_
 
 ## P1 — Always-On Analytics Engine
 
-- [Feedback] **`analytics recap --date today` returns empty when no events yet** — Evening Analyst reported empty results. If the date is today and no recap events exist yet, fall back to showing yesterday's recap with a note, or display a "no events recorded yet today" message instead of empty output. (`src/commands/recap.rs`)
-
 ### F53: Situation Engine — Canonical “What Matters Now” Layer
 
 > Status: shipped on `feat/situation-engine` / PR #121. The canonical situation contract now exists in Rust and is reused by CLI, mobile, and web.
@@ -84,6 +82,8 @@ _(none)_
 
 ### F58: Narrative State And Structured Recap Layer
 
+> Status: shipped on `feat/f58-narrative-state`. Native `analytics narrative` now persists server-owned narrative snapshots, powers shared recap/state payloads, and drives structured recap views in mobile and web.
+
 > Vision fit: pftui should accumulate machine-readable analytical memory so recap and synthesis can be rendered without depending on an LLM.
 >
 > Actionable scope:
@@ -104,6 +104,13 @@ _(none)_
 - [Feedback] **Scenario probability tracking in data sources** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands for faster narrative shift detection. Could auto-inject active scenario probabilities into `analytics summary` and `analytics low` output. (`src/commands/scenario.rs`, `src/commands/summary.rs`)
 
 ## P3 — Long Term
+
+- **Integrate native narrative/situation analytics into `agents/routines/` prompts** — Update the multi-timeframe analyst and delivery routines so they consume the new Rust/Postgres-native analytics products instead of re-deriving the same logic in prompt text. Scope:
+  1. Review `low-timeframe-analyst.md`, `medium-timeframe-analyst.md`, `high-timeframe-analyst.md`, `macro-timeframe-analyst.md`, `morning-brief.md`, and `evening-analysis.md`
+  2. Replace prompt-internal recap / “what changed” / cross-timeframe synthesis / portfolio-impact / catalyst-ranking steps with calls to `pftui analytics situation --json`, `pftui analytics deltas --json`, `pftui analytics catalysts --json`, `pftui analytics impact --json`, `pftui analytics opportunities --json`, `pftui analytics synthesis --json`, and `pftui analytics narrative --json` where appropriate
+  3. Keep the routines focused on judgment, escalation, and prose synthesis, not recomputing facts already owned by the analytics layer
+  4. Update routine examples and handoff contracts so analysts reference canonical payload fields rather than vague prompt lore
+  5. Verify the revised routines still preserve the multi-timeframe operating model while reducing AI-side duplicated reasoning
 
 ---
 

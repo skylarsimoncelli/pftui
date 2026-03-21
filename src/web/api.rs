@@ -26,6 +26,7 @@ use crate::analytics::{
     catalysts::CatalystReport,
     deltas::SituationDeltaReport,
     impact::{ImpactReport, OpportunitiesReport},
+    narrative::NarrativeReport,
     situation::SituationSnapshot,
     synthesis::SynthesisReport,
 };
@@ -2545,6 +2546,27 @@ pub async fn get_synthesis(
             format!("Failed to build synthesis report: {}", e),
         )
     })?;
+
+    Ok(Json(report))
+}
+
+pub async fn get_narrative(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<NarrativeReport>, (StatusCode, String)> {
+    let backend = state.get_backend().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
+
+    let report =
+        crate::analytics::narrative::build_report_backend(&backend, true).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to build narrative report: {}", e),
+            )
+        })?;
 
     Ok(Json(report))
 }

@@ -2118,6 +2118,10 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    Narrative {
+        #[arg(long)]
+        json: bool,
+    },
     Synthesis {
         #[arg(long)]
         json: bool,
@@ -3439,6 +3443,20 @@ mod tests {
 
         assert_eq!(symbol, "GC=F");
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_narrative_command() {
+        let cli = Cli::try_parse_from(["pftui", "analytics", "narrative", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Narrative { json },
+        }) = cli.command
+        else {
+            panic!("expected analytics narrative command");
+        };
+
+        assert!(json);
     }
 
     #[test]

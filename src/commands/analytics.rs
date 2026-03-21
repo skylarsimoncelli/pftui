@@ -10,6 +10,7 @@ use crate::analytics::catalysts;
 use crate::analytics::deltas;
 use crate::analytics::impact;
 use crate::analytics::levels::nearest_actionable_levels;
+use crate::analytics::narrative;
 use crate::analytics::situation;
 use crate::analytics::synthesis;
 use crate::analytics::technicals::{load_or_compute_snapshots_backend, DEFAULT_TIMEFRAME};
@@ -618,6 +619,7 @@ pub fn run(
         "catalysts" => run_catalysts(backend, value, json_output),
         "impact" => run_impact(backend, json_output),
         "opportunities" => run_opportunities(backend, json_output),
+        "narrative" => run_narrative(backend, json_output),
         "synthesis" => run_synthesis(backend, json_output),
         "low" => run_low(backend, json_output),
         "medium" => run_medium(backend, json_output),
@@ -654,18 +656,10 @@ pub fn run(
         "recap" => run_recap(backend, date, limit, json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, synthesis, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, narrative, synthesis, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
             action
         ),
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-struct RecapEvent {
-    at: String,
-    event_type: String,
-    source: String,
-    summary: String,
 }
 
 fn parse_day_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
@@ -687,18 +681,6 @@ fn parse_day_filter(value: Option<&str>) -> Result<Option<NaiveDate>> {
         )
     })?;
     Ok(Some(parsed))
-}
-
-fn ts_matches_day(ts: &str, day: Option<NaiveDate>) -> bool {
-    let Some(target) = day else {
-        return true;
-    };
-    if ts.len() < 10 {
-        return false;
-    }
-    NaiveDate::parse_from_str(&ts[..10], "%Y-%m-%d")
-        .map(|d| d == target)
-        .unwrap_or(false)
 }
 
 fn run_digest(
@@ -789,120 +771,27 @@ fn run_recap(
     json_output: bool,
 ) -> Result<()> {
     let day = parse_day_filter(date)?;
-    let mut events: Vec<RecapEvent> = Vec::new();
-
-    let preds = user_predictions::list_predictions_backend(backend, None, None, None, None)
-        .unwrap_or_default();
-    for p in preds {
-        if ts_matches_day(&p.created_at, day) {
-            events.push(RecapEvent {
-                at: p.created_at.clone(),
-                event_type: "prediction_added".to_string(),
-                source: p
-                    .source_agent
-                    .clone()
-                    .unwrap_or_else(|| "predict".to_string()),
-                summary: format!("#{} {}", p.id, p.claim),
-            });
-        }
-        if let Some(scored_at) = p.scored_at.as_ref() {
-            if ts_matches_day(scored_at, day) {
-                events.push(RecapEvent {
-                    at: scored_at.clone(),
-                    event_type: "prediction_scored".to_string(),
-                    source: p
-                        .source_agent
-                        .clone()
-                        .unwrap_or_else(|| "predict".to_string()),
-                    summary: format!("#{} -> {}", p.id, p.outcome),
-                });
-            }
-        }
-    }
-
-    let scenario_rows = scenarios::list_scenarios_backend(backend, None).unwrap_or_default();
-    for s in scenario_rows {
-        if ts_matches_day(&s.updated_at, day) {
-            events.push(RecapEvent {
-                at: s.updated_at.clone(),
-                event_type: "scenario_updated".to_string(),
-                source: "scenario".to_string(),
-                summary: format!("{} {:.1}% ({})", s.name, s.probability, s.status),
-            });
-        }
-    }
-
-    let conviction_rows = convictions::list_current_backend(backend).unwrap_or_default();
-    for c in conviction_rows {
-        if ts_matches_day(&c.recorded_at, day) {
-            events.push(RecapEvent {
-                at: c.recorded_at.clone(),
-                event_type: "conviction_set".to_string(),
-                source: "conviction".to_string(),
-                summary: format!("{} -> {}", c.symbol, c.score),
-            });
-        }
-    }
-
-    let signal_rows =
-        timeframe_signals::list_signals_backend(backend, None, None, None).unwrap_or_default();
-    for s in signal_rows {
-        if ts_matches_day(&s.detected_at, day) {
-            events.push(RecapEvent {
-                at: s.detected_at.clone(),
-                event_type: "timeframe_signal".to_string(),
-                source: "analytics".to_string(),
-                summary: format!("[{}] {}", s.severity, s.description),
-            });
-        }
-    }
-
-    let regime_rows = regime_snapshots::get_history_backend(backend, Some(limit.unwrap_or(50)))
-        .unwrap_or_default();
-    for r in regime_rows {
-        if ts_matches_day(&r.recorded_at, day) {
-            events.push(RecapEvent {
-                at: r.recorded_at.clone(),
-                event_type: "regime_snapshot".to_string(),
-                source: "regime".to_string(),
-                summary: format!("{} ({:.2})", r.regime, r.confidence.unwrap_or(0.0)),
-            });
-        }
-    }
-
-    let msg_rows =
-        agent_messages::list_messages_backend(backend, None, None, None, false, None, None, None)
-            .unwrap_or_default();
-    for m in msg_rows {
-        if ts_matches_day(&m.created_at, day) {
-            events.push(RecapEvent {
-                at: m.created_at.clone(),
-                event_type: "agent_message".to_string(),
-                source: m.from_agent.clone(),
-                summary: m.content.chars().take(120).collect(),
-            });
-        }
-    }
-
-    events.sort_by(|a, b| b.at.cmp(&a.at));
-    if let Some(n) = limit {
-        events.truncate(n);
-    }
+    let recap = narrative::build_recap_backend(backend, day, limit, true)?;
 
     if json_output {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
-                "date": day.map(|d| d.to_string()),
-                "events": events,
-                "count": events.len(),
+                "date": recap.date,
+                "note": recap.note,
+                "events": recap.events,
+                "count": recap.count,
             }))?
         );
-    } else if events.is_empty() {
-        println!("No recap events found.");
     } else {
         println!("Analytics Recap");
-        for e in events {
+        if let Some(note) = recap.note.as_ref() {
+            println!("{note}");
+        }
+        if recap.events.is_empty() {
+            println!("No recap events found.");
+        }
+        for e in recap.events {
             println!("  {} [{}:{}] {}", e.at, e.source, e.event_type, e.summary);
         }
     }
@@ -1848,6 +1737,66 @@ fn run_opportunities(backend: &BackendConnection, json_output: bool) -> Result<(
                 println!(
                     "- [{}] {} — {} ({})",
                     item.severity, item.symbol, item.summary, item.consensus
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_narrative(backend: &BackendConnection, json_output: bool) -> Result<()> {
+    let report = narrative::build_report_backend(backend, true)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Narrative State");
+        println!("════════════════════════════════════════════════════════════════");
+        println!("{}", report.headline);
+        println!("{}", report.subtitle);
+        if let Some(note) = report.coverage_note.as_ref() {
+            println!("{note}");
+        }
+        println!();
+
+        if !report.surprises.is_empty() {
+            println!("SURPRISES");
+            for item in report.surprises.iter().take(5) {
+                println!(
+                    "- [{}] {} — {} ({})",
+                    item.severity, item.title, item.detail, item.value
+                );
+            }
+        }
+
+        if !report.scenario_shifts.is_empty() {
+            println!("\nSCENARIO SHIFTS");
+            for item in report.scenario_shifts.iter().take(5) {
+                println!(
+                    "- [{}] {} {:.1}% -> {:.1}% ({:+.1})",
+                    item.severity,
+                    item.name,
+                    item.previous_probability,
+                    item.current_probability,
+                    item.delta_pct
+                );
+            }
+        }
+
+        if !report.lessons.is_empty() {
+            println!("\nLESSONS");
+            for item in report.lessons.iter().take(3) {
+                println!("- [{}] {}", item.severity, item.detail);
+            }
+        }
+
+        if !report.recap.events.is_empty() {
+            println!("\nRECAP ({})", report.recap.date);
+            for event in report.recap.events.iter().take(5) {
+                println!(
+                    "  {} [{}:{}] {}",
+                    event.at, event.source, event.event_type, event.summary
                 );
             }
         }

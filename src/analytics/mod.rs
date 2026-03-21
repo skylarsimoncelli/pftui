@@ -2,6 +2,7 @@ pub mod catalysts;
 pub mod deltas;
 pub mod impact;
 pub mod levels;
+pub mod narrative;
 pub mod risk;
 pub mod scenarios;
 pub mod signals;

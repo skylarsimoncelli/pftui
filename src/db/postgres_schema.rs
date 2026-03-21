@@ -394,6 +394,21 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS narrative_snapshots (
+                id BIGSERIAL PRIMARY KEY,
+                recorded_at TIMESTAMPTZ NOT NULL,
+                report_json TEXT NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_narrative_snapshots_recorded_at
+             ON narrative_snapshots(recorded_at DESC)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS worldbank_cache (
                 country_code TEXT NOT NULL,
                 country_name TEXT NOT NULL,

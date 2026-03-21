@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add native narrative state and structured recap layer
+
+- What: added a new Rust-native `analytics narrative --json` report that turns recap and analytical memory into a shared server-owned contract. The new narrative layer now captures fallback-aware recap events, scenario shifts, conviction changes, trend refreshes, prediction scorecard summaries, surprise deltas, lessons, and catalyst outcomes, and persists those reports in `narrative_snapshots`. The same payload is exposed through mobile and web APIs, folded into the mobile dashboard, and rendered in the Situation and Analytics tabs as Narrative State, Structured Recap, Narrative Memory, and Prediction Scorecard sections. `analytics recap --date today` also now falls back to yesterday with a note instead of returning an empty result.
+- Why: recap and synthesis needed to stop depending on prompts and become machine-readable analytics state that every surface can reuse consistently.
+- Files: `src/analytics/narrative.rs`, `src/analytics/mod.rs`, `src/db/narrative_snapshots.rs`, `src/db/schema.rs`, `src/db/postgres_schema.rs`, `src/db/scenarios.rs`, `src/db/mod.rs`, `src/commands/analytics.rs`, `src/cli.rs`, `src/main.rs`, `src/mobile/server.rs`, `src/web/api.rs`, `src/web/server.rs`, `mobile/app/PftuiMobile/Models.swift`, `mobile/app/PftuiMobile/ContentView.swift`, `AGENTS.md`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo test`; `cargo clippy -- -D warnings`; `cargo run -- analytics narrative --json`; `swiftc -typecheck mobile/app/PftuiMobile/*.swift`
+
 ### 2026-03-21 — feat: add cross-timeframe synthesis engine
 
 - What: added native `analytics synthesis --json` with shared `SynthesisReport` output covering strongest alignment, highest-confidence divergence, timeframe-to-timeframe constraint flows, unresolved tensions, and watch-tomorrow candidates. Exposed the same synthesis contract through mobile and web APIs and added a dedicated Situation Room synthesis section so the app can show constraints and next-watch candidates instead of expecting the user to mentally reconcile alignment/divergence tables.
