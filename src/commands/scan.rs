@@ -47,6 +47,8 @@ struct ScanRow {
     current_value: Option<Decimal>,
     gain_pct: Option<Decimal>,
     allocation_pct: Option<Decimal>,
+    /// Daily change percentage: (price − previous_close) / previous_close × 100.
+    change_1d: Option<Decimal>,
     sma50: Option<Decimal>,
     sma200: Option<Decimal>,
     sma50_gap_pct: Option<Decimal>,
@@ -222,7 +224,12 @@ fn print_saved_queries(backend: &BackendConnection, json: bool) -> Result<()> {
 }
 
 fn load_rows(conn: &Connection, mode_hint: Option<PortfolioMode>) -> Result<Vec<ScanRow>> {
-    let prices = get_all_cached_prices(conn)?
+    let all_quotes = get_all_cached_prices(conn)?;
+    let prev_close_map: HashMap<String, Decimal> = all_quotes
+        .iter()
+        .filter_map(|q| q.previous_close.map(|pc| (q.symbol.clone(), pc)))
+        .collect();
+    let prices: HashMap<String, Decimal> = all_quotes
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
@@ -254,6 +261,8 @@ fn load_rows(conn: &Connection, mode_hint: Option<PortfolioMode>) -> Result<Vec<
         .into_iter()
         .map(|p| {
             let current_price = p.current_price;
+            let change_1d =
+                compute_change_1d(current_price, prev_close_map.get(&p.symbol).copied());
             let technical = technicals.get(&p.symbol);
             let sma50 = technical.and_then(|t| f64_to_decimal(t.sma_50));
             let sma200 = technical.and_then(|t| f64_to_decimal(t.sma_200));
@@ -278,6 +287,7 @@ fn load_rows(conn: &Connection, mode_hint: Option<PortfolioMode>) -> Result<Vec<
                 current_value: p.current_value,
                 gain_pct: p.gain_pct,
                 allocation_pct: p.allocation_pct,
+                change_1d,
                 sma50,
                 sma200,
                 sma50_gap_pct,
@@ -293,7 +303,12 @@ fn load_rows_backend(
     backend: &BackendConnection,
     mode_hint: Option<PortfolioMode>,
 ) -> Result<Vec<ScanRow>> {
-    let prices = get_all_cached_prices_backend(backend)?
+    let all_quotes = get_all_cached_prices_backend(backend)?;
+    let prev_close_map: HashMap<String, Decimal> = all_quotes
+        .iter()
+        .filter_map(|q| q.previous_close.map(|pc| (q.symbol.clone(), pc)))
+        .collect();
+    let prices: HashMap<String, Decimal> = all_quotes
         .into_iter()
         .map(|q| (q.symbol, q.price))
         .collect();
@@ -325,6 +340,8 @@ fn load_rows_backend(
         .into_iter()
         .map(|p| {
             let current_price = p.current_price;
+            let change_1d =
+                compute_change_1d(current_price, prev_close_map.get(&p.symbol).copied());
             let technical = technicals.get(&p.symbol);
             let sma50 = technical.and_then(|t| f64_to_decimal(t.sma_50));
             let sma200 = technical.and_then(|t| f64_to_decimal(t.sma_200));
@@ -349,6 +366,7 @@ fn load_rows_backend(
                 current_value: p.current_value,
                 gain_pct: p.gain_pct,
                 allocation_pct: p.allocation_pct,
+                change_1d,
                 sma50,
                 sma200,
                 sma50_gap_pct,
@@ -372,6 +390,19 @@ fn load_technical_snapshots_backend(
     symbols: &[String],
 ) -> HashMap<String, TechnicalSnapshot> {
     load_or_compute_snapshots_backend(backend, symbols, DEFAULT_TIMEFRAME)
+}
+
+/// Compute daily change percentage: `(price − prev_close) / prev_close × 100`.
+fn compute_change_1d(
+    current_price: Option<Decimal>,
+    previous_close: Option<Decimal>,
+) -> Option<Decimal> {
+    let price = current_price?;
+    let prev = previous_close?;
+    if prev.is_zero() {
+        return None;
+    }
+    Some((price - prev) / prev * Decimal::from(100))
 }
 
 fn compute_gap_pct(current_price: Option<Decimal>, reference: Option<Decimal>) -> Option<Decimal> {
@@ -486,7 +517,7 @@ fn validate_clauses(clauses: &[Clause]) -> Result<()> {
     for clause in clauses {
         let Some(field_type) = field_type(&clause.field) else {
             bail!(
-                "Unknown field '{}'. Supported fields: symbol, name, category, quantity, current_price, current_value, gain_pct, allocation_pct, sma50, sma200, sma50_gap_pct, sma200_gap_pct, trackline_breach, trackline_breach_count",
+                "Unknown field '{}'. Supported fields: symbol, name, category, quantity, current_price, current_value, gain_pct, change_1d, allocation_pct, sma50, sma200, sma50_gap_pct, sma200_gap_pct, trackline_breach, trackline_breach_count",
                 clause.field
             );
         };
@@ -523,6 +554,7 @@ fn field_type(field: &str) -> Option<FieldType> {
         | "current_price"
         | "current_value"
         | "gain_pct"
+        | "change_1d"
         | "allocation_pct"
         | "sma50"
         | "sma200"
@@ -537,6 +569,7 @@ fn normalize_field(field: &str) -> &str {
     match field {
         "alloc" | "allocation" => "allocation_pct",
         "gain" => "gain_pct",
+        "change" | "daily_change" | "change1d" => "change_1d",
         "price" => "current_price",
         "value" => "current_value",
         "qty" => "quantity",
@@ -609,6 +642,7 @@ fn get_numeric(row: &ScanRow, field: &str) -> Option<Decimal> {
         "current_price" => row.current_price,
         "current_value" => row.current_value,
         "gain_pct" => row.gain_pct,
+        "change_1d" => row.change_1d,
         "allocation_pct" => row.allocation_pct,
         "sma50" => row.sma50,
         "sma200" => row.sma200,
@@ -668,16 +702,24 @@ fn print_table(
 
     if show_trackline {
         println!(
-            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}  {:<22}",
-            "Symbol", "Name", "Category", "Alloc%", "Gain%", "Value", "Price", "Trackline",
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>8}  {:>11}  {:>11}  {:<22}",
+            "Symbol",
+            "Name",
+            "Category",
+            "Alloc%",
+            "Gain%",
+            "Chg1D%",
+            "Value",
+            "Price",
+            "Trackline",
         );
-        println!("  {}", "─".repeat(sym_w + name_w + cat_w + 74));
+        println!("  {}", "─".repeat(sym_w + name_w + cat_w + 84));
     } else {
         println!(
-            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
-            "Symbol", "Name", "Category", "Alloc%", "Gain%", "Value", "Price",
+            "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>8}  {:>11}  {:>11}",
+            "Symbol", "Name", "Category", "Alloc%", "Gain%", "Chg1D%", "Value", "Price",
         );
-        println!("  {}", "─".repeat(sym_w + name_w + cat_w + 50));
+        println!("  {}", "─".repeat(sym_w + name_w + cat_w + 60));
     }
 
     for row in rows {
@@ -687,6 +729,10 @@ fn print_table(
             .unwrap_or_else(|| "-".to_string());
         let gain = row
             .gain_pct
+            .map(|v| format!("{:+.2}", v))
+            .unwrap_or_else(|| "-".to_string());
+        let chg1d = row
+            .change_1d
             .map(|v| format!("{:+.2}", v))
             .unwrap_or_else(|| "-".to_string());
         let value = row
@@ -699,24 +745,26 @@ fn print_table(
             .unwrap_or_else(|| "-".to_string());
         if show_trackline {
             println!(
-                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}  {:<22}",
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>8}  {:>11}  {:>11}  {:<22}",
                 row.symbol,
                 truncate_name(&row.name, name_w),
                 row.category,
                 alloc,
                 gain,
+                chg1d,
                 value,
                 price,
                 row.trackline_breach,
             );
         } else {
             println!(
-                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>11}  {:>11}",
+                "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>7}  {:>8}  {:>8}  {:>11}  {:>11}",
                 row.symbol,
                 truncate_name(&row.name, name_w),
                 row.category,
                 alloc,
                 gain,
+                chg1d,
                 value,
                 price,
             );
@@ -768,6 +816,7 @@ fn to_json(row: &ScanRow) -> serde_json::Value {
         "current_price": row.current_price.and_then(|v| v.to_string().parse::<f64>().ok()),
         "current_value": row.current_value.and_then(|v| v.to_string().parse::<f64>().ok()),
         "gain_pct": row.gain_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
+        "change_1d": row.change_1d.and_then(|v| v.to_string().parse::<f64>().ok()),
         "allocation_pct": row.allocation_pct.and_then(|v| v.to_string().parse::<f64>().ok()),
         "sma50": row.sma50.and_then(|v| v.to_string().parse::<f64>().ok()),
         "sma200": row.sma200.and_then(|v| v.to_string().parse::<f64>().ok()),
@@ -796,6 +845,7 @@ mod tests {
             current_value: Some(dec!(1900)),
             gain_pct: Some(dec!(15)),
             allocation_pct: Some(dec!(12.5)),
+            change_1d: Some(dec!(2.34)),
             sma50: Some(dec!(195)),
             sma200: Some(dec!(180)),
             sma50_gap_pct: Some(dec!(-2.56)),
@@ -898,5 +948,81 @@ mod tests {
         let rows = load_rows(&conn, None).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].trackline_breach, "below_sma50");
+    }
+
+    #[test]
+    fn change_1d_filter_matches_big_movers() {
+        let row = sample_row(); // change_1d = 2.34
+        let clauses = parse_filter("change_1d > 5").unwrap();
+        assert!(!matches_all_clauses(&row, &clauses).unwrap());
+
+        let clauses = parse_filter("change_1d > 2").unwrap();
+        assert!(matches_all_clauses(&row, &clauses).unwrap());
+    }
+
+    #[test]
+    fn change_1d_alias_works() {
+        let row = sample_row();
+        let clauses = parse_filter("change > 2").unwrap();
+        assert!(matches_all_clauses(&row, &clauses).unwrap());
+
+        let clauses = parse_filter("daily_change > 2").unwrap();
+        assert!(matches_all_clauses(&row, &clauses).unwrap());
+    }
+
+    #[test]
+    fn compute_change_1d_basic() {
+        // 100 -> 105 = +5%
+        assert_eq!(
+            compute_change_1d(Some(dec!(105)), Some(dec!(100))),
+            Some(dec!(5))
+        );
+        // 100 -> 95 = -5%
+        assert_eq!(
+            compute_change_1d(Some(dec!(95)), Some(dec!(100))),
+            Some(dec!(-5))
+        );
+        // Missing previous close
+        assert_eq!(compute_change_1d(Some(dec!(100)), None), None);
+        // Zero previous close
+        assert_eq!(compute_change_1d(Some(dec!(100)), Some(dec!(0))), None);
+    }
+
+    #[test]
+    fn change_1d_populated_from_previous_close() {
+        let conn = open_in_memory();
+        crate::db::transactions::insert_transaction(
+            &conn,
+            &crate::models::transaction::NewTransaction {
+                symbol: "AAPL".to_string(),
+                category: crate::models::asset::AssetCategory::Equity,
+                tx_type: crate::models::transaction::TxType::Buy,
+                quantity: Decimal::from(1),
+                price_per: Decimal::from(100),
+                currency: "USD".to_string(),
+                date: "2026-03-09".to_string(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        price_cache::upsert_price(
+            &conn,
+            &PriceQuote {
+                symbol: "AAPL".to_string(),
+                price: Decimal::from(110),
+                currency: "USD".to_string(),
+                fetched_at: "2026-03-10T00:00:00Z".to_string(),
+                source: "test".to_string(),
+                pre_market_price: None,
+                post_market_price: None,
+                post_market_change_percent: None,
+                previous_close: Some(Decimal::from(100)),
+            },
+        )
+        .unwrap();
+
+        let rows = load_rows(&conn, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].change_1d, Some(dec!(10))); // +10%
     }
 }
