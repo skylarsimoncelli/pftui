@@ -4,13 +4,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
-use axum::{extract::State, http::StatusCode, middleware, routing::get, Json, Router};
+use axum::{
+    extract::{DefaultBodyLimit, State},
+    http::StatusCode,
+    middleware,
+    routing::get,
+    Json, Router,
+};
 use axum_server::tls_rustls::RustlsConfig;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rustls::crypto::CryptoProvider;
 use serde::Serialize;
+use tower_http::trace::{self, TraceLayer};
+use tracing::Level;
 
 use crate::alerts::AlertStatus;
 use crate::config::Config;
@@ -166,6 +174,14 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
         anyhow!("mobile.key_path is missing; re-run `pftui system mobile enable`")
     })?;
 
+    // Initialize tracing subscriber for access logging (M-4)
+    let subscriber = tracing_subscriber::fmt()
+        .with_target(false)
+        .with_env_filter("tower_http=debug,mobile_api=info")
+        .compact()
+        .finish();
+    let _ = tracing::subscriber::set_global_default(subscriber);
+
     let app_state = Arc::new(MobileAppState {
         backend: std::sync::Mutex::new(backend),
         config: config.clone(),
@@ -189,6 +205,16 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
             auth_state.clone(),
             auth_middleware,
         ))
+        // M-4: Access logging (outermost — sees all requests including auth failures)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+        )
+        // H-2: Body size limit (1 MB)
+        .layer(DefaultBodyLimit::max(1024 * 1024))
+        // H-2: Concurrency limit (50 concurrent requests)
+        .layer(tower::limit::ConcurrencyLimitLayer::new(50))
         .with_state(auth_state);
 
     let addr: SocketAddr = format!("{}:{}", config.mobile.bind, config.mobile.port).parse()?;
@@ -201,7 +227,7 @@ pub async fn run_server(backend: BackendConnection, config: Config) -> Result<()
     println!("   iOS setup: enter host or host:port, API token, then verify this fingerprint");
 
     axum_server::bind_rustls(addr, tls)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await?;
     Ok(())
 }
@@ -554,7 +580,11 @@ fn load_positions(
 }
 
 fn internal_error(error: anyhow::Error) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+    eprintln!("[mobile-api] Internal error: {:?}", error);
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Internal server error".to_string(),
+    )
 }
 
 fn timeframe_label(value: &str) -> &'static str {

@@ -1134,6 +1134,21 @@ pub enum MobileTokenCommand {
         #[arg(long, value_enum, default_value = "read")]
         permission: MobileTokenPermissionArg,
     },
+    /// List all configured mobile API tokens (names, permissions, dates — not hashes)
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Revoke a mobile API token by name or prefix
+    Revoke {
+        /// Token name or prefix to match
+        prefix: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

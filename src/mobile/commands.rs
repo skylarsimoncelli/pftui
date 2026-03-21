@@ -1,5 +1,7 @@
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
@@ -7,8 +9,9 @@ use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use chrono::Utc;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use rcgen::generate_simple_self_signed;
+use rcgen::{CertificateParams, DnType, KeyPair};
 use serde_json::json;
+use time::OffsetDateTime;
 
 use crate::cli::MobileTokenPermissionArg;
 use crate::config::{config_path, save_config, Config, MobileApiToken, MobileTokenPermission};
@@ -197,6 +200,117 @@ fn map_permission(permission: MobileTokenPermissionArg) -> MobileTokenPermission
     }
 }
 
+pub fn list_tokens(config: &Config, json_output: bool) -> Result<()> {
+    if config.mobile.api_tokens.is_empty() {
+        if json_output {
+            println!("[]");
+        } else {
+            println!("No mobile API tokens configured.");
+        }
+        return Ok(());
+    }
+
+    if json_output {
+        let tokens: Vec<serde_json::Value> = config
+            .mobile
+            .api_tokens
+            .iter()
+            .map(|token| {
+                json!({
+                    "name": token.name,
+                    "prefix": token.prefix,
+                    "permission": format_permission(token.permission),
+                    "created_at": token.created_at,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&tokens)?);
+    } else {
+        println!("Mobile API tokens:");
+        for token in &config.mobile.api_tokens {
+            println!(
+                "  {} [{}] {} (created {})",
+                token.name,
+                format_permission(token.permission),
+                token.prefix,
+                token.created_at
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn revoke_token(config: &Config, prefix: &str, json_output: bool) -> Result<()> {
+    let matching: Vec<usize> = config
+        .mobile
+        .api_tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| {
+            token.name.contains(prefix) || token.prefix.contains(prefix)
+        })
+        .map(|(idx, _)| idx)
+        .collect();
+
+    if matching.is_empty() {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "revoked": false,
+                    "error": format!("No token matching '{}'", prefix),
+                }))?
+            );
+        } else {
+            println!("No token matching '{}'", prefix);
+        }
+        return Ok(());
+    }
+
+    if matching.len() > 1 {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "revoked": false,
+                    "error": format!("Multiple tokens match '{}'. Be more specific.", prefix),
+                }))?
+            );
+        } else {
+            println!(
+                "Multiple tokens match '{}'. Be more specific:",
+                prefix
+            );
+            for idx in &matching {
+                let token = &config.mobile.api_tokens[*idx];
+                println!("  {} [{}] {}", token.name, format_permission(token.permission), token.prefix);
+            }
+        }
+        return Ok(());
+    }
+
+    let idx = matching[0];
+    let removed = &config.mobile.api_tokens[idx];
+    let removed_name = removed.name.clone();
+
+    let mut next = config.clone();
+    next.mobile.api_tokens.remove(idx);
+    save_config(&next)?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "revoked": true,
+                "name": removed_name,
+            }))?
+        );
+    } else {
+        println!("✓ Revoked token '{}'", removed_name);
+    }
+    Ok(())
+}
+
 fn format_permission(permission: MobileTokenPermission) -> &'static str {
     match permission {
         MobileTokenPermission::Read => "read",
@@ -213,6 +327,9 @@ fn ensure_tls_material(bind: &str) -> Result<(PathBuf, PathBuf)> {
     let cert_path = dir.join(CERT_FILE);
     let key_path = dir.join(KEY_FILE);
     if cert_path.exists() && key_path.exists() {
+        // Ensure existing key file has correct permissions
+        #[cfg(unix)]
+        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))?;
         return Ok((cert_path, key_path));
     }
 
@@ -223,9 +340,23 @@ fn ensure_tls_material(bind: &str) -> Result<(PathBuf, PathBuf)> {
     if let Ok(ip) = bind.parse::<IpAddr>() {
         names.push(ip.to_string());
     }
-    let rcgen::CertifiedKey { cert, key_pair } = generate_simple_self_signed(names)?;
+
+    // Generate certificate with 2-year validity
+    let key_pair = KeyPair::generate()?;
+    let mut params = CertificateParams::new(names)?;
+    params.distinguished_name.push(DnType::CommonName, "pftui mobile API");
+    let now = OffsetDateTime::now_utc();
+    params.not_before = now;
+    params.not_after = now + time::Duration::days(730); // 2 years
+    let cert = params.self_signed(&key_pair)?;
+
     fs::write(&cert_path, cert.pem())?;
     fs::write(&key_path, key_pair.serialize_pem())?;
+
+    // Set private key file permissions to owner-only (C-2)
+    #[cfg(unix)]
+    fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))?;
+
     Ok((cert_path, key_path))
 }
 
