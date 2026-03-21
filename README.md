@@ -12,20 +12,20 @@
 
 ---
 
-**pftui** is a local-first portfolio terminal for self-directed investors and technical operators.
+**pftui** is a local-first portfolio intelligence system with a multi-timeframe analytics engine.
 
-It brings together **positions, markets, macro, sentiment, news, and analytics** in one system, with a fast terminal UI, a browser dashboard, and a structured CLI your AI agent can work with directly.
+It aggregates **19+ data sources** (prices, CFTC positioning, COMEX inventory, BLS economic data, FedWatch probabilities, prediction markets, ETF flows, on-chain metrics), computes cross-asset correlations and regime classification, and runs four analytics layers — from intraday volatility to decade-long structural cycles — to produce situation awareness, catalyst ranking, impact analysis, and opportunity scoring. Terminal UI. Web dashboard. **100+ CLI commands** with structured JSON output. Your AI agent operates the same system you do.
 
 ---
 
 ## Why pftui
 
-- **One system, not five** — portfolio tracking, watchlists, markets, macro, news, and research state in one place
-- **Local-first by default** — your data stays with you, not inside a hosted black box
-- **Built for daily use** — fast, keyboard-driven, and practical enough to live in every day
-- **Agent-ready** — every major feature is accessible through the CLI with structured JSON output
+- **Multi-timeframe analytics engine** — four intelligence layers (LOW/MEDIUM/HIGH/MACRO) classify market regime, rank catalysts by portfolio impact, detect cross-timeframe alignment and divergence, and score opportunities with evidence chains. No other CLI tool does this.
+- **19+ data sources, one command** — `pftui data refresh` pulls prices (84 symbols), CFTC COT positioning, COMEX warehouse inventory, BLS economic data (101 series), FedWatch rate probabilities, oil term structure, sovereign gold/BTC holdings, prediction market odds, Fear & Greed indices, ETF flows, on-chain metrics, and financial news. Cached locally. No API keys required.
+- **Falsifiable predictions with scoring** — track predictions, score outcomes, measure your hit rate by conviction level and timeframe. The system tells you where you're calibrated and where you're overconfident.
+- **Local-first, zero-config** — SQLite on your machine. No cloud account. No API keys for core sources. Install and go. PostgreSQL for production deployments.
+- **100+ CLI commands with `--json`** — every feature is a composable CLI primitive. Agents operate the same system humans do. The recommended setup is "tell your agent to install pftui and set it up with you."
 - **Broker sync** — connect Trading212, IBKR, Binance, Kraken, Coinbase, or Crypto.com and pull positions automatically
-- **More valuable over time** — the longer you run it, the richer and more useful your local dataset becomes
 
 ---
 
@@ -110,15 +110,50 @@ That makes pftui a strong foundation for:
 ### Core commands
 
 ```bash
-pftui data refresh --json               # Refresh prices, macro, sentiment, news
-pftui portfolio brief --json                 # Full portfolio state
-pftui portfolio summary --json               # Position-level breakdown
-pftui data dashboard macro --json            # Macro, rates, commodities, sentiment
-pftui portfolio watchlist --json             # Watched symbols and targets
-pftui data news --json                       # Aggregated financial news
-pftui portfolio performance --json           # Returns across key periods
-pftui portfolio drift --json                 # Allocation drift vs targets
-pftui data status --json                # Data source freshness
+# Refresh all 19+ data sources in one call
+pftui data refresh --json
+
+# Situation awareness: what matters right now
+pftui analytics situation --json
+# Returns: regime classification, watch-now items with severity,
+# portfolio impacts, alignment state, alert status
+
+# What changed since last check
+pftui analytics deltas --json
+# Returns: change radar with severity scoring across price moves,
+# regime shifts, alert triggers, scenario probability changes
+
+# Ranked upcoming catalysts with portfolio relevance scoring
+pftui analytics catalysts --json
+# Returns: calendar events, linked scenarios, affected assets,
+# countdown buckets, composite importance score
+
+# Impact analysis: what matters to YOUR book
+pftui analytics impact --json
+# Returns: per-position consensus (bullish/bearish/mixed), evidence
+# chains linking conviction + trend impacts + technical signals
+# + scenario probabilities into a single ranked view
+
+# High-alignment ideas you don't currently hold
+pftui analytics opportunities --json
+# Returns: non-held assets ranked by cross-timeframe alignment,
+# conviction, trend linkage, and catalyst proximity
+
+# Cross-timeframe synthesis: where do the layers agree?
+pftui analytics synthesis --json
+# Returns: strongest alignments, highest-confidence divergences,
+# layer-by-layer bias per asset (LOW/MEDIUM/HIGH/MACRO)
+
+# Full asset intelligence dossier
+pftui analytics asset BTC --json
+# Returns: price, technicals, correlations, conviction history,
+# scenario links, trend impacts, alerts, alignment — everything
+# the system knows about one asset in one blob
+
+# Portfolio state
+pftui portfolio brief --json
+pftui portfolio drift --json
+pftui portfolio performance --json
 ```
 
 ### Portfolio Management
@@ -228,7 +263,7 @@ pftui is built as a four-layer intelligence stack. Each layer builds on the one 
 
 ### Data Aggregation Engine
 
-One `pftui data refresh` pulls from 10+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.
+One `pftui data refresh` pulls from 19+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.
 
 **What it collects:** Equity/crypto/commodity/forex prices across 84 symbols. CFTC Commitments of Traders positioning. COMEX gold and silver warehouse inventory. BLS economic data (CPI, NFP, unemployment, wages across 101 series). World Bank structural indicators for 8 economies. Polymarket prediction market odds. Crypto and traditional Fear and Greed indices. Economic calendar events. Financial news from 10+ RSS feeds and Brave Search. BTC on-chain data and ETF flows.
 
@@ -248,16 +283,21 @@ Every data source works out of the box with no API keys:
 
 | Source | Data | Update Cadence |
 |---|---|---|
-| Yahoo Finance | Equities, ETFs, forex, crypto, commodities | Real-time |
+| Yahoo Finance | Equities, ETFs, forex, crypto, commodities (84 symbols) | Real-time |
 | CoinGecko | Crypto prices, market cap, volume | Real-time |
-| Polymarket | Prediction market probabilities | 15-min |
+| CME FedWatch | Fed funds futures-implied rate probabilities | Daily |
+| CME/Yahoo | Oil futures term structure (contango/backwardation, war premium) | Daily |
 | CFTC Socrata | Commitments of Traders (COT) positioning | Weekly |
+| CME Group | COMEX gold/silver warehouse inventory | Daily |
+| WGC / BitcoinTreasuries | Central bank gold reserves, government BTC holdings | Quarterly/Daily |
+| BLS API v1 | CPI, unemployment, NFP, wages (101 series) | Monthly |
+| World Bank | GDP, debt/GDP, reserves for 8 economies (160 indicators) | Quarterly |
+| Polymarket | Prediction market probabilities | 15-min |
 | Alternative.me | Crypto Fear & Greed Index | Daily |
-| BLS API v1 | CPI, unemployment, NFP, wages | Monthly |
-| World Bank | GDP, debt/GDP, reserves for 8 economies | Quarterly |
-| CME Group | COMEX gold/silver inventory | Daily |
-| Blockchair | BTC on-chain data | Real-time |
-| RSS Feeds | Reuters, CoinDesk, Bloomberg, Kitco, CNBC | 10-min |
+| Blockchair | BTC on-chain data, ETF flows | Real-time |
+| EIA | Weekly crude oil inventory, SPR levels | Weekly |
+| Yahoo Options | Options chains for equity symbols | Real-time |
+| RSS Feeds | Reuters, CoinDesk, Bloomberg, Kitco, CNBC (10+ feeds) | 10-min |
 
 Optional API keys unlock additional sources (Finnhub, FRED, Alpha Vantage). See [docs/API-SOURCES.md](docs/API-SOURCES.md).
 
@@ -333,7 +373,92 @@ pftui analytics signals --source technical --symbol BTC-USD --json
 pftui analytics technicals --symbol BTC-USD --json             # Persisted technical snapshot(s)
 ```
 
+#### What the analytics engine produces
+
+**Situation awareness** — the canonical "what matters now" payload:
+```json
+{
+  "headline": "Alignment",
+  "subtitle": "bearish cross-timeframe alignment (3 / 4 layers agree)",
+  "watch_now": [
+    {"title": "3 live alerts need triage", "severity": "critical"},
+    {"title": "Regime: Risk-off", "value": "75%"}
+  ],
+  "portfolio_impacts": [
+    {"title": "GC=F", "detail": "Gold • 23.3% allocation", "value": "2.73"},
+    {"title": "BTC", "detail": "Bitcoin • 20.1% allocation", "value": "-1.20"}
+  ]
+}
+```
+
+**Impact analysis** — what matters to your specific book:
+```json
+{
+  "exposures": [{
+    "symbol": "GC=F", "consensus": "bullish", "score": 142,
+    "evidence_chain": [
+      "2 bull / 0 bear layers (63%). Conviction +4.",
+      "Trend AI Displacement is bullish via safe haven.",
+      "Scenario War Escalation at 85% probability."
+    ]
+  }]
+}
+```
+
+**Cross-timeframe synthesis** — where the layers agree and disagree:
+```json
+{
+  "strongest_alignment": [
+    {"symbol": "GOOG", "low": "bear", "medium": "bear", "high": "bear", "consensus": "BEARISH"}
+  ],
+  "highest_confidence_divergence": [
+    {"symbol": "BTC", "low": "bear", "medium": "bull", "high": "bull", "dominant_side": "bull"}
+  ]
+}
+```
+
 See the full documentation: [docs/ANALYTICS-ENGINE.md](docs/ANALYTICS-ENGINE.md)
+
+---
+
+### Research Journal
+
+The journal turns portfolio management from "I think gold will go up" into a structured, accountable research practice.
+
+**Predictions with scoring.** Make a call, assign conviction (low/medium/high) and timeframe, then score the outcome. pftui tracks your accuracy — overall, by conviction level, by asset class, by timeframe.
+
+```bash
+pftui journal prediction add "Gold outperforms equities into Q2" \
+  --symbol GC=F --conviction high --timeframe medium
+pftui journal prediction score --id 42 --outcome correct \
+  --lesson "Rates rollover mattered more than expected"
+pftui journal prediction stats --json
+```
+
+```json
+{
+  "total": 165, "scored": 102, "correct": 46, "hit_rate_pct": 45.1,
+  "by_conviction": {
+    "high": {"scored": 29, "correct": 14, "hit_rate_pct": 48.3},
+    "medium": {"scored": 64, "correct": 28, "hit_rate_pct": 43.8}
+  }
+}
+```
+
+**Scenarios with probability tracking.** Define macro scenarios, assign probabilities that evolve with evidence, and link signals that move the needle.
+
+```bash
+pftui journal scenario add "Stagflation" --probability 35
+pftui journal scenario signal add "Oil above $90 sustained" --scenario "Stagflation"
+pftui journal scenario update "Stagflation" --probability 60 --notes "NFP collapse + sticky CPI"
+```
+
+**Conviction scores.** Track your conviction on any asset over time (-5 to +5). The analytics engine reads these scores and incorporates them into impact analysis and alignment detection.
+
+```bash
+pftui journal conviction set GC=F --score 4 --notes "War premium + BRICS"
+pftui journal conviction set BTC --score 2 --notes "ETF flows strong but macro headwinds"
+```
 
 ---
 

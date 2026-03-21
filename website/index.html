@@ -4,20 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>pftui | portfolio intelligence in your terminal</title>
-    <meta name="description" content="pftui is a local-first portfolio terminal for self-directed investors and technical operators. Track positions, markets, macro, sentiment, news, and analytics in one system.">
+    <meta name="description" content="pftui is a local-first portfolio intelligence system with a multi-timeframe analytics engine. 19+ data sources, 100+ CLI commands, regime detection, catalyst ranking, and prediction scoring.">
     
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://pftui.com/">
     <meta property="og:title" content="pftui | portfolio intelligence">
-    <meta property="og:description" content="Track positions, markets, macro, sentiment, news, and analytics in one system, with a browser dashboard and an agent-ready CLI.">
+    <meta property="og:description" content="A multi-timeframe analytics engine for your portfolio. 19+ data sources, 4 intelligence layers, 100+ CLI commands with structured JSON output.">
     <meta property="og:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://pftui.com/">
     <meta property="twitter:title" content="pftui | portfolio intelligence">
-    <meta property="twitter:description" content="A local-first portfolio terminal for positions, markets, macro, sentiment, news, and analytics.">
+    <meta property="twitter:description" content="A multi-timeframe analytics engine for your portfolio. 19+ data sources, 4 intelligence layers, 100+ CLI commands.">
     <meta property="twitter:image" content="https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b">
     
     <!-- Favicon -->
@@ -37,7 +37,7 @@
             <div class="hero-content">
                 <p class="hero-kicker"><em>pftui</em></p>
                 <h1 class="hero-title">portfolio intelligence <span class="gradient-text">in your terminal</span></h1>
-                <p class="hero-subtitle">Track positions, markets, macro, sentiment, news, and analytics in one system, with a browser dashboard and a structured CLI your AI agent can work with directly.</p>
+                <p class="hero-subtitle">A multi-timeframe analytics engine for your portfolio. 19+ data sources, 4 intelligence layers, 100+ CLI commands — from intraday regime detection to decade-long structural cycles.</p>
                 <div class="hero-install">
                     <div class="install-command">
                         <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/install.sh | bash</code>
@@ -61,13 +61,14 @@
                     </a>
                 </div>
                 <div class="market-pills">
-                    <span>Equities</span>
-                    <span>Crypto</span>
-                    <span>Forex</span>
-                    <span>Commodities</span>
-                    <span>Macro</span>
-                    <span>Sentiment</span>
-                    <span>News</span>
+                    <span>Analytics Engine</span>
+                    <span>Regime Detection</span>
+                    <span>Catalyst Ranking</span>
+                    <span>Prediction Scoring</span>
+                    <span>COT Positioning</span>
+                    <span>COMEX Inventory</span>
+                    <span>FedWatch</span>
+                    <span>100+ CLI Commands</span>
                 </div>
             </div>
             <div class="hero-terminal">
@@ -93,23 +94,23 @@
     <section class="highlights">
         <div class="container">
             <h2 class="section-title">Why pftui</h2>
-            <p class="section-subtitle">A local-first system for investors and technical operators who want their portfolio, market context, and research state in one place.</p>
+            <p class="section-subtitle">The intelligence layer between raw data and portfolio decisions — not another dashboard.</p>
             <div class="agent-grid stack-cards">
                 <div class="agent-card">
-                    <h3>One system, not five</h3>
-                    <p>Portfolio tracking, watchlists, markets, macro, news, and research state in one place instead of across scattered apps and spreadsheets.</p>
+                    <h3>Analytics engine, not a dashboard</h3>
+                    <p>Four intelligence layers (LOW/MEDIUM/HIGH/MACRO) produce situation awareness, impact analysis, opportunity scoring, and cross-timeframe synthesis. This is the intelligence layer between raw data and portfolio decisions.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Built for daily use</h3>
-                    <p>Fast, keyboard-driven, practical enough to live in every day, with both a terminal UI and a web dashboard backed by the same local data.</p>
+                    <h3>19+ sources, one command</h3>
+                    <p>Prices, CFTC positioning, COMEX inventory, BLS economic data, FedWatch rates, oil term structure, sovereign holdings, ETF flows, prediction markets, on-chain metrics — all cached locally with <code>pftui data refresh</code>. No API keys required.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Agent-ready</h3>
-                    <p>Every major feature is accessible through the CLI with structured JSON output, so humans and agents can work from the same live state.</p>
+                    <h3>100+ CLI commands with <code>--json</code></h3>
+                    <p>Every feature is a composable CLI primitive. Agents run <code>pftui analytics situation</code> for a full awareness payload. Humans open the TUI for visual depth. Both work from the same database.</p>
                 </div>
                 <div class="agent-card">
-                    <h3>Broker integration</h3>
-                    <p>Connect Trading212, IBKR, Binance, Kraken, Coinbase, or Crypto.com and sync your positions automatically instead of entering them manually.</p>
+                    <h3>Predictions with accuracy scoring</h3>
+                    <p>Make falsifiable calls, score outcomes, track your hit rate by conviction level and timeframe. The system tells you where you're calibrated and where you're overconfident.</p>
                 </div>
             </div>
         </div>
@@ -251,17 +252,17 @@
                     </div>
                     <div class="terminal-body schema-body">
 <pre class="schema-pre">
-<span class="schema-table">$ pftui refresh</span>
-<span class="schema-desc">12 sources updated, 84 symbols, regime classified</span>
+<span class="schema-table">$ pftui data refresh</span>
+<span class="schema-desc">19 sources updated, 84 symbols, regime classified</span>
 
-<span class="schema-table">$ pftui brief --json</span>
-<span class="schema-desc">{"value": 287345, "regime": "risk-off", "movers": [...]}</span>
+<span class="schema-table">$ pftui analytics situation --json</span>
+<span class="schema-desc">{"regime": "risk-off", "watch_now": [...], "impacts": [...]}</span>
 
-<span class="schema-table">$ pftui conviction set GC=F --score 4 --notes "War + BRICS"</span>
+<span class="schema-table">$ pftui analytics impact --json</span>
+<span class="schema-desc">{"exposures": [{"symbol":"GC=F","consensus":"bullish","score":142}]}</span>
+
+<span class="schema-table">$ pftui journal conviction set GC=F --score 4 --notes "War + BRICS"</span>
 <span class="schema-desc">Gold conviction: +4 (strong bullish)</span>
-
-<span class="schema-table">$ pftui agent-msg send "All 4 layers agree: gold bullish"</span>
-<span class="schema-desc">Message logged to cross-layer feed</span>
 </pre>
                     </div>
                 </div>
@@ -280,51 +281,51 @@
             <p class="section-subtitle">Every major feature is available as a composable CLI primitive, with structured output available across the system.</p>
             <div class="cli-grid">
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui refresh</div>
-                    <div class="cli-output">✓ Prices (51) ✓ Macro (18) ✓ COT (4) ✓ F&amp;G ✓ Predictions (50) ✓ News (47) ✓ COMEX (2)</div>
+                    <div class="cli-command">$ pftui data refresh</div>
+                    <div class="cli-output">✓ 19 sources • 84 symbols • regime classified • 371 signals computed</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui value</div>
-                    <div class="cli-output">Portfolio: $287,345.42 <span class="green">(+$3,892 / +1.5%)</span> Cash: 35% │ Comd: 30% │ Crypto: 25%</div>
+                    <div class="cli-command">$ pftui analytics situation --json</div>
+                    <div class="cli-output">REGIME: risk-off (75%) │ ALERTS: 3 critical │ ALIGNMENT: bearish 3/4 layers</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui macro</div>
-                    <div class="cli-output">DXY 98.86 RSI 56 │ VIX 29.5 ⚠️ │ 10Y 4.13% │ Gold $5,181 │ Oil $91.27 RSI 89 🔥</div>
+                    <div class="cli-command">$ pftui analytics impact --json</div>
+                    <div class="cli-output">GC=F bullish (score 142) │ BTC bullish (score 154) │ USD lean-bull (score 51)</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui sentiment</div>
-                    <div class="cli-output">Crypto F&amp;G: 🔴 10 Extreme Fear │ COT Gold: 🟢 Net Long 142k (+8k) │ Oil: 🟢 264k</div>
+                    <div class="cli-command">$ pftui analytics opportunities --json</div>
+                    <div class="cli-output">CL=F bullish score:91 │ CCJ bullish score:80 │ HG=F bullish score:69</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui movers</div>
-                    <div class="cli-output"><span class="green">▲ Oil +12.7%</span> │ <span class="green">▲ VIX +24.2%</span> │ <span class="green">▲ Silver +3.7%</span> │ <span class="red">▼ BTC -6.0%</span> │ <span class="red">▼ GLXY -9.6%</span></div>
+                    <div class="cli-command">$ pftui analytics synthesis --json</div>
+                    <div class="cli-output">ALIGN: GOOG bearish 3/4 │ DIVERGE: BTC bull/bear split │ GC=F bull/bear split</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui sector</div>
-                    <div class="cli-output"><span class="green">XLE +4.2%</span> │ <span class="green">GDX +3.1%</span> │ <span class="green">XLU +1.8%</span> │ <span class="red">XLK -2.1%</span> │ <span class="red">SMH -3.7%</span></div>
+                    <div class="cli-command">$ pftui analytics catalysts --json</div>
+                    <div class="cli-output">🔴 GDP (Preliminary) Mar 26 │ Durable Goods Mar 25 │ PCE Apr 1</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui predictions --category crypto</div>
-                    <div class="cli-output">BTC &gt;$100k by Dec? 45% ↓ │ ETH flippening? 8% → │ Stablecoin regulation? 72% ↑</div>
+                    <div class="cli-command">$ pftui data fedwatch --json</div>
+                    <div class="cli-output">Apr 29: HOLD 62% / CUT 38% │ Jun 17: CUT 55% / HOLD 35% │ Jul 29: CUT 72%</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui supply</div>
-                    <div class="cli-output">Gold COMEX: 18.2M oz (Reg 89%) │ Silver COMEX: 25.7M oz │ Reg Ratio declining ▼</div>
+                    <div class="cli-command">$ pftui data oil-premium --json</div>
+                    <div class="cli-output">WTI $98.32 BACKWARDATION │ Brent $106.41 │ Spread -$8.09 │ 🟡 MIXED STRUCTURE</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui calendar --impact high</div>
-                    <div class="cli-output">🔴 CPI Mar 12 (5d) │ 🔴 FOMC Mar 17 (10d) │ 🔴 NFP Apr 3 │ 🔴 GDP Mar 27</div>
+                    <div class="cli-command">$ pftui data sovereign --json</div>
+                    <div class="cli-output">CB Gold: Italy 2452t │ Russia 2327t │ China 2306t │ Govt BTC tracked</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui eod</div>
-                    <div class="cli-output">$287,345 +$3,892 │ 7 movers &gt;3% │ VIX 29.5 ⚠️ │ F&amp;G 🔴 10 │ Next: CPI in 5d</div>
+                    <div class="cli-command">$ pftui journal prediction stats --json</div>
+                    <div class="cli-output">165 predictions │ 45% hit rate │ High conviction: 48.3% │ Low: 44.4%</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui drift</div>
-                    <div class="cli-output">Cash: 35% (target 40%) ⚠️ +9pp │ Gold: 25% ✓ │ BTC: 19% ✓ │ Equity: 10% ✓</div>
+                    <div class="cli-command">$ pftui analytics alignment --symbol GC=F --json</div>
+                    <div class="cli-output">GC=F │ LOW:bear │ MED:bull │ HIGH:bull │ MACRO:neutral │ MIXED (34%)</div>
                 </div>
                 <div class="cli-example">
-                    <div class="cli-command">$ pftui brief --agent --json</div>
+                    <div class="cli-command">$ pftui portfolio brief --agent --json</div>
                     <div class="cli-output">{"value":287345,"pnl":3892,"movers":[...],"macro":{...},"regime":"risk-off"}</div>
                 </div>
             </div>
@@ -346,7 +347,7 @@
     <section class="agent-workflows architecture-analytics">
         <div class="container">
             <h2 class="section-title">Data Aggregation Engine</h2>
-            <p class="section-subtitle">One <code>pftui refresh</code> pulls from 19 data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.</p>
+            <p class="section-subtitle">One <code>pftui data refresh</code> pulls from 19+ data sources, caches everything locally, and runs pre-processing on top of the raw data. By the time anything else reads from the database, the heavy numerical work is already done.</p>
             <div class="agent-grid stack-cards">
                 <div class="agent-card">
                     <h3>What it collects</h3>
@@ -369,24 +370,24 @@
                             <span class="btn-minimize"></span>
                             <span class="btn-maximize"></span>
                         </div>
-                        <div class="terminal-title">$ pftui refresh</div>
+                        <div class="terminal-title">$ pftui data refresh</div>
                     </div>
                     <div class="terminal-body schema-body">
 <pre class="schema-pre">
-<span class="schema-table">$ pftui refresh</span>
+<span class="schema-table">$ pftui data refresh</span>
 
-<span class="green">✓</span> <span class="schema-table">FX rates</span>        <span class="schema-desc">(7 currencies)</span>
 <span class="green">✓</span> <span class="schema-table">Prices</span>          <span class="schema-desc">(84 symbols, RSI/MACD/SMA computed)</span>
 <span class="green">✓</span> <span class="schema-table">Correlations</span>    <span class="schema-desc">(33 cross-asset pairs)</span>
 <span class="green">✓</span> <span class="schema-table">Regime</span>          <span class="schema-desc">(risk-off, confidence 0.85)</span>
+<span class="green">✓</span> <span class="schema-table">FedWatch</span>        <span class="schema-desc">(14 FOMC meetings priced)</span>
+<span class="green">✓</span> <span class="schema-table">COT</span>             <span class="schema-desc">(4 reports from CFTC)</span>
+<span class="green">✓</span> <span class="schema-table">COMEX</span>           <span class="schema-desc">(gold + silver inventory)</span>
+<span class="green">✓</span> <span class="schema-table">Economy</span>         <span class="schema-desc">(101 BLS series)</span>
+<span class="green">✓</span> <span class="schema-table">Sovereign</span>       <span class="schema-desc">(CB gold, govt BTC, COMEX silver)</span>
 <span class="green">✓</span> <span class="schema-table">Predictions</span>     <span class="schema-desc">(4 markets from Polymarket)</span>
 <span class="green">✓</span> <span class="schema-table">News</span>            <span class="schema-desc">(116 articles via Brave + RSS)</span>
-<span class="green">✓</span> <span class="schema-table">COT</span>             <span class="schema-desc">(4 reports from CFTC)</span>
-<span class="green">✓</span> <span class="schema-table">Sentiment</span>       <span class="schema-desc">(2 indices)</span>
-<span class="green">✓</span> <span class="schema-table">Calendar</span>        <span class="schema-desc">(3 upcoming events)</span>
-<span class="green">✓</span> <span class="schema-table">Economy</span>         <span class="schema-desc">(101 BLS series)</span>
-<span class="green">✓</span> <span class="schema-table">World Bank</span>      <span class="schema-desc">(160 global indicators)</span>
 <span class="green">✓</span> <span class="schema-table">On-chain</span>        <span class="schema-desc">(ETF flows, BTC metrics)</span>
+<span class="green">✓</span> <span class="schema-table">Oil structure</span>   <span class="schema-desc">(term structure, war premium)</span>
 </pre>
                     </div>
                 </div>
@@ -542,21 +543,21 @@
                         </tr>
                         <tr>
                             <td>Persistent Local DB</td>
-                            <td class="highlight">18 tables, compounds daily</td>
+                            <td class="highlight">46 tables, compounds daily</td>
                             <td>No</td>
                             <td>Proprietary</td>
                             <td>Manual</td>
                         </tr>
                         <tr>
                             <td>Agent-ready CLI</td>
-                            <td class="highlight">30+ commands, structured output</td>
+                            <td class="highlight">100+ commands, structured output</td>
                             <td>No</td>
                             <td>Bloomberg API ($)</td>
                             <td>No</td>
                         </tr>
                         <tr>
                             <td>Data Centralisation</td>
-                            <td class="highlight">10+ sources, one refresh</td>
+                            <td class="highlight">19+ sources, one refresh</td>
                             <td>1 source</td>
                             <td>✓</td>
                             <td>Manual</td>
