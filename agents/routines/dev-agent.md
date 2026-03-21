@@ -94,7 +94,29 @@ git fetch origin
 git pull
 ```
 
-## Step 8: Update TODO.md
+## Step 8: Deploy Binary
+
+After merging, build and deploy the release binary so the running system uses the new code:
+```bash
+source "$HOME/.cargo/env"
+cd /root/pftui
+cargo build --release
+# Stop services before replacing binary
+screen -S pftui-daemon -X quit 2>/dev/null || true
+screen -S pftui-mobile -X quit 2>/dev/null || true
+sleep 2
+cp target/release/pftui /root/.cargo/bin/pftui
+# Restart services
+export PGPASSWORD=Rd9H0B66q8zDf8r0aHBe14HdvY6Kj7oD0GgueEBQ
+screen -dmS pftui-daemon bash -c "export PGPASSWORD=Rd9H0B66q8zDf8r0aHBe14HdvY6Kj7oD0GgueEBQ; pftui system daemon start 2>&1 | tee /tmp/pftui-daemon.log"
+screen -dmS pftui-mobile bash -c "export PGPASSWORD=Rd9H0B66q8zDf8r0aHBe14HdvY6Kj7oD0GgueEBQ; pftui system mobile serve 2>&1 | tee /tmp/pftui-mobile.log"
+sleep 3
+pftui system daemon status
+```
+
+This is mandatory. If you skip this step, the running system stays on the old binary and your changes have no effect.
+
+## Step 9: Update TODO.md
 
 Remove the completed item from TODO.md. Update CHANGELOG.md with what shipped. Commit directly to master:
 ```bash
@@ -103,7 +125,7 @@ git commit -m "Close [item]: [what shipped]"
 git push origin master
 ```
 
-## Step 9: FEEDBACK.csv
+## Step 10: FEEDBACK.csv
 
 Append one row to `/root/pftui/FEEDBACK.csv` reviewing your own run:
 ```
