@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-21 — feat: add `change_1d` daily change field to scan system
+
+- What: added a `change_1d` (daily change percentage) field to the scan filter system. Computes `(price − previous_close) / previous_close × 100` from cached `PriceQuote.previous_close`. Available in both SQLite and Postgres paths. Aliases: `change`, `daily_change`, `change1d`. Shown in scan table output as `Chg1D%` column. Included in `--json` output. Enables precise scan queries like `change_1d > 5` (big daily gainers) or `change_1d < -5` (big daily losers) instead of relying on total `gain_pct` which triggered false positives during broad selloffs.
+- Why: Alert Investigator reported BIG-GAINERS scan triggering on minor total gains during broad market selloffs (noise not signal). Without a daily change field, agents couldn't distinguish "up 0.5% today" from "up 15% today" in scan queries. This directly fixes the false positive problem by enabling threshold-based daily move filtering.
+- Files: `src/commands/scan.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo fmt`; `cargo test` (1543 pass, +4 new); `cargo clippy -- -D warnings` (clean)
+
 ### 2026-03-21 — feat: add native narrative state and structured recap layer
 
 - What: added a new Rust-native `analytics narrative --json` report that turns recap and analytical memory into a shared server-owned contract. The new narrative layer now captures fallback-aware recap events, scenario shifts, conviction changes, trend refreshes, prediction scorecard summaries, surprise deltas, lessons, and catalyst outcomes, and persists those reports in `narrative_snapshots`. The same payload is exposed through mobile and web APIs, folded into the mobile dashboard, and rendered in the Situation and Analytics tabs as Narrative State, Structured Recap, Narrative Memory, and Prediction Scorecard sections. `analytics recap --date today` also now falls back to yesterday with a note instead of returning an empty result.

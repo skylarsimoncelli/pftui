@@ -18,8 +18,6 @@ _(none)_
 
 - [Feedback] **Correlation break alerts** — Low-Timeframe Analyst wants alerts when historically correlated pairs diverge beyond N sigma. Could build on existing `analytics correlations` infrastructure. Add configurable thresholds and integrate with alert system. (`src/commands/correlations.rs`, `src/commands/alerts.rs`)
 
-- [Feedback] **Scan threshold tuning** — Alert Investigator noted BIG-GAINERS scan triggered on minor gains during broad selloff (noise not signal). Add configurable minimum thresholds for scan alerts (e.g., minimum absolute % move, relative-to-market filter) to reduce false positives. (`src/commands/scan.rs`)
-
 - [Feedback] **Scenario probability tracking in data sources** — Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands for faster narrative shift detection. Could auto-inject active scenario probabilities into `analytics summary` and `analytics low` output. (`src/commands/scenario.rs`, `src/commands/summary.rs`)
 
 ## P3 — Long Term
