@@ -347,7 +347,7 @@ pub fn collect_recap_events_backend(
     events
 }
 
-fn scenario_shifts_backend(backend: &BackendConnection, days: i64) -> Vec<ScenarioShift> {
+pub(crate) fn scenario_shifts_backend(backend: &BackendConnection, days: i64) -> Vec<ScenarioShift> {
     let cutoff = Utc::now().date_naive() - Duration::days(days);
     let mut shifts = Vec::new();
 
@@ -391,7 +391,7 @@ fn scenario_shifts_backend(backend: &BackendConnection, days: i64) -> Vec<Scenar
     shifts
 }
 
-fn conviction_changes_backend(backend: &BackendConnection, days: usize) -> Vec<ConvictionShift> {
+pub(crate) fn conviction_changes_backend(backend: &BackendConnection, days: usize) -> Vec<ConvictionShift> {
     let current = db::convictions::list_current_backend(backend).unwrap_or_default();
     let current_map = current
         .into_iter()
@@ -425,7 +425,7 @@ fn conviction_changes_backend(backend: &BackendConnection, days: usize) -> Vec<C
     changes
 }
 
-fn trend_changes_backend(backend: &BackendConnection, days: i64) -> Vec<TrendShift> {
+pub(crate) fn trend_changes_backend(backend: &BackendConnection, days: i64) -> Vec<TrendShift> {
     let cutoff = Utc::now().date_naive() - Duration::days(days);
     let mut changes = Vec::new();
     for trend in db::trends::list_trends_backend(backend, Some("active"), None).unwrap_or_default()
@@ -464,7 +464,7 @@ fn trend_changes_backend(backend: &BackendConnection, days: i64) -> Vec<TrendShi
     changes
 }
 
-fn prediction_scorecard_backend(
+pub(crate) fn prediction_scorecard_backend(
     backend: &BackendConnection,
     resolution_days: i64,
 ) -> PredictionScorecardSummary {
@@ -544,7 +544,7 @@ fn surprise_items_backend(backend: &BackendConnection) -> Vec<NarrativeInsight> 
         .unwrap_or_default()
 }
 
-fn lesson_items_backend(backend: &BackendConnection, days: i64) -> Vec<LessonEntry> {
+pub(crate) fn lesson_items_backend(backend: &BackendConnection, days: i64) -> Vec<LessonEntry> {
     let cutoff = Utc::now() - Duration::days(days);
     let mut lessons =
         db::user_predictions::list_predictions_backend(backend, None, None, None, None)
@@ -574,7 +574,7 @@ fn lesson_items_backend(backend: &BackendConnection, days: i64) -> Vec<LessonEnt
     lessons
 }
 
-fn catalyst_outcomes_backend(backend: &BackendConnection, days: i64) -> Vec<CatalystOutcome> {
+pub(crate) fn catalyst_outcomes_backend(backend: &BackendConnection, days: i64) -> Vec<CatalystOutcome> {
     let from_date = (Utc::now().date_naive() - Duration::days(days)).to_string();
     let today = Utc::now().date_naive().to_string();
     let predictions =
