@@ -1,6 +1,5 @@
 <p align="center">
-  <b>pftui</b><br>
-  portfolio intelligence in your terminal<br>
+  <a href="https://pftui.com"><img src="website/assets/lockup.svg" alt="pftui" height="56"></a><br>
   <a href="https://pftui.com">pftui.com</a>
 </p>
 

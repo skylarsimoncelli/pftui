@@ -104,20 +104,9 @@ body {
     min-width: 0;
 }
 
-.hero-kicker {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    font-style: italic;
-    letter-spacing: 0.04em;
-    color: var(--accent-cyan);
-    border: 1px solid rgba(137, 220, 235, 0.35);
-    border-radius: 999px;
-    padding: 0.35rem 0.9rem;
+.hero-logo {
     margin-bottom: var(--spacing-sm);
-    background: rgba(13, 17, 23, 0.7);
+    border-radius: var(--radius-md);
 }
 
 .hero-title {
