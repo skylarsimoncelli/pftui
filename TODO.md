@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Always-On Analytics Engine
 
-- **F53: Situation Engine — Phase 1 complete (schema + CRUD), remaining phases:** Phase 2 = mechanical indicator evaluation in `data refresh` pipeline (auto-check indicators against live prices, update `status`/`last_value`/`triggered_at`). Phase 3 = analytics enhancements (inject situation data into `analytics situation` dashboard, `analytics summary`, `analytics low`; add `analytics situation matrix` cross-situation view). Phase 4 = agent routine updates (agents use `situation update log`, `situation indicator list`, `situation exposure` in their workflows).
+- **F53: Situation Engine — Phase 1 + Phase 2 complete, remaining phases:** Phase 3 = analytics enhancements (inject situation data into `analytics situation` dashboard, `analytics summary`, `analytics low`; add `analytics situation matrix` cross-situation view). Phase 4 = agent routine updates (agents use `situation update log`, `situation indicator list`, `situation exposure` in their workflows).
 
 ## P2 - Coverage And Agent Consumption
 
@@ -34,12 +34,12 @@ _(none)_
 | Alert Investigator | 85% | 82% | Mar 22 | → (stable, consistent routine monitoring, wants correlation detection and regime notifications) |
 | Morning Intelligence | 75% | 80% | Mar 20 | → (no new data since Mar 20, noted non-existent analytics commands in routine) |
 | Low-Timeframe Analyst | 85% | 90% | Mar 21 | → (stable high, wants weekend/after-hours mode) |
-| Dev Agent | 92% | 93% | Mar 22 | → (shipping consistently, `system search` shipped PR #155, all top 3 priorities resolved) |
+| Dev Agent | 92% | 93% | Mar 22 | → (shipping consistently, F53 Phase 2 shipped PR #182, indicator evaluation in refresh pipeline) |
 
 **Key changes since last review (Mar 21):**
 - v0.14.1 released Mar 21 (3 code fixes: plausibility guard #99, journal alert section #107, mobile API runtime #112)
 - 74 commits since v0.14.1: `system search` (#155), scenario probabilities in analytics (#148), correlation breaks (#141), oil-premium (#134), change_1d scan field (#127), narrative layer, synthesis engine, impact/opportunities engine, catalysts engine, deltas engine, situation room enhancements, website fixes
-- Tests: 1572 passing (up from 1505), clippy clean
+- Tests: 1585 passing (up from 1578), clippy clean
 - Evening Analyst continuing recovery: 65/72 → 72/78 — still lowest but trending up
 - All previous top 3 priorities RESOLVED: CLI discoverability (#155), scenario probabilities (#148), routine integration (109fd67)
 - `system search` command now helps agents discover existing features like `score-batch`
