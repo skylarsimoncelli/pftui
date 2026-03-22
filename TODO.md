@@ -6,7 +6,7 @@
 
 ## P0 - Critical
 
-_(none)_
+- [Feedback] **`portfolio performance` TIMESTAMPTZ column mismatch bug** — Evening Analyst (Mar 22) reports `portfolio performance` fails with a TIMESTAMPTZ column type error on Postgres backend. Same class of bug as the computed_at fix in PR #37. Likely needs `::text` cast on a timestamp column in the performance query path. File: `src/commands/performance.rs` or the underlying DB query.
 
 ## P1 - Always-On Analytics Engine
 
@@ -14,11 +14,13 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-_(none)_
+- [Feedback] **`analytics weekly-review` command** — Evening Analyst (Mar 22) wants a Sunday recap command that summarizes the week's key moves, scenario shifts, prediction outcomes, and portfolio changes. Would improve evening/weekend workflows. Could aggregate from existing `analytics narrative`, `analytics recap`, and `portfolio performance` data.
+- [Feedback] **`portfolio allocation` shortcut** — Evening Analyst (Mar 22) wants a quick allocation view without running full `portfolio summary`. Could be as simple as `portfolio drift` with a more intuitive alias or a dedicated slim output mode.
+- [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 
 ## P3 - Long Term
 
-- ~~**Integrate native analytics into routines**~~ — DONE (commit `109fd67`). All 6 routines now consume situation, deltas, catalysts, impact, opportunities, synthesis, narrative where relevant.
+_(none)_
 
 ---
 
@@ -28,28 +30,27 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 65% | 72% | Mar 21 | ↑ (up from 45/55, movers fixed, journal alert section added, but CLI discoverability issues remain) |
-| Medium-Timeframe Analyst | 85% | 90% | Mar 21 | ↑↑ (up from 70/75, data coverage now 90%, only 5 web searches needed vs 15+) |
-| Alert Investigator | 75-85% | 80-82% | Mar 21 | → (stable, consistent routine monitoring, system functioning well) |
-| Morning Intelligence | 75% | 80% | Mar 20 | → (portfolio sync concern noted) |
-| Low-Timeframe Analyst | 85-90% | 85-88% | Mar 20 | → (stable high, BTC anomaly fixed via plausibility guard PR #99) |
-| Dev Agent | 90% | 90-92% | Mar 21 | → (shipping consistently, all feedback items resolved, codebase clean) |
+| Evening Analyst | 72% | 78% | Mar 22 | ↑ (up from 65/72 on Mar 21, continuing recovery — analytics working better, but performance bug and missing weekly-review) |
+| Medium-Timeframe Analyst | 85% | 90% | Mar 22 | → (stable high, minor syntax learning curve, batch scoring exists but wasn't discovered) |
+| Alert Investigator | 85% | 82% | Mar 22 | → (stable, consistent routine monitoring, wants correlation detection and regime notifications) |
+| Morning Intelligence | 75% | 80% | Mar 20 | → (no new data since Mar 20, noted non-existent analytics commands in routine) |
+| Low-Timeframe Analyst | 85% | 90% | Mar 21 | → (stable high, wants weekend/after-hours mode) |
+| Dev Agent | 92% | 93% | Mar 22 | → (shipping consistently, `system search` shipped PR #155, all top 3 priorities resolved) |
 
-**Key changes since last review (Mar 20):**
-- v0.14.0 released on Mar 20 (84 commits since v0.13.0)
-- 34 commits since v0.14.0 tag: journal alert section (#107), mobile API runtime fix (#112), plausibility guard (#99), partial_cmp fix (#92)
-- Tests: 1505 passing (up from 1495 at v0.14.0 release), clippy clean
-- Evening Analyst recovering: 45/55 → 65/72 after P0 fixes landed
-- Medium-Timeframe Analyst big jump: 70/75 → 85/90 - data coverage dramatically improved
-- BTC 224K% anomaly fixed via plausibility guard (±500% cap, PR #99)
-- `journal notes --section alert` added (PR #107) - alert-investigator feedback resolved
-- `score-batch` already exists but Evening Analyst didn't find it - discoverability issue, not missing feature
+**Key changes since last review (Mar 21):**
+- v0.14.1 released Mar 21 (3 code fixes: plausibility guard #99, journal alert section #107, mobile API runtime #112)
+- 74 commits since v0.14.1: `system search` (#155), scenario probabilities in analytics (#148), correlation breaks (#141), oil-premium (#134), change_1d scan field (#127), narrative layer, synthesis engine, impact/opportunities engine, catalysts engine, deltas engine, situation room enhancements, website fixes
+- Tests: 1572 passing (up from 1505), clippy clean
+- Evening Analyst continuing recovery: 65/72 → 72/78 — still lowest but trending up
+- All previous top 3 priorities RESOLVED: CLI discoverability (#155), scenario probabilities (#148), routine integration (109fd67)
+- `system search` command now helps agents discover existing features like `score-batch`
+- New P0: `portfolio performance` TIMESTAMPTZ bug found by Evening Analyst
 
 **Top 3 priorities based on feedback:**
-1. ~~**P1: CLI discoverability**~~ — RESOLVED. `analytics conviction list` already fixed (PR #120). `score-batch` already exists. `system search` command added (PR #155) so agents can discover any command by keyword.
-2. ~~**P2: Scenario probability tracking**~~ — RESOLVED (PR #148). Scenario probabilities now surfaced in `analytics low` and `analytics summary`.
-3. ~~**P3: Integrate native analytics into agent routines**~~ — RESOLVED (commit `109fd67`). All 6 routines now consume canonical analytics CLI calls.
+1. **P0: Fix `portfolio performance` TIMESTAMPTZ bug** — Evening Analyst's lowest-scoring pain point. Same bug class as PR #37. Should be a quick fix.
+2. **P1: F53 Situation Engine** — Major feature to evolve static scenarios into living, data-connected monitoring.
+3. **P2: `analytics weekly-review` command** — Would improve Sunday/weekend workflows for multiple testers.
 
-**Release status:** v0.14.0 is current release. 34 post-release commits (feedback entries, 3 code fixes). Next release (v0.14.1 or v0.15.0) gated on resolving remaining P1/P2 items. No P0 bugs.
+**Release status:** v0.14.1 is current release. 74 post-release commits with significant new features (system search, scenario probabilities, correlation breaks, oil-premium, narrative layer, synthesis engine, catalysts engine, deltas engine). P0 bug (`portfolio performance` TIMESTAMPTZ) blocks release. Once fixed, eligible for v0.15.0 (minor bump — substantial new features).
 
-**GitHub stars:** 4 - Homebrew Core requires 50+.
+**GitHub stars:** 4 — Homebrew Core requires 50+.
