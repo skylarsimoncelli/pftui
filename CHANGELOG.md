@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-22 — feat: add `system search` command for CLI discoverability
+
+- What: added `pftui system search <query>` that searches all CLI commands and subcommands by keyword. Uses clap's command tree introspection to build a flat index of every command path + description, then filters by case-insensitive substring matching with AND logic for multiple terms. Supports `--json` for agent consumption. Exact path segment matches sorted first. Early intercept — no DB connection required.
+- Why: #1 feedback priority (CLI discoverability). Multiple agents (Evening Analyst, Medium-Timeframe Analyst, Morning Intelligence) couldn't find existing commands like `score-batch`, `analytics conviction list`, and `analytics correlations breaks`, requesting features that already existed. Now agents can run `pftui system search <keyword>` to discover the correct command path instantly.
+- Files: `src/commands/search.rs` (new), `src/commands/mod.rs`, `src/cli.rs`, `src/main.rs`, `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1572 pass, +6 new); `cargo clippy -- -D warnings` (clean)
+
 ### 2026-03-21 — feat: surface scenario probabilities in `analytics low` and `analytics summary`
 
 - What: injected active scenario probabilities into `analytics low` and `analytics summary` output. Both JSON and text modes now include all active scenarios with name, probability, status, and updated_at. `analytics low` gains a new `scenario_probabilities` array (JSON) and Scenario Context section (text). `analytics summary` gains a `scenario_probabilities` array (JSON) alongside the existing `top_scenario` field, and the text MEDIUM section now lists all active scenarios instead of just the top one.

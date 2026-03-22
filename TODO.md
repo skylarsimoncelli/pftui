@@ -46,9 +46,9 @@ _(none)_
 - `score-batch` already exists but Evening Analyst didn't find it - discoverability issue, not missing feature
 
 **Top 3 priorities based on feedback:**
-1. **P1: CLI discoverability** - `analytics conviction list` fails, `score-batch` undiscoverable. Evening Analyst (lowest scorer) directly impacted.
-2. **P2: Scenario probability tracking** - Low-Timeframe Analyst wants scenario probabilities surfaced in data source commands.
-3. **P3: Integrate native analytics into agent routines** - Replace prompt-internal recap/synthesis with canonical analytics CLI calls.
+1. ~~**P1: CLI discoverability**~~ — RESOLVED. `analytics conviction list` already fixed (PR #120). `score-batch` already exists. `system search` command added (PR #155) so agents can discover any command by keyword.
+2. ~~**P2: Scenario probability tracking**~~ — RESOLVED (PR #148). Scenario probabilities now surfaced in `analytics low` and `analytics summary`.
+3. ~~**P3: Integrate native analytics into agent routines**~~ — RESOLVED (commit `109fd67`). All 6 routines now consume canonical analytics CLI calls.
 
 **Release status:** v0.14.0 is current release. 34 post-release commits (feedback entries, 3 code fixes). Next release (v0.14.1 or v0.15.0) gated on resolving remaining P1/P2 items. No P0 bugs.
 
