@@ -14,18 +14,18 @@
 
 **pftui** is a local-first portfolio intelligence system with a multi-timeframe analytics engine.
 
-It aggregates **19+ data sources** (prices, CFTC positioning, COMEX inventory, BLS economic data, FedWatch probabilities, prediction markets, ETF flows, on-chain metrics), computes cross-asset correlations and regime classification, and runs four analytics layers — from intraday volatility to decade-long structural cycles — to produce situation awareness, catalyst ranking, impact analysis, and opportunity scoring. Terminal UI. Web dashboard. **100+ CLI commands** with structured JSON output. Your AI agent operates the same system you do.
+It aggregates **19+ data sources** (prices, CFTC positioning, COMEX inventory, BLS economic data, FedWatch probabilities, prediction markets, ETF flows, on-chain metrics), computes cross-asset correlations and regime classification, and runs four analytics layers spanning intraday volatility to decade-long structural cycles to produce situation awareness, catalyst ranking, impact analysis, and opportunity scoring. Terminal UI. Web dashboard. **100+ CLI commands** with structured JSON output. Your AI agent operates the same system you do.
 
 ---
 
 ## Why pftui
 
-- **Multi-timeframe analytics engine** — four intelligence layers (LOW/MEDIUM/HIGH/MACRO) classify market regime, rank catalysts by portfolio impact, detect cross-timeframe alignment and divergence, and score opportunities with evidence chains. No other CLI tool does this.
-- **19+ data sources, one command** — `pftui data refresh` pulls prices (84 symbols), CFTC COT positioning, COMEX warehouse inventory, BLS economic data (101 series), FedWatch rate probabilities, oil term structure, sovereign gold/BTC holdings, prediction market odds, Fear & Greed indices, ETF flows, on-chain metrics, and financial news. Cached locally. No API keys required.
-- **Falsifiable predictions with scoring** — track predictions, score outcomes, measure your hit rate by conviction level and timeframe. The system tells you where you're calibrated and where you're overconfident.
-- **Local-first, zero-config** — SQLite on your machine. No cloud account. No API keys for core sources. Install and go. PostgreSQL for production deployments.
-- **100+ CLI commands with `--json`** — every feature is a composable CLI primitive. Agents operate the same system humans do. The recommended setup is "tell your agent to install pftui and set it up with you."
-- **Broker sync** — connect Trading212, IBKR, Binance, Kraken, Coinbase, or Crypto.com and pull positions automatically
+- **Multi-timeframe analytics engine**: four intelligence layers (LOW/MEDIUM/HIGH/MACRO) classify market regime, rank catalysts by portfolio impact, detect cross-timeframe alignment and divergence, and score opportunities with evidence chains. No other CLI tool does this.
+- **19+ data sources, one command**: `pftui data refresh` pulls prices (84 symbols), CFTC COT positioning, COMEX warehouse inventory, BLS economic data (101 series), FedWatch rate probabilities, oil term structure, sovereign gold/BTC holdings, prediction market odds, Fear & Greed indices, ETF flows, on-chain metrics, and financial news. Cached locally. No API keys required.
+- **Falsifiable predictions with scoring**: track predictions, score outcomes, measure your hit rate by conviction level and timeframe. The system tells you where you're calibrated and where you're overconfident.
+- **Local-first, zero-config**: SQLite on your machine. No cloud account. No API keys for core sources. Install and go. PostgreSQL for production deployments.
+- **100+ CLI commands with `--json`**: every feature is a composable CLI primitive. Agents operate the same system humans do. The recommended setup is "tell your agent to install pftui and set it up with you."
+- **Broker sync**: connect Trading212, IBKR, Binance, Kraken, Coinbase, or Crypto.com and pull positions automatically
 
 ---
 
@@ -147,7 +147,7 @@ pftui analytics synthesis --json
 # Full asset intelligence dossier
 pftui analytics asset BTC --json
 # Returns: price, technicals, correlations, conviction history,
-# scenario links, trend impacts, alerts, alignment — everything
+# scenario links, trend impacts, alerts, alignment, everything
 # the system knows about one asset in one blob
 
 # Portfolio state
@@ -334,13 +334,13 @@ When all four layers agree on an asset, that is the highest conviction signal in
 
 On top of those four layers, pftui defines a set of shared analytics contracts across CLI, web, mobile, and agent workflows:
 
-- `analytics situation` — what matters now
-- `analytics deltas` — what changed
-- `analytics catalysts` — what is coming next
-- `analytics impact` — why it matters to the current book
-- `analytics opportunities` — what high-alignment ideas are outside the book
-- `analytics synthesis` — where timeframes agree or conflict
-- `analytics narrative` — structured recap and analytical memory
+- `analytics situation`: what matters now
+- `analytics deltas`: what changed
+- `analytics catalysts`: what is coming next
+- `analytics impact`: why it matters to the current book
+- `analytics opportunities`: what high-alignment ideas are outside the book
+- `analytics synthesis`: where timeframes agree or conflict
+- `analytics narrative`: structured recap and analytical memory
 
 These shared analytics contracts keep the architecture coherent across every surface: the same market situation, change radar, catalyst pressure, portfolio impact, cross-timeframe synthesis, and analytical memory appear wherever you access pftui.
 
@@ -375,7 +375,7 @@ pftui analytics technicals --symbol BTC-USD --json             # Persisted techn
 
 #### What the analytics engine produces
 
-**Situation awareness** — the canonical "what matters now" payload:
+**Situation awareness**: the canonical "what matters now" payload:
 ```json
 {
   "headline": "Alignment",
@@ -391,7 +391,7 @@ pftui analytics technicals --symbol BTC-USD --json             # Persisted techn
 }
 ```
 
-**Impact analysis** — what matters to your specific book:
+**Impact analysis**: what matters to your specific book:
 ```json
 {
   "exposures": [{
@@ -405,7 +405,7 @@ pftui analytics technicals --symbol BTC-USD --json             # Persisted techn
 }
 ```
 
-**Cross-timeframe synthesis** — where the layers agree and disagree:
+**Cross-timeframe synthesis**: where the layers agree and disagree:
 ```json
 {
   "strongest_alignment": [
@@ -425,7 +425,7 @@ See the full documentation: [docs/ANALYTICS-ENGINE.md](docs/ANALYTICS-ENGINE.md)
 
 The journal turns portfolio management from "I think gold will go up" into a structured, accountable research practice.
 
-**Predictions with scoring.** Make a call, assign conviction (low/medium/high) and timeframe, then score the outcome. pftui tracks your accuracy — overall, by conviction level, by asset class, by timeframe.
+**Predictions with scoring.** Make a call, assign conviction (low/medium/high) and timeframe, then score the outcome. pftui tracks your accuracy across the whole system, by conviction level, by asset class, and by timeframe.
 
 ```bash
 pftui journal prediction add "Gold outperforms equities into Q2" \

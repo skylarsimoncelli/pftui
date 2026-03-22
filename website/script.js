@@ -332,9 +332,15 @@ let terminal = null;
 let cursor = null;
 let isAnimating = false;
 
+function scrollTerminalToBottom() {
+    if (!terminal) return;
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
 function clearTerminal() {
     const lines = terminal.querySelectorAll('.terminal-line');
     lines.forEach(l => l.remove());
+    scrollTerminalToBottom();
 }
 
 function createLine(text, type) {
@@ -379,6 +385,7 @@ function colorize(text) {
 async function typeText(element, text, delay) {
     for (let i = 0; i <= text.length; i++) {
         element.textContent = text.slice(0, i);
+        scrollTerminalToBottom();
         await sleep(delay);
     }
 }
@@ -390,12 +397,14 @@ async function playScene(scene) {
     for (const line of scene.lines) {
         const el = createLine('', line.type);
         terminal.insertBefore(el, cursor);
+        scrollTerminalToBottom();
         
         if (line.type === 'command') {
             // Type out commands character by character
             await typeText(el, line.text, line.delay);
             await sleep(400);
             cursor.style.display = 'none';
+            scrollTerminalToBottom();
             await sleep(200);
         } else {
             // Output lines appear instantly (like real terminal output)
@@ -405,12 +414,14 @@ async function playScene(scene) {
             } else {
                 el.innerHTML = colorize(line.text);
             }
+            scrollTerminalToBottom();
             await sleep(line.delay);
         }
     }
     
     // Show cursor blinking after scene completes
     cursor.style.display = 'inline-block';
+    scrollTerminalToBottom();
     
     // Hold the scene
     await sleep(scene.hold);

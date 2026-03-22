@@ -237,8 +237,9 @@ body {
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-lg);
-    width: min(100%, 760px);
+    width: 760px;
     margin-inline: auto;
+    flex: 0 0 auto;
 }
 
 .hero-terminal {
@@ -284,12 +285,12 @@ body {
     padding: var(--spacing-md);
     font-family: var(--font-mono);
     font-size: clamp(0.66rem, 0.78vw, 0.95rem);
-    height: 260px;
+    height: 360px;
     background: var(--bg-primary);
     text-align: left;
     line-height: 1.45;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: auto;
     scrollbar-width: thin;
 }
 
@@ -1111,6 +1112,10 @@ footer {
         text-align: center;
     }
 
+    .terminal-window {
+        width: min(100%, 760px);
+    }
+
     .hero-content {
         max-width: 100%;
     }
@@ -1136,6 +1141,7 @@ footer {
     
     .terminal-body {
         font-size: 0.76rem;
+        height: 320px;
     }
 }
 
@@ -1175,6 +1181,7 @@ footer {
     .terminal-body {
         padding: var(--spacing-sm);
         font-size: 0.8rem;
+        height: 260px;
     }
     
     .section-title {
