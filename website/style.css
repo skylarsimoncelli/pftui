@@ -91,7 +91,7 @@ body {
 
 .hero .container {
     display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-columns: minmax(0, 0.78fr) minmax(760px, 1.22fr);
     gap: var(--spacing-lg);
     align-items: center;
     position: relative;
@@ -246,7 +246,8 @@ body {
     width: 100%;
     min-width: 0;
     display: flex;
-    justify-content: center;
+    justify-content: flex-end;
+    padding-left: 2rem;
 }
 
 .terminal-header {
