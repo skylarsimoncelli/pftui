@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="320" height="64" rx="8" fill="#1e1e2e"/>
+
+  <!-- Left square icon area -->
+  <rect x="8" y="8" width="48" height="48" rx="6" fill="#181825"/>
+
+  <!-- 4 data layer bars inside icon, 6px padding inside -->
+  <rect x="14" y="15" width="36" height="2" rx="0.5" fill="#94e2d5" opacity="1"/>
+  <rect x="14" y="21" width="27" height="2" rx="0.5" fill="#94e2d5" opacity="0.7"/>
+  <rect x="14" y="27" width="18" height="2" rx="0.5" fill="#94e2d5" opacity="0.45"/>
+  <rect x="14" y="33" width="11" height="2" rx="0.5" fill="#94e2d5" opacity="0.25"/>
+
+  <!-- Cursor in icon -->
+  <rect x="14" y="39" width="5" height="10" rx="1" fill="#89b4fa" opacity="0.85"/>
+
+  <!-- Vertical separator -->
+  <rect x="66" y="14" width="1" height="36" rx="0.5" fill="#313244"/>
+
+  <!-- Right wordmark section -->
+  <!-- Prompt chevron -->
+  <text
+    x="78"
+    y="38"
+    font-family="'JetBrains Mono', 'Courier New', monospace"
+    font-weight="400"
+    font-size="18"
+    fill="#45475a"
+    dominant-baseline="auto"
+  >›</text>
+
+  <!-- pftui wordmark -->
+  <text
+    x="94"
+    y="38"
+    font-family="'JetBrains Mono', 'Courier New', monospace"
+    font-weight="700"
+    font-size="20"
+    fill="#cdd6f4"
+    letter-spacing="2"
+    dominant-baseline="auto"
+  >pftui</text>
+
+  <!-- Cursor blink block — positioned right after "pftui" text
+       "pftui" at font-size 20 with letter-spacing 2: ~5 chars * ~12px + spacing = ~70px wide. Start at x=94+70=164 -->
+  <rect x="168" y="20" width="9" height="18" rx="1" fill="#89b4fa" opacity="0.8"/>
+
+  <!-- Tagline — centered under wordmark area -->
+  <text
+    x="94"
+    y="52"
+    font-family="'JetBrains Mono', 'Courier New', monospace"
+    font-weight="400"
+    font-size="8"
+    fill="#45475a"
+    letter-spacing="2.5"
+    dominant-baseline="auto"
+  >PORTFOLIO INTELLIGENCE</text>
+</svg>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Background -->
+  <rect width="32" height="32" rx="5" fill="#1e1e2e"/>
+
+  <!-- 4 data layer bars — 4px left padding, max width 24px -->
+  <rect x="4" y="5"  width="24" height="2" rx="0.5" fill="#94e2d5" opacity="1"/>
+  <rect x="4" y="10" width="18" height="2" rx="0.5" fill="#94e2d5" opacity="0.72"/>
+  <rect x="4" y="15" width="12" height="2" rx="0.5" fill="#94e2d5" opacity="0.44"/>
+  <rect x="4" y="20" width="7"  height="2" rx="0.5" fill="#94e2d5" opacity="0.22"/>
+
+  <!-- Cursor block -->
+  <rect x="4" y="25" width="4" height="5" rx="0.5" fill="#89b4fa"/>
+
+  <!-- "pftui" text centered in remaining bottom row space -->
+  <!-- space from x=10 to x=28, midpoint=19 -->
+  <text
+    x="19"
+    y="30"
+    text-anchor="middle"
+    font-family="'JetBrains Mono', 'Courier New', monospace"
+    font-weight="700"
+    font-size="5.5"
+    fill="#585b70"
+    letter-spacing="0.4"
+  >pftui</text>
+</svg>

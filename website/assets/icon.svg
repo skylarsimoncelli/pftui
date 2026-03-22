@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&amp;display=swap');
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="64" height="64" rx="10" fill="#1e1e2e"/>
+
+  <!-- 4 data layer bars — left-anchored, 8px padding -->
+  <rect x="8" y="9"  width="48" height="2.5" rx="1" fill="#94e2d5" opacity="1"/>
+  <rect x="8" y="16" width="36" height="2.5" rx="1" fill="#94e2d5" opacity="0.7"/>
+  <rect x="8" y="23" width="24" height="2.5" rx="1" fill="#94e2d5" opacity="0.45"/>
+  <rect x="8" y="30" width="14" height="2.5" rx="1" fill="#94e2d5" opacity="0.25"/>
+
+  <!-- Subtle divider -->
+  <rect x="8" y="39" width="48" height="0.75" rx="0.5" fill="#313244"/>
+
+  <!-- Bottom row: cursor + wordmark, visually centered as a unit -->
+  <!-- Cursor block -->
+  <rect x="9" y="45" width="5" height="12" rx="1" fill="#89b4fa" opacity="0.9"/>
+
+  <!-- "pftui" centered in remaining space (x=14 to x=56), midpoint=35 -->
+  <text
+    x="35"
+    y="56"
+    text-anchor="middle"
+    dominant-baseline="auto"
+    font-family="'JetBrains Mono', 'Courier New', monospace"
+    font-weight="700"
+    font-size="11"
+    fill="#cdd6f4"
+    letter-spacing="1.2"
+  >pftui</text>
+</svg>
