@@ -515,6 +515,43 @@ pub fn list_indicators(conn: &Connection, scenario_id: i64) -> Result<Vec<Scenar
     Ok(indicators)
 }
 
+/// List ALL indicators with status='watching' across all scenarios (for refresh pipeline evaluation).
+pub fn list_all_watching_indicators(
+    conn: &Connection,
+) -> Result<Vec<ScenarioIndicator>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, scenario_id, branch_id, impact_id, symbol, metric, operator, threshold, label, status, triggered_at, last_value, last_checked, created_at, updated_at
+         FROM scenario_indicators WHERE status = 'watching' ORDER BY scenario_id, id",
+    )?;
+    let rows = stmt.query_map([], ScenarioIndicator::from_row)?;
+    let mut indicators = Vec::new();
+    for row in rows {
+        indicators.push(row?);
+    }
+    Ok(indicators)
+}
+
+/// Update an indicator's evaluation result (last_value, last_checked, and optionally trigger it).
+pub fn update_indicator_evaluation(
+    conn: &Connection,
+    indicator_id: i64,
+    last_value: &str,
+    triggered: bool,
+) -> Result<()> {
+    if triggered {
+        conn.execute(
+            "UPDATE scenario_indicators SET last_value = ?, last_checked = datetime('now'), status = 'triggered', triggered_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+            params![last_value, indicator_id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE scenario_indicators SET last_value = ?, last_checked = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+            params![last_value, indicator_id],
+        )?;
+    }
+    Ok(())
+}
+
 // --- Update log CRUD ---
 
 #[allow(clippy::too_many_arguments)]
@@ -1109,6 +1146,29 @@ pub fn list_indicators_backend(
         backend,
         |conn| list_indicators(conn, scenario_id),
         |pool| list_indicators_postgres(pool, scenario_id),
+    )
+}
+
+pub fn list_all_watching_indicators_backend(
+    backend: &BackendConnection,
+) -> Result<Vec<ScenarioIndicator>> {
+    query::dispatch(
+        backend,
+        list_all_watching_indicators,
+        list_all_watching_indicators_postgres,
+    )
+}
+
+pub fn update_indicator_evaluation_backend(
+    backend: &BackendConnection,
+    indicator_id: i64,
+    last_value: &str,
+    triggered: bool,
+) -> Result<()> {
+    query::dispatch(
+        backend,
+        |conn| update_indicator_evaluation(conn, indicator_id, last_value, triggered),
+        |pool| update_indicator_evaluation_postgres(pool, indicator_id, last_value, triggered),
     )
 }
 
@@ -1812,6 +1872,69 @@ fn list_indicators_postgres(pool: &PgPool, scenario_id: i64) -> Result<Vec<Scena
             updated_at: r.14,
         })
         .collect())
+}
+
+fn list_all_watching_indicators_postgres(pool: &PgPool) -> Result<Vec<ScenarioIndicator>> {
+    ensure_tables_postgres(pool)?;
+    let rows: Vec<IndicatorRow> = crate::db::pg_runtime::block_on(async {
+        sqlx::query_as(
+            "SELECT id, scenario_id, branch_id, impact_id, symbol, metric, operator, threshold, label, status, triggered_at::text, last_value, last_checked::text, created_at::text, updated_at::text
+             FROM scenario_indicators WHERE status = 'watching' ORDER BY scenario_id, id",
+        )
+        .fetch_all(pool)
+        .await
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| ScenarioIndicator {
+            id: r.0,
+            scenario_id: r.1,
+            branch_id: r.2,
+            impact_id: r.3,
+            symbol: r.4,
+            metric: r.5,
+            operator: r.6,
+            threshold: r.7,
+            label: r.8,
+            status: r.9,
+            triggered_at: r.10,
+            last_value: r.11,
+            last_checked: r.12,
+            created_at: r.13,
+            updated_at: r.14,
+        })
+        .collect())
+}
+
+fn update_indicator_evaluation_postgres(
+    pool: &PgPool,
+    indicator_id: i64,
+    last_value: &str,
+    triggered: bool,
+) -> Result<()> {
+    ensure_tables_postgres(pool)?;
+    if triggered {
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query(
+                "UPDATE scenario_indicators SET last_value = $1, last_checked = now(), status = 'triggered', triggered_at = now(), updated_at = now() WHERE id = $2",
+            )
+            .bind(last_value)
+            .bind(indicator_id)
+            .execute(pool)
+            .await
+        })?;
+    } else {
+        crate::db::pg_runtime::block_on(async {
+            sqlx::query(
+                "UPDATE scenario_indicators SET last_value = $1, last_checked = now(), updated_at = now() WHERE id = $2",
+            )
+            .bind(last_value)
+            .bind(indicator_id)
+            .execute(pool)
+            .await
+        })?;
+    }
+    Ok(())
 }
 
 type UpdateRow = (

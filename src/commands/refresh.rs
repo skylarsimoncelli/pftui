@@ -1333,6 +1333,60 @@ fn run_pipeline(
             error: None,
             detail: None,
         });
+
+        // ── Situation indicator evaluation ─────────────────────────
+        let indicator_start = Instant::now();
+        match evaluate_situation_indicators(backend, verbose) {
+            Ok((checked, triggered)) => {
+                if checked > 0 {
+                    if triggered > 0 {
+                        info_ln!(
+                            verbose,
+                            "✓ Situation indicators ({} checked, {} triggered)",
+                            checked,
+                            triggered
+                        );
+                    } else {
+                        info_ln!(
+                            verbose,
+                            "✓ Situation indicators ({} checked, none triggered)",
+                            checked
+                        );
+                    }
+                } else {
+                    info_ln!(verbose, "⊘ Situation indicators (none watching)");
+                }
+                dag_result.add(SourceResult {
+                    name: "situation_indicators".to_string(),
+                    label: "Situation Indicators".to_string(),
+                    status: SourceStatus::Ok,
+                    items_updated: Some(checked),
+                    duration_ms: indicator_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: None,
+                    detail: if triggered > 0 {
+                        Some(format!("{} triggered", triggered))
+                    } else {
+                        None
+                    },
+                });
+            }
+            Err(e) => {
+                info_ln!(verbose, "✗ Situation indicators (failed: {})", e);
+                dag_result.add(SourceResult {
+                    name: "situation_indicators".to_string(),
+                    label: "Situation Indicators".to_string(),
+                    status: SourceStatus::Failed,
+                    items_updated: None,
+                    duration_ms: indicator_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: Some(e.to_string()),
+                    detail: None,
+                });
+            }
+        }
     } else if plan.prices {
         info_ln!(verbose, "⊘ Prices (no symbols)");
         dag_result.add(SourceResult {
@@ -3272,6 +3326,193 @@ fn store_portfolio_snapshot(
     Ok(())
 }
 
+/// Evaluate all 'watching' situation indicators against live price cache and technical snapshots.
+/// Returns (checked_count, triggered_count).
+fn evaluate_situation_indicators(
+    backend: &BackendConnection,
+    verbose: bool,
+) -> Result<(usize, usize)> {
+    use std::str::FromStr as _;
+
+    let indicators = crate::db::scenarios::list_all_watching_indicators_backend(backend)?;
+    if indicators.is_empty() {
+        return Ok((0, 0));
+    }
+
+    let mut checked = 0usize;
+    let mut triggered = 0usize;
+
+    for ind in &indicators {
+        // Resolve the current value for this indicator's symbol + metric
+        let current_value = resolve_indicator_value(backend, &ind.symbol, &ind.metric);
+
+        let current_value = match current_value {
+            Some(v) => v,
+            None => {
+                // Can't evaluate — no data for this symbol/metric. Skip silently.
+                continue;
+            }
+        };
+
+        checked += 1;
+
+        // Parse threshold as Decimal
+        let threshold = match Decimal::from_str(&ind.threshold) {
+            Ok(t) => t,
+            Err(_) => {
+                warn_ln!(
+                    verbose,
+                    "⚠ Indicator {} ({}): invalid threshold '{}'",
+                    ind.id,
+                    ind.label,
+                    ind.threshold
+                );
+                continue;
+            }
+        };
+
+        // Evaluate the operator
+        let is_triggered = match ind.operator.as_str() {
+            ">" | "gt" => current_value > threshold,
+            ">=" | "gte" => current_value >= threshold,
+            "<" | "lt" => current_value < threshold,
+            "<=" | "lte" => current_value <= threshold,
+            "==" | "eq" => current_value == threshold,
+            "!=" | "ne" => current_value != threshold,
+            "crosses_above" => {
+                // Check if last_value was below threshold and current is above
+                let was_below = ind
+                    .last_value
+                    .as_deref()
+                    .and_then(|v| Decimal::from_str(v).ok())
+                    .is_some_and(|prev| prev < threshold);
+                was_below && current_value >= threshold
+            }
+            "crosses_below" => {
+                // Check if last_value was above threshold and current is below
+                let was_above = ind
+                    .last_value
+                    .as_deref()
+                    .and_then(|v| Decimal::from_str(v).ok())
+                    .is_some_and(|prev| prev > threshold);
+                was_above && current_value <= threshold
+            }
+            other => {
+                warn_ln!(
+                    verbose,
+                    "⚠ Indicator {} ({}): unknown operator '{}'",
+                    ind.id,
+                    ind.label,
+                    other
+                );
+                continue;
+            }
+        };
+
+        if is_triggered {
+            triggered += 1;
+            info_ln!(
+                verbose,
+                "🔔 Indicator TRIGGERED: {} — {} {} {} (value: {})",
+                ind.label,
+                ind.symbol,
+                ind.operator,
+                ind.threshold,
+                current_value
+            );
+        }
+
+        // Update the indicator in the database
+        crate::db::scenarios::update_indicator_evaluation_backend(
+            backend,
+            ind.id,
+            &current_value.to_string(),
+            is_triggered,
+        )?;
+    }
+
+    Ok((checked, triggered))
+}
+
+/// Resolve the current numeric value for a symbol + metric combination.
+/// Supported metrics:
+///   - "close" / "price" — current spot price from price cache
+///   - "rsi", "rsi_14" — 14-period RSI from technical snapshots
+///   - "sma_20", "sma_50", "sma_200" — SMA values
+///   - "macd", "macd_signal", "macd_histogram" — MACD components
+///   - "bollinger_upper", "bollinger_lower", "bollinger_middle" — Bollinger Bands
+///   - "52w_high", "52w_low", "52w_position" — 52-week range metrics
+///   - "atr", "atr_14" — Average True Range
+///   - "atr_ratio" — ATR as percentage of price
+///   - "volume_ratio" — 20-day volume ratio
+fn resolve_indicator_value(
+    backend: &BackendConnection,
+    symbol: &str,
+    metric: &str,
+) -> Option<Decimal> {
+    match metric {
+        "close" | "price" => {
+            // Try USD first, then GBP, then any
+            let quote = crate::db::price_cache::get_cached_price_backend(backend, symbol, "USD")
+                .ok()
+                .flatten()
+                .or_else(|| {
+                    crate::db::price_cache::get_cached_price_backend(backend, symbol, "GBp")
+                        .ok()
+                        .flatten()
+                })
+                .or_else(|| {
+                    crate::db::price_cache::get_cached_price_backend(backend, symbol, "GBP")
+                        .ok()
+                        .flatten()
+                });
+            quote.map(|q| q.price)
+        }
+        "rsi" | "rsi_14" => get_technical_field(backend, symbol, |snap| snap.rsi_14),
+        "sma_20" => get_technical_field(backend, symbol, |snap| snap.sma_20),
+        "sma_50" => get_technical_field(backend, symbol, |snap| snap.sma_50),
+        "sma_200" => get_technical_field(backend, symbol, |snap| snap.sma_200),
+        "macd" => get_technical_field(backend, symbol, |snap| snap.macd),
+        "macd_signal" => get_technical_field(backend, symbol, |snap| snap.macd_signal),
+        "macd_histogram" => get_technical_field(backend, symbol, |snap| snap.macd_histogram),
+        "bollinger_upper" => get_technical_field(backend, symbol, |snap| snap.bollinger_upper),
+        "bollinger_lower" => get_technical_field(backend, symbol, |snap| snap.bollinger_lower),
+        "bollinger_middle" => get_technical_field(backend, symbol, |snap| snap.bollinger_middle),
+        "52w_high" | "range_52w_high" => {
+            get_technical_field(backend, symbol, |snap| snap.range_52w_high)
+        }
+        "52w_low" | "range_52w_low" => {
+            get_technical_field(backend, symbol, |snap| snap.range_52w_low)
+        }
+        "52w_position" | "range_52w_position" => {
+            get_technical_field(backend, symbol, |snap| snap.range_52w_position)
+        }
+        "atr" | "atr_14" => get_technical_field(backend, symbol, |snap| snap.atr_14),
+        "atr_ratio" => get_technical_field(backend, symbol, |snap| snap.atr_ratio),
+        "volume_ratio" | "volume_ratio_20" => {
+            get_technical_field(backend, symbol, |snap| snap.volume_ratio_20)
+        }
+        _ => None,
+    }
+}
+
+/// Helper: extract a numeric field from the latest technical snapshot for a symbol.
+fn get_technical_field(
+    backend: &BackendConnection,
+    symbol: &str,
+    extractor: impl Fn(&crate::db::technical_snapshots::TechnicalSnapshotRecord) -> Option<f64>,
+) -> Option<Decimal> {
+    use std::str::FromStr as _;
+
+    let snap =
+        crate::db::technical_snapshots::get_latest_snapshot_backend(backend, symbol, "daily")
+            .ok()
+            .flatten()?;
+    let value = extractor(&snap)?;
+    // Convert f64 to Decimal via string to avoid floating point artifacts
+    Decimal::from_str(&format!("{:.6}", value)).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3338,5 +3579,156 @@ mod tests {
 
         std::env::remove_var("PFTUI_REFRESH_LOCK_DIR");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn evaluate_indicators_empty_db() {
+        use crate::db;
+        use rusqlite::Connection;
+
+        let conn = Connection::open_in_memory().unwrap();
+        db::schema::run_migrations(&conn).unwrap();
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+
+        let (checked, triggered) = evaluate_situation_indicators(&backend, false).unwrap();
+        assert_eq!(checked, 0);
+        assert_eq!(triggered, 0);
+    }
+
+    #[test]
+    fn evaluate_indicators_with_price_data() {
+        use crate::db;
+        use crate::db::scenarios;
+        use crate::models::price::PriceQuote;
+        use rusqlite::Connection;
+
+        let conn = Connection::open_in_memory().unwrap();
+        db::schema::run_migrations(&conn).unwrap();
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+
+        // Create a scenario with indicators
+        let s_id =
+            scenarios::add_scenario_backend(&backend, "Gold Watch", 50.0, None, None, None, None)
+                .unwrap();
+        scenarios::promote_scenario_backend(&backend, s_id).unwrap();
+
+        // Indicator: gold > 3000
+        scenarios::add_indicator_backend(
+            &backend, s_id, None, None, "GC=F", "close", ">", "3000", "Gold above 3k",
+        )
+        .unwrap();
+
+        // Indicator: gold < 2500 (should NOT trigger)
+        scenarios::add_indicator_backend(
+            &backend, s_id, None, None, "GC=F", "close", "<", "2500", "Gold crash",
+        )
+        .unwrap();
+
+        // Insert a price into the cache: gold at 3100
+        let quote = PriceQuote {
+            symbol: "GC=F".to_string(),
+            price: dec!(3100),
+            currency: "USD".to_string(),
+            fetched_at: "2026-03-22T12:00:00Z".to_string(),
+            source: "test".to_string(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+            previous_close: Some(dec!(3050)),
+        };
+        crate::db::price_cache::upsert_price_backend(&backend, &quote).unwrap();
+
+        // Evaluate
+        let (checked, triggered) = evaluate_situation_indicators(&backend, false).unwrap();
+        assert_eq!(checked, 2);
+        assert_eq!(triggered, 1); // only > 3000 triggers
+
+        // Verify the triggered indicator
+        let indicators = scenarios::list_indicators_backend(&backend, s_id).unwrap();
+        let gt_ind = indicators.iter().find(|i| i.label == "Gold above 3k").unwrap();
+        assert_eq!(gt_ind.status, "triggered");
+        assert_eq!(gt_ind.last_value.as_deref(), Some("3100"));
+
+        let lt_ind = indicators.iter().find(|i| i.label == "Gold crash").unwrap();
+        assert_eq!(lt_ind.status, "watching");
+        assert_eq!(lt_ind.last_value.as_deref(), Some("3100"));
+
+        // Re-evaluate — triggered indicator should be skipped (it's no longer 'watching')
+        let (checked2, triggered2) = evaluate_situation_indicators(&backend, false).unwrap();
+        assert_eq!(checked2, 1); // only the non-triggered one
+        assert_eq!(triggered2, 0);
+    }
+
+    #[test]
+    fn evaluate_indicators_crosses_above() {
+        use crate::db;
+        use crate::db::scenarios;
+        use crate::models::price::PriceQuote;
+        use rusqlite::Connection;
+
+        let conn = Connection::open_in_memory().unwrap();
+        db::schema::run_migrations(&conn).unwrap();
+        let backend = crate::db::backend::BackendConnection::Sqlite { conn };
+
+        let s_id = scenarios::add_scenario_backend(
+            &backend,
+            "Cross Test",
+            50.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        scenarios::promote_scenario_backend(&backend, s_id).unwrap();
+
+        let ind_id = scenarios::add_indicator_backend(
+            &backend,
+            s_id,
+            None,
+            None,
+            "BTC-USD",
+            "close",
+            "crosses_above",
+            "100000",
+            "BTC crosses 100k",
+        )
+        .unwrap();
+
+        // First evaluation: BTC at 95000 (below threshold, no previous value)
+        let quote1 = PriceQuote {
+            symbol: "BTC-USD".to_string(),
+            price: dec!(95000),
+            currency: "USD".to_string(),
+            fetched_at: "2026-03-22T11:00:00Z".to_string(),
+            source: "test".to_string(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+            previous_close: None,
+        };
+        crate::db::price_cache::upsert_price_backend(&backend, &quote1).unwrap();
+        let (_, triggered1) = evaluate_situation_indicators(&backend, false).unwrap();
+        assert_eq!(triggered1, 0); // no previous value, can't detect cross
+
+        // Second evaluation: BTC at 102000 (above threshold, previous was 95000)
+        let quote2 = PriceQuote {
+            symbol: "BTC-USD".to_string(),
+            price: dec!(102000),
+            currency: "USD".to_string(),
+            fetched_at: "2026-03-22T12:00:00Z".to_string(),
+            source: "test".to_string(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+            previous_close: None,
+        };
+        crate::db::price_cache::upsert_price_backend(&backend, &quote2).unwrap();
+        let (_, triggered2) = evaluate_situation_indicators(&backend, false).unwrap();
+        assert_eq!(triggered2, 1); // crossed above!
+
+        let indicators = scenarios::list_indicators_backend(&backend, s_id).unwrap();
+        let ind = indicators.iter().find(|i| i.id == ind_id).unwrap();
+        assert_eq!(ind.status, "triggered");
     }
 }
