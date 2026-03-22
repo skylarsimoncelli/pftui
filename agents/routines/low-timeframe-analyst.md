@@ -17,6 +17,7 @@ You run 3x daily. Detect which run this is and adjust:
 ```bash
 pftui data refresh
 pftui analytics situation --json
+pftui analytics situation list --json
 pftui analytics deltas --json --since last-refresh
 pftui analytics catalysts --json --window today
 pftui analytics impact --json
@@ -31,6 +32,12 @@ pftui analytics scan --load big-gainers --json
 pftui analytics scan --load big-losers --json
 pftui analytics scan --load risk-check --json
 ```
+
+For each active situation, check its mechanical indicators:
+```bash
+pftui analytics situation indicator list --situation "<name>" --json
+```
+If any indicator has been evaluated by the refresh pipeline and crossed a threshold, flag it as a signal.
 
 Prefer the canonical analytics payloads for prioritization. Use raw feeds like movers, alerts, and scans to investigate and enrich what `situation` and `deltas` already surfaced.
 
@@ -55,6 +62,14 @@ Flag scenario-relevant news:
 ```bash
 pftui agent message send "NEWS: [headline] — scenario impact: [which scenario, how]" \
   --from low-agent --to evening-analyst --priority high --category signal --layer low
+```
+
+When news directly affects an active situation, log a structured update:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "[what happened]" --detail "[why it matters]" \
+  --severity [low|normal|high|critical] --source "[news source]" \
+  --source-agent low-agent
 ```
 
 5. Read pftui data sources before resorting to web_search:
@@ -85,6 +100,12 @@ Do 1-2 targeted searches per run, not broad sweeps. If pftui data already covers
 pftui agent message send "MISMATCH: [asset] conviction [+X] but moved [Y%]" \
   --from low-agent --to evening-analyst --priority normal --category signal --layer low
 ```
+
+For held/watched assets with big moves, check cross-situation exposure:
+```bash
+pftui analytics situation exposure --symbol [SYM] --json
+```
+This shows which active situations affect that symbol and how. Include in your mismatch analysis if the move aligns with a situation branch rather than conviction.
 
 ## Pre-Market Run
 

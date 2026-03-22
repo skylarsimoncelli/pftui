@@ -15,6 +15,8 @@ pftui analytics trends list --json
 
 ```bash
 pftui analytics situation --json
+pftui analytics situation list --json
+pftui analytics situation matrix --json
 pftui analytics deltas --json --since 48h
 pftui analytics catalysts --json --window month
 pftui analytics impact --json
@@ -27,6 +29,19 @@ pftui journal conviction list --json
 pftui journal prediction list --json
 pftui agent message list --to high-agent --unacked
 ```
+
+For each active situation, review its mechanical indicators and recent event log:
+```bash
+pftui analytics situation indicator list --situation "<name>" --json
+pftui analytics situation update list --situation "<name>" --limit 5 --json
+```
+
+For structurally important assets, check cross-situation exposure:
+```bash
+pftui analytics situation exposure --symbol BTC --json
+pftui analytics situation exposure --symbol GLD --json
+```
+This maps which situations create overlapping structural pressure on key holdings.
 
 Use `impact` and `opportunities` to anchor where structural trends already intersect the current book and where strong non-held ideas are emerging.
 
@@ -71,13 +86,22 @@ pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
   --impact <strengthens|weakens|neutral> --source "<source>" "<specific finding>"
 ```
 
-4. Update conviction on assets affected by this trend:
+4. When trend evidence affects an active situation, log the structural development:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "[structural development]" \
+  --detail "[trend evidence and long-term implications]" \
+  --severity [low|normal|high] --source "[research source]" \
+  --source-agent high-agent
+```
+
+5. Update conviction on assets affected by this trend:
 ```bash
 pftui analytics conviction set <SYMBOL> --score <n> \
   --notes "HIGH [date]: Trend '[name]' is [accelerating/stable/weakening]. Evidence: [specific]. Impact on [asset]: [reasoning]."
 ```
 
-5. If you discover a new structural trend not yet tracked, add it:
+6. If you discover a new structural trend not yet tracked, add it:
 ```bash
 pftui analytics trends add "[name]" --timeframe high \
   --direction [accelerating|stable|decelerating] --conviction [high|medium|low] \
