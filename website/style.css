@@ -91,7 +91,8 @@ body {
 
 .hero .container {
     display: grid;
-    grid-template-columns: minmax(0, 0.78fr) minmax(760px, 1.22fr);
+    max-width: 1360px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 680px);
     gap: var(--spacing-lg);
     align-items: center;
     position: relative;
@@ -99,7 +100,7 @@ body {
 }
 
 .hero-content {
-    max-width: 560px;
+    max-width: 620px;
     min-width: 0;
 }
 
@@ -237,7 +238,7 @@ body {
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-lg);
-    width: 760px;
+    width: 640px;
     margin-inline: auto;
     flex: 0 0 auto;
 }
@@ -247,7 +248,7 @@ body {
     min-width: 0;
     display: flex;
     justify-content: flex-end;
-    padding-left: 2rem;
+    padding-left: 0;
 }
 
 .terminal-header {
