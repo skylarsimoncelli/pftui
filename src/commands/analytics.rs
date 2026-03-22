@@ -654,9 +654,10 @@ pub fn run(
         "divergence" => run_divergence(backend, symbol, json_output),
         "digest" => run_digest(backend, from, limit, json_output),
         "recap" => run_recap(backend, date, limit, json_output),
+        "weekly-review" => run_weekly_review(backend, limit.unwrap_or(7), json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, narrative, synthesis, low, medium, high, macro, alignment, divergence, digest, recap, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, narrative, synthesis, low, medium, high, macro, alignment, divergence, digest, recap, weekly-review, gaps",
             action
         ),
     }
@@ -798,6 +799,298 @@ fn run_recap(
 
     Ok(())
 }
+
+// ── Weekly Review ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WeeklyReviewReport {
+    generated_at: String,
+    period: WeeklyPeriod,
+    portfolio: WeeklyPortfolio,
+    scenario_shifts: Vec<narrative::ScenarioShift>,
+    conviction_changes: Vec<narrative::ConvictionShift>,
+    trend_changes: Vec<narrative::TrendShift>,
+    prediction_scorecard: narrative::PredictionScorecardSummary,
+    lessons: Vec<narrative::LessonEntry>,
+    catalyst_outcomes: Vec<narrative::CatalystOutcome>,
+    recap_events: Vec<narrative::RecapEvent>,
+    regime: Option<WeeklyRegime>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WeeklyPeriod {
+    from: String,
+    to: String,
+    days: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WeeklyPortfolio {
+    start_value: Option<String>,
+    end_value: Option<String>,
+    change_pct: Option<String>,
+    snapshots: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WeeklyRegime {
+    current: String,
+    confidence: Option<f64>,
+}
+
+fn run_weekly_review(
+    backend: &BackendConnection,
+    days: usize,
+    json_output: bool,
+) -> Result<()> {
+    let now = Utc::now();
+    let today = now.date_naive();
+    let period_start = today - Duration::days(days as i64);
+
+    // Portfolio performance over the period
+    let all_snapshots =
+        crate::db::snapshots::get_all_portfolio_snapshots_backend(backend)?;
+    let period_snapshots: Vec<_> = all_snapshots
+        .iter()
+        .filter(|s| s.date.as_str() >= period_start.to_string().as_str())
+        .collect();
+
+    // Find the start anchor: last snapshot on or before period_start
+    let start_snap = all_snapshots
+        .iter()
+        .rev()
+        .find(|s| s.date.as_str() <= period_start.to_string().as_str());
+    let end_snap = all_snapshots.last();
+
+    let (start_val, end_val, change_pct) = match (start_snap, end_snap) {
+        (Some(s), Some(e)) if s.total_value > dec!(0) => {
+            let pct = ((e.total_value - s.total_value) / s.total_value) * dec!(100);
+            (
+                Some(s.total_value.to_string()),
+                Some(e.total_value.to_string()),
+                Some(format!("{:+.2}", pct)),
+            )
+        }
+        (None, Some(e)) => (None, Some(e.total_value.to_string()), None),
+        _ => (None, None, None),
+    };
+
+    let portfolio = WeeklyPortfolio {
+        start_value: start_val,
+        end_value: end_val,
+        change_pct,
+        snapshots: period_snapshots.len(),
+    };
+
+    // Collect narrative data for the period
+    let scenario_shifts = narrative::scenario_shifts_backend(backend, days as i64);
+    let conviction_changes = narrative::conviction_changes_backend(backend, days);
+    let trend_changes = narrative::trend_changes_backend(backend, days as i64);
+    let prediction_scorecard = narrative::prediction_scorecard_backend(backend, days as i64);
+    let lessons = narrative::lesson_items_backend(backend, days as i64);
+    let catalyst_outcomes = narrative::catalyst_outcomes_backend(backend, days as i64);
+
+    // Collect recap events for the whole period
+    let mut all_events = Vec::new();
+    for offset in 0..days {
+        let day = today - Duration::days(offset as i64);
+        let day_events = narrative::collect_recap_events_backend(backend, Some(day));
+        all_events.extend(day_events);
+    }
+    all_events.sort_by(|a, b| b.at.cmp(&a.at));
+    all_events.truncate(30);
+
+    // Current regime
+    let regime = regime_snapshots::get_current_backend(backend)
+        .unwrap_or(None)
+        .map(|r| WeeklyRegime {
+            current: r.regime.clone(),
+            confidence: r.confidence,
+        });
+
+    let report = WeeklyReviewReport {
+        generated_at: now.to_rfc3339(),
+        period: WeeklyPeriod {
+            from: period_start.to_string(),
+            to: today.to_string(),
+            days,
+        },
+        portfolio,
+        scenario_shifts,
+        conviction_changes,
+        trend_changes,
+        prediction_scorecard,
+        lessons,
+        catalyst_outcomes,
+        recap_events: all_events,
+        regime,
+    };
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Weekly Review ({} → {})", report.period.from, report.period.to);
+        println!("════════════════════════════════════════════════════════════════");
+
+        // Regime
+        if let Some(ref r) = report.regime {
+            println!(
+                "Regime: {} (confidence: {:.0}%)",
+                r.current,
+                r.confidence.unwrap_or(0.0) * 100.0
+            );
+            println!();
+        }
+
+        // Portfolio
+        println!("PORTFOLIO");
+        if let (Some(ref start), Some(ref end)) =
+            (&report.portfolio.start_value, &report.portfolio.end_value)
+        {
+            if let Some(ref pct) = report.portfolio.change_pct {
+                println!("  Week: {} → {} ({})", start, end, pct);
+            } else {
+                println!("  Start: {} | End: {}", start, end);
+            }
+        } else {
+            println!("  No snapshots for this period.");
+        }
+        println!("  Snapshots: {}", report.portfolio.snapshots);
+        println!();
+
+        // Scenario shifts
+        if !report.scenario_shifts.is_empty() {
+            println!("SCENARIO SHIFTS");
+            for s in &report.scenario_shifts {
+                println!(
+                    "  [{}] {} {:.1}% → {:.1}% ({:+.1}pp){}",
+                    s.severity,
+                    s.name,
+                    s.previous_probability,
+                    s.current_probability,
+                    s.delta_pct,
+                    s.driver
+                        .as_ref()
+                        .map(|d| format!(" — {}", d))
+                        .unwrap_or_default()
+                );
+            }
+            println!();
+        }
+
+        // Conviction changes
+        if !report.conviction_changes.is_empty() {
+            println!("CONVICTION CHANGES");
+            for c in &report.conviction_changes {
+                println!(
+                    "  [{}] {} {} → {} ({:+}){}",
+                    c.severity,
+                    c.symbol,
+                    c.old_score,
+                    c.new_score,
+                    c.delta,
+                    c.notes
+                        .as_ref()
+                        .map(|n| format!(" — {}", n))
+                        .unwrap_or_default()
+                );
+            }
+            println!();
+        }
+
+        // Trend changes
+        if !report.trend_changes.is_empty() {
+            println!("TREND CHANGES");
+            for t in &report.trend_changes {
+                println!(
+                    "  [{}] {} ({}) {} [{}]{}",
+                    t.severity,
+                    t.name,
+                    t.timeframe,
+                    t.direction,
+                    t.conviction,
+                    if t.affected_assets.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" → {}", t.affected_assets.join(", "))
+                    }
+                );
+            }
+            println!();
+        }
+
+        // Prediction scorecard
+        println!("PREDICTION SCORECARD");
+        let ps = &report.prediction_scorecard;
+        println!(
+            "  Total: {} | Scored: {} | Pending: {} | Hit rate: {:.0}%",
+            ps.total, ps.scored, ps.pending, ps.hit_rate_pct
+        );
+        if ps.scored > 0 {
+            println!(
+                "  Correct: {} | Partial: {} | Wrong: {}",
+                ps.correct, ps.partial, ps.wrong
+            );
+        }
+        if !ps.recent_resolutions.is_empty() {
+            println!("  Recent resolutions:");
+            for r in &ps.recent_resolutions {
+                println!(
+                    "    #{} {} → {}{}",
+                    r.id,
+                    r.claim,
+                    r.outcome,
+                    r.lesson
+                        .as_ref()
+                        .map(|l| format!(" ({})", l))
+                        .unwrap_or_default()
+                );
+            }
+        }
+        println!();
+
+        // Lessons
+        if !report.lessons.is_empty() {
+            println!("LESSONS");
+            for l in &report.lessons {
+                println!("  [{}] {}: {}", l.severity, l.title, l.detail);
+            }
+            println!();
+        }
+
+        // Catalyst outcomes
+        if !report.catalyst_outcomes.is_empty() {
+            println!("CATALYST OUTCOMES");
+            for c in &report.catalyst_outcomes {
+                println!(
+                    "  {} [{}] {} — {}",
+                    c.date, c.category, c.title, c.outcome
+                );
+            }
+            println!();
+        }
+
+        // Recap event count
+        println!("ACTIVITY SUMMARY");
+        println!("  {} events recorded this period", report.recap_events.len());
+        if !report.recap_events.is_empty() {
+            // Summarize by event type
+            let mut by_type: HashMap<String, usize> = HashMap::new();
+            for e in &report.recap_events {
+                *by_type.entry(e.event_type.clone()).or_default() += 1;
+            }
+            let mut sorted: Vec<_> = by_type.into_iter().collect();
+            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+            for (t, count) in &sorted {
+                println!("    {}: {}", t, count);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── Gaps ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct GapRow {

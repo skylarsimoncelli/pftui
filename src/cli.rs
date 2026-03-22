@@ -2205,6 +2205,15 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Weekly review: summarizes the past week's key moves, scenario shifts, prediction outcomes, conviction changes, and portfolio performance
+    #[command(name = "weekly-review")]
+    WeeklyReview {
+        /// Number of days to cover (default: 7)
+        #[arg(long, default_value = "7")]
+        days: usize,
+        #[arg(long)]
+        json: bool,
+    },
     Gaps {
         /// Show per-symbol OHLCV data quality for a specific symbol
         #[arg(long)]
