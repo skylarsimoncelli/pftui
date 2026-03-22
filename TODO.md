@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Always-On Analytics Engine
 
-- **F53: Situation Engine — Phase 1 + Phase 2 + Phase 3 complete, remaining:** Phase 4 = agent routine updates (agents use `situation update log`, `situation indicator list`, `situation exposure` in their workflows).
+_(none — F53 Situation Engine fully shipped: Phase 1-4 complete)_
 
 ## P2 - Coverage And Agent Consumption
 
@@ -46,9 +46,9 @@ _(none)_
 - New P0: `portfolio performance` TIMESTAMPTZ bug found by Evening Analyst
 
 **Top 3 priorities based on feedback:**
-1. **P1: F53 Situation Engine** — Major feature to evolve static scenarios into living, data-connected monitoring.
-2. **P2: `portfolio allocation` shortcut** — Quick allocation view without full `portfolio summary`.
-3. **P2: Weekend/after-hours CLI mode** — Streamline commands for non-market hours.
+1. **P2: `portfolio allocation` shortcut** — Quick allocation view without full `portfolio summary`.
+2. **P2: Weekend/after-hours CLI mode** — Streamline commands for non-market hours.
+3. **F53 Situation Engine fully shipped** (Phase 1-4 complete, all agent routines integrated).
 
 **Release status:** v0.15.0 released Mar 22. 76 post-release commits from v0.14.1 including: system search (#155), scenario probabilities (#148), correlation breaks (#141), oil-premium (#134), narrative/synthesis/catalysts/deltas/impact/opportunities engines, situation room enhancements, portfolio performance TIMESTAMPTZ fix (#166). No P0 bugs.
 
