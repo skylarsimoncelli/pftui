@@ -227,7 +227,7 @@ pub fn get_all_portfolio_snapshots_backend(
 fn get_all_portfolio_snapshots_postgres(pool: &PgPool) -> Result<Vec<PortfolioSnapshot>> {
     let rows = crate::db::pg_runtime::block_on(async {
         sqlx::query_as::<_, (String, String, String, String, String)>(
-            "SELECT date, total_value, cash_value, invested_value, snapshot_at
+            "SELECT date, total_value, cash_value, invested_value, snapshot_at::text
              FROM portfolio_snapshots
              ORDER BY date ASC",
         )
