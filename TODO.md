@@ -6,7 +6,7 @@
 
 ## P0 - Critical
 
-- [Feedback] **`portfolio performance` TIMESTAMPTZ column mismatch bug** — Evening Analyst (Mar 22) reports `portfolio performance` fails with a TIMESTAMPTZ column type error on Postgres backend. Same class of bug as the computed_at fix in PR #37. Likely needs `::text` cast on a timestamp column in the performance query path. File: `src/commands/performance.rs` or the underlying DB query.
+_(none)_
 
 ## P1 - Always-On Analytics Engine
 
@@ -51,6 +51,6 @@ _(none)_
 2. **P1: F53 Situation Engine** — Major feature to evolve static scenarios into living, data-connected monitoring.
 3. **P2: `analytics weekly-review` command** — Would improve Sunday/weekend workflows for multiple testers.
 
-**Release status:** v0.14.1 is current release. 74 post-release commits with significant new features (system search, scenario probabilities, correlation breaks, oil-premium, narrative layer, synthesis engine, catalysts engine, deltas engine). P0 bug (`portfolio performance` TIMESTAMPTZ) blocks release. Once fixed, eligible for v0.15.0 (minor bump — substantial new features).
+**Release status:** v0.15.0 released Mar 22. 76 post-release commits from v0.14.1 including: system search (#155), scenario probabilities (#148), correlation breaks (#141), oil-premium (#134), narrative/synthesis/catalysts/deltas/impact/opportunities engines, situation room enhancements, portfolio performance TIMESTAMPTZ fix (#166). No P0 bugs.
 
 **GitHub stars:** 4 — Homebrew Core requires 50+.
