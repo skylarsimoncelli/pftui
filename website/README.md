@@ -9,15 +9,15 @@ This directory contains the marketing website for pftui, deployed to GitHub Page
 
 ## 🏗️ Architecture
 
-Pure HTML/CSS/JS — no frameworks, no build step. Optimized for speed and simplicity.
+Pure HTML/CSS/JS with no frameworks and no build step. Optimized for speed and simplicity.
 
 ### Files
 
-- `index.html` — Main page structure
-- `style.css` — Dark theme styling (GitHub dark inspired)
-- `script.js` — Interactivity (terminal animation, copy buttons, scroll effects)
-- `favicon.svg` — Terminal $ icon
-- `CNAME` — Custom domain configuration
+- `index.html`: Main page structure
+- `style.css`: Dark theme styling (GitHub dark inspired)
+- `script.js`: Interactivity (terminal animation, copy buttons, scroll effects)
+- `favicon.svg`: Terminal $ icon
+- `CNAME`: Custom domain configuration
 
 ## 🎨 Design
 
@@ -58,7 +58,7 @@ The site will auto-deploy on push to master.
 
 ## 🎯 SEO & Social
 
-- Title: "pftui — Your portfolio's command center"
+- Title: "pftui: Your portfolio's command center"
 - Description: Terminal-based portfolio intelligence dashboard
 - Open Graph & Twitter cards configured
 - Screenshot: https://github.com/user-attachments/assets/a1b6b11a-5893-4b91-9ac9-e14a9c64a66b
@@ -86,9 +86,9 @@ The CNAME file points to `pftui.com`. To activate:
 
 ## 🎨 Design Inspiration
 
-- **Warp terminal** — Modern terminal aesthetic
-- **Bloomberg terminal** — Information density
-- **Indie hacker landing pages** — Personality without corporate stiffness
+- **Warp terminal**: Modern terminal aesthetic
+- **Bloomberg terminal**: Information density
+- **Indie hacker landing pages**: Personality without corporate stiffness
 
 ---
 
