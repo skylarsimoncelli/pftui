@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-22 — feat: add `analytics weekly-review` command
+
+- What: added `pftui analytics weekly-review` that summarizes the past week's key developments into one structured report. Aggregates: portfolio performance change (start/end value with %), scenario probability shifts, conviction score deltas, trend direction changes, prediction scorecard with recent resolutions, lessons from scored predictions, catalyst outcomes, activity event summary by type, and current regime state. Supports `--days N` to customize the review window (default 7) and `--json` for structured agent consumption.
+- Why: P2 feedback item from Evening Analyst (Mar 22) — agents needed a single Sunday recap command instead of manually running `analytics narrative`, `analytics recap`, and `portfolio performance` separately. Improves weekend/evening workflows for multiple agent testers.
+- Files: `src/commands/analytics.rs` (new `run_weekly_review` + structs), `src/analytics/narrative.rs` (6 helpers promoted to `pub(crate)`), `src/cli.rs` (new `WeeklyReview` variant), `src/main.rs` (wiring), `TODO.md`, `CHANGELOG.md`
+- Tests: `cargo test` (1572 pass); `cargo clippy --all-targets -- -D warnings` (clean)
+
 ### 2026-03-22 — feat: add `system search` command for CLI discoverability
 
 - What: added `pftui system search <query>` that searches all CLI commands and subcommands by keyword. Uses clap's command tree introspection to build a flat index of every command path + description, then filters by case-insensitive substring matching with AND logic for multiple terms. Supports `--json` for agent consumption. Exact path segment matches sorted first. Early intercept — no DB connection required.

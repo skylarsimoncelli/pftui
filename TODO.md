@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **`analytics weekly-review` command** — Evening Analyst (Mar 22) wants a Sunday recap command that summarizes the week's key moves, scenario shifts, prediction outcomes, and portfolio changes. Would improve evening/weekend workflows. Could aggregate from existing `analytics narrative`, `analytics recap`, and `portfolio performance` data.
 - [Feedback] **`portfolio allocation` shortcut** — Evening Analyst (Mar 22) wants a quick allocation view without running full `portfolio summary`. Could be as simple as `portfolio drift` with a more intuitive alias or a dedicated slim output mode.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 
@@ -47,9 +46,9 @@ _(none)_
 - New P0: `portfolio performance` TIMESTAMPTZ bug found by Evening Analyst
 
 **Top 3 priorities based on feedback:**
-1. **P0: Fix `portfolio performance` TIMESTAMPTZ bug** — Evening Analyst's lowest-scoring pain point. Same bug class as PR #37. Should be a quick fix.
-2. **P1: F53 Situation Engine** — Major feature to evolve static scenarios into living, data-connected monitoring.
-3. **P2: `analytics weekly-review` command** — Would improve Sunday/weekend workflows for multiple testers.
+1. **P1: F53 Situation Engine** — Major feature to evolve static scenarios into living, data-connected monitoring.
+2. **P2: `portfolio allocation` shortcut** — Quick allocation view without full `portfolio summary`.
+3. **P2: Weekend/after-hours CLI mode** — Streamline commands for non-market hours.
 
 **Release status:** v0.15.0 released Mar 22. 76 post-release commits from v0.14.1 including: system search (#155), scenario probabilities (#148), correlation breaks (#141), oil-premium (#134), narrative/synthesis/catalysts/deltas/impact/opportunities engines, situation room enhancements, portfolio performance TIMESTAMPTZ fix (#166). No P0 bugs.
 
