@@ -17,7 +17,7 @@ mod tui;
 mod web;
 
 use anyhow::{bail, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use crate::cli::{Cli, Command};
 use crate::config::load_config_with_first_run_prompt;
@@ -545,6 +545,16 @@ fn main() -> Result<()> {
         return commands::console::run(cached_only);
     }
 
+    // Search doesn't need database — intercept early
+    if let Some(Command::System {
+        command: cli::SystemCommand::Search { ref query, json },
+    }) = cli.command
+    {
+        let query_str = query.join(" ");
+        let cli_cmd = Cli::command();
+        return commands::search::run(cli_cmd, &query_str, json);
+    }
+
     let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
 
@@ -830,6 +840,11 @@ fn main() -> Result<()> {
                     json,
                 } => commands::universe::remove(&symbol, &group, json),
             },
+            cli::SystemCommand::Search { query, json } => {
+                let query_str = query.join(" ");
+                let cli_cmd = cli::Cli::command();
+                commands::search::run(cli_cmd, &query_str, json)
+            }
             cli::SystemCommand::MigrateJournal {
                 path,
                 dry_run,

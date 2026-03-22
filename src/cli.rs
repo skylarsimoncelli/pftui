@@ -1069,6 +1069,14 @@ pub enum SystemCommand {
         #[command(subcommand)]
         command: UniverseCommand,
     },
+    /// Search all CLI commands by keyword (helps agents discover features)
+    Search {
+        /// Search query (matches command paths and descriptions)
+        query: Vec<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     #[command(name = "migrate-journal")]
     MigrateJournal {
