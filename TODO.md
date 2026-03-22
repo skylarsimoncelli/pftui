@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Always-On Analytics Engine
 
-- **F53: Situation Engine — Phase 1 + Phase 2 complete, remaining phases:** Phase 3 = analytics enhancements (inject situation data into `analytics situation` dashboard, `analytics summary`, `analytics low`; add `analytics situation matrix` cross-situation view). Phase 4 = agent routine updates (agents use `situation update log`, `situation indicator list`, `situation exposure` in their workflows).
+- **F53: Situation Engine — Phase 1 + Phase 2 + Phase 3 complete, remaining:** Phase 4 = agent routine updates (agents use `situation update log`, `situation indicator list`, `situation exposure` in their workflows).
 
 ## P2 - Coverage And Agent Consumption
 

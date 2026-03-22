@@ -2131,6 +2131,14 @@ pub enum SituationCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Cross-situation matrix: all active situations with branches, indicators, impacts, and overlap
+    Matrix {
+        /// Filter to situations affecting a specific symbol
+        #[arg(long)]
+        symbol: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// List all active situations with summary counts
     List {
         #[arg(long)]
