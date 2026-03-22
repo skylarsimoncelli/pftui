@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-22 — feat(F53): Phase 4 — integrate situation commands into agent routines
+
+- What: completed F53 Phase 4 by integrating Situation Engine commands (`situation update log`, `situation indicator list`, `situation exposure`) into all 7 agent routines. Each routine now reads situation indicators to check mechanical evaluations, reads situation update history to see what other agents logged, writes situation updates when discovering events affecting active situations, and reads cross-situation exposure to understand portfolio risk concentration. Morning brief gets a new SITUATIONS section for active situation status.
+- Why: P1 priority (F53 Phase 4) — the Situation Engine commands existed (Phase 1-3) but agents weren't using them. This closes the loop: agents now feed intelligence into situations and consume situation data as part of their standard workflows. F53 is now fully shipped (all 4 phases complete).
+- Files: `agents/routines/low-timeframe-analyst.md`, `agents/routines/medium-timeframe-analyst.md`, `agents/routines/high-timeframe-analyst.md`, `agents/routines/macro-timeframe-analyst.md`, `agents/routines/alert-investigator.md`, `agents/routines/evening-analysis.md`, `agents/routines/morning-brief.md`
+- Tests: `cargo test` (1589 pass); `cargo clippy --all-targets -- -D warnings` (clean)
+
 ### 2026-03-22 — feat(F53): Situation Engine Phase 3 — analytics injection and cross-situation matrix
 
 - What: completed Phase 3 of the Situation Engine. Three enhancements: (1) New `analytics situation matrix` command that provides a cross-situation view of all active (promoted) situations — shows branches with probabilities, impacted symbols per situation, indicator status (watching/triggered with labels), latest event update, symbol overlap across situations (symbols affected by 2+ situations), and a global indicator summary with recently triggered list. Supports `--symbol` filter to narrow to situations affecting a specific asset and `--json` for agent consumption. (2) Injected situation engine data into `analytics summary` — both JSON and text output now include `situation_engine` section with active situation count, watching/triggered indicator counts, and triggered indicator details. (3) Injected situation indicator data into `analytics low` — JSON output includes `situation_indicators` with watching count and triggered indicator details (situation name, label, symbol, metric, operator, threshold, last value, triggered timestamp); text output shows indicator summary and triggered indicators with ⚡ markers.
