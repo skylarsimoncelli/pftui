@@ -24,10 +24,7 @@ fn collect_commands(cmd: &clap::Command, prefix: &str) -> Vec<CommandEntry> {
         } else {
             format!("{prefix} {name}")
         };
-        let description = sub
-            .get_about()
-            .map(|s| s.to_string())
-            .unwrap_or_default();
+        let description = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
         entries.push(CommandEntry {
             path: path.clone(),
             description,
@@ -59,12 +56,18 @@ pub fn run(cli_cmd: clap::Command, query: &str, json: bool) -> Result<()> {
 
     // Sort: exact path segment matches first, then alphabetically
     results.sort_by(|a, b| {
-        let a_path_exact = terms
-            .iter()
-            .any(|t| a.path.to_lowercase().split_whitespace().any(|seg| seg == *t));
-        let b_path_exact = terms
-            .iter()
-            .any(|t| b.path.to_lowercase().split_whitespace().any(|seg| seg == *t));
+        let a_path_exact = terms.iter().any(|t| {
+            a.path
+                .to_lowercase()
+                .split_whitespace()
+                .any(|seg| seg == *t)
+        });
+        let b_path_exact = terms.iter().any(|t| {
+            b.path
+                .to_lowercase()
+                .split_whitespace()
+                .any(|seg| seg == *t)
+        });
         b_path_exact
             .cmp(&a_path_exact)
             .then_with(|| a.path.cmp(&b.path))
@@ -125,9 +128,7 @@ mod tests {
                                 clap::Command::new("score-batch")
                                     .about("Score multiple predictions at once"),
                             )
-                            .subcommand(
-                                clap::Command::new("list").about("List predictions"),
-                            ),
+                            .subcommand(clap::Command::new("list").about("List predictions")),
                     )
                     .subcommand(
                         clap::Command::new("scenario")
@@ -160,7 +161,9 @@ mod tests {
         let entries = collect_commands(&cmd, "pftui");
         // Should have journal, journal prediction, journal prediction score-batch, etc.
         assert!(entries.len() >= 8);
-        assert!(entries.iter().any(|e| e.path == "pftui journal prediction score-batch"));
+        assert!(entries
+            .iter()
+            .any(|e| e.path == "pftui journal prediction score-batch"));
     }
 
     #[test]
@@ -168,7 +171,10 @@ mod tests {
         let cmd = test_command();
         let entries = collect_commands(&cmd, "pftui");
         let terms = vec!["batch".to_string()];
-        let results: Vec<_> = entries.iter().filter(|e| matches_query(e, &terms)).collect();
+        let results: Vec<_> = entries
+            .iter()
+            .filter(|e| matches_query(e, &terms))
+            .collect();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].path, "pftui journal prediction score-batch");
     }
@@ -178,9 +184,14 @@ mod tests {
         let cmd = test_command();
         let entries = collect_commands(&cmd, "pftui");
         let terms = vec!["correlation".to_string()];
-        let results: Vec<_> = entries.iter().filter(|e| matches_query(e, &terms)).collect();
+        let results: Vec<_> = entries
+            .iter()
+            .filter(|e| matches_query(e, &terms))
+            .collect();
         assert!(results.len() >= 2); // correlations + correlations breaks
-        assert!(results.iter().any(|e| e.path.contains("correlations breaks")));
+        assert!(results
+            .iter()
+            .any(|e| e.path.contains("correlations breaks")));
     }
 
     #[test]
@@ -188,7 +199,10 @@ mod tests {
         let cmd = test_command();
         let entries = collect_commands(&cmd, "pftui");
         let terms = vec!["prediction".to_string(), "score".to_string()];
-        let results: Vec<_> = entries.iter().filter(|e| matches_query(e, &terms)).collect();
+        let results: Vec<_> = entries
+            .iter()
+            .filter(|e| matches_query(e, &terms))
+            .collect();
         assert_eq!(results.len(), 1);
         assert!(results[0].path.contains("score-batch"));
     }
@@ -198,7 +212,10 @@ mod tests {
         let cmd = test_command();
         let entries = collect_commands(&cmd, "pftui");
         let terms = vec!["scenario".to_string()];
-        let results: Vec<_> = entries.iter().filter(|e| matches_query(e, &terms)).collect();
+        let results: Vec<_> = entries
+            .iter()
+            .filter(|e| matches_query(e, &terms))
+            .collect();
         assert!(results.iter().any(|e| e.path.contains("scenario")));
     }
 
@@ -207,7 +224,10 @@ mod tests {
         let cmd = test_command();
         let entries = collect_commands(&cmd, "pftui");
         let terms = vec!["nonexistent".to_string()];
-        let results: Vec<_> = entries.iter().filter(|e| matches_query(e, &terms)).collect();
+        let results: Vec<_> = entries
+            .iter()
+            .filter(|e| matches_query(e, &terms))
+            .collect();
         assert!(results.is_empty());
     }
 }

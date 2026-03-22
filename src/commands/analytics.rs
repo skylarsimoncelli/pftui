@@ -838,18 +838,13 @@ struct WeeklyRegime {
     confidence: Option<f64>,
 }
 
-fn run_weekly_review(
-    backend: &BackendConnection,
-    days: usize,
-    json_output: bool,
-) -> Result<()> {
+fn run_weekly_review(backend: &BackendConnection, days: usize, json_output: bool) -> Result<()> {
     let now = Utc::now();
     let today = now.date_naive();
     let period_start = today - Duration::days(days as i64);
 
     // Portfolio performance over the period
-    let all_snapshots =
-        crate::db::snapshots::get_all_portfolio_snapshots_backend(backend)?;
+    let all_snapshots = crate::db::snapshots::get_all_portfolio_snapshots_backend(backend)?;
     let period_snapshots: Vec<_> = all_snapshots
         .iter()
         .filter(|s| s.date.as_str() >= period_start.to_string().as_str())
@@ -929,7 +924,10 @@ fn run_weekly_review(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("Weekly Review ({} → {})", report.period.from, report.period.to);
+        println!(
+            "Weekly Review ({} → {})",
+            report.period.from, report.period.to
+        );
         println!("════════════════════════════════════════════════════════════════");
 
         // Regime
@@ -1062,17 +1060,17 @@ fn run_weekly_review(
         if !report.catalyst_outcomes.is_empty() {
             println!("CATALYST OUTCOMES");
             for c in &report.catalyst_outcomes {
-                println!(
-                    "  {} [{}] {} — {}",
-                    c.date, c.category, c.title, c.outcome
-                );
+                println!("  {} [{}] {} — {}", c.date, c.category, c.title, c.outcome);
             }
             println!();
         }
 
         // Recap event count
         println!("ACTIVITY SUMMARY");
-        println!("  {} events recorded this period", report.recap_events.len());
+        println!(
+            "  {} events recorded this period",
+            report.recap_events.len()
+        );
         if !report.recap_events.is_empty() {
             // Summarize by event type
             let mut by_type: HashMap<String, usize> = HashMap::new();

@@ -1508,6 +1508,13 @@ pub enum JournalScenarioCommand {
         #[command(subcommand)]
         command: JournalScenarioSignalCommand,
     },
+    /// Promote a hypothesis scenario to an active situation
+    Promote {
+        /// Scenario name
+        value: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1980,6 +1987,210 @@ pub enum AnalyticsScenarioSignalCommand {
 }
 
 #[derive(Subcommand)]
+pub enum SituationBranchCommand {
+    /// Add a branch (sub-outcome) to an active situation
+    Add {
+        /// Situation name
+        #[arg(long)]
+        situation: String,
+        /// Branch name
+        value: String,
+        #[arg(long)]
+        probability: Option<f64>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List branches for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update a branch probability or status
+    Update {
+        /// Branch ID
+        id: i64,
+        #[arg(long)]
+        probability: Option<f64>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SituationImpactCommand {
+    /// Add an asset impact to a situation
+    Add {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        symbol: String,
+        #[arg(long)]
+        direction: String,
+        #[arg(long, default_value = "primary")]
+        tier: String,
+        #[arg(long)]
+        mechanism: Option<String>,
+        #[arg(long)]
+        parent: Option<i64>,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List impact chains for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        tree: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SituationIndicatorCommand {
+    /// Add a mechanical data indicator to a situation
+    Add {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        symbol: String,
+        #[arg(long)]
+        operator: String,
+        #[arg(long)]
+        threshold: String,
+        #[arg(long)]
+        label: String,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        impact: Option<i64>,
+        #[arg(long, default_value = "close")]
+        metric: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List indicators for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SituationUpdateCommand {
+    /// Log a structured event/update for a situation
+    Log {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        headline: String,
+        #[arg(long)]
+        detail: Option<String>,
+        #[arg(long, default_value = "normal")]
+        severity: String,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        source_agent: Option<String>,
+        #[arg(long)]
+        next_decision: Option<String>,
+        #[arg(long)]
+        next_decision_at: Option<String>,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List event updates for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SituationCommand {
+    /// Show the Situation Room dashboard (regime + active situations)
+    Dashboard {
+        #[arg(long)]
+        json: bool,
+    },
+    /// List all active situations with summary counts
+    List {
+        #[arg(long)]
+        phase: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Full composite view for one situation
+    View {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Demote an active situation back to hypothesis
+    Demote {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Resolve a situation with outcome notes
+    Resolve {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        resolution: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage branches (sub-outcomes) of a situation
+    Branch {
+        #[command(subcommand)]
+        command: SituationBranchCommand,
+    },
+    /// Manage asset impact chains
+    Impact {
+        #[command(subcommand)]
+        command: SituationImpactCommand,
+    },
+    /// Manage mechanical data indicators
+    Indicator {
+        #[command(subcommand)]
+        command: SituationIndicatorCommand,
+    },
+    /// Log and list structured event updates
+    Update {
+        #[command(subcommand)]
+        command: SituationUpdateCommand,
+    },
+    /// Cross-situation exposure for a specific symbol
+    Exposure {
+        #[arg(long)]
+        symbol: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsScenarioCommand {
     Add {
         value: String,
@@ -2127,9 +2338,10 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Situation Room — active situation monitoring and management
     Situation {
-        #[arg(long)]
-        json: bool,
+        #[command(subcommand)]
+        command: Option<SituationCommand>,
     },
     Deltas {
         #[arg(long, default_value = "last-refresh")]

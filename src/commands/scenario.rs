@@ -246,7 +246,35 @@ pub fn run(
             }
         }
 
-        _ => bail!("unknown action '{}'. Valid: add, list, update, remove, signal-add, signal-list, signal-update, signal-remove, history", action),
+        "promote" => {
+            let name = value.ok_or_else(|| anyhow::anyhow!("scenario name required"))?;
+            let scenario = scenarios::get_scenario_by_name_backend(backend, name)?
+                .ok_or_else(|| anyhow::anyhow!("scenario '{}' not found", name))?;
+
+            if scenario.phase == "active" {
+                if json_output {
+                    println!("{}", json!({"error": "already active", "scenario": name}));
+                } else {
+                    println!("Scenario '{}' is already an active situation.", name);
+                }
+                return Ok(());
+            }
+            if scenario.phase == "resolved" {
+                bail!("Cannot promote resolved scenario '{}'. Create a new one.", name);
+            }
+
+            scenarios::promote_scenario_backend(backend, scenario.id)?;
+
+            if json_output {
+                let updated = scenarios::get_scenario_by_name_backend(backend, name)?.unwrap();
+                println!("{}", serde_json::to_string_pretty(&updated)?);
+            } else {
+                println!("Promoted '{}' to active situation.", name);
+                println!("Manage with: pftui analytics situation view --situation \"{}\"", name);
+            }
+        }
+
+        _ => bail!("unknown action '{}'. Valid: add, list, update, remove, promote, signal-add, signal-list, signal-update, signal-remove, history", action),
     }
 
     Ok(())

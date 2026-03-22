@@ -63,6 +63,7 @@ pub mod sector;
 pub mod sentiment;
 pub mod set_cash;
 pub mod setup;
+pub mod situation;
 pub mod snapshot;
 pub mod sovereign;
 pub mod status;
