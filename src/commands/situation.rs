@@ -997,4 +997,121 @@ mod tests {
         assert_eq!(s.phase, "resolved");
         assert_eq!(s.resolution_notes.as_deref(), Some("Was nothing"));
     }
+
+    #[test]
+    fn test_list_all_watching_indicators() {
+        let backend = setup();
+
+        // Create two scenarios with indicators
+        let s1 =
+            scenarios::add_scenario_backend(&backend, "Scenario A", 50.0, None, None, None, None)
+                .unwrap();
+        scenarios::promote_scenario_backend(&backend, s1).unwrap();
+        scenarios::add_indicator_backend(
+            &backend, s1, None, None, "BTC-USD", "close", ">", "100000", "BTC 100k",
+        )
+        .unwrap();
+
+        let s2 =
+            scenarios::add_scenario_backend(&backend, "Scenario B", 30.0, None, None, None, None)
+                .unwrap();
+        scenarios::promote_scenario_backend(&backend, s2).unwrap();
+        scenarios::add_indicator_backend(
+            &backend, s2, None, None, "GC=F", "close", "<", "2000", "Gold collapse",
+        )
+        .unwrap();
+
+        let watching = scenarios::list_all_watching_indicators_backend(&backend).unwrap();
+        assert_eq!(watching.len(), 2);
+        assert!(watching.iter().all(|i| i.status == "watching"));
+    }
+
+    #[test]
+    fn test_update_indicator_evaluation_no_trigger() {
+        let backend = setup();
+        let s1 =
+            scenarios::add_scenario_backend(&backend, "Test Eval", 50.0, None, None, None, None)
+                .unwrap();
+        scenarios::promote_scenario_backend(&backend, s1).unwrap();
+        let ind_id = scenarios::add_indicator_backend(
+            &backend, s1, None, None, "BTC-USD", "close", ">", "100000", "BTC 100k",
+        )
+        .unwrap();
+
+        // Update without triggering
+        scenarios::update_indicator_evaluation_backend(&backend, ind_id, "87500.00", false)
+            .unwrap();
+
+        let indicators = scenarios::list_indicators_backend(&backend, s1).unwrap();
+        assert_eq!(indicators[0].status, "watching");
+        assert_eq!(indicators[0].last_value.as_deref(), Some("87500.00"));
+        assert!(indicators[0].last_checked.is_some());
+        assert!(indicators[0].triggered_at.is_none());
+    }
+
+    #[test]
+    fn test_update_indicator_evaluation_trigger() {
+        let backend = setup();
+        let s1 = scenarios::add_scenario_backend(
+            &backend,
+            "Test Trigger",
+            50.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        scenarios::promote_scenario_backend(&backend, s1).unwrap();
+        let ind_id = scenarios::add_indicator_backend(
+            &backend, s1, None, None, "GC=F", "close", ">", "3000", "Gold 3k",
+        )
+        .unwrap();
+
+        // Trigger the indicator
+        scenarios::update_indicator_evaluation_backend(&backend, ind_id, "3150.00", true).unwrap();
+
+        let indicators = scenarios::list_indicators_backend(&backend, s1).unwrap();
+        assert_eq!(indicators[0].status, "triggered");
+        assert_eq!(indicators[0].last_value.as_deref(), Some("3150.00"));
+        assert!(indicators[0].triggered_at.is_some());
+
+        // Triggered indicators should NOT appear in watching list
+        let watching = scenarios::list_all_watching_indicators_backend(&backend).unwrap();
+        assert!(watching.is_empty());
+    }
+
+    #[test]
+    fn test_indicator_evaluation_operators() {
+        let backend = setup();
+        let s1 = scenarios::add_scenario_backend(
+            &backend,
+            "Operator Test",
+            50.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        scenarios::promote_scenario_backend(&backend, s1).unwrap();
+
+        // Greater than: 3150 > 3000 = true
+        let ind_gt = scenarios::add_indicator_backend(
+            &backend, s1, None, None, "GC=F", "close", ">", "3000", "GT test",
+        )
+        .unwrap();
+        scenarios::update_indicator_evaluation_backend(&backend, ind_gt, "3150", true).unwrap();
+
+        // Less than: 85000 < 100000 = true
+        let ind_lt = scenarios::add_indicator_backend(
+            &backend, s1, None, None, "BTC-USD", "close", "<", "100000", "LT test",
+        )
+        .unwrap();
+        scenarios::update_indicator_evaluation_backend(&backend, ind_lt, "85000", true).unwrap();
+
+        let indicators = scenarios::list_indicators_backend(&backend, s1).unwrap();
+        let triggered_count = indicators.iter().filter(|i| i.status == "triggered").count();
+        assert_eq!(triggered_count, 2);
+    }
 }
