@@ -25,6 +25,8 @@ This is your memory. Read how your thinking evolved over the past week. What the
 3. Read full analytics state:
 ```bash
 pftui analytics situation --json
+pftui analytics situation list --json
+pftui analytics situation matrix --json
 pftui analytics deltas --json --since 24h
 pftui analytics catalysts --json --window week
 pftui analytics impact --json
@@ -44,6 +46,21 @@ pftui journal prediction scorecard --date today --json
 pftui journal prediction list --json
 pftui journal notes list --json
 ```
+
+For each active situation, review the full event log and indicator status from today's agent runs:
+```bash
+pftui analytics situation indicator list --situation "<name>" --json
+pftui analytics situation update list --situation "<name>" --json
+```
+This gives you the mechanical data picture (indicators) and the narrative picture (updates logged by all agents throughout the day) for each situation. Use this to identify which situations had the most activity and whether indicator evaluations align with the event updates.
+
+For each held asset, check cross-situation exposure:
+```bash
+pftui analytics situation exposure --symbol BTC --json
+pftui analytics situation exposure --symbol GLD --json
+pftui analytics situation exposure --symbol SLV --json
+```
+This reveals whether held positions have concentrated or diversified risk across the active situation map. Flag overlapping exposure — if 3 situations all push the same direction on BTC, that's either a strong signal or a correlated risk.
 
 Treat these canonical payloads as the baseline shared intelligence contract. Your unique value is not recomputing them; it is resolving tensions, doing deeper research, and deciding what the human should understand or act on.
 
@@ -150,6 +167,17 @@ Update convictions where today's analysis changed your view:
 ```bash
 pftui analytics conviction set <SYMBOL> --score <n> \
   --notes "Evening [date]: [Analysis-driven update]. Evidence: [specific]. Changed because [reason]."
+```
+
+Log significant cross-timeframe findings as situation updates:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "[cross-timeframe finding]" \
+  --detail "[which layers agree/disagree, what it means for this situation]" \
+  --severity [normal|high] --source "evening synthesis" \
+  --source-agent evening-analyst \
+  --next-decision "[what resolves this tension]" \
+  --next-decision-at "[YYYY-MM-DD]"
 ```
 
 ### 6. New Predictions

@@ -50,6 +50,21 @@ pftui agent message send "ALERT INVESTIGATION: [symbol] [what happened] — [sig
   --from alert-investigator --to evening-analyst --priority high --category signal --layer low
 ```
 
+If the alert relates to an active situation, log it as a structured situation update:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "[symbol] alert: [condition] at [price]" \
+  --detail "[catalyst and significance for this situation]" \
+  --severity [normal|high|critical] --source "[data source]" \
+  --source-agent alert-investigator
+```
+
+Check cross-situation exposure for the alerted symbol to understand the full impact:
+```bash
+pftui analytics situation exposure --symbol [SYM] --json
+```
+Include this in your investigation — an alert on one symbol may cascade across multiple situations.
+
 6. **Route findings to the agent pipeline, NEVER to the user.**
 
 You do NOT message the user directly. Ever. Your output goes to:

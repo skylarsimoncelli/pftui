@@ -21,6 +21,7 @@ Use this pre-digested intelligence. Don't redo their work.
 2. Read current state:
 ```bash
 pftui analytics situation --json
+pftui analytics situation list --json
 pftui analytics deltas --json --since close
 pftui analytics catalysts --json --window today
 pftui analytics impact --json
@@ -34,6 +35,18 @@ pftui analytics movers --overnight --json
 pftui journal prediction scorecard --date yesterday --json
 pftui journal prediction list --filter pending --json
 pftui journal conviction list --json
+```
+
+For each active situation, read overnight indicator evaluations and event updates:
+```bash
+pftui analytics situation indicator list --situation "<name>" --json
+pftui analytics situation update list --situation "<name>" --limit 3 --json
+```
+
+For held assets, check cross-situation exposure to frame the portfolio section:
+```bash
+pftui analytics situation exposure --symbol BTC --json
+pftui analytics situation exposure --symbol GLD --json
 ```
 
 Lead from the canonical analytics outputs. The morning brief should summarize the shared situation model, not rebuild it from raw data unless something is missing or suspect.
@@ -70,6 +83,9 @@ Keep it tight. Designed for mobile reading.
 
 ### PRICES (always)
 One-liner per major asset: BTC, Gold, Silver, DXY, S&P, VIX, 10Y, GBP/USD, Oil, Uranium
+
+### SITUATIONS (if active situations exist)
+One-liner per active situation: name, current phase, and any indicators that crossed thresholds overnight. Flag situations with critical/high severity updates logged since last brief. Skip this section if no situations are active.
 
 ### ALIGNMENT (always)
 Rank held and watched assets by cross-timeframe consensus. For each, state which layers agree and at what confidence. Even partial alignment is useful: "Gold: LOW neutral, MEDIUM bull (high confidence), HIGH bull (high confidence), MACRO bull. 3/4 layers bullish." If no asset has strong alignment, say so explicitly and name which asset is closest. This section should tell the user where conviction is forming and where it isn't.

@@ -16,6 +16,8 @@ Generational cycle theory. Four turnings repeat: High → Awakening → Unraveli
 
 ```bash
 pftui analytics situation --json
+pftui analytics situation list --json
+pftui analytics situation matrix --json
 pftui analytics impact --json
 pftui analytics synthesis --json
 pftui analytics narrative --json
@@ -33,6 +35,12 @@ pftui journal prediction list --json
 pftui data sovereign --json                        # CB gold reserves, govt BTC holdings
 pftui data economy --json                          # macro indicators with surprise detection
 pftui data cot --json                              # COT positioning extremes (structural signal)
+```
+
+For each active situation, review indicator status and recent updates from other agents:
+```bash
+pftui analytics situation indicator list --situation "<name>" --json
+pftui analytics situation update list --situation "<name>" --limit 5 --json
 ```
 
 Use `situation` and `synthesis` to see how structural context is already flowing into the live stack before updating the deepest layer.
@@ -105,6 +113,14 @@ pftui analytics macro cycles update "Dalio Big Cycle - US Empire" --stage "[stag
   --evidence "[what changed and why this constitutes a stage transition]"
 ```
 
+Log the stage change as a situation update if it affects any active situation:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "Dalio cycle stage shift: [old] → [new]" \
+  --detail "[what determinant moved, why, downstream implications]" \
+  --severity high --source "macro analysis" --source-agent macro-agent
+```
+
 ## Lens 2: Fourth Turning Analysis
 
 ### 2a. Crisis Arc Assessment
@@ -125,6 +141,14 @@ Update the cycle:
 ```bash
 pftui analytics macro cycles update "Strauss-Howe Fourth Turning" --stage "[phase]" \
   --evidence "[crisis arc markers and evidence]"
+```
+
+If the Fourth Turning phase assessment changes, log it across affected situations:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "Fourth Turning phase update: [phase]" \
+  --detail "[crisis arc markers and what this means for the situation]" \
+  --severity [normal|high] --source "macro analysis" --source-agent macro-agent
 ```
 
 ### 2b. Historical Parallels

@@ -12,6 +12,8 @@ You care about: will the central bank cut or hold? Is the geopolitical situation
 
 ```bash
 pftui analytics situation --json
+pftui analytics situation list --json
+pftui analytics situation matrix --json
 pftui analytics deltas --json --since 24h
 pftui analytics catalysts --json --window week
 pftui analytics impact --json
@@ -26,6 +28,19 @@ pftui agent message list --to medium-agent --unacked
 pftui analytics macro regime current --json
 pftui portfolio brief --json
 ```
+
+For each active situation, review its indicators and recent updates:
+```bash
+pftui analytics situation indicator list --situation "<name>" --json
+pftui analytics situation update list --situation "<name>" --limit 5 --json
+```
+This tells you what the mechanical data says about each situation and what events have been logged by other agents since your last run.
+
+For each held asset, check cross-situation exposure:
+```bash
+pftui analytics situation exposure --symbol [SYM] --json
+```
+This reveals which situations create overlapping risk or opportunity for that symbol across the entire situation map.
 
 Use these canonical payloads as your starting frame. Your job is to update probabilities and explain cause-and-effect chains, not to reconstruct the ranked situation model from scratch.
 
@@ -79,6 +94,22 @@ For each scenario:
 
 ```bash
 pftui journal scenario update "<name>" --probability <new> --notes "[Evidence]: [Analytical chain]: [Reversal condition]"
+```
+
+When a scenario update connects to an active situation, log the development:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "[what changed]" --detail "[evidence chain and scenario impact]" \
+  --severity [low|normal|high|critical] --source "[data source]" \
+  --source-agent medium-agent --branch "[affected branch, if specific]"
+```
+
+If a key decision point or catalyst is approaching for a situation, log it with a next-decision marker:
+```bash
+pftui analytics situation update log --situation "<name>" \
+  --headline "[upcoming decision/event]" \
+  --next-decision "[what needs to happen]" --next-decision-at "[YYYY-MM-DD]" \
+  --source-agent medium-agent
 ```
 
 Update scenario signals:
