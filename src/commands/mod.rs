@@ -58,6 +58,7 @@ pub mod remove_tx;
 pub mod research;
 pub mod scan;
 pub mod scenario;
+pub mod search;
 pub mod sector;
 pub mod sentiment;
 pub mod set_cash;
