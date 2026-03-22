@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Always-On Analytics Engine
 
-- **F53: Situation Engine** — Evolve scenarios from static probability tracking into living, data-connected situation monitoring. Scenarios start as hypotheses in `journal scenario`, get promoted to `analytics situation` when they materialise. Active situations have: branch sub-outcomes with probabilities, asset impact chains (primary/secondary/tertiary with `parent_id` tree), mechanical data indicators (auto-evaluated on `data refresh`), and structured event logs. 4 new tables (`scenario_branches`, `scenario_impacts`, `scenario_indicators`, `scenario_updates`), 3 columns on `scenarios`, 16 new CLI commands under `analytics situation`. Full spec: `reports/situation-engine-implementation.md` (in workspace) and `reports/situation-engine-spec.md` (detailed Opus design). Phase 1 = schema + CRUD, Phase 2 = mechanical evaluation in refresh pipeline, Phase 3 = analytics enhancement, Phase 4 = agent routine updates. v1 simplifications: no `crossed_above`/`crossed_below` operators, no indicator weights, 8 operators not 10.
+- **F53: Situation Engine — Phase 1 complete (schema + CRUD), remaining phases:** Phase 2 = mechanical indicator evaluation in `data refresh` pipeline (auto-check indicators against live prices, update `status`/`last_value`/`triggered_at`). Phase 3 = analytics enhancements (inject situation data into `analytics situation` dashboard, `analytics summary`, `analytics low`; add `analytics situation matrix` cross-situation view). Phase 4 = agent routine updates (agents use `situation update log`, `situation indicator list`, `situation exposure` in their workflows).
 
 ## P2 - Coverage And Agent Consumption
 

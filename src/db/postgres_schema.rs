@@ -812,6 +812,126 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
 
+        // F53: Situation Engine — add phase/resolved columns to scenarios
+        sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS phase TEXT NOT NULL DEFAULT 'hypothesis'")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ")
+            .execute(pool)
+            .await?;
+        sqlx::query("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS resolution_notes TEXT")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenarios_phase ON scenarios(phase)")
+            .execute(pool)
+            .await?;
+
+        // F53: Situation Engine — new tables
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scenario_branches (
+                id BIGSERIAL PRIMARY KEY,
+                scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                probability DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                description TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (scenario_id, name)
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_branches_scenario ON scenario_branches(scenario_id)")
+            .execute(pool)
+            .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scenario_impacts (
+                id BIGSERIAL PRIMARY KEY,
+                scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+                branch_id BIGINT REFERENCES scenario_branches(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                tier TEXT NOT NULL DEFAULT 'primary',
+                mechanism TEXT,
+                parent_id BIGINT REFERENCES scenario_impacts(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_impacts_scenario ON scenario_impacts(scenario_id)")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_scenario_impacts_symbol ON scenario_impacts(symbol)",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_scenario_impacts_parent ON scenario_impacts(parent_id)",
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scenario_indicators (
+                id BIGSERIAL PRIMARY KEY,
+                scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+                branch_id BIGINT REFERENCES scenario_branches(id) ON DELETE CASCADE,
+                impact_id BIGINT REFERENCES scenario_impacts(id) ON DELETE SET NULL,
+                symbol TEXT NOT NULL,
+                metric TEXT NOT NULL DEFAULT 'close',
+                operator TEXT NOT NULL,
+                threshold TEXT NOT NULL,
+                label TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'watching',
+                triggered_at TIMESTAMPTZ,
+                last_value TEXT,
+                last_checked TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_indicators_scenario ON scenario_indicators(scenario_id)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_indicators_symbol ON scenario_indicators(symbol)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_indicators_status ON scenario_indicators(status)")
+            .execute(pool)
+            .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS scenario_updates (
+                id BIGSERIAL PRIMARY KEY,
+                scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+                branch_id BIGINT REFERENCES scenario_branches(id) ON DELETE CASCADE,
+                headline TEXT NOT NULL,
+                detail TEXT,
+                severity TEXT NOT NULL DEFAULT 'normal',
+                source TEXT,
+                source_agent TEXT,
+                next_decision TEXT,
+                next_decision_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_updates_scenario ON scenario_updates(scenario_id)")
+            .execute(pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_scenario_updates_created ON scenario_updates(created_at DESC)")
+            .execute(pool)
+            .await?;
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
