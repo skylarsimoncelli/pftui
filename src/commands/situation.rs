@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cli::SituationCommand;
 use crate::db::backend::BackendConnection;
@@ -43,6 +44,9 @@ pub fn run(backend: &BackendConnection, command: SituationCommand) -> Result<()>
         SituationCommand::Dashboard { .. } => {
             // Dashboard is handled in main.rs via the existing analytics situation path
             Ok(())
+        }
+        SituationCommand::Matrix { symbol, json } => {
+            run_matrix(backend, symbol.as_deref(), json)
         }
         SituationCommand::List { phase, json } => run_list(backend, phase.as_deref(), json),
         SituationCommand::View { situation, json } => run_view(backend, &situation, json),
@@ -789,6 +793,350 @@ fn run_exposure(backend: &BackendConnection, symbol: &str, json_output: bool) ->
     Ok(())
 }
 
+// ── Cross-situation matrix ──────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct MatrixReport {
+    situations: Vec<MatrixSituation>,
+    symbol_overlap: Vec<SymbolOverlap>,
+    indicator_summary: IndicatorSummary,
+}
+
+#[derive(Debug, Serialize)]
+struct MatrixSituation {
+    id: i64,
+    name: String,
+    probability: f64,
+    phase: String,
+    branches: Vec<MatrixBranch>,
+    impacted_symbols: Vec<MatrixImpactedSymbol>,
+    indicators: MatrixIndicators,
+    latest_update: Option<MatrixUpdate>,
+}
+
+#[derive(Debug, Serialize)]
+struct MatrixBranch {
+    name: String,
+    probability: f64,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+struct MatrixImpactedSymbol {
+    symbol: String,
+    direction: String,
+    tier: String,
+}
+
+#[derive(Debug, Serialize)]
+struct MatrixIndicators {
+    total: usize,
+    watching: usize,
+    triggered: usize,
+    triggered_labels: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct MatrixUpdate {
+    headline: String,
+    severity: String,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SymbolOverlap {
+    symbol: String,
+    situations: Vec<OverlapEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct OverlapEntry {
+    situation: String,
+    direction: String,
+    tier: String,
+}
+
+#[derive(Debug, Serialize)]
+struct IndicatorSummary {
+    total_watching: usize,
+    total_triggered: usize,
+    recently_triggered: Vec<RecentlyTriggered>,
+}
+
+#[derive(Debug, Serialize)]
+struct RecentlyTriggered {
+    situation: String,
+    label: String,
+    symbol: String,
+    metric: String,
+    last_value: Option<String>,
+    triggered_at: Option<String>,
+}
+
+fn run_matrix(
+    backend: &BackendConnection,
+    symbol_filter: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let all_active =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    // Filter to only promoted situations (phase=active), not hypotheses
+    let active: Vec<_> = all_active
+        .into_iter()
+        .filter(|s| s.phase == "active")
+        .collect();
+
+    if active.is_empty() {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "situations": [],
+                    "symbol_overlap": [],
+                    "indicator_summary": {
+                        "total_watching": 0,
+                        "total_triggered": 0,
+                        "recently_triggered": []
+                    }
+                }))?
+            );
+        } else {
+            println!("No active situations. Promote scenarios with `journal scenario promote`.");
+        }
+        return Ok(());
+    }
+
+    // Collect per-situation data
+    let mut matrix_situations = Vec::new();
+    // symbol → list of (situation_name, direction, tier)
+    let mut symbol_map: BTreeMap<String, Vec<OverlapEntry>> = BTreeMap::new();
+    let mut all_watching = 0usize;
+    let mut all_triggered = 0usize;
+    let mut recently_triggered_list: Vec<RecentlyTriggered> = Vec::new();
+
+    for scenario in &active {
+        let branches = scenarios::list_branches_backend(backend, scenario.id)
+            .unwrap_or_default();
+        let impacts = scenarios::list_impacts_backend(backend, scenario.id)
+            .unwrap_or_default();
+        let indicators = scenarios::list_indicators_backend(backend, scenario.id)
+            .unwrap_or_default();
+        let updates = scenarios::list_updates_backend(backend, scenario.id, Some(1))
+            .unwrap_or_default();
+
+        // Build impacted symbols (deduplicate by symbol)
+        let mut seen_symbols = BTreeSet::new();
+        let mut impacted_symbols = Vec::new();
+        for impact in &impacts {
+            if seen_symbols.insert(impact.symbol.clone()) {
+                impacted_symbols.push(MatrixImpactedSymbol {
+                    symbol: impact.symbol.clone(),
+                    direction: impact.direction.clone(),
+                    tier: impact.tier.clone(),
+                });
+                symbol_map
+                    .entry(impact.symbol.clone())
+                    .or_default()
+                    .push(OverlapEntry {
+                        situation: scenario.name.clone(),
+                        direction: impact.direction.clone(),
+                        tier: impact.tier.clone(),
+                    });
+            }
+        }
+
+        // Indicator stats
+        let watching = indicators.iter().filter(|i| i.status == "watching").count();
+        let triggered = indicators.iter().filter(|i| i.status == "triggered").count();
+        all_watching += watching;
+        all_triggered += triggered;
+
+        let triggered_labels: Vec<String> = indicators
+            .iter()
+            .filter(|i| i.status == "triggered")
+            .map(|i| i.label.clone())
+            .collect();
+
+        for ind in indicators.iter().filter(|i| i.status == "triggered") {
+            recently_triggered_list.push(RecentlyTriggered {
+                situation: scenario.name.clone(),
+                label: ind.label.clone(),
+                symbol: ind.symbol.clone(),
+                metric: ind.metric.clone(),
+                last_value: ind.last_value.clone(),
+                triggered_at: ind.triggered_at.clone(),
+            });
+        }
+
+        let latest_update = updates.first().map(|u| MatrixUpdate {
+            headline: u.headline.clone(),
+            severity: u.severity.clone(),
+            created_at: u.created_at.clone(),
+        });
+
+        matrix_situations.push(MatrixSituation {
+            id: scenario.id,
+            name: scenario.name.clone(),
+            probability: scenario.probability,
+            phase: scenario.phase.clone(),
+            branches: branches
+                .iter()
+                .map(|b| MatrixBranch {
+                    name: b.name.clone(),
+                    probability: b.probability,
+                    status: b.status.clone(),
+                })
+                .collect(),
+            impacted_symbols,
+            indicators: MatrixIndicators {
+                total: indicators.len(),
+                watching,
+                triggered,
+                triggered_labels,
+            },
+            latest_update,
+        });
+    }
+
+    // Sort recently triggered by triggered_at descending
+    recently_triggered_list.sort_by(|a, b| b.triggered_at.cmp(&a.triggered_at));
+    recently_triggered_list.truncate(10);
+
+    // Apply symbol filter if specified
+    if let Some(filter) = symbol_filter {
+        let filter_upper = filter.to_uppercase();
+        matrix_situations.retain(|s| {
+            s.impacted_symbols
+                .iter()
+                .any(|sym| sym.symbol.to_uppercase().contains(&filter_upper))
+        });
+    }
+
+    // Build symbol overlap
+    // When filtering by symbol, show all matching symbols; otherwise only those in 2+ situations
+    let symbol_overlap: Vec<SymbolOverlap> = symbol_map
+        .into_iter()
+        .filter(|(symbol, entries)| {
+            if let Some(filter) = symbol_filter {
+                symbol.to_uppercase().contains(&filter.to_uppercase())
+            } else {
+                entries.len() >= 2
+            }
+        })
+        .map(|(symbol, situations)| SymbolOverlap {
+            symbol,
+            situations,
+        })
+        .collect();
+
+    let report = MatrixReport {
+        situations: matrix_situations,
+        symbol_overlap,
+        indicator_summary: IndicatorSummary {
+            total_watching: all_watching,
+            total_triggered: all_triggered,
+            recently_triggered: recently_triggered_list,
+        },
+    };
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_matrix_text(&report);
+    }
+
+    Ok(())
+}
+
+fn print_matrix_text(report: &MatrixReport) {
+    println!("Situation Matrix — Cross-Situation View");
+    println!("════════════════════════════════════════════════════════════════");
+
+    if report.situations.is_empty() {
+        println!("No active situations match the filter.");
+        return;
+    }
+
+    for (i, sit) in report.situations.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+        println!(
+            "▸ {} ({:.1}%) [{}]",
+            sit.name, sit.probability, sit.phase
+        );
+
+        if !sit.branches.is_empty() {
+            println!("  Branches:");
+            for b in &sit.branches {
+                println!(
+                    "    {} — {:.1}% [{}]",
+                    b.name, b.probability, b.status
+                );
+            }
+        }
+
+        if !sit.impacted_symbols.is_empty() {
+            let symbols: Vec<String> = sit
+                .impacted_symbols
+                .iter()
+                .map(|s| format!("{} {} ({})", s.symbol, s.direction, s.tier))
+                .collect();
+            println!("  Impacts: {}", symbols.join(", "));
+        }
+
+        println!(
+            "  Indicators: {} total, {} watching, {} triggered",
+            sit.indicators.total, sit.indicators.watching, sit.indicators.triggered
+        );
+        if !sit.indicators.triggered_labels.is_empty() {
+            println!(
+                "    Triggered: {}",
+                sit.indicators.triggered_labels.join(", ")
+            );
+        }
+
+        if let Some(update) = &sit.latest_update {
+            println!(
+                "  Latest: [{}] {} ({})",
+                update.severity, update.headline, update.created_at
+            );
+        }
+    }
+
+    if !report.symbol_overlap.is_empty() {
+        println!();
+        println!("SYMBOL OVERLAP");
+        println!("────────────────────────────────────────────────────────────────");
+        for overlap in &report.symbol_overlap {
+            let entries: Vec<String> = overlap
+                .situations
+                .iter()
+                .map(|e| format!("{} {} ({})", e.situation, e.direction, e.tier))
+                .collect();
+            println!("  {} — {}", overlap.symbol, entries.join(" | "));
+        }
+    }
+
+    let summary = &report.indicator_summary;
+    println!();
+    println!(
+        "INDICATORS: {} watching, {} triggered",
+        summary.total_watching, summary.total_triggered
+    );
+    if !summary.recently_triggered.is_empty() {
+        println!("Recently triggered:");
+        for t in &summary.recently_triggered {
+            let val = t.last_value.as_deref().unwrap_or("—");
+            let at = t.triggered_at.as_deref().unwrap_or("—");
+            println!(
+                "  {} — {} {} = {} [{}] ({})",
+                t.situation, t.symbol, t.metric, val, t.label, at
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1113,5 +1461,140 @@ mod tests {
         let indicators = scenarios::list_indicators_backend(&backend, s1).unwrap();
         let triggered_count = indicators.iter().filter(|i| i.status == "triggered").count();
         assert_eq!(triggered_count, 2);
+    }
+
+    #[test]
+    fn test_matrix_empty_when_no_situations() {
+        let backend = setup();
+        // No scenarios at all — matrix should produce empty results
+        let active =
+            scenarios::list_scenarios_backend(&backend, Some("active")).unwrap_or_default();
+        assert!(active.is_empty());
+    }
+
+    #[test]
+    fn test_matrix_filters_by_active_phase() {
+        let backend = setup();
+        // Add a scenario (default phase=hypothesis, status=active)
+        let id = scenarios::add_scenario_backend(
+            &backend,
+            "Hypothesis Only",
+            30.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        // status=active scenarios exist, but only those with phase=active are true situations
+        let all_active =
+            scenarios::list_scenarios_backend(&backend, Some("active")).unwrap_or_default();
+        assert_eq!(all_active.len(), 1);
+        assert_eq!(all_active[0].phase, "hypothesis");
+
+        // After promoting, phase becomes active
+        scenarios::promote_scenario_backend(&backend, id).unwrap();
+        let promoted =
+            scenarios::list_scenarios_backend(&backend, Some("active")).unwrap_or_default();
+        assert_eq!(promoted.len(), 1);
+        assert_eq!(promoted[0].phase, "active");
+    }
+
+    #[test]
+    fn test_matrix_shows_branches_and_impacts() {
+        let backend = setup();
+        let s1 = scenarios::add_scenario_backend(
+            &backend,
+            "Trade War",
+            65.0,
+            Some("US-China trade war escalation"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        scenarios::promote_scenario_backend(&backend, s1).unwrap();
+
+        // Add branches
+        scenarios::add_branch_backend(&backend, s1, "Full Decoupling", 40.0, Some("Complete tech decoupling")).unwrap();
+        scenarios::add_branch_backend(&backend, s1, "Negotiated Settlement", 60.0, Some("Deal reached")).unwrap();
+
+        // Add impacts
+        scenarios::add_impact_backend(&backend, s1, None, "BTC-USD", "bullish", "primary", Some("Safe haven bid"), None).unwrap();
+        scenarios::add_impact_backend(&backend, s1, None, "GC=F", "bullish", "primary", Some("Flight to safety"), None).unwrap();
+
+        let s2 = scenarios::add_scenario_backend(
+            &backend,
+            "Rate Cut Cycle",
+            55.0,
+            Some("Fed cuts rates aggressively"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        scenarios::promote_scenario_backend(&backend, s2).unwrap();
+
+        // Add overlapping impact
+        scenarios::add_impact_backend(&backend, s2, None, "BTC-USD", "bullish", "secondary", Some("Liquidity expansion"), None).unwrap();
+        scenarios::add_impact_backend(&backend, s2, None, "SPY", "bullish", "primary", Some("Lower discount rate"), None).unwrap();
+
+        // Verify we can load all data needed for matrix
+        let active = scenarios::list_scenarios_backend(&backend, Some("active")).unwrap();
+        assert_eq!(active.len(), 2);
+
+        let branches = scenarios::list_branches_backend(&backend, s1).unwrap();
+        assert_eq!(branches.len(), 2);
+
+        let impacts_s1 = scenarios::list_impacts_backend(&backend, s1).unwrap();
+        assert_eq!(impacts_s1.len(), 2);
+
+        let impacts_s2 = scenarios::list_impacts_backend(&backend, s2).unwrap();
+        assert_eq!(impacts_s2.len(), 2);
+
+        // BTC-USD appears in both situations
+        let btc_impacts = scenarios::list_impacts_by_symbol_backend(&backend, "BTC-USD").unwrap();
+        assert_eq!(btc_impacts.len(), 2);
+    }
+
+    #[test]
+    fn test_matrix_indicator_aggregation() {
+        let backend = setup();
+        let s1 = scenarios::add_scenario_backend(
+            &backend,
+            "Matrix Indicator Sit",
+            50.0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        scenarios::promote_scenario_backend(&backend, s1).unwrap();
+
+        // Add 3 indicators: 1 triggered, 2 watching
+        let ind1 = scenarios::add_indicator_backend(
+            &backend, s1, None, None, "BTC-USD", "close", ">", "100000", "BTC 100k",
+        )
+        .unwrap();
+        scenarios::update_indicator_evaluation_backend(&backend, ind1, "105000", true).unwrap();
+
+        scenarios::add_indicator_backend(
+            &backend, s1, None, None, "GC=F", "close", ">", "3000", "Gold 3k",
+        )
+        .unwrap();
+        scenarios::add_indicator_backend(
+            &backend, s1, None, None, "DX-Y.NYB", "close", "<", "100", "DXY sub-100",
+        )
+        .unwrap();
+
+        let indicators = scenarios::list_indicators_backend(&backend, s1).unwrap();
+        assert_eq!(indicators.len(), 3);
+        let watching = indicators.iter().filter(|i| i.status == "watching").count();
+        let triggered = indicators.iter().filter(|i| i.status == "triggered").count();
+        assert_eq!(watching, 2);
+        assert_eq!(triggered, 1);
+        assert_eq!(indicators.iter().find(|i| i.status == "triggered").unwrap().label, "BTC 100k");
     }
 }

@@ -1813,6 +1813,38 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
         })
         .collect();
 
+    // Situation engine data: count active situations and their triggered indicators
+    let active_situations =
+        scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
+    let situations_with_phase: Vec<_> = active_situations
+        .iter()
+        .filter(|s| s.phase == "active")
+        .collect();
+    let situation_count = situations_with_phase.len();
+    let mut situation_indicators_watching = 0usize;
+    let mut situation_indicators_triggered = 0usize;
+    let mut situation_triggered_labels: Vec<serde_json::Value> = Vec::new();
+    for sit in &situations_with_phase {
+        let indicators =
+            scenarios::list_indicators_backend(backend, sit.id).unwrap_or_default();
+        for ind in &indicators {
+            match ind.status.as_str() {
+                "watching" => situation_indicators_watching += 1,
+                "triggered" => {
+                    situation_indicators_triggered += 1;
+                    situation_triggered_labels.push(json!({
+                        "situation": sit.name,
+                        "label": ind.label,
+                        "symbol": ind.symbol,
+                        "metric": ind.metric,
+                        "last_value": ind.last_value,
+                    }));
+                }
+                _ => {}
+            }
+        }
+    }
+
     if json_output {
         println!(
             "{}",
@@ -1830,6 +1862,12 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
                 "alignment_score_pct": alignment_score,
                 "alignment_assets": alignments.len(),
                 "divergence_notes": divergence_notes,
+                "situation_engine": {
+                    "active_situations": situation_count,
+                    "indicators_watching": situation_indicators_watching,
+                    "indicators_triggered": situation_indicators_triggered,
+                    "triggered_indicators": situation_triggered_labels,
+                },
             }))?
         );
     } else {
@@ -1877,6 +1915,24 @@ fn run_summary(backend: &BackendConnection, json_output: bool) -> Result<()> {
         }
         if let Some(sig) = signal {
             println!("ALIGNMENT SIGNAL: [{}] {}", sig.severity, sig.description);
+        }
+        if situation_count > 0 {
+            println!(
+                "SITUATIONS: {} active, {} indicators ({} watching, {} triggered)",
+                situation_count,
+                situation_indicators_watching + situation_indicators_triggered,
+                situation_indicators_watching,
+                situation_indicators_triggered
+            );
+            for t in &situation_triggered_labels {
+                if let (Some(sit), Some(label), Some(sym)) = (
+                    t.get("situation").and_then(|v| v.as_str()),
+                    t.get("label").and_then(|v| v.as_str()),
+                    t.get("symbol").and_then(|v| v.as_str()),
+                ) {
+                    println!("  ⚡ {} — {} [{}]", sit, label, sym);
+                }
+            }
         }
     }
     Ok(())
@@ -2149,6 +2205,34 @@ fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let active_scenarios =
         scenarios::list_scenarios_backend(backend, Some("active")).unwrap_or_default();
 
+    // Situation engine: gather triggered indicators across active situations
+    let active_situations: Vec<_> = active_scenarios
+        .iter()
+        .filter(|s| s.phase == "active")
+        .collect();
+    let mut triggered_indicators: Vec<serde_json::Value> = Vec::new();
+    let mut watching_count = 0usize;
+    for sit in &active_situations {
+        let indicators =
+            scenarios::list_indicators_backend(backend, sit.id).unwrap_or_default();
+        for ind in &indicators {
+            if ind.status == "triggered" {
+                triggered_indicators.push(json!({
+                    "situation": sit.name,
+                    "label": ind.label,
+                    "symbol": ind.symbol,
+                    "metric": ind.metric,
+                    "operator": ind.operator,
+                    "threshold": ind.threshold,
+                    "last_value": ind.last_value,
+                    "triggered_at": ind.triggered_at,
+                }));
+            } else if ind.status == "watching" {
+                watching_count += 1;
+            }
+        }
+    }
+
     if json_output {
         let scenario_probs: Vec<_> = active_scenarios
             .iter()
@@ -2168,6 +2252,10 @@ fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
                 "correlations": corr,
                 "signals": signals,
                 "scenario_probabilities": scenario_probs,
+                "situation_indicators": {
+                    "watching": watching_count,
+                    "triggered": triggered_indicators,
+                },
             }))?
         );
     } else {
@@ -2185,6 +2273,26 @@ fn run_low(backend: &BackendConnection, json_output: bool) -> Result<()> {
             println!("  Scenario Context:");
             for s in &active_scenarios {
                 println!("    {}: {:.1}%", s.name, s.probability);
+            }
+        }
+        if !triggered_indicators.is_empty() || watching_count > 0 {
+            println!(
+                "  Situation Indicators: {} watching, {} triggered",
+                watching_count,
+                triggered_indicators.len()
+            );
+            for t in &triggered_indicators {
+                if let (Some(sit), Some(label), Some(sym)) = (
+                    t.get("situation").and_then(|v| v.as_str()),
+                    t.get("label").and_then(|v| v.as_str()),
+                    t.get("symbol").and_then(|v| v.as_str()),
+                ) {
+                    let val = t
+                        .get("last_value")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("—");
+                    println!("    ⚡ {} — {} [{}] = {}", sit, label, sym, val);
+                }
             }
         }
     }
