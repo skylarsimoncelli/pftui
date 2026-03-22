@@ -49,6 +49,7 @@ pub mod query;
 pub mod regime_snapshots;
 pub mod research_questions;
 pub mod scan_queries;
+pub mod scenario_engine;
 pub mod scenarios;
 pub mod schema;
 #[allow(dead_code)] // Infrastructure for F19.1+ consumers (sentiment gauges, CLI)

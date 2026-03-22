@@ -1045,5 +1045,110 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute_batch("ALTER TABLE price_cache ADD COLUMN previous_close TEXT")?;
     }
 
+    // F53: Situation Engine — phase/resolved columns on scenarios
+    let has_phase: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('scenarios') WHERE name = 'phase'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .unwrap_or(0)
+        > 0;
+    if !has_phase {
+        conn.execute_batch(
+            "ALTER TABLE scenarios ADD COLUMN phase TEXT NOT NULL DEFAULT 'hypothesis';
+             ALTER TABLE scenarios ADD COLUMN resolved_at TEXT;
+             ALTER TABLE scenarios ADD COLUMN resolution_notes TEXT;",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_scenarios_phase ON scenarios(phase);",
+    )?;
+
+    // F53: Situation Engine — scenario_branches
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS scenario_branches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            probability REAL NOT NULL DEFAULT 0.0,
+            description TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (scenario_id, name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_scenario_branches_scenario
+            ON scenario_branches(scenario_id);",
+    )?;
+
+    // F53: Situation Engine — scenario_impacts
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS scenario_impacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            branch_id INTEGER REFERENCES scenario_branches(id) ON DELETE CASCADE,
+            symbol TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            tier TEXT NOT NULL DEFAULT 'primary',
+            mechanism TEXT,
+            parent_id INTEGER REFERENCES scenario_impacts(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_scenario_impacts_scenario
+            ON scenario_impacts(scenario_id);
+        CREATE INDEX IF NOT EXISTS idx_scenario_impacts_symbol
+            ON scenario_impacts(symbol);
+        CREATE INDEX IF NOT EXISTS idx_scenario_impacts_parent
+            ON scenario_impacts(parent_id);",
+    )?;
+
+    // F53: Situation Engine — scenario_indicators
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS scenario_indicators (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            branch_id INTEGER REFERENCES scenario_branches(id) ON DELETE CASCADE,
+            impact_id INTEGER REFERENCES scenario_impacts(id) ON DELETE SET NULL,
+            symbol TEXT NOT NULL,
+            metric TEXT NOT NULL DEFAULT 'close',
+            operator TEXT NOT NULL,
+            threshold TEXT NOT NULL,
+            label TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'watching',
+            triggered_at TEXT,
+            last_value TEXT,
+            last_checked TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_scenario_indicators_scenario
+            ON scenario_indicators(scenario_id);
+        CREATE INDEX IF NOT EXISTS idx_scenario_indicators_symbol
+            ON scenario_indicators(symbol);
+        CREATE INDEX IF NOT EXISTS idx_scenario_indicators_status
+            ON scenario_indicators(status);",
+    )?;
+
+    // F53: Situation Engine — scenario_updates
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS scenario_updates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            branch_id INTEGER REFERENCES scenario_branches(id) ON DELETE CASCADE,
+            headline TEXT NOT NULL,
+            detail TEXT,
+            severity TEXT NOT NULL DEFAULT 'normal',
+            source TEXT,
+            source_agent TEXT,
+            next_decision TEXT,
+            next_decision_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_scenario_updates_scenario
+            ON scenario_updates(scenario_id);
+        CREATE INDEX IF NOT EXISTS idx_scenario_updates_created
+            ON scenario_updates(created_at DESC);",
+    )?;
+
     Ok(())
 }

@@ -1508,6 +1508,13 @@ pub enum JournalScenarioCommand {
         #[command(subcommand)]
         command: JournalScenarioSignalCommand,
     },
+    /// Promote a scenario from hypothesis to active situation
+    Promote {
+        /// Scenario name
+        value: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2079,6 +2086,224 @@ pub enum AnalyticsConvictionCommand {
     },
 }
 
+// ── F53: Situation Engine CLI ──────────────────────────────────────────
+
+#[derive(Subcommand)]
+pub enum AnalyticsSituationBranchCommand {
+    /// Add a branch to a situation
+    Add {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        branch: String,
+        #[arg(long)]
+        probability: f64,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List branches for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update a branch
+    Update {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        branch: String,
+        #[arg(long)]
+        probability: Option<f64>,
+        #[arg(long)]
+        description: Option<String>,
+        /// active, resolved, or eliminated
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsSituationImpactCommand {
+    /// Add an impact mapping to a situation
+    Add {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        symbol: String,
+        /// bullish, bearish, volatile, or neutral
+        #[arg(long)]
+        direction: String,
+        /// primary, secondary, or tertiary
+        #[arg(long, default_value = "primary")]
+        tier: String,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        mechanism: Option<String>,
+        #[arg(long)]
+        parent: Option<i64>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List impacts for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        /// Show as tree hierarchy
+        #[arg(long)]
+        tree: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsSituationIndicatorCommand {
+    /// Add an indicator to monitor
+    Add {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        symbol: String,
+        /// Operator: >, >=, <, <=, above_sma, below_sma, rsi_above, rsi_below
+        #[arg(long)]
+        operator: String,
+        #[arg(long)]
+        threshold: String,
+        #[arg(long)]
+        label: String,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        impact: Option<i64>,
+        #[arg(long, default_value = "close")]
+        metric: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List indicators for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        /// Filter: watching, triggered, fading, expired
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Evaluate indicators against current data
+    Evaluate {
+        #[arg(long)]
+        situation: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsSituationUpdateCommand {
+    /// Log an update/event to a situation
+    Log {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        headline: String,
+        #[arg(long)]
+        detail: Option<String>,
+        /// low, normal, elevated, critical
+        #[arg(long, default_value = "normal")]
+        severity: String,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long = "source-agent")]
+        source_agent: Option<String>,
+        #[arg(long = "next-decision")]
+        next_decision: Option<String>,
+        #[arg(long = "next-decision-at")]
+        next_decision_at: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List updates for a situation
+    List {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsSituationCommand {
+    /// List active situations with branch/indicator summaries
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// View full situation composite (branches, impacts, indicators, updates, history)
+    View {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Resolve a situation
+    Resolve {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        resolution: String,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Demote a situation back to hypothesis
+    Demote {
+        #[arg(long)]
+        situation: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage situation branches
+    Branch {
+        #[command(subcommand)]
+        command: AnalyticsSituationBranchCommand,
+    },
+    /// Manage situation impact mappings
+    Impact {
+        #[command(subcommand)]
+        command: AnalyticsSituationImpactCommand,
+    },
+    /// Manage and evaluate situation indicators
+    Indicator {
+        #[command(subcommand)]
+        command: AnalyticsSituationIndicatorCommand,
+    },
+    /// Manage situation event log
+    Update {
+        #[command(subcommand)]
+        command: AnalyticsSituationUpdateCommand,
+    },
+    /// Cross-situation per-asset exposure query
+    Exposure {
+        #[arg(long)]
+        symbol: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Subcommand)]
 pub enum AnalyticsCommand {
     /// Full synthesized intelligence blob for a single asset
@@ -2127,7 +2352,10 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Situation engine: active situations, branches, impacts, indicators
     Situation {
+        #[command(subcommand)]
+        command: Option<AnalyticsSituationCommand>,
         #[arg(long)]
         json: bool,
     },

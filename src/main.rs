@@ -533,6 +533,9 @@ fn run_agent_journal(
                     )
                 }
             },
+            cli::JournalScenarioCommand::Promote { value, json } => {
+                commands::situation::promote(backend, &value, json)
+            }
         },
     }
 }
@@ -1577,36 +1580,62 @@ fn main() -> Result<()> {
                 None,
                 json,
             ),
-            cli::AnalyticsCommand::Situation { json } => commands::analytics::run(
-                &backend,
-                "situation",
-                None,
-                None,
-                None,
-                None,
-                &[],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                false,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                json,
-            ),
+            cli::AnalyticsCommand::Situation { command, json } => match command {
+                None => commands::situation::dashboard(&backend, json),
+                Some(cli::AnalyticsSituationCommand::List { json: j }) => {
+                    commands::situation::list(&backend, j)
+                }
+                Some(cli::AnalyticsSituationCommand::View { situation, json: j }) => {
+                    commands::situation::view(&backend, &situation, j)
+                }
+                Some(cli::AnalyticsSituationCommand::Resolve { situation, resolution, branch, json: j }) => {
+                    commands::situation::resolve(&backend, &situation, &resolution, branch.as_deref(), j)
+                }
+                Some(cli::AnalyticsSituationCommand::Demote { situation, json: j }) => {
+                    commands::situation::demote(&backend, &situation, j)
+                }
+                Some(cli::AnalyticsSituationCommand::Branch { command: bcmd }) => match bcmd {
+                    cli::AnalyticsSituationBranchCommand::Add { situation, branch, probability, description, json: j } => {
+                        commands::situation::branch_add(&backend, &situation, &branch, probability, description.as_deref(), j)
+                    }
+                    cli::AnalyticsSituationBranchCommand::List { situation, json: j } => {
+                        commands::situation::branch_list(&backend, &situation, j)
+                    }
+                    cli::AnalyticsSituationBranchCommand::Update { situation, branch, probability, description, status, json: j } => {
+                        commands::situation::branch_update(&backend, &situation, &branch, probability, description.as_deref(), status.as_deref(), j)
+                    }
+                },
+                Some(cli::AnalyticsSituationCommand::Impact { command: icmd }) => match icmd {
+                    cli::AnalyticsSituationImpactCommand::Add { situation, symbol, direction, tier, branch, mechanism, parent, json: j } => {
+                        commands::situation::impact_add(&backend, &situation, &symbol, &direction, &tier, branch.as_deref(), mechanism.as_deref(), parent, j)
+                    }
+                    cli::AnalyticsSituationImpactCommand::List { situation, tree, json: j } => {
+                        commands::situation::impact_list(&backend, &situation, tree, j)
+                    }
+                },
+                Some(cli::AnalyticsSituationCommand::Indicator { command: icmd }) => match icmd {
+                    cli::AnalyticsSituationIndicatorCommand::Add { situation, symbol, operator, threshold, label, branch, impact, metric, json: j } => {
+                        commands::situation::indicator_add(&backend, &situation, &symbol, &operator, &threshold, &label, branch.as_deref(), impact, &metric, j)
+                    }
+                    cli::AnalyticsSituationIndicatorCommand::List { situation, status, json: j } => {
+                        commands::situation::indicator_list(&backend, &situation, status.as_deref(), j)
+                    }
+                    cli::AnalyticsSituationIndicatorCommand::Evaluate { situation, json: j } => {
+                        commands::situation::indicator_evaluate(&backend, situation.as_deref(), j)
+                    }
+                },
+                Some(cli::AnalyticsSituationCommand::Update { command: ucmd }) => match ucmd {
+                    cli::AnalyticsSituationUpdateCommand::Log { situation, headline, detail, severity, branch, source, source_agent, next_decision, next_decision_at, json: j } => {
+                        commands::situation::update_log(&backend, &situation, &headline, detail.as_deref(), &severity, branch.as_deref(), source.as_deref(), source_agent.as_deref(), next_decision.as_deref(), next_decision_at.as_deref(), j)
+                    }
+                    cli::AnalyticsSituationUpdateCommand::List { situation, limit, json: j } => {
+                        commands::situation::update_list(&backend, &situation, limit, j)
+                    }
+                },
+                Some(cli::AnalyticsSituationCommand::Exposure { symbol, json: j }) => {
+                    commands::situation::exposure(&backend, &symbol, j)
+                }
+            },
             cli::AnalyticsCommand::Deltas { since, json } => commands::analytics::run(
                 &backend,
                 "deltas",

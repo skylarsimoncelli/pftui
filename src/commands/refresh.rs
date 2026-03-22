@@ -1333,6 +1333,17 @@ fn run_pipeline(
             error: None,
             detail: None,
         });
+
+        // F53: Situation Engine — evaluate indicators after technical snapshots
+        match crate::commands::situation::evaluate_on_refresh(backend) {
+            Ok((active, triggered)) if active > 0 => {
+                info_ln!(verbose, "✓ Situations     {} active, {} indicators triggered", active, triggered);
+            }
+            Ok(_) => {} // no active situations — silent
+            Err(e) => {
+                info_ln!(verbose, "✗ Situations (evaluation failed: {})", e);
+            }
+        }
     } else if plan.prices {
         info_ln!(verbose, "⊘ Prices (no symbols)");
         dag_result.add(SourceResult {
