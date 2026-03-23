@@ -8,6 +8,14 @@ extension UIKeyboardType {
 }
 #endif
 
+#if os(macOS)
+private let appDisplayName = "pftui desktop"
+private let serverSetupTokenName = "macos"
+#else
+private let appDisplayName = "pftui mobile"
+private let serverSetupTokenName = "ios"
+#endif
+
 private enum MobilePalette {
     static let bgPrimary = Color(red: 13/255, green: 17/255, blue: 23/255)
     static let bgSecondary = Color(red: 22/255, green: 27/255, blue: 34/255)
@@ -56,7 +64,7 @@ struct SetupView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("pftui mobile")
+                        Text(appDisplayName)
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundStyle(MobilePalette.textPrimary)
                         Text("A sleek remote client for the pftui database. Monitor portfolio state, analytics, watchlist pressure, signals, and data freshness from one screen.")
@@ -92,7 +100,7 @@ struct SetupView: View {
                                 .foregroundStyle(MobilePalette.textPrimary)
                                 .font(.headline)
                             Text("1. Run `pftui system mobile enable --bind 0.0.0.0` once")
-                            Text("2. Run `pftui system mobile token generate --permission read --name ios`")
+                            Text("2. Run `pftui system mobile token generate --permission read --name \(serverSetupTokenName)`")
                             Text("3. Start `pftui system mobile serve`")
                             Text("4. Enter the host, token, and fingerprint shown by the server")
                         }
@@ -145,6 +153,14 @@ struct DashboardShellView: View {
             .tag(3)
         }
         .tint(MobilePalette.accent)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Sign Out") {
+                    store.disconnect()
+                }
+                .foregroundStyle(MobilePalette.red)
+            }
+        }
     }
 }
 
@@ -1103,12 +1119,6 @@ struct AnalyticsView: View {
                     Image(systemName: "slider.horizontal.3")
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button("Disconnect") {
-                    store.disconnect()
-                }
-                .foregroundStyle(MobilePalette.red)
-            }
         }
     }
 
@@ -1239,10 +1249,20 @@ struct SystemView: View {
                     isExpanded: $showConnection
                 ) {
                     VStack(spacing: 12) {
+                        if let error = store.errorMessage, !error.isEmpty {
+                            Text(error)
+                                .foregroundStyle(MobilePalette.red)
+                                .font(.footnote)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         systemMetricRow("Host", store.connection?.server ?? "—")
                         systemMetricRow("Status", connectionStatus)
                         systemMetricRow("Fingerprint", abbreviatedFingerprint(store.connection?.fingerprint))
                         systemMetricRow("Last Sync", store.dashboard.map { shortTimestamp($0.generatedAt) } ?? "—")
+                        Button("Sign Out And Reconnect") {
+                            store.disconnect()
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
                     }
                 }
 

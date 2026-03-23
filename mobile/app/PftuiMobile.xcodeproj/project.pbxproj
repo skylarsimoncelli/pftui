@@ -10,6 +10,10 @@
 		A00000000000000000000012 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* Models.swift */; };
 		A00000000000000000000013 /* MobileAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* MobileAPI.swift */; };
 		A00000000000000000000014 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* ContentView.swift */; };
+		A00000000000000000000111 /* PftuiMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* PftuiMobileApp.swift */; };
+		A00000000000000000000112 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* Models.swift */; };
+		A00000000000000000000113 /* MobileAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* MobileAPI.swift */; };
+		A00000000000000000000114 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,10 +23,18 @@
 		A00000000000000000000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A00000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Support/Info.plist; sourceTree = "<group>"; };
 		A00000000000000000000006 /* PftuiMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PftuiMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000105 /* Info-macOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Support/Info-macOS.plist; sourceTree = "<group>"; };
+		A00000000000000000000106 /* PftuiDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PftuiDesktop.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A00000000000000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000121 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = ();
@@ -48,6 +60,7 @@
 				A00000000000000000000003 /* MobileAPI.swift */,
 				A00000000000000000000004 /* ContentView.swift */,
 				A00000000000000000000005 /* Info.plist */,
+				A00000000000000000000105 /* Info-macOS.plist */,
 			);
 			sourceTree = "<group>";
 		};
@@ -55,6 +68,7 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000006 /* PftuiMobile.app */,
+				A00000000000000000000106 /* PftuiDesktop.app */,
 			);
 			sourceTree = "<group>";
 		};
@@ -76,6 +90,21 @@
 			productReference = A00000000000000000000006 /* PftuiMobile.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A00000000000000000000141 /* PftuiDesktop */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000161 /* Build configuration list for PBXNativeTarget "PftuiDesktop" */;
+			buildPhases = (
+				A00000000000000000000120 /* Sources */,
+				A00000000000000000000121 /* Frameworks */,
+				A00000000000000000000122 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = PftuiDesktop;
+			productName = PftuiDesktop;
+			productReference = A00000000000000000000106 /* PftuiDesktop.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -87,6 +116,9 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					A00000000000000000000041 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					A00000000000000000000141 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -105,12 +137,19 @@
 			projectRoot = "";
 			targets = (
 				A00000000000000000000041 /* PftuiMobile */,
+				A00000000000000000000141 /* PftuiDesktop */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A00000000000000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000122 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = ();
@@ -127,6 +166,17 @@
 				A00000000000000000000012 /* Models.swift in Sources */,
 				A00000000000000000000013 /* MobileAPI.swift in Sources */,
 				A00000000000000000000014 /* ContentView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000120 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000111 /* PftuiMobileApp.swift in Sources */,
+				A00000000000000000000112 /* Models.swift in Sources */,
+				A00000000000000000000113 /* MobileAPI.swift in Sources */,
+				A00000000000000000000114 /* ContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -216,6 +266,89 @@
 			};
 			name = Release;
 		};
+		A00000000000000000000171 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_NS_ASSERTIONS = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000172 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A00000000000000000000173 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PftuiMobile/Support/Info-macOS.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skylarsimoncelli.pftui.desktop;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		A00000000000000000000174 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PftuiMobile/Support/Info-macOS.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skylarsimoncelli.pftui.desktop;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -224,6 +357,15 @@
 			buildConfigurations = (
 				A00000000000000000000073 /* Debug */,
 				A00000000000000000000074 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000161 /* Build configuration list for PBXNativeTarget "PftuiDesktop" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000173 /* Debug */,
+				A00000000000000000000174 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

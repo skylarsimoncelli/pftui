@@ -326,11 +326,15 @@ fn ensure_tls_material(bind: &str) -> Result<(PathBuf, PathBuf)> {
     fs::create_dir_all(&dir)?;
     let cert_path = dir.join(CERT_FILE);
     let key_path = dir.join(KEY_FILE);
-    if cert_path.exists() && key_path.exists() {
-        // Ensure existing key file has correct permissions
-        #[cfg(unix)]
-        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))?;
-        return Ok((cert_path, key_path));
+
+    // `mobile enable` is the explicit point where operators change the bind address.
+    // Always rotate the self-signed cert here so the SAN set matches the current host/IP
+    // instead of silently reusing stale TLS material from a previous server address.
+    if cert_path.exists() {
+        let _ = fs::remove_file(&cert_path);
+    }
+    if key_path.exists() {
+        let _ = fs::remove_file(&key_path);
     }
 
     let mut names = vec![

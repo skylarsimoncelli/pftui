@@ -29,10 +29,21 @@ final class MobileStore: ObservableObject {
             return
         }
 
-        connection = settings
-        saveConnection(settings)
-        KeychainHelper.save(password: settings.token, account: tokenAccount)
-        await refresh()
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let payload: DashboardPayload = try await request(path: "/api/dashboard", connection: settings)
+            dashboard = payload
+            portfolio = payload.portfolio
+            analytics = payload.analytics
+            connection = settings
+            saveConnection(settings)
+            KeychainHelper.save(password: settings.token, account: tokenAccount)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func reconnectIfPossible() async {
@@ -62,7 +73,7 @@ final class MobileStore: ObservableObject {
         defer { isBusy = false }
 
         do {
-            let payload: DashboardPayload = try await request(path: "/api/dashboard")
+            let payload: DashboardPayload = try await request(path: "/api/dashboard", connection: connection)
             dashboard = payload
             portfolio = payload.portfolio
             analytics = payload.analytics
@@ -72,18 +83,19 @@ final class MobileStore: ObservableObject {
         }
     }
 
-    private func request<T: Decodable>(path: String) async throws -> T {
-        guard let connection else { throw APIError.missingConnection }
-        guard let url = URL(string: "https://\(connection.server)\(path)") else {
+    private func request<T: Decodable>(path: String, connection: ConnectionSettings? = nil) async throws -> T {
+        let activeConnection = connection ?? self.connection
+        guard let activeConnection else { throw APIError.missingConnection }
+        guard let url = URL(string: "https://\(activeConnection.server)\(path)") else {
             throw APIError.invalidURL
         }
 
-        let delegate = PinnedSessionDelegate(fingerprint: normalizeFingerprint(connection.fingerprint))
+        let delegate = PinnedSessionDelegate(fingerprint: normalizeFingerprint(activeConnection.fingerprint))
         let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(connection.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(activeConnection.token)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
@@ -119,10 +131,26 @@ final class MobileStore: ObservableObject {
     private func normalizeServer(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        if trimmed.contains(":") {
-            return trimmed
+
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        if let components = URLComponents(string: candidate), let host = components.host {
+            let normalizedHost: String
+            if host.contains(":") {
+                normalizedHost = "[\(host)]"
+            } else {
+                normalizedHost = host
+            }
+            let port = components.port ?? 9443
+            return "\(normalizedHost):\(port)"
         }
-        return "\(trimmed):9443"
+
+        let stripped = trimmed
+            .replacingOccurrences(of: #"^https?://"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if stripped.contains(":") {
+            return stripped
+        }
+        return "\(stripped):9443"
     }
 }
 
