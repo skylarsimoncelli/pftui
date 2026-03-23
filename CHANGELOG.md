@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-23 — feat: Add `portfolio allocation` command
+
+- What: New `pftui portfolio allocation` subcommand that shows each position's allocation percentage in a lightweight format. Supports `--group-by category` for category-aggregated view with per-position breakdowns, and `--json` for structured agent output. No technicals, gains, what-if, or period calculations — just clean allocation data.
+- Why: P2 feedback from Evening Analyst (Mar 22) requesting a quick allocation view without running the full `portfolio summary`.
+- Files: `src/commands/allocation.rs` (new, 175 lines), `src/cli.rs` (+10), `src/commands/mod.rs` (+1), `src/main.rs` (+3)
+- Tests: `cargo test` (1590 pass), `cargo clippy` (clean)
+
 ### 2026-03-22 — feat(F53): Phase 4 — integrate situation commands into agent routines
 
 - What: completed F53 Phase 4 by integrating Situation Engine commands (`situation update log`, `situation indicator list`, `situation exposure`) into all 7 agent routines. Each routine now reads situation indicators to check mechanical evaluations, reads situation update history to see what other agents logged, writes situation updates when discovering events affecting active situations, and reads cross-situation exposure to understand portfolio risk concentration. Morning brief gets a new SITUATIONS section for active situation status.

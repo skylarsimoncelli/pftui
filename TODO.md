@@ -14,7 +14,6 @@ _(none — F53 Situation Engine fully shipped: Phase 1-4 complete)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **`portfolio allocation` shortcut** — Evening Analyst (Mar 22) wants a quick allocation view without running full `portfolio summary`. Could be as simple as `portfolio drift` with a more intuitive alias or a dedicated slim output mode.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 
 ## P3 - Long Term
