@@ -8,12 +8,16 @@
 
 _(none)_
 
-## P1 - Always-On Analytics Engine
+## P1 - Data Freshness & Agent Reliability
 
-_(none — F53 Situation Engine fully shipped: Phase 1-4 complete)_
+- [Feedback] **Data source refresh automation gaps** — Medium-Timeframe Analyst (Mar 23) reports COT and economic calendar returning empty. FedWatch works but other data sources need refresh pipeline fixes. This caused a 10-point usefulness drop (85→75). Investigate daemon refresh cadence for COT/calendar sources and fix empty returns.
 
 ## P2 - Coverage And Agent Consumption
 
+- [Feedback] **Portfolio impact estimate command** — Evening Analyst (Mar 23) wants `analytics impact-estimate` or similar that shows projected P&L under each scenario probability shift, rather than requiring manual calculation. Would move Evening Analyst scores significantly.
+- [Feedback] **`macro cycles current` command** — Macro-Timeframe Analyst (Mar 22) requests a command to get 2026 power metrics directly rather than only historical data. Would streamline weekly structural analysis workflow.
+- [Feedback] **Alert count in situation summary** — Low-Timeframe Analyst (Mar 22) suggests adding alert count/status to situation summary output for quicker operational awareness.
+- [Feedback] **Agent message ack syntax clarity** — Evening Analyst (Mar 23) reports confusion between `ack-all` vs `ack --all` syntax. Consider adding both forms or better help text to reduce friction.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 
 ## P3 - Long Term
@@ -28,27 +32,29 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 72% | 78% | Mar 22 | ↑ (up from 65/72 on Mar 21, continuing recovery — analytics working better, but performance bug and missing weekly-review) |
-| Medium-Timeframe Analyst | 85% | 90% | Mar 22 | → (stable high, minor syntax learning curve, batch scoring exists but wasn't discovered) |
-| Alert Investigator | 85% | 82% | Mar 22 | → (stable, consistent routine monitoring, wants correlation detection and regime notifications) |
-| Morning Intelligence | 75% | 80% | Mar 20 | → (no new data since Mar 20, noted non-existent analytics commands in routine) |
-| Low-Timeframe Analyst | 85% | 90% | Mar 21 | → (stable high, wants weekend/after-hours mode) |
-| Dev Agent | 92% | 93% | Mar 22 | → (shipping consistently, F53 Phase 2 shipped PR #182, indicator evaluation in refresh pipeline) |
+| Evening Analyst | 72% | 70% | Mar 23 | ↓ (down from 72/78 on Mar 22 — overall dropped, wants impact-estimate command and clearer ack syntax) |
+| Medium-Timeframe Analyst | 75% | 85% | Mar 23 | ↓ (down from 85/90 on Mar 22 — empty COT/calendar data hurt usefulness significantly) |
+| Low-Timeframe Analyst | 85% | 88% | Mar 22 | → (stable high, wants alert count in situation summary) |
+| Macro-Timeframe Analyst | 85% | 90% | Mar 22 | → (first data point, wants `macro cycles current` command) |
+| Morning Brief | 85% | 90% | Mar 22 | → (first data point, analytics commands working well) |
+| Morning Intelligence | 85% | 80% | Mar 21 | → (stable, no new data since Mar 21) |
+| Alert Investigator | 85% | 90% | Mar 23 | → (stable, consistent routine monitoring) |
+| Dev Agent | 90% | 92% | Mar 23 | → (shipping consistently, portfolio allocation #204 shipped) |
 
-**Key changes since last review (Mar 21):**
-- v0.14.1 released Mar 21 (3 code fixes: plausibility guard #99, journal alert section #107, mobile API runtime #112)
-- 74 commits since v0.14.1: `system search` (#155), scenario probabilities in analytics (#148), correlation breaks (#141), oil-premium (#134), change_1d scan field (#127), narrative layer, synthesis engine, impact/opportunities engine, catalysts engine, deltas engine, situation room enhancements, website fixes
-- Tests: 1585 passing (up from 1578), clippy clean
-- Evening Analyst continuing recovery: 65/72 → 72/78 — still lowest but trending up
-- All previous top 3 priorities RESOLVED: CLI discoverability (#155), scenario probabilities (#148), routine integration (109fd67)
-- `system search` command now helps agents discover existing features like `score-batch`
-- New P0: `portfolio performance` TIMESTAMPTZ bug found by Evening Analyst
+**Key changes since last review (Mar 22):**
+- v0.15.0 released Mar 22 — 46 post-release commits: F53 Situation Engine (Phases 1-4), analytics weekly-review (#169), portfolio allocation (#204), website logo, plus feedback PRs
+- Tests: 1590 passing (up from 1585), clippy clean
+- Two testers regressed: Evening Analyst overall 78→70, Medium-Timeframe usefulness 85→75
+- Evening Analyst: recovery stalled — wants portfolio-impact-estimate, ack syntax confusing
+- Medium-Timeframe Analyst: significant drop due to empty data sources (COT/calendar)
+- Portfolio allocation command shipped (#204) — closes previous top priority
+- F53 Situation Engine fully shipped (all 4 phases) — closes previous top priority
 
 **Top 3 priorities based on feedback:**
-1. **P2: `portfolio allocation` shortcut** — Quick allocation view without full `portfolio summary`.
-2. **P2: Weekend/after-hours CLI mode** — Streamline commands for non-market hours.
-3. **F53 Situation Engine fully shipped** (Phase 1-4 complete, all agent routines integrated).
+1. **P1: Data source refresh gaps** — COT/calendar empty for Medium-Timeframe Analyst. Biggest score regression this cycle.
+2. **P2: Portfolio impact estimate** — Evening Analyst (lowest overall at 70%) needs scenario-aware P&L projections.
+3. **P2: `macro cycles current`** — Quick access to current power metrics for Macro-Timeframe Analyst.
 
-**Release status:** v0.15.0 released Mar 22. 76 post-release commits from v0.14.1 including: system search (#155), scenario probabilities (#148), correlation breaks (#141), oil-premium (#134), narrative/synthesis/catalysts/deltas/impact/opportunities engines, situation room enhancements, portfolio performance TIMESTAMPTZ fix (#166). No P0 bugs.
+**Release eligibility:** v0.15.0 released yesterday. 46 new commits since tag but mostly feedback PRs and F53 feature work already in v0.15.0. No P0 bugs. Could release when the P1 data refresh issue is resolved — meaningful new features include portfolio allocation and situation engine integration.
 
 **GitHub stars:** 4 — Homebrew Core requires 50+.
