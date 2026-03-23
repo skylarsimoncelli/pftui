@@ -945,6 +945,9 @@ fn main() -> Result<()> {
                     commands::target::remove(&backend, sym)
                 }
             },
+            Some(cli::PortfolioCommand::Allocation { group_by, json }) => {
+                commands::allocation::run(&backend, group_by.as_ref(), json)
+            }
             Some(cli::PortfolioCommand::Drift { json }) => commands::drift::run(&backend, json),
             Some(cli::PortfolioCommand::Rebalance { json }) => {
                 commands::rebalance::run(&backend, json)
