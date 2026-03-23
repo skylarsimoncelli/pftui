@@ -1992,6 +1992,28 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
                 );
             }
         }
+
+        // Alert summary
+        let alerts = &snapshot.alert_summary;
+        if alerts.total > 0 || alerts.triggered > 0 {
+            println!();
+            println!("ALERTS");
+            println!(
+                "  {} total — {} armed, {} triggered, {} acknowledged",
+                alerts.total, alerts.armed, alerts.triggered, alerts.acknowledged
+            );
+            if !alerts.recent_triggered.is_empty() {
+                println!("  Recently triggered:");
+                for alert in &alerts.recent_triggered {
+                    let at = alert
+                        .triggered_at
+                        .as_deref()
+                        .map(|t| format!(" ({})", t))
+                        .unwrap_or_default();
+                    println!("    #{} {} [{}]{}", alert.id, alert.rule_text, alert.kind, at);
+                }
+            }
+        }
     }
 
     Ok(())

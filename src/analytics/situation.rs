@@ -17,10 +17,29 @@ pub struct SituationSnapshot {
     pub headline: String,
     pub subtitle: String,
     pub summary_stats: Vec<SituationStat>,
+    pub alert_summary: AlertSummary,
     pub watch_now: Vec<SituationInsight>,
     pub portfolio_impacts: Vec<PortfolioImpact>,
     pub risk_matrix: Vec<RiskState>,
     pub cross_timeframe: Vec<CrossTimeframeState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertSummary {
+    pub total: usize,
+    pub armed: usize,
+    pub triggered: usize,
+    pub acknowledged: usize,
+    pub recent_triggered: Vec<AlertDetail>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertDetail {
+    pub id: i64,
+    pub rule_text: String,
+    pub symbol: String,
+    pub kind: String,
+    pub triggered_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,6 +94,9 @@ pub struct SituationInputs {
     pub latest_timeframe_signal: Option<LatestSignal>,
     pub technical_signal_count: usize,
     pub triggered_alert_count: usize,
+    pub armed_alert_count: usize,
+    pub acknowledged_alert_count: usize,
+    pub recent_triggered_alerts: Vec<AlertDetail>,
     pub market_pulse: Vec<MarketPulseItem>,
     pub stale_sources: usize,
     pub scenarios: Vec<ScenarioState>,
@@ -246,13 +268,31 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
         db::technical_signals::list_signals_backend(backend, None, None, Some(200))
             .map(|rows| rows.len())
             .unwrap_or(0);
-    let triggered_alert_count = db::alerts::list_alerts_backend(backend)
-        .map(|rows| {
-            rows.into_iter()
-                .filter(|row| row.status == AlertStatus::Triggered)
-                .count()
+    let all_alerts = db::alerts::list_alerts_backend(backend).unwrap_or_default();
+    let triggered_alert_count = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Triggered)
+        .count();
+    let armed_alert_count = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Armed)
+        .count();
+    let acknowledged_alert_count = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Acknowledged)
+        .count();
+    let recent_triggered_alerts: Vec<AlertDetail> = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Triggered)
+        .take(5)
+        .map(|row| AlertDetail {
+            id: row.id,
+            rule_text: row.rule_text.clone(),
+            symbol: row.symbol.clone(),
+            kind: row.kind.to_string(),
+            triggered_at: row.triggered_at.clone(),
         })
-        .unwrap_or(0);
+        .collect();
 
     let market_pulse = view_model::market_overview_symbols()
         .into_iter()
@@ -300,6 +340,9 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
         latest_timeframe_signal,
         technical_signal_count,
         triggered_alert_count,
+        armed_alert_count,
+        acknowledged_alert_count,
+        recent_triggered_alerts,
         market_pulse,
         stale_sources: count_stale_sources(backend),
         scenarios,
@@ -358,6 +401,15 @@ pub fn build_snapshot(inputs: &SituationInputs) -> SituationSnapshot {
                 value: inputs.stale_sources.to_string(),
             },
         ],
+        alert_summary: AlertSummary {
+            total: inputs.armed_alert_count
+                + inputs.triggered_alert_count
+                + inputs.acknowledged_alert_count,
+            armed: inputs.armed_alert_count,
+            triggered: inputs.triggered_alert_count,
+            acknowledged: inputs.acknowledged_alert_count,
+            recent_triggered: inputs.recent_triggered_alerts.clone(),
+        },
         watch_now,
         portfolio_impacts,
         risk_matrix,
@@ -812,6 +864,9 @@ mod tests {
             latest_timeframe_signal: None,
             technical_signal_count: 0,
             triggered_alert_count: 0,
+            armed_alert_count: 0,
+            acknowledged_alert_count: 0,
+            recent_triggered_alerts: Vec::new(),
             market_pulse: Vec::new(),
             stale_sources: 0,
             scenarios: Vec::new(),
@@ -823,6 +878,8 @@ mod tests {
         assert_eq!(snapshot.watch_now.len(), 0);
         assert_eq!(snapshot.summary_stats.len(), 4);
         assert_eq!(snapshot.cross_timeframe.len(), 0);
+        assert_eq!(snapshot.alert_summary.total, 0);
+        assert_eq!(snapshot.alert_summary.triggered, 0);
     }
 
     #[test]
@@ -865,6 +922,24 @@ mod tests {
             }),
             technical_signal_count: 7,
             triggered_alert_count: 2,
+            armed_alert_count: 5,
+            acknowledged_alert_count: 1,
+            recent_triggered_alerts: vec![
+                AlertDetail {
+                    id: 1,
+                    rule_text: "BTC-USD above 100000".to_string(),
+                    symbol: "BTC-USD".to_string(),
+                    kind: "price".to_string(),
+                    triggered_at: Some("2026-03-23T10:00:00Z".to_string()),
+                },
+                AlertDetail {
+                    id: 2,
+                    rule_text: "VIX above 25".to_string(),
+                    symbol: "VIX".to_string(),
+                    kind: "indicator".to_string(),
+                    triggered_at: Some("2026-03-23T09:30:00Z".to_string()),
+                },
+            ],
             market_pulse: vec![MarketPulseItem {
                 symbol: "BTC-USD".to_string(),
                 name: "Bitcoin".to_string(),
@@ -884,5 +959,13 @@ mod tests {
             .iter()
             .any(|item| item.title.contains("live alerts")));
         assert_eq!(snapshot.risk_matrix[0].severity, "critical");
+
+        // Alert summary assertions
+        assert_eq!(snapshot.alert_summary.total, 8);
+        assert_eq!(snapshot.alert_summary.armed, 5);
+        assert_eq!(snapshot.alert_summary.triggered, 2);
+        assert_eq!(snapshot.alert_summary.acknowledged, 1);
+        assert_eq!(snapshot.alert_summary.recent_triggered.len(), 2);
+        assert_eq!(snapshot.alert_summary.recent_triggered[0].symbol, "BTC-USD");
     }
 }

@@ -738,6 +738,9 @@ mod tests {
                 }),
                 technical_signal_count: 2,
                 triggered_alert_count: 1,
+                armed_alert_count: 3,
+                acknowledged_alert_count: 0,
+                recent_triggered_alerts: Vec::new(),
                 market_pulse: vec![MarketPulseItem {
                     symbol: "BTC-USD".to_string(),
                     name: "Bitcoin".to_string(),
