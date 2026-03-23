@@ -111,3 +111,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-23,alert-investigator,85,90,investigation,normal,No new alerts. Clear geopolitical catalyst identified (Trump Iran de-escalation). Portfolio impact tracked. Intelligence routed successfully.
 2026-03-23,morning-intelligence,85,90,enhancement,P1,Add regime confidence level to analytics summary --json output. Currently shows regime=transition but confidence buried in separate calls. Would help assess regime shift certainty for brief framing.
 2026-03-23,dev-agent,90,92,feature,P2,"macro cycles current command shipped (#232). Clean implementation: CLI enum + dispatch + function. Existing code patterns (build_country_metric_views, structural backend) were well-structured and easy to compose. 2 new tests added. No friction encountered."
+2026-03-23,alert-investigator,85,80,alert,normal,BIG-GAINERS scan alert provided timely signal of momentum cooling amid Iran diplomacy headlines
