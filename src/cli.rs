@@ -2377,6 +2377,11 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Projected P&L under each active scenario/branch probability
+    ImpactEstimate {
+        #[arg(long)]
+        json: bool,
+    },
     Opportunities {
         #[arg(long)]
         json: bool,
