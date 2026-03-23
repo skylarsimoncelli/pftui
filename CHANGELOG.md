@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-23 — feat: `macro cycles current` command for live power metrics
+
+- What: Added `pftui analytics macro cycles current [COUNTRY] [--json]` subcommand that shows both structural cycle phases and current (2026) power metrics with composite scores in a single output.
+- Why: P2 feedback from Macro-Timeframe Analyst (Mar 22) — needed a single command to get 2026 power metrics directly rather than combining `macro cycles` + `macro metrics` separately.
+- Files: `src/cli.rs` (+72), `src/commands/analytics.rs` (+115), `src/main.rs` (+34)
+- Tests: `cargo test` (1603 pass, +2 new); `cargo clippy` (clean)
+- PR: #232
+
 ### 2026-03-23 — feat: `ack --all` flag for agent message ack syntax clarity
 
 - What: Added `--all` flag to `pftui agent message ack` so both `ack --all` and `ack-all` work. `--all` conflicts with `--id` to prevent ambiguous usage. `--to` filter available with `--all`. Help text updated with usage examples.

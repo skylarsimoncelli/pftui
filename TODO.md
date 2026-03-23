@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **`macro cycles current` command** — Macro-Timeframe Analyst (Mar 22) requests a command to get 2026 power metrics directly rather than only historical data. Would streamline weekly structural analysis workflow.
 - [Feedback] **Alert count in situation summary** — Low-Timeframe Analyst (Mar 22) suggests adding alert count/status to situation summary output for quicker operational awareness.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 
