@@ -123,16 +123,29 @@ pub enum AgentMessageCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Acknowledge one or more messages by ID
+    /// Acknowledge messages by ID, or all at once with --all
+    ///
+    /// Examples:
+    ///   pftui agent message ack --id 1 --id 2    # ack specific messages
+    ///   pftui agent message ack --all             # ack all pending messages
+    ///   pftui agent message ack --all --to bot-x  # ack all for a specific recipient
     Ack {
         /// One or more message IDs (repeatable: --id 1 --id 2 --id 3)
         #[arg(long)]
         id: Vec<i64>,
 
+        /// Acknowledge ALL pending messages (same as `ack-all`)
+        #[arg(long, conflicts_with = "id")]
+        all: bool,
+
+        /// Filter by recipient when using --all
+        #[arg(long, requires = "all")]
+        to: Option<String>,
+
         #[arg(long)]
         json: bool,
     },
-    /// Acknowledge all pending messages for a recipient
+    /// Acknowledge all pending messages for a recipient (alias for `ack --all`)
     #[command(name = "ack-all")]
     AckAll {
         #[arg(long)]
@@ -2958,6 +2971,71 @@ mod tests {
             }
             _ => panic!("unexpected parse result"),
         }
+    }
+
+    #[test]
+    fn parses_agent_message_ack_all_flag() {
+        // `ack --all` should be equivalent to `ack-all`
+        let cli = Cli::try_parse_from([
+            "pftui", "agent", "message", "ack", "--all", "--to", "agent-b", "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Agent {
+                command:
+                    AgentCommand::Message {
+                        command:
+                            AgentMessageCommand::Ack {
+                                id,
+                                all,
+                                to,
+                                json,
+                            },
+                    },
+            }) => {
+                assert!(id.is_empty());
+                assert!(all);
+                assert_eq!(to.as_deref(), Some("agent-b"));
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_agent_message_ack_all_flag_no_to() {
+        // `ack --all` without --to should also work
+        let cli =
+            Cli::try_parse_from(["pftui", "agent", "message", "ack", "--all", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Agent {
+                command:
+                    AgentCommand::Message {
+                        command:
+                            AgentMessageCommand::Ack {
+                                id,
+                                all,
+                                to,
+                                json,
+                            },
+                    },
+            }) => {
+                assert!(id.is_empty());
+                assert!(all);
+                assert!(to.is_none());
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn ack_id_conflicts_with_all_flag() {
+        // --id and --all should conflict
+        let result = Cli::try_parse_from([
+            "pftui", "agent", "message", "ack", "--id", "1", "--all",
+        ]);
+        assert!(result.is_err());
     }
 
     #[test]
