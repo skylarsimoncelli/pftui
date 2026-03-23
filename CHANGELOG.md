@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-23 — feat: add `analytics impact-estimate` command
+
+- What: New `pftui analytics impact-estimate` command that projects portfolio P&L under each active scenario. For every active scenario (and its branches), estimates how current positions would be affected based on scenario impacts (direction + tier), weighted by probability. Shows per-scenario and per-branch P&L breakdown, asset-level impact detail, and probability-weighted expected P&L across all scenarios. Supports `--json` for structured agent consumption. Conservative tier defaults: 15%/8%/4% for primary/secondary/tertiary.
+- Why: P2 feedback from Evening Analyst (Mar 23) requesting `analytics impact-estimate` to show projected P&L under scenario probability shifts without manual calculation. Evening Analyst has the lowest overall score (70%), so this was highest feedback impact.
+- Files: `src/commands/impact_estimate.rs` (new, 523 lines), `src/cli.rs` (+5), `src/commands/mod.rs` (+1), `src/main.rs` (+3)
+- Tests: `cargo test` (1598 pass, +4 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #218
+
 ### 2026-03-23 — fix: COT freshness check failing on Postgres timestamp format
 
 - What: Fixed a bug where `cot_needs_refresh()` silently failed to parse Postgres `fetched_at::text` timestamps, causing COT data to never re-fetch after initial load. Added `parse_timestamp_flexible()` helper that handles both RFC 3339 and Postgres text formats (space separator, abbreviated timezone like `+00`). Applied to all 5 timestamp parsing sites in the refresh pipeline. Fixed the COT function's unsafe fallthrough: now defaults to "needs refresh" when no timestamps can be parsed, matching the safe fallback pattern used by other freshness checks.
