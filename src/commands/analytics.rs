@@ -2443,6 +2443,9 @@ fn run_macro(
             return run_macro_compare(backend, left, right, json_output);
         }
         "cycles" => {
+            if arg1 == Some("current") {
+                return run_macro_cycles_current(backend, country, json_output);
+            }
             if arg1 == Some("history") {
                 if arg2 == Some("add") {
                     let c = country.ok_or_else(|| anyhow::anyhow!("--country required"))?;
@@ -3037,6 +3040,118 @@ fn gap_trend(gap: Option<f64>, prev_gap: Option<f64>) -> &'static str {
         (Some(_), Some(_)) => "Stable",
         _ => "Unknown",
     }
+}
+
+fn run_macro_cycles_current(
+    backend: &BackendConnection,
+    country: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let cycles = structural::list_cycles_backend(backend).unwrap_or_default();
+    let metrics = structural::list_metrics_backend(backend, country, None).unwrap_or_default();
+    let grouped = build_country_metric_views(&metrics);
+
+    if json_output {
+        let cycle_objs: Vec<serde_json::Value> = cycles
+            .iter()
+            .map(|c| {
+                json!({
+                    "cycle": c.cycle_name,
+                    "phase": c.current_stage,
+                    "since": c.stage_entered,
+                    "evidence": c.evidence,
+                })
+            })
+            .collect();
+
+        let country_objs: serde_json::Value = if let Some(c) = country {
+            if let Some(view) = grouped.get(c) {
+                json!({
+                    c: {
+                        "metrics": view.metrics,
+                        "composite": view.composite,
+                        "composite_prev": view.composite_prev,
+                        "composite_delta": view.composite_delta,
+                    }
+                })
+            } else {
+                json!({ c: { "metrics": [], "composite": null } })
+            }
+        } else {
+            let mut map = serde_json::Map::new();
+            for (c, view) in &grouped {
+                map.insert(
+                    c.clone(),
+                    json!({
+                        "metrics": view.metrics,
+                        "composite": view.composite,
+                        "composite_prev": view.composite_prev,
+                        "composite_delta": view.composite_delta,
+                    }),
+                );
+            }
+            serde_json::Value::Object(map)
+        };
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "cycles": cycle_objs,
+                "countries": country_objs,
+            }))?
+        );
+    } else {
+        println!("=== Structural Cycles ===\n");
+        if cycles.is_empty() {
+            println!("  (no cycles tracked)");
+        }
+        for c in &cycles {
+            println!(
+                "  {:<30} {} (since {})",
+                c.cycle_name,
+                c.current_stage,
+                c.stage_entered.as_deref().unwrap_or("?")
+            );
+            if let Some(ev) = &c.evidence {
+                println!("    evidence: {}", ev);
+            }
+        }
+
+        println!("\n=== Current Power Metrics (2026) ===\n");
+        if grouped.is_empty() {
+            println!("  (no power metrics recorded)");
+        }
+        let mut countries_sorted: Vec<_> = grouped.iter().collect();
+        countries_sorted.sort_by_key(|(k, _)| (*k).clone());
+
+        for (c, view) in &countries_sorted {
+            println!(
+                "  {} — composite: {}{}",
+                c,
+                view.composite
+                    .map(|v| format!("{:.2}/10", v))
+                    .unwrap_or_else(|| "—".to_string()),
+                view.composite_delta
+                    .map(|d| format!(" ({:+.2} vs prev)", d))
+                    .unwrap_or_default()
+            );
+            for m in &view.metrics {
+                println!(
+                    "    {:<24} {:<8} rank={:<4} {}",
+                    m.metric,
+                    m.score
+                        .map(|v| format!("{:.1}", v))
+                        .unwrap_or_else(|| "—".to_string()),
+                    m.rank
+                        .map(|r| r.to_string())
+                        .unwrap_or_else(|| "—".to_string()),
+                    trend_arrow(&m.trend),
+                );
+            }
+            println!();
+        }
+    }
+    Ok(())
 }
 
 fn run_macro_cycles(backend: &BackendConnection, json_output: bool) -> Result<()> {

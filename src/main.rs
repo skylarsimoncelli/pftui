@@ -2095,6 +2095,40 @@ fn main() -> Result<()> {
                         None,
                         json,
                     ),
+                    Some(cli::AnalyticsMacroCyclesCommand::Current { country, json }) => {
+                        let countries: Vec<String> =
+                            country.into_iter().collect();
+                        commands::analytics::run(
+                            &backend,
+                            "macro",
+                            Some("cycles"),
+                            Some("current"),
+                            None,
+                            None,
+                            &countries,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            false,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            json,
+                        )
+                    }
                     Some(cli::AnalyticsMacroCyclesCommand::History { command }) => match command {
                         cli::AnalyticsMacroCyclesHistoryCommand::Add {
                             country,
