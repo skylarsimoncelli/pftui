@@ -30,6 +30,7 @@ pub mod global;
 pub mod group;
 pub mod heatmap;
 pub mod history;
+pub mod impact_estimate;
 pub mod import;
 pub mod journal;
 pub mod list_tx;

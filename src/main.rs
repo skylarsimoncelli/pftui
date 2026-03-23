@@ -1755,6 +1755,9 @@ fn main() -> Result<()> {
                 None,
                 json,
             ),
+            cli::AnalyticsCommand::ImpactEstimate { json } => {
+                commands::impact_estimate::run(&backend, json)
+            }
             cli::AnalyticsCommand::Opportunities { json } => commands::analytics::run(
                 &backend,
                 "opportunities",
