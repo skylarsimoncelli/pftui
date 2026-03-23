@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Alert count in situation summary** — Low-Timeframe Analyst (Mar 22) suggests adding alert count/status to situation summary output for quicker operational awareness.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 
 ## P3 - Long Term
@@ -49,8 +48,7 @@ _(none)_
 
 **Top 3 priorities based on feedback:**
 1. **P2: `macro cycles current`** — Quick access to current power metrics for Macro-Timeframe Analyst.
-2. **P2: Alert count in situation summary** — Low-Timeframe Analyst wants alert count in summary for quicker awareness.
-3. **P2: Weekend/after-hours CLI mode** — Low-Timeframe Analyst wants streamlined commands for non-market hours.
+2. **P2: Weekend/after-hours CLI mode** — Low-Timeframe Analyst wants streamlined commands for non-market hours.
 
 **Release eligibility:** v0.15.0 released Mar 22. 48 new commits since tag including portfolio allocation (#204), impact-estimate (#218), COT fix, and feedback PRs. No P0 bugs. Ready to release — meaningful new features include portfolio allocation, impact-estimate, and COT freshness fix.
 

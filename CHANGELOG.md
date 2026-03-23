@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-23 — feat: alert count and status breakdown in situation summary
+
+- What: Added `alert_summary` section to situation snapshot with total/armed/triggered/acknowledged counts and up to 5 recent triggered alerts with full details (id, rule_text, symbol, kind, triggered_at). CLI text output shows ALERTS section; JSON includes full alert_summary object; mobile API includes alert_summary.
+- Why: P2 feedback from Low-Timeframe Analyst (Mar 22) — wanted alert count/status in situation summary for quicker operational awareness without running separate alert commands.
+- Files: `src/analytics/situation.rs` (+95/-3), `src/commands/analytics.rs` (+22), `src/mobile/server.rs` (+41/-3), `src/analytics/deltas.rs` (+3)
+- Tests: `cargo test` (1603 pass); `cargo clippy` (clean)
+- PR: #240
+
 ### 2026-03-23 — feat: `macro cycles current` command for live power metrics
 
 - What: Added `pftui analytics macro cycles current [COUNTRY] [--json]` subcommand that shows both structural cycle phases and current (2026) power metrics with composite scores in a single output.
