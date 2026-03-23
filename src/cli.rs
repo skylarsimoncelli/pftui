@@ -724,6 +724,16 @@ pub enum PortfolioCommand {
         #[command(subcommand)]
         command: PortfolioTargetCommand,
     },
+    /// Quick allocation snapshot: each position's weight in the portfolio
+    Allocation {
+        /// Group output by a field (e.g. "category")
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Show allocation drift vs targets
     Drift {
         /// Output as JSON
