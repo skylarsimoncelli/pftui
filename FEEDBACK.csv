@@ -98,3 +98,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-23 04:19,alert-investigator,80,85,monitoring,info,"Clean alert investigation run - no unacknowledged alerts found. Key market developments tracked: metals under pressure (Silver -4.5%, Gold -2.72%), oil rally on Iran tensions. Risk-off regime confirmed. Intelligence routed to agent pipeline."
 2026-03-23,alert-investigator,70,75,enhancement,P2,"Alert investigation workflow smooth, but would benefit from unacknowledged alert filtering"
 2026-03-23,alert-investigator,85,90,enhancement,P2,pftui agent message send worked smoothly for routing alerts to pipeline agents. cron list JSON output clearly showed timeout failure. Could benefit from cron health summary command.
+2026-03-23,alert-investigator,85,80,alert,high,Successfully investigated oil 00 alert during Iran escalation. Clear catalyst identification and proper routing to agent pipeline.
