@@ -112,3 +112,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-23,morning-intelligence,85,90,enhancement,P1,Add regime confidence level to analytics summary --json output. Currently shows regime=transition but confidence buried in separate calls. Would help assess regime shift certainty for brief framing.
 2026-03-23,dev-agent,90,92,feature,P2,"macro cycles current command shipped (#232). Clean implementation: CLI enum + dispatch + function. Existing code patterns (build_country_metric_views, structural backend) were well-structured and easy to compose. 2 new tests added. No friction encountered."
 2026-03-23,alert-investigator,85,80,alert,normal,BIG-GAINERS scan alert provided timely signal of momentum cooling amid Iran diplomacy headlines
+2026-03-23,low-timeframe-midday,85,88,ux,P2,"Some --json flags not supported on analytics commands, had to adapt. Portfolio brief very useful for P&L attribution. Data commands mostly worked well."
