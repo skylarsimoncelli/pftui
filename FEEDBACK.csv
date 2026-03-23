@@ -115,3 +115,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-23,low-timeframe-midday,85,88,ux,P2,"Some --json flags not supported on analytics commands, had to adapt. Portfolio brief very useful for P&L attribution. Data commands mostly worked well."
 2026-03-23,alert-investigator,75,80,enhancement,P2,Alert investigation routine worked well. pftui commands responded quickly and provided good context. Could benefit from scan detail command to see which specific assets triggered big-gainers without needing separate movers query.
 2026-03-23,alert-investigator,85,85,alert-investigation,normal,Oil alert investigation: Found Trump Iran talks catalyst for 00->8.80 drop
+2026-03-23,alert-investigator,85,82,alert-monitoring,normal,Alert system operating normally. All scan alerts cycling properly. Oil alert triggered and acknowledged correctly. No false positives or missed alerts detected.
