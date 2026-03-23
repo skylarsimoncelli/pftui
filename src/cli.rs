@@ -1883,6 +1883,13 @@ pub enum AnalyticsMacroCyclesHistoryCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsMacroCyclesCommand {
+    /// Show current power metrics and cycle phases for all tracked countries
+    Current {
+        /// Filter by country code (e.g. US, CN)
+        country: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     History {
         #[command(subcommand)]
         command: AnalyticsMacroCyclesHistoryCommand,
@@ -3602,6 +3609,71 @@ mod tests {
         assert_eq!(regime, "risk-off");
         assert_eq!(confidence, Some(0.8));
         assert_eq!(drivers.as_deref(), Some("manual override"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_cycles_current_command() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "cycles",
+            "current",
+            "US",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Cycles {
+                            command:
+                                Some(AnalyticsMacroCyclesCommand::Current { country, json }),
+                            ..
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro cycles current command");
+        };
+
+        assert_eq!(country.as_deref(), Some("US"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_macro_cycles_current_no_country() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "macro",
+            "cycles",
+            "current",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Macro {
+                    command:
+                        Some(AnalyticsMacroCommand::Cycles {
+                            command:
+                                Some(AnalyticsMacroCyclesCommand::Current { country, json }),
+                            ..
+                        }),
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics macro cycles current command");
+        };
+
+        assert!(country.is_none());
         assert!(json);
     }
 
