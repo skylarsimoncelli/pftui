@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-23 — fix: COT freshness check failing on Postgres timestamp format
+
+- What: Fixed a bug where `cot_needs_refresh()` silently failed to parse Postgres `fetched_at::text` timestamps, causing COT data to never re-fetch after initial load. Added `parse_timestamp_flexible()` helper that handles both RFC 3339 and Postgres text formats (space separator, abbreviated timezone like `+00`). Applied to all 5 timestamp parsing sites in the refresh pipeline. Fixed the COT function's unsafe fallthrough: now defaults to "needs refresh" when no timestamps can be parsed, matching the safe fallback pattern used by other freshness checks.
+- Why: P1 — Medium-Timeframe Analyst (Mar 23) reported COT returning empty, causing a 10-point usefulness drop (85→75). Root cause: Postgres `::text` outputs `2026-03-09 17:50:47.025534+00` which is not valid RFC 3339 (requires `T` separator and `+00:00`). The parse failure caused `cot_needs_refresh` to return false, permanently skipping COT refresh.
+- Files: `src/commands/refresh.rs` (+61/-8: `parse_timestamp_flexible()`, 5 call sites updated, 4 new tests)
+- Tests: `cargo test` (1594 pass, +4 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- Impact: COT now properly refreshes — 624 rows (156 weeks × 4 contracts) loaded on first daemon cycle. `pftui data cot` returns full positioning data with percentiles, z-scores, and extreme flags.
+
 ### 2026-03-23 — feat: Add `portfolio allocation` command
 
 - What: New `pftui portfolio allocation` subcommand that shows each position's allocation percentage in a lightweight format. Supports `--group-by category` for category-aggregated view with per-position breakdowns, and `--json` for structured agent output. No technicals, gains, what-if, or period calculations — just clean allocation data.

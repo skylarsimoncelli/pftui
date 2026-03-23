@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Data Freshness & Agent Reliability
 
-- [Feedback] **Data source refresh automation gaps** — Medium-Timeframe Analyst (Mar 23) reports COT and economic calendar returning empty. FedWatch works but other data sources need refresh pipeline fixes. This caused a 10-point usefulness drop (85→75). Investigate daemon refresh cadence for COT/calendar sources and fix empty returns.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 
