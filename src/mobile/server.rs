@@ -141,6 +141,7 @@ pub struct MobileSituationResponse {
     pub title: String,
     pub subtitle: String,
     pub summary: Vec<MobileSituationStat>,
+    pub alert_summary: situation::AlertSummary,
     pub watch_now: Vec<MobileSituationInsight>,
     pub portfolio_impacts: Vec<MobileSituationInsight>,
     pub risk_matrix: Vec<MobileRiskSignal>,
@@ -186,6 +187,9 @@ pub struct MobileMonitoringResponse {
     pub latest_timeframe_signal: Option<MobileLatestSignal>,
     pub technical_signal_count: usize,
     pub triggered_alert_count: usize,
+    pub armed_alert_count: usize,
+    pub acknowledged_alert_count: usize,
+    pub recent_triggered_alerts: Vec<situation::AlertDetail>,
     pub market_pulse: Vec<MobileMarketPulseItem>,
     pub watchlist: Vec<MobileWatchlistItem>,
     pub news: Vec<MobileNewsItem>,
@@ -679,13 +683,31 @@ fn monitoring_payload(
         crate::db::technical_signals::list_signals_backend(backend, None, None, Some(200))
             .map(|rows| rows.len())
             .unwrap_or(0);
-    let triggered_alert_count = crate::db::alerts::list_alerts_backend(backend)
-        .map(|rows| {
-            rows.into_iter()
-                .filter(|row| row.status == AlertStatus::Triggered)
-                .count()
+    let all_alerts = crate::db::alerts::list_alerts_backend(backend).unwrap_or_default();
+    let triggered_alert_count = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Triggered)
+        .count();
+    let armed_alert_count = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Armed)
+        .count();
+    let acknowledged_alert_count = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Acknowledged)
+        .count();
+    let recent_triggered_alerts: Vec<situation::AlertDetail> = all_alerts
+        .iter()
+        .filter(|row| row.status == AlertStatus::Triggered)
+        .take(5)
+        .map(|row| situation::AlertDetail {
+            id: row.id,
+            rule_text: row.rule_text.clone(),
+            symbol: row.symbol.clone(),
+            kind: row.kind.to_string(),
+            triggered_at: row.triggered_at.clone(),
         })
-        .unwrap_or(0);
+        .collect();
 
     let market_pulse = view_model::market_overview_symbols()
         .into_iter()
@@ -746,6 +768,9 @@ fn monitoring_payload(
         latest_timeframe_signal,
         technical_signal_count,
         triggered_alert_count,
+        armed_alert_count,
+        acknowledged_alert_count,
+        recent_triggered_alerts,
         market_pulse,
         watchlist,
         news,
@@ -810,6 +835,9 @@ fn situation_payload(
         }),
         technical_signal_count: monitoring.technical_signal_count,
         triggered_alert_count: monitoring.triggered_alert_count,
+        armed_alert_count: monitoring.armed_alert_count,
+        acknowledged_alert_count: monitoring.acknowledged_alert_count,
+        recent_triggered_alerts: monitoring.recent_triggered_alerts.clone(),
         market_pulse: monitoring
             .market_pulse
             .iter()
@@ -838,6 +866,7 @@ fn situation_payload(
                 value: stat.value,
             })
             .collect(),
+        alert_summary: snapshot.alert_summary,
         watch_now: snapshot
             .watch_now
             .into_iter()
