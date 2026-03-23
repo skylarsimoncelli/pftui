@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-23 — feat: `ack --all` flag for agent message ack syntax clarity
+
+- What: Added `--all` flag to `pftui agent message ack` so both `ack --all` and `ack-all` work. `--all` conflicts with `--id` to prevent ambiguous usage. `--to` filter available with `--all`. Help text updated with usage examples.
+- Why: P2 feedback from Evening Analyst (Mar 23) — confusion between `ack-all` subcommand and expected `ack --all` flag syntax.
+- Files: `src/cli.rs` (+80), `src/main.rs` (+48/-21)
+- Tests: `cargo test` (1601 pass, +3 new); `cargo clippy` (clean)
+- PR: #226
+
 ### 2026-03-23 — feat: add `analytics impact-estimate` command
 
 - What: New `pftui analytics impact-estimate` command that projects portfolio P&L under each active scenario. For every active scenario (and its branches), estimates how current positions would be affected based on scenario impacts (direction + tier), weighted by probability. Shows per-scenario and per-branch P&L breakdown, asset-level impact detail, and probability-weighted expected P&L across all scenarios. Supports `--json` for structured agent consumption. Conservative tier defaults: 15%/8%/4% for primary/secondary/tertiary.
