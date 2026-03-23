@@ -241,7 +241,7 @@ fn news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     }
 
     let now = chrono::Utc::now();
-    if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&news[0].fetched_at) {
+    if let Some(fetched) = parse_timestamp_flexible(&news[0].fetched_at) {
         let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
         return Ok(age.num_seconds() > NEWS_FRESHNESS_SECS);
     }
@@ -255,7 +255,7 @@ fn brave_news_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     };
 
     let now = chrono::Utc::now();
-    if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&timestamp) {
+    if let Some(fetched) = parse_timestamp_flexible(&timestamp) {
         let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
         return Ok(age.num_seconds() > BRAVE_NEWS_FRESHNESS_SECS);
     }
@@ -397,11 +397,29 @@ fn calendar_needs_refresh(backend: &BackendConnection) -> Result<bool> {
 
     // Check fetched_at timestamp of the first event
     let now = chrono::Utc::now();
-    if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&events[0].fetched_at) {
+    if let Some(fetched) = parse_timestamp_flexible(&events[0].fetched_at) {
         let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
         return Ok(age.num_seconds() > CALENDAR_FRESHNESS_SECS);
     }
     Ok(true)
+}
+
+/// Try to parse a timestamp that may be RFC 3339 or Postgres `::text` format.
+/// Postgres `::text` uses a space separator and may abbreviate the timezone
+/// (e.g. `2026-03-09 17:50:47.025534+00`). We normalise to RFC 3339 before parsing.
+fn parse_timestamp_flexible(s: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    // Try RFC 3339 first (fastest path).
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt);
+    }
+    // Normalise Postgres text: replace first space with 'T', expand bare +00 → +00:00.
+    let normalised = s.replacen(' ', "T", 1);
+    let normalised = if normalised.ends_with("+00") || normalised.ends_with("-00") {
+        format!("{}:00", normalised)
+    } else {
+        normalised
+    };
+    chrono::DateTime::parse_from_rfc3339(&normalised).ok()
 }
 
 /// Check if COT needs refreshing
@@ -412,15 +430,18 @@ fn cot_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     }
 
     let now = chrono::Utc::now();
+    let mut any_parsed = false;
     for report in reports {
-        if let Ok(fetched) = chrono::DateTime::parse_from_rfc3339(&report.fetched_at) {
+        if let Some(fetched) = parse_timestamp_flexible(&report.fetched_at) {
+            any_parsed = true;
             let age = now.signed_duration_since(fetched.with_timezone(&chrono::Utc));
             if age.num_seconds() > COT_FRESHNESS_SECS {
                 return Ok(true);
             }
         }
     }
-    Ok(false)
+    // If no timestamps could be parsed, assume stale (safe fallback).
+    Ok(!any_parsed)
 }
 
 /// Check if COMEX needs refreshing
@@ -3095,9 +3116,8 @@ fn maybe_insert_signal(
         if s.description != description {
             return false;
         }
-        let parsed = chrono::DateTime::parse_from_rfc3339(&s.detected_at)
-            .map(|d| d.with_timezone(&chrono::Utc))
-            .ok();
+        let parsed = parse_timestamp_flexible(&s.detected_at)
+            .map(|d| d.with_timezone(&chrono::Utc));
         parsed.is_some_and(|dt| dt >= cutoff)
     });
     if exists_recent {
@@ -3516,6 +3536,7 @@ fn get_technical_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{Datelike, Timelike};
 
     #[test]
     fn format_price_large() {
@@ -3730,5 +3751,37 @@ mod tests {
         let indicators = scenarios::list_indicators_backend(&backend, s_id).unwrap();
         let ind = indicators.iter().find(|i| i.id == ind_id).unwrap();
         assert_eq!(ind.status, "triggered");
+    }
+
+    #[test]
+    fn parse_timestamp_flexible_rfc3339() {
+        let ts = "2026-03-09T17:50:47.025534+00:00";
+        let dt = parse_timestamp_flexible(ts).expect("should parse RFC 3339");
+        assert_eq!(dt.year(), 2026);
+        assert_eq!(dt.month(), 3);
+        assert_eq!(dt.day(), 9);
+    }
+
+    #[test]
+    fn parse_timestamp_flexible_postgres_text() {
+        // Postgres `fetched_at::text` format: space separator, abbreviated tz
+        let ts = "2026-03-09 17:50:47.025534+00";
+        let dt = parse_timestamp_flexible(ts).expect("should parse Postgres text");
+        assert_eq!(dt.year(), 2026);
+        assert_eq!(dt.month(), 3);
+        assert_eq!(dt.day(), 9);
+    }
+
+    #[test]
+    fn parse_timestamp_flexible_postgres_no_frac() {
+        let ts = "2026-03-09 17:50:47+00";
+        let dt = parse_timestamp_flexible(ts).expect("should parse Postgres text without fractional seconds");
+        assert_eq!(dt.hour(), 17);
+    }
+
+    #[test]
+    fn parse_timestamp_flexible_returns_none_on_garbage() {
+        assert!(parse_timestamp_flexible("not-a-timestamp").is_none());
+        assert!(parse_timestamp_flexible("").is_none());
     }
 }
