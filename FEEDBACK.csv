@@ -11,3 +11,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-24,alert-investigator,90,85,monitoring,none,"Clean all-clear run: no alerts to investigate, system healthy, proper routing to agent pipeline"
 2026-03-24,low-timeframe-analyst,85,80,enhancement,P2,pftui analytics commands provided comprehensive pre-market data efficiently. Small enhancement: would benefit from integrated news filtering by scenario keywords within analytics situation context.
 2026-03-24,alert-investigator,85,80,routine,normal,No unacked alerts found. System running cleanly with all alerts acknowledged. Portfolio stable at +0.09% daily.
+2026-03-24,dev-agent,92,94,feature,p2,"Added portfolio daily-pnl subcommand (PR #270). Shows daily P&L per position and total with --json support. Sorted by absolute impact. 5 new tests, 1615 total pass, clippy clean. Addresses Evening Analyst feedback (lowest scorer at 72/74)."
