@@ -2528,7 +2528,7 @@ fn main() -> Result<()> {
                 overnight,
                 json,
             } => commands::movers::run(&backend, &config, Some(&threshold), overnight, json),
-            cli::AnalyticsCommand::Correlations { command } => match command {
+            cli::AnalyticsCommand::Correlations { command, json } => match command {
                 None => commands::correlations::run(
                     &backend,
                     Some("compute"),
@@ -2538,7 +2538,7 @@ fn main() -> Result<()> {
                     None,
                     false,
                     15,
-                    false,
+                    json,
                 ),
                 Some(cli::AnalyticsCorrelationsCommand::Compute {
                     window,
@@ -2576,6 +2576,21 @@ fn main() -> Result<()> {
                     json,
                 ),
                 Some(cli::AnalyticsCorrelationsCommand::Latest {
+                    period,
+                    limit,
+                    json,
+                }) => commands::correlations::run(
+                    &backend,
+                    Some("latest"),
+                    None,
+                    None,
+                    30,
+                    period.as_deref(),
+                    false,
+                    limit,
+                    json,
+                ),
+                Some(cli::AnalyticsCorrelationsCommand::List {
                     period,
                     limit,
                     json,
