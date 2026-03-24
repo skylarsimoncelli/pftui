@@ -711,6 +711,16 @@ pub enum PortfolioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show total unrealized gain/loss across all positions with cost basis comparison
+    Unrealized {
+        /// Group output by asset category
+        #[arg(long, value_enum)]
+        group_by: Option<SummaryGroupBy>,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Show portfolio performance: returns over time (MTD, QTD, YTD, since inception)
     Performance {
         /// Custom start date for return calculation (YYYY-MM-DD)
