@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **`portfolio daily-pnl` subcommand** — Evening Analyst (Mar 24) had to compute daily P&L manually. Add a dedicated `portfolio daily-pnl` or `portfolio performance --daily` command showing today's P&L per position and total. Files: `src/commands/` (new or extend `performance.rs`).
 - [Feedback] **`portfolio performance-since-inception` / unrealized-gain summary** — Evening Analyst (Mar 24) wants a single command for total unrealized gain across positions with cost basis comparison. May extend existing `portfolio performance` or `portfolio summary`.
 - [Feedback] **`analytics correlations` --json and list improvements** — Evening Analyst (Mar 24) reports `correlations --json` not supported and `analytics correlations list` doesn't exist (only `history`). Add `--json` flag to correlations compute output and a `list` subcommand for latest stored snapshots.
 - [Feedback] **Correlation break alerts in situation room** — Medium-Timeframe Analyst (Mar 24) wants correlation break alerts more prominently surfaced in the situation room / analytics situation matrix. Files: `src/commands/situation.rs`.
