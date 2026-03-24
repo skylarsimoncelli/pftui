@@ -78,5 +78,6 @@ pub mod target;
 pub mod thesis;
 pub mod trends;
 pub mod universe;
+pub mod unrealized;
 pub mod value;
 pub mod watchlist_cli;

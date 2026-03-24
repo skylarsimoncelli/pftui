@@ -908,6 +908,14 @@ fn main() -> Result<()> {
             Some(cli::PortfolioCommand::DailyPnl { json }) => {
                 commands::daily_pnl::run(&backend, &config, json)
             }
+            Some(cli::PortfolioCommand::Unrealized { group_by, json }) => {
+                commands::unrealized::run(
+                    &backend,
+                    &config,
+                    group_by.is_some(),
+                    json,
+                )
+            }
             Some(cli::PortfolioCommand::Performance {
                 since,
                 period,
