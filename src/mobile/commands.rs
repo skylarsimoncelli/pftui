@@ -9,7 +9,9 @@ use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use chrono::Utc;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use rcgen::{CertificateParams, DnType, KeyPair};
+use rcgen::{
+    CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
+};
 use serde_json::json;
 use time::OffsetDateTime;
 
@@ -351,6 +353,9 @@ fn ensure_tls_material(bind: &str) -> Result<(PathBuf, PathBuf)> {
     params
         .distinguished_name
         .push(DnType::CommonName, "pftui mobile API");
+    params.is_ca = IsCa::ExplicitNoCa;
+    params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyEncipherment];
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     let now = OffsetDateTime::now_utc();
     params.not_before = now;
     params.not_after = now + time::Duration::days(730); // 2 years
