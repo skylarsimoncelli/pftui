@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] **`analytics situation` returns empty results** — Evening Analyst (Mar 24) reports `analytics situation` producing empty output. Check if situation data requires promotion or if the command path has a query issue. Files: `src/commands/situation.rs`.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 
@@ -52,9 +52,9 @@ _(none)_
 - Dev Agent at all-time high 92/94
 
 **Top 3 priorities based on feedback:**
-1. **P1: `analytics situation` empty results** — Evening Analyst (lowest scorer) can't use situation commands.
-2. **P2: `portfolio daily-pnl`** — Evening Analyst (lowest scorer) had to compute manually. Quick win for score recovery.
-3. **P2: `portfolio performance-since-inception`** — Evening Analyst wants total unrealized gain summary.
+1. **P2: `portfolio daily-pnl`** — Evening Analyst (lowest scorer) had to compute manually. Quick win for score recovery.
+2. **P2: `portfolio performance-since-inception`** — Evening Analyst wants total unrealized gain summary.
+3. **P2: `analytics correlations` --json and list** — Evening Analyst reports missing --json support and no list subcommand.
 
 **Release eligibility:** v0.15.0 released Mar 22. 96 new commits with major features (F53 Situation Engine, impact-estimate, macro cycles current, portfolio allocation, alert summary, COT fix, deltas crash fix). All tests pass (1604), clippy clean, no P0 bugs. **Ready to release v0.16.0.**
 

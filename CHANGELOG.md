@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-24 — fix: analytics situation --json missing flag
+
+- What: Fixed `analytics situation --json` failing with "unexpected argument '--json'" error. The `--json` flag was only available on the `dashboard` subcommand (`analytics situation dashboard --json`), not on the top-level `analytics situation` command. Added `--json` to the `Situation` variant in `AnalyticsCommand` so it works like every other analytics subcommand. Both `analytics situation --json` and `analytics situation dashboard --json` now produce correct output.
+- Why: P1 — Evening Analyst (lowest scorer at 72/74) reported `analytics situation` producing empty output. Root cause was agents running `analytics situation --json` which errored silently, while `analytics situation` (plain text) worked fine.
+- Files: `src/cli.rs` (+2), `src/main.rs` (+11/-33, simplified match arm)
+- Tests: `cargo test` (1610 pass); `cargo clippy` (clean)
+- PR: #263
+
 ### 2026-03-24 — fix: economy data format/quality — BLS derived values and plausibility tightening
 
 - What: Fixed three classes of economy data quality issues reported by High-Timeframe Analyst and Medium-Timeframe Analyst:
