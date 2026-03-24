@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-24 — feat: `analytics correlations` --json flag and `list` subcommand
+
+- What: Added `--json` flag to bare `analytics correlations` command (no subcommand needed) so agents get structured JSON without specifying `compute`. Added `analytics correlations list` as alias for `latest` — agents naturally try `list` for discovery but only `latest` existed.
+- Why: P2 feedback from Evening Analyst (Mar 24) — `correlations --json` was not supported and `analytics correlations list` didn't exist.
+- Files: `src/cli.rs` (+80: List variant, --json on parent Correlations, 3 new CLI parsing tests), `src/main.rs` (+19/-2: wire json flag and List dispatch)
+- Tests: `cargo test` (1624 pass, +3 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #283
+
 ### 2026-03-24 — feat: `portfolio unrealized` — cost basis vs current value summary
 
 - What: Added `pftui portfolio unrealized [--group-by category] [--json]` command that shows total unrealized gain/loss across all positions with per-position cost basis comparison. For each position: symbol, name, category, quantity, avg cost, total cost basis, current price, current value, unrealized gain/loss (absolute + percentage), and allocation weight. Output sorted by absolute gain (biggest impact first). Includes category-level subtotals and portfolio-wide totals. `--group-by category` groups positions under category headers. `--json` provides full structured output for agent consumption.

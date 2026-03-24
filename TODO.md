@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **`analytics correlations` --json and list improvements** — Evening Analyst (Mar 24) reports `correlations --json` not supported and `analytics correlations list` doesn't exist (only `history`). Add `--json` flag to correlations compute output and a `list` subcommand for latest stored snapshots.
 - [Feedback] **Correlation break alerts in situation room** — Medium-Timeframe Analyst (Mar 24) wants correlation break alerts more prominently surfaced in the situation room / analytics situation matrix. Files: `src/commands/situation.rs`.
 - [Feedback] **Alert summary for investigation continuity** — Alert Investigator (Mar 24) wants a command showing recent acknowledged alerts to maintain investigation context across cycles. May extend `analytics alerts list --acknowledged --recent`.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
