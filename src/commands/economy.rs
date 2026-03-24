@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rust_decimal::Decimal;
 
 use crate::data::fred;
 use crate::db::backend::BackendConnection;
@@ -24,8 +25,10 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
             .iter()
             .map(|r| {
                 let (unit, display_name) = indicator_metadata(&r.indicator);
-                // Check if FRED has a more authoritative value for this indicator
-                let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations);
+                // Check if FRED has a more authoritative value for this indicator.
+                // Try direct FRED value first, then derived (for PAYEMS/CPIAUCSL).
+                let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations)
+                    .or_else(|| fred_derived_value_for_indicator(&r.indicator, backend));
                 let (final_value, source, confidence) =
                     if let Some((fval, fred_date)) = fred_override {
                         // FRED is more authoritative; use it
@@ -100,7 +103,8 @@ pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> 
     println!("{}", "─".repeat(92));
 
     for r in &rows {
-        let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations);
+        let fred_override = fred_value_for_indicator(&r.indicator, &fred_observations)
+            .or_else(|| fred_derived_value_for_indicator(&r.indicator, backend));
         let (display_val, source_label, conf) = if let Some((fval, fred_date)) = fred_override {
             (
                 format!("{:.2}", fval),
@@ -178,16 +182,24 @@ struct Discrepancy {
 }
 
 /// Detect discrepancies between economy data table values and FRED cache values.
+///
+/// Skips PAYEMS and CPIAUCSL since those are raw levels in FRED but derived
+/// values (MoM change, YoY%) in the economy data table — comparing them
+/// directly would always produce a false discrepancy.
 fn detect_fred_discrepancies(
     rows: &[economic_data::EconomicDataEntry],
     fred_obs: &[economic_cache::EconomicObservation],
 ) -> Vec<Discrepancy> {
-    use rust_decimal::Decimal;
-
     let mut discrepancies = Vec::new();
 
     for row in rows {
         if let Some(fred_indicator) = indicator_to_fred_series(&row.indicator) {
+            // Skip series where FRED stores raw levels but economy table has
+            // derived values — these are not directly comparable.
+            if fred_indicator == "PAYEMS" || fred_indicator == "CPIAUCSL" {
+                continue;
+            }
+
             if let Some(obs) = fred_obs.iter().find(|o| o.series_id == fred_indicator) {
                 let diff_abs = (row.value - obs.value).abs();
                 let denominator = obs.value.abs();
@@ -215,13 +227,68 @@ fn detect_fred_discrepancies(
 
 /// Get the FRED value for an economy indicator if available.
 /// Returns (value, date) from FRED cache.
+///
+/// For indicators where the FRED series is a raw level (not a rate), this
+/// returns None — those need historical data to compute derived values.
+/// Use `fred_derived_value_for_indicator` with backend access instead.
 fn fred_value_for_indicator(
     indicator: &str,
     fred_obs: &[economic_cache::EconomicObservation],
 ) -> Option<(rust_decimal::Decimal, String)> {
     let fred_series = indicator_to_fred_series(indicator)?;
+
+    // PAYEMS (total employment) and CPIAUCSL (CPI index) are raw levels,
+    // not the derived values agents expect (MoM change and YoY% respectively).
+    // Skip these — they need historical computation via fred_derived_value_for_indicator.
+    match fred_series {
+        "PAYEMS" | "CPIAUCSL" => return None,
+        _ => {}
+    }
+
     let obs = fred_obs.iter().find(|o| o.series_id == fred_series)?;
     Some((obs.value, obs.date.clone()))
+}
+
+/// Compute a FRED-derived economy value that requires historical data.
+/// For PAYEMS: month-over-month change (NFP jobs added).
+/// For CPIAUCSL: year-over-year percentage change (CPI inflation rate).
+fn fred_derived_value_for_indicator(
+    indicator: &str,
+    backend: &BackendConnection,
+) -> Option<(Decimal, String)> {
+    let fred_series = indicator_to_fred_series(indicator)?;
+
+    match fred_series {
+        "PAYEMS" => {
+            // NFP: compute month-over-month change from FRED history
+            let history = economic_cache::get_history_backend(backend, "PAYEMS", 3).ok()?;
+            if history.len() < 2 {
+                return None;
+            }
+            // history is ascending by date
+            let latest = &history[history.len() - 1];
+            let previous = &history[history.len() - 2];
+            let mom_change = latest.value - previous.value;
+            Some((mom_change, latest.date.clone()))
+        }
+        "CPIAUCSL" => {
+            // CPI: compute YoY% from FRED history (need 13+ months)
+            let history = economic_cache::get_history_backend(backend, "CPIAUCSL", 14).ok()?;
+            if history.len() < 13 {
+                return None;
+            }
+            // history is ascending by date; latest is last element
+            let latest = &history[history.len() - 1];
+            let year_ago = &history[history.len() - 13];
+            if year_ago.value == Decimal::ZERO {
+                return None;
+            }
+            let yoy =
+                ((latest.value / year_ago.value) - Decimal::ONE) * Decimal::from(100);
+            Some((yoy.round_dp(1), latest.date.clone()))
+        }
+        _ => None,
+    }
 }
 
 /// Map economy indicator names to FRED series IDs for cross-referencing.

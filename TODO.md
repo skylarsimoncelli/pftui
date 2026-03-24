@@ -10,7 +10,6 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] **Economy data format/quality issues** — High-Timeframe Analyst (Mar 23) and Medium-Timeframe Analyst (Mar 24) report incorrect Fed rate, garbled PMI, and raw-format CPI/NFP values (308.417, 157032). Investigate data source parsing in `src/data/fred.rs` and `src/commands/economy.rs` — values may need formatting or unit normalization for agent consumption.
 - [Feedback] **`analytics situation` returns empty results** — Evening Analyst (Mar 24) reports `analytics situation` producing empty output. Check if situation data requires promotion or if the command path has a query issue. Files: `src/commands/situation.rs`.
 
 ## P2 - Coverage And Agent Consumption
@@ -53,9 +52,9 @@ _(none)_
 - Dev Agent at all-time high 92/94
 
 **Top 3 priorities based on feedback:**
-1. **P1: Economy data format/quality** — Two testers flagged raw/incorrect values. Fix would help High-Timeframe (75% overall) and Medium-Timeframe recovery.
-2. **P1: `analytics situation` empty results** — Evening Analyst (lowest scorer) can't use situation commands.
-3. **P2: `portfolio daily-pnl`** — Evening Analyst (lowest scorer) had to compute manually. Quick win for score recovery.
+1. **P1: `analytics situation` empty results** — Evening Analyst (lowest scorer) can't use situation commands.
+2. **P2: `portfolio daily-pnl`** — Evening Analyst (lowest scorer) had to compute manually. Quick win for score recovery.
+3. **P2: `portfolio performance-since-inception`** — Evening Analyst wants total unrealized gain summary.
 
 **Release eligibility:** v0.15.0 released Mar 22. 96 new commits with major features (F53 Situation Engine, impact-estimate, macro cycles current, portfolio allocation, alert summary, COT fix, deltas crash fix). All tests pass (1604), clippy clean, no P0 bugs. **Ready to release v0.16.0.**
 
