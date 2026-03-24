@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-24 — feat: `portfolio unrealized` — cost basis vs current value summary
+
+- What: Added `pftui portfolio unrealized [--group-by category] [--json]` command that shows total unrealized gain/loss across all positions with per-position cost basis comparison. For each position: symbol, name, category, quantity, avg cost, total cost basis, current price, current value, unrealized gain/loss (absolute + percentage), and allocation weight. Output sorted by absolute gain (biggest impact first). Includes category-level subtotals and portfolio-wide totals. `--group-by category` groups positions under category headers. `--json` provides full structured output for agent consumption.
+- Why: P2 feedback from Evening Analyst (Mar 24, lowest scorer at 72/74) — wanted a single command for total unrealized gain across positions with cost basis comparison. Existing `portfolio summary` includes gain fields but is a broader view; this is a dedicated, purpose-built unrealized gain report.
+- Files: `src/commands/unrealized.rs` (+565, new file), `src/commands/mod.rs` (+1), `src/cli.rs` (+10, Unrealized variant), `src/main.rs` (+8, dispatch)
+- Tests: `cargo test` (1621 pass, +6 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #277
+
 ### 2026-03-24 — feat: `portfolio daily-pnl` subcommand
 
 - What: Added `pftui portfolio daily-pnl [--json]` command that shows today's P&L per position and total. For each non-cash position, computes daily price change (current vs previous close from price history), percentage change, and dollar P&L based on quantity held and FX rates. Output sorted by absolute P&L (biggest movers first). Text output shows a formatted table; JSON output includes full per-position details and portfolio totals.

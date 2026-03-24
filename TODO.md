@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **`portfolio performance-since-inception` / unrealized-gain summary** — Evening Analyst (Mar 24) wants a single command for total unrealized gain across positions with cost basis comparison. May extend existing `portfolio performance` or `portfolio summary`.
 - [Feedback] **`analytics correlations` --json and list improvements** — Evening Analyst (Mar 24) reports `correlations --json` not supported and `analytics correlations list` doesn't exist (only `history`). Add `--json` flag to correlations compute output and a `list` subcommand for latest stored snapshots.
 - [Feedback] **Correlation break alerts in situation room** — Medium-Timeframe Analyst (Mar 24) wants correlation break alerts more prominently surfaced in the situation room / analytics situation matrix. Files: `src/commands/situation.rs`.
 - [Feedback] **Alert summary for investigation continuity** — Alert Investigator (Mar 24) wants a command showing recent acknowledged alerts to maintain investigation context across cycles. May extend `analytics alerts list --acknowledged --recent`.
@@ -51,9 +50,9 @@ _(none)_
 - Dev Agent at all-time high 92/94
 
 **Top 3 priorities based on feedback:**
-1. **P2: `portfolio daily-pnl`** — Evening Analyst (lowest scorer) had to compute manually. Quick win for score recovery.
-2. **P2: `portfolio performance-since-inception`** — Evening Analyst wants total unrealized gain summary.
-3. **P2: `analytics correlations` --json and list** — Evening Analyst reports missing --json support and no list subcommand.
+1. **P2: `analytics correlations` --json and list** — Evening Analyst reports missing --json support and no list subcommand.
+2. **P2: Correlation break alerts in situation room** — Medium-Timeframe Analyst wants them more prominent.
+3. **P2: Alert summary for investigation continuity** — Alert Investigator wants acknowledged alert history.
 
 **Release eligibility:** v0.15.0 released Mar 22. 96 new commits with major features (F53 Situation Engine, impact-estimate, macro cycles current, portfolio allocation, alert summary, COT fix, deltas crash fix). All tests pass (1604), clippy clean, no P0 bugs. **Ready to release v0.16.0.**
 
