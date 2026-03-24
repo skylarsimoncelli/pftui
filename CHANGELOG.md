@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-24 — fix: analytics deltas JSON deserialize crash on pre-#240 snapshots
+
+- What: Fixed `pftui analytics deltas --json` crashing with `missing field armed_alert_count` when deserializing snapshots stored before #240 added alert fields to `SituationInputs`. Added `#[serde(default)]` to `armed_alert_count`, `acknowledged_alert_count`, and `recent_triggered_alerts` so older snapshots default to 0/empty.
+- Why: Bug reported by Low-Timeframe Analyst (Mar 23) — `analytics deltas` command was completely broken for `--json` output since any baseline snapshot from before #240 would fail to deserialize.
+- Files: `src/analytics/situation.rs` (+3), `src/analytics/deltas.rs` (+31, 1 new test)
+- Tests: `cargo test` (1604 pass, +1 new); `cargo clippy` (clean)
+- PR: #248
+
 ### 2026-03-23 — feat: alert count and status breakdown in situation summary
 
 - What: Added `alert_summary` section to situation snapshot with total/armed/triggered/acknowledged counts and up to 5 recent triggered alerts with full details (id, rule_text, symbol, kind, triggered_at). CLI text output shows ALERTS section; JSON includes full alert_summary object; mobile API includes alert_summary.
