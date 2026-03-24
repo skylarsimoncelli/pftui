@@ -94,8 +94,11 @@ pub struct SituationInputs {
     pub latest_timeframe_signal: Option<LatestSignal>,
     pub technical_signal_count: usize,
     pub triggered_alert_count: usize,
+    #[serde(default)]
     pub armed_alert_count: usize,
+    #[serde(default)]
     pub acknowledged_alert_count: usize,
+    #[serde(default)]
     pub recent_triggered_alerts: Vec<AlertDetail>,
     pub market_pulse: Vec<MarketPulseItem>,
     pub stale_sources: usize,

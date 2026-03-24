@@ -805,4 +805,35 @@ mod tests {
             .iter()
             .any(|item| item.title.contains("Correlation shifted")));
     }
+
+    #[test]
+    fn deserialize_pre_alert_snapshot_defaults_missing_fields() {
+        // Simulate a snapshot stored before #240 added alert fields to SituationInputs.
+        // The JSON has no armed_alert_count, acknowledged_alert_count, or recent_triggered_alerts.
+        let old_json = r#"{
+            "recorded_at": "2026-03-20T10:00:00Z",
+            "inputs": {
+                "position_count": 1,
+                "positions": [],
+                "timeframes": [],
+                "regime": null,
+                "sentiment": [],
+                "latest_timeframe_signal": null,
+                "technical_signal_count": 0,
+                "triggered_alert_count": 2,
+                "market_pulse": [],
+                "stale_sources": 0,
+                "scenarios": [],
+                "convictions": [],
+                "correlations": []
+            }
+        }"#;
+
+        let snapshot: StoredSituationSnapshot =
+            serde_json::from_str(old_json).expect("should deserialize old snapshot format");
+        assert_eq!(snapshot.inputs.triggered_alert_count, 2);
+        assert_eq!(snapshot.inputs.armed_alert_count, 0);
+        assert_eq!(snapshot.inputs.acknowledged_alert_count, 0);
+        assert!(snapshot.inputs.recent_triggered_alerts.is_empty());
+    }
 }
