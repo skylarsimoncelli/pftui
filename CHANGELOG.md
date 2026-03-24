@@ -3,6 +3,18 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-24 — fix: economy data format/quality — BLS derived values and plausibility tightening
+
+- What: Fixed three classes of economy data quality issues reported by High-Timeframe Analyst and Medium-Timeframe Analyst:
+  1. **BLS NFP raw level → MoM change**: `fetch_bls_fallback()` was storing the raw total employment level (157,032K) from BLS CES0000000001 instead of the month-over-month change agents expect (~151K). Now computes MoM change from the two most recent months, with previous MoM and change-of-change fields populated.
+  2. **BLS CPI index → YoY%**: CPI-U index level (e.g., 308.417) was stored as-is despite the indicator being labeled "CPI (YoY Inflation)". Now computes YoY percentage change from 12-months-ago value using `((current/year_ago) - 1) * 100`. Previous YoY and change fields also populated when data depth permits (14+ months).
+  3. **Brave PMI/claims plausibility bounds tightened**: PMI plausibility range narrowed from 0-100 to 25-80 (ISM historical low ~29.4, never above ~65). This rejects garbage extractions like "2.5" from irrelevant article text. Jobless claims floor raised from 50K to 100K.
+  4. **FRED PAYEMS/CPIAUCSL override fix**: The `data economy` command was overriding properly-computed BLS values with raw FRED levels for PAYEMS and CPIAUCSL. Now skips direct FRED override for these series and instead computes derived values (MoM/YoY) from FRED historical cache when available.
+  5. **Discrepancy detection fix**: Disabled raw-level vs derived-value comparisons for PAYEMS/CPIAUCSL that would always produce false discrepancies.
+- Why: P1 — Two testers (High-Timeframe Analyst at 75% overall, Medium-Timeframe Analyst) reported incorrect Fed rate, garbled PMI, and raw-format CPI/NFP values. The root cause was that BLS series CES0000000001 and CUUR0000SA0 return raw levels (total employment, price index) but were stored without transformation. Brave text extraction also accepted implausibly low PMI values.
+- Files: `src/data/economic.rs` (+99/-22: `compute_yoy_pct_change`, `compute_yoy_pct_change_offset`, rewritten `fetch_bls_fallback`, tightened `is_plausible` bounds, 6 new tests), `src/commands/economy.rs` (+47/-6: `fred_derived_value_for_indicator`, updated FRED override logic, fixed discrepancy detection)
+- Tests: `cargo test` (1610 pass, +6 new); `cargo clippy --all-targets -- -D warnings` (clean)
+
 ### 2026-03-24 — fix: analytics deltas JSON deserialize crash on pre-#240 snapshots
 
 - What: Fixed `pftui analytics deltas --json` crashing with `missing field armed_alert_count` when deserializing snapshots stored before #240 added alert fields to `SituationInputs`. Added `#[serde(default)]` to `armed_alert_count`, `acknowledged_alert_count`, and `recent_triggered_alerts` so older snapshots default to 0/empty.

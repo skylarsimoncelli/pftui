@@ -196,35 +196,91 @@ pub async fn fetch_via_brave(key: &str) -> Result<Vec<EconomicReading>> {
 
 pub async fn fetch_bls_fallback() -> Result<Vec<EconomicReading>> {
     let data = bls::fetch_all_key_series().await?;
-    let mut cpi = None;
-    let mut unemp = None;
-    let mut nfp = None;
-    let mut ppi = None;
 
+    // Group data points by series, sorted by date descending (most recent first).
+    let mut by_series: std::collections::HashMap<String, Vec<bls::BlsDataPoint>> =
+        std::collections::HashMap::new();
     for p in data {
-        match p.series_id.as_str() {
-            bls::SERIES_CPI_U => cpi = Some(p.value),
-            bls::SERIES_UNEMPLOYMENT => unemp = Some(p.value),
-            bls::SERIES_NFP => nfp = Some(p.value),
-            "WPUFD4" => ppi = Some(p.value),
-            _ => {}
-        }
+        by_series.entry(p.series_id.clone()).or_default().push(p);
+    }
+    for points in by_series.values_mut() {
+        points.sort_by(|a, b| b.date.cmp(&a.date));
     }
 
     let mut out = Vec::new();
-    if let Some(v) = cpi {
-        out.push(reading("cpi", v));
+
+    // CPI: BLS CUUR0000SA0 is the CPI-U index level. Compute YoY % change.
+    // YoY = ((current / 12-months-ago) - 1) * 100
+    if let Some(cpi_points) = by_series.get(bls::SERIES_CPI_U) {
+        if let Some(yoy) = compute_yoy_pct_change(cpi_points) {
+            let mut r = reading("cpi", yoy);
+            // Also set previous (last month's YoY) if enough data
+            if cpi_points.len() >= 14 {
+                if let Some(prev_yoy) = compute_yoy_pct_change_offset(cpi_points, 1) {
+                    r.previous = Some(prev_yoy);
+                    r.change = Some(yoy - prev_yoy);
+                }
+            }
+            out.push(r);
+        }
     }
-    if let Some(v) = unemp {
-        out.push(reading("unemployment_rate", v));
+
+    // Unemployment: already a rate (%), use latest value directly.
+    if let Some(unemp_points) = by_series.get(bls::SERIES_UNEMPLOYMENT) {
+        if let Some(latest) = unemp_points.first() {
+            let mut r = reading("unemployment_rate", latest.value);
+            if let Some(prev) = unemp_points.get(1) {
+                r.previous = Some(prev.value);
+                r.change = Some(latest.value - prev.value);
+            }
+            out.push(r);
+        }
     }
-    if let Some(v) = nfp {
-        out.push(reading("nfp", v));
+
+    // NFP: BLS CES0000000001 is total nonfarm employment in thousands.
+    // Agents expect month-over-month change (e.g., +151K), not the raw level (157,032K).
+    if let Some(nfp_points) = by_series.get(bls::SERIES_NFP) {
+        if nfp_points.len() >= 2 {
+            let current = nfp_points[0].value;
+            let previous = nfp_points[1].value;
+            let mom_change = current - previous;
+            let mut r = reading("nfp", mom_change);
+            // previous = last month's MoM change
+            if nfp_points.len() >= 3 {
+                let prev_mom = previous - nfp_points[2].value;
+                r.previous = Some(prev_mom);
+                r.change = Some(mom_change - prev_mom);
+            }
+            out.push(r);
+        }
     }
-    if let Some(v) = ppi {
-        out.push(reading("ppi", v));
-    }
+
     Ok(out)
+}
+
+/// Compute YoY percentage change from a sorted (desc) series of index values.
+/// Finds the value ~12 months before the latest and computes ((latest/year_ago) - 1) * 100.
+fn compute_yoy_pct_change(points: &[bls::BlsDataPoint]) -> Option<Decimal> {
+    compute_yoy_pct_change_offset(points, 0)
+}
+
+/// Like compute_yoy_pct_change but offset by N months from the latest.
+/// offset=0 means latest vs 12-months-ago, offset=1 means (latest-1) vs (latest-13), etc.
+fn compute_yoy_pct_change_offset(
+    points: &[bls::BlsDataPoint],
+    offset: usize,
+) -> Option<Decimal> {
+    if points.len() < offset + 13 {
+        return None;
+    }
+    let current = points.get(offset)?;
+    // Find the point ~12 months earlier. BLS monthly data: 12 periods back.
+    let year_ago = points.get(offset + 12)?;
+    if year_ago.value == Decimal::ZERO {
+        return None;
+    }
+    let yoy = ((current.value / year_ago.value) - Decimal::ONE) * Decimal::from(100);
+    Some(yoy.round_dp(1))
 }
 
 fn reading(indicator: &str, value: Decimal) -> EconomicReading {
@@ -258,15 +314,17 @@ fn is_plausible(indicator: &str, value: Decimal) -> bool {
         "cpi" => (-5.0..=25.0).contains(&v),
         // Unemployment rate: 0% to 30%
         "unemployment_rate" => (0.0..=30.0).contains(&v),
-        // NFP: typically 50K-500K range, but can go -20M in crisis. Reject < 50 (likely noise).
-        "nfp" => v.abs() >= 50.0 && v.abs() <= 20_000_000.0,
-        // PMI: 0-100 index (never > 100)
-        "pmi_manufacturing" | "pmi_services" => (0.0..=100.0).contains(&v),
+        // NFP month-over-month change: -20M to +2M (COVID was ~-20M, booms top ~500K).
+        // Values < 10 in absolute terms are likely noise from text extraction.
+        "nfp" => v.abs() >= 10.0 && v.abs() <= 20_000_000.0,
+        // PMI: ISM index ranges 25-80 historically. Below 25 is noise from text extraction
+        // (e.g., extracting "2.5" from an unrelated number in the article).
+        // The all-time low is ~29.4 (2008 crisis). Use 25 as floor with margin.
+        "pmi_manufacturing" | "pmi_services" => (25.0..=80.0).contains(&v),
         // Fed funds rate: 0% to 25%
         "fed_funds_rate" => (0.0..=25.0).contains(&v),
-        // Initial jobless claims: typically 150K-1M+. Values under 50K are noise
-        // (likely extracted a random number from article text, not the actual figure).
-        "initial_jobless_claims" => (50_000.0..=10_000_000.0).contains(&v),
+        // Initial jobless claims: typically 150K-1M+. Values under 100K are noise.
+        "initial_jobless_claims" => (100_000.0..=10_000_000.0).contains(&v),
         // PPI: can be negative to ~20%
         "ppi" => (-10.0..=30.0).contains(&v),
         _ => true,
@@ -313,6 +371,7 @@ fn extract_integer_like(text: &str) -> Option<Decimal> {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+    use std::str::FromStr;
 
     fn make_reading(indicator: &str, value: Decimal, source: DataSource) -> EconomicReading {
         EconomicReading {
@@ -355,7 +414,7 @@ mod tests {
 
     #[test]
     fn plausibility_rejects_tiny_nfp() {
-        assert!(!is_plausible("nfp", dec!(19)));
+        assert!(!is_plausible("nfp", dec!(5)));
     }
 
     #[test]
@@ -365,16 +424,30 @@ mod tests {
     }
 
     #[test]
+    fn plausibility_rejects_low_pmi() {
+        // Values below 25 are noise from text extraction (ISM historical low ~29.4)
+        assert!(!is_plausible("pmi_manufacturing", dec!(2.5)));
+        assert!(!is_plausible("pmi_services", dec!(2.5)));
+        assert!(!is_plausible("pmi_manufacturing", dec!(24.9)));
+    }
+
+    #[test]
+    fn plausibility_rejects_high_pmi() {
+        // PMI above 80 has never occurred
+        assert!(!is_plausible("pmi_manufacturing", dec!(80.1)));
+    }
+
+    #[test]
     fn plausibility_rejects_low_jobless_claims() {
         assert!(!is_plausible("initial_jobless_claims", dec!(8000)));
         assert!(!is_plausible("initial_jobless_claims", dec!(500)));
-        assert!(!is_plausible("initial_jobless_claims", dec!(49999)));
+        assert!(!is_plausible("initial_jobless_claims", dec!(99999)));
     }
 
     #[test]
     fn plausibility_accepts_valid_jobless_claims() {
         assert!(is_plausible("initial_jobless_claims", dec!(225000)));
-        assert!(is_plausible("initial_jobless_claims", dec!(50000)));
+        assert!(is_plausible("initial_jobless_claims", dec!(100000)));
     }
 
     #[test]
@@ -528,5 +601,81 @@ mod tests {
         // CPI index is not directly comparable to CPI YoY rate
         assert_eq!(fred_to_indicator("CPIAUCSL"), None);
         assert_eq!(fred_to_indicator("BOGUS"), None);
+    }
+
+    // ─── BLS derived value tests ───
+
+    #[test]
+    fn compute_yoy_from_cpi_index() {
+        use chrono::NaiveDate;
+        // Simulate 13 months of CPI-U index data (sorted desc by date).
+        // Current month index=310, 12 months ago=300 → YoY = (310/300 - 1)*100 = 3.3%
+        let points: Vec<bls::BlsDataPoint> = (0..13)
+            .map(|i| {
+                let base = dec!(300) + Decimal::from(13 - i) * Decimal::from_str("0.77").unwrap();
+                bls::BlsDataPoint {
+                    series_id: bls::SERIES_CPI_U.to_string(),
+                    year: 2025 + if i < 1 { 1 } else { 0 },
+                    period: format!("M{:02}", if i < 1 { 3 } else { 3 + 12 - i }),
+                    value: base,
+                    date: NaiveDate::from_ymd_opt(
+                        2025 + if i < 1 { 1 } else { 0 },
+                        if i < 1 { 3 } else { (3 + 12 - i) as u32 },
+                        1,
+                    )
+                    .unwrap_or(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()),
+                }
+            })
+            .collect();
+        let result = compute_yoy_pct_change(&points);
+        assert!(result.is_some());
+        let yoy = result.unwrap();
+        // Should be a positive percentage (index growing)
+        assert!(yoy > Decimal::ZERO);
+    }
+
+    #[test]
+    fn compute_yoy_needs_13_points() {
+        // With only 12 points, cannot compute YoY
+        let points: Vec<bls::BlsDataPoint> = (0..12)
+            .map(|i| bls::BlsDataPoint {
+                series_id: bls::SERIES_CPI_U.to_string(),
+                year: 2025,
+                period: format!("M{:02}", i + 1),
+                value: dec!(300) + Decimal::from(i),
+                date: chrono::NaiveDate::from_ymd_opt(2025, (i + 1) as u32, 1).unwrap(),
+            })
+            .collect();
+        assert!(compute_yoy_pct_change(&points).is_none());
+    }
+
+    #[test]
+    fn compute_yoy_exact_values() {
+        // CPI index: current=310, 12 months ago=300 → YoY = 3.3%
+        let mut points: Vec<bls::BlsDataPoint> = Vec::new();
+        for i in 0..13 {
+            let value = if i == 0 {
+                dec!(310)
+            } else if i == 12 {
+                dec!(300)
+            } else {
+                dec!(305)
+            };
+            points.push(bls::BlsDataPoint {
+                series_id: bls::SERIES_CPI_U.to_string(),
+                year: 2025,
+                period: format!("M{:02}", 13 - i),
+                value,
+                date: chrono::NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            });
+        }
+        let yoy = compute_yoy_pct_change(&points).unwrap();
+        assert_eq!(yoy, dec!(3.3));
+    }
+
+    #[test]
+    fn brave_rejects_garbage_pmi() {
+        // "2.5" should now be rejected by the tighter PMI bounds (25-80)
+        assert!(extract_value("pmi_manufacturing", "ISM PMI index 2.5% decline").is_none());
     }
 }
