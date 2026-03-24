@@ -1631,8 +1631,14 @@ fn main() -> Result<()> {
                 None,
                 json,
             ),
-            cli::AnalyticsCommand::Situation { command } => match command {
-                None | Some(cli::SituationCommand::Dashboard { json: false }) => {
+            cli::AnalyticsCommand::Situation { command, json } => match command {
+                None | Some(cli::SituationCommand::Dashboard { .. }) => {
+                    // Use top-level --json OR dashboard subcommand --json
+                    let use_json = json
+                        || matches!(
+                            command,
+                            Some(cli::SituationCommand::Dashboard { json: true })
+                        );
                     commands::analytics::run(
                         &backend,
                         "situation",
@@ -1661,39 +1667,9 @@ fn main() -> Result<()> {
                         None,
                         None,
                         None,
-                        false,
+                        use_json,
                     )
                 }
-                Some(cli::SituationCommand::Dashboard { json: true }) => commands::analytics::run(
-                    &backend,
-                    "situation",
-                    None,
-                    None,
-                    None,
-                    None,
-                    &[],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    true,
-                ),
                 Some(cmd) => commands::situation::run(&backend, cmd),
             },
             cli::AnalyticsCommand::Deltas { since, json } => commands::analytics::run(

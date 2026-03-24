@@ -2380,6 +2380,8 @@ pub enum AnalyticsCommand {
     Situation {
         #[command(subcommand)]
         command: Option<SituationCommand>,
+        #[arg(long)]
+        json: bool,
     },
     Deltas {
         #[arg(long, default_value = "last-refresh")]
