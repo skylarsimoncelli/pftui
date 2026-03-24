@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-24 — feat: `portfolio daily-pnl` subcommand
+
+- What: Added `pftui portfolio daily-pnl [--json]` command that shows today's P&L per position and total. For each non-cash position, computes daily price change (current vs previous close from price history), percentage change, and dollar P&L based on quantity held and FX rates. Output sorted by absolute P&L (biggest movers first). Text output shows a formatted table; JSON output includes full per-position details and portfolio totals.
+- Why: P2 feedback from Evening Analyst (Mar 24, lowest scorer at 72/74) — had to manually compute daily P&L from position data. This adds a dedicated command so agents can get structured daily P&L in one call.
+- Files: `src/commands/daily_pnl.rs` (+260, new file), `src/commands/mod.rs` (+1), `src/cli.rs` (+7, DailyPnl variant), `src/main.rs` (+3, dispatch)
+- Tests: `cargo test` (1615 pass, +5 new); `cargo clippy --all-targets -- -D warnings` (clean)
+
 ### 2026-03-24 — fix: analytics situation --json missing flag
 
 - What: Fixed `analytics situation --json` failing with "unexpected argument '--json'" error. The `--json` flag was only available on the `dashboard` subcommand (`analytics situation dashboard --json`), not on the top-level `analytics situation` command. Added `--json` to the `Situation` variant in `AnalyticsCommand` so it works like every other analytics subcommand. Both `analytics situation --json` and `analytics situation dashboard --json` now produce correct output.

@@ -15,6 +15,7 @@ pub mod conviction;
 pub mod correlations;
 pub mod cot;
 pub mod crisis;
+pub mod daily_pnl;
 pub mod daemon;
 pub mod db_info;
 pub mod demo;

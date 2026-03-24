@@ -704,6 +704,13 @@ pub enum PortfolioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show today's P&L per position and total (price change vs previous close)
+    #[command(name = "daily-pnl")]
+    DailyPnl {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Show portfolio performance: returns over time (MTD, QTD, YTD, since inception)
     Performance {
         /// Custom start date for return calculation (YYYY-MM-DD)

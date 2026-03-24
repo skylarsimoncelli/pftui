@@ -905,6 +905,9 @@ fn main() -> Result<()> {
             Some(cli::PortfolioCommand::Eod { json }) => {
                 commands::eod::run(&backend, &config, json)
             }
+            Some(cli::PortfolioCommand::DailyPnl { json }) => {
+                commands::daily_pnl::run(&backend, &config, json)
+            }
             Some(cli::PortfolioCommand::Performance {
                 since,
                 period,
