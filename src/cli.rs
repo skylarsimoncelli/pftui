@@ -1637,6 +1637,18 @@ pub enum AnalyticsCorrelationsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List stored correlation snapshots (alias for `latest`)
+    List {
+        /// Period for snapshots/history: 7d, 30d, 90d
+        #[arg(long)]
+        period: Option<String>,
+        /// Maximum number of rows to show
+        #[arg(long, default_value = "25")]
+        limit: usize,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// List pairs with correlation breaks (short-term vs long-term divergence beyond threshold)
     Breaks {
         /// Minimum absolute delta (|corr_7d − corr_90d|) to count as a break (default: 0.30)
@@ -2506,6 +2518,9 @@ pub enum AnalyticsCommand {
     Correlations {
         #[command(subcommand)]
         command: Option<AnalyticsCorrelationsCommand>,
+        /// Output as JSON (when no subcommand given)
+        #[arg(long)]
+        json: bool,
     },
     Scan {
         #[arg(long)]
@@ -4281,5 +4296,70 @@ mod tests {
 
         assert_eq!(days.as_deref(), Some("14"));
         assert!(json);
+    }
+
+    #[test]
+    fn test_correlations_bare_json_flag() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "correlations", "--json"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Correlations { command, json } = command else {
+            panic!("expected correlations");
+        };
+        assert!(json);
+        assert!(command.is_none());
+    }
+
+    #[test]
+    fn test_correlations_list_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "correlations",
+            "list",
+            "--json",
+            "--limit",
+            "10",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Correlations { command, json: _ } = command else {
+            panic!("expected correlations");
+        };
+        let Some(AnalyticsCorrelationsCommand::List { period, limit, json }) = command else {
+            panic!("expected List subcommand");
+        };
+        assert!(json);
+        assert_eq!(limit, 10);
+        assert!(period.is_none());
+    }
+
+    #[test]
+    fn test_correlations_list_with_period() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "correlations",
+            "list",
+            "--period",
+            "7d",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Correlations { command, json: _ } = command else {
+            panic!("expected correlations");
+        };
+        let Some(AnalyticsCorrelationsCommand::List { period, limit, json }) = command else {
+            panic!("expected List subcommand");
+        };
+        assert!(!json);
+        assert_eq!(limit, 25);
+        assert_eq!(period.as_deref(), Some("7d"));
     }
 }
