@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::alerts::AlertStatus;
+use crate::commands::correlations;
 use crate::db;
 use crate::db::backend::BackendConnection;
 use crate::models::asset_names::resolve_name;
@@ -22,6 +23,17 @@ pub struct SituationSnapshot {
     pub portfolio_impacts: Vec<PortfolioImpact>,
     pub risk_matrix: Vec<RiskState>,
     pub cross_timeframe: Vec<CrossTimeframeState>,
+    pub correlation_breaks: Vec<CorrelationBreakState>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CorrelationBreakState {
+    pub symbol_a: String,
+    pub symbol_b: String,
+    pub corr_7d: Option<f64>,
+    pub corr_90d: Option<f64>,
+    pub break_delta: f64,
+    pub severity: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,7 +190,36 @@ pub struct CorrelationState {
 
 pub fn build_snapshot_backend(backend: &BackendConnection) -> Result<SituationSnapshot> {
     let inputs = collect_inputs_backend(backend)?;
-    Ok(build_snapshot(&inputs))
+    let correlation_breaks = compute_correlation_breaks(backend);
+    Ok(build_snapshot(&inputs, &correlation_breaks))
+}
+
+fn compute_correlation_breaks(backend: &BackendConnection) -> Vec<CorrelationBreakState> {
+    let threshold = 0.30;
+    let limit = 10;
+    match correlations::compute_breaks_backend(backend, threshold, limit) {
+        Ok(breaks) => breaks
+            .into_iter()
+            .map(|b| {
+                let severity = if b.break_delta.abs() >= 0.60 {
+                    "critical"
+                } else if b.break_delta.abs() >= 0.40 {
+                    "elevated"
+                } else {
+                    "normal"
+                };
+                CorrelationBreakState {
+                    symbol_a: b.symbol_a,
+                    symbol_b: b.symbol_b,
+                    corr_7d: b.corr_7d,
+                    corr_90d: b.corr_90d,
+                    break_delta: b.break_delta,
+                    severity: severity.to_string(),
+                }
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationInputs> {
@@ -354,12 +395,48 @@ pub fn collect_inputs_backend(backend: &BackendConnection) -> Result<SituationIn
     })
 }
 
-pub fn build_snapshot(inputs: &SituationInputs) -> SituationSnapshot {
+pub fn build_snapshot(
+    inputs: &SituationInputs,
+    correlation_breaks: &[CorrelationBreakState],
+) -> SituationSnapshot {
     let average_score = average_timeframe_score(&inputs.timeframes);
-    let watch_now = situation_watch_now(inputs, average_score);
+    let mut watch_now = situation_watch_now(inputs, average_score);
     let portfolio_impacts = situation_portfolio_impacts(&inputs.positions);
     let risk_matrix = situation_risk_matrix(inputs);
     let cross_timeframe = situation_cross_timeframe(&inputs.timeframes);
+
+    // Surface significant correlation breaks in watch_now
+    if !correlation_breaks.is_empty() {
+        let break_count = correlation_breaks.len();
+        let worst = &correlation_breaks[0]; // Already sorted by |delta| descending
+        let severity = if worst.break_delta.abs() >= 0.60 {
+            "critical"
+        } else if worst.break_delta.abs() >= 0.40 {
+            "elevated"
+        } else {
+            "normal"
+        };
+        watch_now.push(SituationInsight {
+            title: format!(
+                "{} correlation break{}",
+                break_count,
+                if break_count == 1 { "" } else { "s" }
+            ),
+            detail: format!(
+                "{} ↔ {} diverged {:+.2} (7d vs 90d)",
+                worst.symbol_a, worst.symbol_b, worst.break_delta
+            ),
+            value: format!("{:+.2}", worst.break_delta),
+            severity: severity.to_string(),
+        });
+        // Re-sort and truncate after adding correlation break insight
+        watch_now.sort_by(|left, right| {
+            severity_weight(&right.severity)
+                .cmp(&severity_weight(&left.severity))
+                .then_with(|| left.title.cmp(&right.title))
+        });
+        watch_now.truncate(6);
+    }
     let headline = inputs
         .latest_timeframe_signal
         .as_ref()
@@ -417,6 +494,7 @@ pub fn build_snapshot(inputs: &SituationInputs) -> SituationSnapshot {
         portfolio_impacts,
         risk_matrix,
         cross_timeframe,
+        correlation_breaks: correlation_breaks.to_vec(),
     }
 }
 
@@ -858,24 +936,27 @@ mod tests {
 
     #[test]
     fn empty_snapshot_has_stable_defaults() {
-        let snapshot = build_snapshot(&SituationInputs {
-            position_count: 0,
-            positions: Vec::new(),
-            timeframes: Vec::new(),
-            regime: None,
-            sentiment: Vec::new(),
-            latest_timeframe_signal: None,
-            technical_signal_count: 0,
-            triggered_alert_count: 0,
-            armed_alert_count: 0,
-            acknowledged_alert_count: 0,
-            recent_triggered_alerts: Vec::new(),
-            market_pulse: Vec::new(),
-            stale_sources: 0,
-            scenarios: Vec::new(),
-            convictions: Vec::new(),
-            correlations: Vec::new(),
-        });
+        let snapshot = build_snapshot(
+            &SituationInputs {
+                position_count: 0,
+                positions: Vec::new(),
+                timeframes: Vec::new(),
+                regime: None,
+                sentiment: Vec::new(),
+                latest_timeframe_signal: None,
+                technical_signal_count: 0,
+                triggered_alert_count: 0,
+                armed_alert_count: 0,
+                acknowledged_alert_count: 0,
+                recent_triggered_alerts: Vec::new(),
+                market_pulse: Vec::new(),
+                stale_sources: 0,
+                scenarios: Vec::new(),
+                convictions: Vec::new(),
+                correlations: Vec::new(),
+            },
+            &[],
+        );
 
         assert_eq!(snapshot.headline, "Situation Stable");
         assert_eq!(snapshot.watch_now.len(), 0);
@@ -883,6 +964,7 @@ mod tests {
         assert_eq!(snapshot.cross_timeframe.len(), 0);
         assert_eq!(snapshot.alert_summary.total, 0);
         assert_eq!(snapshot.alert_summary.triggered, 0);
+        assert!(snapshot.correlation_breaks.is_empty());
     }
 
     #[test]
@@ -953,7 +1035,7 @@ mod tests {
             scenarios: Vec::new(),
             convictions: Vec::new(),
             correlations: Vec::new(),
-        });
+        }, &[]);
 
         assert!(!snapshot.watch_now.is_empty());
         assert_eq!(snapshot.watch_now[0].severity, "critical");
@@ -970,5 +1052,105 @@ mod tests {
         assert_eq!(snapshot.alert_summary.acknowledged, 1);
         assert_eq!(snapshot.alert_summary.recent_triggered.len(), 2);
         assert_eq!(snapshot.alert_summary.recent_triggered[0].symbol, "BTC-USD");
+    }
+
+    #[test]
+    fn correlation_breaks_surface_in_watch_now() {
+        let breaks = vec![
+            CorrelationBreakState {
+                symbol_a: "BTC-USD".to_string(),
+                symbol_b: "GC=F".to_string(),
+                corr_7d: Some(-0.30),
+                corr_90d: Some(0.45),
+                break_delta: -0.75,
+                severity: "critical".to_string(),
+            },
+            CorrelationBreakState {
+                symbol_a: "BTC-USD".to_string(),
+                symbol_b: "SPY".to_string(),
+                corr_7d: Some(0.10),
+                corr_90d: Some(0.50),
+                break_delta: -0.40,
+                severity: "elevated".to_string(),
+            },
+        ];
+        let snapshot = build_snapshot(
+            &SituationInputs {
+                position_count: 0,
+                positions: Vec::new(),
+                timeframes: Vec::new(),
+                regime: None,
+                sentiment: Vec::new(),
+                latest_timeframe_signal: None,
+                technical_signal_count: 0,
+                triggered_alert_count: 0,
+                armed_alert_count: 0,
+                acknowledged_alert_count: 0,
+                recent_triggered_alerts: Vec::new(),
+                market_pulse: Vec::new(),
+                stale_sources: 0,
+                scenarios: Vec::new(),
+                convictions: Vec::new(),
+                correlations: Vec::new(),
+            },
+            &breaks,
+        );
+
+        // Correlation breaks should appear in watch_now
+        assert!(
+            snapshot
+                .watch_now
+                .iter()
+                .any(|item| item.title.contains("correlation break")),
+            "Correlation breaks should appear in watch_now"
+        );
+        // Should be surfaced with critical severity (worst break is -0.75)
+        let corr_item = snapshot
+            .watch_now
+            .iter()
+            .find(|item| item.title.contains("correlation break"))
+            .unwrap();
+        assert_eq!(corr_item.severity, "critical");
+        assert!(corr_item.detail.contains("BTC-USD"));
+        assert!(corr_item.detail.contains("GC=F"));
+
+        // correlation_breaks field should be populated
+        assert_eq!(snapshot.correlation_breaks.len(), 2);
+        assert_eq!(snapshot.correlation_breaks[0].symbol_a, "BTC-USD");
+        assert_eq!(snapshot.correlation_breaks[0].symbol_b, "GC=F");
+    }
+
+    #[test]
+    fn no_correlation_breaks_leaves_section_empty() {
+        let snapshot = build_snapshot(
+            &SituationInputs {
+                position_count: 0,
+                positions: Vec::new(),
+                timeframes: Vec::new(),
+                regime: None,
+                sentiment: Vec::new(),
+                latest_timeframe_signal: None,
+                technical_signal_count: 0,
+                triggered_alert_count: 0,
+                armed_alert_count: 0,
+                acknowledged_alert_count: 0,
+                recent_triggered_alerts: Vec::new(),
+                market_pulse: Vec::new(),
+                stale_sources: 0,
+                scenarios: Vec::new(),
+                convictions: Vec::new(),
+                correlations: Vec::new(),
+            },
+            &[],
+        );
+
+        assert!(snapshot.correlation_breaks.is_empty());
+        assert!(
+            !snapshot
+                .watch_now
+                .iter()
+                .any(|item| item.title.contains("correlation break")),
+            "No correlation break insight when no breaks exist"
+        );
     }
 }

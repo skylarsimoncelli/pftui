@@ -1993,6 +1993,40 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
             }
         }
 
+        // Correlation breaks
+        if !snapshot.correlation_breaks.is_empty() {
+            println!();
+            println!("CORRELATION BREAKS");
+            println!(
+                "{:<22} {:>8} {:>8} {:>10} {:>10}",
+                "Pair", "7d", "90d", "Break Δ", "Severity"
+            );
+            println!("{}", "─".repeat(62));
+            for cb in &snapshot.correlation_breaks {
+                let pair = format!("{}-{}", cb.symbol_a, cb.symbol_b);
+                let c7 = cb
+                    .corr_7d
+                    .map(|v| format!("{:+.2}", v))
+                    .unwrap_or_else(|| "---".to_string());
+                let c90 = cb
+                    .corr_90d
+                    .map(|v| format!("{:+.2}", v))
+                    .unwrap_or_else(|| "---".to_string());
+                println!(
+                    "{:<22} {:>8} {:>8} {:>10} {:>10}",
+                    if pair.len() > 22 {
+                        format!("{}...", &pair[..19])
+                    } else {
+                        pair
+                    },
+                    c7,
+                    c90,
+                    format!("{:+.2}", cb.break_delta),
+                    cb.severity,
+                );
+            }
+        }
+
         // Alert summary
         let alerts = &snapshot.alert_summary;
         if alerts.total > 0 || alerts.triggered > 0 {
