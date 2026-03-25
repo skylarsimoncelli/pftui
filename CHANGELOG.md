@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-25 — feat: analytics predictions alias + situation list --json guidance
+
+- What: Two P1 fixes for Evening Analyst discoverability issues: (1) Added `pftui analytics predictions` as a full alias for `pftui data predictions`, so agents can discover prediction market data from the analytics command tree. Supports all flags: `--category`, `--search`, `--limit`, `--json`. (2) Fixed `analytics situation list --json` returning bare `[]` when no scenarios are promoted. Now returns a structured JSON object with `situations`, `count`, `phase`, and a `hint` field explaining how to promote scenarios via `journal scenario promote`.
+- Why: Both P1 items from Evening Analyst (lowest scorer at 78%). The `analytics predictions` gap directly caused empty output and agent confusion. The `situation list` empty JSON gave no guidance on what to do next.
+- Files: `src/cli.rs` (+72, Predictions variant in AnalyticsCommand, 2 new tests), `src/main.rs` (+12, dispatch), `src/commands/situation.rs` (+15/-1, JSON empty guidance)
+- Tests: `cargo test` (1628 pass, +2 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #300
+
 ### 2026-03-25 — feat: correlation breaks in situation room
 
 - What: Added dedicated CORRELATION BREAKS section to the Situation Room (`analytics situation`). Live correlation breaks (|7d − 90d| ≥ 0.30) are now computed inline and displayed with pair, 7d/90d values, break delta, and severity classification. Significant breaks also surface in WATCH NOW with critical/elevated severity. JSON output includes `correlation_breaks` array for agent consumption.

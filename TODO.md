@@ -10,8 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] **`analytics predictions` command missing — discoverability gap** — Evening Analyst (Mar 25) tried `analytics predictions` which doesn't exist; the correct paths are `journal prediction list` (journal predictions) and `data predictions` (Polymarket). Either add `analytics predictions` as an alias/redirect or surface a helpful error. Evening Analyst is the lowest scorer — this directly caused empty output and confusion.
-- [Feedback] **`analytics situation list` returns empty with no guidance** — Evening Analyst (Mar 25) got empty `[]` from `analytics situation list` because no scenarios have been promoted to active situations. Should return a helpful message explaining that scenarios need to be promoted via `journal scenario promote` before they appear as situations.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 
@@ -43,17 +42,17 @@ _(none)_
 **Key changes since last review (Mar 24):**
 - v0.16.0 released Mar 24. 47 new commits since tag.
 - Shipped: correlation breaks in situation room (#291), correlations --json + list subcommand (#283), portfolio unrealized (#277), portfolio daily-pnl (#270), analytics situation --json fix (#263), economy data format fix (#257), mobile TLS cert fix
-- Tests: 1626 passing (up from 1604), clippy clean
+- Tests: 1628 passing (up from 1626), clippy clean
 - Evening Analyst improved 72→78 usefulness, 74→75 overall — situation/narrative/deltas praised but predictions/situation-list discoverability hurt
 - Medium-Timeframe stable at 85/80 — COT extreme detection was critical for repositioning calls
 - Low-Timeframe Analyst recovered to 85/80 from 75/85 crash
 - Alert Investigator stable and consistent across multiple daily reviews
 
 **Top 3 priorities based on feedback:**
-1. **P1: `analytics predictions` discoverability** — Evening Analyst (lowest scorer) hit empty output trying a nonexistent command path.
-2. **P1: `analytics situation list` empty with no guidance** — Evening Analyst confusion when no scenarios are promoted.
+1. ~~**P1: `analytics predictions` discoverability**~~ — SHIPPED #300. `analytics predictions` now aliases `data predictions`.
+2. ~~**P1: `analytics situation list` empty with no guidance**~~ — SHIPPED #300. JSON output now returns structured object with hint.
 3. **P2: Regime transition alerts** — Medium-Timeframe Analyst wants alerts on scenario probability shifts >10%.
 
-**Release eligibility:** v0.16.0 released Mar 24. 47 new commits since tag with features (correlation breaks in situation room, correlations --json/list, portfolio unrealized, portfolio daily-pnl) and fixes (analytics situation --json, economy data format, mobile TLS cert). All tests pass (1626), clippy clean, no P0 bugs. **Ready to release v0.17.0** when the current batch stabilizes — suggest waiting for the P1 discoverability fixes to land first.
+**Release eligibility:** v0.17.0 released. All P1 items shipped (#300 — analytics predictions alias + situation list guidance). Tests: 1628 passing, clippy clean, no P0 bugs. No P1 remaining.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.
