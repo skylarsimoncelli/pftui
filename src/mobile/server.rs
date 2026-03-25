@@ -583,7 +583,7 @@ fn portfolio_history(
 ) -> Vec<MobilePortfolioHistoryPoint> {
     let non_cash_positions: Vec<_> = positions
         .iter()
-        .filter(|position| position.category.to_ascii_lowercase() != "cash")
+        .filter(|position| !position.category.eq_ignore_ascii_case("cash"))
         .collect();
     if non_cash_positions.is_empty() {
         return Vec::new();
@@ -629,7 +629,7 @@ fn portfolio_history(
 
     let cash_total: Decimal = positions
         .iter()
-        .filter(|position| position.category.to_ascii_lowercase() == "cash")
+        .filter(|position| position.category.eq_ignore_ascii_case("cash"))
         .filter_map(|position| position.current_value)
         .sum();
 

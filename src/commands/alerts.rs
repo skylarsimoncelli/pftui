@@ -1427,7 +1427,7 @@ mod tests {
     #[test]
     fn test_list_recent_without_status_filter() {
         let backend = setup_backend();
-        let id = alerts_db::add_alert_backend(
+        let _id = alerts_db::add_alert_backend(
             &backend,
             alerts_db::NewAlert {
                 kind: "price",
