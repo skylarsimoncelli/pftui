@@ -18,6 +18,8 @@ pub enum AlertKind {
     Technical,
     /// Macro alert evaluated from cached regime/economic/sentiment data.
     Macro,
+    /// Scenario alert: fires when a scenario probability shifts by ≥ threshold in a single update.
+    Scenario,
 }
 
 impl fmt::Display for AlertKind {
@@ -28,6 +30,7 @@ impl fmt::Display for AlertKind {
             AlertKind::Indicator => write!(f, "indicator"),
             AlertKind::Technical => write!(f, "technical"),
             AlertKind::Macro => write!(f, "macro"),
+            AlertKind::Scenario => write!(f, "scenario"),
         }
     }
 }
@@ -42,6 +45,7 @@ impl std::str::FromStr for AlertKind {
             "indicator" => Ok(AlertKind::Indicator),
             "technical" => Ok(AlertKind::Technical),
             "macro" => Ok(AlertKind::Macro),
+            "scenario" => Ok(AlertKind::Scenario),
             _ => Err(anyhow::anyhow!("Unknown alert kind: {}", s)),
         }
     }

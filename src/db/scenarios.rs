@@ -1,6 +1,8 @@
 use anyhow::Result;
+use chrono::Utc;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::PgPool;
 
 use crate::db::backend::BackendConnection;
@@ -602,13 +604,28 @@ pub fn list_updates(
     Ok(updates)
 }
 
+/// Default threshold (percentage points) for scenario probability shift alerts.
+const SCENARIO_SHIFT_THRESHOLD_PP: f64 = 10.0;
+
 pub fn update_scenario_probability(
     conn: &Connection,
     id: i64,
     probability: f64,
     driver: Option<&str>,
 ) -> Result<()> {
-    // Update scenario first
+    // Read current probability before updating
+    let old_prob: f64 = conn.query_row(
+        "SELECT probability FROM scenarios WHERE id = ?",
+        params![id],
+        |row| row.get(0),
+    )?;
+    let scenario_name: String = conn.query_row(
+        "SELECT name FROM scenarios WHERE id = ?",
+        params![id],
+        |row| row.get(0),
+    )?;
+
+    // Update scenario
     conn.execute(
         "UPDATE scenarios SET probability = ?, updated_at = datetime('now') WHERE id = ?",
         params![probability, id],
@@ -619,6 +636,49 @@ pub fn update_scenario_probability(
         "INSERT INTO scenario_history (scenario_id, probability, driver) VALUES (?, ?, ?)",
         params![id, probability, driver],
     )?;
+
+    // Detect large probability shifts and auto-create scenario alerts
+    let delta = probability - old_prob;
+    let abs_delta = delta.abs();
+    if abs_delta >= SCENARIO_SHIFT_THRESHOLD_PP {
+        let direction = if delta > 0.0 { "above" } else { "below" };
+        let sign = if delta > 0.0 { "+" } else { "" };
+        let rule_text = format!(
+            "{} probability shifted {}{:.1}pp ({:.1}% → {:.1}%)",
+            scenario_name, sign, delta, old_prob, probability
+        );
+        let driver_text = driver.unwrap_or("(no driver specified)");
+        let trigger_data = json!({
+            "scenario_id": id,
+            "scenario_name": scenario_name,
+            "old_probability": old_prob,
+            "new_probability": probability,
+            "delta_pp": delta,
+            "threshold_pp": SCENARIO_SHIFT_THRESHOLD_PP,
+            "driver": driver_text,
+        });
+
+        // Create the alert in triggered state
+        conn.execute(
+            "INSERT INTO alerts (kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, triggered_at)
+             VALUES ('scenario', ?, ?, 'probability_shift', ?, 'triggered', ?, 0, 0, datetime('now'))",
+            params![
+                scenario_name,
+                direction,
+                SCENARIO_SHIFT_THRESHOLD_PP.to_string(),
+                rule_text,
+            ],
+        )?;
+        let alert_id = conn.last_insert_rowid();
+
+        // Also log to triggered_alerts for history
+        let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO triggered_alerts (alert_id, triggered_at, trigger_data, acknowledged) VALUES (?, ?, ?, 0)",
+            params![alert_id, now, trigger_data.to_string()],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -1380,6 +1440,19 @@ fn update_scenario_probability_postgres(
     driver: Option<&str>,
 ) -> Result<()> {
     ensure_tables_postgres(pool)?;
+
+    // Read old probability and name before updating
+    let (old_prob, scenario_name): (f64, String) =
+        crate::db::pg_runtime::block_on(async {
+            let row: (f64, String) = sqlx::query_as(
+                "SELECT probability, name FROM scenarios WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
+            Ok::<(f64, String), sqlx::Error>(row)
+        })?;
+
     crate::db::pg_runtime::block_on(async {
         sqlx::query("UPDATE scenarios SET probability = $1, updated_at = NOW() WHERE id = $2")
             .bind(probability)
@@ -1396,6 +1469,55 @@ fn update_scenario_probability_postgres(
         .await?;
         Ok::<(), sqlx::Error>(())
     })?;
+
+    // Detect large probability shifts and auto-create scenario alerts
+    let delta = probability - old_prob;
+    let abs_delta = delta.abs();
+    if abs_delta >= SCENARIO_SHIFT_THRESHOLD_PP {
+        let direction = if delta > 0.0 { "above" } else { "below" };
+        let sign = if delta > 0.0 { "+" } else { "" };
+        let rule_text = format!(
+            "{} probability shifted {}{:.1}pp ({:.1}% → {:.1}%)",
+            scenario_name, sign, delta, old_prob, probability
+        );
+        let driver_text = driver.unwrap_or("(no driver specified)");
+        let trigger_data = json!({
+            "scenario_id": id,
+            "scenario_name": scenario_name,
+            "old_probability": old_prob,
+            "new_probability": probability,
+            "delta_pp": delta,
+            "threshold_pp": SCENARIO_SHIFT_THRESHOLD_PP,
+            "driver": driver_text,
+        });
+        let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        crate::db::pg_runtime::block_on(async {
+            let alert_id: (i64,) = sqlx::query_as(
+                "INSERT INTO alerts (kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, triggered_at)
+                 VALUES ('scenario', $1, $2, 'probability_shift', $3, 'triggered', $4, false, 0, NOW())
+                 RETURNING id",
+            )
+            .bind(&scenario_name)
+            .bind(direction)
+            .bind(SCENARIO_SHIFT_THRESHOLD_PP.to_string())
+            .bind(&rule_text)
+            .fetch_one(pool)
+            .await?;
+
+            sqlx::query(
+                "INSERT INTO triggered_alerts (alert_id, triggered_at, trigger_data, acknowledged) VALUES ($1, $2, $3, false)",
+            )
+            .bind(alert_id.0)
+            .bind(&now)
+            .bind(trigger_data.to_string())
+            .execute(pool)
+            .await?;
+
+            Ok::<(), sqlx::Error>(())
+        })?;
+    }
+
     Ok(())
 }
 
@@ -2065,4 +2187,170 @@ fn get_history_postgres(
             recorded_at: r.4,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_db() -> Result<Connection> {
+        let conn = Connection::open_in_memory()?;
+        crate::db::schema::run_migrations(&conn)?;
+        Ok(conn)
+    }
+
+    #[test]
+    fn test_probability_shift_creates_scenario_alert() -> Result<()> {
+        let conn = test_db()?;
+        let id = add_scenario(
+            &conn,
+            "Recession",
+            20.0,
+            Some("Test recession scenario"),
+            None,
+            None,
+            None,
+        )?;
+
+        // Small shift — should NOT create an alert
+        update_scenario_probability(&conn, id, 25.0, Some("minor update"))?;
+        let alerts: Vec<String> = conn
+            .prepare("SELECT rule_text FROM alerts WHERE kind = 'scenario'")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        assert!(alerts.is_empty(), "Small shift should not create alert");
+
+        // Large shift (+15pp) — should create an alert
+        update_scenario_probability(&conn, id, 40.0, Some("major data shift"))?;
+        let alerts: Vec<String> = conn
+            .prepare("SELECT rule_text FROM alerts WHERE kind = 'scenario'")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(alerts.len(), 1, "Large shift should create one alert");
+        assert!(
+            alerts[0].contains("Recession"),
+            "Alert should mention scenario name"
+        );
+        assert!(
+            alerts[0].contains("+15.0pp"),
+            "Alert should show delta: {}",
+            alerts[0]
+        );
+        assert!(
+            alerts[0].contains("25.0%"),
+            "Alert should show old probability"
+        );
+        assert!(
+            alerts[0].contains("40.0%"),
+            "Alert should show new probability"
+        );
+
+        // Check triggered_alerts was also populated
+        let triggered_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM triggered_alerts",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(triggered_count, 1, "Should have one triggered_alert entry");
+
+        // Check trigger_data contains scenario info
+        let trigger_data: String = conn.query_row(
+            "SELECT trigger_data FROM triggered_alerts LIMIT 1",
+            [],
+            |row| row.get(0),
+        )?;
+        let parsed: serde_json::Value = serde_json::from_str(&trigger_data)?;
+        assert_eq!(parsed["scenario_name"], "Recession");
+        assert_eq!(parsed["old_probability"], 25.0);
+        assert_eq!(parsed["new_probability"], 40.0);
+        assert_eq!(parsed["delta_pp"], 15.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_probability_decrease_creates_alert() -> Result<()> {
+        let conn = test_db()?;
+        let id = add_scenario(
+            &conn,
+            "Hyperinflation",
+            50.0,
+            Some("Test inflation scenario"),
+            None,
+            None,
+            None,
+        )?;
+
+        // Large decrease (-12pp) — should create an alert with "below" direction
+        update_scenario_probability(&conn, id, 38.0, Some("CPI came in lower"))?;
+        let direction: String = conn.query_row(
+            "SELECT direction FROM alerts WHERE kind = 'scenario' LIMIT 1",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(direction, "below", "Decreasing probability should use 'below'");
+
+        let rule_text: String = conn.query_row(
+            "SELECT rule_text FROM alerts WHERE kind = 'scenario' LIMIT 1",
+            [],
+            |row| row.get(0),
+        )?;
+        assert!(
+            rule_text.contains("-12.0pp"),
+            "Should show negative delta: {}",
+            rule_text
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_exact_threshold_creates_alert() -> Result<()> {
+        let conn = test_db()?;
+        let id = add_scenario(
+            &conn,
+            "ExactTest",
+            30.0,
+            None,
+            None,
+            None,
+            None,
+        )?;
+
+        // Exactly 10pp shift — should create alert (>= threshold)
+        update_scenario_probability(&conn, id, 40.0, None)?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE kind = 'scenario'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 1, "Exactly 10pp shift should create alert");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_just_below_threshold_no_alert() -> Result<()> {
+        let conn = test_db()?;
+        let id = add_scenario(
+            &conn,
+            "NearMiss",
+            30.0,
+            None,
+            None,
+            None,
+            None,
+        )?;
+
+        // 9.9pp shift — should NOT create alert
+        update_scenario_probability(&conn, id, 39.9, None)?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE kind = 'scenario'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 0, "9.9pp shift should not create alert");
+
+        Ok(())
+    }
 }

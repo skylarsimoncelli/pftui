@@ -298,6 +298,12 @@ fn evaluate_alert_sqlite(
         AlertKind::Indicator => evaluate_indicator_alert_sqlite(conn, alert, price_map),
         AlertKind::Technical => evaluate_technical_alert_sqlite(conn, alert, price_map),
         AlertKind::Macro => evaluate_macro_alert_sqlite(conn, alert, price_map),
+        AlertKind::Scenario => Ok(AlertEvaluation {
+            current_value: None,
+            is_triggered: false, // Scenario alerts are pre-triggered at write time
+            distance_pct: None,
+            trigger_data: json!({ "kind": "scenario", "reason": "evaluated_at_write_time" }),
+        }),
     }
 }
 
@@ -317,6 +323,12 @@ fn evaluate_alert_backend(
         AlertKind::Indicator => evaluate_indicator_alert_backend(backend, alert, price_map),
         AlertKind::Technical => evaluate_technical_alert_backend(backend, alert, price_map),
         AlertKind::Macro => evaluate_macro_alert_backend(backend, alert),
+        AlertKind::Scenario => Ok(AlertEvaluation {
+            current_value: None,
+            is_triggered: false, // Scenario alerts are pre-triggered at write time
+            distance_pct: None,
+            trigger_data: json!({ "kind": "scenario", "reason": "evaluated_at_write_time" }),
+        }),
     }
 }
 
