@@ -101,6 +101,52 @@ pub fn list_alerts_by_status(conn: &Connection, status: AlertStatus) -> Result<V
     Ok(result)
 }
 
+/// List alerts that were triggered/acknowledged within the last N hours.
+/// Optionally filter by status.
+pub fn list_alerts_recent(
+    conn: &Connection,
+    hours: i64,
+    status_filter: Option<AlertStatus>,
+) -> Result<Vec<AlertRule>> {
+    let mut query = String::from(
+        "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at, triggered_at
+         FROM alerts
+         WHERE triggered_at IS NOT NULL
+           AND triggered_at >= datetime('now', ?1)",
+    );
+    if let Some(ref status) = status_filter {
+        query.push_str(&format!(" AND status = '{}'", status));
+    }
+    query.push_str(" ORDER BY triggered_at DESC");
+
+    let interval = format!("-{} hours", hours.max(0));
+    let mut stmt = conn.prepare(&query)?;
+    let rows = stmt.query_map(params![interval], |row| {
+        let kind_str: String = row.get(1)?;
+        let dir_str: String = row.get(3)?;
+        let status_str: String = row.get(6)?;
+        Ok(AlertRule {
+            id: row.get(0)?,
+            kind: kind_str.parse().unwrap_or(AlertKind::Price),
+            symbol: row.get(2)?,
+            direction: dir_str.parse().unwrap_or(AlertDirection::Above),
+            condition: row.get(4)?,
+            threshold: row.get(5)?,
+            status: status_str.parse().unwrap_or(AlertStatus::Armed),
+            rule_text: row.get(7)?,
+            recurring: row.get::<_, i64>(8)? != 0,
+            cooldown_minutes: row.get(9)?,
+            created_at: row.get(10)?,
+            triggered_at: row.get(11)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
 /// Update alert status. Optionally set triggered_at timestamp.
 pub fn update_alert_status(
     conn: &Connection,
@@ -200,6 +246,18 @@ pub fn list_alerts_by_status_backend(
         backend,
         |conn| list_alerts_by_status(conn, status),
         |pool| list_alerts_by_status_postgres(pool, status),
+    )
+}
+
+pub fn list_alerts_recent_backend(
+    backend: &BackendConnection,
+    hours: i64,
+    status_filter: Option<AlertStatus>,
+) -> Result<Vec<AlertRule>> {
+    query::dispatch(
+        backend,
+        |conn| list_alerts_recent(conn, hours, status_filter),
+        |pool| list_alerts_recent_postgres(pool, hours, status_filter),
     )
 }
 
@@ -346,6 +404,30 @@ fn list_alerts_postgres(pool: &PgPool) -> Result<Vec<AlertRule>> {
         )
         .fetch_all(pool)
         .await
+    })?;
+    Ok(rows.into_iter().map(alert_from_row).collect())
+}
+
+fn list_alerts_recent_postgres(
+    pool: &PgPool,
+    hours: i64,
+    status_filter: Option<AlertStatus>,
+) -> Result<Vec<AlertRule>> {
+    ensure_tables_postgres(pool)?;
+    let rows: Vec<AlertRow> = crate::db::pg_runtime::block_on(async {
+        let mut qb = sqlx::QueryBuilder::new(
+            "SELECT id, kind, symbol, direction, condition, threshold, status, rule_text, recurring, cooldown_minutes, created_at::text, triggered_at::text
+             FROM alerts
+             WHERE triggered_at IS NOT NULL
+               AND triggered_at >= NOW() - (",
+        );
+        qb.push_bind(hours.max(0))
+            .push(" * INTERVAL '1 hour')");
+        if let Some(status) = status_filter {
+            qb.push(" AND status = ").push_bind(status.to_string());
+        }
+        qb.push(" ORDER BY triggered_at DESC");
+        qb.build_query_as().fetch_all(pool).await
     })?;
     Ok(rows.into_iter().map(alert_from_row).collect())
 }
@@ -676,5 +758,91 @@ mod tests {
         let alert = get_alert(&conn, id).unwrap().unwrap();
         assert_eq!(alert.kind, AlertKind::Indicator);
         assert_eq!(alert.symbol, "GC=F RSI");
+    }
+
+    #[test]
+    fn test_list_alerts_recent_returns_recently_triggered() {
+        let conn = open_in_memory();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "GC=F above 5500"),
+        )
+        .unwrap();
+        // Trigger the alert with a recent timestamp
+        update_alert_status(
+            &conn,
+            id,
+            AlertStatus::Triggered,
+            Some(&chrono::Utc::now().to_rfc3339()),
+        )
+        .unwrap();
+
+        let recent = list_alerts_recent(&conn, 24, None).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].id, id);
+    }
+
+    #[test]
+    fn test_list_alerts_recent_excludes_old() {
+        let conn = open_in_memory();
+        let id = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "GC=F above 5500"),
+        )
+        .unwrap();
+        // Trigger with an old timestamp (48 hours ago)
+        let old_time = (chrono::Utc::now() - chrono::Duration::hours(48)).to_rfc3339();
+        update_alert_status(&conn, id, AlertStatus::Triggered, Some(&old_time)).unwrap();
+
+        let recent = list_alerts_recent(&conn, 24, None).unwrap();
+        assert!(recent.is_empty());
+    }
+
+    #[test]
+    fn test_list_alerts_recent_filters_by_status() {
+        let conn = open_in_memory();
+        let id1 = add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "5500", "GC=F above 5500"),
+        )
+        .unwrap();
+        let id2 = add_alert(
+            &conn,
+            new_alert("price", "BTC", "below", None, "90000", "BTC below 90000"),
+        )
+        .unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        update_alert_status(&conn, id1, AlertStatus::Triggered, Some(&now)).unwrap();
+        update_alert_status(&conn, id2, AlertStatus::Triggered, Some(&now)).unwrap();
+        // Acknowledge only the first one
+        acknowledge_alert(&conn, id1).unwrap();
+
+        // All recent
+        let all = list_alerts_recent(&conn, 24, None).unwrap();
+        assert_eq!(all.len(), 2);
+
+        // Only acknowledged
+        let acked = list_alerts_recent(&conn, 24, Some(AlertStatus::Acknowledged)).unwrap();
+        assert_eq!(acked.len(), 1);
+        assert_eq!(acked[0].id, id1);
+
+        // Only triggered (not yet acknowledged)
+        let triggered = list_alerts_recent(&conn, 24, Some(AlertStatus::Triggered)).unwrap();
+        assert_eq!(triggered.len(), 1);
+        assert_eq!(triggered[0].id, id2);
+    }
+
+    #[test]
+    fn test_list_alerts_recent_empty_when_none_triggered() {
+        let conn = open_in_memory();
+        // Add an armed alert with no triggered_at
+        add_alert(
+            &conn,
+            new_alert("price", "GC=F", "above", None, "6000", "GC=F above 6000"),
+        )
+        .unwrap();
+
+        let recent = list_alerts_recent(&conn, 24, None).unwrap();
+        assert!(recent.is_empty());
     }
 }
