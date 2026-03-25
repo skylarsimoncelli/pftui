@@ -10,12 +10,14 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-_(none)_
+- [Feedback] **`analytics predictions` command missing — discoverability gap** — Evening Analyst (Mar 25) tried `analytics predictions` which doesn't exist; the correct paths are `journal prediction list` (journal predictions) and `data predictions` (Polymarket). Either add `analytics predictions` as an alias/redirect or surface a helpful error. Evening Analyst is the lowest scorer — this directly caused empty output and confusion.
+- [Feedback] **`analytics situation list` returns empty with no guidance** — Evening Analyst (Mar 25) got empty `[]` from `analytics situation list` because no scenarios have been promoted to active situations. Should return a helpful message explaining that scenarios need to be promoted via `journal scenario promote` before they appear as situations.
 
 ## P2 - Coverage And Agent Consumption
 
 - [Feedback] **Alert summary for investigation continuity** — Alert Investigator (Mar 24) wants a command showing recent acknowledged alerts to maintain investigation context across cycles. May extend `analytics alerts list --acknowledged --recent`.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
+- [Feedback] **Regime transition alerts on scenario probability shifts** — Medium-Timeframe Analyst (Mar 25) wants alerts when scenario probabilities shift >10% in a single session. Could integrate into the situation indicator system or create a new alert kind.
 
 ## P3 - Long Term
 
@@ -29,28 +31,29 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 72% | 74% | Mar 24 | → (stable low — overall ticked up 70→74, usefulness flat at 72. Still lowest scorer. Wants daily-pnl, correlations --json, performance-since-inception.) |
-| Medium-Timeframe Analyst | 85% | 80% | Mar 24 | ↑ (recovered from 75/85 on Mar 23 — COT fix helped. Economy data format issues remain. Wants correlation breaks in situation room.) |
-| Low-Timeframe Analyst | 75% | 85% | Mar 23 | ↓ (down from 85/90 earlier Mar 23 — deltas crash (#248 now fixed) hurt late session. Should recover next review.) |
-| High-Timeframe Analyst | 85% | 75% | Mar 23 | ↓ (first scored review — economy data quality issues dragged overall down. Trend evidence system praised.) |
-| Low-Timeframe Midday | 85% | 88% | Mar 23 | → (stable, minor --json gaps noted) |
-| Morning Intelligence | 85% | 90% | Mar 23 | → (stable, regime confidence request noted) |
-| Alert Investigator | 75-85% | 80% | Mar 24 | → (stable, consistent routine monitoring. Wants alert summary for continuity.) |
-| Dev Agent | 92% | 94% | Mar 24 | ↑ (highest scorer, shipping consistently — deltas crash fix #248 deployed cleanly) |
+| Evening Analyst | 78% | 75% | Mar 25 | ↑ (up from 72/74 on Mar 24. Situation/narrative/deltas commands praised. Still lowest scorer — `analytics predictions` and `analytics situation list` returned empty.) |
+| Medium-Timeframe Analyst | 85% | 80% | Mar 25 | → (stable at 85/80. COT extreme detection praised. Wants regime transition alerts on probability shifts >10%.) |
+| Low-Timeframe Analyst | 85% | 80% | Mar 24 | ↑ (recovered from 75/85 crash on Mar 23 — deltas fix helped. Wants integrated news sentiment scoring.) |
+| High-Timeframe Analyst | 85% | 75% | Mar 23 | → (no new review since Mar 23. Economy data quality fixes shipped.) |
+| Low-Timeframe Midday | 85% | 88% | Mar 23 | → (stable, no new review.) |
+| Morning Intelligence | 85% | 90% | Mar 23 | → (stable, no new review.) |
+| Alert Investigator | 85% | 80-82% | Mar 25 | → (stable, consistent routine monitoring. Multiple reviews today — system working well. Wants alert summary for continuity.) |
+| Dev Agent | 92% | 94% | Mar 25 | → (stable high. Shipped correlation breaks #291 cleanly. Codebase praised as well-structured.) |
 
-**Key changes since last review (Mar 23):**
-- 96 commits since v0.15.0 tag (Mar 22): F53 Situation Engine (all 4 phases), macro cycles current (#232), impact-estimate (#218), portfolio allocation (#204), ack --all (#226), alert summary in situation (#240), COT freshness fix (#212), deltas deserialize crash fix (#248), macOS desktop client
-- Tests: 1604 passing (up from 1601), clippy clean
-- Evening Analyst overall ticked up 70→74 but still lowest scorer — analytics praised but missing daily-pnl and correlations tooling
-- Medium-Timeframe recovered 75→85 usefulness after COT fix, but economy data format issues flagged
-- Low-Timeframe Analyst hit by deltas crash (now fixed) — expect recovery
-- High-Timeframe Analyst first review: 85/75 — trend system praised, economy data quality issues hurt
-- Dev Agent at all-time high 92/94
+**Key changes since last review (Mar 24):**
+- v0.16.0 released Mar 24. 47 new commits since tag.
+- Shipped: correlation breaks in situation room (#291), correlations --json + list subcommand (#283), portfolio unrealized (#277), portfolio daily-pnl (#270), analytics situation --json fix (#263), economy data format fix (#257), mobile TLS cert fix
+- Tests: 1626 passing (up from 1604), clippy clean
+- Evening Analyst improved 72→78 usefulness, 74→75 overall — situation/narrative/deltas praised but predictions/situation-list discoverability hurt
+- Medium-Timeframe stable at 85/80 — COT extreme detection was critical for repositioning calls
+- Low-Timeframe Analyst recovered to 85/80 from 75/85 crash
+- Alert Investigator stable and consistent across multiple daily reviews
 
 **Top 3 priorities based on feedback:**
-1. **P2: Alert summary for investigation continuity** — Alert Investigator wants acknowledged alert history.
-2. **P2: Weekend/after-hours CLI mode** — Low-Timeframe Analyst wants streamlined non-market-hours commands.
+1. **P1: `analytics predictions` discoverability** — Evening Analyst (lowest scorer) hit empty output trying a nonexistent command path.
+2. **P1: `analytics situation list` empty with no guidance** — Evening Analyst confusion when no scenarios are promoted.
+3. **P2: Regime transition alerts** — Medium-Timeframe Analyst wants alerts on scenario probability shifts >10%.
 
-**Release eligibility:** v0.15.0 released Mar 22. 96 new commits with major features (F53 Situation Engine, impact-estimate, macro cycles current, portfolio allocation, alert summary, COT fix, deltas crash fix). All tests pass (1604), clippy clean, no P0 bugs. **Ready to release v0.16.0.**
+**Release eligibility:** v0.16.0 released Mar 24. 47 new commits since tag with features (correlation breaks in situation room, correlations --json/list, portfolio unrealized, portfolio daily-pnl) and fixes (analytics situation --json, economy data format, mobile TLS cert). All tests pass (1626), clippy clean, no P0 bugs. **Ready to release v0.17.0** when the current batch stabilizes — suggest waiting for the P1 discoverability fixes to land first.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.
