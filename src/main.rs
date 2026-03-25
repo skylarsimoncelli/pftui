@@ -575,6 +575,14 @@ fn main() -> Result<()> {
         return commands::search::run(cli_cmd, &query_str, json);
     }
 
+    // Market hours doesn't need database — intercept early
+    if let Some(Command::System {
+        command: cli::SystemCommand::MarketHours { json },
+    }) = cli.command
+    {
+        return commands::market_hours::run(json);
+    }
+
     let config = load_config_with_first_run_prompt()?;
     let db_path = default_db_path();
 
@@ -864,6 +872,9 @@ fn main() -> Result<()> {
                 let query_str = query.join(" ");
                 let cli_cmd = cli::Cli::command();
                 commands::search::run(cli_cmd, &query_str, json)
+            }
+            cli::SystemCommand::MarketHours { json } => {
+                commands::market_hours::run(json)
             }
             cli::SystemCommand::MigrateJournal {
                 path,

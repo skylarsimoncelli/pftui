@@ -1117,6 +1117,13 @@ pub enum SystemCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show US equity market hours: current phase, next open/close, agent guidance
+    #[command(name = "market-hours")]
+    MarketHours {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// One-time migration from legacy JOURNAL.md into SQLite journal table
     #[command(name = "migrate-journal")]
     MigrateJournal {
