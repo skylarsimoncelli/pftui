@@ -6,7 +6,7 @@ struct FlexValue: Codable, Hashable {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let string = try? container.decode(String.self) {
-            self.raw = string
+            self.raw = FlexValue.normalize(string)
         } else if let intValue = try? container.decode(Int.self) {
             self.raw = String(intValue)
         } else if let doubleValue = try? container.decode(Double.self) {
@@ -21,6 +21,12 @@ struct FlexValue: Codable, Hashable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(raw)
+    }
+
+    private static func normalize(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Double(trimmed) else { return trimmed }
+        return String(format: "%.2f", value)
     }
 }
 
@@ -322,7 +328,14 @@ struct PortfolioPayload: Decodable {
     let totalValue: FlexValue?
     let dailyChangePct: FlexValue?
     let positionCount: Int
+    let history: [PortfolioHistoryPointPayload]
     let positions: [PositionPayload]
+}
+
+struct PortfolioHistoryPointPayload: Decodable, Identifiable {
+    var id: String { date }
+    let date: String
+    let value: FlexValue
 }
 
 struct PositionPayload: Decodable, Identifiable {

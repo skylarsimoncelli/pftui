@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(Charts)
+import Charts
+#endif
 #if canImport(UIKit)
 import UIKit
 #else
@@ -117,6 +120,9 @@ struct SetupView: View {
 struct DashboardShellView: View {
     @EnvironmentObject private var store: MobileStore
     @Binding var selectedTab: Int
+    @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
+    @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
+    @AppStorage("pftui.mobile.systemDensity") private var systemDensity = "dense"
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -154,6 +160,23 @@ struct DashboardShellView: View {
         }
         .tint(MobilePalette.accent)
         .toolbar {
+#if os(macOS)
+            ToolbarItemGroup(placement: .automatic) {
+                Button {
+                    setDensity("dense")
+                } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .keyboardShortcut("-")
+
+                Button {
+                    setDensity("expanded")
+                } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .keyboardShortcut("+")
+            }
+#endif
             ToolbarItem(placement: .primaryAction) {
                 Button("Sign Out") {
                     store.disconnect()
@@ -161,6 +184,12 @@ struct DashboardShellView: View {
                 .foregroundStyle(MobilePalette.red)
             }
         }
+    }
+
+    private func setDensity(_ density: String) {
+        homeDensity = density
+        analyticsDensity = density
+        systemDensity = density
     }
 }
 
@@ -178,25 +207,24 @@ struct HomeView: View {
     @AppStorage("pftui.mobile.home.showConcentration") private var showConcentration = true
     @AppStorage("pftui.mobile.home.showPulse") private var showPulse = true
     @AppStorage("pftui.mobile.home.showWatchlist") private var showWatchlist = true
-    @AppStorage("pftui.mobile.home.showSystem") private var showSystem = false
-    @AppStorage("pftui.mobile.home.showNews") private var showNews = false
+    @AppStorage("pftui.mobile.home.showSystem") private var showSystem = true
+    @AppStorage("pftui.mobile.home.showNews") private var showNews = true
     @AppStorage("pftui.mobile.home.showOpportunities") private var showOpportunities = true
     @AppStorage("pftui.mobile.home.showSynthesis") private var showSynthesis = true
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
                 topBar(maskValues: $maskValues)
 
                 heroCard(
                     title: store.dashboard?.situation.title ?? situationTitle,
-                    subtitle: "Situation Room",
+                    subtitle: "Overview",
                     detail: store.dashboard?.situation.subtitle ?? situationSubtitle
                 )
 
                 if let dashboard = store.dashboard {
                     signalSummaryCard(monitoring: dashboard.monitoring)
-                    commandDeckCard(dashboard: dashboard)
 
                     CollapsibleCardSection(
                         title: "Watch Now",
@@ -212,8 +240,8 @@ struct HomeView: View {
 
                     if !dashboard.impact.exposures.isEmpty {
                         CollapsibleCardSection(
-                            title: "Portfolio Impact",
-                            subtitle: "Held and watched exposure ranked by evidence",
+                            title: "Current Exposures",
+                            subtitle: "Held assets ranked by active evidence",
                             isExpanded: $showFocus
                         ) {
                             VStack(spacing: 12) {
@@ -226,12 +254,12 @@ struct HomeView: View {
 
                     if !dashboard.opportunities.opportunities.isEmpty {
                         CollapsibleCardSection(
-                            title: "Opportunities",
-                            subtitle: "High-alignment non-held ideas",
+                            title: "New Ideas",
+                            subtitle: "Non-held candidates with the strongest alignment",
                             isExpanded: $showOpportunities
                         ) {
                             VStack(spacing: 12) {
-                                ForEach(dashboard.opportunities.opportunities.prefix(homeDensity == "dense" ? 4 : 6)) { insight in
+                                ForEach(dashboard.opportunities.opportunities.prefix(homeDensity == "dense" ? 3 : 5)) { insight in
                                     assetInsightRow(insight)
                                 }
                             }
@@ -491,10 +519,10 @@ struct HomeView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(12)
         }
         .background(MobilePalette.bgPrimary)
-        .navigationTitle("Situation")
+        .navigationTitle("Overview")
     }
 
     @ViewBuilder
@@ -825,39 +853,91 @@ struct PortfolioView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 heroCard(
                     title: masked(store.portfolio?.totalValue?.raw),
                     subtitle: "Portfolio Value",
                     detail: store.portfolio?.dailyChangePct.map { "24H \($0.raw)" } ?? "No daily change"
                 )
 
-                ForEach(store.portfolio?.positions ?? []) { position in
+                if let portfolio = store.portfolio {
                     card {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(position.symbol)
-                                        .font(.headline)
-                                        .foregroundStyle(MobilePalette.textPrimary)
-                                    Text(position.name)
-                                        .font(.subheadline)
-                                        .foregroundStyle(MobilePalette.textSecondary)
-                                }
-                                Spacer()
-                                Text(position.dayChangePct?.raw ?? "—")
-                                    .foregroundStyle(deltaColor(position.dayChangePct?.raw))
-                                    .font(.subheadline.weight(.semibold))
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Portfolio Snapshot")
+                                .font(.headline)
+                                .foregroundStyle(MobilePalette.textPrimary)
+
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                                metricChip(label: "Total Value", value: masked(portfolio.totalValue?.raw))
+                                metricChip(label: "24H Change", value: portfolio.dailyChangePct?.raw ?? "—")
+                                metricChip(label: "Positions", value: "\(portfolio.positionCount)")
+                                metricChip(label: "Largest Position", value: portfolio.positions.first?.symbol ?? "—")
                             }
-                            metricRow("Category", position.category)
-                            metricRow("Price", masked(position.currentPrice?.raw))
-                            metricRow("Value", masked(position.currentValue?.raw))
-                            metricRow("Allocation", position.allocationPct?.raw ?? "—")
+                        }
+                    }
+
+                    if !portfolio.history.isEmpty {
+                        card {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Portfolio History")
+                                    .font(.headline)
+                                    .foregroundStyle(MobilePalette.textPrimary)
+                                PortfolioHistoryChart(points: portfolio.history)
+                                    .frame(height: 220)
+                            }
+                        }
+                    }
+
+                    if !allocationSlices(portfolio.positions).isEmpty {
+                        card {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Asset Allocation")
+                                    .font(.headline)
+                                    .foregroundStyle(MobilePalette.textPrimary)
+                                HStack(alignment: .top, spacing: 16) {
+                                    AllocationPieChart(slices: allocationSlices(portfolio.positions))
+                                        .frame(width: 220, height: 220)
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        ForEach(allocationSlices(portfolio.positions)) { slice in
+                                            HStack(spacing: 10) {
+                                                Circle()
+                                                    .fill(slice.color)
+                                                    .frame(width: 10, height: 10)
+                                                Text(slice.label)
+                                                    .foregroundStyle(MobilePalette.textPrimary)
+                                                Spacer()
+                                                Text(String(format: "%.2f%%", slice.value))
+                                                    .foregroundStyle(MobilePalette.textSecondary)
+                                            }
+                                            .font(.subheadline)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Holdings")
+                                .font(.headline)
+                                .foregroundStyle(MobilePalette.textPrimary)
+
+                            VStack(spacing: 0) {
+                                portfolioTableHeader
+                                ForEach(Array(portfolio.positions.enumerated()), id: \.element.id) { index, position in
+                                    if index > 0 {
+                                        Divider()
+                                            .overlay(MobilePalette.border)
+                                    }
+                                    portfolioTableRow(position)
+                                }
+                            }
                         }
                     }
                 }
             }
-            .padding(16)
+            .padding(12)
         }
         .background(MobilePalette.bgPrimary)
         .navigationTitle("Portfolio")
@@ -866,6 +946,64 @@ struct PortfolioView: View {
     private func masked(_ value: String?) -> String {
         guard !maskValues else { return "••••" }
         return value ?? "—"
+    }
+
+    private var portfolioTableHeader: some View {
+        HStack {
+            Text("Asset")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Price")
+                .frame(width: 96, alignment: .trailing)
+            Text("Value")
+                .frame(width: 110, alignment: .trailing)
+            Text("Alloc")
+                .frame(width: 72, alignment: .trailing)
+            Text("24H")
+                .frame(width: 72, alignment: .trailing)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(MobilePalette.textSecondary)
+        .padding(.bottom, 8)
+    }
+
+    private func portfolioTableRow(_ position: PositionPayload) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(position.symbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(MobilePalette.textPrimary)
+                Text(position.name)
+                    .font(.caption)
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(masked(position.currentPrice?.raw))
+                .frame(width: 96, alignment: .trailing)
+            Text(masked(position.currentValue?.raw))
+                .frame(width: 110, alignment: .trailing)
+            Text((position.allocationPct?.raw).map { "\($0)%" } ?? "—")
+                .frame(width: 72, alignment: .trailing)
+            Text((position.dayChangePct?.raw).map { "\($0)%" } ?? "—")
+                .foregroundStyle(deltaColor(position.dayChangePct?.raw))
+                .frame(width: 72, alignment: .trailing)
+        }
+        .font(.subheadline)
+        .foregroundStyle(MobilePalette.textPrimary)
+        .padding(.vertical, 8)
+    }
+
+    private func allocationSlices(_ positions: [PositionPayload]) -> [AllocationSlice] {
+        let grouped = Dictionary(grouping: positions, by: \.category)
+        return grouped.compactMap { category, rows in
+            let total = rows
+                .compactMap { Double($0.allocationPct?.raw ?? "") }
+                .reduce(0, +)
+            guard total > 0 else { return nil }
+            return AllocationSlice(label: category, value: total, color: categoryColor(category))
+        }
+        .sorted { $0.value > $1.value }
     }
 }
 
@@ -883,7 +1021,7 @@ struct AnalyticsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 if let analytics = store.analytics {
                     analyticsHero(analytics: analytics)
                     CollapsibleCardSection(
@@ -1102,7 +1240,7 @@ struct AnalyticsView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(12)
         }
         .background(MobilePalette.bgPrimary)
         .navigationTitle("Analytics")
@@ -1204,7 +1342,7 @@ struct SystemView: View {
     @AppStorage("pftui.mobile.home.showFocus") private var showFocusModule = true
     @AppStorage("pftui.mobile.home.showChanges") private var showChangeModule = true
     @AppStorage("pftui.mobile.home.showRisk") private var showRiskModule = true
-    @AppStorage("pftui.mobile.home.showNews") private var showNewsModule = false
+    @AppStorage("pftui.mobile.home.showNews") private var showNewsModule = true
     @State private var showDisplay = true
     @State private var showConnection = true
     @State private var showServer = true
@@ -1214,7 +1352,7 @@ struct SystemView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 heroCard(
                     title: store.dashboard?.monitoring.system.server.pftuiVersion ?? "Offline",
                     subtitle: "Server Control",
@@ -1362,7 +1500,7 @@ struct SystemView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(12)
         }
         .background(MobilePalette.bgPrimary)
         .navigationTitle("System")
@@ -1490,6 +1628,84 @@ struct SecondaryIconButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.8 : 1.0)
     }
 }
+
+private struct AllocationSlice: Identifiable {
+    let id = UUID()
+    let label: String
+    let value: Double
+    let color: Color
+}
+
+#if canImport(Charts)
+private struct PortfolioHistoryChart: View {
+    let points: [PortfolioHistoryPointPayload]
+
+    var body: some View {
+        Chart(points) { point in
+            let amount = Double(point.value.raw) ?? 0
+
+            AreaMark(
+                x: .value("Date", point.date),
+                y: .value("Value", amount)
+            )
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [MobilePalette.accent.opacity(0.30), .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .interpolationMethod(.monotone)
+
+            LineMark(
+                x: .value("Date", point.date),
+                y: .value("Value", amount)
+            )
+            .foregroundStyle(MobilePalette.accent)
+            .interpolationMethod(.monotone)
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .leading) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(MobilePalette.border)
+                AxisValueLabel {
+                    if let amount = value.as(Double.self) {
+                        Text(shortCurrency(amount))
+                    }
+                }
+                .foregroundStyle(MobilePalette.textSecondary)
+            }
+        }
+    }
+}
+
+private struct AllocationPieChart: View {
+    let slices: [AllocationSlice]
+
+    var body: some View {
+        Chart(slices) { slice in
+            SectorMark(
+                angle: .value("Allocation", slice.value),
+                innerRadius: .ratio(0.58),
+                angularInset: 2
+            )
+            .foregroundStyle(slice.color)
+        }
+        .chartLegend(.hidden)
+    }
+}
+#else
+private struct PortfolioHistoryChart: View {
+    let points: [PortfolioHistoryPointPayload]
+    var body: some View { Color.clear }
+}
+
+private struct AllocationPieChart: View {
+    let slices: [AllocationSlice]
+    var body: some View { Color.clear }
+}
+#endif
 
 struct StatusPill: View {
     let text: String
@@ -1637,7 +1853,7 @@ struct FlowTagList: View {
 @ViewBuilder
 private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     content()
-        .padding(16)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
@@ -1646,8 +1862,8 @@ private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some 
                 endPoint: .bottomTrailing
             )
         )
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(MobilePalette.border))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(MobilePalette.border))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
 }
 
 @ViewBuilder
@@ -1681,7 +1897,7 @@ private func heroCard(title: String, subtitle: String, detail: String) -> some V
         }
         .padding(20)
     }
-    .frame(height: 170)
+    .frame(height: 138)
 }
 
 @ViewBuilder
@@ -1853,6 +2069,33 @@ private func percentageValue(_ raw: String?) -> Double {
     guard let raw else { return 0 }
     let cleaned = raw.replacingOccurrences(of: "%", with: "")
     return Double(cleaned) ?? 0
+}
+
+private func shortCurrency(_ value: Double) -> String {
+    if value >= 1_000_000 {
+        return String(format: "$%.1fM", value / 1_000_000)
+    }
+    if value >= 10_000 {
+        return String(format: "$%.0fK", value / 1_000)
+    }
+    return String(format: "$%.0f", value)
+}
+
+private func categoryColor(_ category: String) -> Color {
+    switch category.lowercased() {
+    case "equity":
+        return MobilePalette.blue
+    case "crypto":
+        return MobilePalette.accent
+    case "cash":
+        return MobilePalette.green
+    case "commodity", "commodities":
+        return MobilePalette.amber
+    case "fixed income", "bond", "bonds":
+        return Color.orange
+    default:
+        return MobilePalette.textSecondary
+    }
 }
 
 private func abbreviatedFingerprint(_ raw: String?) -> String {

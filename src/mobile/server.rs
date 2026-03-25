@@ -50,7 +50,14 @@ pub struct MobilePortfolioResponse {
     pub total_value: Option<Decimal>,
     pub daily_change_pct: Option<Decimal>,
     pub position_count: usize,
+    pub history: Vec<MobilePortfolioHistoryPoint>,
     pub positions: Vec<MobilePosition>,
+}
+
+#[derive(Serialize)]
+pub struct MobilePortfolioHistoryPoint {
+    pub date: String,
+    pub value: Decimal,
 }
 
 #[derive(Serialize)]
@@ -565,8 +572,90 @@ fn portfolio_payload(
         total_value,
         daily_change_pct,
         position_count: mobile_positions.len(),
+        history: portfolio_history(backend, &mobile_positions),
         positions: mobile_positions,
     })
+}
+
+fn portfolio_history(
+    backend: &crate::db::backend::BackendConnection,
+    positions: &[MobilePosition],
+) -> Vec<MobilePortfolioHistoryPoint> {
+    let non_cash_positions: Vec<_> = positions
+        .iter()
+        .filter(|position| position.category.to_ascii_lowercase() != "cash")
+        .collect();
+    if non_cash_positions.is_empty() {
+        return Vec::new();
+    }
+
+    let mut all_dates: Vec<String> = Vec::new();
+    let mut price_by_date: HashMap<String, HashMap<String, Decimal>> = HashMap::new();
+
+    for position in &non_cash_positions {
+        let current_price = match position.current_price {
+            Some(price) if price > dec!(0) => price,
+            _ => continue,
+        };
+        let current_value = match position.current_value {
+            Some(value) if value > dec!(0) => value,
+            _ => continue,
+        };
+
+        let quantity = current_value / current_price;
+        if quantity <= dec!(0) {
+            continue;
+        }
+
+        let history = match crate::db::price_history::get_history_backend(backend, &position.symbol, 180) {
+            Ok(history) if !history.is_empty() => history,
+            _ => continue,
+        };
+
+        let mut symbol_prices = HashMap::new();
+        for record in history {
+            all_dates.push(record.date.clone());
+            symbol_prices.insert(record.date, record.close * quantity);
+        }
+        price_by_date.insert(position.symbol.clone(), symbol_prices);
+    }
+
+    if all_dates.is_empty() {
+        return Vec::new();
+    }
+
+    all_dates.sort();
+    all_dates.dedup();
+
+    let cash_total: Decimal = positions
+        .iter()
+        .filter(|position| position.category.to_ascii_lowercase() == "cash")
+        .filter_map(|position| position.current_value)
+        .sum();
+
+    let mut last_known: HashMap<&str, Decimal> = HashMap::new();
+    let mut out = Vec::new();
+
+    for date in all_dates {
+        let mut total = cash_total;
+        let mut has_data = cash_total > dec!(0);
+
+        for (symbol, values) in &price_by_date {
+            if let Some(value) = values.get(&date) {
+                last_known.insert(symbol.as_str(), *value);
+            }
+            if let Some(value) = last_known.get(symbol.as_str()) {
+                total += *value;
+                has_data = true;
+            }
+        }
+
+        if has_data {
+            out.push(MobilePortfolioHistoryPoint { date, value: total });
+        }
+    }
+
+    out
 }
 
 fn analytics_payload(backend: &crate::db::backend::BackendConnection) -> MobileAnalyticsResponse {

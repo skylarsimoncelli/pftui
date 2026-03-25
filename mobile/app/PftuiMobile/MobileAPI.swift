@@ -97,7 +97,15 @@ final class MobileStore: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(activeConnection.token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw delegate.lastError ?? APIError.tlsTrustFailed
+        } catch {
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? "Unknown server error"
@@ -164,6 +172,8 @@ enum APIError: LocalizedError {
     case invalidURL
     case invalidResponse
     case server(String)
+    case tlsPinMismatch
+    case tlsTrustFailed
 
     var errorDescription: String? {
         switch self {
@@ -171,25 +181,31 @@ enum APIError: LocalizedError {
         case .invalidURL: return "The mobile server URL is invalid."
         case .invalidResponse: return "The server returned an invalid response."
         case .server(let message): return message
+        case .tlsPinMismatch: return "TLS fingerprint mismatch. Verify the server fingerprint and try again."
+        case .tlsTrustFailed: return "TLS trust evaluation failed for the pinned certificate."
         }
     }
 }
 
-final class PinnedSessionDelegate: NSObject, URLSessionDelegate {
+final class PinnedSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     private let fingerprint: String
+    private(set) var lastError: APIError?
 
     init(fingerprint: String) {
         self.fingerprint = fingerprint
     }
 
-    func urlSession(
-        _ session: URLSession,
-        didReceive challenge: URLAuthenticationChallenge,
+    private func handleChallenge(
+        _ challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let trust = challenge.protectionSpace.serverTrust,
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        guard let trust = challenge.protectionSpace.serverTrust,
               let certificate = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first else {
+            lastError = .tlsTrustFailed
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
@@ -197,11 +213,40 @@ final class PinnedSessionDelegate: NSObject, URLSessionDelegate {
         let data = SecCertificateCopyData(certificate) as Data
         let digest = SHA256.hash(data: data)
         let observed = digest.map { String(format: "%02X", $0) }.joined()
-        if observed == fingerprint {
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        } else {
+        guard observed == fingerprint else {
+            lastError = .tlsPinMismatch
             completionHandler(.cancelAuthenticationChallenge, nil)
+            return
         }
+
+        // Trust the pinned self-signed leaf as the only anchor for this session.
+        let anchors: CFArray = [certificate] as CFArray
+        SecTrustSetAnchorCertificates(trust, anchors)
+        SecTrustSetAnchorCertificatesOnly(trust, true)
+        guard SecTrustEvaluateWithError(trust, nil) else {
+            lastError = .tlsTrustFailed
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        handleChallenge(challenge, completionHandler: completionHandler)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        handleChallenge(challenge, completionHandler: completionHandler)
     }
 }
 
