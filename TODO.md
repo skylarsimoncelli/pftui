@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Correlation break alerts in situation room** — Medium-Timeframe Analyst (Mar 24) wants correlation break alerts more prominently surfaced in the situation room / analytics situation matrix. Files: `src/commands/situation.rs`.
 - [Feedback] **Alert summary for investigation continuity** — Alert Investigator (Mar 24) wants a command showing recent acknowledged alerts to maintain investigation context across cycles. May extend `analytics alerts list --acknowledged --recent`.
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 
@@ -49,9 +48,8 @@ _(none)_
 - Dev Agent at all-time high 92/94
 
 **Top 3 priorities based on feedback:**
-1. **P2: `analytics correlations` --json and list** — Evening Analyst reports missing --json support and no list subcommand.
-2. **P2: Correlation break alerts in situation room** — Medium-Timeframe Analyst wants them more prominent.
-3. **P2: Alert summary for investigation continuity** — Alert Investigator wants acknowledged alert history.
+1. **P2: Alert summary for investigation continuity** — Alert Investigator wants acknowledged alert history.
+2. **P2: Weekend/after-hours CLI mode** — Low-Timeframe Analyst wants streamlined non-market-hours commands.
 
 **Release eligibility:** v0.15.0 released Mar 22. 96 new commits with major features (F53 Situation Engine, impact-estimate, macro cycles current, portfolio allocation, alert summary, COT fix, deltas crash fix). All tests pass (1604), clippy clean, no P0 bugs. **Ready to release v0.16.0.**
 

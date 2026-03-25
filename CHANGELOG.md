@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-25 — feat: correlation breaks in situation room
+
+- What: Added dedicated CORRELATION BREAKS section to the Situation Room (`analytics situation`). Live correlation breaks (|7d − 90d| ≥ 0.30) are now computed inline and displayed with pair, 7d/90d values, break delta, and severity classification. Significant breaks also surface in WATCH NOW with critical/elevated severity. JSON output includes `correlation_breaks` array for agent consumption.
+- Why: P2 feedback from Medium-Timeframe Analyst (Mar 24) — correlation break alerts needed to be more prominently surfaced in the situation room. Previously agents had to run `analytics correlations breaks` separately.
+- Files: `src/analytics/situation.rs` (+226/-23, CorrelationBreakState struct, compute_correlation_breaks, watch_now integration), `src/commands/analytics.rs` (+34, text rendering), `src/mobile/server.rs` (+1/-1)
+- Tests: `cargo test` (1626 pass, +2 new); `cargo clippy` (clean)
+- PR: #291
+
 ### 2026-03-24 — feat: `analytics correlations` --json flag and `list` subcommand
 
 - What: Added `--json` flag to bare `analytics correlations` command (no subcommand needed) so agents get structured JSON without specifying `compute`. Added `analytics correlations list` as alias for `latest` — agents naturally try `list` for discovery but only `latest` existed.
