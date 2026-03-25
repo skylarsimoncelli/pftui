@@ -14,7 +14,7 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Alert summary for investigation continuity** — Alert Investigator (Mar 24) wants a command showing recent acknowledged alerts to maintain investigation context across cycles. May extend `analytics alerts list --acknowledged --recent`.
+- [x] ~~**Alert summary for investigation continuity** — Added `--recent` and `--recent-hours` flags to `analytics alerts list`. Merged in PR #309 (Mar 25).~~
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
 - [Feedback] **Regime transition alerts on scenario probability shifts** — Medium-Timeframe Analyst (Mar 25) wants alerts when scenario probabilities shift >10% in a single session. Could integrate into the situation indicator system or create a new alert kind.
 
