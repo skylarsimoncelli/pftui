@@ -155,9 +155,9 @@ The 2-3 things from today that deserve genuine analytical depth:
 - Expert analysis from credible sources
 - Cross-asset correlations that shifted
 
-### 5. Dixon Theater Scorecard & Power Flow
+### 5. Managed Theater Scorecard & Power Flow
 
-**Dixon Theater Scorecard** — Score today's events against the 10-item managed theater checklist:
+**Managed Theater Scorecard** — Score today's events against the 10-item managed theater checklist:
 ```
 Score each 0 or 1:
 _ Oil capped below $115
@@ -185,18 +185,18 @@ For each significant event analyzed today:
 
 Summarize the day's net power balance: "FIC +3 (reconstruction deal + defense stocks down + force majeure), MIC -2 (budget cut + stock decline), TIC +1 (AI contract announced)."
 
-**Follow the Money Deep Dive** — Take today's single biggest event and run it through the full Dixon analysis:
+**Follow the Money Deep Dive** — Take today's single biggest event and run it through the full power structure analysis:
 1. Where did the money actually flow? (not what the headline says)
 2. Who was positioned before this happened? (check 13F filings, ETF flows, pre-positioning)
 3. Do capital flows match the narrative, or contradict it?
 4. Which complex profits most from this event?
 5. What does this tell you about whether the current situation is managed or genuine?
 
-Connect the Dixon power analysis to portfolio implications: "FIC gaining means settlement more likely, which means [asset] benefits because [reason]."
+Connect the power structure analysis to portfolio implications: "FIC gaining means settlement more likely, which means [asset] benefits because [reason]."
 
 ### 6. Scenario + Conviction Updates
 
-Update scenarios with full analytical reasoning (integrate Dixon power analysis into scenario reasoning):
+Update scenarios with full analytical reasoning (integrate power structure analysis into scenario reasoning):
 ```bash
 pftui journal scenario update "<name>" --probability <new> \
   --notes "[Evidence chain]: [Why probability changed]: [Reversal condition]"
@@ -261,9 +261,9 @@ Send ONE detailed evening analysis:
 
 **CROSS-TIMEFRAME:** [Where layers converge/diverge on held assets. Strategic picture.]
 
-**DIXON THEATER SCORECARD:** [X/10 managed theater signals. Which complex gained today. One-line power balance.]
+**MANAGED THEATER SCORECARD:** [X/10 managed theater signals. Which complex gained today. One-line power balance.]
 
-**FOLLOW THE MONEY:** [Deep dive on today's biggest event through Dixon lens. Where money flowed vs what headlines said. Which complex profits. Portfolio implications.]
+**FOLLOW THE MONEY:** [Deep dive on today's biggest event through power structure lens. Where money flowed vs what headlines said. Which complex profits. Portfolio implications.]
 
 **TODAY'S INTELLIGENCE:** [2-3 deep findings. Not headlines. Analysis. Historical parallels. Data patterns. Structural forces.]
 

@@ -107,18 +107,18 @@ pftui analytics situation exposure --symbol [SYM] --json
 ```
 This shows which active situations affect that symbol and how. Include in your mismatch analysis if the move aligns with a situation branch rather than conviction.
 
-## Dixon Lens (every run)
+## Power Structure Lens (every run)
 
-Apply Dixon's "follow the money" framework to today's price action and news. This is a quick daily signal check, not a deep structural analysis.
+Apply the "follow the money" framework to today's price action and news. This is a quick daily signal check, not a deep structural analysis.
 
-**7. Dixon Composite Signal Check:**
+**7. Power Composite Signal Check:**
 
 For each major news event or price move today, ask three questions:
 - **Where did the money flow?** Not what the headline says — where did capital actually move? Check ETF flows, bond yields, gold/oil direction. Do the flows match the narrative or contradict it?
 - **Who benefits?** Classify the event by which industrial complex gains: Financial (FIC — BlackRock, banks, SWFs, asset managers), Military (MIC — defense contractors, military budgets), or Technical (TIC — tech platforms, AI, surveillance, programmable money).
 - **Narrative vs money divergence?** If media says "crisis" but VIX is dropping and defense stocks are flat, that divergence IS the intelligence. Flag it explicitly.
 
-**8. Dixon Composite Signals Dashboard:**
+**8. Power Composite Signals Dashboard:**
 
 Check these signals every run. Score each as bullish/bearish/neutral for the "managed theater" thesis:
 ```
@@ -133,19 +133,19 @@ When 3+ signals point to "managed event," note it in your analysis and flag for 
 
 When you identify a narrative/money divergence:
 ```bash
-pftui agent message send "DIXON DIVERGENCE: [narrative says X] but [money signal says Y]. Interpretation: [which complex benefits]" \
+pftui agent message send "POWER DIVERGENCE: [narrative says X] but [money signal says Y]. Interpretation: [which complex benefits]" \
   --from low-agent --to evening-analyst --priority high --category signal --layer low
 ```
 
 When a significant event can be classified by power complex, log it:
 ```bash
 pftui analytics situation update log --situation "<relevant situation>" \
-  --headline "Dixon: [event] — [FIC|MIC|TIC] [gaining|losing]" \
+  --headline "Power: [event] — [FIC|MIC|TIC] [gaining|losing]" \
   --detail "[evidence from capital flows, defense stocks, gold/oil, VIX]" \
-  --severity [normal|high] --source "dixon lens" --source-agent low-agent
+  --severity [normal|high] --source "power-structure-lens" --source-agent low-agent
 ```
 
-**Note:** This is a signal detection layer, not a structural analysis. You're looking for the daily data points that feed into the higher-timeframe Dixon framework. Flag signals; let evening analyst and medium/high agents do the deeper interpretation.
+**Note:** This is a signal detection layer, not a structural analysis. You're looking for the daily data points that feed into the higher-timeframe power structure framework. Flag signals; let evening analyst and medium/high agents do the deeper interpretation.
 
 ## Pre-Market Run
 
