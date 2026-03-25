@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-25 — feat: `system market-hours` command for session-aware agent routines
+
+- What: Added `pftui system market-hours [--json]` that reports US equity market status: current phase (Weekend, PreMarket, Regular, AfterHours, Overnight), next open/close times with countdown, and agent hints for which data sources are most useful in each phase. DST-aware Eastern Time conversion. No database dependency — intercepted before DB init for instant response.
+- Why: P2 feedback from Low-Timeframe Analyst (Mar 21) — agents needed a way to adapt routines for non-market hours instead of processing stale intraday equity data. This provides a clean primitive agents query at routine start to adjust behavior.
+- Files: `src/commands/market_hours.rs` (+434, new file), `src/commands/mod.rs` (+1), `src/cli.rs` (+7, MarketHours variant), `src/main.rs` (+11, early intercept + dispatch)
+- Tests: `cargo test` (1651 pass, +13 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #318
+
 ### 2026-03-25 — feat: auto-fire scenario alerts on probability shifts ≥10pp
 
 - What: Added `AlertKind::Scenario` variant that auto-fires when a scenario's probability is updated and the absolute change is ≥10 percentage points. When triggered, creates an alert in `triggered` state with full trigger_data JSON containing scenario_id, scenario_name, old/new probability, delta, threshold, and driver. Alerts surface in `analytics alerts list` for agent consumption. Both SQLite and PostgreSQL paths covered. Alert engine returns no-op for Scenario kind since alerts are pre-triggered at write time. Also fixes pre-existing clippy warnings (eq_ignore_ascii_case in mobile/server.rs, unused variable in alerts test).
