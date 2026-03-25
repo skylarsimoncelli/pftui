@@ -155,9 +155,48 @@ The 2-3 things from today that deserve genuine analytical depth:
 - Expert analysis from credible sources
 - Cross-asset correlations that shifted
 
-### 5. Scenario + Conviction Updates
+### 5. Dixon Theater Scorecard & Power Flow
 
-Update scenarios with full analytical reasoning:
+**Dixon Theater Scorecard** — Score today's events against the 10-item managed theater checklist:
+```
+Score each 0 or 1:
+_ Oil capped below $115
+_ Gold flat/down during apparent crisis (or no crisis active)
+_ VIX declining (or stable below 25)
+_ Defense stocks flat/down
+_ Insurance asymmetry present (marine pulled, aviation not)
+_ Off-ramp narratives emerging in media
+_ Diplomatic channels open
+_ Reconstruction/investment deals pre-arranged
+_ Institutional money calm (no panic selling)
+_ Force majeure activated on contracts
+
+Score: X/10 — [High probability managed theater | Mixed signals | Likely genuine escalation]
+```
+
+If no active geopolitical conflict, score based on available signals and note which are N/A.
+
+**Power Flow Assessment** — Which complex gained today and why?
+
+For each significant event analyzed today:
+1. Classify: FIC gaining, MIC gaining, or TIC gaining?
+2. Evidence: What specific capital flow, price action, or contract supports this?
+3. Magnitude: 1 (minor) to 5 (major structural shift)
+
+Summarize the day's net power balance: "FIC +3 (reconstruction deal + defense stocks down + force majeure), MIC -2 (budget cut + stock decline), TIC +1 (AI contract announced)."
+
+**Follow the Money Deep Dive** — Take today's single biggest event and run it through the full Dixon analysis:
+1. Where did the money actually flow? (not what the headline says)
+2. Who was positioned before this happened? (check 13F filings, ETF flows, pre-positioning)
+3. Do capital flows match the narrative, or contradict it?
+4. Which complex profits most from this event?
+5. What does this tell you about whether the current situation is managed or genuine?
+
+Connect the Dixon power analysis to portfolio implications: "FIC gaining means settlement more likely, which means [asset] benefits because [reason]."
+
+### 6. Scenario + Conviction Updates
+
+Update scenarios with full analytical reasoning (integrate Dixon power analysis into scenario reasoning):
 ```bash
 pftui journal scenario update "<name>" --probability <new> \
   --notes "[Evidence chain]: [Why probability changed]: [Reversal condition]"
@@ -180,14 +219,14 @@ pftui analytics situation update log --situation "<name>" \
   --next-decision-at "[YYYY-MM-DD]"
 ```
 
-### 6. New Predictions
+### 7. New Predictions
 
 Make 3-5 cause-and-effect predictions across MEDIUM and HIGH timeframes:
 ```bash
 pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level]
 ```
 
-### 7. Add Trend Evidence
+### 8. Add Trend Evidence
 
 Where today provided data on structural trends:
 ```bash
@@ -195,7 +234,7 @@ pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
   --impact <strengthens|weakens|neutral> --source "<source>" "<specific evidence>"
 ```
 
-### 8. Daily Journal Entry (mandatory)
+### 9. Daily Journal Entry (mandatory)
 
 You are the only agent that sees the full picture daily. Use the journal as your thinking tool. Write a journal entry that captures your evolving view of the world. This is not a summary of what happened. It is your analytical state of mind:
 
@@ -221,6 +260,10 @@ Send ONE detailed evening analysis:
 **SCORECARD:** [prediction results across all timeframes. Hit rate. Key wrong call lesson.]
 
 **CROSS-TIMEFRAME:** [Where layers converge/diverge on held assets. Strategic picture.]
+
+**DIXON THEATER SCORECARD:** [X/10 managed theater signals. Which complex gained today. One-line power balance.]
+
+**FOLLOW THE MONEY:** [Deep dive on today's biggest event through Dixon lens. Where money flowed vs what headlines said. Which complex profits. Portfolio implications.]
 
 **TODAY'S INTELLIGENCE:** [2-3 deep findings. Not headlines. Analysis. Historical parallels. Data patterns. Structural forces.]
 

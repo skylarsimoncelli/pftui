@@ -71,6 +71,53 @@ Do 5-8 deep research queries. pftui provides the data foundation; web research p
 - **Energy transition:** Supply gap analysis, construction pipelines, power demand projections
 - **Geopolitical decoupling:** Export control impacts, supply chain restructuring, dual-technology ecosystems
 
+## Dixon Lens — Quarterly Power Structure Assessment
+
+Apply Dixon's framework at the structural level. This is where the FIC/MIC/TIC power dynamics intersect with Dalio's empire cycle and the longer arc of the multipolar transition.
+
+### Quarterly Power Structure Assessment
+
+Assess the balance of power across the three complexes at the structural level:
+- **FIC trajectory:** Is BlackRock/asset manager influence growing or facing pushback? Are Gulf SWFs deepening their co-investor role or retreating to creditor? Is the FIC successfully positioning itself above sovereign governments?
+- **MIC trajectory:** Is the defense sector growing or being displaced? Are military budgets shifting from US to Europe (NATO burden-sharing)? Is the MIC losing its hold on Middle East profits to FIC reconstruction deals?
+- **TIC trajectory:** How far along is the digital control grid? Programmable money deployment (CBDCs, stablecoin regulation), surveillance infrastructure, AI-driven monitoring. Is this accelerating or facing resistance?
+
+### Dollar's Managed Decline Trajectory
+
+Track Dixon's thesis that the dollar decline is a managed "controlled demolition," not chaotic collapse:
+- DXY trend over the quarter — is the decline orderly?
+- Japan carry trade status — rate differential, yen/dollar. Breaking this trade is one mechanism of dollar weakening.
+- Eurodollar drain via NATO weapon purchases — is this channel active?
+- Gulf states' dollar peg behavior — any cracks or managed adjustments?
+- Key question: "Is the managed path still holding, or are there signs the demolition is losing control?"
+
+### BTC Self-Custody vs Custodied Ratio
+
+Dixon's structural health metric for Bitcoin's resistance function:
+- What percentage of BTC is in self-custody vs ETFs, exchanges, corporate treasuries?
+- Is the trend toward centralization (Saylor model, ETF inflows) or decentralization?
+- Track on-chain metrics: exchange reserves declining = self-custody growing. MVRV, whale activity, dormant supply waking up.
+- Self-custody ratio trending UP = BTC serving its intended function as resistance to Proof of Weapons network.
+- Self-custody ratio trending DOWN = BTC being captured by the FIC — becoming another asset they custody and control.
+
+### Programmable Money / CBDC Deployment
+
+Track the TIC control grid buildout:
+- CBDC pilot programs globally — which are advancing, which are stalling?
+- Stablecoin regulation (Clarity Act and equivalents) — are these enabling freedom or control?
+- Digital ID integration with financial systems
+- Tokenization of real assets — who controls the rails?
+- Key question: "How close is the TIC to having an operational control grid, and is Bitcoin's self-custody base growing fast enough to matter?"
+
+### Managed Transition Assessment
+
+The big-picture Dixon question for the HIGH timeframe:
+- "Is the multipolar transition still on the managed path, or are there signs of loss of control?"
+- Look for: orderly dollar decline, coordinated de-escalation of conflicts, FIC maintaining position above sovereigns, reconstruction deals proceeding on schedule.
+- Red flags for loss of control: oil sustained above $115, genuine military escalation (VIX >30 + defense stocks surging + gold AND oil both soaring), sovereign governments challenging FIC directly, uncoordinated currency crises.
+
+Include Dixon structural assessment in the digest to the evening analyst.
+
 ## Trend Management (your core responsibility)
 
 For each active trend:

@@ -107,9 +107,49 @@ pftui analytics situation exposure --symbol [SYM] --json
 ```
 This shows which active situations affect that symbol and how. Include in your mismatch analysis if the move aligns with a situation branch rather than conviction.
 
+## Dixon Lens (every run)
+
+Apply Dixon's "follow the money" framework to today's price action and news. This is a quick daily signal check, not a deep structural analysis.
+
+**7. Dixon Composite Signal Check:**
+
+For each major news event or price move today, ask three questions:
+- **Where did the money flow?** Not what the headline says — where did capital actually move? Check ETF flows, bond yields, gold/oil direction. Do the flows match the narrative or contradict it?
+- **Who benefits?** Classify the event by which industrial complex gains: Financial (FIC — BlackRock, banks, SWFs, asset managers), Military (MIC — defense contractors, military budgets), or Technical (TIC — tech platforms, AI, surveillance, programmable money).
+- **Narrative vs money divergence?** If media says "crisis" but VIX is dropping and defense stocks are flat, that divergence IS the intelligence. Flag it explicitly.
+
+**8. Dixon Composite Signals Dashboard:**
+
+Check these signals every run. Score each as bullish/bearish/neutral for the "managed theater" thesis:
+```
+☐ Gold/oil ratio direction — rising = genuine crisis, falling = managed event
+☐ Defense sector (ITA/XAR) vs S&P 500 relative performance — defense down during conflict = FIC settlement
+☐ VIX level vs headline fear — VIX declining while headlines escalate = theater
+☐ Oil vs $115 ceiling — bouncing off $115 = managed, sustained above = genuine crisis
+☐ Headlines vs capital flows — consistent or diverging?
+```
+
+When 3+ signals point to "managed event," note it in your analysis and flag for the evening analyst.
+
+When you identify a narrative/money divergence:
+```bash
+pftui agent message send "DIXON DIVERGENCE: [narrative says X] but [money signal says Y]. Interpretation: [which complex benefits]" \
+  --from low-agent --to evening-analyst --priority high --category signal --layer low
+```
+
+When a significant event can be classified by power complex, log it:
+```bash
+pftui analytics situation update log --situation "<relevant situation>" \
+  --headline "Dixon: [event] — [FIC|MIC|TIC] [gaining|losing]" \
+  --detail "[evidence from capital flows, defense stocks, gold/oil, VIX]" \
+  --severity [normal|high] --source "dixon lens" --source-agent low-agent
+```
+
+**Note:** This is a signal detection layer, not a structural analysis. You're looking for the daily data points that feed into the higher-timeframe Dixon framework. Flag signals; let evening analyst and medium/high agents do the deeper interpretation.
+
 ## Pre-Market Run
 
-7. Make 3-5 LOW predictions for today. Cause-and-effect, not price targets. Read your notes and scenario context to inform predictions:
+9. Make 3-5 LOW predictions for today. Cause-and-effect, not price targets. Read your notes and scenario context to inform predictions:
 ```bash
 pftui journal notes list --limit 5 --json
 pftui journal scenario list --json
@@ -127,7 +167,7 @@ pftui journal prediction add "[cause] will [effect] today" --symbol [SYM] --targ
 
 ## Midday Run
 
-7. Score this morning's predictions against midday data:
+10. Score this morning's predictions against midday data:
 ```bash
 pftui journal prediction list --filter pending --json
 ```
@@ -146,32 +186,32 @@ pftui journal notes add "LOW PREDICTION REVIEW: [prediction] — [outcome]. [If 
 
 ## Market Close Run
 
-7. FINAL SCORING. Score ALL remaining daily predictions. Data is final.
+11. FINAL SCORING. Score ALL remaining daily predictions. Data is final.
 ```bash
 pftui journal prediction score <id> --outcome <correct|wrong|partial> --notes "EOD final: [closing data vs prediction]" --lesson "[what this teaches for next low-timeframe call]"
 ```
 Mandatory lesson for every wrong call.
 
-8. Calculate daily scorecard:
+12. Calculate daily scorecard:
 ```bash
 pftui journal prediction list --filter pending --timeframe low --json
 pftui journal prediction stats --json
 ```
 
-9. Send comprehensive EOD data package to Evening Analyst:
+13. Send comprehensive EOD data package to Evening Analyst:
 ```bash
 DIGEST=$(pftui analytics digest --from low-agent --json)
 pftui agent message send "LOW EOD DIGEST [date]: ${DIGEST}" \
   --from low-agent --to evening-analyst --priority normal --category signal --layer low
 ```
 
-10. Send notable moves to Morning Brief:
+14. Send notable moves to Morning Brief:
 ```bash
 pftui agent message send "NOTABLE: [held assets >3% or watched >5%]" \
   --from low-agent --to morning-intelligence --priority normal --category signal --layer low
 ```
 
-11. Send notable market-close handoff to Evening Planner:
+15. Send notable market-close handoff to Evening Planner:
 ```bash
 pftui agent message send "MARKET CLOSE NOTABLE: [largest moves + why they matter for tonight]" \
   --from market-close --to evening-planner --priority normal --category handoff --layer low

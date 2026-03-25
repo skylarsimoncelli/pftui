@@ -106,6 +106,11 @@ What events are happening today? Economic releases, central bank speakers, earni
 ### PORTFOLIO (always)
 Current value, daily change. One-liner per held position.
 
+### DIXON SIGNAL (always, one line)
+One-line Dixon framework summary. Format: "Dixon Composite: X/8 managed theater signals active. [FIC|MIC|TIC] [gaining|stable|losing] this week. Gold/oil ratio [rising|falling|stable]. [Any narrative/money divergence from overnight, or 'No divergences.']"
+
+This line gives the user an instant read on whether the Dixon framework sees managed theater or genuine crisis in the current environment. Derive from overnight defense stock moves, gold/oil direction, VIX vs headlines, and any low-agent Dixon divergence flags.
+
 ### HEADS UP (only if warranted)
 Anything that needs attention or a decision. A scenario crossing a threshold. A conviction flip. An entry level approaching. If nothing warrants it, skip this section entirely.
 
