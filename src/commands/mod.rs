@@ -50,6 +50,7 @@ pub mod opportunity;
 pub mod options;
 pub mod performance;
 pub mod portfolio;
+pub mod power_flow;
 pub mod predict;
 pub mod predictions;
 pub mod prices;

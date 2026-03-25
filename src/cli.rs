@@ -2608,6 +2608,70 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Dixon Power Flow Tracker — track power shifts between FIC, MIC, and TIC
+    #[command(name = "power-flow")]
+    PowerFlow {
+        #[command(subcommand)]
+        command: AnalyticsPowerFlowCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsPowerFlowCommand {
+    /// Log a power flow event
+    Add {
+        /// What happened
+        #[arg(long)]
+        event: String,
+        /// Source complex: FIC, MIC, or TIC
+        #[arg(long)]
+        source: String,
+        /// Direction: gaining or losing
+        #[arg(long)]
+        direction: String,
+        /// Target complex (optional): FIC, MIC, or TIC
+        #[arg(long)]
+        target: Option<String>,
+        /// Market/money signal supporting this classification
+        #[arg(long)]
+        evidence: String,
+        /// Significance of this power shift (1-5, default: 3)
+        #[arg(long, default_value_t = 3)]
+        magnitude: i32,
+        /// Which agent logged this
+        #[arg(long = "agent-source")]
+        agent_source: Option<String>,
+        /// Date (YYYY-MM-DD, default: today)
+        #[arg(long)]
+        date: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List power flow entries
+    List {
+        /// Filter by complex: FIC, MIC, or TIC
+        #[arg(long)]
+        complex: Option<String>,
+        /// Filter by direction: gaining or losing
+        #[arg(long)]
+        direction: Option<String>,
+        /// Number of days to look back (default: 7)
+        #[arg(long, default_value_t = 7)]
+        days: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Aggregate power balance per complex
+    Balance {
+        /// Number of days to aggregate (default: 30)
+        #[arg(long, default_value_t = 30)]
+        days: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Parser)]

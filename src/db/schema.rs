@@ -1130,5 +1130,22 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_scenario_updates_created ON scenario_updates(created_at);",
     )?;
 
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS power_flows (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            date            TEXT NOT NULL,
+            event           TEXT NOT NULL,
+            source_complex  TEXT NOT NULL,
+            direction       TEXT NOT NULL,
+            target_complex  TEXT,
+            evidence        TEXT NOT NULL,
+            magnitude       INTEGER NOT NULL CHECK(magnitude BETWEEN 1 AND 5),
+            agent_source    TEXT,
+            created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_power_flows_date ON power_flows(date);
+        CREATE INDEX IF NOT EXISTS idx_power_flows_complex ON power_flows(source_complex);",
+    )?;
+
     Ok(())
 }

@@ -38,6 +38,7 @@ pub mod news_cache;
 pub mod onchain_cache;
 pub mod opportunity_cost;
 pub mod pg_runtime;
+pub mod power_flows;
 pub mod postgres_schema;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
