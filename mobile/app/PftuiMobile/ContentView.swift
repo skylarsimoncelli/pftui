@@ -130,7 +130,7 @@ struct DashboardShellView: View {
                 HomeView()
             }
             .tabItem {
-                Label("Situation", systemImage: "scope")
+                Label("Overview", systemImage: "rectangle.grid.2x2")
             }
             .tag(0)
 
@@ -146,7 +146,7 @@ struct DashboardShellView: View {
                 AnalyticsView()
             }
             .tabItem {
-                Label("Analytics", systemImage: "chart.line.uptrend.xyaxis")
+                Label("Research", systemImage: "chart.line.uptrend.xyaxis")
             }
             .tag(2)
 
@@ -225,6 +225,7 @@ struct HomeView: View {
 
                 if let dashboard = store.dashboard {
                     signalSummaryCard(monitoring: dashboard.monitoring)
+                    overviewAnalyticsCard(dashboard: dashboard)
 
                     CollapsibleCardSection(
                         title: "Watch Now",
@@ -554,6 +555,31 @@ struct HomeView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .frame(width: 150)
+        }
+    }
+
+    @ViewBuilder
+    private func overviewAnalyticsCard(dashboard: DashboardPayload) -> some View {
+        let strongest = strongestTimeframe(dashboard.analytics.timeframes)
+
+        card {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Analytics Snapshot")
+                    .foregroundStyle(MobilePalette.textSecondary)
+                    .font(.subheadline.weight(.medium))
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    metricChip(
+                        label: "Regime",
+                        value: dashboard.analytics.regime?.regime
+                            .replacingOccurrences(of: "_", with: " ")
+                            .capitalized ?? "Unavailable"
+                    )
+                    metricChip(label: "Strongest Layer", value: strongest?.label ?? "—")
+                    metricChip(label: "Prediction Signals", value: "\(dashboard.analytics.predictions.count)")
+                    metricChip(label: "Correlations", value: "\(dashboard.analytics.correlations.count)")
+                }
+            }
         }
     }
 
@@ -1243,7 +1269,7 @@ struct AnalyticsView: View {
             .padding(12)
         }
         .background(MobilePalette.bgPrimary)
-        .navigationTitle("Analytics")
+        .navigationTitle("Research")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -1265,7 +1291,7 @@ struct AnalyticsView: View {
         let title = analytics.regime?.regime.replacingOccurrences(of: "_", with: " ").capitalized ?? "No Regime"
         let detail = analytics.regime?.confidence.map { "Confidence \(Int($0 * 100))%" } ?? "\(analytics.timeframes.count) timeframes tracked"
 
-        heroCard(title: title, subtitle: "Analytics Engine", detail: detail)
+        heroCard(title: title, subtitle: "Research", detail: detail)
     }
 
     @ViewBuilder
@@ -1368,7 +1394,7 @@ struct SystemView: View {
                         densityPicker(title: "Home", selection: $homeDensity)
                         densityPicker(title: "Analytics", selection: $analyticsDensity)
                         densityPicker(title: "System", selection: $systemDensity)
-                        Toggle("Situation brief", isOn: $showSituationModule)
+                        Toggle("Overview watchlist", isOn: $showSituationModule)
                             .tint(MobilePalette.accent)
                         Toggle("Portfolio impact", isOn: $showFocusModule)
                             .tint(MobilePalette.accent)
