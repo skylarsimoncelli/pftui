@@ -79,13 +79,13 @@ When you find a new analyst call or target via web_search, persist it:
 pftui data consensus add --source "[firm]" --topic [topic] --call "[forecast]" --date $(date +%Y-%m-%d)
 ```
 
-## Dixon Lens — Weekly Power Structure Assessment
+## Power Structure Lens — Weekly Power Structure Assessment
 
-Apply Dixon's "follow the money" framework at the weekly level. This is where FIC/MIC/TIC power shifts become visible.
+Apply the "follow the money" framework at the weekly level. This is where FIC/MIC/TIC power shifts become visible.
 
 ### Weekly FIC/MIC/TIC Power Assessment
 
-For each significant event this week, classify it through the Dixon lens:
+For each significant event this week, classify it through the power structure lens:
 - **Which complex gained power?** New contracts, appointments, legislation, capital flows — what moved in whose favor?
 - **Which complex lost power?** Budget cuts, leadership removals, market losses, sanctions — who got weaker?
 - **Evidence chain:** Don't just classify — connect to specific market signals (defense stock direction, gold/oil ratio, VIX behavior, insurance market moves, force majeure invocations).
@@ -93,21 +93,21 @@ For each significant event this week, classify it through the Dixon lens:
 Log each significant power shift:
 ```bash
 pftui analytics situation update log --situation "<relevant situation>" \
-  --headline "Dixon weekly: [FIC|MIC|TIC] [gaining|losing] — [event]" \
+  --headline "power weekly: [FIC|MIC|TIC] [gaining|losing] — [event]" \
   --detail "[evidence: defense stocks, gold/oil, VIX, capital flows, contracts]" \
-  --severity [normal|high] --source "dixon lens" --source-agent medium-agent
+  --severity [normal|high] --source "power-structure-lens" --source-agent medium-agent
 ```
 
 ### Phase Identification
 
-Identify which phase of Dixon's 3-phase war profit model we're in:
+Identify which phase of the 3-phase war profit model we're in:
 - **Phase 1 (MIC Destruction):** Defense stocks rising, weapons contracts announced, media in full panic, VIX elevated and rising.
 - **Phase 2 (FIC Renegotiation):** Defense stocks declining, force majeure and new contracts being signed, VIX declining, oil retreating from peak, summit announcements. Key marker: "the entity that lost supply owns the repurchase supply."
 - **Phase 3 (TIC Control Grid):** AI/surveillance contracts, programmable money pilots, digital ID deployment, "rebuild" announcements.
 
 State the current phase and what evidence supports it. Flag phase transitions — these are the highest-signal moments for markets.
 
-### Medium-Term Dixon Tracking
+### Medium-Term Power Structure Tracking
 
 - **Force majeure invocations:** Track any new force majeure clauses being activated. Who's invoking? What contracts? Who holds the replacement contracts?
 - **Sovereign wealth fund capital movements:** Gulf SWFs shifting from Treasuries to equities to direct investment. Track direction and magnitude.
@@ -121,7 +121,7 @@ At the weekly level, compile narrative/money divergences detected by the low-tim
 - Is the divergence widening or closing?
 - What does the pattern tell you about which complex is controlling the narrative vs which is controlling the capital flows?
 
-Include your weekly Dixon assessment in the digest to the evening analyst.
+Include your weekly power structure assessment in the digest to the evening analyst.
 
 ## Scenario Management (your core responsibility)
 
