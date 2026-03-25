@@ -50,6 +50,10 @@ pub struct AlertsArgs {
     pub since_hours: Option<i64>,
     pub recurring: bool,
     pub cooldown_minutes: i64,
+    /// Show recently triggered/acknowledged alerts for investigation continuity.
+    pub recent: bool,
+    /// Number of hours for the recent filter (default: 24).
+    pub recent_hours: i64,
 }
 
 fn run_add(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
@@ -232,6 +236,74 @@ fn run_list(backend: &BackendConnection, args: &AlertsArgs) -> Result<()> {
                     "  [#{}] alert #{} at {}",
                     row.id, row.alert_id, row.triggered_at
                 );
+            }
+        }
+        return Ok(());
+    }
+
+    // --recent: show recently triggered/acknowledged alerts for investigation continuity
+    if args.recent {
+        let status_filter = args
+            .status_filter
+            .as_ref()
+            .map(|s| s.parse::<AlertStatus>())
+            .transpose()?;
+        let alerts =
+            alerts_db::list_alerts_recent_backend(backend, args.recent_hours, status_filter)?;
+        if args.json {
+            let payload: Vec<_> = alerts
+                .iter()
+                .map(|alert| {
+                    json!({
+                        "id": alert.id,
+                        "kind": alert.kind.to_string(),
+                        "symbol": alert.symbol,
+                        "condition": alert.condition,
+                        "rule_text": alert.rule_text,
+                        "status": alert.status.to_string(),
+                        "threshold": alert.threshold,
+                        "direction": alert.direction.to_string(),
+                        "triggered_at": alert.triggered_at,
+                        "recurring": alert.recurring,
+                        "cooldown_minutes": alert.cooldown_minutes,
+                    })
+                })
+                .collect();
+            let wrapper = json!({
+                "recent_hours": args.recent_hours,
+                "count": alerts.len(),
+                "alerts": payload,
+                "hint": "Use --recent-hours N to adjust the lookback window (default: 24)."
+            });
+            println!("{}", serde_json::to_string_pretty(&wrapper)?);
+        } else if alerts.is_empty() {
+            println!(
+                "No recently triggered/acknowledged alerts in the last {} hours.",
+                args.recent_hours
+            );
+            println!(
+                "Hint: Use --recent-hours N to adjust the lookback window (default: 24)."
+            );
+        } else {
+            println!(
+                "Recent alerts (last {} hours) — {}:\n",
+                args.recent_hours,
+                alerts.len()
+            );
+            for alert in &alerts {
+                let status_icon = match alert.status {
+                    AlertStatus::Armed => "🟢",
+                    AlertStatus::Triggered => "🔴",
+                    AlertStatus::Acknowledged => "✅",
+                };
+                let triggered_at = alert.triggered_at.as_deref().unwrap_or("unknown");
+                println!(
+                    "  {} [#{}] {} ({}) — triggered: {}",
+                    status_icon, alert.id, alert.rule_text, alert.kind, triggered_at
+                );
+                if let Some(ref condition) = alert.condition {
+                    println!("      Condition: {}", condition);
+                }
             }
         }
         return Ok(());
@@ -843,6 +915,8 @@ mod tests {
             since_hours: None,
             recurring: false,
             cooldown_minutes: 0,
+            recent: false,
+            recent_hours: 24,
         }
     }
 
@@ -1308,5 +1382,74 @@ mod tests {
         assert!(alerts.iter().any(|alert| alert.symbol == "AAPL"));
         assert!(alerts.iter().any(|alert| alert.kind == AlertKind::Macro
             && alert.condition.as_deref() == Some("regime_change")));
+    }
+
+    #[test]
+    fn test_list_recent_shows_recently_acked_alerts() {
+        let backend = setup_backend();
+        // Create and trigger an alert, then ack it
+        let id = alerts_db::add_alert_backend(
+            &backend,
+            alerts_db::NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        check_alerts_backend_only(&backend).unwrap(); // triggers it
+        run_ack(
+            &backend,
+            &AlertsArgs {
+                id: Some(id),
+                ..default_args()
+            },
+        )
+        .unwrap();
+
+        // Now list with --recent --status acknowledged
+        let args = AlertsArgs {
+            recent: true,
+            recent_hours: 24,
+            status_filter: Some("acknowledged".to_string()),
+            json: true,
+            ..default_args()
+        };
+        // Should not panic/error
+        run_list(&backend, &args).unwrap();
+    }
+
+    #[test]
+    fn test_list_recent_without_status_filter() {
+        let backend = setup_backend();
+        let id = alerts_db::add_alert_backend(
+            &backend,
+            alerts_db::NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "5500",
+                rule_text: "GC=F above 5500",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        check_alerts_backend_only(&backend).unwrap(); // triggers it
+
+        // List with --recent (no status filter — should show triggered)
+        let args = AlertsArgs {
+            recent: true,
+            recent_hours: 24,
+            json: true,
+            ..default_args()
+        };
+        run_list(&backend, &args).unwrap();
     }
 }

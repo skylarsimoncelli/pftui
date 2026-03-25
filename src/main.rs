@@ -2957,6 +2957,8 @@ fn main() -> Result<()> {
                             since_hours: None,
                             recurring,
                             cooldown_minutes,
+                            recent: false,
+                            recent_hours: 24,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::List {
@@ -2964,6 +2966,8 @@ fn main() -> Result<()> {
                         triggered,
                         since,
                         today,
+                        recent,
+                        recent_hours,
                         json,
                     } => (
                         "list",
@@ -2983,6 +2987,8 @@ fn main() -> Result<()> {
                             since_hours: since,
                             recurring: false,
                             cooldown_minutes: 0,
+                            recent,
+                            recent_hours,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Remove { id } => (
@@ -3003,6 +3009,8 @@ fn main() -> Result<()> {
                             since_hours: None,
                             recurring: false,
                             cooldown_minutes: 0,
+                            recent: false,
+                            recent_hours: 24,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Check { today, json } => (
@@ -3023,6 +3031,8 @@ fn main() -> Result<()> {
                             since_hours: None,
                             recurring: false,
                             cooldown_minutes: 0,
+                            recent: false,
+                            recent_hours: 24,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Ack { ids } => (
@@ -3043,6 +3053,8 @@ fn main() -> Result<()> {
                             since_hours: None,
                             recurring: false,
                             cooldown_minutes: 0,
+                            recent: false,
+                            recent_hours: 24,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::Rearm { id } => (
@@ -3063,6 +3075,8 @@ fn main() -> Result<()> {
                             since_hours: None,
                             recurring: false,
                             cooldown_minutes: 0,
+                            recent: false,
+                            recent_hours: 24,
                         },
                     ),
                     cli::AnalyticsAlertsCommand::SeedDefaults => (
@@ -3083,6 +3097,8 @@ fn main() -> Result<()> {
                             since_hours: None,
                             recurring: false,
                             cooldown_minutes: 0,
+                            recent: false,
+                            recent_hours: 24,
                         },
                     ),
                 };

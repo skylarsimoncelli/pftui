@@ -1711,6 +1711,12 @@ pub enum AnalyticsAlertsCommand {
         /// Only include alerts triggered since local midnight
         #[arg(long)]
         today: bool,
+        /// Show recently triggered/acknowledged alerts (default: last 24h). Useful for investigation continuity across agent cycles.
+        #[arg(long)]
+        recent: bool,
+        /// Number of hours for --recent filter (default: 24)
+        #[arg(long = "recent-hours", default_value_t = 24)]
+        recent_hours: i64,
         /// Output as JSON
         #[arg(long)]
         json: bool,
