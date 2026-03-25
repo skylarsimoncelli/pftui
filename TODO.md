@@ -15,7 +15,7 @@ _(none)_
 ## P2 - Coverage And Agent Consumption
 
 - [x] ~~**Alert summary for investigation continuity** — Added `--recent` and `--recent-hours` flags to `analytics alerts list`. Merged in PR #309 (Mar 25).~~
-- [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
+- [x] ~~**Weekend/after-hours CLI mode** — Added `system market-hours [--json]` command for session-aware agent routines. Merged in PR #318 (Mar 25).~~
 - [x] ~~**Regime transition alerts on scenario probability shifts** — New `scenario` AlertKind auto-fires when probability shifts ≥10pp. Merged in PR #314 (Mar 25).~~
 
 ## P3 - Long Term
