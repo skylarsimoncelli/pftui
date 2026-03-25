@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-25 — feat: auto-fire scenario alerts on probability shifts ≥10pp
+
+- What: Added `AlertKind::Scenario` variant that auto-fires when a scenario's probability is updated and the absolute change is ≥10 percentage points. When triggered, creates an alert in `triggered` state with full trigger_data JSON containing scenario_id, scenario_name, old/new probability, delta, threshold, and driver. Alerts surface in `analytics alerts list` for agent consumption. Both SQLite and PostgreSQL paths covered. Alert engine returns no-op for Scenario kind since alerts are pre-triggered at write time. Also fixes pre-existing clippy warnings (eq_ignore_ascii_case in mobile/server.rs, unused variable in alerts test).
+- Why: P2 feedback from Medium-Timeframe Analyst (Mar 25) — wanted alerts when scenario probabilities shift >10% in a single session to detect regime transitions without polling scenario history.
+- Files: `src/alerts/mod.rs` (+4, Scenario variant), `src/alerts/engine.rs` (+12, Scenario evaluation arms), `src/db/scenarios.rs` (+290, probability shift detection + 4 tests), `src/commands/alerts.rs` (+1/-1, clippy fix), `src/mobile/server.rs` (+2/-2, clippy fix)
+- Tests: `cargo test` (1638 pass, +4 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #314
+
 ### 2026-03-25 — feat: analytics predictions alias + situation list --json guidance
 
 - What: Two P1 fixes for Evening Analyst discoverability issues: (1) Added `pftui analytics predictions` as a full alias for `pftui data predictions`, so agents can discover prediction market data from the analytics command tree. Supports all flags: `--category`, `--search`, `--limit`, `--json`. (2) Fixed `analytics situation list --json` returning bare `[]` when no scenarios are promoted. Now returns a structured JSON object with `situations`, `count`, `phase`, and a `hint` field explaining how to promote scenarios via `journal scenario promote`.

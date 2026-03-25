@@ -16,7 +16,7 @@ _(none)_
 
 - [x] ~~**Alert summary for investigation continuity** — Added `--recent` and `--recent-hours` flags to `analytics alerts list`. Merged in PR #309 (Mar 25).~~
 - [Feedback] **Weekend/after-hours CLI mode** — Low-Timeframe Analyst (Mar 21) suggests streamlining commands for non-market hours to skip stale intraday data and focus on positioning/prep.
-- [Feedback] **Regime transition alerts on scenario probability shifts** — Medium-Timeframe Analyst (Mar 25) wants alerts when scenario probabilities shift >10% in a single session. Could integrate into the situation indicator system or create a new alert kind.
+- [x] ~~**Regime transition alerts on scenario probability shifts** — New `scenario` AlertKind auto-fires when probability shifts ≥10pp. Merged in PR #314 (Mar 25).~~
 
 ## P3 - Long Term
 
@@ -93,8 +93,8 @@ _(none)_
 **Top 3 priorities based on feedback:**
 1. ~~**P1: `analytics predictions` discoverability**~~ — SHIPPED #300. `analytics predictions` now aliases `data predictions`.
 2. ~~**P1: `analytics situation list` empty with no guidance**~~ — SHIPPED #300. JSON output now returns structured object with hint.
-3. **P2: Regime transition alerts** — Medium-Timeframe Analyst wants alerts on scenario probability shifts >10%.
+3. ~~**P2: Regime transition alerts**~~ — SHIPPED #314. Scenario alerts auto-fire on ≥10pp probability shifts.
 
-**Release eligibility:** v0.17.0 released. All P1 items shipped (#300 — analytics predictions alias + situation list guidance). Tests: 1628 passing, clippy clean, no P0 bugs. No P1 remaining.
+**Release eligibility:** v0.17.0 released. All P1 items shipped (#300 — analytics predictions alias + situation list guidance). Tests: 1638 passing (+4 new from #314), clippy clean, no P0 bugs. No P1 remaining.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.
