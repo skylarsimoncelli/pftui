@@ -170,6 +170,42 @@ pftui analytics macro parallels add --period "[dates]" \
   --similarity [1-10] --outcome "[what happened then]"
 ```
 
+## Lens 3: Dixon Transnational Power Analysis
+
+Dixon adds a critical layer that Dalio misses: **transnational entities that operate ABOVE national boundaries.** Dalio tracks the rise and fall of nations. Dixon tracks the entities that sit above nations and manage the transitions between them.
+
+### Dixon-Dalio Synthesis
+
+| Dimension | Dalio | Dixon | Synthesis |
+|---|---|---|---|
+| **Unit of analysis** | Nations (US, China, UK) | Transnational complexes (FIC, MIC, TIC) | Track both layers simultaneously |
+| **Driver of change** | Natural empire cycle (debt, conflict, rival) | Deliberate management by transnational capital | The cycle creates conditions; the FIC manages the transition |
+| **China's role** | Rising power in natural cycle | Deal-broker engineered by FIC | Both: rising organically AND being positioned |
+| **Dollar** | Loses reserve status gradually | Being deliberately weakened as managed demolition | Natural decline accelerated by management |
+| **Gold** | Returns as neutral reserve | Already returned (4,500 tons added by CBs) | Agreement — gold is the structural winner |
+| **Bitcoin** | Not central to framework | "Proof of Work" resistance to "Proof of Weapons" | Dixon adds the escape asset Dalio doesn't model |
+| **What to watch** | Education, productivity, reserve currency | FIC/MIC/TIC dynamics, oil thresholds, insurance | Use Dalio for DIRECTION, Dixon for SIGNALS |
+
+**The key insight:** BlackRock, Gulf SWFs, and tech conglomerates operate ABOVE national boundaries. When Dalio says "US is declining," Dixon asks: "Is the US declining, or is the FIC simply relocating its center of gravity while maintaining control?" The multipolar transition might not be the RISE of a new national power — it might be the FIC making itself independent of ANY single national power.
+
+### Macro Dixon Questions (assess annually or when major shifts occur)
+
+1. **"Has any sovereign power genuinely challenged the FIC, or is the multipolar transition still being managed from above?"**
+   - Track: Did any government nationalize a major asset manager's holdings? Did any major economy successfully implement capital controls against FIC flows? Did BRICS develop genuinely independent financial infrastructure, or did the FIC integrate into BRICS too?
+
+2. **"Is Bitcoin's Proof of Work network growing as a genuine alternative, or is it being absorbed into the Proof of Weapons system?"**
+   - Track: Self-custody vs custodied BTC ratio over time. ETF share of total BTC. Corporate treasury share. Mining centralization. The original cypherpunk vision vs the Wall Street capture trajectory.
+
+3. **"Where are we in Dalio's empire cycle, and is the FIC-managed transition tracking to Dixon's timeline?"**
+   - Dalio says 10-30 years for full transition. Dixon says 5-10 years for the managed component. If Dixon's timeline is right, the structural shifts should be happening FASTER than Dalio's model predicts.
+
+4. **"Proof of Weapons vs Proof of Work — which is winning?"**
+   - The "Proof of Weapons" network: coercion, compromise (Epstein network as exemplar), surveillance, programmable money. The system backed by force.
+   - The "Proof of Work" network: Bitcoin, self-custody, decentralization, mathematical verification. The system backed by energy expenditure.
+   - Track adoption curves, regulatory battles, and real-world usage in crisis zones (Venezuela, Dubai, Iran).
+
+Include Dixon-Dalio synthesis in the weekly macro output to the evening analyst.
+
 ## Structural Outcomes
 
 Update outcome probabilities based on both lenses:

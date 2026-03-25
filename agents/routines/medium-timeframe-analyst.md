@@ -79,6 +79,50 @@ When you find a new analyst call or target via web_search, persist it:
 pftui data consensus add --source "[firm]" --topic [topic] --call "[forecast]" --date $(date +%Y-%m-%d)
 ```
 
+## Dixon Lens — Weekly Power Structure Assessment
+
+Apply Dixon's "follow the money" framework at the weekly level. This is where FIC/MIC/TIC power shifts become visible.
+
+### Weekly FIC/MIC/TIC Power Assessment
+
+For each significant event this week, classify it through the Dixon lens:
+- **Which complex gained power?** New contracts, appointments, legislation, capital flows — what moved in whose favor?
+- **Which complex lost power?** Budget cuts, leadership removals, market losses, sanctions — who got weaker?
+- **Evidence chain:** Don't just classify — connect to specific market signals (defense stock direction, gold/oil ratio, VIX behavior, insurance market moves, force majeure invocations).
+
+Log each significant power shift:
+```bash
+pftui analytics situation update log --situation "<relevant situation>" \
+  --headline "Dixon weekly: [FIC|MIC|TIC] [gaining|losing] — [event]" \
+  --detail "[evidence: defense stocks, gold/oil, VIX, capital flows, contracts]" \
+  --severity [normal|high] --source "dixon lens" --source-agent medium-agent
+```
+
+### Phase Identification
+
+Identify which phase of Dixon's 3-phase war profit model we're in:
+- **Phase 1 (MIC Destruction):** Defense stocks rising, weapons contracts announced, media in full panic, VIX elevated and rising.
+- **Phase 2 (FIC Renegotiation):** Defense stocks declining, force majeure and new contracts being signed, VIX declining, oil retreating from peak, summit announcements. Key marker: "the entity that lost supply owns the repurchase supply."
+- **Phase 3 (TIC Control Grid):** AI/surveillance contracts, programmable money pilots, digital ID deployment, "rebuild" announcements.
+
+State the current phase and what evidence supports it. Flag phase transitions — these are the highest-signal moments for markets.
+
+### Medium-Term Dixon Tracking
+
+- **Force majeure invocations:** Track any new force majeure clauses being activated. Who's invoking? What contracts? Who holds the replacement contracts?
+- **Sovereign wealth fund capital movements:** Gulf SWFs shifting from Treasuries to equities to direct investment. Track direction and magnitude.
+- **K-shaped economy indicators:** Asset prices vs wage growth, wealth concentration metrics, private credit retail exposure. The "you will own nothing" trajectory — tokenization of real assets, rental economy expansion.
+- **Contract renegotiations:** Track energy, commodity, and infrastructure contracts being renegotiated under conflict conditions. The Qatar LNG model: same players, new terms, higher prices.
+
+### Narrative vs Money Divergence (Weekly)
+
+At the weekly level, compile narrative/money divergences detected by the low-timeframe agent and assess their pattern:
+- Are divergences clustering around a specific theme? (e.g., media says escalation but every money signal says settlement)
+- Is the divergence widening or closing?
+- What does the pattern tell you about which complex is controlling the narrative vs which is controlling the capital flows?
+
+Include your weekly Dixon assessment in the digest to the evening analyst.
+
 ## Scenario Management (your core responsibility)
 
 Review and update each active scenario:
