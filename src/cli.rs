@@ -2577,6 +2577,24 @@ pub enum AnalyticsCommand {
         #[command(subcommand)]
         command: AnalyticsConvictionCommand,
     },
+    /// Show prediction market odds (alias for `data predictions`)
+    Predictions {
+        /// Filter by category: crypto, economics, geopolitics, ai, finance, macro (supports pipe lists, e.g. geopolitics|macro). Defaults to "macro" (economics|geopolitics|crypto).
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Search question text/topics (e.g. "ceasefire", "Fed rate")
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Maximum number of markets to show (default: 10)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Parser)]
@@ -4361,5 +4379,59 @@ mod tests {
         assert!(!json);
         assert_eq!(limit, 25);
         assert_eq!(period.as_deref(), Some("7d"));
+    }
+
+    #[test]
+    fn test_analytics_predictions_bare() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "predictions", "--json"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Predictions {
+            category,
+            search,
+            limit,
+            json,
+        } = command
+        else {
+            panic!("expected predictions command");
+        };
+        assert!(json);
+        assert!(category.is_none());
+        assert!(search.is_none());
+        assert_eq!(limit, 10);
+    }
+
+    #[test]
+    fn test_analytics_predictions_with_filters() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "predictions",
+            "--category",
+            "crypto",
+            "--search",
+            "bitcoin",
+            "--limit",
+            "5",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Predictions {
+            category,
+            search,
+            limit,
+            json,
+        } = command
+        else {
+            panic!("expected predictions command");
+        };
+        assert!(!json);
+        assert_eq!(category.as_deref(), Some("crypto"));
+        assert_eq!(search.as_deref(), Some("bitcoin"));
+        assert_eq!(limit, 5);
     }
 }
