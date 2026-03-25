@@ -121,7 +121,6 @@ struct DashboardShellView: View {
     @EnvironmentObject private var store: MobileStore
     @Binding var selectedTab: Int
     @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
-    @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
     @AppStorage("pftui.mobile.systemDensity") private var systemDensity = "dense"
 
     var body: some View {
@@ -130,7 +129,7 @@ struct DashboardShellView: View {
                 HomeView()
             }
             .tabItem {
-                Label("Overview", systemImage: "rectangle.grid.2x2")
+                Label("Analytics", systemImage: "chart.line.uptrend.xyaxis")
             }
             .tag(0)
 
@@ -143,20 +142,12 @@ struct DashboardShellView: View {
             .tag(1)
 
             NavigationStack {
-                AnalyticsView()
-            }
-            .tabItem {
-                Label("Research", systemImage: "chart.line.uptrend.xyaxis")
-            }
-            .tag(2)
-
-            NavigationStack {
                 SystemView()
             }
             .tabItem {
                 Label("System", systemImage: "server.rack")
             }
-            .tag(3)
+            .tag(2)
         }
         .tint(MobilePalette.accent)
         .toolbar {
@@ -188,7 +179,6 @@ struct DashboardShellView: View {
 
     private func setDensity(_ density: String) {
         homeDensity = density
-        analyticsDensity = density
         systemDensity = density
     }
 }
@@ -211,6 +201,11 @@ struct HomeView: View {
     @AppStorage("pftui.mobile.home.showNews") private var showNews = true
     @AppStorage("pftui.mobile.home.showOpportunities") private var showOpportunities = true
     @AppStorage("pftui.mobile.home.showSynthesis") private var showSynthesis = true
+    @State private var showRegime = true
+    @State private var showSentiment = true
+    @State private var showCorrelations = true
+    @State private var showPredictions = true
+    @State private var showScorecard = true
 
     var body: some View {
         ScrollView {
@@ -219,7 +214,7 @@ struct HomeView: View {
 
                 heroCard(
                     title: store.dashboard?.situation.title ?? situationTitle,
-                    subtitle: "Overview",
+                    subtitle: "Analytics",
                     detail: store.dashboard?.situation.subtitle ?? situationSubtitle
                 )
 
@@ -394,6 +389,136 @@ struct HomeView: View {
                         }
                     }
 
+                    if let regime = store.analytics?.regime {
+                        CollapsibleCardSection(
+                            title: "Regime Drivers",
+                            subtitle: shortTimestamp(regime.recordedAt),
+                            isExpanded: $showRegime
+                        ) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                if !regime.drivers.isEmpty {
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 8) {
+                                            ForEach(regime.drivers, id: \.self) { driver in
+                                                Text(driver)
+                                                    .font(.caption.weight(.medium))
+                                                    .foregroundStyle(MobilePalette.textPrimary)
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 8)
+                                                    .background(MobilePalette.bgPrimary.opacity(0.65))
+                                                    .clipShape(Capsule())
+                                            }
+                                        }
+                                    }
+                                }
+
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                                    analyticsStat(label: "VIX", value: formatNumber(regime.vix))
+                                    analyticsStat(label: "DXY", value: formatNumber(regime.dxy))
+                                    analyticsStat(label: "10Y", value: formatNumber(regime.yield10y))
+                                    analyticsStat(label: "Oil", value: formatNumber(regime.oil))
+                                    analyticsStat(label: "Gold", value: formatNumber(regime.gold))
+                                    analyticsStat(label: "BTC", value: formatNumber(regime.btc))
+                                }
+                            }
+                        }
+                    }
+
+                    if let analytics = store.analytics, !analytics.sentiment.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Sentiment",
+                            subtitle: "Crypto + traditional",
+                            isExpanded: $showSentiment
+                        ) {
+                            VStack(spacing: 14) {
+                                ForEach(analytics.sentiment) { item in
+                                    SentimentMeter(item: item)
+                                }
+                            }
+                        }
+                    }
+
+                    if let analytics = store.analytics, !analytics.correlations.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Correlations",
+                            subtitle: "Live relationship map",
+                            isExpanded: $showCorrelations
+                        ) {
+                            VStack(spacing: 12) {
+                                ForEach(analytics.correlations) { item in
+                                    compactRow(
+                                        title: "\(item.symbolA) / \(item.symbolB)",
+                                        subtitle: "\(item.period) • \(shortTimestamp(item.recordedAt))",
+                                        trailing: String(format: "%.2f", item.correlation),
+                                        trailingColor: correlationColor(item.correlation)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if let analytics = store.analytics, !analytics.predictions.isEmpty {
+                        CollapsibleCardSection(
+                            title: "Prediction Markets",
+                            subtitle: "Crowd-implied odds",
+                            isExpanded: $showPredictions
+                        ) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(analytics.predictions) { item in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack(alignment: .top) {
+                                            Text(item.question)
+                                                .foregroundStyle(MobilePalette.textPrimary)
+                                                .font(.subheadline.weight(.semibold))
+                                            Spacer()
+                                            Text(String(format: "%.0f%%", item.probabilityPct))
+                                                .foregroundStyle(MobilePalette.accent)
+                                                .font(.subheadline.weight(.bold))
+                                        }
+                                        Text(item.category.capitalized)
+                                            .foregroundStyle(MobilePalette.textSecondary)
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if let narrative = store.dashboard?.narrative {
+                        CollapsibleCardSection(
+                            title: "Prediction Scorecard",
+                            subtitle: "\(narrative.predictionScorecard.scored) scored • \(Int(narrative.predictionScorecard.hitRatePct.rounded()))% hit rate",
+                            isExpanded: $showScorecard
+                        ) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                                    analyticsStat(label: "Total", value: "\(narrative.predictionScorecard.total)")
+                                    analyticsStat(label: "Pending", value: "\(narrative.predictionScorecard.pending)")
+                                    analyticsStat(label: "Correct", value: "\(narrative.predictionScorecard.correct)")
+                                    analyticsStat(label: "Wrong", value: "\(narrative.predictionScorecard.wrong)")
+                                }
+
+                                ForEach(narrative.lessons.prefix(homeDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.symbol ?? "Lesson",
+                                        detail: item.detail,
+                                        trailing: shortTimestamp(item.recordedAt),
+                                        severity: item.severity
+                                    )
+                                }
+
+                                ForEach(narrative.catalystOutcomes.prefix(homeDensity == "dense" ? 2 : 4)) { item in
+                                    compactInsightCard(
+                                        title: item.title,
+                                        detail: item.detail,
+                                        trailing: item.outcome.replacingOccurrences(of: "-", with: " ").uppercased(),
+                                        severity: item.severity
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if let positions = store.portfolio?.positions, !positions.isEmpty {
                         CollapsibleCardSection(
                             title: "Portfolio Concentration",
@@ -523,7 +648,7 @@ struct HomeView: View {
             .padding(12)
         }
         .background(MobilePalette.bgPrimary)
-        .navigationTitle("Overview")
+        .navigationTitle("Analytics")
     }
 
     @ViewBuilder
@@ -1033,336 +1158,9 @@ struct PortfolioView: View {
     }
 }
 
-struct AnalyticsView: View {
-    @EnvironmentObject private var store: MobileStore
-    @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
-    @State private var showOverview = true
-    @State private var showRegime = true
-    @State private var showNarrative = true
-    @State private var showSentiment = true
-    @State private var showCorrelations = true
-    @State private var showPredictions = true
-    @State private var showScorecard = true
-    @State private var showScores = true
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if let analytics = store.analytics {
-                    analyticsHero(analytics: analytics)
-                    CollapsibleCardSection(
-                        title: "Overview",
-                        subtitle: analyticsDensity == "dense" ? "High-density scan" : "Expanded read",
-                        isExpanded: $showOverview
-                    ) {
-                        analyticsSummary(analytics: analytics)
-                    }
-
-                    if let regime = analytics.regime {
-                        CollapsibleCardSection(
-                            title: "Regime Drivers",
-                            subtitle: shortTimestamp(regime.recordedAt),
-                            isExpanded: $showRegime
-                        ) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                if !regime.drivers.isEmpty {
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 8) {
-                                            ForEach(regime.drivers, id: \.self) { driver in
-                                                Text(driver)
-                                                    .font(.caption.weight(.medium))
-                                                    .foregroundStyle(MobilePalette.textPrimary)
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 8)
-                                                    .background(MobilePalette.bgPrimary.opacity(0.65))
-                                                    .clipShape(Capsule())
-                                            }
-                                        }
-                                    }
-                                }
-
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                                    analyticsStat(label: "VIX", value: formatNumber(regime.vix))
-                                    analyticsStat(label: "DXY", value: formatNumber(regime.dxy))
-                                    analyticsStat(label: "10Y", value: formatNumber(regime.yield10y))
-                                    analyticsStat(label: "Oil", value: formatNumber(regime.oil))
-                                    analyticsStat(label: "Gold", value: formatNumber(regime.gold))
-                                    analyticsStat(label: "BTC", value: formatNumber(regime.btc))
-                                }
-                            }
-                        }
-                    }
-
-                    if let narrative = store.dashboard?.narrative,
-                       !narrative.scenarioShifts.isEmpty || !narrative.convictionChanges.isEmpty || !narrative.trendChanges.isEmpty {
-                        CollapsibleCardSection(
-                            title: "Narrative Memory",
-                            subtitle: narrative.headline,
-                            isExpanded: $showNarrative
-                        ) {
-                            VStack(spacing: 12) {
-                                ForEach(narrative.scenarioShifts.prefix(analyticsDensity == "dense" ? 3 : 5)) { item in
-                                    compactInsightCard(
-                                        title: item.name,
-                                        detail: item.driver ?? "Probability repriced",
-                                        trailing: signedNumber(item.deltaPct),
-                                        severity: item.severity
-                                    )
-                                }
-
-                                ForEach(narrative.convictionChanges.prefix(analyticsDensity == "dense" ? 2 : 4)) { item in
-                                    compactInsightCard(
-                                        title: item.symbol,
-                                        detail: item.notes ?? "\(item.name) conviction moved from \(item.oldScore) to \(item.newScore)",
-                                        trailing: signedInteger(item.delta),
-                                        severity: item.severity
-                                    )
-                                }
-
-                                ForEach(narrative.trendChanges.prefix(analyticsDensity == "dense" ? 2 : 3)) { item in
-                                    compactInsightCard(
-                                        title: item.name,
-                                        detail: item.latestEvidence ?? "\(item.direction.capitalized) \(item.timeframe) trend refreshed",
-                                        trailing: item.conviction.uppercased(),
-                                        severity: item.severity
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if !analytics.sentiment.isEmpty {
-                        CollapsibleCardSection(
-                            title: "Sentiment",
-                            subtitle: "Crypto + traditional",
-                            isExpanded: $showSentiment
-                        ) {
-                            VStack(spacing: 14) {
-                                ForEach(analytics.sentiment) { item in
-                                    SentimentMeter(item: item)
-                                }
-                            }
-                        }
-                    }
-
-                    if !analytics.correlations.isEmpty {
-                        CollapsibleCardSection(
-                            title: "Correlations",
-                            subtitle: "Live relationship map",
-                            isExpanded: $showCorrelations
-                        ) {
-                            VStack(spacing: 12) {
-                                ForEach(analytics.correlations) { item in
-                                    compactRow(
-                                        title: "\(item.symbolA) / \(item.symbolB)",
-                                        subtitle: "\(item.period) • \(shortTimestamp(item.recordedAt))",
-                                        trailing: String(format: "%.2f", item.correlation),
-                                        trailingColor: correlationColor(item.correlation)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if !analytics.predictions.isEmpty {
-                        CollapsibleCardSection(
-                            title: "Prediction Markets",
-                            subtitle: "Crowd-implied odds",
-                            isExpanded: $showPredictions
-                        ) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                ForEach(analytics.predictions) { item in
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack(alignment: .top) {
-                                            Text(item.question)
-                                                .foregroundStyle(MobilePalette.textPrimary)
-                                                .font(.subheadline.weight(.semibold))
-                                            Spacer()
-                                            Text(String(format: "%.0f%%", item.probabilityPct))
-                                                .foregroundStyle(MobilePalette.accent)
-                                                .font(.subheadline.weight(.bold))
-                                        }
-                                        Text(item.category.capitalized)
-                                            .foregroundStyle(MobilePalette.textSecondary)
-                                            .font(.caption)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if let narrative = store.dashboard?.narrative {
-                        CollapsibleCardSection(
-                            title: "Prediction Scorecard",
-                            subtitle: "\(narrative.predictionScorecard.scored) scored • \(Int(narrative.predictionScorecard.hitRatePct.rounded()))% hit rate",
-                            isExpanded: $showScorecard
-                        ) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                                    analyticsStat(label: "Total", value: "\(narrative.predictionScorecard.total)")
-                                    analyticsStat(label: "Pending", value: "\(narrative.predictionScorecard.pending)")
-                                    analyticsStat(label: "Correct", value: "\(narrative.predictionScorecard.correct)")
-                                    analyticsStat(label: "Wrong", value: "\(narrative.predictionScorecard.wrong)")
-                                }
-
-                                ForEach(narrative.lessons.prefix(analyticsDensity == "dense" ? 2 : 4)) { item in
-                                    compactInsightCard(
-                                        title: item.symbol ?? "Lesson",
-                                        detail: item.detail,
-                                        trailing: shortTimestamp(item.recordedAt),
-                                        severity: item.severity
-                                    )
-                                }
-
-                                ForEach(narrative.catalystOutcomes.prefix(analyticsDensity == "dense" ? 2 : 4)) { item in
-                                    compactInsightCard(
-                                        title: item.title,
-                                        detail: item.detail,
-                                        trailing: item.outcome.replacingOccurrences(of: "-", with: " ").uppercased(),
-                                        severity: item.severity
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    CollapsibleCardSection(
-                        title: "Timeframe Scores",
-                        subtitle: "\(analytics.timeframes.count) tracked layers",
-                        isExpanded: $showScores
-                    ) {
-                        VStack(spacing: 12) {
-                            ForEach(analytics.timeframes) { timeframe in
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(alignment: .firstTextBaseline) {
-                                        Text(timeframe.label)
-                                            .font(.headline)
-                                            .foregroundStyle(MobilePalette.textPrimary)
-                                        Spacer()
-                                        Text(String(format: "%.0f", timeframe.score))
-                                            .font(.title3.weight(.bold))
-                                            .foregroundStyle(scoreColor(timeframe.score))
-                                    }
-
-                                    ScoreBar(score: timeframe.score)
-
-                                    Text(timeframe.summary ?? "No score set yet.")
-                                        .font(.subheadline)
-                                        .foregroundStyle(MobilePalette.textSecondary)
-                                        .lineLimit(analyticsDensity == "dense" ? 2 : nil)
-
-                                    if let updatedAt = timeframe.updatedAt {
-                                        Text("Updated \(shortTimestamp(updatedAt))")
-                                            .font(.caption)
-                                            .foregroundStyle(MobilePalette.textSecondary)
-                                    }
-                                }
-                                .padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(MobilePalette.bgPrimary.opacity(0.4))
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(12)
-        }
-        .background(MobilePalette.bgPrimary)
-        .navigationTitle("Research")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button(analyticsDensity == "dense" ? "Dense Layout ✓" : "Dense Layout") {
-                        analyticsDensity = "dense"
-                    }
-                    Button(analyticsDensity == "expanded" ? "Expanded Layout ✓" : "Expanded Layout") {
-                        analyticsDensity = "expanded"
-                    }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func analyticsHero(analytics: AnalyticsPayload) -> some View {
-        let title = analytics.regime?.regime.replacingOccurrences(of: "_", with: " ").capitalized ?? "No Regime"
-        let detail = analytics.regime?.confidence.map { "Confidence \(Int($0 * 100))%" } ?? "\(analytics.timeframes.count) timeframes tracked"
-
-        heroCard(title: title, subtitle: "Research", detail: detail)
-    }
-
-    @ViewBuilder
-    private func analyticsSummary(analytics: AnalyticsPayload) -> some View {
-        let avg = averageScore(analytics.timeframes)
-        let strongest = strongestTimeframe(analytics.timeframes)
-
-        VStack(alignment: .leading, spacing: 14) {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                analyticsStat(label: "Average Score", value: String(format: "%.0f", avg))
-                analyticsStat(label: "Strongest Layer", value: strongest?.label ?? "—")
-                analyticsStat(label: "Correlations", value: "\(analytics.correlations.count)")
-                analyticsStat(label: "Prediction Signals", value: "\(analytics.predictions.count)")
-            }
-
-            if analyticsDensity != "dense" {
-                VStack(spacing: 10) {
-                    ForEach(analytics.timeframes) { timeframe in
-                        compactRow(
-                            title: timeframe.label,
-                            subtitle: timeframe.summary ?? "No summary",
-                            trailing: String(format: "%.0f", timeframe.score),
-                            trailingColor: scoreColor(timeframe.score)
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func compactInsightCard(title: String, detail: String, trailing: String, severity: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(insightColor(severity))
-                .frame(width: 10, height: 10)
-                .padding(.top, 6)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .top) {
-                    Text(title)
-                        .foregroundStyle(MobilePalette.textPrimary)
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text(trailing)
-                        .foregroundStyle(insightColor(severity))
-                        .font(.caption.weight(.bold))
-                }
-                Text(detail)
-                    .foregroundStyle(MobilePalette.textSecondary)
-                    .font(.caption)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(MobilePalette.bgPrimary.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func signedNumber(_ value: Double) -> String {
-        value >= 0 ? String(format: "+%.1f", value) : String(format: "%.1f", value)
-    }
-
-    private func signedInteger(_ value: Int) -> String {
-        value >= 0 ? "+\(value)" : "\(value)"
-    }
-}
-
 struct SystemView: View {
     @EnvironmentObject private var store: MobileStore
     @AppStorage("pftui.mobile.homeDensity") private var homeDensity = "dense"
-    @AppStorage("pftui.mobile.analyticsDensity") private var analyticsDensity = "dense"
     @AppStorage("pftui.mobile.systemDensity") private var systemDensity = "dense"
     @AppStorage("pftui.mobile.home.showSituation") private var showSituationModule = true
     @AppStorage("pftui.mobile.home.showFocus") private var showFocusModule = true
@@ -1391,10 +1189,9 @@ struct SystemView: View {
                     isExpanded: $showDisplay
                 ) {
                     VStack(alignment: .leading, spacing: 14) {
-                        densityPicker(title: "Home", selection: $homeDensity)
-                        densityPicker(title: "Analytics", selection: $analyticsDensity)
+                        densityPicker(title: "Analytics", selection: $homeDensity)
                         densityPicker(title: "System", selection: $systemDensity)
-                        Toggle("Overview watchlist", isOn: $showSituationModule)
+                        Toggle("Analytics watchlist", isOn: $showSituationModule)
                             .tint(MobilePalette.accent)
                         Toggle("Portfolio impact", isOn: $showFocusModule)
                             .tint(MobilePalette.accent)
