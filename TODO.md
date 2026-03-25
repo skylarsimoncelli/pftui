@@ -20,49 +20,7 @@ _(none)_
 
 ## P3 - Long Term
 
-- **F54: Dixon Power Flow Tracker** — Track power flows between Financial Industrial Complex (FIC), Military Industrial Complex (MIC), and Technical Industrial Complex (TIC) based on Simon Dixon's "follow the money" framework. This is a new analytical layer that classifies geopolitical events by which power complex gains or loses.
-
-  **Database table: `power_flows`**
-  ```sql
-  CREATE TABLE power_flows (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      date            TEXT NOT NULL,          -- ISO date (YYYY-MM-DD)
-      event           TEXT NOT NULL,          -- what happened
-      source_complex  TEXT NOT NULL,          -- 'FIC', 'MIC', or 'TIC'
-      direction       TEXT NOT NULL,          -- 'gaining' or 'losing'
-      target_complex  TEXT,                   -- which complex is losing/gaining relative to source (nullable)
-      evidence        TEXT NOT NULL,          -- the market/money signal that supports this classification
-      magnitude       INTEGER NOT NULL CHECK(magnitude BETWEEN 1 AND 5), -- significance of this power shift
-      agent_source    TEXT,                   -- which timeframe agent logged this (low-agent, medium-agent, etc.)
-      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-  CREATE INDEX idx_power_flows_date ON power_flows(date);
-  CREATE INDEX idx_power_flows_complex ON power_flows(source_complex);
-  ```
-
-  **CLI commands:**
-  ```
-  pftui analytics power-flow add --event "..." --source FIC --direction gaining --target MIC --evidence "..." --magnitude 3 [--agent-source low-agent] [--date YYYY-MM-DD]
-  pftui analytics power-flow list [--complex FIC|MIC|TIC] [--days 30] [--direction gaining|losing] [--json]
-  pftui analytics power-flow balance [--days 30] [--json]
-  ```
-
-  **`power-flow add`**: Creates a new power flow entry. `--source` and `--direction` are required. `--target` is optional (sometimes a complex gains without a clear loser). `--magnitude` defaults to 3 if omitted. `--date` defaults to today. Validate `--source` and `--target` are one of FIC, MIC, TIC.
-
-  **`power-flow list`**: Lists power flow entries. Default: last 7 days. Filterable by complex, direction, days. Output format follows existing `analytics alerts list` pattern.
-
-  **`power-flow balance`**: Aggregates power flows over the specified period and shows a net score per complex. For each complex, sum `magnitude` where `direction=gaining` minus sum `magnitude` where `direction=losing`, considering both `source_complex` and `target_complex` entries. Display as:
-  ```
-  POWER BALANCE (last 30 days)
-  FIC:  +12 (8 gaining, 3 losing)
-  MIC:  -7  (2 gaining, 6 losing)
-  TIC:  +3  (4 gaining, 2 losing)
-  ```
-  JSON output: `{"period_days": 30, "balances": [{"complex": "FIC", "net": 12, "gaining_count": 8, "losing_count": 3, "gaining_magnitude": 15, "losing_magnitude": 3}, ...]}`
-
-  **Agent integration**: All timeframe agents should log power flow entries when they classify events through the Dixon lens. The evening analyst synthesizes the daily balance. The morning brief includes a one-line power balance summary.
-
-  **Design notes**: Follows existing pftui patterns — SQLite TEXT storage for dates, `--json` on every command, hierarchical CLI under `analytics`. Similar in scope to `analytics situation update log` but tracks a different dimension (power structure vs event narrative).
+_(none)_
 
 ---
 
@@ -95,6 +53,6 @@ _(none)_
 2. ~~**P1: `analytics situation list` empty with no guidance**~~ — SHIPPED #300. JSON output now returns structured object with hint.
 3. ~~**P2: Regime transition alerts**~~ — SHIPPED #314. Scenario alerts auto-fire on ≥10pp probability shifts.
 
-**Release eligibility:** v0.17.0 released. All P1 items shipped (#300 — analytics predictions alias + situation list guidance). Tests: 1638 passing (+4 new from #314), clippy clean, no P0 bugs. No P1 remaining.
+**Release eligibility:** v0.17.0 released. All P1 items shipped (#300 — analytics predictions alias + situation list guidance). Tests: 1659 passing (+8 new from #327 power-flow), clippy clean, no P0 bugs. No P1 remaining. All P2 and P3 items shipped.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.

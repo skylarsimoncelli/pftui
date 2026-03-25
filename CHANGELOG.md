@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-25 — feat: Dixon Power Flow Tracker (`analytics power-flow`)
+
+- What: Added F54 — Dixon Power Flow Tracker, a new analytical layer under `analytics power-flow` for tracking power shifts between Financial Industrial Complex (FIC), Military Industrial Complex (MIC), and Technical Industrial Complex (TIC) based on Simon Dixon's "follow the money" framework. Three subcommands: `add` (log power flow events with source complex, direction, target, evidence, magnitude 1-5, and optional agent source), `list` (filtered by complex, direction, days; default 7 days), and `balance` (aggregate net power score per complex; default 30 days). Balance computation accounts for both direct (source_complex) and inverse (target_complex) power flows for accurate net scoring. New `power_flows` database table with indexes on date and source_complex. Both SQLite and PostgreSQL backends supported. All commands support `--json` for agent consumption. Full input validation: FIC/MIC/TIC complexes, gaining/losing directions, magnitude 1-5.
+- Why: P3 — only remaining TODO item. Enables timeframe agents to classify geopolitical events by which power complex gains or loses, with the evening analyst synthesizing daily balance and morning briefs including power balance summaries.
+- Files: `src/db/power_flows.rs` (+704, new file), `src/commands/power_flow.rs` (+171, new file), `src/cli.rs` (+64, PowerFlow variant + AnalyticsPowerFlowCommand enum), `src/main.rs` (+39, dispatch), `src/db/schema.rs` (+17, SQLite migration), `src/db/postgres_schema.rs` (+25, PG migration), `src/db/mod.rs` (+1), `src/commands/mod.rs` (+1)
+- Tests: `cargo test` (1659 pass, +8 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #327
+
 ### 2026-03-25 — feat: `system market-hours` command for session-aware agent routines
 
 - What: Added `pftui system market-hours [--json]` that reports US equity market status: current phase (Weekend, PreMarket, Regular, AfterHours, Overnight), next open/close times with countdown, and agent hints for which data sources are most useful in each phase. DST-aware Eastern Time conversion. No database dependency — intercepted before DB init for instant response.
