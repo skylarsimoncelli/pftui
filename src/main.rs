@@ -3359,6 +3359,18 @@ fn main() -> Result<()> {
                     commands::conviction::run_changes(&backend, d, json)
                 }
             },
+            cli::AnalyticsCommand::Predictions {
+                category,
+                search,
+                limit,
+                json,
+            } => commands::predictions::run(
+                &backend,
+                category.as_deref(),
+                search.as_deref(),
+                limit,
+                json,
+            ),
         },
     };
 

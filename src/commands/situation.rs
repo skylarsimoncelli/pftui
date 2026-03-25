@@ -124,7 +124,20 @@ fn run_list(backend: &BackendConnection, phase: Option<&str>, json_output: bool)
     }
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&entries)?);
+        if entries.is_empty() {
+            let empty_result = serde_json::json!({
+                "situations": [],
+                "count": 0,
+                "phase": phase,
+                "hint": format!(
+                    "No {} situations found. Scenarios must be promoted to active situations before they appear here. Use: pftui journal scenario promote --json \"Scenario Name\"",
+                    phase
+                )
+            });
+            println!("{}", serde_json::to_string_pretty(&empty_result)?);
+        } else {
+            println!("{}", serde_json::to_string_pretty(&entries)?);
+        }
     } else {
         if entries.is_empty() {
             println!("No {} situations found.", phase);
