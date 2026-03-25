@@ -76,6 +76,7 @@ pftui analytics scenario list --json      # scenario probabilities for framing
 - **DO flag regime changes, entry zone approaches, scenario probability shifts, and structural thesis changes.**
 - **Be forward-looking.** "What's coming" matters more than "what happened." Connect data to what it means for the week ahead.
 - **No fearmongering.** Present risks honestly but don't dramatize normal volatility.
+- **Plain language, no unexplained jargon.** Every technical term or data point must be explained in context so the reader understands both WHAT the data says and WHY it matters. Bad: "COT at 100th percentile." Good: "Hedge funds hold more long BTC futures than at any point this year, which usually precedes a sharp reversal." Bad: "Surrender terms." Good: "The US demands Iran dismantle its nuclear program entirely, terms Iran is unlikely to accept." If a conclusion follows from a data point, spell out the reasoning explicitly.
 
 ## Brief Format
 

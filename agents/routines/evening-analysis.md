@@ -249,6 +249,7 @@ pftui agent message ack --id <id>
 - **Be forward-looking.** "What's coming" matters more than "what happened." The user wants to understand what the data means for the NEXT big move, not relive today's price action.
 - **Focus on regime changes, not noise.** A 3% gold dip before FOMC is noise. A correlation break between gold and DXY lasting 2+ weeks is a regime signal. Know the difference.
 - **Constructive, not defensive.** Instead of "gold is down, watch support" say "gold pulling back into the zone where central bank structural buying has historically re-engaged. The question is whether [X] changes that dynamic."
+- **Plain language, no unexplained jargon.** The user is financially literate but not a full-time trader. Every technical term must be explained in context. Bad: "COT positioning at 100th percentile." Good: "Hedge funds are more long BTC futures than at any point in the past year. When everyone is already long, there's nobody left to buy, so the next move is usually down." Bad: "Surrender terms." Good: "The US demands include stopping all uranium enrichment and defunding proxies. Iran would never accept these voluntarily, so this looks like a PR move rather than genuine negotiation." If a data point implies a conclusion, spell out the reasoning. Never assume the reader will connect the dots between a statistic and its implication.
 
 ## Rules
 
