@@ -3398,6 +3398,45 @@ fn main() -> Result<()> {
                 limit,
                 json,
             ),
+            cli::AnalyticsCommand::PowerFlow { command } => match command {
+                cli::AnalyticsPowerFlowCommand::Add {
+                    event,
+                    source,
+                    direction,
+                    target,
+                    evidence,
+                    magnitude,
+                    agent_source,
+                    date,
+                    json,
+                } => commands::power_flow::run_add(
+                    &backend,
+                    &event,
+                    &source,
+                    &direction,
+                    target.as_deref(),
+                    &evidence,
+                    magnitude,
+                    agent_source.as_deref(),
+                    date.as_deref(),
+                    json,
+                ),
+                cli::AnalyticsPowerFlowCommand::List {
+                    complex,
+                    direction,
+                    days,
+                    json,
+                } => commands::power_flow::run_list(
+                    &backend,
+                    complex.as_deref(),
+                    direction.as_deref(),
+                    days,
+                    json,
+                ),
+                cli::AnalyticsPowerFlowCommand::Balance { days, json } => {
+                    commands::power_flow::run_balance(&backend, days, json)
+                }
+            },
         },
     };
 

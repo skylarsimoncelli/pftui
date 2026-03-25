@@ -932,6 +932,31 @@ pub fn run_migrations(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
 
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS power_flows (
+                id              BIGSERIAL PRIMARY KEY,
+                date            TEXT NOT NULL,
+                event           TEXT NOT NULL,
+                source_complex  TEXT NOT NULL,
+                direction       TEXT NOT NULL,
+                target_complex  TEXT,
+                evidence        TEXT NOT NULL,
+                magnitude       INTEGER NOT NULL CHECK(magnitude BETWEEN 1 AND 5),
+                agent_source    TEXT,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_power_flows_date ON power_flows(date)")
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_power_flows_complex ON power_flows(source_complex)",
+        )
+        .execute(pool)
+        .await?;
+
         Ok::<(), sqlx::Error>(())
     })?;
     Ok(())
