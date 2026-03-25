@@ -28,3 +28,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-25,alert-investigator,85,90,operations,info,"No active alerts. System healthy. Market data current, all alerts properly acknowledged."
 2026-03-25,alert-investigator,85,80,monitoring,normal,No alerts triggered - routine monitoring. Good data synthesis of geopolitical tensions and market regime. Clear scenario probability updates and appropriate agent routing.
 2026-03-25,alert-investigator,90,90,routine,normal,No unacknowledged alerts found during routine health check. All monitoring systems operational and alerts properly armed. Agent messaging pipeline functioning correctly.
+2026-03-25,alert-investigator,85,80,narrative-detection,normal,No alerts fired but detected peace dividend narrative shift. System correctly identified Iran peace talks catalyst and JPM bullish outlook. Portfolio tracking accurate.
