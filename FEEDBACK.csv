@@ -40,3 +40,4 @@ date,reviewer,usefulness_pct,overall_pct,category,severity,description
 2026-03-25,alert-investigator,85,80,monitoring,normal,Alert system functioning normally. No triggered alerts to investigate. Armed alerts properly configured for key thresholds.
 2026-03-25,alert-investigator,75,78,monitoring,normal,No unacked alerts found during 18:28 UTC run. All monitoring systems functioning normally. Armed alerts properly configured and waiting for market conditions. Agent messaging pipeline working correctly.
 2026-03-25,alert-investigator,85,82,routine-check,normal,No alerts triggered - successful health check. System monitoring thresholds intact. Iran diplomatic whiplash noted in market context.
+2026-03-25,alert-investigator,85,80,alert-detection,normal,BTC alert correctly triggered on 5.53% gain. Investigation revealed Iran diplomatic whiplash as catalyst. Good portfolio impact analysis and agent routing.
