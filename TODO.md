@@ -46,10 +46,9 @@ _(none)_
 - Low-Timeframe Analyst **surged** 85→95 usefulness, 80→90 overall — correlation breaks and ratio alerts praised
 - Predictions stats/unanswered fix (#334) shipped in response to Evening Analyst's 65/68 — score impact TBD next review
 
-**Top 3 priorities based on feedback:**
+**Top 2 priorities based on feedback:**
 1. **P2: Auto-scored prediction lifecycle** — Evening Analyst wants predictions to resolve automatically from market data.
 2. **P2: Correlation breaks × impact analysis cross-reference** — Low-Timeframe Analyst wants breaks cross-referenced with portfolio impact.
-3. **P2: Overnight-futures endpoint** — Evening Analyst wants dedicated futures data for pre-market positioning.
 
 **Release eligibility:** ✅ READY — v0.18.0. 46 commits since v0.17.0, 5 significant features shipped, 1672 tests passing, clippy clean, no P0 bugs. New P1 items are discoverability/quality issues, not blockers.
 
