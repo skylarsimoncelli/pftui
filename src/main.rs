@@ -2639,10 +2639,20 @@ fn main() -> Result<()> {
                 json,
             ),
             cli::AnalyticsCommand::Movers {
+                command,
                 threshold,
                 overnight,
                 json,
-            } => commands::movers::run(&backend, &config, Some(&threshold), overnight, json),
+            } => match command {
+                Some(cli::AnalyticsMoversCommand::Themes {
+                    threshold: t,
+                    min_symbols,
+                    json: j,
+                }) => commands::movers::run_themes(&backend, &config, &t, min_symbols, j),
+                None => {
+                    commands::movers::run(&backend, &config, Some(&threshold), overnight, json)
+                }
+            },
             cli::AnalyticsCommand::Correlations { command, json } => match command {
                 None => commands::correlations::run(
                     &backend,

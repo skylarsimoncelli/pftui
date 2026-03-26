@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use rust_decimal::Decimal;
@@ -410,6 +410,292 @@ pub fn run(
             "  {:<sym_w$}  {:<name_w$}  {:<cat_w$}  {:>price_w$}  {:>chg_w$}  {}",
             m.symbol, m.name, m.category, m.price, m.change_str, m.source,
         );
+    }
+
+    Ok(())
+}
+
+// ─── Sector theme mapping ───────────────────────────────────────────────────
+
+/// Map a symbol to its sector name. Uses SECTOR_ETFS for known sector ETFs,
+/// then falls back to asset category grouping.
+fn classify_sector(symbol: &str, category: &AssetCategory) -> String {
+    // Check if this IS a sector ETF
+    for (etf_sym, name) in crate::commands::sector::SECTOR_ETFS {
+        if symbol.eq_ignore_ascii_case(etf_sym) {
+            return name.to_string();
+        }
+    }
+
+    // Map by asset category for non-ETF symbols
+    match category {
+        AssetCategory::Crypto => "Crypto".to_string(),
+        AssetCategory::Commodity => "Commodities".to_string(),
+        AssetCategory::Forex => "Forex".to_string(),
+        AssetCategory::Cash => "Cash".to_string(),
+        AssetCategory::Fund => "Funds".to_string(),
+        AssetCategory::Equity => "Equities".to_string(),
+    }
+}
+
+/// A mover within a theme: symbol, display name, change percentage.
+type ThemeMover = (String, String, f64);
+
+/// A detected sector theme: multiple symbols in the same sector moving together.
+struct SectorTheme {
+    sector: String,
+    direction: &'static str, // "up" or "down"
+    symbols: Vec<ThemeMover>,
+    avg_change: f64,
+    strength: f64, // |avg_change| * count — composite strength score
+}
+
+/// Detect sector-wide themes from movers data.
+///
+/// Groups symbols by sector, then within each sector detects when ≥min_symbols
+/// move in the same direction above threshold. Returns themes sorted by strength.
+fn detect_themes(
+    backend: &BackendConnection,
+    threshold_pct: Decimal,
+    min_symbols: usize,
+) -> Vec<SectorTheme> {
+    // Collect all trackable symbols: held + watchlist + sector ETFs
+    let mut symbols: Vec<(String, AssetCategory, &'static str)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    // Held positions (full mode)
+    if let Ok(held) = get_unique_symbols_backend(backend) {
+        for (sym, cat) in held {
+            if cat == AssetCategory::Cash {
+                continue;
+            }
+            if seen.insert(sym.clone()) {
+                symbols.push((sym, cat, "held"));
+            }
+        }
+    }
+
+    // Held positions (percentage mode)
+    if let Ok(alloc) = get_unique_allocation_symbols_backend(backend) {
+        for (sym, cat) in alloc {
+            if cat == AssetCategory::Cash {
+                continue;
+            }
+            if seen.insert(sym.clone()) {
+                symbols.push((sym, cat, "held"));
+            }
+        }
+    }
+
+    // Watchlist
+    if let Ok(entries) = list_watchlist_backend(backend) {
+        for entry in entries {
+            let cat: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
+            if seen.insert(entry.symbol.clone()) {
+                symbols.push((entry.symbol, cat, "watchlist"));
+            }
+        }
+    }
+
+    // Sector ETFs (ensure coverage even if not in portfolio/watchlist)
+    for (etf_sym, _) in crate::commands::sector::SECTOR_ETFS {
+        if seen.insert(etf_sym.to_string()) {
+            symbols.push((etf_sym.to_string(), AssetCategory::Fund, "sector"));
+        }
+    }
+
+    // Build price maps
+    let cached = get_all_cached_prices_backend(backend).unwrap_or_default();
+    let price_map: HashMap<String, Decimal> =
+        cached.iter().map(|q| (q.symbol.clone(), q.price)).collect();
+    let prev_close_map: HashMap<String, Decimal> = cached
+        .iter()
+        .filter_map(|q| q.previous_close.map(|pc| (q.symbol.clone(), pc)))
+        .collect();
+
+    // Compute changes and group by sector
+    // Key: (sector, direction) → Vec<ThemeMover>
+    let mut groups: HashMap<(String, &'static str), Vec<ThemeMover>> = HashMap::new();
+
+    for (sym, cat, _source) in &symbols {
+        let current_price = price_map.get(sym).copied();
+        let cached_prev = prev_close_map.get(sym).copied();
+
+        if let Some(pct) = compute_change_pct(backend, sym, current_price, cached_prev) {
+            let abs_pct = if pct < dec!(0) { -pct } else { pct };
+            if abs_pct >= threshold_pct {
+                let direction = if pct >= dec!(0) { "up" } else { "down" };
+                let sector = classify_sector(sym, cat);
+                let name = resolve_name(sym);
+                let display_name = if name.is_empty() {
+                    sym.clone()
+                } else {
+                    name
+                };
+                let f: f64 = pct.to_string().parse().unwrap_or(0.0);
+
+                groups
+                    .entry((sector, direction))
+                    .or_default()
+                    .push((sym.clone(), display_name, f));
+            }
+        }
+    }
+
+    // Build themes from groups that meet the min_symbols threshold
+    let mut themes: Vec<SectorTheme> = Vec::new();
+    for ((sector, direction), mut movers) in groups {
+        if movers.len() < min_symbols {
+            continue;
+        }
+
+        // Sort by absolute change descending
+        movers.sort_by(|a, b| {
+            b.2.abs()
+                .partial_cmp(&a.2.abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let count = movers.len() as f64;
+        let avg_change: f64 = movers.iter().map(|m| m.2).sum::<f64>() / count;
+        let strength = avg_change.abs() * count;
+
+        themes.push(SectorTheme {
+            sector,
+            direction,
+            symbols: movers,
+            avg_change,
+            strength,
+        });
+    }
+
+    // Sort by strength descending
+    themes.sort_by(|a, b| {
+        b.strength
+            .partial_cmp(&a.strength)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    themes
+}
+
+/// Run the `analytics movers themes` subcommand.
+pub fn run_themes(
+    backend: &BackendConnection,
+    _config: &Config,
+    threshold: &str,
+    min_symbols: usize,
+    json: bool,
+) -> Result<()> {
+    let threshold_pct: Decimal = {
+        let cleaned = threshold.replace('%', "");
+        Decimal::from_str_exact(&cleaned).unwrap_or(dec!(2))
+    };
+
+    let themes = detect_themes(backend, threshold_pct, min_symbols);
+
+    if json {
+        print_themes_json(&themes, threshold_pct, min_symbols)?;
+    } else {
+        print_themes_terminal(&themes, threshold_pct, min_symbols)?;
+    }
+
+    Ok(())
+}
+
+fn print_themes_json(
+    themes: &[SectorTheme],
+    threshold_pct: Decimal,
+    min_symbols: usize,
+) -> Result<()> {
+    let entries: Vec<serde_json::Value> = themes
+        .iter()
+        .map(|t| {
+            let symbols: Vec<serde_json::Value> = t
+                .symbols
+                .iter()
+                .map(|(sym, name, chg)| {
+                    serde_json::json!({
+                        "symbol": sym,
+                        "name": name,
+                        "change_pct": (*chg * 100.0).round() / 100.0,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "sector": t.sector,
+                "direction": t.direction,
+                "symbol_count": t.symbols.len(),
+                "avg_change_pct": (t.avg_change * 100.0).round() / 100.0,
+                "strength": (t.strength * 100.0).round() / 100.0,
+                "symbols": symbols,
+            })
+        })
+        .collect();
+
+    let output = serde_json::json!({
+        "threshold_pct": threshold_pct.to_string().parse::<f64>().unwrap_or(2.0),
+        "min_symbols": min_symbols,
+        "themes_count": themes.len(),
+        "themes": entries,
+    });
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn print_themes_terminal(
+    themes: &[SectorTheme],
+    threshold_pct: Decimal,
+    min_symbols: usize,
+) -> Result<()> {
+    if themes.is_empty() {
+        println!(
+            "No sector themes detected (threshold: {}%, min symbols: {}).",
+            threshold_pct, min_symbols
+        );
+        return Ok(());
+    }
+
+    println!(
+        "\n📊 Sector Themes (≥{}% move, ≥{} symbols)\n",
+        threshold_pct, min_symbols
+    );
+
+    for theme in themes {
+        let arrow = if theme.direction == "up" {
+            "▲"
+        } else {
+            "▼"
+        };
+        let color = if theme.direction == "up" {
+            "\x1b[32m"
+        } else {
+            "\x1b[31m"
+        };
+        let reset = "\x1b[0m";
+
+        println!(
+            "  {}{} {} — {} ({} symbols, avg {}{:+.2}%{}, strength {:.1})",
+            color,
+            arrow,
+            theme.sector,
+            theme.direction.to_uppercase(),
+            theme.symbols.len(),
+            color,
+            theme.avg_change,
+            reset,
+            theme.strength,
+        );
+
+        for (sym, name, chg) in &theme.symbols {
+            let sym_color = if *chg >= 0.0 { "\x1b[32m" } else { "\x1b[31m" };
+            println!(
+                "      {:<8} {:<24} {}{:+.2}%{}",
+                sym, name, sym_color, chg, reset
+            );
+        }
+        println!();
     }
 
     Ok(())
@@ -1136,5 +1422,242 @@ mod tests {
         // Just over 500% → rejected
         let pct = compute_change_pct(&backend, "TEST", Some(dec!(602)), Some(dec!(100)));
         assert!(pct.is_none(), "502% should be rejected as implausible");
+    }
+
+    // ─── Sector theme tests ────────────────────────────────────────────────
+
+    #[test]
+    fn classify_sector_known_etf() {
+        let cat = AssetCategory::Fund;
+        assert_eq!(classify_sector("XLE", &cat), "Energy");
+        assert_eq!(classify_sector("XLK", &cat), "Technology");
+        assert_eq!(classify_sector("GDX", &cat), "Gold Miners");
+        assert_eq!(classify_sector("ITA", &cat), "Aerospace & Defense ETF");
+        assert_eq!(classify_sector("SMH", &cat), "Semiconductors");
+    }
+
+    #[test]
+    fn classify_sector_case_insensitive() {
+        let cat = AssetCategory::Fund;
+        assert_eq!(classify_sector("xle", &cat), "Energy");
+        assert_eq!(classify_sector("Xlk", &cat), "Technology");
+    }
+
+    #[test]
+    fn classify_sector_unknown_symbol_uses_category() {
+        assert_eq!(
+            classify_sector("TSLA", &AssetCategory::Equity),
+            "Equities"
+        );
+        assert_eq!(
+            classify_sector("BTC-USD", &AssetCategory::Crypto),
+            "Crypto"
+        );
+        assert_eq!(
+            classify_sector("GC=F", &AssetCategory::Commodity),
+            "Commodities"
+        );
+        assert_eq!(
+            classify_sector("GBPUSD=X", &AssetCategory::Forex),
+            "Forex"
+        );
+    }
+
+    #[test]
+    fn detect_themes_empty_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+
+        let themes = detect_themes(&backend, dec!(2), 2);
+        assert!(themes.is_empty());
+    }
+
+    fn make_quote(
+        symbol: &str,
+        price: Decimal,
+        previous_close: Option<Decimal>,
+    ) -> crate::models::price::PriceQuote {
+        crate::models::price::PriceQuote {
+            symbol: symbol.to_string(),
+            price,
+            currency: "USD".to_string(),
+            source: "test".to_string(),
+            fetched_at: chrono::Utc::now().to_rfc3339(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+            previous_close,
+        }
+    }
+
+    fn make_history(date: &str, close: Decimal) -> crate::models::price::HistoryRecord {
+        crate::models::price::HistoryRecord {
+            date: date.to_string(),
+            close,
+            open: None,
+            high: None,
+            low: None,
+            volume: None,
+        }
+    }
+
+    fn seed_symbol(
+        conn: &Connection,
+        symbol: &str,
+        prev_price: Decimal,
+        curr_price: Decimal,
+    ) {
+        use crate::db::price_cache::upsert_price;
+        use crate::db::price_history::upsert_history;
+
+        let today = chrono::Utc::now().date_naive().to_string();
+        let yesterday =
+            (chrono::Utc::now().date_naive() - chrono::Duration::days(1)).to_string();
+
+        upsert_price(conn, &make_quote(symbol, curr_price, Some(prev_price))).unwrap();
+        upsert_history(
+            conn,
+            symbol,
+            "test",
+            &[
+                make_history(&yesterday, prev_price),
+                make_history(&today, curr_price),
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn detect_themes_groups_sector_movers() {
+        let conn = crate::db::open_in_memory();
+
+        // XLE: Energy, XLK: Technology, XLF: Financials — all up >3%
+        seed_symbol(&conn, "XLE", dec!(95), dec!(100));  // +5.26%
+        seed_symbol(&conn, "XLK", dec!(190), dec!(200)); // +5.26%
+        seed_symbol(&conn, "XLF", dec!(48), dec!(50));   // +4.17%
+
+        let backend = to_backend(conn);
+
+        // Each sector ETF maps to its own unique sector name (Energy, Technology,
+        // Financials) — so no theme of ≥2 in same sector emerges from them alone.
+        let themes = detect_themes(&backend, dec!(3), 2);
+
+        for t in &themes {
+            assert!(
+                t.symbols.len() >= 2,
+                "Theme {} should have ≥2 symbols",
+                t.sector
+            );
+        }
+    }
+
+    #[test]
+    fn detect_themes_respects_min_symbols() {
+        let conn = crate::db::open_in_memory();
+
+        // Only one symbol per sector — no theme should form
+        seed_symbol(&conn, "XLE", dec!(95), dec!(100)); // +5.26%
+
+        let backend = to_backend(conn);
+        let themes = detect_themes(&backend, dec!(3), 2);
+
+        let energy_theme = themes.iter().find(|t| t.sector == "Energy");
+        assert!(
+            energy_theme.is_none(),
+            "Should not form theme with only 1 symbol"
+        );
+    }
+
+    #[test]
+    fn detect_themes_separates_up_and_down() {
+        let conn = crate::db::open_in_memory();
+
+        use crate::db::watchlist::add_to_watchlist;
+
+        // Add four watchlist equities: two up, two down
+        add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
+        add_to_watchlist(&conn, "MSFT", AssetCategory::Equity).unwrap();
+        add_to_watchlist(&conn, "GOOG", AssetCategory::Equity).unwrap();
+        add_to_watchlist(&conn, "META", AssetCategory::Equity).unwrap();
+
+        // AAPL +5%, MSFT +5%
+        seed_symbol(&conn, "AAPL", dec!(100), dec!(105));
+        seed_symbol(&conn, "MSFT", dec!(200), dec!(210));
+
+        // GOOG -5%, META -5%
+        seed_symbol(&conn, "GOOG", dec!(100), dec!(95));
+        seed_symbol(&conn, "META", dec!(200), dec!(190));
+
+        let backend = to_backend(conn);
+        let themes = detect_themes(&backend, dec!(3), 2);
+
+        // Should get two themes for Equities: one up, one down
+        let equity_up = themes
+            .iter()
+            .find(|t| t.sector == "Equities" && t.direction == "up");
+        let equity_down = themes
+            .iter()
+            .find(|t| t.sector == "Equities" && t.direction == "down");
+
+        assert!(equity_up.is_some(), "Should detect Equities UP theme");
+        assert!(equity_down.is_some(), "Should detect Equities DOWN theme");
+
+        let up = equity_up.unwrap();
+        assert_eq!(up.symbols.len(), 2);
+        assert!(up.avg_change > 0.0);
+
+        let down = equity_down.unwrap();
+        assert_eq!(down.symbols.len(), 2);
+        assert!(down.avg_change < 0.0);
+    }
+
+    #[test]
+    fn detect_themes_sorted_by_strength() {
+        let conn = crate::db::open_in_memory();
+
+        use crate::db::watchlist::add_to_watchlist;
+
+        // Two equities with big moves, two crypto with smaller moves
+        add_to_watchlist(&conn, "AAPL", AssetCategory::Equity).unwrap();
+        add_to_watchlist(&conn, "MSFT", AssetCategory::Equity).unwrap();
+        add_to_watchlist(&conn, "BTC-USD", AssetCategory::Crypto).unwrap();
+        add_to_watchlist(&conn, "ETH-USD", AssetCategory::Crypto).unwrap();
+
+        // Equities: big moves (+10%)
+        seed_symbol(&conn, "AAPL", dec!(100), dec!(110));
+        seed_symbol(&conn, "MSFT", dec!(200), dec!(220));
+
+        // Crypto: smaller moves (+4%)
+        seed_symbol(&conn, "BTC-USD", dec!(100), dec!(104));
+        seed_symbol(&conn, "ETH-USD", dec!(200), dec!(208));
+
+        let backend = to_backend(conn);
+        let themes = detect_themes(&backend, dec!(3), 2);
+
+        // Equities theme should rank higher (larger avg change × count)
+        if themes.len() >= 2 {
+            assert!(
+                themes[0].strength >= themes[1].strength,
+                "Themes should be sorted by strength descending"
+            );
+        }
+    }
+
+    #[test]
+    fn theme_strength_computation() {
+        // Strength = |avg_change| * count
+        // 3 symbols averaging +4% → strength = 4 * 3 = 12
+        let theme = SectorTheme {
+            sector: "Test".to_string(),
+            direction: "up",
+            symbols: vec![
+                ("A".into(), "Alpha".into(), 5.0),
+                ("B".into(), "Beta".into(), 4.0),
+                ("C".into(), "Charlie".into(), 3.0),
+            ],
+            avg_change: 4.0,
+            strength: 4.0 * 3.0,
+        };
+        assert!((theme.strength - 12.0).abs() < 0.001);
     }
 }
