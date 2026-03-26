@@ -217,8 +217,8 @@ mod tests {
         let q = FuturesQuote {
             symbol: "ES=F".to_string(),
             name: "S&P 500 Futures".to_string(),
-            last_price: Decimal::new(5500_00, 2),
-            previous_close: Some(Decimal::new(5490_00, 2)),
+            last_price: Decimal::new(550_000, 2),
+            previous_close: Some(Decimal::new(549_000, 2)),
             change: Some(Decimal::new(10_00, 2)),
             change_pct: Some(Decimal::new(18, 2)),
             volume: Some(1_234_567),
