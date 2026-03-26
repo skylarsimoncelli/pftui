@@ -208,6 +208,9 @@ fn run_agent_journal(
                     json,
                 )
             }
+            cli::JournalPredictionCommand::AutoScore { dry_run, json } => {
+                commands::predict::run_auto_score(backend, dry_run, json)
+            }
         },
         Some(cli::JournalCommand::Conviction { command }) => match command {
             cli::JournalConvictionCommand::Set {
@@ -2687,33 +2690,55 @@ fn main() -> Result<()> {
                 Some(cli::AnalyticsCorrelationsCommand::Latest {
                     period,
                     limit,
+                    with_impact,
                     json,
-                }) => commands::correlations::run(
-                    &backend,
-                    Some("latest"),
-                    None,
-                    None,
-                    30,
-                    period.as_deref(),
-                    false,
-                    limit,
-                    json,
-                ),
+                }) => {
+                    if with_impact && json {
+                        commands::correlations::run_latest_with_impact(
+                            &backend,
+                            period.as_deref(),
+                            limit,
+                        )
+                    } else {
+                        commands::correlations::run(
+                            &backend,
+                            Some("latest"),
+                            None,
+                            None,
+                            30,
+                            period.as_deref(),
+                            false,
+                            limit,
+                            json,
+                        )
+                    }
+                }
                 Some(cli::AnalyticsCorrelationsCommand::List {
                     period,
                     limit,
+                    with_impact,
                     json,
-                }) => commands::correlations::run(
-                    &backend,
-                    Some("latest"),
-                    None,
-                    None,
-                    30,
-                    period.as_deref(),
-                    false,
-                    limit,
-                    json,
-                ),
+                }) => {
+                    if with_impact && json {
+                        commands::correlations::run_latest_with_impact(
+                            &backend,
+                            period.as_deref(),
+                            limit,
+                        )
+                    } else {
+                        commands::correlations::run(
+                            &backend,
+                            Some("latest"),
+                            None,
+                            None,
+                            30,
+                            period.as_deref(),
+                            false,
+                            limit,
+                            json,
+                        )
+                    }
+                }
                 Some(cli::AnalyticsCorrelationsCommand::Breaks {
                     threshold,
                     limit,

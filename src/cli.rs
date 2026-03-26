@@ -1439,6 +1439,18 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Auto-score pending predictions whose target_date has passed, using market price data.
+    /// Only scores unambiguous price-direction predictions (e.g., "BTC above $70K by Mar 28").
+    /// Complex or qualitative predictions are left as pending.
+    #[command(name = "auto-score")]
+    AutoScore {
+        /// Preview what would be scored without writing changes
+        #[arg(long)]
+        dry_run: bool,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1703,6 +1715,9 @@ pub enum AnalyticsCorrelationsCommand {
         /// Maximum number of rows to show
         #[arg(long, default_value = "25")]
         limit: usize,
+        /// Enrich correlation breaks with portfolio impact analysis (requires --json)
+        #[arg(long = "with-impact")]
+        with_impact: bool,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -1715,6 +1730,9 @@ pub enum AnalyticsCorrelationsCommand {
         /// Maximum number of rows to show
         #[arg(long, default_value = "25")]
         limit: usize,
+        /// Enrich correlation breaks with portfolio impact analysis (requires --json)
+        #[arg(long = "with-impact")]
+        with_impact: bool,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -4491,7 +4509,7 @@ mod tests {
         let AnalyticsCommand::Correlations { command, json: _ } = command else {
             panic!("expected correlations");
         };
-        let Some(AnalyticsCorrelationsCommand::List { period, limit, json }) = command else {
+        let Some(AnalyticsCorrelationsCommand::List { period, limit, json, .. }) = command else {
             panic!("expected List subcommand");
         };
         assert!(json);
@@ -4516,7 +4534,7 @@ mod tests {
         let AnalyticsCommand::Correlations { command, json: _ } = command else {
             panic!("expected correlations");
         };
-        let Some(AnalyticsCorrelationsCommand::List { period, limit, json }) = command else {
+        let Some(AnalyticsCorrelationsCommand::List { period, limit, json, .. }) = command else {
             panic!("expected List subcommand");
         };
         assert!(!json);

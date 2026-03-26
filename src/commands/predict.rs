@@ -1,8 +1,12 @@
 use anyhow::{bail, Result};
 use chrono::{Duration, NaiveDate, Utc};
+use regex::Regex;
+use rust_decimal::Decimal;
 use serde_json::json;
 
 use crate::db::backend::BackendConnection;
+use crate::db::price_cache::get_cached_price_backend;
+use crate::db::price_history::get_price_at_date_backend;
 use crate::db::user_predictions;
 
 fn validate_conviction(value: &str) -> Result<()> {
@@ -459,6 +463,400 @@ pub fn run_score_batch(
     Ok(())
 }
 
+/// Direction parsed from a prediction claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PriceDirection {
+    Above,
+    Below,
+}
+
+/// A parsed price-direction prediction extracted from the claim text.
+#[derive(Debug, Clone)]
+struct ParsedPricePrediction {
+    symbol: String,
+    direction: PriceDirection,
+    target_price: Decimal,
+}
+
+/// Known symbol aliases for matching prediction claims to price_history/price_cache symbols.
+fn resolve_symbol_alias(token: &str) -> Option<&'static str> {
+    match token.to_uppercase().as_str() {
+        "BTC" | "BITCOIN" => Some("BTC-USD"),
+        "ETH" | "ETHEREUM" => Some("ETH-USD"),
+        "SOL" | "SOLANA" => Some("SOL-USD"),
+        "GOLD" | "XAUUSD" => Some("GC=F"),
+        "SILVER" | "XAGUSD" => Some("SI=F"),
+        "DXY" | "DOLLAR" => Some("DX-Y.NYB"),
+        "SPY" | "S&P" | "SP500" | "S&P500" => Some("SPY"),
+        "OIL" | "CRUDE" | "WTI" => Some("CL=F"),
+        "VIX" => Some("^VIX"),
+        "NASDAQ" | "QQQ" => Some("QQQ"),
+        _ => None,
+    }
+}
+
+/// Attempt to parse a price-direction prediction from the claim text.
+///
+/// Matches patterns like:
+///   "BTC above $70K by ..."
+///   "Gold below 2000 by ..."
+///   "TSLA above 250.50 by ..."
+///   "BTC > $100,000 by ..."
+///   "ETH >= 4000"
+fn parse_price_prediction(
+    claim: &str,
+    prediction_symbol: Option<&str>,
+) -> Option<ParsedPricePrediction> {
+    let claim_lower = claim.to_lowercase();
+
+    // Pattern: <SYMBOL> (above|below|>|<|>=|<=) $?<PRICE>[K|k|M|m]
+    // The suffix [KkMmBb] must immediately follow the number (no whitespace).
+    let re = Regex::new(
+        r"(?i)\b([A-Za-z][A-Za-z0-9&]{0,10})\s+(?:(above|over|>|>=)\s*\$?\s*([\d,]+(?:\.\d+)?)([kmb])?(?:\s|$|[^a-z0-9])|(below|under|<|<=)\s*\$?\s*([\d,]+(?:\.\d+)?)([kmb])?(?:\s|$|[^a-z0-9]))"
+    ).ok()?;
+
+    if let Some(caps) = re.captures(claim) {
+        let symbol_token = caps.get(1)?.as_str();
+
+        // Determine the actual ticker symbol
+        let resolved_symbol = if let Some(alias) = resolve_symbol_alias(symbol_token) {
+            alias.to_string()
+        } else if prediction_symbol.is_some() {
+            prediction_symbol?.to_string()
+        } else {
+            // Use the raw token as-is (could be a ticker like TSLA)
+            symbol_token.to_uppercase()
+        };
+
+        // Parse direction and price
+        let (direction, price_str, suffix) = if caps.get(2).is_some() {
+            (
+                PriceDirection::Above,
+                caps.get(3)?.as_str(),
+                caps.get(4).map(|m| m.as_str()),
+            )
+        } else {
+            (
+                PriceDirection::Below,
+                caps.get(6)?.as_str(),
+                caps.get(7).map(|m| m.as_str()),
+            )
+        };
+
+        let clean_price = price_str.replace(',', "");
+        let mut price: Decimal = clean_price.parse().ok()?;
+
+        // Apply suffix multiplier
+        match suffix.map(|s| s.to_lowercase()).as_deref() {
+            Some("k") => price *= Decimal::from(1_000),
+            Some("m") => price *= Decimal::from(1_000_000),
+            Some("b") => price *= Decimal::from(1_000_000_000),
+            _ => {}
+        }
+
+        return Some(ParsedPricePrediction {
+            symbol: resolved_symbol,
+            direction,
+            target_price: price,
+        });
+    }
+
+    // Also try pattern with claim_lower for "X reaches/hits Y" → treat as "above"
+    let re2 = Regex::new(
+        r"(?i)\b([A-Za-z][A-Za-z0-9&]{0,10})\s+(?:reaches?|hits?|to|at)\s+\$?\s*([\d,]+(?:\.\d+)?)([kmb])?(?:\s|$|[^a-z0-9])"
+    ).ok()?;
+
+    if let Some(caps) = re2.captures(claim) {
+        let symbol_token = caps.get(1)?.as_str();
+        let resolved_symbol = if let Some(alias) = resolve_symbol_alias(symbol_token) {
+            alias.to_string()
+        } else if prediction_symbol.is_some() {
+            prediction_symbol?.to_string()
+        } else {
+            symbol_token.to_uppercase()
+        };
+
+        let clean_price = caps.get(2)?.as_str().replace(',', "");
+        let mut price: Decimal = clean_price.parse().ok()?;
+        match caps.get(3).map(|m| m.as_str().to_lowercase()).as_deref() {
+            Some("k") => price *= Decimal::from(1_000),
+            Some("m") => price *= Decimal::from(1_000_000),
+            Some("b") => price *= Decimal::from(1_000_000_000),
+            _ => {}
+        }
+
+        // "reaches/hits/to" implies price should be AT or ABOVE
+        return Some(ParsedPricePrediction {
+            symbol: resolved_symbol,
+            direction: PriceDirection::Above,
+            target_price: price,
+        });
+    }
+
+    // If no pattern matched in claim but we have a symbol and the claim mentions a dollar amount
+    if let Some(sym) = prediction_symbol {
+        let price_re = Regex::new(r"\$\s*([\d,]+(?:\.\d+)?)([kmb])?(?:\s|$|[^a-z0-9])").ok()?;
+        if let Some(caps) = price_re.captures(claim) {
+            let clean_price = caps.get(1)?.as_str().replace(',', "");
+            let mut price: Decimal = clean_price.parse().ok()?;
+            match caps.get(2).map(|m| m.as_str().to_lowercase()).as_deref() {
+                Some("k") => price *= Decimal::from(1_000),
+                Some("m") => price *= Decimal::from(1_000_000),
+                Some("b") => price *= Decimal::from(1_000_000_000),
+                _ => {}
+            }
+            let direction = if claim_lower.contains("above")
+                || claim_lower.contains("over")
+                || claim_lower.contains("reach")
+                || claim_lower.contains("hit")
+                || claim_lower.contains("bull")
+            {
+                PriceDirection::Above
+            } else if claim_lower.contains("below")
+                || claim_lower.contains("under")
+                || claim_lower.contains("bear")
+                || claim_lower.contains("drop")
+                || claim_lower.contains("fall")
+            {
+                PriceDirection::Below
+            } else {
+                return None; // Ambiguous direction
+            };
+
+            return Some(ParsedPricePrediction {
+                symbol: resolve_symbol_alias(sym)
+                    .map(String::from)
+                    .unwrap_or_else(|| sym.to_string()),
+                direction,
+                target_price: price,
+            });
+        }
+    }
+
+    None
+}
+
+/// Get the current price for a symbol. Tries price_cache first, then latest price_history.
+fn get_current_price(backend: &BackendConnection, symbol: &str) -> Option<Decimal> {
+    // Try price cache first (most recent)
+    if let Ok(Some(quote)) = get_cached_price_backend(backend, symbol, "USD") {
+        if quote.price > Decimal::ZERO {
+            return Some(quote.price);
+        }
+    }
+
+    // Fallback: latest price_history entry
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    if let Ok(Some(price)) = get_price_at_date_backend(backend, symbol, &today) {
+        if price > Decimal::ZERO {
+            return Some(price);
+        }
+    }
+
+    None
+}
+
+/// Result of auto-scoring a single prediction.
+#[derive(Debug, Clone, serde::Serialize)]
+struct AutoScoreResult {
+    id: i64,
+    claim: String,
+    symbol: Option<String>,
+    parsed_symbol: String,
+    direction: String,
+    target_price: String,
+    actual_price: String,
+    outcome: String,
+    note: String,
+}
+
+/// Auto-score pending predictions whose target_date has passed.
+/// Only scores unambiguous price-direction predictions.
+pub fn run_auto_score(backend: &BackendConnection, dry_run: bool, json_output: bool) -> Result<()> {
+    let today = Utc::now().date_naive();
+    let today_str = today.format("%Y-%m-%d").to_string();
+
+    // Fetch all pending predictions
+    let pending =
+        user_predictions::list_predictions_backend(backend, Some("pending"), None, None, None)?;
+
+    let mut scoreable: Vec<AutoScoreResult> = Vec::new();
+    let mut skipped: Vec<serde_json::Value> = Vec::new();
+
+    for pred in &pending {
+        // Check if target_date has passed
+        let target_date = match &pred.target_date {
+            Some(td) => {
+                let parsed = NaiveDate::parse_from_str(td, "%Y-%m-%d");
+                match parsed {
+                    Ok(d) if d <= today => d,
+                    Ok(_) => {
+                        // Target date is in the future — skip
+                        continue;
+                    }
+                    Err(_) => {
+                        // Can't parse target_date — skip
+                        skipped.push(json!({
+                            "id": pred.id,
+                            "reason": "unparseable target_date",
+                            "target_date": td,
+                        }));
+                        continue;
+                    }
+                }
+            }
+            None => {
+                // No target_date — skip
+                continue;
+            }
+        };
+
+        // Try to parse a price-direction prediction from the claim
+        let parsed = match parse_price_prediction(&pred.claim, pred.symbol.as_deref()) {
+            Some(p) => p,
+            None => {
+                skipped.push(json!({
+                    "id": pred.id,
+                    "reason": "not a parseable price-direction prediction",
+                    "claim": pred.claim,
+                }));
+                continue;
+            }
+        };
+
+        // Get the price at the target date (or closest before it)
+        let price_at_date = get_price_at_date_backend(
+            backend,
+            &parsed.symbol,
+            &target_date.format("%Y-%m-%d").to_string(),
+        )
+        .ok()
+        .flatten();
+
+        // Also get current price as fallback for very recent dates
+        let current_price = get_current_price(backend, &parsed.symbol);
+
+        let actual_price = match price_at_date.or(current_price) {
+            Some(p) if p > Decimal::ZERO => p,
+            _ => {
+                skipped.push(json!({
+                    "id": pred.id,
+                    "reason": "no price data available",
+                    "symbol": parsed.symbol,
+                    "target_date": target_date.to_string(),
+                }));
+                continue;
+            }
+        };
+
+        // Determine outcome
+        let outcome = match parsed.direction {
+            PriceDirection::Above => {
+                if actual_price >= parsed.target_price {
+                    "correct"
+                } else {
+                    "wrong"
+                }
+            }
+            PriceDirection::Below => {
+                if actual_price <= parsed.target_price {
+                    "correct"
+                } else {
+                    "wrong"
+                }
+            }
+        };
+
+        let direction_str = match parsed.direction {
+            PriceDirection::Above => "above",
+            PriceDirection::Below => "below",
+        };
+
+        let note = format!(
+            "Auto-scored from market data: {} was {} at {} (target: {} {} by {})",
+            parsed.symbol,
+            actual_price,
+            today_str,
+            direction_str,
+            parsed.target_price,
+            target_date,
+        );
+
+        scoreable.push(AutoScoreResult {
+            id: pred.id,
+            claim: pred.claim.clone(),
+            symbol: pred.symbol.clone(),
+            parsed_symbol: parsed.symbol,
+            direction: direction_str.to_string(),
+            target_price: parsed.target_price.to_string(),
+            actual_price: actual_price.to_string(),
+            outcome: outcome.to_string(),
+            note,
+        });
+    }
+
+    // Apply scores (unless dry_run)
+    if !dry_run {
+        for result in &scoreable {
+            user_predictions::score_prediction_backend(
+                backend,
+                result.id,
+                &result.outcome,
+                Some(&result.note),
+                None,
+            )?;
+        }
+    }
+
+    if json_output {
+        let payload = json!({
+            "dry_run": dry_run,
+            "scored": scoreable,
+            "scored_count": scoreable.len(),
+            "skipped": skipped,
+            "skipped_count": skipped.len(),
+            "total_pending": pending.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else if scoreable.is_empty() {
+        println!("No predictions eligible for auto-scoring.");
+        if !skipped.is_empty() {
+            println!("  {} predictions skipped (no target_date, not parseable, or no price data)", skipped.len());
+        }
+    } else {
+        let action = if dry_run {
+            "Would auto-score"
+        } else {
+            "Auto-scored"
+        };
+        println!("{} {} prediction(s):", action, scoreable.len());
+        for r in &scoreable {
+            println!(
+                "  #{} [{}] {} → {} (actual: {}, target: {} {})",
+                r.id,
+                r.parsed_symbol,
+                if r.claim.len() > 50 {
+                    format!("{}...", &r.claim[..47])
+                } else {
+                    r.claim.clone()
+                },
+                r.outcome,
+                r.actual_price,
+                r.direction,
+                r.target_price,
+            );
+        }
+        if !skipped.is_empty() {
+            println!(
+                "  {} predictions skipped (not auto-scoreable)",
+                skipped.len()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,5 +933,101 @@ mod tests {
         assert!(validate_timeframe("medium").is_ok());
         assert!(validate_timeframe("high").is_ok());
         assert!(validate_timeframe("macro").is_ok());
+    }
+
+    #[test]
+    fn parse_btc_above_70k() {
+        let result = parse_price_prediction("BTC above $70K by Mar 28", None);
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.symbol, "BTC-USD");
+        assert_eq!(p.direction, PriceDirection::Above);
+        assert_eq!(p.target_price, Decimal::from(70_000));
+    }
+
+    #[test]
+    fn parse_gold_below_2000() {
+        let result = parse_price_prediction("Gold below 2000 by end of March", None);
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.symbol, "GC=F");
+        assert_eq!(p.direction, PriceDirection::Below);
+        assert_eq!(p.target_price, Decimal::from(2_000));
+    }
+
+    #[test]
+    fn parse_tsla_above_250() {
+        let result = parse_price_prediction("TSLA above 250.50 by Q2", None);
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.symbol, "TSLA");
+        assert_eq!(p.direction, PriceDirection::Above);
+        assert_eq!(
+            p.target_price,
+            Decimal::from_str_exact("250.50").unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_btc_reaches_100k() {
+        let result = parse_price_prediction("BTC reaches $100K by year end", None);
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.symbol, "BTC-USD");
+        assert_eq!(p.direction, PriceDirection::Above);
+        assert_eq!(p.target_price, Decimal::from(100_000));
+    }
+
+    #[test]
+    fn parse_with_symbol_and_dollar_amount() {
+        let result = parse_price_prediction(
+            "Price will drop below $50,000",
+            Some("BTC-USD"),
+        );
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.symbol, "BTC-USD");
+        assert_eq!(p.direction, PriceDirection::Below);
+        assert_eq!(p.target_price, Decimal::from(50_000));
+    }
+
+    #[test]
+    fn parse_non_price_prediction_returns_none() {
+        let result = parse_price_prediction(
+            "Fed will cut rates in Q2 2026",
+            None,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_eth_over_4000() {
+        let result = parse_price_prediction("ETH over $4,000 by April", None);
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.symbol, "ETH-USD");
+        assert_eq!(p.direction, PriceDirection::Above);
+        assert_eq!(p.target_price, Decimal::from(4_000));
+    }
+
+    #[test]
+    fn parse_silver_under_30() {
+        let result = parse_price_prediction("Silver under $30 by June", None);
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.symbol, "SI=F");
+        assert_eq!(p.direction, PriceDirection::Below);
+        assert_eq!(p.target_price, Decimal::from(30));
+    }
+
+    #[test]
+    fn resolve_symbol_alias_btc() {
+        assert_eq!(resolve_symbol_alias("BTC"), Some("BTC-USD"));
+        assert_eq!(resolve_symbol_alias("Bitcoin"), Some("BTC-USD"));
+    }
+
+    #[test]
+    fn resolve_symbol_alias_unknown() {
+        assert_eq!(resolve_symbol_alias("XYZZY"), None);
     }
 }
