@@ -2754,6 +2754,17 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Consolidated morning intelligence: regime + portfolio + scenarios + situations + correlation breaks + movers + news sentiment + alerts in one call
+    #[command(name = "morning-brief")]
+    MorningBrief {
+        /// Lookback window in hours for news and alerts (default: 24)
+        #[arg(long, default_value = "24")]
+        hours: i64,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2878,7 +2889,7 @@ pub enum Command {
     },
 
     /// Multi-timeframe analytics engine views (includes scenario, situation, signals, synthesis)
-    #[command(name = "analytics", after_help = "Key subcommands:\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis")]
+    #[command(name = "analytics", after_help = "Key subcommands:\n  morning-brief  Consolidated morning intelligence (regime + portfolio + scenarios + situations + correlations + movers + sentiment + alerts)\n  scenario       Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation      Situation Room: active situations, regime, branches, indicators\n  signals        Technical and cross-timeframe signals\n  synthesis      Cross-timeframe alignment and divergence analysis")]
     Analytics {
         #[command(subcommand)]
         command: AnalyticsCommand,
@@ -5087,5 +5098,54 @@ mod tests {
         };
         assert!(with_sentiment);
         assert!(json);
+    }
+
+    #[test]
+    fn parse_morning_brief_defaults() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "morning-brief", "--json"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MorningBrief { hours, json } = command else {
+            panic!("expected MorningBrief");
+        };
+        assert_eq!(hours, 24);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_morning_brief_custom_hours() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "morning-brief",
+            "--hours",
+            "12",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MorningBrief { hours, json } = command else {
+            panic!("expected MorningBrief");
+        };
+        assert_eq!(hours, 12);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_morning_brief_human_output() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "morning-brief"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MorningBrief { hours, json } = command else {
+            panic!("expected MorningBrief");
+        };
+        assert_eq!(hours, 24);
+        assert!(!json);
     }
 }

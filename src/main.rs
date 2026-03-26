@@ -3616,6 +3616,9 @@ fn main() -> Result<()> {
                 detail,
                 json,
             ),
+            cli::AnalyticsCommand::MorningBrief { hours, json } => {
+                commands::morning_brief::run(&backend, &config, hours, json)
+            }
         },
     };
 
