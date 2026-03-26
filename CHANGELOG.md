@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: alignment `--summary` for compact consensus overview
+
+- What: Added `--summary` flag to `pftui analytics alignment` that groups symbols by consensus (STRONG BUY, BULLISH, MIXED, BEARISH, STRONG AVOID) with counts, percentages, visual score bars (█/░), and top 5 symbols per group. Both terminal and `--json` output. JSON includes total, avg_score_pct, avg_bull/bear_layers, dominant_consensus, and per-group breakdowns with full symbol lists. Backward compatible — bare `analytics alignment --json` still shows individual rows.
+- Why: Morning-brief agent feedback (Mar 24): "Would benefit from more streamlined alignment summary format." Agents delivering briefs need a compact alignment overview instead of scanning 50+ individual rows.
+- Files: `src/commands/analytics.rs` (+209: `run_alignment_summary`, consensus grouping, score aggregation, JSON+terminal output, 9 unit tests), `src/cli.rs` (+41: `--summary` flag on Alignment variant, 2 CLI parse tests), `src/main.rs` (+12/-3: summary dispatch via action string)
+- Tests: `cargo test` (1712 pass, +11 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #353
+
 ### 2026-03-26 — feat: sector-wide theme detection in movers (`analytics movers themes`)
 
 - What: Added `pftui analytics movers themes` subcommand that detects when multiple symbols in the same sector/category move in the same direction above a threshold. Groups symbols by sector (using SECTOR_ETFS mapping for known ETFs, AssetCategory fallback for others). Detects "themes" when ≥`min_symbols` (default 2) in the same group move the same direction. Reports sector name, direction, symbol count, average change, composite strength score, and individual symbol details. Both terminal and `--json` output for agent consumption. Backward compatible — bare `analytics movers --threshold 3 --json` still works.
