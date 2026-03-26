@@ -40,7 +40,7 @@ _(none)_
 **Key changes since last review (Mar 25):**
 - v0.17.0 released Mar 25. 46 new commits since tag.
 - Shipped: ratio-based alerts (#332), predictions stats/scorecard/unanswered (#334), Dixon Power Flow Tracker (#327), market-hours command (#318), scenario probability alerts (#314)
-- Tests: 1672 passing (up from 1628), clippy clean
+- Tests: 1701 passing (up from 1628), clippy clean
 - Evening Analyst **dropped** 78→65 usefulness, 75→68 overall — scenario discoverability, economy confidence, missing auto-scoring
 - Low-Timeframe Analyst **surged** 85→95 usefulness, 80→90 overall — correlation breaks and ratio alerts praised
 - Predictions stats/unanswered fix (#334) shipped in response to Evening Analyst's 65/68 — score impact TBD next review
@@ -48,6 +48,7 @@ _(none)_
 **Shipped since last review:**
 1. ~~**P2: Auto-scored prediction lifecycle**~~ — ✅ Shipped #341. `journal prediction auto-score` command.
 2. ~~**P2: Correlation breaks × impact analysis cross-reference**~~ — ✅ Shipped #341. `--with-impact` flag on `analytics correlations latest --json`.
+3. ~~**P2: Sector-wide theme detection**~~ — ✅ Shipped #351. `analytics movers themes` subcommand. Detects rotation patterns across sectors/categories.
 
 **Release eligibility:** ✅ READY — v0.18.0. 46 commits since v0.17.0, 5 significant features shipped, 1672 tests passing, clippy clean, no P0 bugs. New P1 items are discoverability/quality issues, not blockers.
 
