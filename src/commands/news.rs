@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde_json::json;
 
+use crate::commands::news_sentiment;
 use crate::db::backend::BackendConnection;
 use crate::db::news_cache::{get_latest_news_backend, NewsEntry};
 
@@ -16,6 +17,7 @@ pub fn run(
     search: Option<&str>,
     hours: Option<i64>,
     limit: usize,
+    with_sentiment: bool,
     json: bool,
 ) -> Result<()> {
     let entries = match get_latest_news_backend(backend, limit, source, None, search, hours) {
@@ -51,7 +53,11 @@ pub fn run(
     }
 
     if json {
-        print_json(&entries)?;
+        if with_sentiment {
+            print_json_with_sentiment(&entries)?;
+        } else {
+            print_json(&entries)?;
+        }
     } else {
         print_table(&entries);
     }
@@ -162,6 +168,42 @@ fn print_json(entries: &[NewsEntry]) -> Result<()> {
     Ok(())
 }
 
+/// Print news entries as JSON with sentiment scores.
+fn print_json_with_sentiment(entries: &[NewsEntry]) -> Result<()> {
+    let scored = news_sentiment::score_all(entries);
+    let json_entries: Vec<_> = scored
+        .iter()
+        .map(|s| {
+            json!({
+                "id": s.entry.id,
+                "title": s.entry.title,
+                "url": s.entry.url,
+                "source": s.entry.source,
+                "source_type": s.entry.source_type,
+                "symbol_tag": s.entry.symbol_tag,
+                "description": s.entry.description,
+                "extra_snippets": s.entry.extra_snippets,
+                "category": s.entry.category,
+                "published_at": s.entry.published_at,
+                "fetched_at": s.entry.fetched_at,
+                "sentiment_score": s.score,
+                "sentiment_label": s.label.as_str(),
+                "bullish_hits": s.bullish_hits,
+                "bearish_hits": s.bearish_hits,
+            })
+        })
+        .collect();
+
+    match serde_json::to_string_pretty(&json_entries) {
+        Ok(output) => println!("{output}"),
+        Err(err) => {
+            eprintln!("warning: news JSON serialization failed: {err}");
+            println!("[]");
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,7 +274,7 @@ mod tests {
         let backend = to_backend(conn);
 
         // JSON mode with empty cache should return Ok (exit 0), not error
-        let result = run(&backend, None, None, None, 20, true);
+        let result = run(&backend, None, None, None, 20, false, true);
         assert!(result.is_ok(), "JSON mode should not fail on empty cache");
     }
 
@@ -241,7 +283,7 @@ mod tests {
         let conn = crate::db::open_in_memory();
         let backend = to_backend(conn);
 
-        let result = run(&backend, None, None, None, 20, false);
+        let result = run(&backend, None, None, None, 20, false, false);
         assert!(result.is_ok(), "Text mode should not fail on empty cache");
     }
 
@@ -260,7 +302,7 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, None, None, None, 20, true);
+        let result = run(&backend, None, None, None, 20, false, true);
         assert!(result.is_ok(), "JSON mode should succeed with entries");
     }
 
@@ -279,7 +321,29 @@ mod tests {
         .unwrap();
 
         let backend = to_backend(conn);
-        let result = run(&backend, None, None, None, 20, false);
+        let result = run(&backend, None, None, None, 20, false, false);
         assert!(result.is_ok(), "Text mode should succeed with entries");
+    }
+
+    #[test]
+    fn test_run_with_sentiment_json() {
+        let conn = crate::db::open_in_memory();
+
+        insert_news(
+            &conn,
+            "Markets surge on stimulus hopes",
+            "https://example.com/surge",
+            "Reuters",
+            "markets",
+            chrono::Utc::now().timestamp(),
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+        let result = run(&backend, None, None, None, 20, true, true);
+        assert!(
+            result.is_ok(),
+            "JSON mode with sentiment should succeed with entries"
+        );
     }
 }

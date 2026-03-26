@@ -42,6 +42,7 @@ pub mod migrate_journal;
 pub mod mirror;
 pub mod movers;
 pub mod news;
+pub mod news_sentiment;
 pub mod notes;
 pub mod oil;
 pub mod oil_inventory;

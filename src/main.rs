@@ -813,6 +813,7 @@ fn main() -> Result<()> {
                 search,
                 hours,
                 limit,
+                with_sentiment,
                 json,
             } => commands::news::run(
                 &backend,
@@ -820,6 +821,7 @@ fn main() -> Result<()> {
                 search.as_deref(),
                 hours,
                 limit,
+                with_sentiment,
                 json,
             ),
             cli::DataCommand::Sentiment {
@@ -3600,6 +3602,20 @@ fn main() -> Result<()> {
                     commands::power_flow::run_balance(&backend, days, json)
                 }
             },
+            cli::AnalyticsCommand::NewsSentiment {
+                category,
+                hours,
+                limit,
+                detail,
+                json,
+            } => commands::news_sentiment::run(
+                &backend,
+                category.as_deref(),
+                hours,
+                limit,
+                detail,
+                json,
+            ),
         },
     };
 

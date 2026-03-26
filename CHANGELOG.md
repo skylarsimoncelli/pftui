@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: news sentiment scoring and aggregation (`analytics news-sentiment`)
+
+- What: Added keyword-based news sentiment analysis. New `pftui analytics news-sentiment` command scores cached news headlines as bullish/bearish/neutral using 90+ financial domain keywords weighted by intensity (strong/medium/mild). Aggregates sentiment by category with counts, average scores, and breakdown. Supports `--category`, `--hours`, `--limit`, `--detail` (per-article keyword hits), and `--json` flags. Also added `--with-sentiment` flag to `pftui data news --json` to enrich existing news output with per-article sentiment scores and keyword hits. Scoring uses title + description + extra_snippets text. No DB schema changes — scoring is computed at query time.
+- Why: Low-Timeframe Analyst feedback (Mar 24, P2): "Would benefit from integrated news sentiment scoring... within the analytics suite rather than separate commands." Agents can now get structured sentiment aggregation per category (e.g., crypto bullish, geopolitics bearish) in one JSON call without external web searches.
+- Files: `src/commands/news_sentiment.rs` (+505, new file: keyword dictionaries, scoring engine, category aggregation, JSON+terminal output, 11 tests), `src/commands/mod.rs` (+1), `src/commands/news.rs` (+40/-5: `--with-sentiment` support, `print_json_with_sentiment`, updated tests), `src/cli.rs` (+78: `NewsSentiment` variant on `AnalyticsCommand`, `--with-sentiment` on `DataCommand::News`, 3 CLI parse tests), `src/main.rs` (+14: `NewsSentiment` + `with_sentiment` dispatch)
+- Tests: `cargo test` (1728 pass, +15 new); `cargo clippy --all-targets -- -D warnings` (clean)
+
 ### 2026-03-26 — feat: prediction stats `--timeframe` and `--agent` filters
 
 - What: Added `--timeframe` and `--agent` filters to `journal prediction stats`, `data predictions stats`, and `analytics predictions stats`. When applied, stats are computed only for matching predictions, enabling per-agent and per-timeframe accuracy tracking. Terminal output now shows full breakdowns: by-timeframe (sorted low→macro), by-agent (alphabetical), by-conviction (sorted low→high), and by-symbol (top 10 by count). JSON output includes `filter_timeframe`/`filter_agent` metadata when filters are active. New `get_stats_filtered_backend()` function handles filtered computation using existing `list_predictions_backend` timeframe filter + in-memory agent matching.
