@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: prediction stats `--timeframe` and `--agent` filters
+
+- What: Added `--timeframe` and `--agent` filters to `journal prediction stats`, `data predictions stats`, and `analytics predictions stats`. When applied, stats are computed only for matching predictions, enabling per-agent and per-timeframe accuracy tracking. Terminal output now shows full breakdowns: by-timeframe (sorted low→macro), by-agent (alphabetical), by-conviction (sorted low→high), and by-symbol (top 10 by count). JSON output includes `filter_timeframe`/`filter_agent` metadata when filters are active. New `get_stats_filtered_backend()` function handles filtered computation using existing `list_predictions_backend` timeframe filter + in-memory agent matching.
+- Why: Low-Timeframe Analyst feedback (Mar 26, 75/80): "Add prediction tracking command to verify low timeframe forecast accuracy. Current analytics show great situational awareness but no feedback loop on prediction quality." Agents can now run `pftui journal prediction stats --timeframe low --agent low-agent --json` to see their own accuracy.
+- Files: `src/cli.rs` (+112: `--timeframe`/`--agent` flags on Stats in DataPredictionsCommand + JournalPredictionCommand, 4 new CLI parse tests), `src/commands/predict.rs` (+102/-6: filtered stats dispatch, expanded terminal output with 4 breakdown sections), `src/db/user_predictions.rs` (+81: `get_stats_filtered_backend` with timeframe+agent filtering), `src/main.rs` (+62/-26: wire filters through both dispatch paths)
+- Tests: `cargo test` (1713 pass, +4 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #356
+
 ### 2026-03-26 — feat: alignment `--summary` for compact consensus overview
 
 - What: Added `--summary` flag to `pftui analytics alignment` that groups symbols by consensus (STRONG BUY, BULLISH, MIXED, BEARISH, STRONG AVOID) with counts, percentages, visual score bars (█/░), and top 5 symbols per group. Both terminal and `--json` output. JSON includes total, avg_score_pct, avg_bull/bear_layers, dominant_consensus, and per-group breakdowns with full symbol lists. Backward compatible — bare `analytics alignment --json` still shows individual rows.

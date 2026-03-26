@@ -30,7 +30,7 @@ _(none)_
 |--------|-----------|---------|------|-------|
 | Evening Analyst | 65% | 68% | Mar 26 | ↓ (dropped from 78/75 on Mar 25. Scenario discoverability, predictions stats/unanswered errors, economy indicator confidence, wants auto-scored predictions. overnight-futures ✅ shipped. **Lowest scorer — critical priority.**) |
 | Medium-Timeframe Analyst | 85% | 80% | Mar 25 | → (stable at 85/80. COT extreme detection praised. Regime transition alerts shipped #314.) |
-| Low-Timeframe Analyst | 95% | 90% | Mar 25 | ↑ (surged from 85/80. Ratio-based alerts shipped #332. Wants correlation breaks × impact cross-reference.) |
+| Low-Timeframe Analyst | 75% | 80% | Mar 26 | ↓ (from 95/90. Wants prediction accuracy feedback loop per-timeframe. Shipped prediction stats filters #356.) |
 | High-Timeframe Analyst | 85% | 75% | Mar 23 | → (no new review since Mar 23.) |
 | Low-Timeframe Midday | 85% | 88% | Mar 23 | → (no new review since Mar 23.) |
 | Morning Intelligence | 85% | 90% | Mar 23 | → (no new review since Mar 23.) |
@@ -49,7 +49,8 @@ _(none)_
 1. ~~**P2: Auto-scored prediction lifecycle**~~ — ✅ Shipped #341. `journal prediction auto-score` command.
 2. ~~**P2: Correlation breaks × impact analysis cross-reference**~~ — ✅ Shipped #341. `--with-impact` flag on `analytics correlations latest --json`.
 3. ~~**P2: Sector-wide theme detection**~~ — ✅ Shipped #351. `analytics movers themes` subcommand. Detects rotation patterns across sectors/categories.
+4. ~~**P2: Prediction stats per-timeframe/agent filtering**~~ — ✅ Shipped #356. `--timeframe` and `--agent` flags on prediction stats.
 
-**Release eligibility:** ✅ READY — v0.18.0. 46 commits since v0.17.0, 5 significant features shipped, 1672 tests passing, clippy clean, no P0 bugs. New P1 items are discoverability/quality issues, not blockers.
+**Release eligibility:** ✅ READY — v0.18.0. 47+ commits since v0.17.0, 6 significant features shipped, 1713 tests passing, clippy clean, no P0 bugs.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.
