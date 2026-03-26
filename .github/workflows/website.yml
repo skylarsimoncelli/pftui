@@ -9,6 +9,7 @@ on:
     branches: [master]
     paths:
       - 'website/**'
+      - 'newsletter/**'
       - '.github/workflows/website.yml'
   workflow_dispatch:
 
@@ -38,8 +39,10 @@ jobs:
           mkdir -p _site
           # Copy website files as the root
           cp -r website/* _site/
-          # Preserve apt/yum repo directories if they exist in current Pages
-          # (they'll be rebuilt by release workflow when needed)
+          # Copy newsletter PDFs so they're served at /newsletter/
+          cp -r newsletter/ _site/newsletter/
+          # Copy .nojekyll to prevent Jekyll processing
+          touch _site/.nojekyll
       
       - name: Setup Pages
         uses: actions/configure-pages@v4

@@ -256,6 +256,8 @@ jobs:
         run: |
           mkdir -p site
           cp -r website/* site/
+          cp -r newsletter/ site/newsletter/
+          touch site/.nojekyll
 
       - name: Build APT repository
         run: |
