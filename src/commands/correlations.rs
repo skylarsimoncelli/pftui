@@ -778,6 +778,170 @@ fn fmt_opt(v: Option<f64>) -> String {
     }
 }
 
+/// Run `analytics correlations latest --with-impact --json`
+/// Enriches each correlation snapshot (especially breaks) with portfolio impact data.
+pub fn run_latest_with_impact(
+    backend: &BackendConnection,
+    period: Option<&str>,
+    limit: usize,
+) -> Result<()> {
+    use crate::db::allocations::list_allocations_backend;
+    use crate::db::price_cache::get_all_cached_prices_backend;
+    use crate::db::transactions::list_transactions_backend;
+    use crate::models::position::compute_positions;
+    use rust_decimal::Decimal;
+
+    // 1. Get stored correlation snapshots
+    let mut rows = correlation_snapshots::list_current_backend(backend, period)?;
+    rows.sort_by(|a, b| {
+        b.correlation
+            .abs()
+            .partial_cmp(&a.correlation.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rows.truncate(limit.max(1));
+
+    // 2. Compute portfolio positions
+    let txns = list_transactions_backend(backend)?;
+    let all_prices = get_all_cached_prices_backend(backend)?;
+    let mut price_map: HashMap<String, Decimal> = HashMap::new();
+    for q in &all_prices {
+        price_map.insert(q.symbol.clone(), q.price);
+    }
+    let positions = compute_positions(&txns, &price_map, &HashMap::new());
+
+    // Build a set of held symbols
+    let held: HashSet<String> = positions.iter().map(|p| p.symbol.clone()).collect();
+
+    // Also get allocation-based symbols
+    let alloc_syms: HashSet<String> = list_allocations_backend(backend)
+        .unwrap_or_default()
+        .iter()
+        .map(|a| a.symbol.clone())
+        .collect();
+
+    let all_held: HashSet<String> = held.union(&alloc_syms).cloned().collect();
+
+    // 3. Compute fresh breaks for enrichment
+    let breaks = compute_breaks_backend(backend, 0.20, 100)?;
+    let break_map: HashMap<(String, String), f64> = breaks
+        .iter()
+        .map(|b| {
+            (
+                (b.symbol_a.clone(), b.symbol_b.clone()),
+                b.break_delta,
+            )
+        })
+        .collect();
+
+    // 4. Enrich each snapshot row with impact data
+    let enriched: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|snap| {
+            let break_delta = break_map
+                .get(&(snap.symbol_a.clone(), snap.symbol_b.clone()))
+                .or_else(|| break_map.get(&(snap.symbol_b.clone(), snap.symbol_a.clone())));
+
+            let is_break = break_delta.is_some();
+
+            // Find which held positions are affected by this pair
+            let a_held = all_held.contains(&snap.symbol_a);
+            let b_held = all_held.contains(&snap.symbol_b);
+            let affected_positions: Vec<serde_json::Value> = positions
+                .iter()
+                .filter(|p| p.symbol == snap.symbol_a || p.symbol == snap.symbol_b)
+                .map(|p| {
+                    // For a break, estimate direction of impact:
+                    // If correlation was positive and broke lower → the pair is decoupling
+                    // If correlation was negative and broke higher → they're converging
+                    let impact_direction = if let Some(&delta) = break_delta {
+                        if p.symbol == snap.symbol_a {
+                            // Symbol A: if delta > 0, short-term corr rose above long-term → positive for A relative to B
+                            if delta > 0.0 {
+                                "positive"
+                            } else {
+                                "negative"
+                            }
+                        } else {
+                            // Symbol B: reverse perspective
+                            if snap.correlation > 0.0 {
+                                if delta > 0.0 { "positive" } else { "negative" }
+                            } else if delta > 0.0 {
+                                "negative"
+                            } else {
+                                "positive"
+                            }
+                        }
+                    } else {
+                        "neutral"
+                    };
+
+                    // Magnitude estimate based on correlation strength and position size
+                    let magnitude = match p.allocation_pct {
+                        Some(pct) => {
+                            let corr_strength = snap.correlation.abs();
+                            let alloc = pct.to_string().parse::<f64>().unwrap_or(0.0);
+                            let magnitude_score = corr_strength * (alloc / 100.0);
+                            if magnitude_score > 0.15 {
+                                "high"
+                            } else if magnitude_score > 0.05 {
+                                "medium"
+                            } else {
+                                "low"
+                            }
+                        }
+                        None => "unknown",
+                    };
+
+                    serde_json::json!({
+                        "symbol": p.symbol,
+                        "name": p.name,
+                        "category": format!("{:?}", p.category).to_lowercase(),
+                        "allocation_pct": p.allocation_pct.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
+                        "current_value": p.current_value.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
+                        "impact_direction": impact_direction,
+                        "magnitude": magnitude,
+                    })
+                })
+                .collect();
+
+            let mut snap_json = serde_json::json!({
+                "symbol_a": snap.symbol_a,
+                "symbol_b": snap.symbol_b,
+                "correlation": snap.correlation,
+                "period": snap.period,
+                "recorded_at": snap.recorded_at,
+                "is_break": is_break,
+            });
+
+            if let Some(&delta) = break_delta {
+                snap_json["break_delta"] = serde_json::json!(delta);
+            }
+
+            if !affected_positions.is_empty() {
+                snap_json["portfolio_impact"] = serde_json::json!({
+                    "affected_positions": affected_positions,
+                    "a_is_held": a_held,
+                    "b_is_held": b_held,
+                });
+            }
+
+            snap_json
+        })
+        .collect();
+
+    let output = serde_json::json!({
+        "period": period,
+        "with_impact": true,
+        "snapshots": enriched,
+        "count": enriched.len(),
+        "held_symbols": all_held.into_iter().collect::<Vec<_>>(),
+    });
+    println!("{}", serde_json::to_string_pretty(&output)?);
+
+    Ok(())
+}
+
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
