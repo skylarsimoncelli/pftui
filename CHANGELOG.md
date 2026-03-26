@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: predictions stats/scorecard/unanswered subcommands
+
+- What: Converted flat `data predictions` and `analytics predictions` commands into subcommand groups. New subcommands: `markets` (default — prediction market odds from Polymarket/Manifold), `stats` (hit rate by conviction/timeframe/symbol/agent), `scorecard` (date-ordered scored predictions), `unanswered` (pending predictions awaiting scoring). Backward compatible — bare `data predictions --json` still shows market odds. Both `data` and `analytics` namespaces support all subcommands via shared `DataPredictionsCommand` enum and `dispatch_predictions()` helper.
+- Why: Evening Analyst feedback (Mar 26, 65/68 — lowest scorer): tried `data predictions stats` and `data predictions unanswered` which returned errors. Stats/scorecard/unanswered existed under `journal prediction` but were undiscoverable from the predictions namespace agents naturally try.
+- Files: `src/cli.rs` (+198: `DataPredictionsCommand` enum, updated Predictions variants in both DataCommand and AnalyticsCommand, 4 new tests), `src/main.rs` (+121/-16: `dispatch_predictions()` helper, updated both dispatch sites)
+- Tests: `cargo test` (1672 pass, +4 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #334
+
 ### 2026-03-26 — feat: ratio-based alerts for cross-asset analysis (`AlertKind::Ratio`)
 
 - What: Added `AlertKind::Ratio` for monitoring when the price ratio between two assets crosses a threshold. Natural-language syntax: `"GC=F/CL=F above 30"`, `"ITA/SPY below 1.2"`, `"GC=F / CL=F above 30"` (spaced). Evaluation computes numerator/denominator from cached prices. Trigger data JSON includes both individual prices and the computed ratio for agent consumption. Handles missing symbols and invalid format gracefully. Both SQLite and PostgreSQL backend paths covered.
