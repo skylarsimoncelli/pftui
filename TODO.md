@@ -51,7 +51,8 @@ _(none)_
 3. ~~**P2: Sector-wide theme detection**~~ — ✅ Shipped #351. `analytics movers themes` subcommand. Detects rotation patterns across sectors/categories.
 4. ~~**P2: Prediction stats per-timeframe/agent filtering**~~ — ✅ Shipped #356. `--timeframe` and `--agent` flags on prediction stats.
 5. ~~**P2: News sentiment scoring**~~ — ✅ Shipped #358. `analytics news-sentiment` command + `data news --with-sentiment` flag. Keyword-based scoring with category aggregation.
+6. ~~**P1: Consolidated morning-brief command**~~ — ✅ Shipped #363. `analytics morning-brief --json` combines situation, deltas, synthesis, scenarios, correlation breaks, catalysts, impact, alerts, news sentiment in one call.
 
-**Release eligibility:** ✅ READY — v0.19.0. 48+ commits since v0.18.0, 7 significant features shipped, 1728 tests passing, clippy clean, no P0 bugs.
+**Release eligibility:** ✅ READY — v0.19.0. 49+ commits since v0.18.0, 8 significant features shipped, 1737 tests passing, clippy clean, no P0 bugs.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.

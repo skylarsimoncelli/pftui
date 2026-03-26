@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: consolidated morning-brief command (`analytics morning-brief`)
+
+- What: Added `pftui analytics morning-brief [--json]` that combines situation room, 24h deltas, cross-timeframe synthesis, active scenario probabilities, correlation breaks, catalysts, portfolio impact, triggered alerts, and news sentiment into a single CLI call. Agents previously needed 5-6 separate `analytics` commands to assemble morning intelligence. JSON output includes all sections with graceful fallbacks (null/empty) when data is missing. Terminal output provides a scannable summary. Includes `after_help` with cross-references to component commands.
+- Why: Morning-brief agent feedback (Mar 26, P1): "pftui provided strong analytics foundation — situation list, portfolio brief, correlation breaks, scenario probabilities all directly used. Would benefit from consolidated morning-specific command combining key brief inputs." Reduces agent routine from 5-6 CLI calls to 1.
+- Files: `src/commands/morning_brief.rs` (+454, new file: MorningBrief struct, 9 section collectors, terminal+JSON output, 7 unit tests), `src/commands/mod.rs` (+1), `src/cli.rs` (+31: MorningBrief variant on AnalyticsCommand, after_help, 2 CLI parse tests), `src/main.rs` (+3: dispatch)
+- Tests: `cargo test` (1737 pass, +9 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #363
+
 ### 2026-03-26 — feat: news sentiment scoring and aggregation (`analytics news-sentiment`)
 
 - What: Added keyword-based news sentiment analysis. New `pftui analytics news-sentiment` command scores cached news headlines as bullish/bearish/neutral using 90+ financial domain keywords weighted by intensity (strong/medium/mild). Aggregates sentiment by category with counts, average scores, and breakdown. Supports `--category`, `--hours`, `--limit`, `--detail` (per-article keyword hits), and `--json` flags. Also added `--with-sentiment` flag to `pftui data news --json` to enrich existing news output with per-article sentiment scores and keyword hits. Scoring uses title + description + extra_snippets text. No DB schema changes — scoring is computed at query time.
