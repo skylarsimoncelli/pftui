@@ -1682,7 +1682,7 @@ pub enum AnalyticsAlertsCommand {
     Add {
         /// Legacy natural-language rule form: "BTC below 55000"
         rule: Option<String>,
-        /// Structured alert kind: price, allocation, indicator, technical, macro
+        /// Structured alert kind: price, allocation, indicator, technical, macro, ratio
         #[arg(long)]
         kind: Option<String>,
         /// Symbol or symbol pair (for structured alerts)
