@@ -244,14 +244,26 @@ python3 /root/pftui/agents/intelligence-report/gen-report.py \
   "Skylar Simoncelli"
 ```
 
-## Step 5: Commit to Repository
+## Step 5: Commit to Repository and Update Website
 
 ```bash
 cd /root/pftui
 DATE_SLUG=$(date +'%d-%B-%Y')
-cp /root/.openclaw/workspace-finance/reports/newsletter-$(date +%Y-%m-%d).pdf \
+DATE_ISO=$(date +'%Y-%m-%d')
+TITLE="PFTUI Daily Intelligence Report"
+
+# Copy PDF to newsletter dir
+cp /root/.openclaw/workspace-finance/reports/newsletter-${DATE_ISO}.pdf \
   newsletter/${DATE_SLUG}.pdf
-git add newsletter/${DATE_SLUG}.pdf
+
+# Update the newsletters page registry
+# Add a new entry to the NEWSLETTERS array in website/newsletters/index.html
+# Insert BEFORE the closing bracket of the array
+sed -i "s|    \];|        { date: \"${DATE_ISO}\", title: \"${TITLE}\", file: \"${DATE_SLUG}.pdf\", type: \"daily\" },\n    ];|" \
+  website/newsletters/index.html
+
+# Commit and push
+git add newsletter/${DATE_SLUG}.pdf website/newsletters/index.html
 git -c user.name="pftui-bot" -c user.email="pftui-bot@users.noreply.github.com" \
   commit -m "newsletter: Daily Intelligence Report — ${DATE_SLUG}"
 git push origin master

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligence Reports | pftui</title>
+    <meta name="description" content="Daily intelligence reports from pftui's multi-timeframe analytics engine. Macro analysis, scenario probabilities, power structure signals, and cross-asset correlation mapping.">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://pftui.com/newsletters/">
+    <meta property="og:title" content="Intelligence Reports | pftui">
+    <meta property="og:description" content="Daily macro intelligence from a multi-timeframe analytics engine. 19+ data sources, 4 intelligence layers, evidence-weighted scenarios.">
+    
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .newsletters-hero {
+            padding: var(--spacing-xl) 0 var(--spacing-lg);
+            text-align: center;
+        }
+        .newsletters-hero .hero-logo {
+            margin-bottom: var(--spacing-sm);
+        }
+        .newsletters-hero h1 {
+            font-family: var(--font-mono);
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: var(--spacing-xs);
+        }
+        .newsletters-hero p {
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .newsletter-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-md);
+            flex-wrap: wrap;
+            gap: var(--spacing-sm);
+        }
+        .newsletter-count {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-tertiary);
+        }
+        .sort-btn {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+            background: transparent;
+            border: 1px solid var(--border);
+            padding: 0.4rem 0.8rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .sort-btn:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-cyan);
+        }
+        
+        .newsletter-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-sm);
+        }
+        .newsletter-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.2rem 1.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            transition: all 0.2s;
+            text-decoration: none;
+            color: inherit;
+        }
+        .newsletter-item:hover {
+            border-color: var(--accent-cyan);
+            background: var(--bg-tertiary);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+        }
+        .newsletter-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .newsletter-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        .newsletter-details h3 {
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.2rem;
+        }
+        .newsletter-details .newsletter-date {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+        }
+        .newsletter-badge {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: var(--radius-sm);
+            background: rgba(137, 220, 235, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(137, 220, 235, 0.2);
+            flex-shrink: 0;
+        }
+        .newsletter-badge.latest {
+            background: rgba(166, 227, 161, 0.1);
+            color: var(--accent-green);
+            border-color: rgba(166, 227, 161, 0.2);
+        }
+        
+        .newsletter-arrow {
+            color: var(--text-tertiary);
+            font-size: 1.2rem;
+            transition: transform 0.2s;
+            flex-shrink: 0;
+            margin-left: 1rem;
+        }
+        .newsletter-item:hover .newsletter-arrow {
+            transform: translateX(3px);
+            color: var(--accent-cyan);
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-bottom: var(--spacing-md);
+            transition: color 0.2s;
+        }
+        .back-link:hover {
+            color: var(--accent-cyan);
+        }
+        
+        .methodology-note {
+            margin-top: var(--spacing-lg);
+            padding: 1.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+        .methodology-note h3 {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: var(--spacing-lg);
+            color: var(--text-tertiary);
+            font-family: var(--font-mono);
+        }
+
+        @media (max-width: 640px) {
+            .newsletter-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.8rem;
+            }
+            .newsletter-arrow {
+                display: none;
+            }
+            .newsletters-hero h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <section class="newsletters-hero">
+        <div class="container">
+            <a href="../" class="back-link">← pftui.dev</a>
+            <a href="../"><img src="../assets/lockup.svg" alt="pftui" class="hero-logo" height="36"></a>
+            <h1>Intelligence Reports</h1>
+            <p>Daily macro intelligence from pftui's multi-timeframe analytics engine. Four specialist agents analyse markets across different time horizons. An Opus-level synthesis layer produces scenario-weighted outlooks with falsifiable predictions.</p>
+        </div>
+    </section>
+    
+    <section style="padding: 0 0 var(--spacing-xl);">
+        <div class="container">
+            <div class="newsletter-controls">
+                <span class="newsletter-count" id="count"></span>
+                <button class="sort-btn" id="sort-btn" onclick="toggleSort()">↓ newest first</button>
+            </div>
+            
+            <div class="newsletter-list" id="newsletter-list">
+                <div class="empty-state">Loading reports...</div>
+            </div>
+            
+            <div class="methodology-note">
+                <h3>Methodology</h3>
+                <p>Each report ingests the full pftui database: scenario probabilities, conviction scores, prediction accuracy, structural cycles, power metrics, and cross-timeframe agent intelligence. Live web research verifies every data point. The analytical framework combines national empire cycle analysis with transnational power structure analysis. First principles: follow the money, not the narrative.</p>
+                <p style="margin-top: 0.5rem;">Reports are generated automatically and do not constitute financial advice. <a href="https://github.com/skylarsimoncelli/pftui/tree/master/agents/intelligence-report" target="_blank" rel="noopener" style="color: var(--accent-cyan);">View the report generation skill →</a></p>
+            </div>
+        </div>
+    </section>
+
+    <script>
+    // Newsletter registry — updated by the daily cron or manually
+    // Each entry: { date: "YYYY-MM-DD", title: "...", file: "DD-Month-YYYY.pdf", type: "daily"|"monthly" }
+    const NEWSLETTERS = [
+        { date: "2026-03-15", title: "Current Outlook for Remainder of 2026", file: "15-March-2026.pdf", type: "monthly" },
+        { date: "2026-03-18", title: "Global Power Metrics Report", file: "18-March-2026.pdf", type: "monthly" },
+    ];
+
+    let sortNewest = true;
+
+    function formatDate(dateStr) {
+        const d = new Date(dateStr + "T12:00:00Z");
+        return d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+    }
+
+    function getTypeLabel(type) {
+        if (type === "monthly") return "monthly";
+        return "daily";
+    }
+
+    function render() {
+        const list = document.getElementById('newsletter-list');
+        const count = document.getElementById('count');
+        const sortBtn = document.getElementById('sort-btn');
+        
+        const sorted = [...NEWSLETTERS].sort((a, b) => {
+            return sortNewest 
+                ? new Date(b.date) - new Date(a.date) 
+                : new Date(a.date) - new Date(b.date);
+        });
+        
+        count.textContent = `${NEWSLETTERS.length} report${NEWSLETTERS.length !== 1 ? 's' : ''}`;
+        sortBtn.textContent = sortNewest ? '↓ newest first' : '↑ oldest first';
+        
+        if (sorted.length === 0) {
+            list.innerHTML = '<div class="empty-state">No reports yet. Check back soon.</div>';
+            return;
+        }
+        
+        list.innerHTML = sorted.map((n, i) => {
+            const isLatest = sortNewest ? i === 0 : i === sorted.length - 1;
+            const pdfUrl = `https://github.com/skylarsimoncelli/pftui/raw/master/newsletter/${n.file}`;
+            return `
+                <a href="${pdfUrl}" target="_blank" rel="noopener" class="newsletter-item">
+                    <div class="newsletter-info">
+                        <span class="newsletter-icon">📊</span>
+                        <div class="newsletter-details">
+                            <h3>${n.title}</h3>
+                            <span class="newsletter-date">${formatDate(n.date)}</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        ${isLatest ? '<span class="newsletter-badge latest">latest</span>' : ''}
+                        <span class="newsletter-badge">${getTypeLabel(n.type)}</span>
+                        <span class="newsletter-arrow">→</span>
+                    </div>
+                </a>
+            `;
+        }).join('');
+    }
+
+    function toggleSort() {
+        sortNewest = !sortNewest;
+        render();
+    }
+
+    render();
+    </script>
+</body>
+</html>
