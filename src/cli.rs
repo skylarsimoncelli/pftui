@@ -2443,6 +2443,15 @@ pub enum AnalyticsScenarioCommand {
         #[command(subcommand)]
         command: AnalyticsScenarioSignalCommand,
     },
+    /// Automated probability suggestions based on signal evidence
+    #[command(
+        after_help = "Analyzes each active scenario's signals (triggered/watching/invalidated)\nand recent probability trend to suggest whether probability should\nincrease, decrease, or hold.\n\nDesigned for agent consumption — agents can use this to inform\ntheir probability update decisions.\n\nSee also: analytics scenario list, analytics scenario signal list"
+    )]
+    Suggest {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3845,6 +3854,42 @@ mod tests {
 
         assert_eq!(scenario.as_deref(), Some("Hard Landing"));
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_suggest() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "scenario", "suggest", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command: AnalyticsScenarioCommand::Suggest { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario suggest command");
+        };
+
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_suggest_no_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "scenario", "suggest"]).unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command: AnalyticsScenarioCommand::Suggest { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario suggest command");
+        };
+
+        assert!(!json);
     }
 
     #[test]

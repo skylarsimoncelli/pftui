@@ -3516,6 +3516,9 @@ fn main() -> Result<()> {
                         )
                     }
                 },
+                cli::AnalyticsScenarioCommand::Suggest { json } => {
+                    commands::scenario_suggest::run(&backend, json)
+                }
             },
             cli::AnalyticsCommand::Conviction { command } => match command {
                 cli::AnalyticsConvictionCommand::Set {
