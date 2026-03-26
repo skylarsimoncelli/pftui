@@ -40,6 +40,7 @@ pub mod macro_cmd;
 pub mod market_hours;
 pub mod migrate_journal;
 pub mod mirror;
+pub mod morning_brief;
 pub mod movers;
 pub mod news;
 pub mod news_sentiment;
