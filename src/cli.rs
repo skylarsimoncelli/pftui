@@ -2754,6 +2754,13 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Consolidated morning intelligence: situation + deltas + synthesis + scenarios + correlation breaks + alerts + news sentiment in one call
+    #[command(name = "morning-brief", after_help = "Combines situation room, 24h deltas, cross-timeframe synthesis,\nactive scenario probabilities, correlation breaks, catalysts, portfolio impact,\ntriggered alerts, and news sentiment into a single payload.\n\nDesigned for morning-brief agents that previously needed 5-6 separate\nanalytics commands to assemble intelligence.\n\nSee also: analytics situation, analytics deltas, analytics synthesis")]
+    MorningBrief {
+        /// Output as JSON for agent/script consumption (recommended)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -5087,5 +5094,29 @@ mod tests {
         };
         assert!(with_sentiment);
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_morning_brief_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "morning-brief", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MorningBrief { json } = command else {
+            panic!("expected MorningBrief");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_morning_brief_no_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "morning-brief"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::MorningBrief { json } = command else {
+            panic!("expected MorningBrief");
+        };
+        assert!(!json);
     }
 }
