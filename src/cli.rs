@@ -2608,6 +2608,8 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     Movers {
+        #[command(subcommand)]
+        command: Option<AnalyticsMoversCommand>,
         #[arg(long, default_value = "3")]
         threshold: String,
         #[arg(long)]
@@ -2761,6 +2763,22 @@ pub enum AnalyticsPowerFlowCommand {
         #[arg(long, default_value_t = 30)]
         days: usize,
         /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AnalyticsMoversCommand {
+    /// Detect sector-wide themes: clusters of symbols in the same sector moving together
+    Themes {
+        /// Minimum % change threshold for a symbol to count as a mover (default: 2)
+        #[arg(long, default_value = "2")]
+        threshold: String,
+        /// Minimum number of symbols moving in the same direction to form a theme (default: 2)
+        #[arg(long, default_value_t = 2)]
+        min_symbols: usize,
+        /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
     },
@@ -4756,5 +4774,60 @@ mod tests {
             }
             _ => panic!("expected markets subcommand"),
         }
+    }
+
+    #[test]
+    fn parse_analytics_movers_themes_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "movers",
+            "themes",
+            "--threshold",
+            "2",
+            "--min-symbols",
+            "3",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Movers { command, .. } = command else {
+            panic!("expected Movers");
+        };
+        let Some(AnalyticsMoversCommand::Themes {
+            threshold,
+            min_symbols,
+            json,
+        }) = command
+        else {
+            panic!("expected Themes subcommand");
+        };
+        assert_eq!(threshold, "2");
+        assert_eq!(min_symbols, 3);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_movers_bare_still_works() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "movers", "--threshold", "5", "--json"])
+                .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Movers {
+            command,
+            threshold,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected Movers");
+        };
+        assert!(command.is_none());
+        assert_eq!(threshold, "5");
+        assert!(json);
     }
 }

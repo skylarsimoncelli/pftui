@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: sector-wide theme detection in movers (`analytics movers themes`)
+
+- What: Added `pftui analytics movers themes` subcommand that detects when multiple symbols in the same sector/category move in the same direction above a threshold. Groups symbols by sector (using SECTOR_ETFS mapping for known ETFs, AssetCategory fallback for others). Detects "themes" when ≥`min_symbols` (default 2) in the same group move the same direction. Reports sector name, direction, symbol count, average change, composite strength score, and individual symbol details. Both terminal and `--json` output for agent consumption. Backward compatible — bare `analytics movers --threshold 3 --json` still works.
+- Why: Feedback from alert-investigator (Mar 25, P2): "Consider adding alert correlation analysis to detect sector-wide themes automatically." Enables agents to detect rotation patterns (e.g., "Energy sector rotating up: XLE +2.1%, XLI +1.8%") without manually cross-referencing individual movers.
+- Files: `src/commands/movers.rs` (+285: `classify_sector`, `detect_themes`, `run_themes`, `SectorTheme`, terminal+JSON output, 9 tests), `src/cli.rs` (+45: `AnalyticsMoversCommand` enum, Movers subcommand support, 2 CLI parse tests), `src/main.rs` (+10/-1: themes dispatch)
+- Tests: `cargo test` (1701 pass, +11 new); `cargo clippy --all-targets -- -D warnings` (clean)
+
 ### 2026-03-26 — fix: clippy inconsistent digit grouping in futures test
 
 - What: Fixed two `clippy::inconsistent_digit_grouping` warnings in `src/commands/futures.rs` test. `5500_00` → `550_000` and `5490_00` → `549_000`. Values unchanged (both produce the same Decimal).
