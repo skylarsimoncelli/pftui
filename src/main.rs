@@ -2458,9 +2458,17 @@ fn main() -> Result<()> {
                     }
                 },
             },
-            cli::AnalyticsCommand::Alignment { symbol, json } => commands::analytics::run(
+            cli::AnalyticsCommand::Alignment {
+                symbol,
+                summary,
+                json,
+            } => commands::analytics::run(
                 &backend,
-                "alignment",
+                if summary {
+                    "alignment-summary"
+                } else {
+                    "alignment"
+                },
                 None,
                 None,
                 None,
