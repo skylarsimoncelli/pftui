@@ -296,6 +296,10 @@ pub enum DataCommand {
         #[arg(long, default_value = "20")]
         limit: usize,
 
+        /// Include sentiment score and label for each article (keyword-based)
+        #[arg(long = "with-sentiment")]
+        with_sentiment: bool,
+
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -2727,6 +2731,29 @@ pub enum AnalyticsCommand {
         #[command(subcommand)]
         command: AnalyticsPowerFlowCommand,
     },
+    /// News sentiment analysis: keyword-based scoring and aggregation of cached news
+    #[command(name = "news-sentiment")]
+    NewsSentiment {
+        /// Filter by news category (e.g. "crypto", "commodities", "geopolitics")
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Only score news from last N hours
+        #[arg(long)]
+        hours: Option<i64>,
+
+        /// Maximum number of articles to score (default: 50)
+        #[arg(long, default_value = "50")]
+        limit: usize,
+
+        /// Show per-article detail with keyword hits
+        #[arg(long)]
+        detail: bool,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -4977,6 +5004,88 @@ mod tests {
             panic!("expected Alignment");
         };
         assert!(!summary);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_news_sentiment_defaults() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "news-sentiment", "--json"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::NewsSentiment {
+            category,
+            hours,
+            limit,
+            detail,
+            json,
+        } = command
+        else {
+            panic!("expected NewsSentiment");
+        };
+        assert!(category.is_none());
+        assert!(hours.is_none());
+        assert_eq!(limit, 50);
+        assert!(!detail);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_news_sentiment_with_filters() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "news-sentiment",
+            "--category",
+            "crypto",
+            "--hours",
+            "6",
+            "--detail",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::NewsSentiment {
+            category,
+            hours,
+            detail,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected NewsSentiment");
+        };
+        assert_eq!(category.as_deref(), Some("crypto"));
+        assert_eq!(hours, Some(6));
+        assert!(detail);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_news_with_sentiment() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "news",
+            "--with-sentiment",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data");
+        };
+        let DataCommand::News {
+            with_sentiment,
+            json,
+            ..
+        } = command
+        else {
+            panic!("expected News");
+        };
+        assert!(with_sentiment);
         assert!(json);
     }
 }
