@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: ratio-based alerts for cross-asset analysis (`AlertKind::Ratio`)
+
+- What: Added `AlertKind::Ratio` for monitoring when the price ratio between two assets crosses a threshold. Natural-language syntax: `"GC=F/CL=F above 30"`, `"ITA/SPY below 1.2"`, `"GC=F / CL=F above 30"` (spaced). Evaluation computes numerator/denominator from cached prices. Trigger data JSON includes both individual prices and the computed ratio for agent consumption. Handles missing symbols and invalid format gracefully. Both SQLite and PostgreSQL backend paths covered.
+- Why: P2 feedback from Low-Timeframe Analyst (Mar 25) — requested ratio-based alerts for Dixon framework analysis (gold/oil ratio, defense vs S&P relative performance). Enables agents to monitor cross-asset relationships without manually computing ratios from raw prices each cycle.
+- Files: `src/alerts/engine.rs` (+175, `evaluate_ratio_alert` + 5 tests), `src/alerts/mod.rs` (+5, Ratio variant), `src/alerts/rules.rs` (+92, `try_parse_ratio_rule` + 4 tests), `src/cli.rs` (+1/-1, help text update)
+- Tests: `cargo test` (1668 pass, +9 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #332
+
 ### 2026-03-25 — feat: Dixon Power Flow Tracker (`analytics power-flow`)
 
 - What: Added F54 — Dixon Power Flow Tracker, a new analytical layer under `analytics power-flow` for tracking power shifts between Financial Industrial Complex (FIC), Military Industrial Complex (MIC), and Technical Industrial Complex (TIC) based on Simon Dixon's "follow the money" framework. Three subcommands: `add` (log power flow events with source complex, direction, target, evidence, magnitude 1-5, and optional agent source), `list` (filtered by complex, direction, days; default 7 days), and `balance` (aggregate net power score per complex; default 30 days). Balance computation accounts for both direct (source_complex) and inverse (target_complex) power flows for accurate net scoring. New `power_flows` database table with indexes on date and source_complex. Both SQLite and PostgreSQL backends supported. All commands support `--json` for agent consumption. Full input validation: FIC/MIC/TIC complexes, gaining/losing directions, magnitude 1-5.
