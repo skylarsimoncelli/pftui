@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: regime-asset flow correlation tracker (`analytics regime-flows`)
+
+- What: Added `pftui analytics regime-flows [--json]` that cross-references the current market regime with asset class flows to detect power structure patterns automatically. Tracks 6 key ratios with 5-day change (Gold/Oil, Copper/Gold, Gold/SPX, Silver/Gold, Oil/DXY, BTC/Gold). Monitors 12 asset flow signals across safe-haven, energy, equities, defense, volatility, dollar, bonds, and industrial classes. 8 pattern detectors: safe-haven rotation, geopolitical stress (full/partial), inflationary pulse, risk-on breakout, deflationary signal, dollar wrecking ball, energy crisis signal, and regime divergence. Flow-regime alignment scoring (aligned/divergent/neutral per asset). Summary with dominant flow, safe-haven bid, risk appetite, energy stress, and regime consistency assessment. Both terminal and `--json` output.
+- Why: Low-timeframe analyst feedback (Mar 26): "Power structure analysis would benefit from automated regime-asset flow correlation tracking" and "add power structure signal dashboard with gold/oil ratio, defense sector tracking." Agents can now run `pftui analytics regime-flows --json` for systematized power structure pattern recognition instead of manually correlating energy/gold/defense/VIX signals.
+- Files: `src/commands/regime_flows.rs` (+1226, new file: RegimeFlowsOutput struct, 6 ratio definitions, 12 flow asset signals, 8 pattern detectors, terminal+JSON output, 14 unit tests), `src/commands/mod.rs` (+1), `src/cli.rs` (+31: RegimeFlows variant on AnalyticsCommand, after_help, 2 CLI parse tests), `src/main.rs` (+3: dispatch)
+- Tests: `cargo test` (1769 pass, +18 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #369
+
 ### 2026-03-26 — feat: automated scenario probability suggestions (`analytics scenario suggest`)
 
 - What: Added `pftui analytics scenario suggest [--json]` that analyzes each active scenario's signals (triggered/watching/invalidated) and recent probability history to suggest whether probability should increase, decrease, or hold. Signal-based scoring: trigger ratio drives base score, invalidated signals penalize, ceiling/floor dampening prevents over-adjustment near 0%/100%, recent large changes moderate suggestions. Output includes per-scenario signal summary, probability trend, suggested action (increase/decrease/hold) with magnitude (minor/moderate/major), confidence level, suggested new probability, and reasoning. Both terminal and JSON output for agent consumption.

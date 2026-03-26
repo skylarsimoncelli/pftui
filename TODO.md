@@ -53,7 +53,8 @@ _(none)_
 5. ~~**P2: News sentiment scoring**~~ — ✅ Shipped #358. `analytics news-sentiment` command + `data news --with-sentiment` flag. Keyword-based scoring with category aggregation.
 6. ~~**P1: Consolidated morning-brief command**~~ — ✅ Shipped #363. `analytics morning-brief --json` combines situation, deltas, synthesis, scenarios, correlation breaks, catalysts, impact, alerts, news sentiment in one call.
 7. ~~**P2: Automated scenario probability suggestions**~~ — ✅ Shipped #366. `analytics scenario suggest --json` analyzes signal evidence + probability trends to suggest adjustments.
+8. ~~**P2: Regime-asset flow correlation tracker**~~ — ✅ Shipped #369. `analytics regime-flows --json` cross-references regime with asset flows, detects 8 power structure patterns (geopolitical stress, inflationary pulse, etc.).
 
-**Release eligibility:** ✅ READY — v0.19.0. 50+ commits since v0.18.0, 9 significant features shipped, 1751 tests passing, clippy clean, no P0 bugs.
+**Release eligibility:** ✅ READY — v0.19.0. 50+ commits since v0.18.0, 10 significant features shipped, 1769 tests passing, clippy clean, no P0 bugs.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.
