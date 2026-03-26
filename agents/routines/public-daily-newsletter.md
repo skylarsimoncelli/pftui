@@ -1,4 +1,4 @@
-# Public Daily Newsletter
+# Public Daily Report
 
 **Before anything else**, read the first principles that govern all analysis:
 ```bash
@@ -89,7 +89,7 @@ Do NOT search for prices, sentiment, or economic data that pftui already provide
 
 Write a comprehensive daily intelligence report as markdown. Save to:
 ```
-/root/.openclaw/workspace-finance/reports/newsletter-YYYY-MM-DD.md
+/root/.openclaw/workspace-finance/reports/daily-YYYY-MM-DD.md
 ```
 
 ### Report Structure
@@ -236,8 +236,8 @@ Learn more: [pftui.dev](https://pftui.dev)
 
 ```bash
 python3 /root/pftui/agents/intelligence-report/gen-report.py \
-  /root/.openclaw/workspace-finance/reports/newsletter-$(date +%Y-%m-%d).md \
-  /root/.openclaw/workspace-finance/reports/newsletter-$(date +%Y-%m-%d).pdf \
+  /root/.openclaw/workspace-finance/reports/daily-$(date +%Y-%m-%d).md \
+  /root/.openclaw/workspace-finance/reports/daily-$(date +%Y-%m-%d).pdf \
   "PFTUI Daily Intelligence Report" \
   "$(date +'%B %d, %Y')" \
   "Multi-Timeframe Market Analysis" \
@@ -252,20 +252,20 @@ DATE_SLUG=$(date +'%d-%B-%Y')
 DATE_ISO=$(date +'%Y-%m-%d')
 TITLE="PFTUI Daily Intelligence Report"
 
-# Copy PDF to newsletter dir
-cp /root/.openclaw/workspace-finance/reports/newsletter-${DATE_ISO}.pdf \
+# Copy PDF to reports dir
+cp /root/.openclaw/workspace-finance/reports/daily-${DATE_ISO}.pdf \
   reports/${DATE_SLUG}.pdf
 
-# Update the newsletters page registry
-# Add a new entry to the NEWSLETTERS array in website/newsletters/index.html
+# Update the reports page registry
+# Add a new entry to the NEWSLETTERS array in website/reports/index.html
 # Insert BEFORE the closing bracket of the array
 sed -i "s|    \];|        { date: \"${DATE_ISO}\", title: \"${TITLE}\", file: \"${DATE_SLUG}.pdf\", type: \"daily\" },\n    ];|" \
-  website/newsletters/index.html
+  website/reports/index.html
 
 # Commit and push
-git add reports/${DATE_SLUG}.pdf website/newsletters/index.html
+git add reports/${DATE_SLUG}.pdf website/reports/index.html
 git -c user.name="pftui-bot" -c user.email="pftui-bot@users.noreply.github.com" \
-  commit -m "newsletter: Daily Intelligence Report — ${DATE_SLUG}"
+  commit -m "report: Daily Intelligence Report — ${DATE_SLUG}"
 git push origin master
 ```
 
