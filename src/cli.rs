@@ -363,8 +363,11 @@ pub enum DataCommand {
         #[command(subcommand)]
         command: ConsensusCommand,
     },
-    /// Show prediction market odds from Polymarket and Manifold
+    /// Prediction intelligence: market odds (Polymarket/Manifold) and personal prediction tracking (stats, scorecard, unanswered)
     Predictions {
+        #[command(subcommand)]
+        command: Option<DataPredictionsCommand>,
+
         /// Filter by category: crypto, economics, geopolitics, ai, finance, macro (supports pipe lists, e.g. geopolitics|macro). Defaults to "macro" (economics|geopolitics|crypto).
         #[arg(long)]
         category: Option<String>,
@@ -497,6 +500,66 @@ pub enum ConsensusCommand {
         /// Maximum rows to return
         #[arg(long, default_value = "20")]
         limit: usize,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataPredictionsCommand {
+    /// Show prediction market odds from Polymarket and Manifold (default when no subcommand)
+    Markets {
+        /// Filter by category: crypto, economics, geopolitics, ai, finance, macro
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Search question text/topics
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Maximum number of markets to show (default: 10)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
+    /// Prediction accuracy statistics — hit rate by conviction, timeframe, symbol, and agent
+    Stats {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Prediction scorecard — date-ordered scored predictions with outcomes
+    Scorecard {
+        /// Filter by date (YYYY-MM-DD)
+        #[arg(long)]
+        date: Option<String>,
+
+        /// Maximum predictions to show
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List unanswered/pending predictions awaiting scoring
+    Unanswered {
+        /// Filter by timeframe: low, medium, high, macro
+        #[arg(long)]
+        timeframe: Option<String>,
+
+        /// Filter by symbol
+        #[arg(long)]
+        symbol: Option<String>,
+
+        /// Maximum predictions to show
+        #[arg(long)]
+        limit: Option<usize>,
 
         /// Output as JSON
         #[arg(long)]
@@ -2590,8 +2653,11 @@ pub enum AnalyticsCommand {
         #[command(subcommand)]
         command: AnalyticsConvictionCommand,
     },
-    /// Show prediction market odds (alias for `data predictions`)
+    /// Prediction intelligence: market odds and personal prediction tracking (alias for `data predictions`)
     Predictions {
+        #[command(subcommand)]
+        command: Option<DataPredictionsCommand>,
+
         /// Filter by category: crypto, economics, geopolitics, ai, finance, macro (supports pipe lists, e.g. geopolitics|macro). Defaults to "macro" (economics|geopolitics|crypto).
         #[arg(long)]
         category: Option<String>,
@@ -4466,6 +4532,7 @@ mod tests {
             panic!("expected analytics command");
         };
         let AnalyticsCommand::Predictions {
+            command: subcmd,
             category,
             search,
             limit,
@@ -4474,6 +4541,7 @@ mod tests {
         else {
             panic!("expected predictions command");
         };
+        assert!(subcmd.is_none());
         assert!(json);
         assert!(category.is_none());
         assert!(search.is_none());
@@ -4498,6 +4566,7 @@ mod tests {
             panic!("expected analytics command");
         };
         let AnalyticsCommand::Predictions {
+            command: _,
             category,
             search,
             limit,
@@ -4510,5 +4579,130 @@ mod tests {
         assert_eq!(category.as_deref(), Some("crypto"));
         assert_eq!(search.as_deref(), Some("bitcoin"));
         assert_eq!(limit, 5);
+    }
+
+    #[test]
+    fn test_predictions_stats_subcommand() {
+        // data predictions stats --json
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "predictions", "stats", "--json"]).unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        assert!(matches!(subcmd, Some(DataPredictionsCommand::Stats { json: true })));
+
+        // analytics predictions stats --json
+        let cli2 =
+            Cli::try_parse_from(["pftui", "analytics", "predictions", "stats", "--json"])
+                .unwrap();
+        let Some(Command::Analytics { command: cmd2 }) = cli2.command else {
+            panic!("expected analytics command");
+        };
+        let AnalyticsCommand::Predictions { command: subcmd2, .. } = cmd2 else {
+            panic!("expected predictions command");
+        };
+        assert!(matches!(
+            subcmd2,
+            Some(DataPredictionsCommand::Stats { json: true })
+        ));
+    }
+
+    #[test]
+    fn test_predictions_scorecard_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "scorecard",
+            "--date",
+            "2026-03-25",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Scorecard { date, limit, json }) => {
+                assert_eq!(date.as_deref(), Some("2026-03-25"));
+                assert!(limit.is_none());
+                assert!(json);
+            }
+            _ => panic!("expected scorecard subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_predictions_unanswered_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "unanswered",
+            "--timeframe",
+            "medium",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Unanswered {
+                timeframe,
+                symbol,
+                limit,
+                json,
+            }) => {
+                assert_eq!(timeframe.as_deref(), Some("medium"));
+                assert!(symbol.is_none());
+                assert!(limit.is_none());
+                assert!(json);
+            }
+            _ => panic!("expected unanswered subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_predictions_markets_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "markets",
+            "--category",
+            "crypto",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        match subcmd {
+            Some(DataPredictionsCommand::Markets {
+                category,
+                search,
+                limit,
+                json,
+            }) => {
+                assert_eq!(category.as_deref(), Some("crypto"));
+                assert!(search.is_none());
+                assert_eq!(limit, 10);
+                assert!(json);
+            }
+            _ => panic!("expected markets subcommand"),
+        }
     }
 }

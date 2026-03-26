@@ -557,6 +557,109 @@ fn run_agent_journal(
     }
 }
 
+/// Dispatch `data predictions` / `analytics predictions` subcommands.
+/// When no subcommand is given, falls back to showing prediction market odds.
+fn dispatch_predictions(
+    backend: &db::backend::BackendConnection,
+    command: Option<cli::DataPredictionsCommand>,
+    category: Option<String>,
+    search: Option<String>,
+    limit: usize,
+    json: bool,
+) -> Result<()> {
+    match command {
+        None | Some(cli::DataPredictionsCommand::Markets { .. }) => {
+            // Merge top-level flags with subcommand flags (subcommand wins if present)
+            let (cat, srch, lim, js) = match command {
+                Some(cli::DataPredictionsCommand::Markets {
+                    category: sc,
+                    search: ss,
+                    limit: sl,
+                    json: sj,
+                }) => (
+                    sc.or(category),
+                    ss.or(search),
+                    sl, // subcommand limit takes precedence (has its own default)
+                    sj || json,
+                ),
+                _ => (category, search, limit, json),
+            };
+            commands::predictions::run(backend, cat.as_deref(), srch.as_deref(), lim, js)
+        }
+        Some(cli::DataPredictionsCommand::Stats { json: j }) => {
+            commands::predict::run(
+                backend,
+                "stats",
+                None,           // value
+                None,           // id
+                None,           // symbol
+                None,           // conviction
+                None,           // timeframe
+                None,           // confidence
+                None,           // source_agent
+                None,           // target_date
+                None,           // resolution_criteria
+                None,           // outcome
+                None,           // notes
+                None,           // lesson
+                None,           // filter
+                None,           // date
+                None,           // limit
+                j || json,
+            )
+        }
+        Some(cli::DataPredictionsCommand::Scorecard {
+            date,
+            limit: lim,
+            json: j,
+        }) => commands::predict::run(
+            backend,
+            "scorecard",
+            None,               // value
+            None,               // id
+            None,               // symbol
+            None,               // conviction
+            None,               // timeframe
+            None,               // confidence
+            None,               // source_agent
+            None,               // target_date
+            None,               // resolution_criteria
+            None,               // outcome
+            None,               // notes
+            None,               // lesson
+            None,               // filter
+            date.as_deref(),    // date
+            lim,                // limit
+            j || json,
+        ),
+        Some(cli::DataPredictionsCommand::Unanswered {
+            timeframe,
+            symbol,
+            limit: lim,
+            json: j,
+        }) => commands::predict::run(
+            backend,
+            "list",
+            None,                          // value
+            None,                          // id
+            symbol.as_deref(),             // symbol
+            None,                          // conviction
+            timeframe.as_deref(),          // timeframe
+            None,                          // confidence
+            None,                          // source_agent
+            None,                          // target_date
+            None,                          // resolution_criteria
+            None,                          // outcome
+            None,                          // notes
+            None,                          // lesson
+            Some("pending"),               // filter = pending
+            None,                          // date
+            lim,                           // limit
+            j || json,
+        ),
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let cached_only = cli.cached_only;
@@ -742,17 +845,12 @@ fn main() -> Result<()> {
                 ),
             },
             cli::DataCommand::Predictions {
+                command,
                 category,
                 search,
                 limit,
                 json,
-            } => commands::predictions::run(
-                &backend,
-                category.as_deref(),
-                search.as_deref(),
-                limit,
-                json,
-            ),
+            } => dispatch_predictions(&backend, command, category, search, limit, json),
             cli::DataCommand::Options {
                 symbol,
                 expiry,
@@ -3387,17 +3485,12 @@ fn main() -> Result<()> {
                 }
             },
             cli::AnalyticsCommand::Predictions {
+                command,
                 category,
                 search,
                 limit,
                 json,
-            } => commands::predictions::run(
-                &backend,
-                category.as_deref(),
-                search.as_deref(),
-                limit,
-                json,
-            ),
+            } => dispatch_predictions(&backend, command, category, search, limit, json),
             cli::AnalyticsCommand::PowerFlow { command } => match command {
                 cli::AnalyticsPowerFlowCommand::Add {
                     event,
