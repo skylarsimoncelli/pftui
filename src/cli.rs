@@ -454,6 +454,12 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Overnight futures prices for pre-market positioning (ES, NQ, YM, RTY, GC, SI, CL)
+    Futures {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
     /// Oil futures term structure: contango/backwardation, WTI-Brent spread, war-premium signal
     #[command(name = "oil-premium")]
     OilPremium {
@@ -3071,6 +3077,32 @@ mod tests {
         match cli.command {
             Some(Command::Data {
                 command: DataCommand::OilPremium { json },
+            }) => {
+                assert!(!json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_futures_json() {
+        let cli = Cli::try_parse_from(["pftui", "data", "futures", "--json"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Futures { json },
+            }) => {
+                assert!(json);
+            }
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn parses_data_futures_defaults() {
+        let cli = Cli::try_parse_from(["pftui", "data", "futures"]).unwrap();
+        match cli.command {
+            Some(Command::Data {
+                command: DataCommand::Futures { json },
             }) => {
                 assert!(!json);
             }

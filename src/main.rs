@@ -868,6 +868,9 @@ fn main() -> Result<()> {
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }
+            cli::DataCommand::Futures { json } => {
+                commands::futures::run(&backend, json, cached_only)
+            }
             cli::DataCommand::OilPremium { json } => commands::oil_premium::run(&backend, json),
             cli::DataCommand::Backfill { json } => commands::backfill::run(&backend, json),
         },
