@@ -2770,6 +2770,13 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Regime-asset flow correlation: cross-references regime state with asset class flows to detect power structure patterns
+    #[command(name = "regime-flows", after_help = "Cross-references the current market regime with asset class flows to detect\npower structure patterns automatically. Monitors key ratios (gold/oil,\ncopper/gold, BTC/gold), safe-haven vs risk flows, energy complex signals,\nand defense sector tracking.\n\nDetects patterns: safe-haven rotation, geopolitical stress, inflationary pulse,\nrisk-on breakout, deflationary signal, dollar wrecking ball, energy crisis,\nand regime divergence.\n\nSee also: analytics macro regime, analytics correlations, analytics movers themes")]
+    RegimeFlows {
+        /// Output as JSON for agent/script consumption (recommended)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -5161,6 +5168,30 @@ mod tests {
         };
         let AnalyticsCommand::MorningBrief { json } = command else {
             panic!("expected MorningBrief");
+        };
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_regime_flows_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "regime-flows", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::RegimeFlows { json } = command else {
+            panic!("expected RegimeFlows");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_regime_flows_no_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "regime-flows"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::RegimeFlows { json } = command else {
+            panic!("expected RegimeFlows");
         };
         assert!(!json);
     }

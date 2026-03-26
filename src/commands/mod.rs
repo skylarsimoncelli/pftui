@@ -62,6 +62,7 @@ pub mod rebalance;
 pub mod refresh;
 pub mod refresh_dag;
 pub mod regime;
+pub mod regime_flows;
 pub mod remove_tx;
 pub mod research;
 pub mod scan;
