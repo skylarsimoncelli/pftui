@@ -39,6 +39,11 @@ pub fn parse_rule(input: &str) -> Result<ParsedRule> {
         );
     }
 
+    // Check for ratio rule: "GC=F/CL=F above 30" or "GC=F / CL=F above 30"
+    if let Some(rule) = try_parse_ratio_rule(&tokens, input) {
+        return Ok(rule);
+    }
+
     // Check for allocation rule: "<category> allocation above/below <pct>%"
     if tokens.len() >= 4 && tokens[1].eq_ignore_ascii_case("allocation") {
         return parse_allocation_rule(&tokens, input);
@@ -235,6 +240,58 @@ fn parse_change_rule(tokens: &[&str], original: &str) -> Result<ParsedRule> {
     })
 }
 
+/// Try to parse a ratio alert rule. Returns None if the input doesn't look like a ratio rule.
+///
+/// Supported formats:
+///   "GC=F/CL=F above 30"       — compact slash
+///   "GC=F / CL=F above 30"     — spaced slash
+///   "ITA/SPY below 1.2"        — decimal threshold
+fn try_parse_ratio_rule(tokens: &[&str], _original: &str) -> Option<ParsedRule> {
+    // Pattern 1: compact "A/B above N" (3 tokens, first contains '/')
+    if tokens.len() >= 3 && tokens[0].contains('/') && !tokens[0].starts_with('/') && !tokens[0].ends_with('/') {
+        let (numerator, denominator) = tokens[0].split_once('/')?;
+        if numerator.is_empty() || denominator.is_empty() {
+            return None;
+        }
+        let direction: AlertDirection = tokens[1].parse().ok()?;
+        let threshold = parse_threshold(tokens[2]).ok()?;
+        let symbol = format!("{}/{}", numerator.to_uppercase(), denominator.to_uppercase());
+        let rule_text = format!("{} {} {}", symbol, direction, threshold);
+        return Some(ParsedRule {
+            kind: AlertKind::Ratio,
+            symbol,
+            direction,
+            threshold,
+            rule_text,
+        });
+    }
+
+    // Pattern 2: spaced "A / B above N" (4+ tokens, token[1] is "/")
+    if tokens.len() >= 4 && tokens[1] == "/" {
+        let numerator = tokens[0];
+        let denominator = tokens[2];
+        if numerator.is_empty() || denominator.is_empty() {
+            return None;
+        }
+        if tokens.len() < 5 {
+            return None;
+        }
+        let direction: AlertDirection = tokens[3].parse().ok()?;
+        let threshold = parse_threshold(tokens[4]).ok()?;
+        let symbol = format!("{}/{}", numerator.to_uppercase(), denominator.to_uppercase());
+        let rule_text = format!("{} {} {}", symbol, direction, threshold);
+        return Some(ParsedRule {
+            kind: AlertKind::Ratio,
+            symbol,
+            direction,
+            threshold,
+            rule_text,
+        });
+    }
+
+    None
+}
+
 /// Parse a threshold value, stripping optional trailing '%', '$', or ','.
 fn parse_threshold(s: &str) -> Result<Decimal> {
     let cleaned = s.replace(['%', '$', ','], "");
@@ -419,5 +476,40 @@ mod tests {
         let rule = parse_rule("  GC=F   above   5500  ").unwrap();
         assert_eq!(rule.symbol, "GC=F");
         assert_eq!(rule.threshold, dec!(5500));
+    }
+
+    #[test]
+    fn test_parse_ratio_compact() {
+        let rule = parse_rule("GC=F/CL=F above 30").unwrap();
+        assert_eq!(rule.kind, AlertKind::Ratio);
+        assert_eq!(rule.symbol, "GC=F/CL=F");
+        assert_eq!(rule.direction, AlertDirection::Above);
+        assert_eq!(rule.threshold, dec!(30));
+    }
+
+    #[test]
+    fn test_parse_ratio_below() {
+        let rule = parse_rule("ITA/SPY below 1.2").unwrap();
+        assert_eq!(rule.kind, AlertKind::Ratio);
+        assert_eq!(rule.symbol, "ITA/SPY");
+        assert_eq!(rule.direction, AlertDirection::Below);
+        assert_eq!(rule.threshold, dec!(1.2));
+    }
+
+    #[test]
+    fn test_parse_ratio_spaced() {
+        let rule = parse_rule("GC=F / CL=F above 30").unwrap();
+        assert_eq!(rule.kind, AlertKind::Ratio);
+        assert_eq!(rule.symbol, "GC=F/CL=F");
+        assert_eq!(rule.direction, AlertDirection::Above);
+        assert_eq!(rule.threshold, dec!(30));
+    }
+
+    #[test]
+    fn test_parse_ratio_decimal_threshold() {
+        let rule = parse_rule("BTC/ETH above 15.5").unwrap();
+        assert_eq!(rule.kind, AlertKind::Ratio);
+        assert_eq!(rule.symbol, "BTC/ETH");
+        assert_eq!(rule.threshold, dec!(15.5));
     }
 }

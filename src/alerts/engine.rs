@@ -304,6 +304,7 @@ fn evaluate_alert_sqlite(
             distance_pct: None,
             trigger_data: json!({ "kind": "scenario", "reason": "evaluated_at_write_time" }),
         }),
+        AlertKind::Ratio => Ok(evaluate_ratio_alert(alert, price_map)),
     }
 }
 
@@ -329,6 +330,7 @@ fn evaluate_alert_backend(
             distance_pct: None,
             trigger_data: json!({ "kind": "scenario", "reason": "evaluated_at_write_time" }),
         }),
+        AlertKind::Ratio => Ok(evaluate_ratio_alert(alert, price_map)),
     }
 }
 
@@ -353,6 +355,55 @@ fn evaluate_price_alert(
         trigger_data: json!({
             "symbol": alert.symbol,
             "current_value": current.map(|v| v.to_string()),
+            "threshold": threshold.to_string()
+        }),
+    }
+}
+
+/// Evaluate a ratio alert: symbol is "NUMERATOR/DENOMINATOR", computes current ratio from price cache.
+fn evaluate_ratio_alert(
+    alert: &AlertRule,
+    price_map: &HashMap<String, Decimal>,
+) -> AlertEvaluation {
+    let threshold = Decimal::from_str(&alert.threshold).unwrap_or(Decimal::ZERO);
+    let (numerator_sym, denominator_sym) = match alert.symbol.split_once('/') {
+        Some((a, b)) => (a.trim().to_uppercase(), b.trim().to_uppercase()),
+        None => {
+            return AlertEvaluation {
+                current_value: None,
+                is_triggered: false,
+                distance_pct: None,
+                trigger_data: json!({
+                    "symbol": alert.symbol,
+                    "reason": "invalid_ratio_symbol_format",
+                    "hint": "Expected NUMERATOR/DENOMINATOR (e.g. GC=F/CL=F)"
+                }),
+            };
+        }
+    };
+    let numerator_price = price_map.get(&numerator_sym).copied();
+    let denominator_price = price_map.get(&denominator_sym).copied();
+    let ratio = match (numerator_price, denominator_price) {
+        (Some(num), Some(den)) if !den.is_zero() => Some(num / den),
+        _ => None,
+    };
+    let is_triggered = ratio
+        .map(|value| match alert.direction {
+            AlertDirection::Above => value >= threshold,
+            AlertDirection::Below => value <= threshold,
+        })
+        .unwrap_or(false);
+    let distance_pct = ratio.and_then(|value| compute_distance_pct(alert.direction, value, threshold));
+    AlertEvaluation {
+        current_value: ratio,
+        is_triggered,
+        distance_pct,
+        trigger_data: json!({
+            "numerator": numerator_sym,
+            "denominator": denominator_sym,
+            "numerator_price": numerator_price.map(|v| v.to_string()),
+            "denominator_price": denominator_price.map(|v| v.to_string()),
+            "ratio": ratio.map(|v| v.to_string()),
             "threshold": threshold.to_string()
         }),
     }
@@ -2052,5 +2103,129 @@ mod tests {
         let alert = alerts::get_alert(conn, id).unwrap().unwrap();
         let result2 = check_single_alert_sqlite(conn, &alert, &price_map, 0).unwrap();
         assert!(result2.newly_triggered);
+    }
+
+    #[test]
+    fn test_ratio_alert_triggered() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        // GC=F is at 5600, BTC is at 68000. Ratio GC=F/BTC = 5600/68000 ≈ 0.082
+        // Alert for ratio below 0.1 should trigger
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "ratio",
+                "GC=F/BTC",
+                "below",
+                None,
+                "0.1",
+                "GC=F/BTC below 0.1",
+            ),
+        )
+        .unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].newly_triggered);
+        assert!(results[0].current_value.is_some());
+    }
+
+    #[test]
+    fn test_ratio_alert_not_triggered() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        // GC=F=5600, BTC=68000. Ratio = 0.082. Alert for above 0.1 should NOT trigger.
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "ratio",
+                "GC=F/BTC",
+                "above",
+                None,
+                "0.1",
+                "GC=F/BTC above 0.1",
+            ),
+        )
+        .unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].newly_triggered);
+    }
+
+    #[test]
+    fn test_ratio_alert_above_triggered() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        // BTC=68000, GC=F=5600. Ratio BTC/GC=F = 68000/5600 ≈ 12.14
+        // Alert for above 12 should trigger.
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "ratio",
+                "BTC/GC=F",
+                "above",
+                None,
+                "12",
+                "BTC/GC=F above 12",
+            ),
+        )
+        .unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].newly_triggered);
+    }
+
+    #[test]
+    fn test_ratio_alert_missing_denominator() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        // UNKNOWN not in price cache → ratio can't be computed → not triggered
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "ratio",
+                "GC=F/UNKNOWN",
+                "above",
+                None,
+                "1",
+                "GC=F/UNKNOWN above 1",
+            ),
+        )
+        .unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].newly_triggered);
+        assert!(results[0].current_value.is_none());
+    }
+
+    #[test]
+    fn test_ratio_alert_invalid_symbol_format() {
+        let backend = BackendConnection::Sqlite {
+            conn: setup_test_db(),
+        };
+        let conn = backend.sqlite();
+        // Symbol without '/' → invalid format → not triggered
+        alerts::add_alert(
+            conn,
+            new_alert(
+                "ratio",
+                "NOSEPARATOR",
+                "above",
+                None,
+                "1",
+                "NOSEPARATOR above 1",
+            ),
+        )
+        .unwrap();
+        let results = check_alerts_backend(&backend, conn).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].newly_triggered);
     }
 }

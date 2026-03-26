@@ -20,6 +20,9 @@ pub enum AlertKind {
     Macro,
     /// Scenario alert: fires when a scenario probability shifts by ≥ threshold in a single update.
     Scenario,
+    /// Ratio alert: fires when the price ratio between two assets crosses a threshold.
+    /// Symbol format: "NUMERATOR/DENOMINATOR" (e.g. "GC=F/CL=F").
+    Ratio,
 }
 
 impl fmt::Display for AlertKind {
@@ -31,6 +34,7 @@ impl fmt::Display for AlertKind {
             AlertKind::Technical => write!(f, "technical"),
             AlertKind::Macro => write!(f, "macro"),
             AlertKind::Scenario => write!(f, "scenario"),
+            AlertKind::Ratio => write!(f, "ratio"),
         }
     }
 }
@@ -46,6 +50,7 @@ impl std::str::FromStr for AlertKind {
             "technical" => Ok(AlertKind::Technical),
             "macro" => Ok(AlertKind::Macro),
             "scenario" => Ok(AlertKind::Scenario),
+            "ratio" => Ok(AlertKind::Ratio),
             _ => Err(anyhow::anyhow!("Unknown alert kind: {}", s)),
         }
     }
