@@ -14,8 +14,7 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [Feedback] **Auto-scored prediction lifecycle** — Evening Analyst (Mar 26) wants predictions to auto-score when market results become available, rather than requiring manual `journal prediction score`. Could use price data to auto-resolve price-target predictions. Files: `src/db/predictions.rs`, `src/commands/journal.rs`.
-- [Feedback] **Correlation breaks × impact analysis cross-reference** — Low-Timeframe Analyst (95/90, Mar 25) wants correlation breaks cross-referenced with portfolio impact analysis for faster synthesis. Could add a `breaks_impact` field to situation room JSON showing which breaks affect held positions. Files: `src/analytics/situation.rs`.
+_(none)_
 
 ## P3 - Long Term
 
@@ -46,9 +45,9 @@ _(none)_
 - Low-Timeframe Analyst **surged** 85→95 usefulness, 80→90 overall — correlation breaks and ratio alerts praised
 - Predictions stats/unanswered fix (#334) shipped in response to Evening Analyst's 65/68 — score impact TBD next review
 
-**Top 2 priorities based on feedback:**
-1. **P2: Auto-scored prediction lifecycle** — Evening Analyst wants predictions to resolve automatically from market data.
-2. **P2: Correlation breaks × impact analysis cross-reference** — Low-Timeframe Analyst wants breaks cross-referenced with portfolio impact.
+**Shipped since last review:**
+1. ~~**P2: Auto-scored prediction lifecycle**~~ — ✅ Shipped #341. `journal prediction auto-score` command.
+2. ~~**P2: Correlation breaks × impact analysis cross-reference**~~ — ✅ Shipped #341. `--with-impact` flag on `analytics correlations latest --json`.
 
 **Release eligibility:** ✅ READY — v0.18.0. 46 commits since v0.17.0, 5 significant features shipped, 1672 tests passing, clippy clean, no P0 bugs. New P1 items are discoverability/quality issues, not blockers.
 
