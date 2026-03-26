@@ -84,14 +84,20 @@
             border: 1px solid var(--border);
             border-radius: var(--radius-md);
             transition: all 0.2s;
-            text-decoration: none;
+            cursor: pointer;
             color: inherit;
         }
-        .newsletter-item:hover {
+        .newsletter-item:hover,
+        .newsletter-item.active {
             border-color: var(--accent-cyan);
             background: var(--bg-tertiary);
+        }
+        .newsletter-item:hover {
             transform: translateY(-1px);
             box-shadow: var(--shadow-sm);
+        }
+        .newsletter-item.active {
+            border-color: var(--accent-green);
         }
         .newsletter-info {
             display: flex;
@@ -129,17 +135,122 @@
             color: var(--accent-green);
             border-color: rgba(166, 227, 161, 0.2);
         }
-        
+        .newsletter-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
         .newsletter-arrow {
             color: var(--text-tertiary);
             font-size: 1.2rem;
             transition: transform 0.2s;
-            flex-shrink: 0;
-            margin-left: 1rem;
+            margin-left: 0.5rem;
         }
         .newsletter-item:hover .newsletter-arrow {
             transform: translateX(3px);
             color: var(--accent-cyan);
+        }
+        .download-link {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+            text-decoration: none;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            transition: all 0.2s;
+        }
+        .download-link:hover {
+            color: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+        }
+        
+        /* PDF Viewer */
+        .pdf-viewer-container {
+            margin-top: var(--spacing-md);
+            display: none;
+        }
+        .pdf-viewer-container.visible {
+            display: block;
+        }
+        .pdf-viewer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.8rem 1.2rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
+        }
+        .pdf-viewer-title {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+        .pdf-viewer-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+        .pdf-nav-btn {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            background: transparent;
+            border: 1px solid var(--border);
+            padding: 0.3rem 0.6rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .pdf-nav-btn:hover {
+            color: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+        }
+        .pdf-page-info {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+        }
+        .pdf-close-btn {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent-red);
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 0.3rem 0.6rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .pdf-close-btn:hover {
+            border-color: var(--accent-red);
+        }
+        .pdf-canvas-wrapper {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-radius: 0 0 var(--radius-md) var(--radius-md);
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+            padding: var(--spacing-sm);
+            min-height: 600px;
+        }
+        #pdf-canvas {
+            max-width: 100%;
+            height: auto;
+        }
+        .pdf-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--text-tertiary);
         }
         
         .back-link {
@@ -173,13 +284,6 @@
             color: var(--text-primary);
             margin-bottom: 0.5rem;
         }
-        
-        .empty-state {
-            text-align: center;
-            padding: var(--spacing-lg);
-            color: var(--text-tertiary);
-            font-family: var(--font-mono);
-        }
 
         @media (max-width: 640px) {
             .newsletter-item {
@@ -192,6 +296,11 @@
             }
             .newsletters-hero h1 {
                 font-size: 1.5rem;
+            }
+            .pdf-viewer-header {
+                flex-direction: column;
+                gap: 0.5rem;
+                align-items: flex-start;
             }
         }
     </style>
@@ -214,7 +323,24 @@
             </div>
             
             <div class="newsletter-list" id="newsletter-list">
-                <div class="empty-state">Loading reports...</div>
+                <div class="pdf-loading">Loading reports...</div>
+            </div>
+            
+            <!-- PDF Viewer -->
+            <div class="pdf-viewer-container" id="pdf-viewer">
+                <div class="pdf-viewer-header">
+                    <span class="pdf-viewer-title" id="pdf-viewer-title"></span>
+                    <div class="pdf-viewer-controls">
+                        <button class="pdf-nav-btn" onclick="prevPage()">← prev</button>
+                        <span class="pdf-page-info" id="pdf-page-info">1 / 1</span>
+                        <button class="pdf-nav-btn" onclick="nextPage()">next →</button>
+                        <a class="download-link" id="pdf-download-link" href="#" download>↓ download</a>
+                        <button class="pdf-close-btn" onclick="closeViewer()">✕ close</button>
+                    </div>
+                </div>
+                <div class="pdf-canvas-wrapper">
+                    <canvas id="pdf-canvas"></canvas>
+                </div>
             </div>
             
             <div class="methodology-note">
@@ -225,27 +351,33 @@
         </div>
     </section>
 
-    <script>
-    // Newsletter registry — updated by the daily cron or manually
-    // Each entry: { date: "YYYY-MM-DD", title: "...", file: "DD-Month-YYYY.pdf", type: "daily"|"monthly" }
+    <!-- PDF.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
+    <script type="module">
+    import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+
+    // Newsletter registry — the daily cron appends new entries here automatically
     const NEWSLETTERS = [
         { date: "2026-03-15", title: "Current Outlook for Remainder of 2026", file: "15-March-2026.pdf", type: "monthly" },
         { date: "2026-03-18", title: "Global Power Metrics Report", file: "18-March-2026.pdf", type: "monthly" },
     ];
 
     let sortNewest = true;
+    let pdfDoc = null;
+    let currentPage = 1;
+    let activeFile = null;
 
     function formatDate(dateStr) {
         const d = new Date(dateStr + "T12:00:00Z");
         return d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
     }
 
-    function getTypeLabel(type) {
-        if (type === "monthly") return "monthly";
-        return "daily";
+    function pdfUrl(file) {
+        return `/newsletter/${file}`;
     }
 
-    function render() {
+    function renderList() {
         const list = document.getElementById('newsletter-list');
         const count = document.getElementById('count');
         const sortBtn = document.getElementById('sort-btn');
@@ -260,15 +392,15 @@
         sortBtn.textContent = sortNewest ? '↓ newest first' : '↑ oldest first';
         
         if (sorted.length === 0) {
-            list.innerHTML = '<div class="empty-state">No reports yet. Check back soon.</div>';
+            list.innerHTML = '<div class="pdf-loading">No reports yet. Check back soon.</div>';
             return;
         }
         
         list.innerHTML = sorted.map((n, i) => {
             const isLatest = sortNewest ? i === 0 : i === sorted.length - 1;
-            const pdfUrl = `https://github.com/skylarsimoncelli/pftui/raw/master/newsletter/${n.file}`;
+            const isActive = activeFile === n.file;
             return `
-                <a href="${pdfUrl}" target="_blank" rel="noopener" class="newsletter-item">
+                <div class="newsletter-item${isActive ? ' active' : ''}" onclick="window._openPdf('${n.file}', '${n.title}')">
                     <div class="newsletter-info">
                         <span class="newsletter-icon">📊</span>
                         <div class="newsletter-details">
@@ -276,22 +408,114 @@
                             <span class="newsletter-date">${formatDate(n.date)}</span>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div class="newsletter-actions">
                         ${isLatest ? '<span class="newsletter-badge latest">latest</span>' : ''}
-                        <span class="newsletter-badge">${getTypeLabel(n.type)}</span>
+                        <span class="newsletter-badge">${n.type}</span>
+                        <a class="download-link" href="${pdfUrl(n.file)}" download onclick="event.stopPropagation()">↓ pdf</a>
                         <span class="newsletter-arrow">→</span>
                     </div>
-                </a>
+                </div>
             `;
         }).join('');
     }
 
-    function toggleSort() {
-        sortNewest = !sortNewest;
-        render();
+    async function openPdf(file, title) {
+        const viewer = document.getElementById('pdf-viewer');
+        const canvas = document.getElementById('pdf-canvas');
+        const titleEl = document.getElementById('pdf-viewer-title');
+        const downloadLink = document.getElementById('pdf-download-link');
+        const pageInfo = document.getElementById('pdf-page-info');
+        
+        activeFile = file;
+        titleEl.textContent = title;
+        downloadLink.href = pdfUrl(file);
+        viewer.classList.add('visible');
+        
+        // Scroll to viewer
+        viewer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        
+        // Re-render list to show active state
+        renderList();
+        
+        try {
+            pdfDoc = await pdfjsLib.getDocument(pdfUrl(file)).promise;
+            currentPage = 1;
+            pageInfo.textContent = `1 / ${pdfDoc.numPages}`;
+            await renderPage(currentPage);
+        } catch (err) {
+            console.error('PDF load error:', err);
+            const ctx = canvas.getContext('2d');
+            canvas.width = 600;
+            canvas.height = 200;
+            ctx.fillStyle = '#8b949e';
+            ctx.font = '14px JetBrains Mono, monospace';
+            ctx.fillText('Failed to load PDF. Try the download link.', 20, 100);
+        }
     }
 
-    render();
+    async function renderPage(num) {
+        const canvas = document.getElementById('pdf-canvas');
+        const page = await pdfDoc.getPage(num);
+        
+        // Scale to fit container width nicely
+        const containerWidth = canvas.parentElement.clientWidth - 32;
+        const unscaledViewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(containerWidth / unscaledViewport.width, 2.0);
+        const viewport = page.getViewport({ scale });
+        
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        
+        document.getElementById('pdf-page-info').textContent = `${num} / ${pdfDoc.numPages}`;
+    }
+
+    // Expose functions to global scope for onclick handlers
+    window._openPdf = openPdf;
+    
+    window.prevPage = async function() {
+        if (!pdfDoc || currentPage <= 1) return;
+        currentPage--;
+        await renderPage(currentPage);
+    };
+    
+    window.nextPage = async function() {
+        if (!pdfDoc || currentPage >= pdfDoc.numPages) return;
+        currentPage++;
+        await renderPage(currentPage);
+    };
+    
+    window.closeViewer = function() {
+        document.getElementById('pdf-viewer').classList.remove('visible');
+        activeFile = null;
+        pdfDoc = null;
+        renderList();
+    };
+    
+    window.toggleSort = function() {
+        sortNewest = !sortNewest;
+        renderList();
+    };
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+        if (!pdfDoc) return;
+        if (e.key === 'ArrowLeft') window.prevPage();
+        if (e.key === 'ArrowRight') window.nextPage();
+        if (e.key === 'Escape') window.closeViewer();
+    });
+
+    // Initial render
+    renderList();
+    
+    // Auto-open if hash has a report name
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+        const match = NEWSLETTERS.find(n => n.file.includes(hash) || n.date === hash);
+        if (match) openPdf(match.file, match.title);
+    }
     </script>
 </body>
 </html>
