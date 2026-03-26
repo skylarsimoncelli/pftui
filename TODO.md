@@ -31,7 +31,7 @@ _(none)_
 | Evening Analyst | 65% | 68% | Mar 26 | ↓ (dropped from 78/75 on Mar 25. Scenario discoverability, predictions stats/unanswered errors, economy indicator confidence, wants auto-scored predictions. overnight-futures ✅ shipped. **Lowest scorer — critical priority.**) |
 | Medium-Timeframe Analyst | 85% | 80% | Mar 25 | → (stable at 85/80. COT extreme detection praised. Regime transition alerts shipped #314.) |
 | Low-Timeframe Analyst | 75% | 80% | Mar 26 | ↓ (from 95/90. Wants prediction accuracy feedback loop per-timeframe. Shipped prediction stats filters #356.) |
-| High-Timeframe Analyst | 85% | 75% | Mar 23 | → (no new review since Mar 23.) |
+| High-Timeframe Analyst | 85% | 90% | Mar 26 | ↑ (85/90 Mar 26. Requested automated scenario probability updates → shipped #366 `analytics scenario suggest`.) |
 | Low-Timeframe Midday | 85% | 88% | Mar 23 | → (no new review since Mar 23.) |
 | Morning Intelligence | 85% | 90% | Mar 23 | → (no new review since Mar 23.) |
 | Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent. System healthy.) |
@@ -52,7 +52,8 @@ _(none)_
 4. ~~**P2: Prediction stats per-timeframe/agent filtering**~~ — ✅ Shipped #356. `--timeframe` and `--agent` flags on prediction stats.
 5. ~~**P2: News sentiment scoring**~~ — ✅ Shipped #358. `analytics news-sentiment` command + `data news --with-sentiment` flag. Keyword-based scoring with category aggregation.
 6. ~~**P1: Consolidated morning-brief command**~~ — ✅ Shipped #363. `analytics morning-brief --json` combines situation, deltas, synthesis, scenarios, correlation breaks, catalysts, impact, alerts, news sentiment in one call.
+7. ~~**P2: Automated scenario probability suggestions**~~ — ✅ Shipped #366. `analytics scenario suggest --json` analyzes signal evidence + probability trends to suggest adjustments.
 
-**Release eligibility:** ✅ READY — v0.19.0. 49+ commits since v0.18.0, 8 significant features shipped, 1737 tests passing, clippy clean, no P0 bugs.
+**Release eligibility:** ✅ READY — v0.19.0. 50+ commits since v0.18.0, 9 significant features shipped, 1751 tests passing, clippy clean, no P0 bugs.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.

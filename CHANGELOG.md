@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — feat: automated scenario probability suggestions (`analytics scenario suggest`)
+
+- What: Added `pftui analytics scenario suggest [--json]` that analyzes each active scenario's signals (triggered/watching/invalidated) and recent probability history to suggest whether probability should increase, decrease, or hold. Signal-based scoring: trigger ratio drives base score, invalidated signals penalize, ceiling/floor dampening prevents over-adjustment near 0%/100%, recent large changes moderate suggestions. Output includes per-scenario signal summary, probability trend, suggested action (increase/decrease/hold) with magnitude (minor/moderate/major), confidence level, suggested new probability, and reasoning. Both terminal and JSON output for agent consumption.
+- Why: High-timeframe analyst feedback (Mar 26, 85/90): "Would benefit from automated scenario probability updates based on trend evidence changes." Agents can now run `pftui analytics scenario suggest --json` before making probability update decisions, getting structured suggestions with reasoning.
+- Files: `src/commands/scenario_suggest.rs` (+848, new file: ScenarioSuggestion struct, signal classification, trend analysis, suggestion engine, terminal+JSON output, 12 unit tests), `src/commands/mod.rs` (+1), `src/cli.rs` (+45: Suggest variant on AnalyticsScenarioCommand, after_help, 2 CLI parse tests), `src/main.rs` (+3: dispatch)
+- Tests: `cargo test` (1751 pass, +14 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #366
+
 ### 2026-03-26 — feat: consolidated morning-brief command (`analytics morning-brief`)
 
 - What: Added `pftui analytics morning-brief [--json]` that combines situation room, 24h deltas, cross-timeframe synthesis, active scenario probabilities, correlation breaks, catalysts, portfolio impact, triggered alerts, and news sentiment into a single CLI call. Agents previously needed 5-6 separate `analytics` commands to assemble morning intelligence. JSON output includes all sections with graceful fallbacks (null/empty) when data is missing. Terminal output provides a scannable summary. Includes `after_help` with cross-references to component commands.
