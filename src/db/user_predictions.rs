@@ -430,6 +430,87 @@ pub fn score_prediction_backend(
 }
 
 #[allow(dead_code)]
+pub fn get_stats_filtered_backend(
+    backend: &BackendConnection,
+    timeframe_filter: Option<&str>,
+    agent_filter: Option<&str>,
+) -> Result<PredictionStats> {
+    let mut all = list_predictions_backend(backend, None, None, timeframe_filter, None)?;
+    if let Some(agent) = agent_filter {
+        all.retain(|p| {
+            p.source_agent
+                .as_deref()
+                .map(|a| a.eq_ignore_ascii_case(agent))
+                .unwrap_or(false)
+        });
+    }
+    let overall = compute_stats(&all);
+
+    let mut by_conviction_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+    let mut by_symbol_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+    let mut by_timeframe_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+    let mut by_source_agent_map: HashMap<String, Vec<UserPrediction>> = HashMap::new();
+
+    for item in &all {
+        by_conviction_map
+            .entry(item.conviction.clone())
+            .or_default()
+            .push(item.clone());
+
+        let sym = item.symbol.clone().unwrap_or_else(|| "unknown".to_string());
+        by_symbol_map.entry(sym).or_default().push(item.clone());
+        let timeframe = item
+            .timeframe
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        by_timeframe_map
+            .entry(timeframe)
+            .or_default()
+            .push(item.clone());
+        let source = item
+            .source_agent
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        by_source_agent_map
+            .entry(source)
+            .or_default()
+            .push(item.clone());
+    }
+
+    let by_conviction = by_conviction_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+
+    let by_symbol = by_symbol_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+    let by_timeframe = by_timeframe_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+    let by_source_agent = by_source_agent_map
+        .into_iter()
+        .map(|(k, v)| (k, compute_stats(&v)))
+        .collect();
+
+    Ok(PredictionStats {
+        total: overall.total,
+        scored: overall.scored,
+        pending: overall.pending,
+        correct: overall.correct,
+        partial: overall.partial,
+        wrong: overall.wrong,
+        hit_rate_pct: overall.hit_rate_pct,
+        by_conviction,
+        by_symbol,
+        by_timeframe,
+        by_source_agent,
+    })
+}
+
+#[allow(dead_code)]
 pub fn get_stats_backend(backend: &BackendConnection) -> Result<PredictionStats> {
     let all = list_predictions_backend(backend, None, None, None, None)?;
     let overall = compute_stats(&all);

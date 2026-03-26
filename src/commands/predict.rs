@@ -214,11 +214,46 @@ pub fn run(
         }
 
         "stats" => {
-            let stats = user_predictions::get_stats_backend(backend)?;
+            let resolved_timeframe = match timeframe {
+                Some(tf) => Some(normalize_timeframe(tf)?),
+                None => None,
+            };
+            let stats = user_predictions::get_stats_filtered_backend(
+                backend,
+                resolved_timeframe.as_deref(),
+                source_agent,
+            )?;
             if json_output {
-                println!("{}", serde_json::to_string_pretty(&stats)?);
+                // Add filter metadata to JSON output
+                let mut val = serde_json::to_value(&stats)?;
+                if let serde_json::Value::Object(ref mut map) = val {
+                    if let Some(ref tf) = resolved_timeframe {
+                        map.insert(
+                            "filter_timeframe".to_string(),
+                            serde_json::Value::String(tf.clone()),
+                        );
+                    }
+                    if let Some(agent) = source_agent {
+                        map.insert(
+                            "filter_agent".to_string(),
+                            serde_json::Value::String(agent.to_string()),
+                        );
+                    }
+                }
+                println!("{}", serde_json::to_string_pretty(&val)?);
             } else {
-                println!("Prediction stats:");
+                let mut header = String::from("Prediction stats");
+                if resolved_timeframe.is_some() || source_agent.is_some() {
+                    header.push_str(" (filtered:");
+                    if let Some(ref tf) = resolved_timeframe {
+                        header.push_str(&format!(" timeframe={}", tf));
+                    }
+                    if let Some(agent) = source_agent {
+                        header.push_str(&format!(" agent={}", agent));
+                    }
+                    header.push(')');
+                }
+                println!("{}:", header);
                 println!("  Total: {}", stats.total);
                 println!("  Scored: {}", stats.scored);
                 println!("  Pending: {}", stats.pending);
@@ -226,8 +261,65 @@ pub fn run(
                 println!("  Partial: {}", stats.partial);
                 println!("  Wrong: {}", stats.wrong);
                 println!("  Hit rate: {:.1}%", stats.hit_rate_pct);
-                println!("  Timeframes tracked: {}", stats.by_timeframe.len());
-                println!("  Source agents tracked: {}", stats.by_source_agent.len());
+
+                if !stats.by_timeframe.is_empty() {
+                    println!("\n  By timeframe:");
+                    let mut tf_entries: Vec<_> = stats.by_timeframe.iter().collect();
+                    tf_entries.sort_by_key(|(k, _)| match k.as_str() {
+                        "low" => 0,
+                        "medium" => 1,
+                        "high" => 2,
+                        "macro" => 3,
+                        _ => 4,
+                    });
+                    for (tf, s) in &tf_entries {
+                        println!(
+                            "    {:<8} — {}/{} scored, {:.1}% hit rate ({} correct, {} partial, {} wrong)",
+                            tf, s.scored, s.total, s.hit_rate_pct, s.correct, s.partial, s.wrong
+                        );
+                    }
+                }
+
+                if !stats.by_source_agent.is_empty() {
+                    println!("\n  By agent:");
+                    let mut agent_entries: Vec<_> = stats.by_source_agent.iter().collect();
+                    agent_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    for (agent, s) in &agent_entries {
+                        println!(
+                            "    {:<20} — {}/{} scored, {:.1}% hit rate ({} correct, {} partial, {} wrong)",
+                            agent, s.scored, s.total, s.hit_rate_pct, s.correct, s.partial, s.wrong
+                        );
+                    }
+                }
+
+                if !stats.by_conviction.is_empty() {
+                    println!("\n  By conviction:");
+                    let mut conv_entries: Vec<_> = stats.by_conviction.iter().collect();
+                    conv_entries.sort_by_key(|(k, _)| match k.as_str() {
+                        "low" => 0,
+                        "medium" => 1,
+                        "high" => 2,
+                        _ => 3,
+                    });
+                    for (conv, s) in &conv_entries {
+                        println!(
+                            "    {:<8} — {}/{} scored, {:.1}% hit rate ({} correct, {} partial, {} wrong)",
+                            conv, s.scored, s.total, s.hit_rate_pct, s.correct, s.partial, s.wrong
+                        );
+                    }
+                }
+
+                if !stats.by_symbol.is_empty() {
+                    println!("\n  By symbol (top 10):");
+                    let mut sym_entries: Vec<_> = stats.by_symbol.iter().collect();
+                    sym_entries.sort_by(|(_, a), (_, b)| b.total.cmp(&a.total));
+                    for (sym, s) in sym_entries.iter().take(10) {
+                        println!(
+                            "    {:<10} — {}/{} scored, {:.1}% hit rate",
+                            sym, s.scored, s.total, s.hit_rate_pct
+                        );
+                    }
+                }
             }
         }
 

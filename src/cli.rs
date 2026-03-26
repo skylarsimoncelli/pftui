@@ -535,6 +535,14 @@ pub enum DataPredictionsCommand {
     },
     /// Prediction accuracy statistics — hit rate by conviction, timeframe, symbol, and agent
     Stats {
+        /// Filter by timeframe: low, medium, high, macro
+        #[arg(long)]
+        timeframe: Option<String>,
+
+        /// Filter by source agent (e.g. low-agent, medium-agent)
+        #[arg(long)]
+        agent: Option<String>,
+
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -1434,6 +1442,14 @@ pub enum JournalPredictionCommand {
         json: bool,
     },
     Stats {
+        /// Filter by timeframe: low, medium, high, macro
+        #[arg(long)]
+        timeframe: Option<String>,
+
+        /// Filter by source agent (e.g. low-agent, medium-agent)
+        #[arg(long)]
+        agent: Option<String>,
+
         #[arg(long)]
         json: bool,
     },
@@ -4665,7 +4681,10 @@ mod tests {
         let DataCommand::Predictions { command: subcmd, .. } = command else {
             panic!("expected predictions command");
         };
-        assert!(matches!(subcmd, Some(DataPredictionsCommand::Stats { json: true })));
+        assert!(matches!(
+            subcmd,
+            Some(DataPredictionsCommand::Stats { json: true, .. })
+        ));
 
         // analytics predictions stats --json
         let cli2 =
@@ -4679,8 +4698,62 @@ mod tests {
         };
         assert!(matches!(
             subcmd2,
-            Some(DataPredictionsCommand::Stats { json: true })
+            Some(DataPredictionsCommand::Stats { json: true, .. })
         ));
+
+        // data predictions stats --timeframe low --agent low-agent --json
+        let cli3 = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "stats",
+            "--timeframe",
+            "low",
+            "--agent",
+            "low-agent",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command: cmd3 }) = cli3.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd3, .. } = cmd3 else {
+            panic!("expected predictions command");
+        };
+        match subcmd3 {
+            Some(DataPredictionsCommand::Stats {
+                timeframe,
+                agent,
+                json,
+            }) => {
+                assert_eq!(timeframe.as_deref(), Some("low"));
+                assert_eq!(agent.as_deref(), Some("low-agent"));
+                assert!(json);
+            }
+            _ => panic!("expected stats subcommand with filters"),
+        }
+
+        // data predictions stats (no filters)
+        let cli4 =
+            Cli::try_parse_from(["pftui", "data", "predictions", "stats"]).unwrap();
+        let Some(Command::Data { command: cmd4 }) = cli4.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd4, .. } = cmd4 else {
+            panic!("expected predictions command");
+        };
+        match subcmd4 {
+            Some(DataPredictionsCommand::Stats {
+                timeframe,
+                agent,
+                json,
+            }) => {
+                assert!(timeframe.is_none());
+                assert!(agent.is_none());
+                assert!(!json);
+            }
+            _ => panic!("expected stats subcommand"),
+        }
     }
 
     #[test]
@@ -4742,6 +4815,41 @@ mod tests {
                 assert!(json);
             }
             _ => panic!("expected unanswered subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_journal_prediction_stats_filters() {
+        // journal prediction stats --timeframe low --agent low-agent --json
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "prediction",
+            "stats",
+            "--timeframe",
+            "low",
+            "--agent",
+            "low-agent",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Journal {
+            command: Some(JournalCommand::Prediction { command }),
+        }) = cli.command
+        else {
+            panic!("expected journal prediction command");
+        };
+        match command {
+            JournalPredictionCommand::Stats {
+                timeframe,
+                agent,
+                json,
+            } => {
+                assert_eq!(timeframe.as_deref(), Some("low"));
+                assert_eq!(agent.as_deref(), Some("low-agent"));
+                assert!(json);
+            }
+            _ => panic!("expected stats subcommand"),
         }
     }
 

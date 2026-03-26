@@ -182,9 +182,29 @@ fn run_agent_journal(
             cli::JournalPredictionCommand::ScoreBatch { entries, json } => {
                 commands::predict::run_score_batch(backend, &entries, json)
             }
-            cli::JournalPredictionCommand::Stats { json } => commands::predict::run(
-                backend, "stats", None, None, None, None, None, None, None, None, None, None, None,
-                None, None, None, None, json,
+            cli::JournalPredictionCommand::Stats {
+                timeframe,
+                agent,
+                json,
+            } => commands::predict::run(
+                backend,
+                "stats",
+                None,                          // value
+                None,                          // id
+                None,                          // symbol
+                None,                          // conviction
+                timeframe.as_deref(),          // timeframe
+                None,                          // confidence
+                agent.as_deref(),              // source_agent
+                None,                          // target_date
+                None,                          // resolution_criteria
+                None,                          // outcome
+                None,                          // notes
+                None,                          // lesson
+                None,                          // filter
+                None,                          // date
+                None,                          // limit
+                json,
             ),
             cli::JournalPredictionCommand::Scorecard { date, limit, json } => {
                 commands::predict::run(
@@ -589,25 +609,29 @@ fn dispatch_predictions(
             };
             commands::predictions::run(backend, cat.as_deref(), srch.as_deref(), lim, js)
         }
-        Some(cli::DataPredictionsCommand::Stats { json: j }) => {
+        Some(cli::DataPredictionsCommand::Stats {
+            timeframe,
+            agent,
+            json: j,
+        }) => {
             commands::predict::run(
                 backend,
                 "stats",
-                None,           // value
-                None,           // id
-                None,           // symbol
-                None,           // conviction
-                None,           // timeframe
-                None,           // confidence
-                None,           // source_agent
-                None,           // target_date
-                None,           // resolution_criteria
-                None,           // outcome
-                None,           // notes
-                None,           // lesson
-                None,           // filter
-                None,           // date
-                None,           // limit
+                None,                          // value
+                None,                          // id
+                None,                          // symbol
+                None,                          // conviction
+                timeframe.as_deref(),          // timeframe
+                None,                          // confidence
+                agent.as_deref(),              // source_agent
+                None,                          // target_date
+                None,                          // resolution_criteria
+                None,                          // outcome
+                None,                          // notes
+                None,                          // lesson
+                None,                          // filter
+                None,                          // date
+                None,                          // limit
                 j || json,
             )
         }
