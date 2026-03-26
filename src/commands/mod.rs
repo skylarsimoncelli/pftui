@@ -27,6 +27,7 @@ pub mod eod;
 pub mod etf_flows;
 pub mod export;
 pub mod fedwatch;
+pub mod futures;
 pub mod global;
 pub mod group;
 pub mod heatmap;
