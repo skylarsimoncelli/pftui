@@ -277,9 +277,9 @@ The generator supports: relative image paths (auto-resolved to `file://`), autho
 4. Only after the user approves, upload the PDF to the repo:
 ```bash
 cp /root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf \
-  /root/pftui/newsletter/DD-Month-YYYY.pdf
+  /root/pftui/reports/DD-Month-YYYY.pdf
 cd /root/pftui
-git add newsletter/
+git add reports/
 git -c user.name="pftui-bot" -c user.email="pftui-bot@users.noreply.github.com" \
   commit -m "Newsletter: <title> — <date>"
 git push
@@ -290,7 +290,7 @@ And send to the user:
 message action=send target=<user_id> message="📊 PFTUI Intelligence Report: <title>" filePath=/root/.openclaw/workspace-finance/reports/YYYY-MM-<slug>.pdf
 ```
 
-File naming: `DD-Month-YYYY.pdf` (e.g. `15-March-2026.pdf`, `12-April-2026.pdf`). All newsletters live in `newsletter/` at the repo root.
+File naming: `DD-Month-YYYY.pdf` (e.g. `15-March-2026.pdf`, `12-April-2026.pdf`). All newsletters live in `reports/` at the repo root.
 
 The generator produces dark-themed PDFs matching pftui.com branding:
 - Fonts: Inter (body) + JetBrains Mono (code, headers, metadata)

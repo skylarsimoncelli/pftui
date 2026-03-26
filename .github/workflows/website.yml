@@ -9,7 +9,7 @@ on:
     branches: [master]
     paths:
       - 'website/**'
-      - 'newsletter/**'
+      - 'reports/**'
       - '.github/workflows/website.yml'
   workflow_dispatch:
 
@@ -39,8 +39,8 @@ jobs:
           mkdir -p _site
           # Copy website files as the root
           cp -r website/* _site/
-          # Copy newsletter PDFs so they're served at /newsletter/
-          cp -r newsletter/ _site/newsletter/
+          # Copy newsletter PDFs so they're served at /reports/
+          cp -r reports/ _site/reports/
           # Copy .nojekyll to prevent Jekyll processing
           touch _site/.nojekyll
       

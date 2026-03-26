@@ -7,7 +7,7 @@
     <meta name="description" content="Daily intelligence reports from pftui's multi-timeframe analytics engine. Macro analysis, scenario probabilities, power structure signals, and cross-asset correlation mapping.">
     
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://pftui.com/newsletters/">
+    <meta property="og:url" content="https://pftui.com/reports/">
     <meta property="og:title" content="Intelligence Reports | pftui">
     <meta property="og:description" content="Daily macro intelligence from a multi-timeframe analytics engine. 19+ data sources, 4 intelligence layers, evidence-weighted scenarios.">
     
@@ -20,28 +20,28 @@
     
     <link rel="stylesheet" href="../style.css">
     <style>
-        .newsletters-hero {
+        .reports-hero {
             padding: var(--spacing-xl) 0 var(--spacing-lg);
             text-align: center;
         }
-        .newsletters-hero .hero-logo {
+        .reports-hero .hero-logo {
             margin-bottom: var(--spacing-sm);
         }
-        .newsletters-hero h1 {
+        .reports-hero h1 {
             font-family: var(--font-mono);
             font-size: 2rem;
             font-weight: 700;
             color: var(--text-primary);
             margin-bottom: var(--spacing-xs);
         }
-        .newsletters-hero p {
+        .reports-hero p {
             color: var(--text-secondary);
             max-width: 640px;
             margin: 0 auto;
             line-height: 1.6;
         }
         
-        .newsletter-controls {
+        .report-controls {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -49,7 +49,7 @@
             flex-wrap: wrap;
             gap: var(--spacing-sm);
         }
-        .newsletter-count {
+        .report-count {
             font-family: var(--font-mono);
             font-size: 0.85rem;
             color: var(--text-tertiary);
@@ -70,12 +70,12 @@
             border-color: var(--accent-cyan);
         }
         
-        .newsletter-list {
+        .report-list {
             display: flex;
             flex-direction: column;
             gap: var(--spacing-sm);
         }
-        .newsletter-item {
+        .report-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -87,40 +87,40 @@
             cursor: pointer;
             color: inherit;
         }
-        .newsletter-item:hover,
-        .newsletter-item.active {
+        .report-item:hover,
+        .report-item.active {
             border-color: var(--accent-cyan);
             background: var(--bg-tertiary);
         }
-        .newsletter-item:hover {
+        .report-item:hover {
             transform: translateY(-1px);
             box-shadow: var(--shadow-sm);
         }
-        .newsletter-item.active {
+        .report-item.active {
             border-color: var(--accent-green);
         }
-        .newsletter-info {
+        .report-info {
             display: flex;
             align-items: center;
             gap: 1rem;
         }
-        .newsletter-icon {
+        .report-icon {
             font-size: 1.5rem;
             flex-shrink: 0;
         }
-        .newsletter-details h3 {
+        .report-details h3 {
             font-family: var(--font-mono);
             font-size: 0.95rem;
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 0.2rem;
         }
-        .newsletter-details .newsletter-date {
+        .report-details .report-date {
             font-family: var(--font-mono);
             font-size: 0.8rem;
             color: var(--text-tertiary);
         }
-        .newsletter-badge {
+        .report-badge {
             font-family: var(--font-mono);
             font-size: 0.75rem;
             padding: 0.25rem 0.6rem;
@@ -130,24 +130,24 @@
             border: 1px solid rgba(137, 220, 235, 0.2);
             flex-shrink: 0;
         }
-        .newsletter-badge.latest {
+        .report-badge.latest {
             background: rgba(166, 227, 161, 0.1);
             color: var(--accent-green);
             border-color: rgba(166, 227, 161, 0.2);
         }
-        .newsletter-actions {
+        .report-actions {
             display: flex;
             align-items: center;
             gap: 0.5rem;
             flex-shrink: 0;
         }
-        .newsletter-arrow {
+        .report-arrow {
             color: var(--text-tertiary);
             font-size: 1.2rem;
             transition: transform 0.2s;
             margin-left: 0.5rem;
         }
-        .newsletter-item:hover .newsletter-arrow {
+        .report-item:hover .report-arrow {
             transform: translateX(3px);
             color: var(--accent-cyan);
         }
@@ -286,15 +286,15 @@
         }
 
         @media (max-width: 640px) {
-            .newsletter-item {
+            .report-item {
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 0.8rem;
             }
-            .newsletter-arrow {
+            .report-arrow {
                 display: none;
             }
-            .newsletters-hero h1 {
+            .reports-hero h1 {
                 font-size: 1.5rem;
             }
             .pdf-viewer-header {
@@ -306,7 +306,7 @@
     </style>
 </head>
 <body>
-    <section class="newsletters-hero">
+    <section class="reports-hero">
         <div class="container">
             <a href="../" class="back-link">← pftui.com</a>
             <a href="../"><img src="../assets/lockup.svg" alt="pftui" class="hero-logo" height="36"></a>
@@ -317,12 +317,12 @@
     
     <section style="padding: 0 0 var(--spacing-xl);">
         <div class="container">
-            <div class="newsletter-controls">
-                <span class="newsletter-count" id="count"></span>
+            <div class="report-controls">
+                <span class="report-count" id="count"></span>
                 <button class="sort-btn" id="sort-btn" onclick="toggleSort()">↓ newest first</button>
             </div>
             
-            <div class="newsletter-list" id="newsletter-list">
+            <div class="report-list" id="report-list">
                 <div class="pdf-loading">Loading reports...</div>
             </div>
             
@@ -374,11 +374,11 @@
     }
 
     function pdfUrl(file) {
-        return `/newsletter/${file}`;
+        return `/reports/${file}`;
     }
 
     function renderList() {
-        const list = document.getElementById('newsletter-list');
+        const list = document.getElementById('report-list');
         const count = document.getElementById('count');
         const sortBtn = document.getElementById('sort-btn');
         
@@ -400,19 +400,19 @@
             const isLatest = sortNewest ? i === 0 : i === sorted.length - 1;
             const isActive = activeFile === n.file;
             return `
-                <div class="newsletter-item${isActive ? ' active' : ''}" onclick="window._openPdf('${n.file}', '${n.title}')">
-                    <div class="newsletter-info">
-                        <span class="newsletter-icon">📊</span>
-                        <div class="newsletter-details">
+                <div class="report-item${isActive ? ' active' : ''}" onclick="window._openPdf('${n.file}', '${n.title}')">
+                    <div class="report-info">
+                        <span class="report-icon">📊</span>
+                        <div class="report-details">
                             <h3>${n.title}</h3>
-                            <span class="newsletter-date">${formatDate(n.date)}</span>
+                            <span class="report-date">${formatDate(n.date)}</span>
                         </div>
                     </div>
-                    <div class="newsletter-actions">
-                        ${isLatest ? '<span class="newsletter-badge latest">latest</span>' : ''}
-                        <span class="newsletter-badge">${n.type}</span>
+                    <div class="report-actions">
+                        ${isLatest ? '<span class="report-badge latest">latest</span>' : ''}
+                        <span class="report-badge">${n.type}</span>
                         <a class="download-link" href="${pdfUrl(n.file)}" download onclick="event.stopPropagation()">↓ pdf</a>
-                        <span class="newsletter-arrow">→</span>
+                        <span class="report-arrow">→</span>
                     </div>
                 </div>
             `;

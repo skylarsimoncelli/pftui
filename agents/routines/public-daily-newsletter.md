@@ -254,7 +254,7 @@ TITLE="PFTUI Daily Intelligence Report"
 
 # Copy PDF to newsletter dir
 cp /root/.openclaw/workspace-finance/reports/newsletter-${DATE_ISO}.pdf \
-  newsletter/${DATE_SLUG}.pdf
+  reports/${DATE_SLUG}.pdf
 
 # Update the newsletters page registry
 # Add a new entry to the NEWSLETTERS array in website/newsletters/index.html
@@ -263,7 +263,7 @@ sed -i "s|    \];|        { date: \"${DATE_ISO}\", title: \"${TITLE}\", file: \"
   website/newsletters/index.html
 
 # Commit and push
-git add newsletter/${DATE_SLUG}.pdf website/newsletters/index.html
+git add reports/${DATE_SLUG}.pdf website/newsletters/index.html
 git -c user.name="pftui-bot" -c user.email="pftui-bot@users.noreply.github.com" \
   commit -m "newsletter: Daily Intelligence Report — ${DATE_SLUG}"
 git push origin master
