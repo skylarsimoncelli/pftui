@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-26 — fix: clippy inconsistent digit grouping in futures test
+
+- What: Fixed two `clippy::inconsistent_digit_grouping` warnings in `src/commands/futures.rs` test. `5500_00` → `550_000` and `5490_00` → `549_000`. Values unchanged (both produce the same Decimal).
+- Why: Clippy was failing with `-D warnings` due to inconsistent underscore grouping in numeric literals introduced by PR #340.
+- Files: `src/commands/futures.rs` (+2/-2)
+- Tests: `cargo test` (1690 pass); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #348
+
 ### 2026-03-26 — feat: predictions stats/scorecard/unanswered subcommands
 
 - What: Converted flat `data predictions` and `analytics predictions` commands into subcommand groups. New subcommands: `markets` (default — prediction market odds from Polymarket/Manifold), `stats` (hit rate by conviction/timeframe/symbol/agent), `scorecard` (date-ordered scored predictions), `unanswered` (pending predictions awaiting scoring). Backward compatible — bare `data predictions --json` still shows market odds. Both `data` and `analytics` namespaces support all subcommands via shared `DataPredictionsCommand` enum and `dispatch_predictions()` helper.
