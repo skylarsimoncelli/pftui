@@ -2566,6 +2566,9 @@ pub enum AnalyticsCommand {
     Alignment {
         #[arg(long)]
         symbol: Option<String>,
+        /// Compact summary grouped by consensus (counts + notable symbols)
+        #[arg(long)]
+        summary: bool,
         #[arg(long)]
         json: bool,
     },
@@ -4828,6 +4831,44 @@ mod tests {
         };
         assert!(command.is_none());
         assert_eq!(threshold, "5");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_alignment_summary_flag() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "alignment", "--summary", "--json"])
+                .unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alignment {
+            symbol,
+            summary,
+            json,
+        } = command
+        else {
+            panic!("expected Alignment");
+        };
+        assert!(summary);
+        assert!(json);
+        assert!(symbol.is_none());
+    }
+
+    #[test]
+    fn parse_alignment_bare_no_summary() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "alignment", "--json"]).unwrap();
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::Alignment {
+            summary, json, ..
+        } = command
+        else {
+            panic!("expected Alignment");
+        };
+        assert!(!summary);
         assert!(json);
     }
 }

@@ -651,13 +651,14 @@ pub fn run(
             json_output,
         ),
         "alignment" => run_alignment(backend, symbol, json_output),
+        "alignment-summary" => run_alignment_summary(backend, symbol, json_output),
         "divergence" => run_divergence(backend, symbol, json_output),
         "digest" => run_digest(backend, from, limit, json_output),
         "recap" => run_recap(backend, date, limit, json_output),
         "weekly-review" => run_weekly_review(backend, limit.unwrap_or(7), json_output),
         "gaps" => run_gaps(backend, symbol, json_output),
         _ => bail!(
-            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, narrative, synthesis, low, medium, high, macro, alignment, divergence, digest, recap, weekly-review, gaps",
+            "unknown analytics action '{}'. Valid: technicals, levels, signals, summary, situation, deltas, catalysts, impact, opportunities, narrative, synthesis, low, medium, high, macro, alignment, alignment-summary, divergence, digest, recap, weekly-review, gaps",
             action
         ),
     }
@@ -3422,6 +3423,144 @@ fn run_alignment(
     Ok(())
 }
 
+fn run_alignment_summary(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let alignments = build_alignment_rows(backend, symbol).unwrap_or_default();
+
+    if alignments.is_empty() {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "total": 0,
+                    "groups": [],
+                    "avg_score_pct": 0.0,
+                    "dominant_consensus": "NONE",
+                }))?
+            );
+        } else {
+            println!("No assets available for alignment summary.");
+        }
+        return Ok(());
+    }
+
+    // Group by consensus
+    let mut groups: std::collections::BTreeMap<String, Vec<&AlignmentRow>> =
+        std::collections::BTreeMap::new();
+    for a in &alignments {
+        groups.entry(a.consensus.clone()).or_default().push(a);
+    }
+
+    let total = alignments.len();
+    let avg_score: f64 = alignments.iter().map(|a| a.score_pct).sum::<f64>() / total as f64;
+
+    // Dominant consensus = group with most symbols
+    let dominant = groups
+        .iter()
+        .max_by_key(|(_, v)| v.len())
+        .map(|(k, _)| k.clone())
+        .unwrap_or_else(|| "MIXED".to_string());
+
+    // Bull/bear layer averages
+    let avg_bull: f64 =
+        alignments.iter().map(|a| a.bull_layers as f64).sum::<f64>() / total as f64;
+    let avg_bear: f64 =
+        alignments.iter().map(|a| a.bear_layers as f64).sum::<f64>() / total as f64;
+
+    if json_output {
+        let group_json: Vec<serde_json::Value> = groups
+            .iter()
+            .map(|(consensus, rows)| {
+                let mut sorted = rows.clone();
+                sorted.sort_by(|a, b| {
+                    b.score_pct
+                        .partial_cmp(&a.score_pct)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                let symbols: Vec<&str> = sorted.iter().map(|r| r.symbol.as_str()).collect();
+                let grp_avg: f64 =
+                    sorted.iter().map(|r| r.score_pct).sum::<f64>() / sorted.len() as f64;
+                json!({
+                    "consensus": consensus,
+                    "count": rows.len(),
+                    "pct_of_total": (rows.len() as f64 / total as f64 * 100.0),
+                    "avg_score_pct": (grp_avg * 10.0).round() / 10.0,
+                    "symbols": symbols,
+                })
+            })
+            .collect();
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "total": total,
+                "avg_score_pct": (avg_score * 10.0).round() / 10.0,
+                "avg_bull_layers": (avg_bull * 100.0).round() / 100.0,
+                "avg_bear_layers": (avg_bear * 100.0).round() / 100.0,
+                "dominant_consensus": dominant,
+                "groups": group_json,
+            }))?
+        );
+    } else {
+        println!("Alignment Summary ({} assets)", total);
+        println!("{}", "─".repeat(50));
+        println!(
+            "Dominant consensus: {}  |  Avg score: {:.1}%",
+            dominant, avg_score
+        );
+        println!(
+            "Avg bull layers: {:.1}  |  Avg bear layers: {:.1}",
+            avg_bull, avg_bear
+        );
+        println!();
+
+        // Order: STRONG BUY, BULLISH, MIXED, BEARISH, STRONG AVOID
+        let order = [
+            "STRONG BUY",
+            "BULLISH",
+            "MIXED",
+            "BEARISH",
+            "STRONG AVOID",
+        ];
+        for consensus in &order {
+            if let Some(rows) = groups.get(*consensus) {
+                let pct = rows.len() as f64 / total as f64 * 100.0;
+                let bar = score_bar(pct);
+                let mut sorted = rows.clone();
+                sorted.sort_by(|a, b| {
+                    b.score_pct
+                        .partial_cmp(&a.score_pct)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                let top_symbols: Vec<&str> = sorted
+                    .iter()
+                    .take(5)
+                    .map(|r| r.symbol.as_str())
+                    .collect();
+                let more = if sorted.len() > 5 {
+                    format!(" +{} more", sorted.len() - 5)
+                } else {
+                    String::new()
+                };
+                println!(
+                    "{:<13} {:>3} ({:>4.1}%)  {}  {}{}",
+                    consensus,
+                    rows.len(),
+                    pct,
+                    bar,
+                    top_symbols.join(", "),
+                    more,
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 struct DivergenceRow {
     symbol: String,
@@ -3867,6 +4006,74 @@ mod tests {
             "run_alignment should not error: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn alignment_summary_empty_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_alignment_summary(&backend, None, true);
+        assert!(
+            result.is_ok(),
+            "run_alignment_summary should not error on empty db: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn alignment_summary_terminal_empty_db() {
+        let conn = crate::db::open_in_memory();
+        let backend = to_backend(conn);
+        let result = run_alignment_summary(&backend, None, false);
+        assert!(
+            result.is_ok(),
+            "run_alignment_summary terminal should not error on empty db: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn consensus_from_counts_strong_buy() {
+        assert_eq!(consensus_from_counts(4, 0), "STRONG BUY");
+    }
+
+    #[test]
+    fn consensus_from_counts_strong_avoid() {
+        assert_eq!(consensus_from_counts(0, 4), "STRONG AVOID");
+    }
+
+    #[test]
+    fn consensus_from_counts_bullish() {
+        assert_eq!(consensus_from_counts(3, 1), "BULLISH");
+    }
+
+    #[test]
+    fn consensus_from_counts_bearish() {
+        assert_eq!(consensus_from_counts(1, 3), "BEARISH");
+    }
+
+    #[test]
+    fn consensus_from_counts_mixed() {
+        assert_eq!(consensus_from_counts(2, 2), "MIXED");
+        assert_eq!(consensus_from_counts(1, 1), "MIXED");
+        assert_eq!(consensus_from_counts(0, 0), "MIXED");
+    }
+
+    #[test]
+    fn score_bar_extremes() {
+        let bar0 = score_bar(0.0);
+        assert_eq!(bar0, "░░░░░░░░░░");
+        let bar100 = score_bar(100.0);
+        assert_eq!(bar100, "██████████");
+        let bar50 = score_bar(50.0);
+        assert_eq!(bar50, "█████░░░░░");
+    }
+
+    #[test]
+    fn bias_from_score_directions() {
+        assert_eq!(bias_from_score(3), "bull");
+        assert_eq!(bias_from_score(-2), "bear");
+        assert_eq!(bias_from_score(0), "neutral");
     }
 
     #[test]
