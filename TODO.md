@@ -50,7 +50,8 @@ _(none)_
 2. ~~**P2: Correlation breaks × impact analysis cross-reference**~~ — ✅ Shipped #341. `--with-impact` flag on `analytics correlations latest --json`.
 3. ~~**P2: Sector-wide theme detection**~~ — ✅ Shipped #351. `analytics movers themes` subcommand. Detects rotation patterns across sectors/categories.
 4. ~~**P2: Prediction stats per-timeframe/agent filtering**~~ — ✅ Shipped #356. `--timeframe` and `--agent` flags on prediction stats.
+5. ~~**P2: News sentiment scoring**~~ — ✅ Shipped #358. `analytics news-sentiment` command + `data news --with-sentiment` flag. Keyword-based scoring with category aggregation.
 
-**Release eligibility:** ✅ READY — v0.18.0. 47+ commits since v0.17.0, 6 significant features shipped, 1713 tests passing, clippy clean, no P0 bugs.
+**Release eligibility:** ✅ READY — v0.19.0. 48+ commits since v0.18.0, 7 significant features shipped, 1728 tests passing, clippy clean, no P0 bugs.
 
 **GitHub stars:** 5 — Homebrew Core requires 50+.
