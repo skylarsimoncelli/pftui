@@ -196,7 +196,10 @@ fn detect_fred_discrepancies(
         if let Some(fred_indicator) = indicator_to_fred_series(&row.indicator) {
             // Skip series where FRED stores raw levels but economy table has
             // derived values — these are not directly comparable.
-            if fred_indicator == "PAYEMS" || fred_indicator == "CPIAUCSL" {
+            if fred_indicator == "PAYEMS"
+                || fred_indicator == "CPIAUCSL"
+                || fred_indicator == "PPIACO"
+            {
                 continue;
             }
 
@@ -237,11 +240,11 @@ fn fred_value_for_indicator(
 ) -> Option<(rust_decimal::Decimal, String)> {
     let fred_series = indicator_to_fred_series(indicator)?;
 
-    // PAYEMS (total employment) and CPIAUCSL (CPI index) are raw levels,
-    // not the derived values agents expect (MoM change and YoY% respectively).
+    // PAYEMS (total employment), CPIAUCSL (CPI index), and PPIACO (PPI index)
+    // are raw levels, not the derived values agents expect (MoM change, YoY%).
     // Skip these — they need historical computation via fred_derived_value_for_indicator.
     match fred_series {
-        "PAYEMS" | "CPIAUCSL" => return None,
+        "PAYEMS" | "CPIAUCSL" | "PPIACO" => return None,
         _ => {}
     }
 
@@ -287,6 +290,21 @@ fn fred_derived_value_for_indicator(
                 ((latest.value / year_ago.value) - Decimal::ONE) * Decimal::from(100);
             Some((yoy.round_dp(1), latest.date.clone()))
         }
+        "PPIACO" => {
+            // PPI: compute YoY% from FRED history (need 13+ months)
+            let history = economic_cache::get_history_backend(backend, "PPIACO", 14).ok()?;
+            if history.len() < 13 {
+                return None;
+            }
+            let latest = &history[history.len() - 1];
+            let year_ago = &history[history.len() - 13];
+            if year_ago.value == Decimal::ZERO {
+                return None;
+            }
+            let yoy =
+                ((latest.value / year_ago.value) - Decimal::ONE) * Decimal::from(100);
+            Some((yoy.round_dp(1), latest.date.clone()))
+        }
         _ => None,
     }
 }
@@ -299,20 +317,33 @@ fn indicator_to_fred_series(indicator: &str) -> Option<&'static str> {
         "nfp" => Some("PAYEMS"),
         "pmi_manufacturing" => Some("NAPM"),
         "initial_jobless_claims" => Some("ICSA"),
+        "cpi" => Some("CPIAUCSL"),
+        "ppi" => Some("PPIACO"),
         _ => None,
     }
 }
 
-/// Determine confidence based on FRED observation freshness.
+/// Determine confidence for a FRED-sourced indicator.
+///
+/// FRED data is inherently authoritative — source reliability is high regardless
+/// of age. Confidence reflects whether the data is current relative to the
+/// indicator's release frequency (monthly, weekly, etc.).
+///
+/// Most economic indicators are released monthly (CPI, NFP, unemployment, PMI,
+/// PPI, fed funds). Within two release cycles (60 days) the data is current.
+/// Weekly indicators (jobless claims) use a tighter window.
 fn confidence_for_fred_date(date: &str) -> String {
     use chrono::{NaiveDate, Utc};
     let Ok(obs_date) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
         return "medium".to_string();
     };
     let age_days = (Utc::now().date_naive() - obs_date).num_days();
-    if age_days <= 7 {
+    // FRED data is authoritative. Most economic indicators update monthly,
+    // so data within 60 days (two release cycles) is fully current.
+    // Even older FRED data is more reliable than Brave scraping.
+    if age_days <= 60 {
         "high".to_string()
-    } else if age_days <= 45 {
+    } else if age_days <= 120 {
         "medium".to_string()
     } else {
         "low".to_string()

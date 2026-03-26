@@ -2481,7 +2481,7 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Situation Room — active situation monitoring and management
+    /// Situation Room — active situation monitoring and management (see also: `analytics scenario` for macro scenarios)
     Situation {
         #[command(subcommand)]
         command: Option<SituationCommand>,
@@ -2645,6 +2645,8 @@ pub enum AnalyticsCommand {
         #[command(subcommand)]
         command: AnalyticsAlertsCommand,
     },
+    /// Macro scenario tracking: add, list, update, and manage probability scenarios
+    #[command(alias = "scenarios")]
     Scenario {
         #[command(subcommand)]
         command: AnalyticsScenarioCommand,
@@ -2787,8 +2789,8 @@ pub enum Command {
         command: Option<PortfolioCommand>,
     },
 
-    /// Multi-timeframe analytics engine views
-    #[command(name = "analytics")]
+    /// Multi-timeframe analytics engine views (includes scenario, situation, signals, synthesis)
+    #[command(name = "analytics", after_help = "Key subcommands:\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis")]
     Analytics {
         #[command(subcommand)]
         command: AnalyticsCommand,
