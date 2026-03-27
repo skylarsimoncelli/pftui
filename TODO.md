@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [Feedback] **Economy indicator confidence depth** — Evening Analyst (72/75 Mar 27) reports "data economy confidence is low on most indicators which limits analytical value vs raw web_search." The #339 fix improved FRED thresholds (7d→60d) and added CPI/PPI FRED mappings, but many indicators still show low confidence. Investigate: expand FRED series coverage for core macro indicators (unemployment rate, retail sales, industrial production), add multi-source cross-validation where possible, and surface confidence reasoning in `data economy --json` output so agents can decide when to supplement with web search. Files: `src/commands/economy.rs`, `src/data/economic.rs`, `src/data/fred.rs`.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 
