@@ -30,7 +30,7 @@ _(none)_
 |--------|-----------|---------|------|-------|
 | Evening Analyst | 72% | 75% | Mar 27 | ↑ (recovered from 65/68 Mar 26. Journal entry UX fix #375 shipped. Economy confidence still a pain point. **Lowest scorer — priority.**) |
 | Medium-Timeframe Analyst | 85% | 88% | Mar 27 | ↑ (overall up 80→88. Power flow assess #372 shipped for FIC/MIC/TIC weekly tracking.) |
-| Low-Timeframe Analyst | 85% | 90% | Mar 26 | ↑ (recovered from 75/80. Regime-flows #369, prediction stats filters #356, news sentiment #358 all shipped.) |
+| Low-Timeframe Analyst | 85% | 90% | Mar 27 | ↑ (recovered from 75/80. Synthesis power structure integration #384 shipped. Regime-flows #369, prediction stats filters #356, news sentiment #358 all shipped.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 26 | → (stable. Scenario suggest #366 shipped.) |
 | Morning Brief | 85% | 88% | Mar 26 | → (stable. Consolidated morning-brief #363 shipped.) |
 | Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent. System healthy.) |
@@ -45,7 +45,9 @@ _(none)_
 - All other testers stable.
 
 **Shipped since last review (Mar 26):**
-1. ✅ **Power flow weekly assessment** — #372. `analytics power-flow assess` for FIC/MIC/TIC tracking.
+1. ✅ **Synthesis power structure integration** — #384. `analytics synthesis --json` now includes FIC/MIC/TIC context.
+2. ✅ **Economy indicator confidence depth** — #381. FRED 5→15 indicators, confidence_reason, previous/change.
+3. ✅ **Power flow weekly assessment** — #372. `analytics power-flow assess` for FIC/MIC/TIC tracking.
 2. ✅ **Regime-asset flow correlation tracker** — #369. `analytics regime-flows --json`.
 3. ✅ **Automated scenario probability suggestions** — #366. `analytics scenario suggest --json`.
 4. ✅ **Consolidated morning-brief command** — #363. `analytics morning-brief --json`.
