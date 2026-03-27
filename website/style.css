@@ -1212,8 +1212,8 @@ footer {
     }
     
     .hero {
-        min-height: auto;
-        padding: var(--spacing-md) 0 var(--spacing-lg);
+        min-height: 100vh;
+        padding: var(--spacing-lg) 0 var(--spacing-lg);
     }
     
     .hero-logo {
