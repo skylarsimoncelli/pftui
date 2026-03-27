@@ -370,6 +370,26 @@ fn get_previous_inventory_postgres(
     }))
 }
 
+/// Count total entries in comex_cache (used for fallback status reporting).
+pub fn count_entries(conn: &Connection) -> Result<usize> {
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM comex_cache", [], |row| row.get(0))?;
+    Ok(count as usize)
+}
+
+pub fn count_entries_backend(backend: &BackendConnection) -> Result<usize> {
+    query::dispatch(backend, count_entries, count_entries_postgres)
+}
+
+fn count_entries_postgres(pool: &PgPool) -> Result<usize> {
+    ensure_table_postgres(pool)?;
+    let count: i64 = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM comex_cache")
+            .fetch_one(pool)
+            .await
+    })?;
+    Ok(count as usize)
+}
+
 fn has_fresh_data_postgres(pool: &PgPool, symbol: &str) -> Result<bool> {
     ensure_table_postgres(pool)?;
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();

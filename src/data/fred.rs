@@ -69,12 +69,9 @@ pub const FRED_SERIES: &[FredSeries] = &[
         unit: "billions_usd",
         frequency: Frequency::Monthly,
     },
-    FredSeries {
-        id: "NAPM",
-        name: "ISM Manufacturing PMI",
-        unit: "index",
-        frequency: Frequency::Monthly,
-    },
+    // NOTE: ISM Manufacturing PMI (formerly NAPM) is proprietary and not
+    // available on FRED. PMI data comes from Brave web search or BLS instead.
+    // The "NAPM" series was removed because it returns HTTP 400 from FRED.
     FredSeries {
         id: "JTSJOL",
         name: "JOLTS Job Openings",
@@ -417,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_fred_series_count() {
-        assert_eq!(FRED_SERIES.len(), 12);
+        assert_eq!(FRED_SERIES.len(), 11);
     }
 
     #[test]

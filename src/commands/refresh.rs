@@ -926,7 +926,7 @@ fn run_pipeline(
                 return None;
             }
             let start = Instant::now();
-            match calendar::fetch_events(7) {
+            match calendar::fetch_events(30) {
                 Ok(mut events) => {
                     let bk = brave_key.clone();
                     if !bk.is_empty() {
@@ -2668,18 +2668,35 @@ fn store_comex_result(
                 detail: None,
             });
         } else {
-            info_ln!(verbose, "✗ COMEX (all failed)");
-            dag_result.add(SourceResult {
-                name: "comex".to_string(),
-                label: "COMEX".to_string(),
-                status: SourceStatus::Failed,
-                items_updated: None,
-                duration_ms: comex_start.elapsed().as_millis() as u64,
-                reason: None,
-                age_minutes: None,
-                error: Some("all metals failed".to_string()),
-                detail: None,
-            });
+            // Check if we have stale cached data — still usable for agents
+            let cached_count = comex_cache::count_entries_backend(backend).unwrap_or(0);
+            if cached_count > 0 {
+                info_ln!(verbose, "⚠ COMEX (live fetch failed, {} stale cached entries available)", cached_count);
+                dag_result.add(SourceResult {
+                    name: "comex".to_string(),
+                    label: "COMEX".to_string(),
+                    status: SourceStatus::Ok,
+                    items_updated: Some(0),
+                    duration_ms: comex_start.elapsed().as_millis() as u64,
+                    reason: Some(format!("live fetch failed, using {} cached entries", cached_count)),
+                    age_minutes: None,
+                    error: None,
+                    detail: None,
+                });
+            } else {
+                info_ln!(verbose, "✗ COMEX (all failed, no cache)");
+                dag_result.add(SourceResult {
+                    name: "comex".to_string(),
+                    label: "COMEX".to_string(),
+                    status: SourceStatus::Failed,
+                    items_updated: None,
+                    duration_ms: comex_start.elapsed().as_millis() as u64,
+                    reason: None,
+                    age_minutes: None,
+                    error: Some("all metals failed, no cache".to_string()),
+                    detail: None,
+                });
+            }
         }
     } else if in_plan {
         info_ln!(verbose, "⊘ COMEX (fresh, skipping)");

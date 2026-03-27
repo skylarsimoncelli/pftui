@@ -9,6 +9,13 @@ use crate::db::macro_events;
 
 pub fn run(backend: &BackendConnection, indicator: Option<&str>, json: bool) -> Result<()> {
     let mut rows = economic_data::get_all_backend(backend)?;
+
+    // If economic_data table is empty (BLS/Brave both failed), synthesize
+    // indicator rows from FRED cache data so agents always get values.
+    if rows.is_empty() {
+        rows = synthesize_from_fred(backend);
+    }
+
     let macro_events = macro_events::list_recent_backend(backend, 10)?;
 
     // Cross-reference with FRED data from economic_cache for discrepancy detection
@@ -315,7 +322,7 @@ fn indicator_to_fred_series(indicator: &str) -> Option<&'static str> {
         "fed_funds_rate" => Some("FEDFUNDS"),
         "unemployment_rate" => Some("UNRATE"),
         "nfp" => Some("PAYEMS"),
-        "pmi_manufacturing" => Some("NAPM"),
+        // ISM PMI is proprietary, not available on FRED
         "initial_jobless_claims" => Some("ICSA"),
         "cpi" => Some("CPIAUCSL"),
         "ppi" => Some("PPIACO"),
@@ -383,6 +390,93 @@ fn indicator_metadata(indicator: &str) -> (&str, &str) {
         "yield_spread_10y2y" => ("%", "10Y-2Y Yield Spread"),
         _ => ("", indicator),
     }
+}
+
+/// Synthesize economy indicator entries from FRED cache when economic_data table is empty.
+///
+/// This ensures agents always get economy data even when BLS is rate-limited
+/// and Brave scraping produces garbage. FRED is authoritative and already cached.
+fn synthesize_from_fred(backend: &BackendConnection) -> Vec<economic_data::EconomicDataEntry> {
+    let fred_obs = economic_cache::get_all_latest_backend(backend).unwrap_or_default();
+    if fred_obs.is_empty() {
+        return Vec::new();
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut entries = Vec::new();
+
+    // Direct-value indicators (FRED value IS the indicator value)
+    let direct_series = [
+        ("FEDFUNDS", "fed_funds_rate"),
+        ("UNRATE", "unemployment_rate"),
+        ("ICSA", "initial_jobless_claims"),
+        ("DGS10", "treasury_10y"),
+        ("T10Y2Y", "yield_spread_10y2y"),
+        ("GDP", "gdp"),
+        ("PCE", "pce"),
+        ("JTSJOL", "jolts"),
+    ];
+
+    for (series_id, indicator) in direct_series {
+        if let Some(obs) = fred_obs.iter().find(|o| o.series_id == series_id) {
+            let confidence = confidence_for_fred_date(&obs.date);
+            entries.push(economic_data::EconomicDataEntry {
+                indicator: indicator.to_string(),
+                value: obs.value,
+                previous: None,
+                change: None,
+                source_url: format!("https://fred.stlouisfed.org/series/{}", series_id),
+                source: "fred".to_string(),
+                confidence,
+                fetched_at: now.clone(),
+            });
+        }
+    }
+
+    // Derived indicators: NFP (month-over-month change from PAYEMS)
+    if let Some((nfp_value, nfp_date)) = fred_derived_value_for_indicator("nfp", backend) {
+        entries.push(economic_data::EconomicDataEntry {
+            indicator: "nfp".to_string(),
+            value: nfp_value,
+            previous: None,
+            change: None,
+            source_url: "https://fred.stlouisfed.org/series/PAYEMS".to_string(),
+            source: "fred".to_string(),
+            confidence: confidence_for_fred_date(&nfp_date),
+            fetched_at: now.clone(),
+        });
+    }
+
+    // Derived indicators: CPI (YoY% from CPIAUCSL index)
+    if let Some((cpi_value, cpi_date)) = fred_derived_value_for_indicator("cpi", backend) {
+        entries.push(economic_data::EconomicDataEntry {
+            indicator: "cpi".to_string(),
+            value: cpi_value,
+            previous: None,
+            change: None,
+            source_url: "https://fred.stlouisfed.org/series/CPIAUCSL".to_string(),
+            source: "fred".to_string(),
+            confidence: confidence_for_fred_date(&cpi_date),
+            fetched_at: now.clone(),
+        });
+    }
+
+    // Derived indicators: PPI (YoY% from PPIACO index)
+    if let Some((ppi_value, ppi_date)) = fred_derived_value_for_indicator("ppi", backend) {
+        entries.push(economic_data::EconomicDataEntry {
+            indicator: "ppi".to_string(),
+            value: ppi_value,
+            previous: None,
+            change: None,
+            source_url: "https://fred.stlouisfed.org/series/PPIACO".to_string(),
+            source: "fred".to_string(),
+            confidence: confidence_for_fred_date(&ppi_date),
+            fetched_at: now.clone(),
+        });
+    }
+
+    entries.sort_by(|a, b| a.indicator.cmp(&b.indicator));
+    entries
 }
 
 fn _truncate_url(url: &str, max: usize) -> String {

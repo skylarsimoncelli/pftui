@@ -101,11 +101,24 @@ pub async fn fetch_bls_data(series_ids: &[&str]) -> Result<Vec<BlsDataPoint>> {
         .await
         .context("BLS API request failed")?;
 
-    if !resp.status().is_success() {
-        anyhow::bail!("BLS API HTTP error: {}", resp.status());
+    let status = resp.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.as_u16() == 429 {
+        anyhow::bail!("BLS API rate limited (429). Free tier allows 10 calls/day. Skipping until next day.");
     }
 
-    let api_resp: BlsApiResponse = resp.json().await.context("BLS API JSON parse failed")?;
+    if !status.is_success() {
+        anyhow::bail!("BLS API HTTP error: {}", status);
+    }
+
+    // BLS returns HTML instead of JSON when rate-limited (even with 200 status).
+    // Peek at the body to detect this before JSON parsing fails.
+    let body_text = resp.text().await.context("BLS API response read failed")?;
+    if body_text.trim_start().starts_with('<') {
+        anyhow::bail!("BLS API rate limited (returned HTML instead of JSON). Free tier allows 10 calls/day.");
+    }
+
+    let api_resp: BlsApiResponse = serde_json::from_str(&body_text)
+        .context("BLS API JSON parse failed")?;
 
     if api_resp.status != "REQUEST_SUCCEEDED" {
         anyhow::bail!("BLS API status: {}", api_resp.status);

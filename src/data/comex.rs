@@ -85,11 +85,17 @@ pub fn fetch_inventory(symbol: &str) -> Result<ComexInventory> {
         .ok_or_else(|| anyhow!("Unknown COMEX symbol: {}", symbol))?;
 
     let client = reqwest::blocking::Client::builder()
-        .user_agent("pftui/0.4.1")
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(30))
+        // CME blocks HTTP/2 with INTERNAL_ERROR; force HTTP/1.1
+        .http1_only()
         .build()?;
 
-    let resp = client.get(metal.url).send()?;
+    let resp = client
+        .get(metal.url)
+        .header("Accept", "application/vnd.ms-excel,*/*")
+        .header("Referer", "https://www.cmegroup.com/clearing/operations-and-deliveries/nymex-delivery-notices.html")
+        .send()?;
     if !resp.status().is_success() {
         return Err(anyhow!(
             "COMEX fetch failed: {} (status {})",

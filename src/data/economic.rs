@@ -79,7 +79,7 @@ pub fn fred_to_indicator(series_id: &str) -> Option<&'static str> {
         "FEDFUNDS" => Some("fed_funds_rate"),
         "UNRATE" => Some("unemployment_rate"),
         "PAYEMS" => Some("nfp"),
-        "NAPM" => Some("pmi_manufacturing"),
+        // ISM PMI is proprietary, not available on FRED
         "ICSA" => Some("initial_jobless_claims"),
         // CPIAUCSL is an index, not a YoY rate, so not directly comparable to Brave "cpi"
         // PPIACO is also an index, not a YoY rate
@@ -596,7 +596,8 @@ mod tests {
         assert_eq!(fred_to_indicator("FEDFUNDS"), Some("fed_funds_rate"));
         assert_eq!(fred_to_indicator("UNRATE"), Some("unemployment_rate"));
         assert_eq!(fred_to_indicator("PAYEMS"), Some("nfp"));
-        assert_eq!(fred_to_indicator("NAPM"), Some("pmi_manufacturing"));
+        // ISM PMI is proprietary, not on FRED
+        assert_eq!(fred_to_indicator("NAPM"), None);
         assert_eq!(fred_to_indicator("ICSA"), Some("initial_jobless_claims"));
         // CPI index is not directly comparable to CPI YoY rate
         assert_eq!(fred_to_indicator("CPIAUCSL"), None);

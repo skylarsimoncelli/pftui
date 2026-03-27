@@ -222,12 +222,16 @@ fn get_cached_predictions_postgres(pool: &PgPool, limit: usize) -> Result<Vec<Pr
 
 fn get_last_update_postgres(pool: &PgPool) -> Result<Option<i64>> {
     ensure_table_postgres(pool)?;
-    let ts: Option<i64> = crate::db::pg_runtime::block_on(async {
-        sqlx::query_scalar::<_, Option<i64>>("SELECT MAX(updated_at) FROM predictions_cache")
-            .fetch_one(pool)
-            .await
+    // Use COALESCE to avoid NULL decode issues: returns 0 when table is empty,
+    // then we map 0 back to None for the caller.
+    let ts: i64 = crate::db::pg_runtime::block_on(async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COALESCE(MAX(updated_at), 0) FROM predictions_cache",
+        )
+        .fetch_one(pool)
+        .await
     })?;
-    Ok(ts)
+    Ok(if ts == 0 { None } else { Some(ts) })
 }
 
 #[cfg(test)]
