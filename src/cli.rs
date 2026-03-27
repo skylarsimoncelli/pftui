@@ -1310,15 +1310,25 @@ pub enum MirrorCommand {
 
 #[derive(Subcommand)]
 pub enum JournalEntryCommand {
+    /// Add a journal entry. Content can be positional or via --content flag.
+    ///
+    /// Examples:
+    ///   pftui journal entry add "Gold looking strong" --tag macro --symbol GC=F
+    ///   pftui journal entry add --content "Fed meeting notes" --date 2026-03-27
+    ///   pftui journal entry add "BTC thesis update" --conviction high --tag btc
     Add {
-        value: String,
+        /// The journal entry text (positional). Alternative: use --content flag.
+        value: Option<String>,
+        /// The journal entry text (named flag). Overrides positional value if both given.
         #[arg(long)]
+        content: Option<String>,
+        #[arg(long, help = "Entry date (YYYY-MM-DD). Defaults to today.")]
         date: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Tag for categorization (e.g. macro, btc, trade).")]
         tag: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Related asset symbol (e.g. BTC-USD, GC=F).")]
         symbol: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Conviction level (e.g. high, medium, low).")]
         conviction: Option<String>,
         #[arg(long)]
         json: bool,
@@ -5269,5 +5279,111 @@ mod tests {
         assert_eq!(days, 14);
         assert_eq!(complex.as_deref(), Some("FIC"));
         assert!(json);
+    }
+
+    #[test]
+    fn journal_entry_add_positional_value() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "entry",
+            "add",
+            "Gold looking strong",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { value, content, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        assert_eq!(value.as_deref(), Some("Gold looking strong"));
+        assert!(content.is_none());
+    }
+
+    #[test]
+    fn journal_entry_add_content_flag() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "entry",
+            "add",
+            "--content",
+            "Fed meeting notes",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { value, content, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        assert!(value.is_none());
+        assert_eq!(content.as_deref(), Some("Fed meeting notes"));
+    }
+
+    #[test]
+    fn journal_entry_add_content_overrides_positional() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "journal",
+            "entry",
+            "add",
+            "positional text",
+            "--content",
+            "flag text wins",
+        ])
+        .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { value, content, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        // Both present — main.rs resolves content.or(value), so content wins
+        assert_eq!(value.as_deref(), Some("positional text"));
+        assert_eq!(content.as_deref(), Some("flag text wins"));
+    }
+
+    #[test]
+    fn journal_entry_add_no_value_no_content_parses() {
+        // Clap allows this since value is now optional; main.rs handles the error
+        let cli = Cli::try_parse_from(["pftui", "journal", "entry", "add", "--tag", "macro"])
+            .unwrap();
+        let Command::Journal { command } = cli.command.unwrap() else {
+            panic!("expected Journal");
+        };
+        let JournalCommand::Entry { command: entry_cmd } = command.unwrap() else {
+            panic!("expected Entry");
+        };
+        let JournalEntryCommand::Add { value, content, .. } = entry_cmd else {
+            panic!("expected Add");
+        };
+        assert!(value.is_none());
+        assert!(content.is_none());
+    }
+
+    #[test]
+    fn journal_entry_add_help_shows_content_flag() -> Result<()> {
+        let help = subcommand_help(&["journal", "entry", "add"])?;
+        assert!(help.contains("--content"), "help should show --content flag");
+        assert!(
+            help.contains("--date"),
+            "help should show --date flag"
+        );
+        assert!(
+            help.contains("YYYY-MM-DD"),
+            "help should describe date format"
+        );
+        Ok(())
     }
 }
