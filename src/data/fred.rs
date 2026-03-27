@@ -11,6 +11,9 @@
 //! - PPIACO: Producer Price Index - All Commodities (monthly)
 //! - UNRATE: Unemployment Rate (monthly)
 //! - T10Y2Y: 10-Year Treasury Minus 2-Year Treasury (daily, yield curve spread)
+//! - RSAFS: Advance Retail Sales: Retail and Food Services (monthly)
+//! - INDPRO: Industrial Production Index (monthly)
+//! - UMCSENT: University of Michigan Consumer Sentiment (monthly)
 
 use anyhow::{bail, Result};
 use chrono::{NaiveDate, Utc};
@@ -88,6 +91,24 @@ pub const FRED_SERIES: &[FredSeries] = &[
         id: "PAYEMS",
         name: "Nonfarm Payrolls",
         unit: "thousands",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "RSAFS",
+        name: "Retail Sales",
+        unit: "millions_usd",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "INDPRO",
+        name: "Industrial Production Index",
+        unit: "index",
+        frequency: Frequency::Monthly,
+    },
+    FredSeries {
+        id: "UMCSENT",
+        name: "Consumer Sentiment (UMich)",
+        unit: "index",
         frequency: Frequency::Monthly,
     },
 ];
@@ -414,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_fred_series_count() {
-        assert_eq!(FRED_SERIES.len(), 11);
+        assert_eq!(FRED_SERIES.len(), 14);
     }
 
     #[test]
