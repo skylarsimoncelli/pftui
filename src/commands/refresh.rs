@@ -871,11 +871,13 @@ fn run_pipeline(
                         used_brave = true;
                         Ok(v)
                     }
-                    Ok(_) => economic::fetch_bls_fallback().await,
-                    Err(_) => economic::fetch_bls_fallback().await,
+                    Ok(_) => economic::fetch_bls_fallback().await.or_else(|_| Ok(Vec::new())),
+                    Err(_) => economic::fetch_bls_fallback().await.or_else(|_| Ok(Vec::new())),
                 }
             } else {
-                economic::fetch_bls_fallback().await
+                // BLS fallback — if rate-limited, return empty (FRED cache
+                // synthesis in the economy command provides data anyway).
+                economic::fetch_bls_fallback().await.or_else(|_| Ok(Vec::new()))
             };
             Some((readings, used_brave, start.elapsed()))
         };

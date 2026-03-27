@@ -23,6 +23,8 @@ pub struct BlsDataPoint {
 #[derive(Debug, Deserialize)]
 struct BlsApiResponse {
     status: String,
+    #[serde(default)]
+    message: Vec<String>,
     #[serde(rename = "Results")]
     results: Option<BlsResults>,
 }
@@ -121,6 +123,12 @@ pub async fn fetch_bls_data(series_ids: &[&str]) -> Result<Vec<BlsDataPoint>> {
         .context("BLS API JSON parse failed")?;
 
     if api_resp.status != "REQUEST_SUCCEEDED" {
+        // Detect rate-limiting: BLS returns REQUEST_NOT_PROCESSED with a threshold message
+        let is_rate_limited = api_resp.status == "REQUEST_NOT_PROCESSED"
+            && api_resp.message.iter().any(|m| m.contains("threshold"));
+        if is_rate_limited {
+            anyhow::bail!("BLS API rate limited (daily threshold reached). Free tier allows 10 calls/day.");
+        }
         anyhow::bail!("BLS API status: {}", api_resp.status);
     }
 
