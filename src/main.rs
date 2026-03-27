@@ -33,20 +33,32 @@ fn run_agent_journal(
         Some(cli::JournalCommand::Entry { command }) => match command {
             cli::JournalEntryCommand::Add {
                 value,
+                content,
                 date,
                 tag,
                 symbol,
                 conviction,
                 json,
-            } => commands::journal::run_add(
-                backend,
-                &value,
-                date.as_deref(),
-                tag.as_deref(),
-                symbol.as_deref(),
-                conviction.as_deref(),
-                json,
-            ),
+            } => {
+                let resolved = content.or(value).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "journal entry text required.\n\n\
+                         Usage:\n  \
+                         pftui journal entry add \"your entry text\"\n  \
+                         pftui journal entry add --content \"your entry text\"\n\n\
+                         Run 'pftui journal entry add --help' for all options."
+                    )
+                })?;
+                commands::journal::run_add(
+                    backend,
+                    &resolved,
+                    date.as_deref(),
+                    tag.as_deref(),
+                    symbol.as_deref(),
+                    conviction.as_deref(),
+                    json,
+                )
+            }
             cli::JournalEntryCommand::List {
                 limit,
                 since,
