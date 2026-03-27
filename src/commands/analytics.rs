@@ -2248,6 +2248,42 @@ fn run_synthesis(backend: &BackendConnection, json_output: bool) -> Result<()> {
                 println!("- {} {}", item.symbol, item.summary);
             }
         }
+        if let Some(ps) = &report.power_structure {
+            println!("\nPower structure (FIC/MIC/TIC):");
+            for c in &ps.complexes {
+                let arrow = match c.trend.as_str() {
+                    "ascending" => "↑",
+                    "descending" => "↓",
+                    "volatile" => "↕",
+                    _ => "→",
+                };
+                println!(
+                    "  {} {} net {:+} ({} gaining, {} losing)",
+                    c.complex, arrow, c.net_score, c.gaining_events, c.losing_events
+                );
+            }
+            println!("  Regime: {}", ps.regime_classification);
+            if ps.regime_shift_detected {
+                println!(
+                    "  ⚠ Shift: {}",
+                    ps.shift_description.as_deref().unwrap_or("detected")
+                );
+            }
+            if let Some(overlay) = &ps.regime_overlay {
+                println!("  Overlay: {}", overlay);
+            }
+        }
+        if !report.unresolved_tensions.is_empty() {
+            println!("\nUnresolved tensions:");
+            for t in &report.unresolved_tensions {
+                let icon = if t.severity == "critical" {
+                    "🔴"
+                } else {
+                    "🟡"
+                };
+                println!("  {} {} — {}", icon, t.title, t.detail);
+            }
+        }
     }
 
     Ok(())
