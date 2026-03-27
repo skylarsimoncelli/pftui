@@ -3,6 +3,13 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-27 — fix: journal entry add UX — add --content flag and help text
+
+- What: Fixed confusing UX on `journal entry add` where the main content required a bare positional `<VALUE>` with no description alongside named flags (`--date`, `--tag`, etc.). Made value optional, added `--content` as a named flag alternative (overrides positional if both given). Added help text to all flags: `--date` now shows "YYYY-MM-DD. Defaults to today.", `--tag` shows "Tag for categorization", `--symbol` shows "Related asset symbol", `--conviction` shows "Conviction level". Added doc comment with three usage examples. Clear error message when neither positional nor --content is provided, showing correct usage.
+- Why: Evening Analyst feedback (Mar 27, 72/75): "journal entry add requires positional VALUE but help shows named flags for date/type/content - confusing UX." Agents can now use either `pftui journal entry add "text"` (backwards-compatible) or `pftui journal entry add --content "text" --tag macro --date 2026-03-27` (fully named).
+- Files: `src/cli.rs` (+113: optional value, --content flag, help text on all flags, doc comment with examples, 5 new tests), `src/main.rs` (+17: content.or(value) resolution with descriptive error)
+- Tests: 1787 passing (+5 new: positional, --content flag, content overrides positional, no value parses, help shows content flag). Clippy clean.
+
 ### 2026-03-27 — feat: power flow weekly assessment (`analytics power-flow assess`)
 
 - What: Added `pftui analytics power-flow assess [--days N] [--complex FIC|MIC|TIC] [--json]` that generates a structured FIC/MIC/TIC power assessment from logged power flow events. Per-complex assessment includes net score, gaining/losing event counts and magnitudes, trend direction (ascending/descending/stable/volatile) computed by comparing first-half vs second-half of the period, average magnitude, and top 3 events. Directed power shift tracking between complexes with counts and magnitudes. Key events filter (magnitude ≥ 4). Trend analysis with regime classification (FIC/MIC/TIC-dominant, contested, or no-data), power concentration metric (0.0-1.0), and regime shift detection when a complex reverses from losing to gaining or vice versa. Terminal output with trend icons and structured sections. Full JSON output for agent consumption. `--complex` flag filters terminal display to a single complex while maintaining full JSON output. `after_help` with cross-references to related commands.
