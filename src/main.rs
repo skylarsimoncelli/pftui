@@ -3604,6 +3604,16 @@ fn main() -> Result<()> {
                 cli::AnalyticsPowerFlowCommand::Balance { days, json } => {
                     commands::power_flow::run_balance(&backend, days, json)
                 }
+                cli::AnalyticsPowerFlowCommand::Assess {
+                    days,
+                    complex,
+                    json,
+                } => commands::power_flow::run_assess(
+                    &backend,
+                    days,
+                    complex.as_deref(),
+                    json,
+                ),
             },
             cli::AnalyticsCommand::NewsSentiment {
                 category,

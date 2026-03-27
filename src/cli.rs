@@ -2835,6 +2835,27 @@ pub enum AnalyticsPowerFlowCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Generate a structured FIC/MIC/TIC power assessment with trend analysis, key events, and regime detection
+    #[command(after_help = "Analyzes logged power flow events to produce a comprehensive assessment:\n\n\
+        • Per-complex net scores, event counts, and trend direction\n\
+        • First-half vs second-half trend comparison for momentum detection\n\
+        • Directed power shifts between complexes\n\
+        • Key events (magnitude ≥ 4)\n\
+        • Regime classification (FIC/MIC/TIC-dominant or contested)\n\
+        • Regime shift detection when a complex reverses direction\n\n\
+        Designed for weekly assessments by medium-timeframe analysts.\n\n\
+        See also: analytics power-flow balance, analytics power-flow list, analytics regime-flows")]
+    Assess {
+        /// Number of days to assess (default: 7)
+        #[arg(long, default_value_t = 7)]
+        days: usize,
+        /// Filter assessment to a single complex: FIC, MIC, or TIC
+        #[arg(long)]
+        complex: Option<String>,
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -5194,5 +5215,59 @@ mod tests {
             panic!("expected RegimeFlows");
         };
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_power_flow_assess_defaults() {
+        let cli = Cli::parse_from(["pftui", "analytics", "power-flow", "assess"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::PowerFlow { command } = command else {
+            panic!("expected PowerFlow");
+        };
+        let AnalyticsPowerFlowCommand::Assess {
+            days,
+            complex,
+            json,
+        } = command
+        else {
+            panic!("expected Assess");
+        };
+        assert_eq!(days, 7);
+        assert!(complex.is_none());
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_power_flow_assess_all_flags() {
+        let cli = Cli::parse_from([
+            "pftui",
+            "analytics",
+            "power-flow",
+            "assess",
+            "--days",
+            "14",
+            "--complex",
+            "FIC",
+            "--json",
+        ]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::PowerFlow { command } = command else {
+            panic!("expected PowerFlow");
+        };
+        let AnalyticsPowerFlowCommand::Assess {
+            days,
+            complex,
+            json,
+        } = command
+        else {
+            panic!("expected Assess");
+        };
+        assert_eq!(days, 14);
+        assert_eq!(complex.as_deref(), Some("FIC"));
+        assert!(json);
     }
 }
