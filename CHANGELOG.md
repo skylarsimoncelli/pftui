@@ -3,6 +3,14 @@
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 > Automated runs append here after completing TODO items.
 
+### 2026-03-27 — feat: power flow weekly assessment (`analytics power-flow assess`)
+
+- What: Added `pftui analytics power-flow assess [--days N] [--complex FIC|MIC|TIC] [--json]` that generates a structured FIC/MIC/TIC power assessment from logged power flow events. Per-complex assessment includes net score, gaining/losing event counts and magnitudes, trend direction (ascending/descending/stable/volatile) computed by comparing first-half vs second-half of the period, average magnitude, and top 3 events. Directed power shift tracking between complexes with counts and magnitudes. Key events filter (magnitude ≥ 4). Trend analysis with regime classification (FIC/MIC/TIC-dominant, contested, or no-data), power concentration metric (0.0-1.0), and regime shift detection when a complex reverses from losing to gaining or vice versa. Terminal output with trend icons and structured sections. Full JSON output for agent consumption. `--complex` flag filters terminal display to a single complex while maintaining full JSON output. `after_help` with cross-references to related commands.
+- Why: Medium-timeframe analyst feedback (Mar 27): "Power structure analysis needs dedicated commands for FIC/MIC/TIC tracking and weekly assessments." Agents can now run `pftui analytics power-flow assess --days 7 --json` for structured weekly assessments instead of manually aggregating power-flow list and balance data.
+- Files: `src/commands/power_flow.rs` (+400: AssessOutput/ComplexAssessment/PowerShift/KeyEvent/TrendAnalysis structs, run_assess function, compute_half_net/classify_trend/compute_trend_analysis/build_summary helpers, 11 unit tests), `src/cli.rs` (+30: Assess variant on AnalyticsPowerFlowCommand with after_help, 2 CLI parse tests), `src/main.rs` (+8: Assess dispatch)
+- Tests: `cargo test` (1782 pass, +13 new); `cargo clippy --all-targets -- -D warnings` (clean)
+- PR: #372
+
 ### 2026-03-26 — feat: regime-asset flow correlation tracker (`analytics regime-flows`)
 
 - What: Added `pftui analytics regime-flows [--json]` that cross-references the current market regime with asset class flows to detect power structure patterns automatically. Tracks 6 key ratios with 5-day change (Gold/Oil, Copper/Gold, Gold/SPX, Silver/Gold, Oil/DXY, BTC/Gold). Monitors 12 asset flow signals across safe-haven, energy, equities, defense, volatility, dollar, bonds, and industrial classes. 8 pattern detectors: safe-haven rotation, geopolitical stress (full/partial), inflationary pulse, risk-on breakout, deflationary signal, dollar wrecking ball, energy crisis signal, and regime divergence. Flow-regime alignment scoring (aligned/divergent/neutral per asset). Summary with dominant flow, safe-haven bid, risk appetite, energy stress, and regime consistency assessment. Both terminal and `--json` output.
