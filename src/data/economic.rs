@@ -81,8 +81,15 @@ pub fn fred_to_indicator(series_id: &str) -> Option<&'static str> {
         "PAYEMS" => Some("nfp"),
         // ISM PMI is proprietary, not available on FRED
         "ICSA" => Some("initial_jobless_claims"),
-        // CPIAUCSL is an index, not a YoY rate, so not directly comparable to Brave "cpi"
-        // PPIACO is also an index, not a YoY rate
+        "CPIAUCSL" => Some("cpi"),
+        "PPIACO" => Some("ppi"),
+        "DGS10" => Some("treasury_10y"),
+        "T10Y2Y" => Some("yield_spread_10y2y"),
+        "GDP" => Some("gdp"),
+        "PCE" => Some("pce"),
+        "JTSJOL" => Some("jolts"),
+        "RSAFS" => Some("retail_sales"),
+        "INDPRO" => Some("industrial_production"),
         _ => None,
     }
 }
@@ -599,8 +606,15 @@ mod tests {
         // ISM PMI is proprietary, not on FRED
         assert_eq!(fred_to_indicator("NAPM"), None);
         assert_eq!(fred_to_indicator("ICSA"), Some("initial_jobless_claims"));
-        // CPI index is not directly comparable to CPI YoY rate
-        assert_eq!(fred_to_indicator("CPIAUCSL"), None);
+        assert_eq!(fred_to_indicator("CPIAUCSL"), Some("cpi"));
+        assert_eq!(fred_to_indicator("PPIACO"), Some("ppi"));
+        assert_eq!(fred_to_indicator("DGS10"), Some("treasury_10y"));
+        assert_eq!(fred_to_indicator("T10Y2Y"), Some("yield_spread_10y2y"));
+        assert_eq!(fred_to_indicator("GDP"), Some("gdp"));
+        assert_eq!(fred_to_indicator("PCE"), Some("pce"));
+        assert_eq!(fred_to_indicator("JTSJOL"), Some("jolts"));
+        assert_eq!(fred_to_indicator("RSAFS"), Some("retail_sales"));
+        assert_eq!(fred_to_indicator("INDPRO"), Some("industrial_production"));
         assert_eq!(fred_to_indicator("BOGUS"), None);
     }
 
