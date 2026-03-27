@@ -1,0 +1,28 @@
+[Unit]
+Description=pftui mobile API server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/pftui system mobile serve
+Restart=on-failure
+RestartSec=10
+Environment=HOME=/root
+Environment=PATH=/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/root
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pftui-mobile
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/root/.config/pftui /root/.cargo /tmp
+ProtectHome=no
+
+[Install]
+WantedBy=multi-user.target
