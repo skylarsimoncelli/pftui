@@ -68,30 +68,64 @@ body {
     padding: 0 var(--spacing-md);
 }
 
-/* ===== NAV LINKS ===== */
-.hero-nav-link {
-    display: inline-flex;
+/* ===== SITE NAV BAR ===== */
+.site-nav {
+    display: flex;
     align-items: center;
-    gap: 0.3rem;
+    justify-content: space-between;
+    padding: 1rem var(--spacing-md);
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 10;
+}
+
+.site-nav-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.site-nav-left img {
+    height: 28px;
+    border-radius: 6px;
+}
+
+.site-nav-left .nav-wordmark {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-decoration: none;
+    letter-spacing: -0.01em;
+}
+
+.site-nav-left a {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-decoration: none;
+}
+
+.site-nav-right a {
     font-family: var(--font-mono);
     font-size: 0.85rem;
     color: var(--text-secondary);
     text-decoration: none;
-    margin-bottom: var(--spacing-sm);
-    float: right;
     transition: color 0.2s;
+    letter-spacing: -0.01em;
 }
 
-.hero-nav-link:hover {
+.site-nav-right a:hover {
     color: var(--accent-cyan);
 }
 
 /* ===== HERO SECTION ===== */
 .hero {
-    min-height: 100vh;
+    min-height: calc(100vh - 60px);
     display: flex;
     align-items: center;
-    padding: var(--spacing-xl) 0;
+    padding: var(--spacing-lg) 0 var(--spacing-xl);
     position: relative;
     overflow: hidden;
 }
@@ -120,7 +154,6 @@ body {
 .hero-content {
     max-width: 620px;
     min-width: 0;
-    overflow: hidden; /* clear float */
 }
 
 .hero-logo {
@@ -151,10 +184,11 @@ body {
 }
 
 .hero-subtitle {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     color: var(--text-secondary);
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: var(--spacing-md);
     max-width: 500px;
+    line-height: 1.7;
 }
 
 .hero-install {
@@ -210,6 +244,12 @@ body {
     background: var(--accent-cyan);
     color: var(--bg-primary);
     border-color: var(--accent-cyan);
+}
+
+.hero-upgrade-note {
+    margin-top: 0.5rem;
+    opacity: 0.5;
+    font-size: 0.85rem;
 }
 
 .hero-badges {
@@ -1121,11 +1161,6 @@ footer {
         grid-template-columns: 1fr;
         text-align: center;
     }
-    
-    .hero-nav-link {
-        float: none;
-        display: inline-flex;
-    }
 
     .terminal-window {
         width: min(100%, 760px);
@@ -1172,18 +1207,46 @@ footer {
         padding: 0 var(--spacing-sm);
     }
     
+    .site-nav {
+        padding: 0.75rem var(--spacing-sm);
+    }
+    
     .hero {
         min-height: auto;
-        padding: var(--spacing-lg) 0;
+        padding: var(--spacing-md) 0 var(--spacing-lg);
+    }
+    
+    .hero-logo {
+        margin-bottom: 0.75rem;
+        display: none;
     }
     
     .hero-title {
         font-size: 2rem;
+        margin-bottom: var(--spacing-sm);
     }
     
     .hero-subtitle {
         font-size: 1rem;
         line-height: 1.7;
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .hero-install {
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .hero-upgrade-note {
+        display: none;
+    }
+    
+    .hero-badges {
+        display: none;
+    }
+    
+    .hero-terminal {
+        margin-top: var(--spacing-sm);
+        justify-content: center;
     }
     
     .install-command {
@@ -1287,13 +1350,20 @@ footer {
         padding: 0 0.75rem;
     }
     
-    .hero-logo {
-        height: 36px !important;
+    .site-nav {
+        padding: 0.75rem;
     }
     
-    .hero-badges {
-        gap: 0.4rem;
-        flex-wrap: wrap;
+    .site-nav-left img {
+        height: 24px;
+    }
+    
+    .site-nav-left .nav-wordmark {
+        font-size: 0.9rem;
+    }
+    
+    .site-nav-right a {
+        font-size: 0.8rem;
     }
 
     .agent-setup {
@@ -1309,10 +1379,11 @@ footer {
     
     .hero-title {
         font-size: 1.75rem;
+        margin-bottom: 0.75rem;
     }
     
     .hero-subtitle {
-        font-size: 1rem;
+        font-size: 0.95rem;
     }
     
     /* Install command: keep single line + ellipsis on mobile */
@@ -1350,10 +1421,15 @@ footer {
         font-size: 0.8rem;
     }
     
-    /* Terminal mockup */
+    /* Terminal mockup: reduce prominence on mobile */
+    .hero-terminal .terminal-window {
+        border-radius: var(--radius-md);
+    }
+    
     .terminal-body {
         padding: 0.75rem;
         font-size: 0.7rem;
+        height: 200px;
     }
     
     .terminal-header {
@@ -1443,11 +1519,6 @@ footer {
         padding: var(--spacing-lg) 0;
     }
     
-    /* Badges wrap nicely */
-    .hero-badges {
-        gap: 0.5rem;
-    }
-    
     /* Demo image */
     .demo-terminal {
         border-radius: var(--radius-sm);
@@ -1468,6 +1539,24 @@ footer {
         font-size: 0.8rem;
         padding: 0.5rem 0.75rem;
     }
+    
+    /* Agent cards on mobile */
+    .agent-card {
+        padding: var(--spacing-sm);
+    }
+    
+    .stack-cards .agent-card {
+        padding: 1rem 1.15rem;
+    }
+    
+    /* Database features on mobile */
+    .database-feature {
+        padding: var(--spacing-md);
+    }
+
+    .schema-pre {
+        font-size: 0.58rem;
+    }
 }
 
 /* Small phones (iPhone SE, etc) */
@@ -1486,5 +1575,10 @@ footer {
     
     .terminal-body {
         font-size: 0.6rem;
+        height: 180px;
+    }
+    
+    .site-nav-left .nav-wordmark {
+        font-size: 0.85rem;
     }
 }

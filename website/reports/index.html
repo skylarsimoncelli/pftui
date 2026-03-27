@@ -21,24 +21,22 @@
     <link rel="stylesheet" href="../style.css">
     <style>
         .reports-hero {
-            padding: var(--spacing-xl) 0 var(--spacing-lg);
+            padding: var(--spacing-lg) 0 var(--spacing-md);
             text-align: center;
-        }
-        .reports-hero .hero-logo {
-            margin-bottom: var(--spacing-sm);
         }
         .reports-hero h1 {
             font-family: var(--font-mono);
             font-size: 2rem;
             font-weight: 700;
             color: var(--text-primary);
-            margin-bottom: var(--spacing-xs);
+            margin-bottom: var(--spacing-sm);
         }
         .reports-hero p {
             color: var(--text-secondary);
             max-width: 640px;
             margin: 0 auto;
-            line-height: 1.6;
+            line-height: 1.7;
+            font-size: 1rem;
         }
         
         .report-controls {
@@ -253,21 +251,6 @@
             color: var(--text-tertiary);
         }
         
-        .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            text-decoration: none;
-            margin-bottom: var(--spacing-md);
-            transition: color 0.2s;
-        }
-        .back-link:hover {
-            color: var(--accent-cyan);
-        }
-        
         .methodology-note {
             margin-top: var(--spacing-lg);
             padding: 1.5rem;
@@ -285,31 +268,69 @@
             margin-bottom: 0.5rem;
         }
 
+        @media (max-width: 768px) {
+            .reports-hero {
+                padding: var(--spacing-md) 0 var(--spacing-sm);
+            }
+            .reports-hero h1 {
+                font-size: 1.5rem;
+                margin-bottom: 0.5rem;
+            }
+            .reports-hero p {
+                font-size: 0.9rem;
+            }
+        }
+
         @media (max-width: 640px) {
             .report-item {
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 0.8rem;
+                padding: 1rem 1.15rem;
             }
             .report-arrow {
                 display: none;
-            }
-            .reports-hero h1 {
-                font-size: 1.5rem;
             }
             .pdf-viewer-header {
                 flex-direction: column;
                 gap: 0.5rem;
                 align-items: flex-start;
             }
+            .methodology-note {
+                padding: 1.15rem;
+                font-size: 0.85rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .reports-hero h1 {
+                font-size: 1.35rem;
+            }
+            .report-details h3 {
+                font-size: 0.85rem;
+            }
+            .report-item {
+                padding: 0.9rem 1rem;
+            }
         }
     </style>
 </head>
 <body>
+    <!-- Navigation -->
+    <nav class="site-nav">
+        <div class="site-nav-left">
+            <a href="../">
+                <img src="../assets/lockup.svg" alt="pftui">
+                <span class="nav-wordmark">pftui</span>
+            </a>
+        </div>
+        <div class="site-nav-right">
+            <a href="../">← Home</a>
+        </div>
+    </nav>
+
     <section class="reports-hero">
         <div class="container">
-            <a href="../" class="back-link">← pftui.com</a>
-            <a href="../"><img src="../assets/lockup.svg" alt="pftui" class="hero-logo" height="36"></a>
             <h1>Intelligence Reports</h1>
             <p>Daily macro intelligence from pftui's multi-timeframe analytics engine. Four specialist agents analyse markets across different time horizons. An Opus-level synthesis layer produces scenario-weighted outlooks with falsifiable predictions.</p>
         </div>

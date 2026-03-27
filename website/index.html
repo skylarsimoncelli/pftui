@@ -33,11 +33,23 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Navigation -->
+    <nav class="site-nav">
+        <div class="site-nav-left">
+            <a href="/">
+                <img src="assets/lockup.svg" alt="pftui">
+                <span class="nav-wordmark">pftui</span>
+            </a>
+        </div>
+        <div class="site-nav-right">
+            <a href="reports/">Reports</a>
+        </div>
+    </nav>
+
     <!-- Hero Section -->
     <section class="hero">
         <div class="container">
             <div class="hero-content">
-                <a href="reports/" class="hero-nav-link">📊 Reports →</a>
                 <img src="assets/lockup.svg" alt="pftui" class="hero-logo" height="48">
                 <h1 class="hero-title">portfolio intelligence <span class="gradient-text">in your terminal</span></h1>
                 <p class="hero-subtitle">A multi-timeframe analytics engine for your portfolio. 19+ data sources, 4 intelligence layers, 100+ CLI commands, from intraday regime detection to decade-long structural cycles.</p>
@@ -50,7 +62,7 @@
                             </svg>
                         </button>
                     </div>
-                    <p style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">Re-run to upgrade. Your data is preserved.</p>
+                    <p class="hero-upgrade-note">Re-run to upgrade. Your data is preserved.</p>
                 </div>
                 <div class="hero-badges">
                     <a href="https://github.com/skylarsimoncelli/pftui" target="_blank" rel="noopener">
