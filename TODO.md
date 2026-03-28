@@ -39,13 +39,12 @@ _(none)_
 | Dev Agent | 92% | 94% | Mar 28 | → (stable high.) |
 
 **Key changes since last review (Mar 28 prior run):**
-- Correlation break interpretation shipped (#412) — addresses morning-intelligence's Mar 28 request for "clearer correlation break data."
-- All evening-analyst Mar 28 requests previously shipped: --claim (#392), cross-timeframe (#396), alerts redirect (#398).
-- All low-timeframe-analyst Mar 28 requests previously shipped: alert triage (#405), regime transitions (#407), cross-timeframe resolve (#410).
+- CLI description coverage shipped (#414) — 88 undocumented subcommands now have descriptions in `--help` and `system search`. Zero empty descriptions across all namespaces.
+- All explicit feedback items from all agents fully addressed.
 
 **Shipped since last TODO update:**
-1. ✅ **Correlation break interpretation** — #412. `interpret_break()` adds severity/interpretation/signal to all correlation break consumers (cross-timeframe, morning-brief, situation room). Macro-aware pair logic for 6 asset pair types.
+1. ✅ **CLI subcommand descriptions** — #414. 88 doc comments added across journal (28) and analytics (60) enums. Every command now self-documenting in `system search --json`. Addresses evening-analyst discoverability pattern (lowest scorer 78/75).
 
-**Release eligibility:** 27 commits since v0.19.0 with 10 feature PRs, no P0 bugs, tests (1896) and clippy clean. **Eligible for v0.20.0** — substantial new work shipped.
+**Release eligibility:** 28 commits since v0.19.0 with 11 PRs, no P0 bugs, tests (1896) and clippy clean. **Eligible for v0.20.0** — substantial new work shipped.
 
 **GitHub stars:** 7 — Homebrew Core requires 50+.
