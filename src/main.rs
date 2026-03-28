@@ -3531,6 +3531,9 @@ fn main() -> Result<()> {
                 cli::AnalyticsScenarioCommand::Suggest { json } => {
                     commands::scenario_suggest::run(&backend, json)
                 }
+                cli::AnalyticsScenarioCommand::ImpactMatrix { json } => {
+                    commands::impact_matrix::run(&backend, &config, json)
+                }
             },
             cli::AnalyticsCommand::Conviction { command } => match command {
                 cli::AnalyticsConvictionCommand::Set {

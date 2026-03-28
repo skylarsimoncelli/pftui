@@ -2462,6 +2462,16 @@ pub enum AnalyticsScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Consolidated portfolio impact matrix across all scenarios and presets
+    #[command(
+        name = "impact-matrix",
+        after_help = "Runs every active scenario (using defined impacts) AND all built-in\nstress presets through the portfolio, producing a ranked matrix of\noutcomes sorted by impact severity (worst to best).\n\nScenario impacts use direction+tier assumptions (15/8/4% for\nprimary/secondary/tertiary). Presets use fixed historical-analog shocks.\nExpected P&L is probability-weighted across active scenarios only.\n\nDesigned for agent consumption — one JSON call returns the complete\nrisk landscape.\n\nSee also: analytics impact-estimate, portfolio stress-test,\n          analytics scenario list, analytics scenario suggest"
+    )]
+    ImpactMatrix {
+        /// Output as JSON for agent/script consumption
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3925,6 +3935,53 @@ mod tests {
         }) = cli.command
         else {
             panic!("expected analytics scenario suggest command");
+        };
+
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_impact_matrix_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "impact-matrix",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command: AnalyticsScenarioCommand::ImpactMatrix { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario impact-matrix command");
+        };
+
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_scenario_impact_matrix_no_json() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "scenario",
+            "impact-matrix",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::Scenario {
+                    command: AnalyticsScenarioCommand::ImpactMatrix { json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics scenario impact-matrix command");
         };
 
         assert!(!json);
