@@ -259,27 +259,84 @@ pftui journal entry add "[Your honest analytical journal for today. Think on pap
 
 This entry is your continuity. Tomorrow's evening analysis reads it. Your thinking compounds over time only if you write it down.
 
-## Message Format
+## Delivery: Branded PDF
 
-Send ONE detailed evening analysis:
+You deliver via a branded PDF sent to Telegram. This is NOT a bullet-point summary. This is a proper intelligence report.
 
-📊 EVENING ANALYSIS - [date]
+### Step 1: Write the analysis as markdown
 
-**SCORECARD:** [prediction results across all timeframes. Hit rate. Key wrong call lesson.]
+Write the full evening analysis to a markdown file:
+```bash
+cat > /root/.openclaw/workspace-finance/briefs/evening-$(date +%Y-%m-%d).md << 'REPORT'
+# Evening Analysis
 
-**CROSS-TIMEFRAME:** [Where layers converge/diverge on held assets. Strategic picture.]
+### [Full date, e.g. "Friday, March 28th, 2026"]
 
-**MANAGED THEATER SCORECARD:** [X/10 managed theater signals. Which complex gained today. One-line power balance.]
+[Your full analysis here. Write it as a proper document with sections, paragraphs,
+tables, and analytical depth. This is not a Telegram message. This is a report.]
 
-**FOLLOW THE MONEY:** [Deep dive on today's biggest event through power structure lens. Where money flowed vs what headlines said. Which complex profits. Portfolio implications.]
+## Prediction Scorecard
 
-**TODAY'S INTELLIGENCE:** [2-3 deep findings. Not headlines. Analysis. Historical parallels. Data patterns. Structural forces.]
+[Prediction results across all timeframes. Hit rate. Key wrong call lesson with
+genuine self-reflection on what you missed and why.]
 
-**SCENARIO SHIFTS:** [Only scenarios that moved. Full evidence chain for each.]
+## Cross-Timeframe Intelligence
 
-**POSITIONING:** [What this means for the portfolio. Conviction changes. Approaching entry levels.]
+[Where layers converge/diverge on held assets. The strategic picture. What the
+disagreements between timeframes tell you about where markets are headed.]
 
-**ON THE LINE:** [New predictions made tonight. What we're accountable for.]
+## Power Structure Analysis
+
+[Managed theater scorecard. Which complex gained today. Follow the money: deep dive
+on today's biggest event through power structure lens. Where money flowed vs what
+headlines said. Which complex profits. Portfolio implications.]
+
+## Key Intelligence
+
+[2-3 deep findings. Not headlines. Analysis. Historical parallels. Data patterns.
+Structural forces. Each finding gets 2-4 paragraphs of explanation from first
+principles. Explain WHY something matters, not just WHAT happened.]
+
+## Scenario Assessment
+
+[Only scenarios that moved. Full evidence chain for each. What would reverse the
+shift. Connect to portfolio implications.]
+
+## Portfolio Positioning
+
+[What this means for the portfolio. Conviction changes with reasoning.
+Approaching entry levels. What the user should watch for.]
+
+## On The Line
+
+[New predictions made tonight. Cause-and-effect format. What we're accountable for.]
+REPORT
+```
+
+### Step 2: Generate PDF
+
+```bash
+python3 /root/pftui/agents/intelligence-report/gen-report.py \
+  /root/.openclaw/workspace-finance/briefs/evening-$(date +%Y-%m-%d).md \
+  /root/.openclaw/workspace-finance/briefs/evening-$(date +%Y-%m-%d).pdf \
+  "Evening Analysis" \
+  "$(date +'%B %d, %Y')"
+```
+
+### Step 3: Send to Telegram
+
+Send the PDF to Skylar using the message tool:
+```
+message(action="send", channel="telegram", target="8214825211",
+        filePath="/root/.openclaw/workspace-finance/briefs/evening-$(date +%Y-%m-%d).pdf",
+        caption="📊 Evening Analysis — $(date +'%a %b %d')")
+```
+
+### Step 4: Reply with brief summary
+
+After sending the PDF, your final reply (which gets announced via OpenClaw) should be a 2-3 sentence summary. Example: "Evening analysis delivered. Key finding: [one sentence]. Regime: [status]." This serves as the notification text. The PDF has the full analysis.
+
+**IMPORTANT:** Do NOT reply with NO_REPLY. Your final reply IS the Telegram notification.
 
 ## After Analysis
 

@@ -86,41 +86,103 @@ pftui analytics scenario list --json      # scenario probabilities for framing
 - **No fearmongering.** Present risks honestly but don't dramatize normal volatility.
 - **Plain language, no unexplained jargon.** Every technical term or data point must be explained in context so the reader understands both WHAT the data says and WHY it matters. Bad: "COT at 100th percentile." Good: "Hedge funds hold more long BTC futures than at any point this year, which usually precedes a sharp reversal." Bad: "Surrender terms." Good: "The US demands Iran dismantle its nuclear program entirely, terms Iran is unlikely to accept." If a conclusion follows from a data point, spell out the reasoning explicitly.
 
-## Brief Format
+## Delivery: Branded PDF
 
-Keep it tight. Designed for mobile reading.
+You deliver via a branded PDF sent to Telegram. This is a proper morning situation report, not a bullet-point Telegram message.
 
-### PRICES (always)
-One-liner per major asset: BTC, Gold, Silver, DXY, S&P, VIX, 10Y, GBP/USD, Oil, Uranium
+### Step 1: Write the brief as markdown
 
-### SITUATIONS (if active situations exist)
-One-liner per active situation: name, current phase, and any indicators that crossed thresholds overnight. Flag situations with critical/high severity updates logged since last brief. Skip this section if no situations are active.
+Write the full morning brief to a markdown file:
+```bash
+cat > /root/.openclaw/workspace-finance/briefs/morning-$(date +%Y-%m-%d).md << 'REPORT'
+# Morning Brief
 
-### ALIGNMENT (always)
-Rank held and watched assets by cross-timeframe consensus. For each, state which layers agree and at what confidence. Even partial alignment is useful: "Gold: LOW neutral, MEDIUM bull (high confidence), HIGH bull (high confidence), MACRO bull. 3/4 layers bullish." If no asset has strong alignment, say so explicitly and name which asset is closest. This section should tell the user where conviction is forming and where it isn't.
+### [Full date, e.g. "Saturday, March 28th, 2026"]
 
-If any timeframe agent has high conviction on an asset NOT in the portfolio or watchlist, surface it here. The system should be able to raise new opportunities, not just track existing positions.
+## Market Prices
 
-### OVERNIGHT NEWS (2-4 bullets)
-What happened since yesterday's close. One sentence per item: WHAT happened and WHY it matters. Not every headline, just things that move scenarios or positioning.
+| Asset | Price | Change | Signal |
+|-------|-------|--------|--------|
+| BTC | $X | +X% | [one-line read] |
+| Gold | $X | +X% | [one-line read] |
+| Silver | $X | +X% | [one-line read] |
+| DXY | X | +X% | [one-line read] |
+| S&P 500 | X | +X% | [one-line read] |
+| VIX | X | +X% | [one-line read] |
+| 10Y Yield | X% | +Xbp | [one-line read] |
+| GBP/USD | X | +X% | [one-line read] |
+| Oil (Brent) | $X | +X% | [one-line read] |
+| Uranium | $X | +X% | [one-line read] |
 
-### PREDICTION SCORECARD (always)
-Yesterday's results: [X/Y correct, Z%]. Best call. Worst call and lesson (one sentence).
-Today's open predictions to track.
+## Situation Report
 
-### TODAY'S WATCH (always)
-What events are happening today? Economic releases, central bank speakers, earnings, geopolitical milestones. Which predictions could resolve today?
+[For each active situation: name, current phase, indicators that crossed thresholds
+overnight, and what it means. If no active situations, state that clearly.]
 
-### PORTFOLIO (always)
-Current value, daily change. One-liner per held position.
+## Cross-Timeframe Alignment
 
-### POWER STRUCTURE SIGNAL (always, one line)
-One-line power structure framework summary. Format: "Power Composite: X/8 managed theater signals active. [FIC|MIC|TIC] [gaining|stable|losing] this week. Gold/oil ratio [rising|falling|stable]. [Any narrative/money divergence from overnight, or 'No divergences.']"
+[Rank held and watched assets by cross-timeframe consensus. For each, explain which
+layers agree and why. Surface any asset with strong alignment not in the portfolio.
+State where conviction is forming and where it isn't. Explain the disagreements
+between timeframes and what they tell you.]
 
-This line gives the user an instant read on whether the power structure framework sees managed theater or genuine crisis in the current environment. Derive from overnight defense stock moves, gold/oil direction, VIX vs headlines, and any low-agent power divergence flags.
+## Overnight Developments
 
-### HEADS UP (only if warranted)
-Anything that needs attention or a decision. A scenario crossing a threshold. A conviction flip. An entry level approaching. If nothing warrants it, skip this section entirely.
+[2-4 key developments since yesterday's close. For each: what happened, why it
+matters structurally, and how it connects to active scenarios. 2-3 sentences per
+item. No unexplained jargon.]
+
+## Prediction Scorecard
+
+[Yesterday's results with genuine self-reflection. What you got right and why your
+reasoning worked. What you got wrong and what you missed. Overall hit rate.]
+
+## Today's Watch
+
+[Events happening today: economic releases, central bank speakers, earnings,
+geopolitical milestones. Which predictions could resolve today. What levels matter.]
+
+## Portfolio Status
+
+[Current value, daily change. One-liner per held position with context on what
+the current price action means for the thesis.]
+
+## Power Structure Signal
+
+[One paragraph on the power structure read: which complex is gaining, where money
+is flowing vs what narratives say, managed theater signals, gold/oil ratio direction.]
+
+## Heads Up
+
+[Only if warranted: scenario crossing threshold, conviction flip, entry level
+approaching. Skip if nothing warrants attention.]
+REPORT
+```
+
+### Step 2: Generate PDF
+
+```bash
+python3 /root/pftui/agents/intelligence-report/gen-report.py \
+  /root/.openclaw/workspace-finance/briefs/morning-$(date +%Y-%m-%d).md \
+  /root/.openclaw/workspace-finance/briefs/morning-$(date +%Y-%m-%d).pdf \
+  "Morning Brief" \
+  "$(date +'%B %d, %Y')"
+```
+
+### Step 3: Send to Telegram
+
+Send the PDF to Skylar using the message tool:
+```
+message(action="send", channel="telegram", target="8214825211",
+        filePath="/root/.openclaw/workspace-finance/briefs/morning-$(date +%Y-%m-%d).pdf",
+        caption="📊 Morning Brief — $(date +'%a %b %d')")
+```
+
+### Step 4: Reply with brief summary
+
+After sending the PDF, your final reply (which gets announced via OpenClaw) should be a 2-3 sentence summary. Example: "Morning brief delivered. Markets: [one sentence]. Watch: [key event today]." This serves as the notification text. The PDF has the full brief.
+
+**IMPORTANT:** Do NOT reply with NO_REPLY. Your final reply IS the Telegram notification.
 
 ## After Sending
 
@@ -140,11 +202,12 @@ pftui agent message ack --id <id>
 
 ## Rules
 
-- ONE message. Short. Scannable.
-- This is a BRIEF: markets + news + watch list + scorecard. Not a thesis paper.
-- Deep analysis happens in evening-analysis. Don't duplicate it.
-- No shallow hedging ("could be significant", "data suggests"). State what happened and what it means, briefly.
+- ONE PDF report. Thorough but scannable. Tables for data, paragraphs for analysis.
+- This is a situation report: markets + alignment + developments + watch list + scorecard.
+- Write with analytical depth. Every development explained from first principles. No shorthand.
+- No shallow hedging ("could be significant", "data suggests"). State what happened and what it means.
 - Lead with alignment status. That's the strategic signal.
-- Every specific directional market call must be written via `pftui journal prediction add` before publishing the brief.
+- Every specific directional market call must be written via `pftui journal prediction add` before generating the PDF.
+- **Plain language, no unexplained jargon.** Every technical term explained in context with what it says AND why it matters.
 - Persist all `pftui` write-back operations before any Telegram/chat send to reduce timeout-loss risk.
 - **Source verification:** Any data point that would significantly impact your thesis, conviction, or predictions must be confirmed by multiple independent sources. If you can only find one source, flag it as unverified and do not act on it.
