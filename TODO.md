@@ -45,18 +45,20 @@ _(none)_
 - 21 commits since v0.19.0 including 3 feature PRs (#384, #387, #392), data source fixes, systemd services.
 
 **Shipped since last review (Mar 27):**
-1. ✅ **Unified cross-timeframe view** — #396. `analytics cross-timeframe --json`. Alignment + divergence + correlation breaks in one call.
-2. ✅ **Scenario impact matrix** — #387. `analytics scenario impact-matrix --json`.
-3. ✅ **Prediction add --claim flag** — #392. Named flag UX fix for evening analyst.
-4. ✅ **Synthesis power structure integration** — #384. FIC/MIC/TIC in synthesis.
-5. ✅ **Economy indicator confidence depth** — #381. 15 FRED indicators, confidence reasoning.
-6. ✅ **Data source resilience** — #380. BLS rate limits, broken pipelines fixed.
-7. ✅ **Systemd services** — daemon + mobile service files deployed.
+1. ✅ **Alert triage dashboard** — #405. `analytics alerts triage --json`. Urgency-ranked grouping with per-kind breakdown.
+2. ✅ **Unified cross-timeframe view** — #396. `analytics cross-timeframe --json`. Alignment + divergence + correlation breaks in one call.
+3. ✅ **Scenario impact matrix** — #387. `analytics scenario impact-matrix --json`.
+4. ✅ **Prediction add --claim flag** — #392. Named flag UX fix for evening analyst.
+5. ✅ **Synthesis power structure integration** — #384. FIC/MIC/TIC in synthesis.
+6. ✅ **Economy indicator confidence depth** — #381. 15 FRED indicators, confidence reasoning.
+7. ✅ **Data source resilience** — #380. BLS rate limits, broken pipelines fixed.
+8. ✅ **Systemd services** — daemon + mobile service files deployed.
 
 **Top priorities from feedback:**
 1. ✅ ~~**P2: Overnight price changes in brief**~~ — shipped in #400.
 2. ✅ ~~**P2: Commodity coverage in scoreboard**~~ — shipped in #402. URA (Uranium ETF) added to market/economy symbols. `data prices --market` flag for full scoreboard.
+3. ✅ ~~**P2: Alert triage dashboard**~~ — shipped in #405. `analytics alerts triage --json`. Urgency-ranked alert grouping with per-kind breakdown.
 
-**Release eligibility:** 23 commits since v0.19.0 with 5 feature PRs, no P0 bugs, tests (1834) and clippy clean. **Eligible for v0.20.0** — meaningful new work shipped.
+**Release eligibility:** 24 commits since v0.19.0 with 6 feature PRs, no P0 bugs, tests (1846) and clippy clean. **Eligible for v0.20.0** — meaningful new work shipped.
 
 **GitHub stars:** 7 — Homebrew Core requires 50+.
