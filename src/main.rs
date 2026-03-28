@@ -3215,6 +3215,10 @@ fn main() -> Result<()> {
                 },
             },
             cli::AnalyticsCommand::Alerts { command } => {
+                // Handle triage separately — it has its own function signature
+                if let cli::AnalyticsAlertsCommand::Triage { json } = command {
+                    return commands::alerts::run_triage(&backend, json);
+                }
                 let (action, args) = match command {
                     cli::AnalyticsAlertsCommand::Add {
                         rule,
@@ -3387,6 +3391,8 @@ fn main() -> Result<()> {
                             recent_hours: 24,
                         },
                     ),
+                    // Triage is handled above via early return
+                    cli::AnalyticsAlertsCommand::Triage { .. } => unreachable!(),
                 };
                 commands::alerts::run(&backend, action, &args)
             }
