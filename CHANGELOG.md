@@ -2,6 +2,14 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-28 — feat: unified cross-timeframe view (`analytics cross-timeframe`)
+
+- What: Added `pftui analytics cross-timeframe [--json]` that combines alignment, divergence, and correlation breaks into a single JSON payload. Includes per-asset alignment across LOW/MEDIUM/HIGH/MACRO timeframes, divergence detection (assets where layers disagree), correlation break detection (pairs with short/long-term divergence), and a summary with regime read (clean/mixed/conflicted). Supports `--symbol` filter, `--threshold` for correlation break sensitivity (default 0.30), `--limit` for max breaks (default 20). Both human-readable table output and structured JSON for agents.
+- Why: Evening Analyst feedback (Mar 28, 78/75 — lowest scorer): "having to run `analytics divergence` and `analytics correlations` separately" was main workflow friction. Agents previously needed 3 separate commands. Now it's one call.
+- Files: `src/cli.rs` (+15: CrossTimeframe variant with symbol/threshold/limit/json args), `src/commands/analytics.rs` (+273: CrossTimeframeReport/Alignment/Divergences/CorrelationBreaks/Summary structs, run_cross_timeframe function, regime_read classification, human-readable + JSON output), `src/main.rs` (+12: CrossTimeframe dispatch)
+- Tests: 1822 passing. Clippy clean.
+- PR: #396
+
 ### 2026-03-28 — fix: add --claim flag to journal prediction add
 
 - What: Added `--claim` as a named flag alternative to the bare positional value on `journal prediction add`. Makes the positional value optional — either `--claim` or positional works, with `--claim` taking precedence when both provided. Clear error message with usage examples when neither is given. Same UX pattern as the journal entry add `--content` fix (PR #375).

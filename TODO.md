@@ -10,7 +10,6 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [ ] [Feedback] Unified cross-timeframe view command — Evening Analyst (78/75 Mar 28) notes having to run `analytics divergence` and `analytics correlations` separately. Add an `analytics cross-timeframe` (or similar) command combining divergence, correlation-breaks, and alignment into one JSON call. See `src/commands/morning_brief.rs` for multi-section consolidation pattern. Evening Analyst is lowest scorer — this is their main workflow friction.
 - [ ] [Feedback] `alerts check` subcommand discoverability — Evening Analyst (Mar 28) couldn't find alerts check under `data` or top-level. Likely expects `analytics alerts check` or `data alerts check`. Add alias/redirect or improve `--help` text with cross-references. Check `src/cli.rs` AlertsCommand variants.
 
 ## P2 - Coverage And Agent Consumption
@@ -47,17 +46,18 @@ _(none)_
 - 21 commits since v0.19.0 including 3 feature PRs (#384, #387, #392), data source fixes, systemd services.
 
 **Shipped since last review (Mar 27):**
-1. ✅ **Scenario impact matrix** — #387. `analytics scenario impact-matrix --json`.
-2. ✅ **Prediction add --claim flag** — #392. Named flag UX fix for evening analyst.
-3. ✅ **Synthesis power structure integration** — #384. FIC/MIC/TIC in synthesis.
-4. ✅ **Economy indicator confidence depth** — #381. 15 FRED indicators, confidence reasoning.
-5. ✅ **Data source resilience** — #380. BLS rate limits, broken pipelines fixed.
-6. ✅ **Systemd services** — daemon + mobile service files deployed.
+1. ✅ **Unified cross-timeframe view** — #396. `analytics cross-timeframe --json`. Alignment + divergence + correlation breaks in one call.
+2. ✅ **Scenario impact matrix** — #387. `analytics scenario impact-matrix --json`.
+3. ✅ **Prediction add --claim flag** — #392. Named flag UX fix for evening analyst.
+4. ✅ **Synthesis power structure integration** — #384. FIC/MIC/TIC in synthesis.
+5. ✅ **Economy indicator confidence depth** — #381. 15 FRED indicators, confidence reasoning.
+6. ✅ **Data source resilience** — #380. BLS rate limits, broken pipelines fixed.
+7. ✅ **Systemd services** — daemon + mobile service files deployed.
 
 **Top 3 priorities from feedback:**
-1. **P1: Unified cross-timeframe view** — Evening Analyst (lowest scorer) needs single command for divergence + correlation-breaks + alignment.
-2. **P1: Alerts check discoverability** — Evening Analyst can't find alert checking commands intuitively.
-3. **P2: Overnight price changes in brief** — Morning Intelligence wants overnight moves in portfolio brief.
+1. **P1: Alerts check discoverability** — Evening Analyst can't find alert checking commands intuitively.
+2. **P2: Overnight price changes in brief** — Morning Intelligence wants overnight moves in portfolio brief.
+3. **P2: Commodity coverage in scoreboard** — Public Daily Report wants uranium/copper in price tables.
 
 **Release eligibility:** 21 commits since v0.19.0 with 3 feature PRs, no P0 bugs, tests (1822) and clippy clean. **Eligible for v0.20.0** — meaningful new work shipped.
 
