@@ -1370,6 +1370,7 @@ pub enum JournalEntryCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List journal entries with optional filters (date, tag, symbol, status)
     List {
         #[arg(long)]
         limit: Option<usize>,
@@ -1384,6 +1385,7 @@ pub enum JournalEntryCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Full-text search across journal entry content
     Search {
         query: String,
         #[arg(long)]
@@ -1393,6 +1395,7 @@ pub enum JournalEntryCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Update an existing journal entry by ID (content, status)
     Update {
         #[arg(long)]
         id: i64,
@@ -1403,16 +1406,19 @@ pub enum JournalEntryCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Remove a journal entry by ID
     Remove {
         #[arg(long)]
         id: i64,
         #[arg(long)]
         json: bool,
     },
+    /// List all tags used across journal entries
     Tags {
         #[arg(long)]
         json: bool,
     },
+    /// Journal entry statistics: counts by tag, date range, conviction distribution
     Stats {
         #[arg(long)]
         json: bool,
@@ -1456,6 +1462,7 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List predictions with optional filters (status, timeframe, symbol)
     List {
         #[arg(long)]
         filter: Option<String>,
@@ -1468,6 +1475,7 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Score a prediction outcome: correct, partial, wrong, or pending
     Score {
         /// Prediction ID (flag form)
         #[arg(long)]
@@ -1496,6 +1504,7 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Prediction accuracy statistics: hit rate by conviction, timeframe, symbol, and agent
     Stats {
         /// Filter by timeframe: low, medium, high, macro
         #[arg(long)]
@@ -1508,6 +1517,7 @@ pub enum JournalPredictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Date-ordered scorecard of scored predictions with outcomes and lessons
     Scorecard {
         #[arg(long)]
         date: Option<String>,
@@ -1532,6 +1542,7 @@ pub enum JournalPredictionCommand {
 
 #[derive(Subcommand)]
 pub enum JournalConvictionCommand {
+    /// Set conviction score for an asset (-5 bearish to +5 bullish)
     Set {
         symbol: String,
         /// Score (positional shorthand): -5..+5
@@ -1546,10 +1557,12 @@ pub enum JournalConvictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List current conviction scores for all tracked assets
     List {
         #[arg(long)]
         json: bool,
     },
+    /// Show conviction score history for a specific asset over time
     History {
         symbol: String,
         #[arg(long)]
@@ -1557,6 +1570,7 @@ pub enum JournalConvictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show recent conviction changes across all assets (default: last 7 days)
     Changes {
         days: Option<String>,
         #[arg(long)]
@@ -1566,6 +1580,7 @@ pub enum JournalConvictionCommand {
 
 #[derive(Subcommand)]
 pub enum JournalNotesCommand {
+    /// Add a date-keyed narrative note (daily research log, market observations)
     Add {
         value: String,
         #[arg(long)]
@@ -1575,6 +1590,7 @@ pub enum JournalNotesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List narrative notes with optional date range filter
     List {
         #[arg(long)]
         since: Option<String>,
@@ -1583,6 +1599,7 @@ pub enum JournalNotesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Full-text search across narrative notes
     Search {
         query: String,
         #[arg(long)]
@@ -1592,6 +1609,7 @@ pub enum JournalNotesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Remove a narrative note by ID
     Remove {
         #[arg(long)]
         id: i64,
@@ -1602,6 +1620,7 @@ pub enum JournalNotesCommand {
 
 #[derive(Subcommand)]
 pub enum JournalScenarioSignalCommand {
+    /// Add a signal (evidence or trigger) linked to a scenario
     Add {
         value: String,
         #[arg(long)]
@@ -1613,6 +1632,7 @@ pub enum JournalScenarioSignalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List scenario signals with optional scenario/status filter
     List {
         #[arg(long)]
         scenario: Option<String>,
@@ -1623,6 +1643,7 @@ pub enum JournalScenarioSignalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Update a scenario signal's evidence or status by ID
     Update {
         #[arg(long = "signal-id")]
         signal_id: i64,
@@ -1633,6 +1654,7 @@ pub enum JournalScenarioSignalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Remove a scenario signal by ID
     Remove {
         #[arg(long = "signal-id")]
         signal_id: i64,
@@ -1643,6 +1665,7 @@ pub enum JournalScenarioSignalCommand {
 
 #[derive(Subcommand)]
 pub enum JournalScenarioCommand {
+    /// Add a new macro scenario with probability, triggers, and impact assessment
     Add {
         value: String,
         #[arg(long)]
@@ -1660,6 +1683,7 @@ pub enum JournalScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List scenarios with optional status filter (active, resolved, archived)
     List {
         #[arg(long)]
         status: Option<String>,
@@ -1668,6 +1692,7 @@ pub enum JournalScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Update a scenario's probability, description, triggers, or status
     Update {
         value: String,
         /// History note / driver (positional shorthand)
@@ -1691,11 +1716,13 @@ pub enum JournalScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Remove a scenario by name
     Remove {
         value: String,
         #[arg(long)]
         json: bool,
     },
+    /// Show probability history and driver log for a scenario
     History {
         value: String,
         #[arg(long)]
@@ -1703,6 +1730,7 @@ pub enum JournalScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Manage scenario signals (evidence and triggers)
     Signal {
         #[command(subcommand)]
         command: JournalScenarioSignalCommand,
@@ -1982,6 +2010,7 @@ pub enum AnalyticsTrendsImpactCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsTrendsCommand {
+    /// Add a new trend (structural force or narrative) with direction and conviction
     Add {
         value: Option<String>,
         #[arg(long)]
@@ -2003,6 +2032,7 @@ pub enum AnalyticsTrendsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List tracked trends with optional filters (timeframe, direction, conviction, category)
     List {
         #[arg(long)]
         timeframe: Option<String>,
@@ -2019,6 +2049,7 @@ pub enum AnalyticsTrendsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Update a trend's direction, conviction, status, or description
     Update {
         value: Option<String>,
         #[arg(long)]
@@ -2042,14 +2073,17 @@ pub enum AnalyticsTrendsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Trend dashboard: consolidated view of all active trends by timeframe and direction
     Dashboard {
         #[arg(long)]
         json: bool,
     },
+    /// Manage trend evidence (supporting/conflicting data points)
     Evidence {
         #[command(subcommand)]
         command: AnalyticsTrendsEvidenceCommand,
     },
+    /// Manage trend-to-asset impact mappings (which assets a trend affects and how)
     Impact {
         #[command(subcommand)]
         command: AnalyticsTrendsImpactCommand,
@@ -2058,6 +2092,7 @@ pub enum AnalyticsTrendsCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsMacroCyclesHistoryCommand {
+    /// Add a historical cycle data point (e.g. US trade score for the 1940s)
     Add {
         #[arg(long)]
         country: String,
@@ -2074,6 +2109,7 @@ pub enum AnalyticsMacroCyclesHistoryCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List historical cycle data with optional country/metric/decade filters
     List {
         #[arg(long = "country")]
         countries: Vec<String>,
@@ -2097,10 +2133,12 @@ pub enum AnalyticsMacroCyclesCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Historical cycle data: add and list power metric scores by country/decade
     History {
         #[command(subcommand)]
         command: AnalyticsMacroCyclesHistoryCommand,
     },
+    /// Update a country's cycle phase with evidence notes
     Update {
         name: String,
         #[arg(long)]
@@ -2116,10 +2154,12 @@ pub enum AnalyticsMacroCyclesCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsMacroRegimeCommand {
+    /// Show the current market regime classification with confidence and drivers
     Current {
         #[arg(long)]
         json: bool,
     },
+    /// Set the market regime (risk-on, risk-off, crisis, etc.) with confidence and drivers
     Set {
         regime: String,
         #[arg(long)]
@@ -2129,12 +2169,14 @@ pub enum AnalyticsMacroRegimeCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show regime classification history over time
     History {
         #[arg(long)]
         limit: Option<usize>,
         #[arg(long)]
         json: bool,
     },
+    /// Show regime transitions: when the regime changed and what triggered it
     Transitions {
         #[arg(long)]
         limit: Option<usize>,
@@ -2145,37 +2187,44 @@ pub enum AnalyticsMacroRegimeCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsMacroCommand {
+    /// Show macro power metrics for a country (education, trade, military, innovation, etc.)
     Metrics {
         country: Option<String>,
         #[arg(long)]
         json: bool,
     },
+    /// Side-by-side comparison of two countries' macro power metrics
     Compare {
         left: Option<String>,
         right: Option<String>,
         #[arg(long)]
         json: bool,
     },
+    /// Long-term empire/power cycles: current phases, historical data, updates
     Cycles {
         #[command(subcommand)]
         command: Option<AnalyticsMacroCyclesCommand>,
         #[arg(long)]
         json: bool,
     },
+    /// Scenario-to-outcome mapping: what happens to assets under each macro scenario
     Outcomes {
         #[arg(long)]
         json: bool,
     },
+    /// Historical parallels: match current conditions to past macro regimes
     Parallels {
         #[arg(long)]
         json: bool,
     },
+    /// Macro analysis log: timestamped agent observations and regime notes
     Log {
         #[arg(long)]
         limit: Option<usize>,
         #[arg(long)]
         json: bool,
     },
+    /// Market regime classification: current state, set, history, transitions
     Regime {
         #[command(subcommand)]
         command: AnalyticsMacroRegimeCommand,
@@ -2184,6 +2233,7 @@ pub enum AnalyticsMacroCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsScenarioSignalCommand {
+    /// Add a signal (evidence or trigger) linked to a scenario
     Add {
         value: String,
         #[arg(long)]
@@ -2195,6 +2245,7 @@ pub enum AnalyticsScenarioSignalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List scenario signals with optional scenario/status filter
     List {
         #[arg(long)]
         scenario: Option<String>,
@@ -2205,6 +2256,7 @@ pub enum AnalyticsScenarioSignalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Update a scenario signal's evidence or status by ID
     Update {
         #[arg(long = "signal-id")]
         signal_id: i64,
@@ -2215,6 +2267,7 @@ pub enum AnalyticsScenarioSignalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Remove a scenario signal by ID
     Remove {
         #[arg(long = "signal-id")]
         signal_id: i64,
@@ -2437,6 +2490,7 @@ pub enum SituationCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsScenarioCommand {
+    /// Add a new macro scenario with probability, triggers, and impact assessment
     Add {
         value: String,
         #[arg(long)]
@@ -2454,6 +2508,7 @@ pub enum AnalyticsScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List scenarios with optional status filter (active, resolved, archived)
     List {
         #[arg(long)]
         status: Option<String>,
@@ -2462,6 +2517,7 @@ pub enum AnalyticsScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Update a scenario's probability, description, triggers, or status
     Update {
         value: String,
         /// History note / driver (positional shorthand)
@@ -2485,11 +2541,13 @@ pub enum AnalyticsScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Remove a scenario by name
     Remove {
         value: String,
         #[arg(long)]
         json: bool,
     },
+    /// Show probability history and driver log for a scenario
     History {
         value: String,
         #[arg(long)]
@@ -2497,6 +2555,7 @@ pub enum AnalyticsScenarioCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Manage scenario signals (evidence and triggers)
     Signal {
         #[command(subcommand)]
         command: AnalyticsScenarioSignalCommand,
@@ -2524,6 +2583,7 @@ pub enum AnalyticsScenarioCommand {
 
 #[derive(Subcommand)]
 pub enum AnalyticsConvictionCommand {
+    /// Set conviction score for an asset (-5 bearish to +5 bullish)
     Set {
         symbol: String,
         #[arg(allow_hyphen_values = true)]
@@ -2536,10 +2596,12 @@ pub enum AnalyticsConvictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List current conviction scores for all tracked assets
     List {
         #[arg(long)]
         json: bool,
     },
+    /// Show conviction score history for a specific asset over time
     History {
         symbol: String,
         #[arg(long)]
@@ -2547,6 +2609,7 @@ pub enum AnalyticsConvictionCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Show recent conviction changes across all assets (default: last 7 days)
     Changes {
         days: Option<String>,
         #[arg(long)]
@@ -2563,6 +2626,7 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Technical indicators for one or all assets (RSI, MACD, SMA, Bollinger, ATR)
     Technicals {
         #[arg(long)]
         symbol: Option<String>,
@@ -2573,6 +2637,7 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Market structure levels: support, resistance, moving averages, swing points, 52-week range
     Levels {
         #[arg(long)]
         symbol: Option<String>,
@@ -2583,6 +2648,7 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Technical and cross-timeframe signals (RSI extremes, MACD crosses, SMA reclaims, BB squeezes)
     Signals {
         #[arg(long)]
         symbol: Option<String>,
@@ -2598,6 +2664,7 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Portfolio summary: allocation breakdown, top movers, regime read, key metrics
     Summary {
         #[arg(long)]
         json: bool,
@@ -2609,18 +2676,21 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Change radar: what moved since last refresh (prices, scenarios, convictions, signals)
     Deltas {
         #[arg(long, default_value = "last-refresh")]
         since: String,
         #[arg(long)]
         json: bool,
     },
+    /// Ranked upcoming catalysts and event pressure (earnings, Fed meetings, data releases)
     Catalysts {
         #[arg(long, default_value = "week")]
         window: String,
         #[arg(long)]
         json: bool,
     },
+    /// Portfolio impact analysis: which scenarios and events affect your holdings most
     Impact {
         #[arg(long)]
         json: bool,
@@ -2630,36 +2700,44 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Identified opportunities: undervalued positions, scenario plays, entry points
     Opportunities {
         #[arg(long)]
         json: bool,
     },
+    /// Structured analytical narrative: recap, key themes, and analytical memory
     Narrative {
         #[arg(long)]
         json: bool,
     },
+    /// Cross-timeframe synthesis: alignment, divergence, tensions, and regime context
     Synthesis {
         #[arg(long)]
         json: bool,
     },
+    /// LOW timeframe layer (hours to days): momentum, intraday signals, short-term positioning
     Low {
         #[arg(long)]
         json: bool,
     },
+    /// MEDIUM timeframe layer (weeks to months): swing trends, sector rotation, earnings impact
     Medium {
         #[arg(long)]
         json: bool,
     },
+    /// HIGH timeframe layer (months to years): secular trends, macro positioning, structural forces
     High {
         #[arg(long)]
         json: bool,
     },
+    /// MACRO timeframe layer: empire cycles, world order shifts, decade-scale power metrics
     Macro {
         #[command(subcommand)]
         command: Option<AnalyticsMacroCommand>,
         #[arg(long)]
         json: bool,
     },
+    /// Cross-timeframe alignment: how LOW/MEDIUM/HIGH/MACRO layers agree or conflict per asset
     Alignment {
         #[arg(long)]
         symbol: Option<String>,
@@ -2669,6 +2747,7 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Cross-timeframe divergence: assets where timeframe layers disagree on direction
     Divergence {
         #[arg(long)]
         symbol: Option<String>,
@@ -2699,6 +2778,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Daily digest: condensed summary of market activity and portfolio changes
     Digest {
         #[arg(long)]
         from: Option<String>,
@@ -2707,6 +2787,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Daily recap: structured market recap with key themes for analytical memory
     Recap {
         #[arg(long)]
         date: Option<String>,
@@ -2724,6 +2805,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Data quality gaps: OHLCV coverage, missing dates, stale symbols
     Gaps {
         /// Show per-symbol OHLCV data quality for a specific symbol
         #[arg(long)]
@@ -2731,6 +2813,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Top movers: biggest gainers and losers across portfolio, watchlist, and market
     Movers {
         #[command(subcommand)]
         command: Option<AnalyticsMoversCommand>,
@@ -2741,6 +2824,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Rolling correlations: compute, store, and detect correlation breaks between asset pairs
     Correlations {
         #[command(subcommand)]
         command: Option<AnalyticsCorrelationsCommand>,
@@ -2748,6 +2832,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Multi-filter scan: technical setups, news keywords, trackline breaches, saved scans
     Scan {
         #[arg(long)]
         filter: Option<String>,
@@ -2764,6 +2849,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Web research: search news, Fed statements, earnings, COT data, ETF flows, geopolitics
     Research {
         query: Option<String>,
         #[arg(long)]
@@ -2787,6 +2873,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         opec: bool,
     },
+    /// Structural trend tracking: add, list, update, evidence, impact mappings, dashboard
     Trends {
         #[command(subcommand)]
         command: AnalyticsTrendsCommand,
@@ -2803,6 +2890,7 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[command(subcommand)]
         command: AnalyticsScenarioCommand,
     },
+    /// Asset conviction tracking: set, list, history, and recent changes (-5 to +5 scale)
     Conviction {
         #[command(subcommand)]
         command: AnalyticsConvictionCommand,
