@@ -1,6 +1,14 @@
 # Changelog
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
+
+### 2026-03-28 — fix: add --claim flag to journal prediction add
+
+- What: Added `--claim` as a named flag alternative to the bare positional value on `journal prediction add`. Makes the positional value optional — either `--claim` or positional works, with `--claim` taking precedence when both provided. Clear error message with usage examples when neither is given. Same UX pattern as the journal entry add `--content` fix (PR #375).
+- Why: Evening-analyst feedback (Mar 28, 78/75): "journal prediction add rejected --claim flag syntax requiring positional VALUE instead." Agents using fully-named flag syntax (e.g. `--claim "BTC above 100k" --timeframe low`) now work instead of erroring.
+- Files: `src/cli.rs` (+172/-8: optional value, --claim flag, help text update, 4 new tests), `src/main.rs` (+15/-4: claim.or(value) resolution with descriptive error)
+- Tests: 1822 passing (+4 new: claim flag, claim overrides positional, no value parses, claim with all flags). Clippy clean.
+- PR: #392
 > Automated runs append here after completing TODO items.
 
 ### 2026-03-28 — feat: consolidated scenario impact matrix (`analytics scenario impact-matrix`)
