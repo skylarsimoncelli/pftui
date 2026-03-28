@@ -102,6 +102,7 @@ fn run_agent_journal(
         Some(cli::JournalCommand::Prediction { command }) => match command {
             cli::JournalPredictionCommand::Add {
                 value,
+                claim,
                 timeframe_pos,
                 confidence_pos,
                 symbol,
@@ -112,10 +113,18 @@ fn run_agent_journal(
                 target_date,
                 resolution_criteria,
                 json,
-            } => commands::predict::run(
+            } => {
+                let text = claim.or(value).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No prediction text provided. Use --claim \"your prediction\" or pass it as the first positional argument.\n\
+                         Examples:\n  pftui journal prediction add --claim \"BTC above 70k\" --timeframe low\n  \
+                         pftui journal prediction add \"BTC above 70k\" --timeframe low"
+                    )
+                })?;
+                commands::predict::run(
                 backend,
                 "add",
-                Some(&value),
+                Some(&text),
                 None,
                 symbol.as_deref(),
                 conviction.as_deref(),
@@ -131,7 +140,7 @@ fn run_agent_journal(
                 None,
                 None,
                 json,
-            ),
+            )},
             cli::JournalPredictionCommand::List {
                 filter,
                 timeframe,
