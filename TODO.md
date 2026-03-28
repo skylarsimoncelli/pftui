@@ -10,11 +10,13 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-_(none)_
+- [ ] [Feedback] Unified cross-timeframe view command — Evening Analyst (78/75 Mar 28) notes having to run `analytics divergence` and `analytics correlations` separately. Add an `analytics cross-timeframe` (or similar) command combining divergence, correlation-breaks, and alignment into one JSON call. See `src/commands/morning_brief.rs` for multi-section consolidation pattern. Evening Analyst is lowest scorer — this is their main workflow friction.
+- [ ] [Feedback] `alerts check` subcommand discoverability — Evening Analyst (Mar 28) couldn't find alerts check under `data` or top-level. Likely expects `analytics alerts check` or `data alerts check`. Add alias/redirect or improve `--help` text with cross-references. Check `src/cli.rs` AlertsCommand variants.
 
 ## P2 - Coverage And Agent Consumption
 
-_(none)_
+- [ ] [Feedback] Overnight price change summary in portfolio brief — Morning Intelligence (75/85 Mar 28) wants overnight price moves surfaced directly in `portfolio brief --json`. Add `overnight_changes` section with previous close → current for key holdings. See `src/commands/portfolio_brief.rs`.
+- [ ] [Feedback] Commodity coverage in scoreboard — Public Daily Report (82/80 Mar 28) notes uranium and copper missing from price scoreboard tables. Ensure `data prices` and related commands include commodity ETFs/symbols (U-U.TO, COPX, HG=F) when available. Check `src/commands/prices.rs` symbol lists.
 
 ## P3 - Long Term
 
@@ -28,39 +30,35 @@ _(none)_
 
 | Tester | Usefulness | Overall | Date | Trend |
 |--------|-----------|---------|------|-------|
-| Evening Analyst | 72% | 75% | Mar 27 | ↑ (recovered from 65/68 Mar 26. Journal entry UX fix #375 shipped. Economy confidence still a pain point. **Lowest scorer — priority.**) |
-| Medium-Timeframe Analyst | 85% | 88% | Mar 27 | ↑ (overall up 80→88. Power flow assess #372 shipped for FIC/MIC/TIC weekly tracking.) |
-| Low-Timeframe Analyst | 85% | 90% | Mar 27 | ↑ (recovered from 75/80. Synthesis power structure integration #384 shipped. Regime-flows #369, prediction stats filters #356, news sentiment #358 all shipped.) |
+| Evening Analyst | 78% | 75% | Mar 28 | ↑ (72→78 usefulness, 75→75 overall. --claim fix #392 shipped. Wants unified cross-timeframe view. **Lowest scorer — priority.**) |
+| Medium-Timeframe Analyst | 85% | 90% | Mar 28 | ↑ (88→90 overall. Scenario impact-matrix #387 shipped.) |
+| Low-Timeframe Analyst | 85% | 90% | Mar 27 | → (stable. Synthesis power structure #384 shipped.) |
 | High-Timeframe Analyst | 85% | 90% | Mar 26 | → (stable. Scenario suggest #366 shipped.) |
-| Morning Brief | 85% | 88% | Mar 26 | → (stable. Consolidated morning-brief #363 shipped.) |
-| Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent. System healthy.) |
-| Dev Agent | 92% | 94% | Mar 27 | → (stable high.) |
+| Morning Intelligence | 75% | 85% | Mar 28 | new (first scored review. Wants overnight price changes in brief.) |
+| Morning Brief | 85% | 88% | Mar 26 | → (stable. Morning-brief #363 shipped.) |
+| Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent.) |
+| Public Daily Report | 82% | 80% | Mar 28 | new (first scored review. Wants better commodity coverage.) |
+| Dev Agent | 92% | 94% | Mar 28 | → (stable high.) |
 
-**Key changes since last review (Mar 26):**
-- v0.18.0 was released Mar 26. 61 commits since tag.
-- **v0.19.0 released Mar 27** with 15 feature PRs since v0.18.0.
-- Evening Analyst **recovered** 65→72 usefulness, 68→75 overall — journal UX fix helped, economy confidence still limiting.
-- Medium-Timeframe Analyst **up** 80→88 overall — power flow weekly assessment praised.
-- Low-Timeframe Analyst **recovered** from 75/80 dip, back to 85/90.
-- All other testers stable.
+**Key changes since last review (Mar 27):**
+- Evening Analyst usefulness up 72→78 (--claim fix helped), overall stable at 75. Still lowest.
+- Medium-Timeframe Analyst overall up 88→90 — scenario impact-matrix praised.
+- Two new testers appeared: Morning Intelligence (75/85) and Public Daily Report (82/80).
+- 21 commits since v0.19.0 including 3 feature PRs (#384, #387, #392), data source fixes, systemd services.
 
-**Shipped since last review (Mar 26):**
-1. ✅ **Synthesis power structure integration** — #384. `analytics synthesis --json` now includes FIC/MIC/TIC context.
-2. ✅ **Economy indicator confidence depth** — #381. FRED 5→15 indicators, confidence_reason, previous/change.
-3. ✅ **Power flow weekly assessment** — #372. `analytics power-flow assess` for FIC/MIC/TIC tracking.
-2. ✅ **Regime-asset flow correlation tracker** — #369. `analytics regime-flows --json`.
-3. ✅ **Automated scenario probability suggestions** — #366. `analytics scenario suggest --json`.
-4. ✅ **Consolidated morning-brief command** — #363. `analytics morning-brief --json`.
-5. ✅ **News sentiment scoring** — #358. `analytics news-sentiment` + `data news --with-sentiment`.
-6. ✅ **Prediction stats per-timeframe/agent filtering** — #356. `--timeframe`/`--agent` on stats.
-7. ✅ **Alignment summary** — #353. `analytics alignment --summary`.
-8. ✅ **Sector-wide theme detection** — #351. `analytics movers themes`.
-9. ✅ **Auto-scored predictions** — #341. `journal prediction auto-score`.
-10. ✅ **Correlation breaks × impact cross-ref** — #341. `--with-impact` on correlations.
-11. ✅ **Data futures endpoint** — #340. `data futures` for overnight positioning.
-12. ✅ **Economy confidence + scenario discoverability** — #339. FRED thresholds, CPI/PPI mappings, scenario plural alias.
-13. ✅ **Journal entry add UX fix** — #375. `--content` named flag, help text on all flags.
+**Shipped since last review (Mar 27):**
+1. ✅ **Scenario impact matrix** — #387. `analytics scenario impact-matrix --json`.
+2. ✅ **Prediction add --claim flag** — #392. Named flag UX fix for evening analyst.
+3. ✅ **Synthesis power structure integration** — #384. FIC/MIC/TIC in synthesis.
+4. ✅ **Economy indicator confidence depth** — #381. 15 FRED indicators, confidence reasoning.
+5. ✅ **Data source resilience** — #380. BLS rate limits, broken pipelines fixed.
+6. ✅ **Systemd services** — daemon + mobile service files deployed.
 
-**Release:** v0.19.0 cut Mar 27 — 61 commits, 15 features, 1787 tests, clippy clean.
+**Top 3 priorities from feedback:**
+1. **P1: Unified cross-timeframe view** — Evening Analyst (lowest scorer) needs single command for divergence + correlation-breaks + alignment.
+2. **P1: Alerts check discoverability** — Evening Analyst can't find alert checking commands intuitively.
+3. **P2: Overnight price changes in brief** — Morning Intelligence wants overnight moves in portfolio brief.
 
-**GitHub stars:** 6 — Homebrew Core requires 50+.
+**Release eligibility:** 21 commits since v0.19.0 with 3 feature PRs, no P0 bugs, tests (1822) and clippy clean. **Eligible for v0.20.0** — meaningful new work shipped.
+
+**GitHub stars:** 7 — Homebrew Core requires 50+.
