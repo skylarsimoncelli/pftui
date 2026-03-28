@@ -2,6 +2,14 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-28 — feat: alert triage dashboard (`analytics alerts triage`)
+
+- What: Added `pftui analytics alerts triage [--json]` that groups all alerts into urgency tiers: 🔴 CRITICAL (newly triggered), 🟠 HIGH (previously triggered, unacknowledged), 🟡 WATCH (armed, within 5% of threshold), 🟢 LOW (armed, >5% from threshold). Acknowledged alerts counted but excluded from tiers. Summary stats with per-kind breakdown (price/technical/macro/scenario/ratio) showing tier distribution. Each entry includes urgency classification, current value, distance to threshold, and trigger timestamp. Sorted by urgency (critical first). Terminal output with emoji heat indicators and structured sections. Full JSON output with `TriageDashboard` struct for agent consumption. Cross-references in `data alerts`, `analytics alerts`, and `data --help`.
+- Why: Low-timeframe analyst feedback (Mar 28, 85/90): "Would benefit from alert triage dashboard for 15 active alerts." Agents previously got a flat list from `analytics alerts check` with no prioritization or grouping — now `triage` gives an at-a-glance urgency-ranked view with kind breakdown and actionability scoring.
+- Files: `src/commands/alerts.rs` (+271: TriageUrgency enum, TriageEntry/KindGroup/TriageDashboard structs, classify_urgency, build_triage, run_triage, 10 tests), `src/cli.rs` (+30: Triage variant on AnalyticsAlertsCommand with after_help, updated parent after_help and data alerts cross-references, 2 CLI parse tests), `src/main.rs` (+4: Triage early-return dispatch + unreachable arm)
+- Tests: 1846 passing (+12 new: classify_urgency_newly_triggered, classify_urgency_previously_triggered, classify_urgency_watch_within_5pct, classify_urgency_low_far_from_threshold, classify_urgency_acknowledged_excluded, classify_urgency_watch_boundary_at_5pct, triage_dashboard_groups_by_kind, triage_dashboard_empty, triage_urgency_ordering, triage_entry_serializes_to_json, parse_analytics_alerts_triage_json, parse_analytics_alerts_triage_no_json). Clippy clean.
+- PR: #405
+
 ### 2026-03-28 — feat: uranium in market/economy symbols + `--market` flag on `data prices`
 
 - What: Added URA (Uranium ETF) to `market_symbols()` and `economy_symbols()` so it appears in the Markets tab, Economy tab, and gets fetched during `data refresh`. Added `--market` flag to `data prices` that includes all 22 market overview symbols (indices, commodities, crypto, forex, bonds) in the output. Market name map provides human-readable names for Yahoo symbols (e.g. `^GSPC` → `S&P 500`). Copper (HG=F) was already present in both symbol lists.

@@ -1907,6 +1907,13 @@ pub enum AnalyticsAlertsCommand {
     Rearm { id: i64 },
     /// Seed a default smart-alert set for current holdings + core macro conditions
     SeedDefaults,
+    /// Triage dashboard: prioritize, group, and score all alerts by urgency
+    #[command(after_help = "Groups alerts into urgency tiers:\n\n  🔴 CRITICAL  Newly triggered — needs immediate attention\n  🟠 HIGH      Previously triggered, not yet acknowledged\n  🟡 WATCH     Armed and within 5% of threshold\n  🟢 LOW       Armed but far from threshold\n\nSummary stats by kind (price/technical/macro/scenario/ratio)\nand actionability scoring.\n\nSee also: analytics alerts check, analytics alerts list")]
+    Triage {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2776,7 +2783,7 @@ pub enum AnalyticsCommand {
         command: AnalyticsTrendsCommand,
     },
     /// Alert rules and monitoring (also available as `data alerts`)
-    #[command(after_help = "Common workflows:\n  pftui analytics alerts check             Check all alerts against current data\n  pftui analytics alerts check --today     Check only today's triggers\n  pftui analytics alerts list              List alert rules\n  pftui analytics alerts list --triggered  Show triggered alert log\n  pftui analytics alerts add \"BTC > 100000\" Add a custom alert rule\n  pftui analytics alerts seed-defaults     Seed smart-alert defaults for holdings\n\nAlso accessible via: pftui data alerts check, pftui data alerts list")]
+    #[command(after_help = "Common workflows:\n  pftui analytics alerts check             Check all alerts against current data\n  pftui analytics alerts check --today     Check only today's triggers\n  pftui analytics alerts triage            Prioritized alert dashboard with urgency tiers\n  pftui analytics alerts list              List alert rules\n  pftui analytics alerts list --triggered  Show triggered alert log\n  pftui analytics alerts add \"BTC > 100000\" Add a custom alert rule\n  pftui analytics alerts seed-defaults     Seed smart-alert defaults for holdings\n\nAlso accessible via: pftui data alerts check, pftui data alerts list")]
     Alerts {
         #[command(subcommand)]
         command: AnalyticsAlertsCommand,
@@ -2982,7 +2989,7 @@ pub enum Command {
     },
 
     /// Data management operations
-    #[command(after_help = "Looking for alerts? Use:\n  pftui data alerts check      Check alerts against current data\n  pftui data alerts list       List alert rules\n  pftui analytics alerts       Full alert management (add, ack, seed-defaults)")]
+    #[command(after_help = "Looking for alerts? Use:\n  pftui data alerts check      Check alerts against current data\n  pftui data alerts list       List alert rules\n  pftui analytics alerts triage  Prioritized alert dashboard\n  pftui analytics alerts       Full alert management (add, ack, seed-defaults)")]
     Data {
         #[command(subcommand)]
         command: DataCommand,
@@ -5678,5 +5685,36 @@ mod tests {
         };
         assert!(!market);
         assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_alerts_triage_json() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "alerts", "triage", "--json"]).unwrap();
+        let Command::Analytics { command } = cli.command.unwrap() else {
+            panic!("expected Analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected Alerts");
+        };
+        let AnalyticsAlertsCommand::Triage { json } = command else {
+            panic!("expected Triage");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_alerts_triage_no_json() {
+        let cli = Cli::try_parse_from(["pftui", "analytics", "alerts", "triage"]).unwrap();
+        let Command::Analytics { command } = cli.command.unwrap() else {
+            panic!("expected Analytics");
+        };
+        let AnalyticsCommand::Alerts { command } = command else {
+            panic!("expected Alerts");
+        };
+        let AnalyticsAlertsCommand::Triage { json } = command else {
+            panic!("expected Triage");
+        };
+        assert!(!json);
     }
 }

@@ -1,7 +1,9 @@
 use anyhow::{bail, Result};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::json;
+use std::fmt;
 
 use crate::alerts::engine::{check_alerts_backend_only, AlertCheckResult};
 use crate::alerts::rules::parse_rule;
@@ -826,6 +828,324 @@ impl From<&AlertCheckResult> for AlertCheckJson {
     }
 }
 
+// ── Alert Triage Dashboard ──────────────────────────────────────────
+
+/// Urgency tier for alert triage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TriageUrgency {
+    /// Newly triggered — needs immediate attention
+    Critical,
+    /// Previously triggered, not yet acknowledged
+    High,
+    /// Armed and within 5% of threshold
+    Watch,
+    /// Armed but far from threshold
+    Low,
+}
+
+impl fmt::Display for TriageUrgency {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TriageUrgency::Critical => write!(f, "critical"),
+            TriageUrgency::High => write!(f, "high"),
+            TriageUrgency::Watch => write!(f, "watch"),
+            TriageUrgency::Low => write!(f, "low"),
+        }
+    }
+}
+
+/// A single triaged alert entry.
+#[derive(Debug, Clone, Serialize)]
+pub struct TriageEntry {
+    pub id: i64,
+    pub urgency: TriageUrgency,
+    pub kind: String,
+    pub symbol: String,
+    pub rule_text: String,
+    pub status: String,
+    pub current_value: Option<String>,
+    pub threshold: String,
+    pub direction: String,
+    pub distance_pct: Option<String>,
+    pub triggered_at: Option<String>,
+    pub condition: Option<String>,
+    pub recurring: bool,
+}
+
+/// Per-kind group summary.
+#[derive(Debug, Clone, Serialize)]
+pub struct KindGroup {
+    pub kind: String,
+    pub count: usize,
+    pub critical: usize,
+    pub high: usize,
+    pub watch: usize,
+    pub low: usize,
+}
+
+/// Full triage dashboard output.
+#[derive(Debug, Clone, Serialize)]
+pub struct TriageDashboard {
+    pub total: usize,
+    pub critical_count: usize,
+    pub high_count: usize,
+    pub watch_count: usize,
+    pub low_count: usize,
+    pub acknowledged_count: usize,
+    pub by_kind: Vec<KindGroup>,
+    pub alerts: Vec<TriageEntry>,
+}
+
+/// Classify an alert check result into an urgency tier.
+fn classify_urgency(r: &AlertCheckResult) -> Option<TriageUrgency> {
+    if r.rule.status == AlertStatus::Acknowledged {
+        return None; // excluded from triage tiers
+    }
+    if r.newly_triggered {
+        return Some(TriageUrgency::Critical);
+    }
+    if r.rule.status == AlertStatus::Triggered {
+        return Some(TriageUrgency::High);
+    }
+    // Armed — check distance
+    if let Some(dist) = r.distance_pct {
+        let abs_dist = dist.abs();
+        let five = Decimal::from(5);
+        if abs_dist <= five {
+            Some(TriageUrgency::Watch)
+        } else {
+            Some(TriageUrgency::Low)
+        }
+    } else {
+        Some(TriageUrgency::Low)
+    }
+}
+
+/// Build and return the triage dashboard.
+pub fn build_triage(backend: &BackendConnection) -> Result<TriageDashboard> {
+    let results = check_alerts_backend_only(backend)?;
+
+    let mut entries: Vec<TriageEntry> = Vec::new();
+    let mut acknowledged_count: usize = 0;
+    let mut kind_counts: std::collections::BTreeMap<
+        String,
+        (usize, usize, usize, usize, usize),
+    > = std::collections::BTreeMap::new();
+
+    for r in &results {
+        let urgency = match classify_urgency(r) {
+            Some(u) => u,
+            None => {
+                acknowledged_count += 1;
+                continue;
+            }
+        };
+
+        let kind_str = r.rule.kind.to_string();
+        let entry = kind_counts.entry(kind_str.clone()).or_default();
+        entry.0 += 1; // total
+        match urgency {
+            TriageUrgency::Critical => entry.1 += 1,
+            TriageUrgency::High => entry.2 += 1,
+            TriageUrgency::Watch => entry.3 += 1,
+            TriageUrgency::Low => entry.4 += 1,
+        }
+
+        entries.push(TriageEntry {
+            id: r.rule.id,
+            urgency,
+            kind: kind_str,
+            symbol: r.rule.symbol.clone(),
+            rule_text: r.rule.rule_text.clone(),
+            status: if r.newly_triggered {
+                "triggered".to_string()
+            } else {
+                r.rule.status.to_string()
+            },
+            current_value: r.current_value.map(|v| v.to_string()),
+            threshold: r.rule.threshold.clone(),
+            direction: r.rule.direction.to_string(),
+            distance_pct: r.distance_pct.map(|d| d.round_dp(2).to_string()),
+            triggered_at: r.rule.triggered_at.clone(),
+            condition: r.rule.condition.clone(),
+            recurring: r.rule.recurring,
+        });
+    }
+
+    // Sort entries: Critical first, then High, Watch, Low
+    entries.sort_by(|a, b| a.urgency.cmp(&b.urgency));
+
+    let critical_count = entries
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::Critical)
+        .count();
+    let high_count = entries
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::High)
+        .count();
+    let watch_count = entries
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::Watch)
+        .count();
+    let low_count = entries
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::Low)
+        .count();
+
+    let by_kind: Vec<KindGroup> = kind_counts
+        .into_iter()
+        .map(|(kind, (count, critical, high, watch, low))| KindGroup {
+            kind,
+            count,
+            critical,
+            high,
+            watch,
+            low,
+        })
+        .collect();
+
+    Ok(TriageDashboard {
+        total: entries.len(),
+        critical_count,
+        high_count,
+        watch_count,
+        low_count,
+        acknowledged_count,
+        by_kind,
+        alerts: entries,
+    })
+}
+
+/// Run the triage dashboard CLI command.
+pub fn run_triage(backend: &BackendConnection, json: bool) -> Result<()> {
+    let dashboard = build_triage(backend)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&dashboard)?);
+        return Ok(());
+    }
+
+    // Terminal output
+    println!("╔══════════════════════════════════════╗");
+    println!("║       ALERT TRIAGE DASHBOARD         ║");
+    println!("╚══════════════════════════════════════╝\n");
+
+    println!(
+        "Total: {} alerts | 🔴 {} critical | 🟠 {} high | 🟡 {} watch | 🟢 {} low | ✅ {} ack'd\n",
+        dashboard.total,
+        dashboard.critical_count,
+        dashboard.high_count,
+        dashboard.watch_count,
+        dashboard.low_count,
+        dashboard.acknowledged_count
+    );
+
+    // By-kind breakdown
+    if !dashboard.by_kind.is_empty() {
+        println!("BY KIND:");
+        for group in &dashboard.by_kind {
+            println!(
+                "  {:<12} {:>3} total  (🔴{} 🟠{} 🟡{} 🟢{})",
+                group.kind, group.count, group.critical, group.high, group.watch, group.low
+            );
+        }
+        println!();
+    }
+
+    // Critical tier
+    let critical: Vec<&TriageEntry> = dashboard
+        .alerts
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::Critical)
+        .collect();
+    if !critical.is_empty() {
+        println!("🔴 CRITICAL — Newly Triggered ({}):\n", critical.len());
+        for e in &critical {
+            let current = e.current_value.as_deref().unwrap_or("N/A");
+            println!("  🔴 [#{}] {} — current: {}", e.id, e.rule_text, current);
+        }
+        println!();
+    }
+
+    // High tier
+    let high: Vec<&TriageEntry> = dashboard
+        .alerts
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::High)
+        .collect();
+    if !high.is_empty() {
+        println!(
+            "🟠 HIGH — Triggered, Unacknowledged ({}):\n",
+            high.len()
+        );
+        for e in &high {
+            let current = e.current_value.as_deref().unwrap_or("N/A");
+            let triggered = e.triggered_at.as_deref().unwrap_or("unknown");
+            println!(
+                "  🟠 [#{}] {} — current: {} (triggered: {})",
+                e.id, e.rule_text, current, triggered
+            );
+        }
+        println!();
+    }
+
+    // Watch tier
+    let watch: Vec<&TriageEntry> = dashboard
+        .alerts
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::Watch)
+        .collect();
+    if !watch.is_empty() {
+        println!(
+            "🟡 WATCH — Armed, Within 5% of Threshold ({}):\n",
+            watch.len()
+        );
+        for e in &watch {
+            let current = e.current_value.as_deref().unwrap_or("N/A");
+            let dist = e
+                .distance_pct
+                .as_ref()
+                .map(|d| format!("({}% to target)", d))
+                .unwrap_or_default();
+            println!(
+                "  🟡 [#{}] {} — current: {} {}",
+                e.id, e.rule_text, current, dist
+            );
+        }
+        println!();
+    }
+
+    // Low tier
+    let low: Vec<&TriageEntry> = dashboard
+        .alerts
+        .iter()
+        .filter(|e| e.urgency == TriageUrgency::Low)
+        .collect();
+    if !low.is_empty() {
+        println!("🟢 LOW — Armed, >5% From Threshold ({}):\n", low.len());
+        for e in &low {
+            let current = e.current_value.as_deref().unwrap_or("N/A");
+            let dist = e
+                .distance_pct
+                .as_ref()
+                .map(|d| format!("({}% to target)", d))
+                .unwrap_or_default();
+            println!(
+                "  🟢 [#{}] {} — current: {} {}",
+                e.id, e.rule_text, current, dist
+            );
+        }
+        println!();
+    }
+
+    if dashboard.total == 0 {
+        println!("No active alerts. Run `analytics alerts seed-defaults` to create smart defaults.");
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1451,5 +1771,275 @@ mod tests {
             ..default_args()
         };
         run_list(&backend, &args).unwrap();
+    }
+
+    // ── Triage tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_classify_urgency_newly_triggered() {
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 1,
+                kind: AlertKind::Price,
+                symbol: "BTC".into(),
+                direction: AlertDirection::Above,
+                condition: None,
+                threshold: "100000".into(),
+                status: AlertStatus::Triggered,
+                rule_text: "BTC above 100000".into(),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".into(),
+                triggered_at: Some("2026-03-28".into()),
+            },
+            current_value: Some(Decimal::from(105000)),
+            newly_triggered: true,
+            distance_pct: Some(Decimal::from(0)),
+            trigger_data: json!({}),
+        };
+        assert_eq!(classify_urgency(&r), Some(TriageUrgency::Critical));
+    }
+
+    #[test]
+    fn test_classify_urgency_previously_triggered() {
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 2,
+                kind: AlertKind::Price,
+                symbol: "GC=F".into(),
+                direction: AlertDirection::Above,
+                condition: None,
+                threshold: "3000".into(),
+                status: AlertStatus::Triggered,
+                rule_text: "GC=F above 3000".into(),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".into(),
+                triggered_at: Some("2026-03-27".into()),
+            },
+            current_value: Some(Decimal::from(3100)),
+            newly_triggered: false,
+            distance_pct: Some(Decimal::from(0)),
+            trigger_data: json!({}),
+        };
+        assert_eq!(classify_urgency(&r), Some(TriageUrgency::High));
+    }
+
+    #[test]
+    fn test_classify_urgency_watch_within_5pct() {
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 3,
+                kind: AlertKind::Price,
+                symbol: "SI=F".into(),
+                direction: AlertDirection::Above,
+                condition: None,
+                threshold: "30".into(),
+                status: AlertStatus::Armed,
+                rule_text: "SI=F above 30".into(),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".into(),
+                triggered_at: None,
+            },
+            current_value: Some(Decimal::from(29)),
+            newly_triggered: false,
+            distance_pct: Some(Decimal::from_str("3.4").unwrap()),
+            trigger_data: json!({}),
+        };
+        assert_eq!(classify_urgency(&r), Some(TriageUrgency::Watch));
+    }
+
+    #[test]
+    fn test_classify_urgency_low_far_from_threshold() {
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 4,
+                kind: AlertKind::Price,
+                symbol: "CL=F".into(),
+                direction: AlertDirection::Below,
+                condition: None,
+                threshold: "50".into(),
+                status: AlertStatus::Armed,
+                rule_text: "CL=F below 50".into(),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".into(),
+                triggered_at: None,
+            },
+            current_value: Some(Decimal::from(70)),
+            newly_triggered: false,
+            distance_pct: Some(Decimal::from(28)),
+            trigger_data: json!({}),
+        };
+        assert_eq!(classify_urgency(&r), Some(TriageUrgency::Low));
+    }
+
+    #[test]
+    fn test_classify_urgency_acknowledged_excluded() {
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 5,
+                kind: AlertKind::Price,
+                symbol: "BTC".into(),
+                direction: AlertDirection::Above,
+                condition: None,
+                threshold: "90000".into(),
+                status: AlertStatus::Acknowledged,
+                rule_text: "BTC above 90000".into(),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".into(),
+                triggered_at: Some("2026-03-25".into()),
+            },
+            current_value: Some(Decimal::from(95000)),
+            newly_triggered: false,
+            distance_pct: None,
+            trigger_data: json!({}),
+        };
+        assert_eq!(classify_urgency(&r), None);
+    }
+
+    #[test]
+    fn test_classify_urgency_watch_boundary_at_5pct() {
+        let r = AlertCheckResult {
+            rule: AlertRule {
+                id: 6,
+                kind: AlertKind::Price,
+                symbol: "GC=F".into(),
+                direction: AlertDirection::Above,
+                condition: None,
+                threshold: "3000".into(),
+                status: AlertStatus::Armed,
+                rule_text: "GC=F above 3000".into(),
+                recurring: false,
+                cooldown_minutes: 0,
+                created_at: "2026-01-01".into(),
+                triggered_at: None,
+            },
+            current_value: Some(Decimal::from(2850)),
+            newly_triggered: false,
+            distance_pct: Some(Decimal::from(5)),
+            trigger_data: json!({}),
+        };
+        // Exactly 5% should be Watch (<=5)
+        assert_eq!(classify_urgency(&r), Some(TriageUrgency::Watch));
+    }
+
+    fn make_price_quote(symbol: &str, price: i64) -> PriceQuote {
+        PriceQuote {
+            symbol: symbol.to_string(),
+            price: Decimal::from(price),
+            currency: "USD".to_string(),
+            fetched_at: "2026-03-28".into(),
+            source: "test".into(),
+            pre_market_price: None,
+            post_market_price: None,
+            post_market_change_percent: None,
+            previous_close: None,
+        }
+    }
+
+    #[test]
+    fn test_triage_dashboard_groups_by_kind() {
+        let conn = setup_db();
+        let backend = BackendConnection::Sqlite { conn };
+
+        // Add cached prices
+        price_cache::upsert_price(
+            backend.sqlite(),
+            &make_price_quote("BTC", 85000),
+        )
+        .unwrap();
+        price_cache::upsert_price(
+            backend.sqlite(),
+            &make_price_quote("GC=F", 3050),
+        )
+        .unwrap();
+
+        // Add price alerts
+        alerts_db::add_alert_backend(
+            &backend,
+            alerts_db::NewAlert {
+                kind: "price",
+                symbol: "BTC",
+                direction: "above",
+                condition: None,
+                threshold: "100000",
+                rule_text: "BTC above 100000",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+        alerts_db::add_alert_backend(
+            &backend,
+            alerts_db::NewAlert {
+                kind: "price",
+                symbol: "GC=F",
+                direction: "above",
+                condition: None,
+                threshold: "3200",
+                rule_text: "GC=F above 3200",
+                recurring: false,
+                cooldown_minutes: 0,
+            },
+        )
+        .unwrap();
+
+        let dashboard = build_triage(&backend).unwrap();
+
+        assert_eq!(dashboard.total, 2);
+        assert_eq!(dashboard.critical_count, 0);
+        assert_eq!(dashboard.high_count, 0);
+        // Both are armed, BTC is ~17.6% away (low), GC=F is ~4.9% away (watch)
+        assert!(dashboard.watch_count + dashboard.low_count == 2);
+        assert_eq!(dashboard.acknowledged_count, 0);
+        assert_eq!(dashboard.by_kind.len(), 1);
+        assert_eq!(dashboard.by_kind[0].kind, "price");
+        assert_eq!(dashboard.by_kind[0].count, 2);
+    }
+
+    #[test]
+    fn test_triage_dashboard_empty() {
+        let conn = setup_db();
+        let backend = BackendConnection::Sqlite { conn };
+        let dashboard = build_triage(&backend).unwrap();
+        assert_eq!(dashboard.total, 0);
+        assert_eq!(dashboard.critical_count, 0);
+        assert_eq!(dashboard.by_kind.len(), 0);
+        assert!(dashboard.alerts.is_empty());
+    }
+
+    #[test]
+    fn test_triage_urgency_ordering() {
+        // Verify that Critical < High < Watch < Low for sorting
+        assert!(TriageUrgency::Critical < TriageUrgency::High);
+        assert!(TriageUrgency::High < TriageUrgency::Watch);
+        assert!(TriageUrgency::Watch < TriageUrgency::Low);
+    }
+
+    #[test]
+    fn test_triage_entry_serializes_to_json() {
+        let entry = TriageEntry {
+            id: 1,
+            urgency: TriageUrgency::Critical,
+            kind: "price".into(),
+            symbol: "BTC".into(),
+            rule_text: "BTC above 100000".into(),
+            status: "triggered".into(),
+            current_value: Some("105000".into()),
+            threshold: "100000".into(),
+            direction: "above".into(),
+            distance_pct: Some("0".into()),
+            triggered_at: Some("2026-03-28".into()),
+            condition: None,
+            recurring: false,
+        };
+        let json_str = serde_json::to_string(&entry).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["urgency"], "critical");
+        assert_eq!(parsed["kind"], "price");
+        assert_eq!(parsed["symbol"], "BTC");
     }
 }
