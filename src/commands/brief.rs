@@ -63,6 +63,8 @@ struct AgentBrief {
     timeframe_signal: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     technical_signals: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    overnight_changes: Vec<OvernightChangeJson>,
 }
 
 #[derive(Serialize)]
@@ -128,6 +130,19 @@ struct MoverJson {
     signals: Vec<String>,
 }
 
+#[derive(Serialize, Debug, Clone)]
+struct OvernightChangeJson {
+    symbol: String,
+    name: String,
+    category: String,
+    previous_close: String,
+    current_price: String,
+    change_abs: String,
+    change_pct: String,
+    /// "held" for portfolio positions, "watchlist" for watchlist items
+    source: String,
+}
+
 const DEFAULT_MARKET_MOVER_SYMBOLS: &[&str] = &[
     "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOG", "SPY", "QQQ", "XLE", "XOP", "CL=F",
     "GC=F", "SI=F", "HG=F",
@@ -153,6 +168,86 @@ struct CorrelationBreak {
 struct CorrelationSummary {
     top_pairs: Vec<CorrelationPair>,
     active_breaks: Vec<CorrelationBreak>,
+}
+
+/// Build overnight change entries for held positions and watchlist items.
+/// Shows previous close → current price with absolute and percentage change,
+/// sorted by absolute change percentage descending (biggest movers first).
+fn build_overnight_changes(
+    positions: &[Position],
+    watchlist_symbols: &[String],
+    prices: &HashMap<String, Decimal>,
+    hist_1d: &HashMap<String, Decimal>,
+) -> Vec<OvernightChangeJson> {
+    let mut changes = Vec::new();
+
+    // Held positions (skip cash)
+    for pos in positions {
+        if pos.category == AssetCategory::Cash {
+            continue;
+        }
+        if let (Some(current), Some(&prev)) = (pos.current_price, hist_1d.get(&pos.symbol)) {
+            if prev > dec!(0) {
+                let change_abs = current - prev;
+                let change_pct = ((current - prev) / prev) * dec!(100);
+                changes.push(OvernightChangeJson {
+                    symbol: pos.symbol.clone(),
+                    name: resolve_name(&pos.symbol),
+                    category: format!("{:?}", pos.category),
+                    previous_close: prev.to_string(),
+                    current_price: current.to_string(),
+                    change_abs: change_abs.round_dp(4).to_string(),
+                    change_pct: change_pct.round_dp(2).to_string(),
+                    source: "held".to_string(),
+                });
+            }
+        }
+    }
+
+    // Watchlist items (only those not already in positions)
+    let held_symbols: std::collections::HashSet<&str> =
+        positions.iter().map(|p| p.symbol.as_str()).collect();
+    for sym in watchlist_symbols {
+        if held_symbols.contains(sym.as_str()) {
+            continue;
+        }
+        if let (Some(&current), Some(&prev)) = (prices.get(sym), hist_1d.get(sym)) {
+            if prev > dec!(0) {
+                let change_abs = current - prev;
+                let change_pct = ((current - prev) / prev) * dec!(100);
+                changes.push(OvernightChangeJson {
+                    symbol: sym.clone(),
+                    name: resolve_name(sym),
+                    category: format!(
+                        "{:?}",
+                        crate::models::asset_names::infer_category(sym)
+                    ),
+                    previous_close: prev.to_string(),
+                    current_price: current.to_string(),
+                    change_abs: change_abs.round_dp(4).to_string(),
+                    change_pct: change_pct.round_dp(2).to_string(),
+                    source: "watchlist".to_string(),
+                });
+            }
+        }
+    }
+
+    // Sort by absolute change percentage descending (biggest movers first)
+    changes.sort_by(|a, b| {
+        let a_pct = a
+            .change_pct
+            .parse::<f64>()
+            .unwrap_or(0.0)
+            .abs();
+        let b_pct = b
+            .change_pct
+            .parse::<f64>()
+            .unwrap_or(0.0)
+            .abs();
+        b_pct.partial_cmp(&a_pct).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    changes
 }
 
 /// Agent mode: single comprehensive JSON blob
@@ -339,6 +434,10 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
     let correlations = correlation_summary_to_json(&corr_summary);
     let timeframe_signal = get_top_timeframe_signal_json(conn).ok();
 
+    // Overnight changes: previous close → current for all held + watchlist
+    let overnight_changes =
+        build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+
     let brief = AgentBrief {
         timestamp,
         portfolio: portfolio_summary,
@@ -357,6 +456,7 @@ fn run_agent_mode(conn: &Connection, config: &Config) -> Result<()> {
         correlations,
         timeframe_signal,
         technical_signals: technical_signals_json,
+        overnight_changes,
     };
 
     let json = serde_json::to_string_pretty(&brief)?;
@@ -531,6 +631,10 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
     let correlations = correlation_summary_to_json(&corr_summary);
     let timeframe_signal = get_top_timeframe_signal_json_backend(backend).ok();
 
+    // Overnight changes: previous close → current for all held + watchlist
+    let overnight_changes =
+        build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+
     let brief = AgentBrief {
         timestamp,
         portfolio: portfolio_summary,
@@ -549,6 +653,7 @@ fn run_agent_mode_backend(backend: &BackendConnection, config: &Config) -> Resul
         correlations,
         timeframe_signal,
         technical_signals: technical_signals_json,
+        overnight_changes,
     };
     println!("{}", serde_json::to_string_pretty(&brief)?);
     Ok(())
@@ -3545,5 +3650,171 @@ mod tests {
         assert_eq!(json_values[0]["type"], "52w_high");
         assert_eq!(json_values[0]["direction"], "bullish");
         assert_eq!(json_values[0]["severity"], "critical");
+    }
+
+    #[test]
+    fn overnight_changes_includes_held_positions() {
+        let positions = vec![
+            make_position(
+                "BTC",
+                AssetCategory::Crypto,
+                dec!(1),
+                dec!(80000),
+                Some(dec!(85000)),
+                Some(dec!(85000)),
+            ),
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(150),
+                Some(dec!(160)),
+                Some(dec!(1600)),
+            ),
+        ];
+        let watchlist_symbols = vec![];
+        let prices = HashMap::new();
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("BTC".to_string(), dec!(83000));
+        hist_1d.insert("AAPL".to_string(), dec!(155));
+
+        let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+        assert_eq!(changes.len(), 2);
+        assert!(changes.iter().any(|c| c.symbol == "BTC" && c.source == "held"));
+        assert!(changes.iter().any(|c| c.symbol == "AAPL" && c.source == "held"));
+    }
+
+    #[test]
+    fn overnight_changes_skips_cash() {
+        let positions = vec![make_position(
+            "USD",
+            AssetCategory::Cash,
+            dec!(10000),
+            dec!(1),
+            Some(dec!(1)),
+            Some(dec!(10000)),
+        )];
+        let watchlist_symbols = vec![];
+        let prices = HashMap::new();
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("USD".to_string(), dec!(1));
+
+        let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn overnight_changes_includes_watchlist_excludes_held() {
+        let positions = vec![make_position(
+            "BTC",
+            AssetCategory::Crypto,
+            dec!(1),
+            dec!(80000),
+            Some(dec!(85000)),
+            Some(dec!(85000)),
+        )];
+        let watchlist_symbols = vec!["BTC".to_string(), "NVDA".to_string()];
+        let mut prices = HashMap::new();
+        prices.insert("NVDA".to_string(), dec!(130));
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("BTC".to_string(), dec!(83000));
+        hist_1d.insert("NVDA".to_string(), dec!(120));
+
+        let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+        // BTC from positions, NVDA from watchlist (BTC not duplicated)
+        assert_eq!(changes.len(), 2);
+        assert_eq!(
+            changes.iter().filter(|c| c.symbol == "BTC").count(),
+            1,
+            "BTC should appear only once (from held)"
+        );
+        assert!(changes.iter().any(|c| c.symbol == "NVDA" && c.source == "watchlist"));
+    }
+
+    #[test]
+    fn overnight_changes_sorted_by_abs_pct() {
+        let positions = vec![
+            make_position(
+                "AAPL",
+                AssetCategory::Equity,
+                dec!(10),
+                dec!(150),
+                Some(dec!(153)), // +2%
+                Some(dec!(1530)),
+            ),
+            make_position(
+                "BTC",
+                AssetCategory::Crypto,
+                dec!(1),
+                dec!(80000),
+                Some(dec!(88000)), // +10%
+                Some(dec!(88000)),
+            ),
+            make_position(
+                "TSLA",
+                AssetCategory::Equity,
+                dec!(5),
+                dec!(200),
+                Some(dec!(190)), // -5%
+                Some(dec!(950)),
+            ),
+        ];
+        let watchlist_symbols = vec![];
+        let prices = HashMap::new();
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("AAPL".to_string(), dec!(150));
+        hist_1d.insert("BTC".to_string(), dec!(80000));
+        hist_1d.insert("TSLA".to_string(), dec!(200));
+
+        let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+        assert_eq!(changes.len(), 3);
+        // Sorted by absolute pct: BTC (10%), TSLA (5%), AAPL (2%)
+        assert_eq!(changes[0].symbol, "BTC");
+        assert_eq!(changes[1].symbol, "TSLA");
+        assert_eq!(changes[2].symbol, "AAPL");
+    }
+
+    #[test]
+    fn overnight_changes_computes_correct_values() {
+        let positions = vec![make_position(
+            "GC=F",
+            AssetCategory::Commodity,
+            dec!(10),
+            dec!(2000),
+            Some(dec!(2050)),
+            Some(dec!(20500)),
+        )];
+        let watchlist_symbols = vec![];
+        let prices = HashMap::new();
+        let mut hist_1d = HashMap::new();
+        hist_1d.insert("GC=F".to_string(), dec!(2000));
+
+        let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+        assert_eq!(changes.len(), 1);
+        let gold = &changes[0];
+        assert_eq!(gold.previous_close, "2000");
+        assert_eq!(gold.current_price, "2050");
+        assert_eq!(gold.change_abs, "50");
+        assert_eq!(gold.change_pct, "2.50");
+        assert_eq!(gold.source, "held");
+        assert_eq!(gold.category, "Commodity");
+    }
+
+    #[test]
+    fn overnight_changes_skips_no_history() {
+        let positions = vec![make_position(
+            "BTC",
+            AssetCategory::Crypto,
+            dec!(1),
+            dec!(80000),
+            Some(dec!(85000)),
+            Some(dec!(85000)),
+        )];
+        let watchlist_symbols = vec![];
+        let prices = HashMap::new();
+        let hist_1d = HashMap::new(); // No history
+
+        let changes = build_overnight_changes(&positions, &watchlist_symbols, &prices, &hist_1d);
+        assert!(changes.is_empty());
     }
 }
