@@ -21,7 +21,7 @@ use crate::db::{
     timeframe_signals, transactions, trends, user_predictions, watchlist,
 };
 use crate::db::{price_history, query};
-use crate::commands::correlations::compute_breaks_backend;
+use crate::commands::correlations::{compute_breaks_backend, interpret_break};
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::{infer_category, resolve_name};
 use crate::models::position::compute_positions;
@@ -1999,11 +1999,6 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
         if !snapshot.correlation_breaks.is_empty() {
             println!();
             println!("CORRELATION BREAKS");
-            println!(
-                "{:<22} {:>8} {:>8} {:>10} {:>10}",
-                "Pair", "7d", "90d", "Break Δ", "Severity"
-            );
-            println!("{}", "─".repeat(62));
             for cb in &snapshot.correlation_breaks {
                 let pair = format!("{}-{}", cb.symbol_a, cb.symbol_b);
                 let c7 = cb
@@ -2015,17 +2010,22 @@ fn run_situation(backend: &BackendConnection, json_output: bool) -> Result<()> {
                     .map(|v| format!("{:+.2}", v))
                     .unwrap_or_else(|| "---".to_string());
                 println!(
-                    "{:<22} {:>8} {:>8} {:>10} {:>10}",
+                    "\n  {} (Δ{:+.2}) — {}",
                     if pair.len() > 22 {
                         format!("{}...", &pair[..19])
                     } else {
                         pair
                     },
-                    c7,
-                    c90,
-                    format!("{:+.2}", cb.break_delta),
+                    cb.break_delta,
                     cb.severity,
                 );
+                println!("    7d: {}  90d: {}", c7, c90);
+                if let Some(ref interp) = cb.interpretation {
+                    println!("    {}", interp);
+                }
+                if let Some(ref sig) = cb.signal {
+                    println!("    → {}", sig);
+                }
             }
         }
 
@@ -3985,6 +3985,12 @@ struct CorrelationBreakJson {
     corr_7d: Option<f64>,
     corr_90d: Option<f64>,
     break_delta: f64,
+    /// "severe" (|delta| >= 0.70), "moderate" (>= 0.50), "minor" (< 0.50)
+    severity: String,
+    /// Human-readable explanation of what the break means
+    interpretation: String,
+    /// What the break suggests for portfolio positioning
+    signal: String,
 }
 
 #[derive(serde::Serialize)]
@@ -4049,11 +4055,17 @@ pub fn run_cross_timeframe(
     let corr_breaks = compute_breaks_backend(backend, threshold, limit).unwrap_or_default();
     let corr_break_json: Vec<CorrelationBreakJson> = corr_breaks
         .into_iter()
-        .map(|b| CorrelationBreakJson {
-            pair: format!("{}/{}", b.symbol_a, b.symbol_b),
-            corr_7d: b.corr_7d,
-            corr_90d: b.corr_90d,
-            break_delta: b.break_delta,
+        .map(|b| {
+            let interp = interpret_break(&b);
+            CorrelationBreakJson {
+                pair: format!("{}/{}", b.symbol_a, b.symbol_b),
+                corr_7d: b.corr_7d,
+                corr_90d: b.corr_90d,
+                break_delta: b.break_delta,
+                severity: interp.severity,
+                interpretation: interp.interpretation,
+                signal: interp.signal,
+            }
         })
         .collect();
 
@@ -4191,23 +4203,27 @@ pub fn run_cross_timeframe(
                 "\n🔗 CORRELATION BREAKS ({} pairs, threshold {:.2})",
                 report.correlation_breaks.count, report.correlation_breaks.threshold
             );
-            println!(
-                "{:<25} {:>8} {:>8} {:>10}",
-                "Pair", "7d", "90d", "Delta"
-            );
-            println!("{}", "─".repeat(55));
             for b in &report.correlation_breaks.pairs {
+                let severity_icon = match b.severity.as_str() {
+                    "severe" => "🔴",
+                    "moderate" => "🟡",
+                    _ => "🟢",
+                };
                 println!(
-                    "{:<25} {:>8} {:>8} {:>+10.3}",
-                    b.pair,
+                    "\n  {} {} (Δ{:+.3}) — {}",
+                    severity_icon, b.pair, b.break_delta, b.severity
+                );
+                println!(
+                    "    7d: {}  90d: {}",
                     b.corr_7d
                         .map(|v| format!("{:.3}", v))
                         .unwrap_or_else(|| "---".to_string()),
                     b.corr_90d
                         .map(|v| format!("{:.3}", v))
                         .unwrap_or_else(|| "---".to_string()),
-                    b.break_delta
                 );
+                println!("    {}", b.interpretation);
+                println!("    → {}", b.signal);
             }
         } else {
             println!("\n✅ CORRELATION BREAKS: None detected above threshold");

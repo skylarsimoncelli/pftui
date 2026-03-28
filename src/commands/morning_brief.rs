@@ -13,7 +13,7 @@ use crate::db::backend::BackendConnection;
 use crate::db::news_cache::get_latest_news_backend;
 use crate::db::scenarios::list_scenarios_backend;
 
-use crate::commands::correlations::compute_breaks_backend;
+use crate::commands::correlations::{compute_breaks_backend, interpret_break};
 use crate::commands::news_sentiment;
 
 // ==================== Morning Brief Structures ====================
@@ -63,6 +63,9 @@ struct CorrelationBreakJson {
     corr_7d: Option<f64>,
     corr_90d: Option<f64>,
     break_delta: f64,
+    severity: String,
+    interpretation: String,
+    signal: String,
 }
 
 #[derive(Serialize)]
@@ -133,11 +136,17 @@ pub fn run(backend: &BackendConnection, json_output: bool) -> Result<()> {
     let correlation_breaks = match compute_breaks_backend(backend, 0.30, 20) {
         Ok(breaks) => breaks
             .into_iter()
-            .map(|b| CorrelationBreakJson {
-                pair: format!("{}/{}", b.symbol_a, b.symbol_b),
-                corr_7d: b.corr_7d,
-                corr_90d: b.corr_90d,
-                break_delta: b.break_delta,
+            .map(|b| {
+                let interp = interpret_break(&b);
+                CorrelationBreakJson {
+                    pair: format!("{}/{}", b.symbol_a, b.symbol_b),
+                    corr_7d: b.corr_7d,
+                    corr_90d: b.corr_90d,
+                    break_delta: b.break_delta,
+                    severity: interp.severity,
+                    interpretation: interp.interpretation,
+                    signal: interp.signal,
+                }
             })
             .collect(),
         Err(_) => Vec::new(),
@@ -294,13 +303,22 @@ fn print_terminal(brief: &MorningBrief) {
         println!();
         println!("CORRELATION BREAKS:");
         for cb in &brief.correlation_breaks {
+            let severity_icon = match cb.severity.as_str() {
+                "severe" => "🔴",
+                "moderate" => "🟡",
+                _ => "🟢",
+            };
             println!(
-                "  {} — 7d: {:.2}, 90d: {:.2}, Δ: {:.2}",
-                cb.pair,
+                "\n  {} {} (Δ{:+.2}) — {}",
+                severity_icon, cb.pair, cb.break_delta, cb.severity,
+            );
+            println!(
+                "    7d: {:.2}  90d: {:.2}",
                 cb.corr_7d.unwrap_or(0.0),
                 cb.corr_90d.unwrap_or(0.0),
-                cb.break_delta,
             );
+            println!("    {}", cb.interpretation);
+            println!("    → {}", cb.signal);
         }
     }
 
@@ -388,10 +406,16 @@ mod tests {
             corr_7d: Some(-0.45),
             corr_90d: Some(-0.82),
             break_delta: 0.37,
+            severity: "minor".to_string(),
+            interpretation: "Gold and dollar correlation shifted".to_string(),
+            signal: "Monitor DXY direction".to_string(),
         };
         let json = serde_json::to_string(&cb).unwrap();
         assert!(json.contains("GC=F/DXY"));
         assert!(json.contains("0.37"));
+        assert!(json.contains("severity"));
+        assert!(json.contains("interpretation"));
+        assert!(json.contains("signal"));
     }
 
     #[test]

@@ -34,6 +34,12 @@ pub struct CorrelationBreakState {
     pub corr_90d: Option<f64>,
     pub break_delta: f64,
     pub severity: String,
+    /// Human-readable explanation of what the break means
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpretation: Option<String>,
+    /// What the break suggests for portfolio positioning
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +214,7 @@ fn compute_correlation_breaks(backend: &BackendConnection) -> Vec<CorrelationBre
                 } else {
                     "normal"
                 };
+                let interp = correlations::interpret_break(&b);
                 CorrelationBreakState {
                     symbol_a: b.symbol_a,
                     symbol_b: b.symbol_b,
@@ -215,6 +222,8 @@ fn compute_correlation_breaks(backend: &BackendConnection) -> Vec<CorrelationBre
                     corr_90d: b.corr_90d,
                     break_delta: b.break_delta,
                     severity: severity.to_string(),
+                    interpretation: Some(interp.interpretation),
+                    signal: Some(interp.signal),
                 }
             })
             .collect(),
@@ -1064,6 +1073,8 @@ mod tests {
                 corr_90d: Some(0.45),
                 break_delta: -0.75,
                 severity: "critical".to_string(),
+                interpretation: Some("Bitcoin and Gold have flipped to negative short-term correlation".to_string()),
+                signal: Some("Gold-BTC divergence suggests capital rotating between hard assets".to_string()),
             },
             CorrelationBreakState {
                 symbol_a: "BTC-USD".to_string(),
@@ -1072,6 +1083,8 @@ mod tests {
                 corr_90d: Some(0.50),
                 break_delta: -0.40,
                 severity: "elevated".to_string(),
+                interpretation: Some("Bitcoin is decoupling from equities".to_string()),
+                signal: Some("BTC-equity decoupling may signal BTC finding its own narrative".to_string()),
             },
         ];
         let snapshot = build_snapshot(
