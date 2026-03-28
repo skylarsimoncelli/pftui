@@ -2,6 +2,14 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-28 — feat: `data alerts` redirect for discoverability
+
+- What: Added `pftui data alerts` as a discoverable redirect to `analytics alerts`. `data alerts check` and `data alerts list` dispatch directly to the real alert engine. Bare `data alerts` (no subcommand) prints a helpful redirect message listing all alert commands. Cross-references added to `data --help`, `analytics --help` (alerts now listed in key subcommands), and `analytics alerts --help` (common workflows with examples).
+- Why: Evening Analyst (Mar 28, 78/75 — lowest scorer) couldn't find `alerts check` under `data` or top-level. Agents intuitively look for alert checking under the data domain. Now both paths work.
+- Files: `src/cli.rs` (+39: DataAlertsRedirect enum, Alerts variant in DataCommand, after_help cross-references on Data/Analytics/Alerts), `src/main.rs` (+70: DataCommand::Alerts dispatch with check/list redirect + bare redirect message)
+- Tests: 1822 passing. Clippy clean.
+- PR: #398
+
 ### 2026-03-28 — feat: unified cross-timeframe view (`analytics cross-timeframe`)
 
 - What: Added `pftui analytics cross-timeframe [--json]` that combines alignment, divergence, and correlation breaks into a single JSON payload. Includes per-asset alignment across LOW/MEDIUM/HIGH/MACRO timeframes, divergence detection (assets where layers disagree), correlation break detection (pairs with short/long-term divergence), and a summary with regime read (clean/mixed/conflicted). Supports `--symbol` filter, `--threshold` for correlation break sensitivity (default 0.30), `--limit` for max breaks (default 20). Both human-readable table output and structured JSON for agents.

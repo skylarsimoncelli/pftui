@@ -10,7 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-- [ ] [Feedback] `alerts check` subcommand discoverability — Evening Analyst (Mar 28) couldn't find alerts check under `data` or top-level. Likely expects `analytics alerts check` or `data alerts check`. Add alias/redirect or improve `--help` text with cross-references. Check `src/cli.rs` AlertsCommand variants.
+_(none)_
 
 ## P2 - Coverage And Agent Consumption
 
@@ -54,10 +54,9 @@ _(none)_
 6. ✅ **Data source resilience** — #380. BLS rate limits, broken pipelines fixed.
 7. ✅ **Systemd services** — daemon + mobile service files deployed.
 
-**Top 3 priorities from feedback:**
-1. **P1: Alerts check discoverability** — Evening Analyst can't find alert checking commands intuitively.
-2. **P2: Overnight price changes in brief** — Morning Intelligence wants overnight moves in portfolio brief.
-3. **P2: Commodity coverage in scoreboard** — Public Daily Report wants uranium/copper in price tables.
+**Top 2 priorities from feedback:**
+1. **P2: Overnight price changes in brief** — Morning Intelligence wants overnight moves in portfolio brief.
+2. **P2: Commodity coverage in scoreboard** — Public Daily Report wants uranium/copper in price tables.
 
 **Release eligibility:** 21 commits since v0.19.0 with 3 feature PRs, no P0 bugs, tests (1822) and clippy clean. **Eligible for v0.20.0** — meaningful new work shipped.
 
