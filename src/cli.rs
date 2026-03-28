@@ -2952,6 +2952,13 @@ See also: analytics alignment, analytics divergence, analytics correlations, ana
         #[arg(long)]
         json: bool,
     },
+    /// Consolidated evening analysis: morning-brief + narrative + opportunities + conviction changes + prediction stats + cross-timeframe resolution in one call
+    #[command(name = "evening-brief", after_help = "Deep evening analysis payload for agents. Extends morning-brief with:\n  - Narrative: structured recap, key themes, analytical memory\n  - Opportunities: identified entry points, scenario plays\n  - Conviction changes: shifts over the past 7 days\n  - Prediction stats: overall accuracy scorecard\n  - Cross-timeframe resolution: divergent assets with stance guidance\n\nDesigned for the evening analyst who previously needed 20+ separate\nanalytics commands to assemble a full picture.\n\nSee also: analytics morning-brief, analytics narrative, analytics cross-timeframe")]
+    EveningBrief {
+        /// Output as JSON for agent/script consumption (recommended)
+        #[arg(long)]
+        json: bool,
+    },
     /// Regime-asset flow correlation: cross-references regime state with asset class flows to detect power structure patterns
     #[command(name = "regime-flows", after_help = "Cross-references the current market regime with asset class flows to detect\npower structure patterns automatically. Monitors key ratios (gold/oil,\ncopper/gold, BTC/gold), safe-haven vs risk flows, energy complex signals,\nand defense sector tracking.\n\nDetects patterns: safe-haven rotation, geopolitical stress, inflationary pulse,\nrisk-on breakout, deflationary signal, dollar wrecking ball, energy crisis,\nand regime divergence.\n\nSee also: analytics macro regime, analytics correlations, analytics movers themes")]
     RegimeFlows {
@@ -5576,6 +5583,30 @@ mod tests {
         };
         let AnalyticsCommand::MorningBrief { json } = command else {
             panic!("expected MorningBrief");
+        };
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_evening_brief_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "evening-brief", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::EveningBrief { json } = command else {
+            panic!("expected EveningBrief");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_evening_brief_no_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "evening-brief"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::EveningBrief { json } = command else {
+            panic!("expected EveningBrief");
         };
         assert!(!json);
     }
