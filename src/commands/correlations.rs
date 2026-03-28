@@ -590,6 +590,335 @@ pub fn compute_breaks_backend(
     Ok(breaks)
 }
 
+/// Interpretive context for a correlation break.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BreakInterpretation {
+    /// "severe" (|delta| >= 0.70), "moderate" (>= 0.50), "minor" (< 0.50)
+    pub severity: String,
+    /// Human-readable explanation of what the break means
+    pub interpretation: String,
+    /// What the break suggests for portfolio positioning
+    pub signal: String,
+}
+
+/// Classify asset type for interpretation context.
+fn asset_class(sym: &str) -> &'static str {
+    match sym {
+        "GC=F" | "WGLD.L" => "gold",
+        "SI=F" | "PSLV" => "silver",
+        "BTC" | "BTC-USD" => "bitcoin",
+        "DX-Y.NYB" => "dollar",
+        "^GSPC" | "SPY" => "equities",
+        s if s.starts_with("CL=") || s == "CL=F" => "oil",
+        "URA" | "U-U.TO" | "CCJ" => "uranium",
+        "HG=F" => "copper",
+        s if s.starts_with('^') => "index",
+        _ => "other",
+    }
+}
+
+/// Human-readable asset label for interpretation text.
+fn asset_label(sym: &str) -> &'static str {
+    match sym {
+        "GC=F" | "WGLD.L" => "Gold",
+        "SI=F" | "PSLV" => "Silver",
+        "BTC" | "BTC-USD" => "Bitcoin",
+        "DX-Y.NYB" => "US Dollar (DXY)",
+        "^GSPC" | "SPY" => "S&P 500",
+        "CL=F" => "Oil",
+        "URA" | "U-U.TO" => "Uranium",
+        "CCJ" => "Cameco (Uranium)",
+        "HG=F" => "Copper",
+        _ => "asset",
+    }
+}
+
+/// Generate interpretive context for a correlation break.
+///
+/// Analyzes the pair's asset classes, the direction of the break (converging vs
+/// diverging), and the magnitude to produce severity classification, human-readable
+/// interpretation, and a positioning signal.
+pub fn interpret_break(brk: &CorrelationBreak) -> BreakInterpretation {
+    let abs_delta = brk.break_delta.abs();
+    let severity = if abs_delta >= 0.70 {
+        "severe"
+    } else if abs_delta >= 0.50 {
+        "moderate"
+    } else {
+        "minor"
+    }
+    .to_string();
+
+    let c7 = brk.corr_7d.unwrap_or(0.0);
+    let c90 = brk.corr_90d.unwrap_or(0.0);
+
+    let class_a = asset_class(&brk.symbol_a);
+    let class_b = asset_class(&brk.symbol_b);
+    let label_a = asset_label(&brk.symbol_a);
+    let label_b = asset_label(&brk.symbol_b);
+
+    // Determine the nature of the break
+    let (interpretation, signal) =
+        interpret_pair_break(class_a, class_b, label_a, label_b, c7, c90, brk.break_delta);
+
+    BreakInterpretation {
+        severity,
+        interpretation,
+        signal,
+    }
+}
+
+/// Build interpretation and signal strings for a specific pair break.
+fn interpret_pair_break(
+    class_a: &str,
+    class_b: &str,
+    label_a: &str,
+    label_b: &str,
+    c7: f64,
+    c90: f64,
+    delta: f64,
+) -> (String, String) {
+    let pair = (class_a, class_b);
+    let abs_delta = delta.abs();
+    let converging = c7.abs() > c90.abs();
+    let now_positive = c7 > 0.0;
+    let _was_positive = c90 > 0.0;
+    let flipped = (c7 > 0.0) != (c90 > 0.0);
+
+    // Special-case known macro pairs
+    match pair {
+        // Gold vs Dollar — classic inverse relationship
+        ("gold", "dollar") | ("dollar", "gold") => {
+            if flipped && now_positive {
+                (
+                    format!(
+                        "{label_a} and {label_b} have flipped to positive short-term correlation — \
+                         historically unusual. Both rising together suggests liquidity-driven rally \
+                         or extreme uncertainty."
+                    ),
+                    "Potential regime change: both safe havens bid simultaneously. Watch for \
+                     liquidity event or crisis escalation."
+                        .to_string(),
+                )
+            } else if delta > 0.0 {
+                (
+                    format!(
+                        "{label_a} and {label_b} are moving more in sync short-term than their \
+                         90d norm. The usual inverse relationship is weakening."
+                    ),
+                    "Dollar weakness may be broadening — gold thesis strengthening if DXY \
+                     continues to lose its inverse grip."
+                        .to_string(),
+                )
+            } else {
+                (
+                    format!(
+                        "{label_a} and {label_b} are diverging more sharply short-term. \
+                         The inverse relationship is intensifying."
+                    ),
+                    "Classic risk-off pattern intensifying. Stronger dollar headwind for gold \
+                     in the near term."
+                        .to_string(),
+                )
+            }
+        }
+        // Bitcoin vs Equities
+        ("bitcoin", "equities") | ("equities", "bitcoin") => {
+            if converging && now_positive {
+                (
+                    format!(
+                        "{label_a} and {label_b} are tracking each other more closely. \
+                         Bitcoin is behaving as a risk asset, not a hedge."
+                    ),
+                    "BTC correlated with equities = risk-on trade. If equities reverse, \
+                     BTC likely follows. Not acting as digital gold here."
+                        .to_string(),
+                )
+            } else if flipped {
+                (
+                    format!(
+                        "{label_a} and {label_b} correlation has flipped sign. \
+                         Short-term {:.2} vs long-term {:.2} — structural shift underway.",
+                        c7, c90
+                    ),
+                    "Correlation regime change between BTC and equities. Watch whether this \
+                     is a temporary dislocation or emerging decoupling."
+                        .to_string(),
+                )
+            } else {
+                (
+                    format!(
+                        "{label_a} and {label_b} are decoupling — short-term correlation \
+                         diverging from the 90d baseline."
+                    ),
+                    "BTC-equity decoupling may signal BTC finding its own narrative \
+                     (halving cycle, ETF flows, or sovereign demand)."
+                        .to_string(),
+                )
+            }
+        }
+        // Bitcoin vs Gold — digital gold narrative test
+        ("bitcoin", "gold") | ("gold", "bitcoin") => {
+            if now_positive && converging {
+                (
+                    format!(
+                        "{label_a} and {label_b} are converging — digital gold narrative \
+                         strengthening as both move together."
+                    ),
+                    "Both hard assets moving in tandem supports the hard-money thesis. \
+                     Potential tailwind from shared macro driver (dollar weakness, inflation fear)."
+                        .to_string(),
+                )
+            } else if flipped && !now_positive {
+                (
+                    format!(
+                        "{label_a} and {label_b} have flipped to negative short-term \
+                         correlation — one rising while the other falls."
+                    ),
+                    "Gold-BTC divergence suggests capital rotating between hard assets. \
+                     Watch which is gaining — the winner may signal the dominant narrative."
+                        .to_string(),
+                )
+            } else {
+                (
+                    format!(
+                        "{label_a} and {label_b} correlation shifted by {delta:+.2} from \
+                         their 90d norm. Relationship is unstable."
+                    ),
+                    "Unstable BTC-gold correlation = unclear macro narrative. \
+                     Monitor which asset leads on risk events."
+                        .to_string(),
+                )
+            }
+        }
+        // Silver vs Gold — precious metals spread
+        ("silver", "gold") | ("gold", "silver") => {
+            if delta < 0.0 && !now_positive {
+                (
+                    format!(
+                        "{label_a} and {label_b} are diverging — the precious metals \
+                         spread is widening. Silver underperforming gold signals risk-off."
+                    ),
+                    "Gold/silver ratio likely expanding. Silver's industrial demand \
+                     weakening relative to gold's safe-haven bid."
+                        .to_string(),
+                )
+            } else {
+                (
+                    format!(
+                        "{label_a} and {label_b} correlation shifted {delta:+.2}. \
+                         Precious metals spread is in flux."
+                    ),
+                    "Watch gold/silver ratio for confirmation. Narrowing ratio = \
+                     risk-on for precious metals, widening = flight to quality."
+                        .to_string(),
+                )
+            }
+        }
+        // Anything vs Dollar — dollar as macro driver
+        (_, "dollar") | ("dollar", _) => {
+            let non_dollar = if class_a == "dollar" { label_b } else { label_a };
+            if delta > 0.0 {
+                (
+                    format!(
+                        "{non_dollar} is correlating more positively with {label_b} short-term \
+                         — moving with the dollar instead of against it."
+                    ),
+                    format!(
+                        "{non_dollar} may be less dollar-sensitive than its 90d history \
+                         suggests, or a structural shift in the dollar relationship is forming."
+                    ),
+                )
+            } else {
+                (
+                    format!(
+                        "{non_dollar} is diverging from {label_b} more sharply. \
+                         The dollar headwind/tailwind effect is amplifying."
+                    ),
+                    format!(
+                        "Dollar moves are hitting {non_dollar} harder than usual. \
+                         Watch DXY direction closely for positioning."
+                    ),
+                )
+            }
+        }
+        // Anything vs Equities
+        (_, "equities") | ("equities", _) => {
+            let non_eq = if class_a == "equities" { label_b } else { label_a };
+            if now_positive && converging {
+                (
+                    format!(
+                        "{non_eq} is tracking equities more closely — risk-on correlation \
+                         strengthening."
+                    ),
+                    format!(
+                        "{non_eq} is behaving as a risk asset. Equity selloff would likely \
+                         drag it down too."
+                    ),
+                )
+            } else if !now_positive {
+                (
+                    format!(
+                        "{non_eq} is moving inversely to equities short-term — potential \
+                         hedge behavior emerging."
+                    ),
+                    format!(
+                        "{non_eq} showing defensive characteristics. Could be a useful \
+                         hedge if equity downside materializes."
+                    ),
+                )
+            } else {
+                (
+                    format!(
+                        "{non_eq} and equities correlation shifted {delta:+.2} from baseline."
+                    ),
+                    format!(
+                        "Monitor whether {non_eq} continues to diverge from equities — \
+                         could signal sector rotation or idiosyncratic driver."
+                    ),
+                )
+            }
+        }
+        // Generic fallback
+        _ => {
+            let direction = if delta > 0.0 {
+                "converging (more positively correlated)"
+            } else {
+                "diverging (less correlated or inversely correlated)"
+            };
+            let flip_note = if flipped {
+                format!(
+                    " Correlation flipped sign: was {c90:.2} (90d) → now {c7:.2} (7d)."
+                )
+            } else {
+                String::new()
+            };
+            (
+                format!(
+                    "{label_a} and {label_b} are {direction} short-term vs their 90d \
+                     baseline (Δ{delta:+.2}).{flip_note}"
+                ),
+                if flipped {
+                    format!(
+                        "Sign flip between {label_a}/{label_b} is a structural change — \
+                         not noise. Monitor for confirmation over the next 1-2 weeks."
+                    )
+                } else if abs_delta >= 0.70 {
+                    format!(
+                        "Major correlation break between {label_a}/{label_b}. \
+                         Likely driven by a macro catalyst — investigate what changed."
+                    )
+                } else {
+                    format!(
+                        "Moderate shift in {label_a}/{label_b} relationship. \
+                         May be temporary; watch for persistence."
+                    )
+                },
+            )
+        }
+    }
+}
+
 fn print_pairs(
     held: HashSet<String>,
     pairs: Vec<PairCorrelation>,
@@ -1270,5 +1599,195 @@ mod tests {
                 "Breaks should be sorted by |delta| descending"
             );
         }
+    }
+
+    // ── interpret_break tests ──
+
+    #[test]
+    fn interpret_severity_severe_when_delta_large() {
+        let brk = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: Some(-0.80),
+            corr_90d: Some(0.10),
+            break_delta: -0.90,
+        };
+        let interp = interpret_break(&brk);
+        assert_eq!(interp.severity, "severe");
+    }
+
+    #[test]
+    fn interpret_severity_moderate_when_delta_mid() {
+        let brk = CorrelationBreak {
+            symbol_a: "GC=F".to_string(),
+            symbol_b: "DX-Y.NYB".to_string(),
+            corr_7d: Some(-0.20),
+            corr_90d: Some(-0.75),
+            break_delta: 0.55,
+        };
+        let interp = interpret_break(&brk);
+        assert_eq!(interp.severity, "moderate");
+    }
+
+    #[test]
+    fn interpret_severity_minor_when_delta_small() {
+        let brk = CorrelationBreak {
+            symbol_a: "SI=F".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: Some(0.60),
+            corr_90d: Some(0.85),
+            break_delta: -0.25,
+        };
+        let interp = interpret_break(&brk);
+        assert_eq!(interp.severity, "minor");
+        // Should still produce non-empty interpretation
+        assert!(!interp.interpretation.is_empty());
+        assert!(!interp.signal.is_empty());
+    }
+
+    #[test]
+    fn interpret_gold_dollar_positive_flip() {
+        let brk = CorrelationBreak {
+            symbol_a: "GC=F".to_string(),
+            symbol_b: "DX-Y.NYB".to_string(),
+            corr_7d: Some(0.40),
+            corr_90d: Some(-0.60),
+            break_delta: 1.00,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("Gold"));
+        assert!(interp.interpretation.contains("Dollar"));
+        assert!(interp.interpretation.contains("positive"));
+    }
+
+    #[test]
+    fn interpret_btc_equities_risk_on() {
+        let brk = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "^GSPC".to_string(),
+            corr_7d: Some(0.85),
+            corr_90d: Some(0.30),
+            break_delta: 0.55,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("Bitcoin"));
+        assert!(interp.signal.contains("risk"));
+    }
+
+    #[test]
+    fn interpret_btc_gold_converging() {
+        let brk = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: Some(0.70),
+            corr_90d: Some(0.20),
+            break_delta: 0.50,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("Bitcoin"));
+        assert!(interp.interpretation.contains("Gold"));
+        assert!(interp.interpretation.contains("converging") || interp.interpretation.contains("digital gold"));
+    }
+
+    #[test]
+    fn interpret_btc_gold_diverging_flip() {
+        let brk = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: Some(-0.50),
+            corr_90d: Some(0.30),
+            break_delta: -0.80,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("flipped"));
+        assert!(interp.signal.contains("rotating"));
+    }
+
+    #[test]
+    fn interpret_silver_gold_divergence() {
+        let brk = CorrelationBreak {
+            symbol_a: "SI=F".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: Some(-0.10),
+            corr_90d: Some(0.80),
+            break_delta: -0.90,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("Silver") || interp.interpretation.contains("precious"));
+        assert!(interp.signal.contains("gold/silver") || interp.signal.contains("ratio"));
+    }
+
+    #[test]
+    fn interpret_generic_pair_fallback() {
+        let brk = CorrelationBreak {
+            symbol_a: "TSLA".to_string(),
+            symbol_b: "NVDA".to_string(),
+            corr_7d: Some(0.90),
+            corr_90d: Some(0.20),
+            break_delta: 0.70,
+        };
+        let interp = interpret_break(&brk);
+        assert_eq!(interp.severity, "severe");
+        assert!(interp.interpretation.contains("converging") || interp.interpretation.contains("Δ"));
+        assert!(!interp.signal.is_empty());
+    }
+
+    #[test]
+    fn interpret_asset_vs_equities() {
+        let brk = CorrelationBreak {
+            symbol_a: "U-U.TO".to_string(),
+            symbol_b: "^GSPC".to_string(),
+            corr_7d: Some(-0.50),
+            corr_90d: Some(0.30),
+            break_delta: -0.80,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("Uranium") || interp.interpretation.contains("inversely"));
+        assert!(interp.signal.contains("hedge") || interp.signal.contains("defensive"));
+    }
+
+    #[test]
+    fn interpret_asset_vs_dollar() {
+        let brk = CorrelationBreak {
+            symbol_a: "PSLV".to_string(),
+            symbol_b: "DX-Y.NYB".to_string(),
+            corr_7d: Some(0.60),
+            corr_90d: Some(-0.20),
+            break_delta: 0.80,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("Silver") || interp.interpretation.contains("dollar"));
+        assert!(!interp.signal.is_empty());
+    }
+
+    #[test]
+    fn interpret_break_serializes_to_json() {
+        let brk = CorrelationBreak {
+            symbol_a: "BTC-USD".to_string(),
+            symbol_b: "GC=F".to_string(),
+            corr_7d: Some(-0.70),
+            corr_90d: Some(0.10),
+            break_delta: -0.80,
+        };
+        let interp = interpret_break(&brk);
+        let json = serde_json::to_string(&interp).unwrap();
+        assert!(json.contains("severity"));
+        assert!(json.contains("interpretation"));
+        assert!(json.contains("signal"));
+        assert!(json.contains("severe"));
+    }
+
+    #[test]
+    fn interpret_gold_dollar_intensifying_inverse() {
+        // delta < 0 means the inverse relationship is getting stronger
+        let brk = CorrelationBreak {
+            symbol_a: "GC=F".to_string(),
+            symbol_b: "DX-Y.NYB".to_string(),
+            corr_7d: Some(-0.85),
+            corr_90d: Some(-0.30),
+            break_delta: -0.55,
+        };
+        let interp = interpret_break(&brk);
+        assert!(interp.interpretation.contains("intensifying") || interp.interpretation.contains("diverging"));
     }
 }
