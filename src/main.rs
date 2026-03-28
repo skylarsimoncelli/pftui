@@ -923,6 +923,76 @@ fn main() -> Result<()> {
             }
             cli::DataCommand::OilPremium { json } => commands::oil_premium::run(&backend, json),
             cli::DataCommand::Backfill { json } => commands::backfill::run(&backend, json),
+            cli::DataCommand::Alerts { command } => {
+                let (action, args) = match command {
+                    Some(cli::DataAlertsRedirect::Check { today, json }) => (
+                        "check",
+                        commands::alerts::AlertsArgs {
+                            rule: None,
+                            id: None,
+                            ids: vec![],
+                            json,
+                            status_filter: None,
+                            today,
+                            kind: None,
+                            symbol: None,
+                            from_level: None,
+                            condition: None,
+                            label: None,
+                            triggered: false,
+                            since_hours: None,
+                            recurring: false,
+                            cooldown_minutes: 0,
+                            recent: false,
+                            recent_hours: 24,
+                        },
+                    ),
+                    Some(cli::DataAlertsRedirect::List {
+                        status,
+                        triggered,
+                        since,
+                        today,
+                        recent,
+                        recent_hours,
+                        json,
+                    }) => (
+                        "list",
+                        commands::alerts::AlertsArgs {
+                            rule: None,
+                            id: None,
+                            ids: vec![],
+                            json,
+                            status_filter: status,
+                            today,
+                            kind: None,
+                            symbol: None,
+                            from_level: None,
+                            condition: None,
+                            label: None,
+                            triggered,
+                            since_hours: since,
+                            recurring: false,
+                            cooldown_minutes: 0,
+                            recent,
+                            recent_hours,
+                        },
+                    ),
+                    None => {
+                        println!("Alert management is under `analytics alerts`.");
+                        println!();
+                        println!("Common commands:");
+                        println!("  pftui analytics alerts check       Check alerts against current data");
+                        println!("  pftui analytics alerts list        List alert rules");
+                        println!("  pftui analytics alerts add         Add an alert rule");
+                        println!("  pftui analytics alerts ack         Acknowledge triggered alerts");
+                        println!("  pftui analytics alerts seed-defaults  Seed smart-alert defaults");
+                        println!();
+                        println!("Run `pftui analytics alerts --help` for full details.");
+                        return Ok(());
+                    }
+                };
+                commands::alerts::run(&backend, action, &args)
+            }
         },
         Some(Command::System { command }) => match command {
             cli::SystemCommand::Daemon { command } => match command {
