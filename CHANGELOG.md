@@ -2,6 +2,14 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-28 — feat: uranium in market/economy symbols + `--market` flag on `data prices`
+
+- What: Added URA (Uranium ETF) to `market_symbols()` and `economy_symbols()` so it appears in the Markets tab, Economy tab, and gets fetched during `data refresh`. Added `--market` flag to `data prices` that includes all 22 market overview symbols (indices, commodities, crypto, forex, bonds) in the output. Market name map provides human-readable names for Yahoo symbols (e.g. `^GSPC` → `S&P 500`). Copper (HG=F) was already present in both symbol lists.
+- Why: Public Daily Report feedback (82/80 Mar 28): uranium and copper missing from price scoreboard tables. Previously `data prices` only showed portfolio + watchlist, requiring agents to add every market symbol to watchlist individually. Now `pftui data prices --market --json` gives a complete market price table in one call.
+- Files: `src/tui/views/markets.rs` (+7: URA MarketItem, updated count test 21→22), `src/tui/views/economy.rs` (+7: URA EconomyItem, updated count test 16→17), `src/commands/prices.rs` (+58: --market flag support, market_name_map for display names, 4 new tests), `src/cli.rs` (+30: --market arg on Prices, 2 CLI parse tests), `src/main.rs` (+3: market arg passthrough)
+- Tests: 1834 passing (+6 new: prices_market_flag_includes_market_symbols, prices_market_flag_json, market_symbols_include_uranium, market_symbols_include_copper, parse_data_prices_market_flag, parse_data_prices_no_market_flag). Clippy clean.
+- PR: #402
+
 ### 2026-03-28 — feat: `overnight_changes` section in `portfolio brief --json`
 
 - What: Added `overnight_changes` array to the agent brief JSON output. Each entry shows previous close → current price with absolute and percentage change for held positions (excluding cash) and watchlist items (excluding duplicates). Entries sorted by absolute change percentage descending (biggest movers first). Each entry includes: symbol, name, category, previous_close, current_price, change_abs, change_pct, source ("held" or "watchlist"). Empty array when no price history available (graceful degradation). Wired into both SQLite and PostgreSQL backend paths.

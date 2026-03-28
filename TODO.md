@@ -14,7 +14,7 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [ ] [Feedback] Commodity coverage in scoreboard — Public Daily Report (82/80 Mar 28) notes uranium and copper missing from price scoreboard tables. Ensure `data prices` and related commands include commodity ETFs/symbols (U-U.TO, COPX, HG=F) when available. Check `src/commands/prices.rs` symbol lists.
+_(none)_
 
 ## P3 - Long Term
 
@@ -53,10 +53,10 @@ _(none)_
 6. ✅ **Data source resilience** — #380. BLS rate limits, broken pipelines fixed.
 7. ✅ **Systemd services** — daemon + mobile service files deployed.
 
-**Top 2 priorities from feedback:**
-1. **P2: Overnight price changes in brief** — Morning Intelligence wants overnight moves in portfolio brief.
-2. **P2: Commodity coverage in scoreboard** — Public Daily Report wants uranium/copper in price tables.
+**Top priorities from feedback:**
+1. ✅ ~~**P2: Overnight price changes in brief**~~ — shipped in #400.
+2. ✅ ~~**P2: Commodity coverage in scoreboard**~~ — shipped in #402. URA (Uranium ETF) added to market/economy symbols. `data prices --market` flag for full scoreboard.
 
-**Release eligibility:** 21 commits since v0.19.0 with 3 feature PRs, no P0 bugs, tests (1822) and clippy clean. **Eligible for v0.20.0** — meaningful new work shipped.
+**Release eligibility:** 23 commits since v0.19.0 with 5 feature PRs, no P0 bugs, tests (1834) and clippy clean. **Eligible for v0.20.0** — meaningful new work shipped.
 
 **GitHub stars:** 7 — Homebrew Core requires 50+.
