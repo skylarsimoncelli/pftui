@@ -142,6 +142,12 @@ pub fn economy_symbols() -> Vec<EconomyItem> {
             group: EconomyGroup::Commodities,
             yahoo_symbol: "NG=F".into(),
         },
+        EconomyItem {
+            symbol: "URA".into(),
+            name: "Uranium ETF".into(),
+            group: EconomyGroup::Commodities,
+            yahoo_symbol: "URA".into(),
+        },
         // Volatility
         EconomyItem {
             symbol: "VIX".into(),
@@ -1568,7 +1574,7 @@ mod tests {
     #[test]
     fn economy_symbols_has_expected_count() {
         let items = economy_symbols();
-        assert_eq!(items.len(), 16);
+        assert_eq!(items.len(), 17);
     }
 
     #[test]

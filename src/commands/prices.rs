@@ -12,6 +12,7 @@ use crate::db::transactions::get_unique_symbols_backend;
 use crate::db::watchlist::list_watchlist_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::resolve_name;
+use crate::tui::views::markets;
 
 #[derive(Serialize)]
 struct PriceRow {
@@ -66,7 +67,7 @@ fn prev_close_for(backend: &BackendConnection, symbol: &str) -> Option<Decimal> 
         })
 }
 
-pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
+pub fn run(backend: &BackendConnection, market: bool, json: bool) -> Result<()> {
     // Collect all tracked symbols: portfolio holdings + watchlist
     let mut symbols: BTreeMap<String, AssetCategory> = BTreeMap::new();
 
@@ -81,6 +82,16 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
     for entry in &watched {
         let cat: AssetCategory = entry.category.parse().unwrap_or(AssetCategory::Equity);
         symbols.entry(entry.symbol.clone()).or_insert(cat);
+    }
+
+    // Market overview symbols (indices, commodities, crypto, forex, bonds)
+    // Build a name override map for Yahoo symbols that resolve_name() may not know
+    let mut market_name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if market {
+        for item in markets::market_symbols() {
+            symbols.entry(item.yahoo_symbol.clone()).or_insert(item.category);
+            market_name_map.insert(item.yahoo_symbol, item.name);
+        }
     }
 
     if symbols.is_empty() {
@@ -116,7 +127,12 @@ pub fn run(backend: &BackendConnection, json: bool) -> Result<()> {
         }
 
         let name = resolve_name(sym);
-        let display_name = if name.is_empty() { sym.clone() } else { name };
+        let display_name = if name.is_empty() {
+            // Fall back to market name map for Yahoo symbols like ^GSPC
+            market_name_map.get(sym).cloned().unwrap_or_else(|| sym.clone())
+        } else {
+            name
+        };
 
         // Look up price: try canonical symbol first, then Yahoo-mapped crypto
         let quote = price_map.get(sym).or_else(|| {
@@ -270,7 +286,7 @@ mod tests {
     fn prices_empty_db() {
         let conn = open_in_memory();
         let backend = to_backend(conn);
-        let result = run(&backend, false);
+        let result = run(&backend, false, false);
         assert!(result.is_ok());
     }
 
@@ -278,7 +294,7 @@ mod tests {
     fn prices_empty_db_json() {
         let conn = open_in_memory();
         let backend = to_backend(conn);
-        let result = run(&backend, true);
+        let result = run(&backend, false, true);
         assert!(result.is_ok());
     }
 
@@ -327,11 +343,11 @@ mod tests {
         let backend = to_backend(conn);
 
         // Table output
-        let result = run(&backend, false);
+        let result = run(&backend, false, false);
         assert!(result.is_ok());
 
         // JSON output
-        let result = run(&backend, true);
+        let result = run(&backend, false, true);
         assert!(result.is_ok());
     }
 
@@ -368,5 +384,42 @@ mod tests {
     #[test]
     fn format_pct_opt_none() {
         assert_eq!(format_pct_opt(None), "---");
+    }
+
+    #[test]
+    fn prices_market_flag_includes_market_symbols() {
+        let conn = open_in_memory();
+        let backend = to_backend(conn);
+        // --market flag should not error even with empty db (no cached prices)
+        let result = run(&backend, true, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn prices_market_flag_json() {
+        let conn = open_in_memory();
+        let backend = to_backend(conn);
+        let result = run(&backend, true, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn market_symbols_include_uranium() {
+        use crate::tui::views::markets;
+        let items = markets::market_symbols();
+        assert!(
+            items.iter().any(|i| i.yahoo_symbol == "URA"),
+            "market_symbols should include URA (Uranium ETF)"
+        );
+    }
+
+    #[test]
+    fn market_symbols_include_copper() {
+        use crate::tui::views::markets;
+        let items = markets::market_symbols();
+        assert!(
+            items.iter().any(|i| i.yahoo_symbol == "HG=F"),
+            "market_symbols should include HG=F (Copper Futures)"
+        );
     }
 }

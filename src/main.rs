@@ -914,7 +914,9 @@ fn main() -> Result<()> {
                 commands::supply::run(&backend, symbol, json)
             }
             cli::DataCommand::Sovereign { json } => commands::sovereign::run(&backend, json),
-            cli::DataCommand::Prices { json } => commands::prices::run(&backend, json),
+            cli::DataCommand::Prices { market, json } => {
+                commands::prices::run(&backend, market, json)
+            }
             cli::DataCommand::OilInventory { weeks, json } => {
                 commands::oil_inventory::run(&config, weeks, json)
             }
