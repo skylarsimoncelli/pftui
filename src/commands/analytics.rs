@@ -21,6 +21,7 @@ use crate::db::{
     timeframe_signals, transactions, trends, user_predictions, watchlist,
 };
 use crate::db::{price_history, query};
+use crate::commands::correlations::compute_breaks_backend;
 use crate::models::asset::AssetCategory;
 use crate::models::asset_names::{infer_category, resolve_name};
 use crate::models::position::compute_positions;
@@ -3906,6 +3907,278 @@ fn bias_to_signal(bias: &str) -> f64 {
         "bear" => -1.0,
         _ => 0.0,
     }
+}
+
+// ==================== Cross-Timeframe Unified View ====================
+
+/// Unified cross-timeframe view combining alignment, divergence, and correlation breaks
+/// into a single JSON payload. Designed for agents that previously needed to run
+/// `analytics alignment`, `analytics divergence`, and `analytics correlations breaks`
+/// separately.
+#[derive(serde::Serialize)]
+struct CrossTimeframeReport {
+    timestamp: String,
+    /// Per-asset alignment across LOW/MEDIUM/HIGH/MACRO timeframes
+    alignment: CrossTimeframeAlignment,
+    /// Assets where timeframe layers disagree (bull vs bear across layers)
+    divergences: CrossTimeframeDivergences,
+    /// Pairs where short-term correlation diverges from long-term
+    correlation_breaks: CrossTimeframeCorrelationBreaks,
+    /// Summary statistics across all three dimensions
+    summary: CrossTimeframeSummary,
+}
+
+#[derive(serde::Serialize)]
+struct CrossTimeframeAlignment {
+    assets: Vec<AlignmentRow>,
+    count: usize,
+}
+
+#[derive(serde::Serialize)]
+struct CrossTimeframeDivergences {
+    assets: Vec<DivergenceRow>,
+    count: usize,
+}
+
+#[derive(serde::Serialize)]
+struct CrossTimeframeCorrelationBreaks {
+    pairs: Vec<CorrelationBreakJson>,
+    count: usize,
+    threshold: f64,
+}
+
+#[derive(serde::Serialize)]
+struct CorrelationBreakJson {
+    pair: String,
+    corr_7d: Option<f64>,
+    corr_90d: Option<f64>,
+    break_delta: f64,
+}
+
+#[derive(serde::Serialize)]
+struct CrossTimeframeSummary {
+    total_tracked_assets: usize,
+    aligned_count: usize,
+    divergent_count: usize,
+    correlation_break_count: usize,
+    avg_alignment_score: f64,
+    dominant_consensus: String,
+    /// "clean" = mostly aligned, few breaks. "conflicted" = many divergences/breaks. "mixed" = in between.
+    regime_read: String,
+}
+
+pub fn run_cross_timeframe(
+    backend: &BackendConnection,
+    symbol: Option<&str>,
+    threshold: f64,
+    limit: usize,
+    json_output: bool,
+) -> Result<()> {
+    let timestamp = Utc::now().to_rfc3339();
+
+    // 1. Alignment — all assets across timeframes
+    let alignments = build_alignment_rows(backend, symbol).unwrap_or_default();
+
+    // 2. Divergences — assets where layers disagree
+    let mut divergences: Vec<DivergenceRow> = alignments
+        .iter()
+        .filter(|a| a.bull_layers > 0 && a.bear_layers > 0)
+        .map(|a| {
+            let dominant_side = if a.bull_layers > a.bear_layers {
+                "bull"
+            } else if a.bear_layers > a.bull_layers {
+                "bear"
+            } else {
+                "split"
+            }
+            .to_string();
+            let disagreement_pct = (a.bull_layers.min(a.bear_layers) as f64 / 4.0) * 100.0;
+            DivergenceRow {
+                symbol: a.symbol.clone(),
+                low: a.low.clone(),
+                medium: a.medium.clone(),
+                high: a.high.clone(),
+                macro_bias: a.macro_bias.clone(),
+                bull_layers: a.bull_layers,
+                bear_layers: a.bear_layers,
+                disagreement_pct,
+                dominant_side,
+            }
+        })
+        .collect();
+    divergences.sort_by(|a, b| {
+        b.disagreement_pct
+            .partial_cmp(&a.disagreement_pct)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // 3. Correlation breaks
+    let corr_breaks = compute_breaks_backend(backend, threshold, limit).unwrap_or_default();
+    let corr_break_json: Vec<CorrelationBreakJson> = corr_breaks
+        .into_iter()
+        .map(|b| CorrelationBreakJson {
+            pair: format!("{}/{}", b.symbol_a, b.symbol_b),
+            corr_7d: b.corr_7d,
+            corr_90d: b.corr_90d,
+            break_delta: b.break_delta,
+        })
+        .collect();
+
+    // 4. Summary
+    let total = alignments.len();
+    let aligned_count = alignments
+        .iter()
+        .filter(|a| a.bull_layers == 0 || a.bear_layers == 0)
+        .count();
+    let divergent_count = divergences.len();
+    let avg_score = if total > 0 {
+        alignments.iter().map(|a| a.score_pct).sum::<f64>() / total as f64
+    } else {
+        0.0
+    };
+
+    // Dominant consensus
+    let mut consensus_counts: HashMap<String, usize> = HashMap::new();
+    for a in &alignments {
+        *consensus_counts.entry(a.consensus.clone()).or_default() += 1;
+    }
+    let dominant_consensus = consensus_counts
+        .iter()
+        .max_by_key(|(_, v)| *v)
+        .map(|(k, _)| k.clone())
+        .unwrap_or_else(|| "NONE".to_string());
+
+    // Regime read: how clean/conflicted is the picture?
+    let divergence_ratio = if total > 0 {
+        divergent_count as f64 / total as f64
+    } else {
+        0.0
+    };
+    let break_severity = corr_break_json.len();
+    let regime_read = if divergence_ratio < 0.2 && break_severity < 3 {
+        "clean"
+    } else if divergence_ratio > 0.5 || break_severity > 8 {
+        "conflicted"
+    } else {
+        "mixed"
+    }
+    .to_string();
+
+    let report = CrossTimeframeReport {
+        timestamp,
+        alignment: CrossTimeframeAlignment {
+            count: alignments.len(),
+            assets: alignments,
+        },
+        divergences: CrossTimeframeDivergences {
+            count: divergences.len(),
+            assets: divergences,
+        },
+        correlation_breaks: CrossTimeframeCorrelationBreaks {
+            count: corr_break_json.len(),
+            pairs: corr_break_json,
+            threshold,
+        },
+        summary: CrossTimeframeSummary {
+            total_tracked_assets: total,
+            aligned_count,
+            divergent_count,
+            correlation_break_count: break_severity,
+            avg_alignment_score: (avg_score * 10.0).round() / 10.0,
+            dominant_consensus,
+            regime_read,
+        },
+    };
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        // Human-readable output
+        println!("Cross-Timeframe View");
+        println!("{}", "═".repeat(72));
+
+        // Alignment section
+        println!("\n📊 ALIGNMENT ({} assets)", report.alignment.count);
+        println!(
+            "{:<10} {:<7} {:<7} {:<7} {:<7} {:<13} {:>6}",
+            "Symbol", "Low", "Medium", "High", "Macro", "Consensus", "Score"
+        );
+        println!("{}", "─".repeat(72));
+        for a in &report.alignment.assets {
+            println!(
+                "{:<10} {:<7} {:<7} {:<7} {:<7} {:<13} {:>5.0}%",
+                a.symbol, a.low, a.medium, a.high, a.macro_bias, a.consensus, a.score_pct
+            );
+        }
+
+        // Divergences section
+        if !report.divergences.assets.is_empty() {
+            println!(
+                "\n⚠️  DIVERGENCES ({} assets with layer conflict)",
+                report.divergences.count
+            );
+            println!(
+                "{:<10} {:<7} {:<7} {:<7} {:<7} {:>6} {:>6} {:>8}",
+                "Symbol", "Low", "Medium", "High", "Macro", "Bull", "Bear", "Split%"
+            );
+            println!("{}", "─".repeat(72));
+            for d in &report.divergences.assets {
+                println!(
+                    "{:<10} {:<7} {:<7} {:<7} {:<7} {:>6} {:>6} {:>7.0}%",
+                    d.symbol,
+                    d.low,
+                    d.medium,
+                    d.high,
+                    d.macro_bias,
+                    d.bull_layers,
+                    d.bear_layers,
+                    d.disagreement_pct
+                );
+            }
+        } else {
+            println!("\n✅ DIVERGENCES: None — all layers in agreement");
+        }
+
+        // Correlation breaks section
+        if !report.correlation_breaks.pairs.is_empty() {
+            println!(
+                "\n🔗 CORRELATION BREAKS ({} pairs, threshold {:.2})",
+                report.correlation_breaks.count, report.correlation_breaks.threshold
+            );
+            println!(
+                "{:<25} {:>8} {:>8} {:>10}",
+                "Pair", "7d", "90d", "Delta"
+            );
+            println!("{}", "─".repeat(55));
+            for b in &report.correlation_breaks.pairs {
+                println!(
+                    "{:<25} {:>8} {:>8} {:>+10.3}",
+                    b.pair,
+                    b.corr_7d
+                        .map(|v| format!("{:.3}", v))
+                        .unwrap_or_else(|| "---".to_string()),
+                    b.corr_90d
+                        .map(|v| format!("{:.3}", v))
+                        .unwrap_or_else(|| "---".to_string()),
+                    b.break_delta
+                );
+            }
+        } else {
+            println!("\n✅ CORRELATION BREAKS: None detected above threshold");
+        }
+
+        // Summary
+        println!("\n📋 SUMMARY");
+        println!("  Tracked assets:     {}", report.summary.total_tracked_assets);
+        println!("  Aligned:            {}", report.summary.aligned_count);
+        println!("  Divergent:          {}", report.summary.divergent_count);
+        println!("  Correlation breaks: {}", report.summary.correlation_break_count);
+        println!("  Avg alignment:      {:.1}%", report.summary.avg_alignment_score);
+        println!("  Dominant consensus: {}", report.summary.dominant_consensus);
+        println!("  Regime read:        {}", report.summary.regime_read);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -2573,6 +2573,18 @@ fn main() -> Result<()> {
                 None,
                 json,
             ),
+            cli::AnalyticsCommand::CrossTimeframe {
+                symbol,
+                threshold,
+                limit,
+                json,
+            } => commands::analytics::run_cross_timeframe(
+                &backend,
+                symbol.as_deref(),
+                threshold,
+                limit,
+                json,
+            ),
             cli::AnalyticsCommand::Digest { from, limit, json } => commands::analytics::run(
                 &backend,
                 "digest",
