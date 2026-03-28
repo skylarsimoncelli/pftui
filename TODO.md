@@ -14,7 +14,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-- [ ] [Feedback] Overnight price change summary in portfolio brief — Morning Intelligence (75/85 Mar 28) wants overnight price moves surfaced directly in `portfolio brief --json`. Add `overnight_changes` section with previous close → current for key holdings. See `src/commands/portfolio_brief.rs`.
 - [ ] [Feedback] Commodity coverage in scoreboard — Public Daily Report (82/80 Mar 28) notes uranium and copper missing from price scoreboard tables. Ensure `data prices` and related commands include commodity ETFs/symbols (U-U.TO, COPX, HG=F) when available. Check `src/commands/prices.rs` symbol lists.
 
 ## P3 - Long Term

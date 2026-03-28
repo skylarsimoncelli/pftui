@@ -2,6 +2,14 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-28 — feat: `overnight_changes` section in `portfolio brief --json`
+
+- What: Added `overnight_changes` array to the agent brief JSON output. Each entry shows previous close → current price with absolute and percentage change for held positions (excluding cash) and watchlist items (excluding duplicates). Entries sorted by absolute change percentage descending (biggest movers first). Each entry includes: symbol, name, category, previous_close, current_price, change_abs, change_pct, source ("held" or "watchlist"). Empty array when no price history available (graceful degradation). Wired into both SQLite and PostgreSQL backend paths.
+- Why: Morning Intelligence feedback (75/85 Mar 28): "wants overnight price moves surfaced directly in `portfolio brief --json`." Agents previously had to compute overnight changes manually from position data and price history — now it's a first-class section.
+- Files: `src/commands/brief.rs` (+271: OvernightChangeJson struct, build_overnight_changes function, wired into both run_agent_mode and run_agent_mode_backend, 6 tests)
+- Tests: 1828 passing (+6 new: overnight_changes_includes_held_positions, overnight_changes_skips_cash, overnight_changes_includes_watchlist_excludes_held, overnight_changes_sorted_by_abs_pct, overnight_changes_computes_correct_values, overnight_changes_skips_no_history). Clippy clean.
+- PR: #400
+
 ### 2026-03-28 — feat: `data alerts` redirect for discoverability
 
 - What: Added `pftui data alerts` as a discoverable redirect to `analytics alerts`. `data alerts check` and `data alerts list` dispatch directly to the real alert engine. Bare `data alerts` (no subcommand) prints a helpful redirect message listing all alert commands. Cross-references added to `data --help`, `analytics --help` (alerts now listed in key subcommands), and `analytics alerts --help` (common workflows with examples).
