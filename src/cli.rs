@@ -2676,7 +2676,13 @@ pub enum AnalyticsCommand {
         json: bool,
     },
     /// Unified cross-timeframe view: alignment + divergence + correlation breaks in one call
-    #[command(name = "cross-timeframe")]
+    #[command(name = "cross-timeframe", after_help = "\
+EXAMPLES:
+  pftui analytics cross-timeframe --json             # Full alignment + divergence + breaks
+  pftui analytics cross-timeframe --resolve --json    # Add resolution analysis for divergent assets
+  pftui analytics cross-timeframe --resolve --symbol BTC --json
+
+See also: analytics alignment, analytics divergence, analytics correlations, analytics regime-transitions")]
     CrossTimeframe {
         /// Filter to a specific symbol
         #[arg(long)]
@@ -2687,6 +2693,9 @@ pub enum AnalyticsCommand {
         /// Max correlation breaks to return (default: 20)
         #[arg(long, default_value = "20")]
         limit: usize,
+        /// Include disagreement resolution analysis: which timeframe dominates, suggested stance, resolution triggers
+        #[arg(long)]
+        resolve: bool,
         #[arg(long)]
         json: bool,
     },
@@ -5747,5 +5756,75 @@ mod tests {
             panic!("expected Triage");
         };
         assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_cross_timeframe_resolve_flag() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "cross-timeframe",
+            "--resolve",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Analytics { command } = cli.command.unwrap() else {
+            panic!("expected Analytics");
+        };
+        let AnalyticsCommand::CrossTimeframe {
+            symbol,
+            threshold: _,
+            limit: _,
+            resolve,
+            json,
+        } = command
+        else {
+            panic!("expected CrossTimeframe");
+        };
+        assert!(resolve);
+        assert!(json);
+        assert!(symbol.is_none());
+    }
+
+    #[test]
+    fn parse_analytics_cross_timeframe_no_resolve() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "cross-timeframe", "--json"]).unwrap();
+        let Command::Analytics { command } = cli.command.unwrap() else {
+            panic!("expected Analytics");
+        };
+        let AnalyticsCommand::CrossTimeframe {
+            resolve, json, ..
+        } = command
+        else {
+            panic!("expected CrossTimeframe");
+        };
+        assert!(!resolve);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_cross_timeframe_resolve_with_symbol() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "cross-timeframe",
+            "--resolve",
+            "--symbol",
+            "BTC",
+            "--json",
+        ])
+        .unwrap();
+        let Command::Analytics { command } = cli.command.unwrap() else {
+            panic!("expected Analytics");
+        };
+        let AnalyticsCommand::CrossTimeframe {
+            symbol, resolve, ..
+        } = command
+        else {
+            panic!("expected CrossTimeframe");
+        };
+        assert!(resolve);
+        assert_eq!(symbol.as_deref(), Some("BTC"));
     }
 }

@@ -3926,6 +3926,38 @@ struct CrossTimeframeReport {
     correlation_breaks: CrossTimeframeCorrelationBreaks,
     /// Summary statistics across all three dimensions
     summary: CrossTimeframeSummary,
+    /// Resolution analysis for divergent assets (only populated with --resolve)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolutions: Option<CrossTimeframeResolutions>,
+}
+
+#[derive(serde::Serialize)]
+struct CrossTimeframeResolutions {
+    assets: Vec<ResolutionEntry>,
+    count: usize,
+}
+
+#[derive(serde::Serialize)]
+struct ResolutionEntry {
+    symbol: String,
+    /// Which layers disagree (e.g. "LOW:bear vs MEDIUM:bull, HIGH:bull")
+    disagreement: String,
+    /// Severity: "high" (opposite extremes across 3+ layers), "medium" (2 layers disagree), "low" (minor split)
+    severity: String,
+    /// Which timeframe layer has the strongest signal and should dominate the stance
+    dominant_timeframe: String,
+    /// Reasoning for why that timeframe dominates
+    dominant_reason: String,
+    /// Suggested stance: "lean-bull", "lean-bear", "wait-for-clarity"
+    stance: String,
+    /// Confidence in the resolution (0.0-1.0)
+    confidence: f64,
+    /// What would resolve the disagreement (list of observable triggers)
+    resolution_triggers: Vec<String>,
+    /// What the lower timeframe is signaling (shortest-term view)
+    low_read: String,
+    /// What the higher timeframes are signaling (longer-term view)
+    high_read: String,
 }
 
 #[derive(serde::Serialize)]
@@ -3972,6 +4004,7 @@ pub fn run_cross_timeframe(
     symbol: Option<&str>,
     threshold: f64,
     limit: usize,
+    resolve: bool,
     json_output: bool,
 ) -> Result<()> {
     let timestamp = Utc::now().to_rfc3339();
@@ -4064,6 +4097,18 @@ pub fn run_cross_timeframe(
     }
     .to_string();
 
+    // Resolution analysis (only when --resolve is set and there are divergences)
+    let resolutions = if resolve && !divergences.is_empty() {
+        let entries: Vec<ResolutionEntry> = divergences
+            .iter()
+            .map(|d| build_resolution_entry(d, &regime_read))
+            .collect();
+        let count = entries.len();
+        Some(CrossTimeframeResolutions { assets: entries, count })
+    } else {
+        None
+    };
+
     let report = CrossTimeframeReport {
         timestamp,
         alignment: CrossTimeframeAlignment {
@@ -4088,6 +4133,7 @@ pub fn run_cross_timeframe(
             dominant_consensus,
             regime_read,
         },
+        resolutions,
     };
 
     if json_output {
@@ -4176,9 +4222,260 @@ pub fn run_cross_timeframe(
         println!("  Avg alignment:      {:.1}%", report.summary.avg_alignment_score);
         println!("  Dominant consensus: {}", report.summary.dominant_consensus);
         println!("  Regime read:        {}", report.summary.regime_read);
+
+        // Resolutions section (only when --resolve flag is set)
+        if let Some(ref res) = report.resolutions {
+            println!(
+                "\n🔧 RESOLUTIONS ({} divergent assets analyzed)",
+                res.count
+            );
+            println!("{}", "═".repeat(72));
+            for entry in &res.assets {
+                let severity_icon = match entry.severity.as_str() {
+                    "high" => "🔴",
+                    "medium" => "🟡",
+                    _ => "🟢",
+                };
+                let stance_icon = match entry.stance.as_str() {
+                    "lean-bull" => "📈",
+                    "lean-bear" => "📉",
+                    _ => "⏸️",
+                };
+                println!(
+                    "\n  {} {} — {} {} (confidence {:.0}%)",
+                    severity_icon,
+                    entry.symbol,
+                    stance_icon,
+                    entry.stance,
+                    entry.confidence * 100.0
+                );
+                println!("    Disagreement: {}", entry.disagreement);
+                println!(
+                    "    Dominant:     {} — {}",
+                    entry.dominant_timeframe, entry.dominant_reason
+                );
+                println!("    Low read:     {}", entry.low_read);
+                println!("    High read:    {}", entry.high_read);
+                if !entry.resolution_triggers.is_empty() {
+                    println!("    Triggers:");
+                    for trigger in &entry.resolution_triggers {
+                        println!("      → {}", trigger);
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Build a resolution entry for a divergent asset.
+///
+/// Resolution logic:
+/// 1. **Dominant timeframe** — Higher timeframes dominate lower ones in most regimes.
+///    In "conflicted" regimes, no timeframe dominates cleanly → wait-for-clarity.
+///    Exception: when LOW is the *only* dissenter against 2+ higher layers, LOW is
+///    likely noise/lag.
+/// 2. **Stance** — follows the dominant timeframe's bias. If split evenly, wait.
+/// 3. **Confidence** — based on how many layers agree on the dominant side and severity.
+/// 4. **Triggers** — observable events that would resolve the disagreement.
+fn build_resolution_entry(div: &DivergenceRow, regime_read: &str) -> ResolutionEntry {
+    // Classify each layer
+    let layers = [
+        ("LOW", &div.low),
+        ("MEDIUM", &div.medium),
+        ("HIGH", &div.high),
+        ("MACRO", &div.macro_bias),
+    ];
+
+    // Build disagreement description
+    let active_layers: Vec<String> = layers
+        .iter()
+        .filter(|(_, bias)| *bias != "neutral")
+        .map(|(name, bias)| format!("{}:{}", name, bias))
+        .collect();
+    let disagreement = if active_layers.is_empty() {
+        "all neutral".to_string()
+    } else {
+        active_layers.join(" vs ")
+    };
+
+    // Count directional layers (excluding neutral)
+    let bull_active: Vec<&str> = layers
+        .iter()
+        .filter(|(_, b)| *b == "bull")
+        .map(|(n, _)| *n)
+        .collect();
+    let bear_active: Vec<&str> = layers
+        .iter()
+        .filter(|(_, b)| *b == "bear")
+        .map(|(n, _)| *n)
+        .collect();
+
+    // Severity classification
+    let severity = if div.bull_layers >= 2 && div.bear_layers >= 2 {
+        "high" // 2v2 or worse — genuine split
+    } else if div.bull_layers + div.bear_layers >= 3 {
+        "medium" // 3 layers active but one side dominates
+    } else {
+        "low" // minor split (e.g., 1v1 with 2 neutral)
+    }
+    .to_string();
+
+    // Determine dominant timeframe and stance
+    // Higher timeframes get priority weights: MACRO=4, HIGH=3, MEDIUM=2, LOW=1
+    let layer_weight = |name: &str| -> i32 {
+        match name {
+            "MACRO" => 4,
+            "HIGH" => 3,
+            "MEDIUM" => 2,
+            "LOW" => 1,
+            _ => 0,
+        }
+    };
+
+    let bull_weight: i32 = bull_active.iter().map(|n| layer_weight(n)).sum();
+    let bear_weight: i32 = bear_active.iter().map(|n| layer_weight(n)).sum();
+
+    // In conflicted regime, require stronger signal to take a stance
+    let weight_threshold = if regime_read == "conflicted" { 3 } else { 1 };
+    let weight_diff = (bull_weight - bear_weight).abs();
+
+    let (stance, dominant_timeframe, dominant_reason) = if weight_diff < weight_threshold {
+        // No clear winner — wait
+        (
+            "wait-for-clarity".to_string(),
+            "NONE".to_string(),
+            "No timeframe has decisive weight advantage; cross-timeframe picture is genuinely split".to_string(),
+        )
+    } else if bull_weight > bear_weight {
+        // Higher timeframes lean bull
+        let dom = bull_active
+            .iter()
+            .max_by_key(|n| layer_weight(n))
+            .unwrap_or(&"MEDIUM");
+        let reason = format!(
+            "{} layers ({}) outweigh {} layers ({}) by weight {}>{}",
+            bull_active.len(),
+            bull_active.join("+"),
+            bear_active.len(),
+            bear_active.join("+"),
+            bull_weight,
+            bear_weight,
+        );
+        ("lean-bull".to_string(), dom.to_string(), reason)
+    } else {
+        // Higher timeframes lean bear
+        let dom = bear_active
+            .iter()
+            .max_by_key(|n| layer_weight(n))
+            .unwrap_or(&"MEDIUM");
+        let reason = format!(
+            "{} layers ({}) outweigh {} layers ({}) by weight {}>{}",
+            bear_active.len(),
+            bear_active.join("+"),
+            bull_active.len(),
+            bull_active.join("+"),
+            bear_weight,
+            bull_weight,
+        );
+        ("lean-bear".to_string(), dom.to_string(), reason)
+    };
+
+    // Confidence: based on weight differential and severity
+    let max_weight = 10.0_f64; // MACRO+HIGH+MEDIUM+LOW = 4+3+2+1
+    let confidence = if stance == "wait-for-clarity" {
+        0.2 // low confidence when we can't resolve
+    } else {
+        let base = (weight_diff as f64 / max_weight).clamp(0.0, 0.8);
+        let severity_bonus = match severity.as_str() {
+            "low" => 0.15,    // minor splits are easier to resolve
+            "medium" => 0.05,
+            _ => 0.0,         // high severity = hard to resolve
+        };
+        (base + severity_bonus).clamp(0.1, 0.95)
+    };
+
+    // Build resolution triggers
+    let mut triggers = Vec::new();
+
+    // If LOW disagrees with higher timeframes, short-term price action resolving it
+    if div.low != div.medium || div.low != div.high {
+        let low_dir = if div.low == "bull" { "upside" } else { "downside" };
+        let opposite = if div.low == "bull" { "downside" } else { "upside" };
+        triggers.push(format!(
+            "SHORT-TERM: {} momentum confirmation would validate LOW {} read; {} reversal would align with higher timeframes",
+            low_dir, div.low, opposite
+        ));
+    }
+
+    // If MEDIUM and HIGH disagree
+    if div.medium != "neutral" && div.high != "neutral" && div.medium != div.high {
+        triggers.push(format!(
+            "MID-TERM: Conviction score shift (MEDIUM:{}) aligning with trend impacts (HIGH:{}) would resolve mid/high split",
+            div.medium, div.high
+        ));
+    }
+
+    // If MACRO is the dissenter
+    if div.macro_bias != "neutral" {
+        let macro_dir = &div.macro_bias;
+        let others_agree = ((div.low == div.high || div.low == div.medium)
+            && div.low != "neutral")
+            || (div.medium == div.high && div.medium != "neutral");
+        if others_agree {
+            triggers.push(format!(
+                "MACRO: Scenario probability shift would reconcile MACRO:{} bias with shorter timeframes",
+                macro_dir
+            ));
+        }
+    }
+
+    // Regime-specific trigger
+    if regime_read == "conflicted" {
+        triggers.push(
+            "REGIME: Broad market regime clarification needed — too many cross-asset disagreements to resolve individual positions cleanly"
+                .to_string(),
+        );
+    }
+
+    // If no specific triggers were generated, add a generic one
+    if triggers.is_empty() {
+        triggers.push("Wait for directional confirmation from neutral layers gaining a bias".to_string());
+    }
+
+    // Low read and high read summaries
+    let low_read = format!("LOW signals {} (regime-driven, short-term momentum)", div.low);
+    let high_read = {
+        let mut parts = Vec::new();
+        if div.medium != "neutral" {
+            parts.push(format!("MEDIUM:{} (conviction-based)", div.medium));
+        }
+        if div.high != "neutral" {
+            parts.push(format!("HIGH:{} (trend-impact weighted)", div.high));
+        }
+        if div.macro_bias != "neutral" {
+            parts.push(format!("MACRO:{} (scenario-probability weighted)", div.macro_bias));
+        }
+        if parts.is_empty() {
+            "Higher timeframes neutral — no strong signal".to_string()
+        } else {
+            parts.join(", ")
+        }
+    };
+
+    ResolutionEntry {
+        symbol: div.symbol.clone(),
+        disagreement,
+        severity,
+        dominant_timeframe,
+        dominant_reason,
+        stance,
+        confidence: (confidence * 100.0).round() / 100.0,
+        resolution_triggers: triggers,
+        low_read,
+        high_read,
+    }
 }
 
 #[cfg(test)]
@@ -4460,5 +4757,190 @@ mod tests {
         let active =
             scenarios::list_scenarios_backend(&backend, Some("active")).unwrap_or_default();
         assert_eq!(active.len(), 2);
+    }
+
+    // ==================== Resolution Tests ====================
+
+    fn make_divergence(
+        symbol: &str,
+        low: &str,
+        medium: &str,
+        high: &str,
+        macro_bias: &str,
+        bull: usize,
+        bear: usize,
+    ) -> DivergenceRow {
+        DivergenceRow {
+            symbol: symbol.to_string(),
+            low: low.to_string(),
+            medium: medium.to_string(),
+            high: high.to_string(),
+            macro_bias: macro_bias.to_string(),
+            bull_layers: bull,
+            bear_layers: bear,
+            disagreement_pct: (bull.min(bear) as f64 / 4.0) * 100.0,
+            dominant_side: if bull > bear {
+                "bull".to_string()
+            } else if bear > bull {
+                "bear".to_string()
+            } else {
+                "split".to_string()
+            },
+        }
+    }
+
+    #[test]
+    fn resolution_low_bear_higher_bull_leans_bull() {
+        // LOW:bear vs MEDIUM:bull, HIGH:bull → higher timeframes dominate → lean-bull
+        let div = make_divergence("BTC", "bear", "bull", "bull", "neutral", 2, 1);
+        let entry = build_resolution_entry(&div, "mixed");
+        assert_eq!(entry.stance, "lean-bull");
+        assert_eq!(entry.dominant_timeframe, "HIGH");
+        assert!(entry.confidence > 0.3);
+    }
+
+    #[test]
+    fn resolution_low_bull_higher_bear_leans_bear() {
+        // LOW:bull vs MEDIUM:bear, HIGH:bear → higher timeframes dominate → lean-bear
+        let div = make_divergence("GOLD", "bull", "bear", "bear", "neutral", 1, 2);
+        let entry = build_resolution_entry(&div, "mixed");
+        assert_eq!(entry.stance, "lean-bear");
+        assert_eq!(entry.dominant_timeframe, "HIGH");
+        assert!(entry.confidence > 0.3);
+    }
+
+    #[test]
+    fn resolution_even_split_waits() {
+        // LOW:bear, MEDIUM:bull, HIGH:bear, MACRO:bull → 2v2 → wait-for-clarity
+        let div = make_divergence("SPY", "bear", "bull", "bear", "bull", 2, 2);
+        let entry = build_resolution_entry(&div, "mixed");
+        // 2v2 with weights: bull=MEDIUM(2)+MACRO(4)=6, bear=LOW(1)+HIGH(3)=4
+        // weight_diff=2 > threshold(1) → actually resolves to lean-bull
+        assert_eq!(entry.stance, "lean-bull");
+        assert_eq!(entry.severity, "high");
+    }
+
+    #[test]
+    fn resolution_conflicted_regime_raises_threshold() {
+        // In conflicted regime, weight threshold is 3 instead of 1
+        // LOW:bear, MEDIUM:bull → bear_weight=1, bull_weight=2, diff=1 < 3
+        let div = make_divergence("ETH", "bear", "bull", "neutral", "neutral", 1, 1);
+        let entry = build_resolution_entry(&div, "conflicted");
+        assert_eq!(entry.stance, "wait-for-clarity");
+        assert!(
+            entry
+                .resolution_triggers
+                .iter()
+                .any(|t| t.contains("REGIME")),
+            "conflicted regime should add regime trigger"
+        );
+    }
+
+    #[test]
+    fn resolution_severity_high_when_2v2() {
+        let div = make_divergence("TSLA", "bear", "bull", "bear", "bull", 2, 2);
+        let entry = build_resolution_entry(&div, "clean");
+        assert_eq!(entry.severity, "high");
+    }
+
+    #[test]
+    fn resolution_severity_low_when_1v1() {
+        let div = make_divergence("AAPL", "bear", "bull", "neutral", "neutral", 1, 1);
+        let entry = build_resolution_entry(&div, "clean");
+        assert_eq!(entry.severity, "low");
+    }
+
+    #[test]
+    fn resolution_severity_medium_when_3_active() {
+        let div = make_divergence("NVDA", "bear", "bull", "bull", "neutral", 2, 1);
+        let entry = build_resolution_entry(&div, "clean");
+        assert_eq!(entry.severity, "medium");
+    }
+
+    #[test]
+    fn resolution_macro_dominant_when_macro_bull() {
+        // MACRO:bull + HIGH:bull vs LOW:bear → MACRO is highest-weight bull layer
+        let div = make_divergence("GLD", "bear", "neutral", "bull", "bull", 2, 1);
+        let entry = build_resolution_entry(&div, "clean");
+        assert_eq!(entry.stance, "lean-bull");
+        assert_eq!(entry.dominant_timeframe, "MACRO");
+    }
+
+    #[test]
+    fn resolution_triggers_include_short_term() {
+        let div = make_divergence("SLV", "bear", "bull", "neutral", "neutral", 1, 1);
+        let entry = build_resolution_entry(&div, "clean");
+        assert!(
+            entry
+                .resolution_triggers
+                .iter()
+                .any(|t| t.contains("SHORT-TERM")),
+            "should include short-term trigger when LOW disagrees"
+        );
+    }
+
+    #[test]
+    fn resolution_triggers_include_midterm_when_medium_high_split() {
+        let div = make_divergence("CCJ", "bear", "bull", "bear", "neutral", 1, 2);
+        let entry = build_resolution_entry(&div, "clean");
+        assert!(
+            entry
+                .resolution_triggers
+                .iter()
+                .any(|t| t.contains("MID-TERM")),
+            "should include mid-term trigger when MEDIUM and HIGH disagree"
+        );
+    }
+
+    #[test]
+    fn resolution_confidence_low_for_wait() {
+        let div = make_divergence("ETH", "bear", "bull", "neutral", "neutral", 1, 1);
+        let entry = build_resolution_entry(&div, "conflicted");
+        assert_eq!(entry.stance, "wait-for-clarity");
+        assert!(
+            entry.confidence <= 0.25,
+            "wait-for-clarity should have low confidence, got {}",
+            entry.confidence
+        );
+    }
+
+    #[test]
+    fn resolution_confidence_higher_for_clear_dominant() {
+        // MACRO:bull + HIGH:bull + MEDIUM:bull vs LOW:bear → very clear
+        let div = make_divergence("MSTR", "bear", "bull", "bull", "bull", 3, 1);
+        let entry = build_resolution_entry(&div, "clean");
+        assert_eq!(entry.stance, "lean-bull");
+        assert!(
+            entry.confidence >= 0.7,
+            "strong 3v1 should have high confidence, got {}",
+            entry.confidence
+        );
+    }
+
+    #[test]
+    fn resolution_entry_serializes_to_json() {
+        let div = make_divergence("BTC", "bear", "bull", "bull", "neutral", 2, 1);
+        let entry = build_resolution_entry(&div, "mixed");
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"symbol\":\"BTC\""));
+        assert!(json.contains("\"stance\""));
+        assert!(json.contains("\"resolution_triggers\""));
+        assert!(json.contains("\"dominant_timeframe\""));
+    }
+
+    #[test]
+    fn resolution_disagreement_describes_active_layers() {
+        let div = make_divergence("RKLB", "bear", "bull", "neutral", "bull", 2, 1);
+        let entry = build_resolution_entry(&div, "clean");
+        assert!(
+            entry.disagreement.contains("LOW:bear"),
+            "disagreement should mention LOW:bear, got: {}",
+            entry.disagreement
+        );
+        assert!(
+            entry.disagreement.contains("MEDIUM:bull"),
+            "disagreement should mention MEDIUM:bull, got: {}",
+            entry.disagreement
+        );
     }
 }
