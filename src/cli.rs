@@ -2631,6 +2631,21 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Unified cross-timeframe view: alignment + divergence + correlation breaks in one call
+    #[command(name = "cross-timeframe")]
+    CrossTimeframe {
+        /// Filter to a specific symbol
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Correlation break threshold (default: 0.30)
+        #[arg(long, default_value = "0.30")]
+        threshold: f64,
+        /// Max correlation breaks to return (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
     Digest {
         #[arg(long)]
         from: Option<String>,
