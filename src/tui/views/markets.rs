@@ -162,6 +162,12 @@ pub fn market_symbols() -> Vec<MarketItem> {
             category: AssetCategory::Commodity,
             yahoo_symbol: "HG=F".into(),
         },
+        MarketItem {
+            symbol: "URA".into(),
+            name: "Uranium ETF".into(),
+            category: AssetCategory::Commodity,
+            yahoo_symbol: "URA".into(),
+        },
     ]
 }
 
@@ -798,7 +804,7 @@ mod tests {
     #[test]
     fn market_symbols_has_expected_count() {
         let items = market_symbols();
-        assert_eq!(items.len(), 21);
+        assert_eq!(items.len(), 22);
     }
 
     #[test]

@@ -437,6 +437,9 @@ pub enum DataCommand {
     },
     /// Consolidated closing prices for all portfolio + watchlist symbols
     Prices {
+        /// Include all market overview symbols (indices, commodities, crypto, forex, bonds)
+        #[arg(long)]
+        market: bool,
         /// Output as JSON for agent/script consumption
         #[arg(long)]
         json: bool,
@@ -5648,5 +5651,32 @@ mod tests {
             "help should describe date format"
         );
         Ok(())
+    }
+
+    #[test]
+    fn parse_data_prices_market_flag() {
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "prices", "--market", "--json"]).unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices { market, json } = command else {
+            panic!("expected Prices");
+        };
+        assert!(market);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_prices_no_market_flag() {
+        let cli = Cli::try_parse_from(["pftui", "data", "prices", "--json"]).unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices { market, json } = command else {
+            panic!("expected Prices");
+        };
+        assert!(!market);
+        assert!(json);
     }
 }
