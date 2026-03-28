@@ -25,6 +25,7 @@ pub mod drift;
 pub mod economy;
 pub mod eod;
 pub mod etf_flows;
+pub mod evening_brief;
 pub mod export;
 pub mod fedwatch;
 pub mod futures;

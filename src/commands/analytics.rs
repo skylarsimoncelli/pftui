@@ -3599,16 +3599,16 @@ fn run_alignment_summary(
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct DivergenceRow {
-    symbol: String,
-    low: String,
-    medium: String,
-    high: String,
-    macro_bias: String,
-    bull_layers: usize,
-    bear_layers: usize,
-    disagreement_pct: f64,
-    dominant_side: String,
+pub(crate) struct DivergenceRow {
+    pub(crate) symbol: String,
+    pub(crate) low: String,
+    pub(crate) medium: String,
+    pub(crate) high: String,
+    pub(crate) macro_bias: String,
+    pub(crate) bull_layers: usize,
+    pub(crate) bear_layers: usize,
+    pub(crate) disagreement_pct: f64,
+    pub(crate) dominant_side: String,
 }
 
 fn run_divergence(
@@ -3686,16 +3686,16 @@ fn run_divergence(
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct AlignmentRow {
-    symbol: String,
-    low: String,
-    medium: String,
-    high: String,
-    macro_bias: String,
-    consensus: String,
-    score_pct: f64,
-    bull_layers: usize,
-    bear_layers: usize,
+pub(crate) struct AlignmentRow {
+    pub(crate) symbol: String,
+    pub(crate) low: String,
+    pub(crate) medium: String,
+    pub(crate) high: String,
+    pub(crate) macro_bias: String,
+    pub(crate) consensus: String,
+    pub(crate) score_pct: f64,
+    pub(crate) bull_layers: usize,
+    pub(crate) bear_layers: usize,
 }
 
 fn score_bar(score_pct: f64) -> String {
@@ -3757,7 +3757,7 @@ fn discover_alignment_symbols(
     symbols.into_iter().collect()
 }
 
-fn build_alignment_rows(
+pub(crate) fn build_alignment_rows(
     backend: &BackendConnection,
     filter_symbol: Option<&str>,
 ) -> Result<Vec<AlignmentRow>> {
@@ -3938,26 +3938,26 @@ struct CrossTimeframeResolutions {
 }
 
 #[derive(serde::Serialize)]
-struct ResolutionEntry {
-    symbol: String,
+pub(crate) struct ResolutionEntry {
+    pub(crate) symbol: String,
     /// Which layers disagree (e.g. "LOW:bear vs MEDIUM:bull, HIGH:bull")
-    disagreement: String,
+    pub(crate) disagreement: String,
     /// Severity: "high" (opposite extremes across 3+ layers), "medium" (2 layers disagree), "low" (minor split)
-    severity: String,
+    pub(crate) severity: String,
     /// Which timeframe layer has the strongest signal and should dominate the stance
-    dominant_timeframe: String,
+    pub(crate) dominant_timeframe: String,
     /// Reasoning for why that timeframe dominates
-    dominant_reason: String,
+    pub(crate) dominant_reason: String,
     /// Suggested stance: "lean-bull", "lean-bear", "wait-for-clarity"
-    stance: String,
+    pub(crate) stance: String,
     /// Confidence in the resolution (0.0-1.0)
-    confidence: f64,
+    pub(crate) confidence: f64,
     /// What would resolve the disagreement (list of observable triggers)
-    resolution_triggers: Vec<String>,
+    pub(crate) resolution_triggers: Vec<String>,
     /// What the lower timeframe is signaling (shortest-term view)
-    low_read: String,
+    pub(crate) low_read: String,
     /// What the higher timeframes are signaling (longer-term view)
-    high_read: String,
+    pub(crate) high_read: String,
 }
 
 #[derive(serde::Serialize)]
@@ -4295,7 +4295,7 @@ pub fn run_cross_timeframe(
 /// 2. **Stance** — follows the dominant timeframe's bias. If split evenly, wait.
 /// 3. **Confidence** — based on how many layers agree on the dominant side and severity.
 /// 4. **Triggers** — observable events that would resolve the disagreement.
-fn build_resolution_entry(div: &DivergenceRow, regime_read: &str) -> ResolutionEntry {
+pub(crate) fn build_resolution_entry(div: &DivergenceRow, regime_read: &str) -> ResolutionEntry {
     // Classify each layer
     let layers = [
         ("LOW", &div.low),
