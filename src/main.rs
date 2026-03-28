@@ -3749,6 +3749,9 @@ fn main() -> Result<()> {
             cli::AnalyticsCommand::RegimeFlows { json } => {
                 commands::regime_flows::run(&backend, json)
             }
+            cli::AnalyticsCommand::RegimeTransitions { json } => {
+                commands::regime_transitions::run(&backend, json)
+            }
         },
     };
 

@@ -2862,6 +2862,13 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Regime transition probability scoring: analyzes signal momentum, current state, and historical patterns to score likelihood of regime changes
+    #[command(name = "regime-transitions", after_help = "Scores the probability of transitioning from the current regime to each\npossible state (risk-on, risk-off, crisis, stagflation, etc.).\n\nAnalyzes:\n  - 6 signal momentum indicators (VIX, DXY, yields, equities, gold, oil)\n  - Current regime confidence and duration\n  - Special regime triggers (crisis: VIX>30+oil>90, stagflation: gold up+equities down)\n  - Historical transition frequency and patterns\n\nEach candidate shows probability, key drivers, confirmation triggers, and\ninvalidation conditions.\n\nSee also: analytics macro regime, analytics regime-flows, analytics synthesis")]
+    RegimeTransitions {
+        /// Output as JSON for agent/script consumption (recommended)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -5496,6 +5503,30 @@ mod tests {
         };
         let AnalyticsCommand::RegimeFlows { json } = command else {
             panic!("expected RegimeFlows");
+        };
+        assert!(!json);
+    }
+
+    #[test]
+    fn parse_analytics_regime_transitions_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "regime-transitions", "--json"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::RegimeTransitions { json } = command else {
+            panic!("expected RegimeTransitions");
+        };
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_regime_transitions_no_json() {
+        let cli = Cli::parse_from(["pftui", "analytics", "regime-transitions"]);
+        let Some(Command::Analytics { command }) = cli.command else {
+            panic!("expected analytics");
+        };
+        let AnalyticsCommand::RegimeTransitions { json } = command else {
+            panic!("expected RegimeTransitions");
         };
         assert!(!json);
     }
