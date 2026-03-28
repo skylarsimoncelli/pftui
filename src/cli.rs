@@ -471,6 +471,40 @@ pub enum DataCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Alert management lives under `analytics alerts` — this redirects there
+    #[command(name = "alerts", after_help = "Alerts are managed under the analytics domain:\n\n  pftui analytics alerts list        List alert rules\n  pftui analytics alerts check       Check alerts against current data\n  pftui analytics alerts add          Add an alert rule\n  pftui analytics alerts ack          Acknowledge triggered alerts\n  pftui analytics alerts seed-defaults Seed smart-alert defaults\n\nRun `pftui analytics alerts --help` for full details.")]
+    Alerts {
+        #[command(subcommand)]
+        command: Option<DataAlertsRedirect>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DataAlertsRedirect {
+    /// → Redirects to `analytics alerts check`
+    Check {
+        #[arg(long)]
+        today: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// → Redirects to `analytics alerts list`
+    List {
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        triggered: bool,
+        #[arg(long)]
+        since: Option<i64>,
+        #[arg(long)]
+        today: bool,
+        #[arg(long)]
+        recent: bool,
+        #[arg(long, default_value = "24")]
+        recent_hours: i64,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2738,6 +2772,8 @@ pub enum AnalyticsCommand {
         #[command(subcommand)]
         command: AnalyticsTrendsCommand,
     },
+    /// Alert rules and monitoring (also available as `data alerts`)
+    #[command(after_help = "Common workflows:\n  pftui analytics alerts check             Check all alerts against current data\n  pftui analytics alerts check --today     Check only today's triggers\n  pftui analytics alerts list              List alert rules\n  pftui analytics alerts list --triggered  Show triggered alert log\n  pftui analytics alerts add \"BTC > 100000\" Add a custom alert rule\n  pftui analytics alerts seed-defaults     Seed smart-alert defaults for holdings\n\nAlso accessible via: pftui data alerts check, pftui data alerts list")]
     Alerts {
         #[command(subcommand)]
         command: AnalyticsAlertsCommand,
@@ -2943,6 +2979,7 @@ pub enum Command {
     },
 
     /// Data management operations
+    #[command(after_help = "Looking for alerts? Use:\n  pftui data alerts check      Check alerts against current data\n  pftui data alerts list       List alert rules\n  pftui analytics alerts       Full alert management (add, ack, seed-defaults)")]
     Data {
         #[command(subcommand)]
         command: DataCommand,
@@ -2961,7 +2998,7 @@ pub enum Command {
     },
 
     /// Multi-timeframe analytics engine views (includes scenario, situation, signals, synthesis)
-    #[command(name = "analytics", after_help = "Key subcommands:\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis")]
+    #[command(name = "analytics", after_help = "Key subcommands:\n  alerts     Alert rules: add, list, check, ack, seed-defaults (also: data alerts)\n  scenario   Macro scenario tracking: probabilities, triggers, history (alias: scenarios)\n  situation  Situation Room: active situations, regime, branches, indicators\n  signals    Technical and cross-timeframe signals\n  synthesis  Cross-timeframe alignment and divergence analysis")]
     Analytics {
         #[command(subcommand)]
         command: AnalyticsCommand,
