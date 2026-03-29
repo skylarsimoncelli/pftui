@@ -52,6 +52,7 @@ pftui analytics macro regime history
 pftui analytics movers --json
 pftui journal prediction scorecard --date today --json
 pftui journal prediction list --json
+pftui journal prediction lessons --json
 pftui journal notes list --json
 ```
 
@@ -130,6 +131,38 @@ pftui journal prediction list --filter scored --json
 - Are multiple agents making the same type of wrong call? (e.g. all overweighting headlines vs supply data)
 - Are lessons from one timeframe relevant to another?
 - Flag these patterns in your analysis so the user sees them.
+
+### 1b. Prediction Lesson Extraction (mandatory, after prediction review)
+
+After reviewing prediction results, extract structured lessons from wrong predictions that don't have lessons yet. This closes the self-improvement feedback loop — wrong predictions are only valuable if you learn from them.
+
+```bash
+pftui journal prediction lessons --json
+```
+
+This shows all wrong predictions with their lesson status and coverage statistics. Focus on predictions without lessons (`has_lesson: false`).
+
+**For each unlessoned wrong prediction (up to 5 per run):**
+
+1. Classify the miss type: `directional` (called the wrong direction), `timing` (right direction, wrong timeframe), or `magnitude` (right direction, underestimated/overestimated the move)
+2. Identify what actually happened vs what was predicted
+3. Diagnose the root cause — why was this wrong? Was it bad data, wrong model, ignored signals, or false confidence?
+4. Name the specific signal that was misread or missed
+
+```bash
+pftui journal prediction lessons add \
+  --prediction-id <ID> \
+  --miss-type <directional|timing|magnitude> \
+  --what-happened "<what the market actually did>" \
+  --why-wrong "<root cause: what assumption or reasoning failed>" \
+  --signal-misread "<specific signal or data point that was ignored or misinterpreted>"
+```
+
+**Prioritisation:** Start with the highest-conviction wrong predictions — those are the most damaging to the system's credibility and the most instructive. A high-conviction wrong call reveals a systematic blind spot; a low-conviction wrong call is just noise.
+
+**Quality bar:** Lessons must be specific and actionable, not generic. Bad: "Market was unpredictable." Good: "Ignored the COT positioning shift from net-long to net-short over the prior 2 weeks, which historically precedes 5-10% corrections in this asset." The lesson should change how the system evaluates similar situations in the future.
+
+**Coverage target:** Aim for 100% lesson coverage over time. Track the coverage percentage from the JSON output and flag it in your analysis if it drops below 80%.
 
 ### 2. Cross-Timeframe Synthesis
 
@@ -295,6 +328,15 @@ tables, and analytical depth. This is not a Telegram message. This is a report.]
 
 [Prediction results across all timeframes. Hit rate. Key wrong call lesson with
 genuine self-reflection on what you missed and why.]
+
+## Prediction Lessons
+
+[Lessons extracted from wrong predictions this session. For each: prediction ID,
+what was predicted vs what happened, miss type (directional/timing/magnitude),
+root cause, and the specific signal that was misread. Coverage statistics: X/Y
+wrong predictions now have structured lessons (Z% coverage). If coverage is below
+80%, flag it. If no new lessons were extracted this session, explain why (e.g. all
+wrong predictions already have lessons, or no new wrong predictions since last run).]
 
 ## Cross-Timeframe Intelligence
 
