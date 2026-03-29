@@ -2034,6 +2034,9 @@ fn main() -> Result<()> {
             cli::AnalyticsCommand::ImpactEstimate { json } => {
                 commands::impact_estimate::run(&backend, json)
             }
+            cli::AnalyticsCommand::Calibration { threshold, json } => {
+                commands::calibration::run(&backend, threshold, json)
+            }
             cli::AnalyticsCommand::Opportunities { json } => commands::analytics::run(
                 &backend,
                 "opportunities",
