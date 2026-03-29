@@ -28,12 +28,20 @@ pub struct CatalystEvent {
     pub significance: String,
     pub countdown_bucket: String,
     pub affected_assets: Vec<String>,
-    pub linked_scenarios: Vec<String>,
+    pub linked_scenarios: Vec<LinkedScenario>,
     pub linked_predictions: Vec<String>,
     pub portfolio_relevance: i32,
     pub macro_significance: i32,
     pub score: i32,
     pub detail: String,
+}
+
+/// A scenario linked to a catalyst with direction and relevance context.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkedScenario {
+    pub name: String,
+    pub direction: String,
+    pub relevance: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -373,29 +381,265 @@ fn catalyst_detail(
     )
 }
 
-fn link_scenarios(event: &CalendarEvent, scenarios: &[Scenario]) -> Vec<String> {
+fn link_scenarios(event: &CalendarEvent, scenarios: &[Scenario]) -> Vec<LinkedScenario> {
     let event_tokens = keyword_set(&format!(
         "{} {} {}",
         event.name,
         event.event_type,
         event.symbol.clone().unwrap_or_default()
     ));
+    let category = event_category(event);
+
     let mut matches = scenarios
         .iter()
         .filter_map(|scenario| {
-            let text = format!(
+            let scenario_text = format!(
                 "{} {} {} {}",
                 scenario.name,
                 scenario.description.as_deref().unwrap_or(""),
                 scenario.asset_impact.as_deref().unwrap_or(""),
                 scenario.triggers.as_deref().unwrap_or("")
             );
-            let overlap = overlap_score(&event_tokens, &keyword_set(&text));
-            (overlap > 0).then_some((overlap, scenario.name.clone()))
+            let keyword_score = overlap_score(&event_tokens, &keyword_set(&scenario_text));
+            let semantic_score =
+                category_scenario_score(category.as_str(), &scenario.name, &scenario_text);
+            let total = keyword_score + semantic_score;
+            if total == 0 {
+                return None;
+            }
+            let direction =
+                infer_catalyst_direction(category.as_str(), &scenario.name, &scenario_text);
+            let relevance = if keyword_score >= 2 {
+                "direct"
+            } else if keyword_score >= 1 || semantic_score >= 3 {
+                "strong"
+            } else {
+                "thematic"
+            };
+            Some((
+                total,
+                LinkedScenario {
+                    name: scenario.name.clone(),
+                    direction: direction.to_string(),
+                    relevance: relevance.to_string(),
+                },
+            ))
         })
         .collect::<Vec<_>>();
-    matches.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
-    matches.into_iter().take(3).map(|(_, name)| name).collect()
+    matches.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.name.cmp(&right.1.name)));
+    matches
+        .into_iter()
+        .take(3)
+        .map(|(_, linked)| linked)
+        .collect()
+}
+
+/// Score how strongly a catalyst category semantically relates to a scenario.
+/// Returns 0 (no match) to 4 (strong thematic match).
+fn category_scenario_score(category: &str, scenario_name: &str, scenario_text: &str) -> usize {
+    let lower_name = scenario_name.to_ascii_lowercase();
+    let lower_text = scenario_text.to_ascii_lowercase();
+
+    match category {
+        "inflation" => {
+            let mut score = 0;
+            if contains_any(
+                &lower_text,
+                &[
+                    "inflation",
+                    "cpi",
+                    "pce",
+                    "price",
+                    "stagflation",
+                    "disinflation",
+                    "deflation",
+                ],
+            ) {
+                score += 3;
+            }
+            if contains_any(&lower_text, &["fed", "rate", "monetary", "easing", "tightening"]) {
+                score += 1;
+            }
+            if contains_any(&lower_name, &["inflation", "stagflation"]) {
+                score += 1;
+            }
+            score
+        }
+        "policy" => {
+            let mut score = 0;
+            if contains_any(
+                &lower_text,
+                &[
+                    "fed",
+                    "fomc",
+                    "rate",
+                    "monetary",
+                    "easing",
+                    "tightening",
+                    "hawkish",
+                    "dovish",
+                    "central bank",
+                    "liquidity",
+                ],
+            ) {
+                score += 3;
+            }
+            if contains_any(&lower_text, &["recession", "rally", "risk-on", "risk-off"]) {
+                score += 1;
+            }
+            if contains_any(&lower_name, &["fed", "rate", "recession", "rally"]) {
+                score += 1;
+            }
+            score
+        }
+        "labor" => {
+            let mut score = 0;
+            if contains_any(
+                &lower_text,
+                &[
+                    "employment",
+                    "labor",
+                    "jobs",
+                    "payroll",
+                    "unemployment",
+                    "nfp",
+                    "workforce",
+                ],
+            ) {
+                score += 3;
+            }
+            if contains_any(
+                &lower_text,
+                &["recession", "contraction", "consumer", "spending", "collapse"],
+            ) {
+                score += 2;
+            }
+            if contains_any(&lower_name, &["recession", "employment", "labor"]) {
+                score += 1;
+            }
+            score
+        }
+        "growth" => {
+            let mut score = 0;
+            if contains_any(
+                &lower_text,
+                &[
+                    "gdp",
+                    "growth",
+                    "pmi",
+                    "manufacturing",
+                    "retail",
+                    "output",
+                    "expansion",
+                    "contraction",
+                ],
+            ) {
+                score += 3;
+            }
+            if contains_any(&lower_text, &["recession", "rally", "equities", "risk-on"]) {
+                score += 1;
+            }
+            if contains_any(&lower_name, &["recession", "rally", "growth"]) {
+                score += 1;
+            }
+            score
+        }
+        "commodities" => {
+            let mut score = 0;
+            if contains_any(
+                &lower_text,
+                &[
+                    "oil",
+                    "crude",
+                    "opec",
+                    "commodity",
+                    "gold",
+                    "copper",
+                    "hormuz",
+                    "energy",
+                ],
+            ) {
+                score += 3;
+            }
+            if contains_any(&lower_text, &["war", "geopolitical", "iran", "conflict"]) {
+                score += 1;
+            }
+            if contains_any(&lower_name, &["war", "iran", "oil", "commodity"]) {
+                score += 1;
+            }
+            score
+        }
+        "earnings" => {
+            let mut score = 0;
+            if contains_any(&lower_text, &["equities", "earnings", "stock", "rally", "crash"]) {
+                score += 2;
+            }
+            if contains_any(&lower_name, &["rally", "recession", "crash"]) {
+                score += 1;
+            }
+            score
+        }
+        _ => 0,
+    }
+}
+
+/// Infer the direction a catalyst outcome would push a scenario (bullish, bearish, or mixed).
+/// Direction reflects: "if this catalyst prints hot/strong, does it push this scenario up or down?"
+fn infer_catalyst_direction(
+    category: &str,
+    scenario_name: &str,
+    scenario_text: &str,
+) -> &'static str {
+    let lower_name = scenario_name.to_ascii_lowercase();
+    let lower_text = scenario_text.to_ascii_lowercase();
+
+    match category {
+        "inflation" => {
+            if contains_any(&lower_name, &["inflation", "stagflation"]) {
+                "confirming" // hot data confirms inflation scenarios
+            } else if contains_any(&lower_text, &["easing", "rally", "risk-on", "liquidity"]) {
+                "opposing" // hot data opposes easing/rally scenarios
+            } else {
+                "mixed"
+            }
+        }
+        "labor" => {
+            if contains_any(&lower_name, &["recession"]) {
+                "confirming" // weak jobs confirm recession
+            } else if contains_any(&lower_text, &["rally", "risk-on"]) {
+                "opposing" // weak jobs oppose rally
+            } else {
+                "mixed"
+            }
+        }
+        "policy" => {
+            if contains_any(&lower_text, &["easing", "cut", "dovish", "liquidity"]) {
+                "confirming" // policy events can confirm easing path
+            } else if contains_any(&lower_text, &["tightening", "hawkish"]) {
+                "opposing"
+            } else {
+                "mixed"
+            }
+        }
+        "growth" => {
+            if contains_any(&lower_name, &["recession"]) {
+                "confirming" // weak growth confirms recession
+            } else {
+                "mixed" // growth data can go either way
+            }
+        }
+        "commodities" => {
+            if contains_any(
+                &lower_text,
+                &["war", "iran", "conflict", "hormuz", "inflation"],
+            ) {
+                "confirming" // commodity spikes confirm war and inflation scenarios
+            } else {
+                "mixed"
+            }
+        }
+        _ => "mixed",
+    }
 }
 
 fn link_predictions(event: &CalendarEvent, predictions: &[PredictionMarket]) -> Vec<String> {
@@ -580,7 +824,228 @@ mod tests {
             .unwrap();
 
         assert!(aapl.portfolio_relevance > fomc.portfolio_relevance);
-        assert!(fomc.linked_scenarios.iter().any(|row| row == "Fed Cuts"));
+        assert!(fomc
+            .linked_scenarios
+            .iter()
+            .any(|row| row.name == "Fed Cuts"));
         assert!(!fomc.linked_predictions.is_empty());
+    }
+
+    #[test]
+    fn category_semantic_matching_links_inflation_catalyst_to_inflation_scenario() {
+        let conn = crate::db::open_in_memory();
+        let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+
+        db::calendar_cache::upsert_event(
+            &conn,
+            &today,
+            "Core PCE Price Index",
+            "high",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
+        let scenario_id = db::scenarios::add_scenario(
+            &conn,
+            "Inflation Spike",
+            0.70,
+            Some("Oil-driven inflation acceleration. CPI heading to 4%+. Stagflation."),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db::scenarios::update_scenario(&conn, scenario_id, None, None, None, Some("active"))
+            .unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let report = build_report_backend(&backend, CatalystWindow::Today).unwrap();
+        assert_eq!(report.catalysts.len(), 1);
+
+        let pce = &report.catalysts[0];
+        assert!(
+            !pce.linked_scenarios.is_empty(),
+            "Core PCE should link to Inflation Spike via category semantics"
+        );
+        assert!(pce
+            .linked_scenarios
+            .iter()
+            .any(|row| row.name == "Inflation Spike"));
+    }
+
+    #[test]
+    fn labor_catalyst_links_to_recession_scenario() {
+        let conn = crate::db::open_in_memory();
+        let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+
+        db::calendar_cache::upsert_event(
+            &conn,
+            &today,
+            "Non-Farm Payrolls",
+            "high",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
+        let scenario_id = db::scenarios::add_scenario(
+            &conn,
+            "Hard Recession",
+            0.55,
+            Some("NFP collapse signals labor market breakdown. Consumer spending contraction."),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db::scenarios::update_scenario(&conn, scenario_id, None, None, None, Some("active"))
+            .unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let report = build_report_backend(&backend, CatalystWindow::Today).unwrap();
+        let nfp = &report.catalysts[0];
+        assert!(
+            nfp.linked_scenarios
+                .iter()
+                .any(|row| row.name == "Hard Recession"),
+            "NFP should link to Hard Recession via labor-recession semantics"
+        );
+    }
+
+    #[test]
+    fn linked_scenario_has_direction_and_relevance() {
+        let conn = crate::db::open_in_memory();
+        let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+
+        db::calendar_cache::upsert_event(
+            &conn,
+            &today,
+            "Consumer Price Index (CPI)",
+            "high",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
+        let s1 = db::scenarios::add_scenario(
+            &conn,
+            "Inflation Spike",
+            0.70,
+            Some("CPI heading to 4%+. Stagflation scenario."),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db::scenarios::update_scenario(&conn, s1, None, None, None, Some("active")).unwrap();
+        let s2 = db::scenarios::add_scenario(
+            &conn,
+            "Risk-On Rally",
+            0.40,
+            Some("Fed easing triggers liquidity flood. BTC/equities rally."),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db::scenarios::update_scenario(&conn, s2, None, None, None, Some("active")).unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let report = build_report_backend(&backend, CatalystWindow::Today).unwrap();
+        let cpi = &report.catalysts[0];
+
+        let inflation_link = cpi
+            .linked_scenarios
+            .iter()
+            .find(|row| row.name == "Inflation Spike");
+        assert!(inflation_link.is_some(), "CPI should link to Inflation Spike");
+        let inflation_link = inflation_link.unwrap();
+        assert_eq!(inflation_link.direction, "confirming");
+
+        let rally_link = cpi
+            .linked_scenarios
+            .iter()
+            .find(|row| row.name == "Risk-On Rally");
+        assert!(rally_link.is_some(), "CPI should link to Risk-On Rally");
+        let rally_link = rally_link.unwrap();
+        assert_eq!(rally_link.direction, "opposing");
+    }
+
+    #[test]
+    fn growth_catalyst_links_to_multiple_scenarios() {
+        let conn = crate::db::open_in_memory();
+        let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+
+        db::calendar_cache::upsert_event(
+            &conn,
+            &today,
+            "ISM Manufacturing PMI",
+            "high",
+            None,
+            None,
+            "economic",
+            None,
+        )
+        .unwrap();
+        let s1 = db::scenarios::add_scenario(
+            &conn,
+            "Hard Recession",
+            0.55,
+            Some("Manufacturing contraction deepens. GDP decline. Equities -20%."),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db::scenarios::update_scenario(&conn, s1, None, None, None, Some("active")).unwrap();
+        let s2 = db::scenarios::add_scenario(
+            &conn,
+            "Risk-On Rally",
+            0.40,
+            Some("Fed cut triggers liquidity flood. Risk-on equities rally."),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db::scenarios::update_scenario(&conn, s2, None, None, None, Some("active")).unwrap();
+
+        let backend = BackendConnection::Sqlite { conn };
+        let report = build_report_backend(&backend, CatalystWindow::Today).unwrap();
+        let ism = &report.catalysts[0];
+        assert!(
+            ism.linked_scenarios.len() >= 2,
+            "ISM PMI should link to both recession and rally scenarios: got {}",
+            ism.linked_scenarios.len()
+        );
+    }
+
+    #[test]
+    fn category_scenario_score_returns_zero_for_unrelated() {
+        assert_eq!(
+            category_scenario_score("inflation", "Iran-US War", "military conflict in Middle East"),
+            0
+        );
+        assert_eq!(
+            category_scenario_score("commodities", "Risk-On Rally", "Fed easing triggers liquidity flood"),
+            0
+        );
+    }
+
+    #[test]
+    fn linked_scenario_serializes_to_json() {
+        let ls = LinkedScenario {
+            name: "Inflation Spike".to_string(),
+            direction: "confirming".to_string(),
+            relevance: "strong".to_string(),
+        };
+        let json = serde_json::to_string(&ls).unwrap();
+        assert!(json.contains("\"name\":\"Inflation Spike\""));
+        assert!(json.contains("\"direction\":\"confirming\""));
+        assert!(json.contains("\"relevance\":\"strong\""));
     }
 }
