@@ -54,6 +54,8 @@ pftui journal prediction scorecard --date today --json
 pftui journal prediction list --json
 pftui journal prediction lessons --json
 pftui journal notes list --json
+pftui agent debate history --status active --json
+pftui agent debate history --status resolved --limit 5 --json
 ```
 
 For each active situation, review the full event log and indicator status from today's agent runs:
@@ -163,6 +165,69 @@ pftui journal prediction lessons add \
 **Quality bar:** Lessons must be specific and actionable, not generic. Bad: "Market was unpredictable." Good: "Ignored the COT positioning shift from net-long to net-short over the prior 2 weeks, which historically precedes 5-10% corrections in this asset." The lesson should change how the system evaluates similar situations in the future.
 
 **Coverage target:** Aim for 100% lesson coverage over time. Track the coverage percentage from the JSON output and flag it in your analysis if it drops below 80%.
+
+### 1c. Adversarial Debate (mandatory, after prediction lessons)
+
+Before writing your cross-timeframe synthesis, force-test the 1-2 most contentious topics of the day through structured adversarial debate. This catches contradictions, strengthens conviction signals, and produces sharper analysis.
+
+**Identify debate topics** from today's data:
+
+1. Check `pftui analytics divergence --json` for assets where timeframe layers strongly disagree (e.g. LOW bullish but HIGH bearish)
+2. Check `pftui analytics calibration --json` for large divergences between your scenario probabilities and prediction market consensus
+3. Check timeframe agent messages for conflicting conclusions on the same asset or scenario
+4. Review any active debates from prior sessions: `pftui agent debate history --status active --json`
+
+Pick the 1-2 topics with the sharpest disagreement. These are the topics where getting it wrong costs the most.
+
+**If active debates exist from prior sessions**, continue them by adding new rounds with today's evidence rather than starting new debates on the same topic. Only start a new debate if the topic is genuinely new.
+
+**Run each debate (1-2 per session):**
+
+```bash
+# Start the debate (or continue an active one)
+pftui agent debate start --topic "<asset or scenario question>" --rounds 3
+
+# Round 1: Opening arguments
+pftui agent debate add-round --debate-id <ID> --round 1 --position bull \
+  --argument "<strongest bull case with specific data>" \
+  --evidence "<data sources: timeframe agent findings, prices, COT, sentiment>" \
+  --agent-source "evening-analyst"
+
+pftui agent debate add-round --debate-id <ID> --round 1 --position bear \
+  --argument "<strongest bear case with specific data>" \
+  --evidence "<data sources: timeframe agent findings, prices, COT, sentiment>" \
+  --agent-source "evening-analyst"
+
+# Round 2: Rebuttals — each side addresses the other's strongest point
+pftui agent debate add-round --debate-id <ID> --round 2 --position bull \
+  --argument "<rebuttal to bear's strongest point + new supporting evidence>" \
+  --evidence "<sources>" --agent-source "evening-analyst"
+
+pftui agent debate add-round --debate-id <ID> --round 2 --position bear \
+  --argument "<rebuttal to bull's strongest point + new supporting evidence>" \
+  --evidence "<sources>" --agent-source "evening-analyst"
+
+# Round 3: Final assessment — which side has stronger evidence TODAY?
+pftui agent debate add-round --debate-id <ID> --round 3 --position bull \
+  --argument "<final synthesis: what would confirm this thesis and by when>" \
+  --evidence "<sources>" --agent-source "evening-analyst"
+
+pftui agent debate add-round --debate-id <ID> --round 3 --position bear \
+  --argument "<final synthesis: what would confirm this thesis and by when>" \
+  --evidence "<sources>" --agent-source "evening-analyst"
+
+# Resolve with your honest assessment
+pftui agent debate resolve --debate-id <ID> \
+  --summary "<which side has stronger evidence today, what would flip it, and how this affects conviction>"
+```
+
+**Quality bar for debate arguments:**
+- Every argument must cite specific data, not vibes. Bad: "BTC looks bullish." Good: "BTC ETF inflows averaged $340M/day this week while exchange reserves hit a 3-year low — demand is absorbing supply at an accelerating rate."
+- Rebuttals must directly address the opposing argument, not just restate the same case.
+- The resolution must be honest about which side is winning and what evidence would change that.
+- If both sides are genuinely balanced, say so — that IS the intelligence (wide outcome distribution = stay in cash/optionality).
+
+**How debates feed the synthesis:** The debate output directly informs your cross-timeframe synthesis (section 2), scenario updates (section 7), and conviction changes (section 7). If a debate resolved with strong evidence on one side, that should show up as a conviction shift. If the debate was balanced, that reinforces the optionality thesis.
 
 ### 2. Cross-Timeframe Synthesis
 
@@ -337,6 +402,15 @@ root cause, and the specific signal that was misread. Coverage statistics: X/Y
 wrong predictions now have structured lessons (Z% coverage). If coverage is below
 80%, flag it. If no new lessons were extracted this session, explain why (e.g. all
 wrong predictions already have lessons, or no new wrong predictions since last run).]
+
+## Adversarial Debate
+
+[For each debate run this session: the topic, the strongest bull and bear arguments
+with cited evidence, how the rebuttals played out, and the resolution. Which side
+has stronger evidence today? What would flip it? How does this affect conviction
+and positioning? If continuing a prior debate, note how the balance shifted with
+new evidence. This is where the system stress-tests its own thinking before
+committing to a view.]
 
 ## Cross-Timeframe Intelligence
 
