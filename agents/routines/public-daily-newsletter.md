@@ -1,10 +1,12 @@
 # Public Daily Report
 
-**Before anything else**, read the first principles that govern all analysis:
+**Before anything else**, read the documents that define what pftui is and how it thinks:
 ```bash
 web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/agents/FIRST-PRINCIPLES.md
+web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/PRODUCT-VISION.md
+web_fetch https://raw.githubusercontent.com/skylarsimoncelli/pftui/master/PRODUCT-PHILOSOPHY.md
 ```
-Internalise these principles. Apply them to every piece of data you encounter this run.
+Internalise all three. The first principles govern your analysis. The vision and philosophy define what pftui is, what it values, and how it's different. You need all three because this report subtly demonstrates the product while delivering intelligence.
 
 ---
 
