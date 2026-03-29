@@ -949,6 +949,185 @@ pub fn run_auto_score(backend: &BackendConnection, dry_run: bool, json_output: b
     Ok(())
 }
 
+/// List wrong predictions with structured lessons (or mark which lack lessons).
+pub fn run_lessons(
+    backend: &BackendConnection,
+    miss_type: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    use crate::db::prediction_lessons;
+
+    // Validate miss_type if provided
+    if let Some(mt) = miss_type {
+        prediction_lessons::validate_miss_type_str(mt)?;
+    }
+
+    let views = prediction_lessons::list_lesson_views_backend(backend, miss_type, limit)?;
+    let (total_wrong, with_lessons) = prediction_lessons::lesson_coverage_backend(backend)?;
+
+    if json_output {
+        let json_views: Vec<serde_json::Value> = views
+            .iter()
+            .map(|v| {
+                let mut obj = serde_json::json!({
+                    "prediction_id": v.prediction_id,
+                    "claim": v.claim,
+                    "symbol": v.symbol,
+                    "conviction": v.conviction,
+                    "timeframe": v.timeframe,
+                    "confidence": v.confidence,
+                    "source_agent": v.source_agent,
+                    "target_date": v.target_date,
+                    "outcome": v.outcome,
+                    "score_notes": v.score_notes,
+                    "created_at": v.created_at,
+                    "scored_at": v.scored_at,
+                    "has_lesson": v.lesson.is_some(),
+                });
+                if let Some(ref lesson) = v.lesson {
+                    obj["lesson"] = serde_json::json!({
+                        "id": lesson.id,
+                        "miss_type": lesson.miss_type,
+                        "what_predicted": lesson.what_predicted,
+                        "what_happened": lesson.what_happened,
+                        "why_wrong": lesson.why_wrong,
+                        "signal_misread": lesson.signal_misread,
+                        "created_at": lesson.created_at,
+                    });
+                }
+                obj
+            })
+            .collect();
+
+        let output = serde_json::json!({
+            "total_wrong": total_wrong,
+            "with_lessons": with_lessons,
+            "without_lessons": total_wrong.saturating_sub(with_lessons),
+            "coverage_pct": if total_wrong > 0 {
+                (with_lessons as f64 / total_wrong as f64 * 100.0).round()
+            } else {
+                0.0
+            },
+            "predictions": json_views,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!(
+            "Prediction Lessons — {}/{} wrong predictions have lessons ({:.0}% coverage)\n",
+            with_lessons,
+            total_wrong,
+            if total_wrong > 0 {
+                with_lessons as f64 / total_wrong as f64 * 100.0
+            } else {
+                0.0
+            }
+        );
+
+        if views.is_empty() {
+            println!("No wrong predictions found.");
+            return Ok(());
+        }
+
+        for v in &views {
+            let symbol_str = v
+                .symbol
+                .as_deref()
+                .map(|s| format!(" [{}]", s))
+                .unwrap_or_default();
+            let agent_str = v
+                .source_agent
+                .as_deref()
+                .map(|s| format!(" ({})", s))
+                .unwrap_or_default();
+
+            println!(
+                "#{}{}{} — {} ({})",
+                v.prediction_id, symbol_str, agent_str, v.claim, v.conviction
+            );
+
+            if let Some(ref lesson) = v.lesson {
+                println!("  Miss type:      {}", lesson.miss_type);
+                println!("  What happened:  {}", lesson.what_happened);
+                println!("  Why wrong:      {}", lesson.why_wrong);
+                if let Some(ref signal) = lesson.signal_misread {
+                    println!("  Signal misread: {}", signal);
+                }
+            } else {
+                println!("  ⚠ No lesson extracted yet");
+            }
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
+/// Add a structured lesson for a wrong prediction.
+pub fn run_add_lesson(
+    backend: &BackendConnection,
+    prediction_id: i64,
+    miss_type: &str,
+    what_happened: &str,
+    why_wrong: &str,
+    signal_misread: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    use crate::db::prediction_lessons;
+    use crate::db::user_predictions;
+
+    // Validate miss_type
+    prediction_lessons::validate_miss_type_str(miss_type)?;
+
+    // Look up the prediction to get what_predicted (the claim) and verify it's wrong
+    let predictions =
+        user_predictions::list_predictions_backend(backend, None, None, None, None)?;
+    let prediction = predictions
+        .iter()
+        .find(|p| p.id == prediction_id)
+        .ok_or_else(|| anyhow::anyhow!("Prediction #{} not found", prediction_id))?;
+
+    if prediction.outcome != "wrong" {
+        bail!(
+            "Prediction #{} has outcome '{}', not 'wrong'. Lessons can only be added to wrong predictions.",
+            prediction_id,
+            prediction.outcome
+        );
+    }
+
+    let what_predicted = &prediction.claim;
+
+    let id = prediction_lessons::add_lesson_backend(
+        backend,
+        prediction_id,
+        miss_type,
+        what_predicted,
+        what_happened,
+        why_wrong,
+        signal_misread,
+    )?;
+
+    if json_output {
+        let output = serde_json::json!({
+            "id": id,
+            "prediction_id": prediction_id,
+            "miss_type": miss_type,
+            "what_predicted": what_predicted,
+            "what_happened": what_happened,
+            "why_wrong": why_wrong,
+            "signal_misread": signal_misread,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!(
+            "Added lesson for prediction #{} (miss type: {})",
+            prediction_id, miss_type
+        );
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

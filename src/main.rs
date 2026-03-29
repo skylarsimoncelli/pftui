@@ -252,6 +252,35 @@ fn run_agent_journal(
             cli::JournalPredictionCommand::AutoScore { dry_run, json } => {
                 commands::predict::run_auto_score(backend, dry_run, json)
             }
+            cli::JournalPredictionCommand::Lessons {
+                command,
+                miss_type,
+                limit,
+                json,
+            } => match command {
+                None => commands::predict::run_lessons(
+                    backend,
+                    miss_type.as_deref(),
+                    limit,
+                    json,
+                ),
+                Some(cli::JournalPredictionLessonsCommand::Add {
+                    prediction_id,
+                    miss_type: mt,
+                    what_happened,
+                    why_wrong,
+                    signal_misread,
+                    json: json_flag,
+                }) => commands::predict::run_add_lesson(
+                    backend,
+                    prediction_id,
+                    &mt,
+                    &what_happened,
+                    &why_wrong,
+                    signal_misread.as_deref(),
+                    json_flag,
+                ),
+            },
         },
         Some(cli::JournalCommand::Conviction { command }) => match command {
             cli::JournalConvictionCommand::Set {

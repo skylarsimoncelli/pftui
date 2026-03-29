@@ -2,6 +2,19 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat: Prediction lesson extraction — structured learning from wrong predictions
+
+**What:** New `journal prediction lessons` command that extracts and stores structured lessons from wrong predictions. Each lesson captures the miss type (directional, timing, or magnitude), what actually happened, root cause analysis, and what signal was misread. Supports listing all wrong predictions with their lesson status (coverage tracking) and adding structured lessons via `journal prediction lessons add`. JSON output includes coverage statistics (total wrong, with/without lessons, coverage percentage). Closes the self-improvement feedback loop by making prediction failures queryable and structured rather than opaque text blobs.
+
+**Files changed:**
+- `src/db/prediction_lessons.rs` — New module: `PredictionLesson` and `PredictionLessonView` structs, `prediction_lessons` table (SQLite + Postgres), `add_lesson`, `list_lessons`, `list_lesson_views`, `lesson_coverage` with full backend dispatch. UNIQUE constraint on prediction_id with upsert support. 8 unit tests.
+- `src/commands/predict.rs` — New `run_lessons()` (list wrong predictions with lesson status + coverage stats) and `run_add_lesson()` (add structured lesson with validation: miss type enum, prediction must exist and be scored wrong).
+- `src/cli.rs` — New `Lessons` variant on `JournalPredictionCommand` with `JournalPredictionLessonsCommand::Add` subcommand. 3 CLI parse tests.
+- `src/main.rs` — Wired `Lessons` dispatch with list/add routing.
+- `src/db/mod.rs` — Registered `prediction_lessons` module.
+
+**Tests:** 1987 total (+11 new). 8 DB tests in prediction_lessons.rs, 3 CLI parse tests in cli.rs.
+
 ### 2026-03-29 — feat: Catalyst-scenario linkage via category semantic matching
 
 **What:** Replaced the keyword-only `link_scenarios()` with a hybrid approach combining token overlap with category-based semantic scoring. Catalysts now reliably link to relevant scenarios — inflation events (Core PCE, CPI) link to inflation/stagflation scenarios, labor events (NFP, unemployment) link to recession scenarios, policy events (FOMC) link to easing/tightening scenarios, etc. New `LinkedScenario` struct provides structured output with `name`, `direction` (confirming/opposing/mixed), and `relevance` (direct/strong/thematic). Terminal output shows linked scenarios per catalyst with context.

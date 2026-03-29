@@ -44,6 +44,7 @@ pub mod postgres_schema;
 #[allow(dead_code)] // Infrastructure for F17.1+ consumers (Predictions panel, CLI)
 pub mod prediction_cache;
 pub mod prediction_contracts;
+pub mod prediction_lessons;
 pub mod predictions_cache;
 pub mod predictions_history;
 pub mod price_cache;
