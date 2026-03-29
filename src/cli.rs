@@ -2831,6 +2831,83 @@ pub enum AnalyticsConvictionCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AnalyticsDebateScoreCommand {
+    /// Score a resolved debate: which side (bull/bear) was right?
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics debate-score add --debate-id 1 --winner bull --margin decisive \
+    ///     --outcome "BTC reached 185k — bull case validated"
+    ///   pftui analytics debate-score add --debate-id 2 --winner bear --margin marginal \
+    ///     --outcome "Gold corrected 5%" --assessment "Bear timing right, bull structure right" \
+    ///     --scored-by evening-analysis --json
+    Add {
+        /// ID of the resolved debate to score
+        #[arg(long = "debate-id")]
+        debate_id: i64,
+        /// Which side won: bull, bear, or mixed
+        #[arg(long)]
+        winner: String,
+        /// How decisive was the outcome: decisive, marginal, or mixed
+        #[arg(long, default_value = "marginal")]
+        margin: String,
+        /// What actually happened — the factual outcome
+        #[arg(long)]
+        outcome: String,
+        /// Assessment of which arguments from each side were validated/invalidated
+        #[arg(long)]
+        assessment: Option<String>,
+        /// Agent that scored this debate
+        #[arg(long = "scored-by")]
+        scored_by: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List scored debates with optional filters
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics debate-score list --json
+    ///   pftui analytics debate-score list --winner bull
+    ///   pftui analytics debate-score list --topic gold --limit 5
+    List {
+        /// Filter by topic keyword
+        #[arg(long)]
+        topic: Option<String>,
+        /// Filter by winner: bull, bear, or mixed
+        #[arg(long)]
+        winner: Option<String>,
+        /// Maximum results to show
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Aggregate accuracy statistics: bull vs bear win rates overall and by topic
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics debate-score accuracy --json
+    ///   pftui analytics debate-score accuracy --topic BTC --json
+    Accuracy {
+        /// Filter accuracy stats to debates matching a topic keyword
+        #[arg(long)]
+        topic: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List resolved debates that haven't been scored yet
+    ///
+    /// EXAMPLES:
+    ///   pftui analytics debate-score unscored --json
+    ///   pftui analytics debate-score unscored --limit 5
+    Unscored {
+        /// Maximum results to show
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum AnalyticsCommand {
     /// Full synthesized intelligence blob for a single asset
     Asset {
@@ -2921,6 +2998,12 @@ pub enum AnalyticsCommand {
         threshold: f64,
         #[arg(long)]
         json: bool,
+    },
+    /// Debate accuracy scoring: track which side (bull/bear) was right historically
+    #[command(name = "debate-score", after_help = "Score resolved debates to track which side (bull/bear) was historically\ncorrect. Feeds into system accuracy tracking.\n\nWorkflow:\n  1. Debates are created and resolved via `agent debate`\n  2. Score resolved debates with `analytics debate-score add`\n  3. View accuracy stats with `analytics debate-score accuracy`\n  4. Find unscored debates with `analytics debate-score unscored`\n\nExamples:\n  pftui analytics debate-score add --debate-id 1 --winner bull --outcome \"BTC hit 185k\"\n  pftui analytics debate-score list --json\n  pftui analytics debate-score accuracy --topic BTC --json\n  pftui analytics debate-score unscored --json\n\nSee also: agent debate start, agent debate history, agent debate summary")]
+    DebateScore {
+        #[command(subcommand)]
+        command: AnalyticsDebateScoreCommand,
     },
     /// Identified opportunities: undervalued positions, scenario plays, entry points
     Opportunities {
@@ -4110,6 +4193,132 @@ mod tests {
             panic!("expected analytics calibration command");
         };
         assert!((threshold - 10.0).abs() < f64::EPSILON);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_debate_score_add() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "debate-score",
+            "add",
+            "--debate-id",
+            "1",
+            "--winner",
+            "bull",
+            "--margin",
+            "decisive",
+            "--outcome",
+            "BTC hit 185k",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::DebateScore {
+                    command:
+                        AnalyticsDebateScoreCommand::Add {
+                            debate_id,
+                            winner,
+                            margin,
+                            outcome,
+                            json,
+                            ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics debate-score add command");
+        };
+        assert_eq!(debate_id, 1);
+        assert_eq!(winner, "bull");
+        assert_eq!(margin, "decisive");
+        assert_eq!(outcome, "BTC hit 185k");
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_debate_score_list() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "debate-score",
+            "list",
+            "--winner",
+            "bear",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::DebateScore {
+                    command:
+                        AnalyticsDebateScoreCommand::List {
+                            winner, json, ..
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics debate-score list command");
+        };
+        assert_eq!(winner.as_deref(), Some("bear"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_debate_score_accuracy() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "debate-score",
+            "accuracy",
+            "--topic",
+            "BTC",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::DebateScore {
+                    command:
+                        AnalyticsDebateScoreCommand::Accuracy { topic, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics debate-score accuracy command");
+        };
+        assert_eq!(topic.as_deref(), Some("BTC"));
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_debate_score_unscored() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "debate-score",
+            "unscored",
+            "--limit",
+            "5",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command:
+                AnalyticsCommand::DebateScore {
+                    command:
+                        AnalyticsDebateScoreCommand::Unscored { limit, json },
+                },
+        }) = cli.command
+        else {
+            panic!("expected analytics debate-score unscored command");
+        };
+        assert_eq!(limit, Some(5));
         assert!(json);
     }
 
