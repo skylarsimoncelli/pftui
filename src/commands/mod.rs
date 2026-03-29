@@ -7,6 +7,7 @@ pub mod annotate;
 pub mod backfill;
 pub mod brief;
 pub mod broker;
+pub mod calibration;
 pub mod calendar;
 pub mod config_cmd;
 pub mod consensus;

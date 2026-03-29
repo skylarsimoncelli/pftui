@@ -2745,6 +2745,15 @@ pub enum AnalyticsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Compare pftui scenario probabilities vs prediction market consensus. Flag divergences.
+    #[command(after_help = "Compares pftui scenario probabilities against prediction market\nconsensus (Polymarket contracts). Flags divergences above the threshold\n(default: 15pp).\n\nRequires scenario↔contract mappings created via:\n  pftui data predictions map --scenario \"<name>\" --search \"<query>\"\n\nExample:\n  pftui analytics calibration --json\n  pftui analytics calibration --threshold 10 --json\n\nSee also: data predictions map, analytics scenario list")]
+    Calibration {
+        /// Divergence threshold in percentage points (default: 15)
+        #[arg(long, default_value = "15")]
+        threshold: f64,
+        #[arg(long)]
+        json: bool,
+    },
     /// Identified opportunities: undervalued positions, scenario plays, entry points
     Opportunities {
         #[arg(long)]
@@ -3897,6 +3906,43 @@ mod tests {
         assert_eq!(value, "Hard Landing");
         assert_eq!(note_pos.as_deref(), Some("labor rolling over"));
         assert_eq!(probability, Some(65.0));
+    }
+
+    #[test]
+    fn parse_analytics_calibration_default() {
+        let cli =
+            Cli::try_parse_from(["pftui", "analytics", "calibration", "--json"]).unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Calibration { threshold, json },
+        }) = cli.command
+        else {
+            panic!("expected analytics calibration command");
+        };
+        assert!((threshold - 15.0).abs() < f64::EPSILON);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_analytics_calibration_custom_threshold() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "analytics",
+            "calibration",
+            "--threshold",
+            "10",
+            "--json",
+        ])
+        .unwrap();
+
+        let Some(Command::Analytics {
+            command: AnalyticsCommand::Calibration { threshold, json },
+        }) = cli.command
+        else {
+            panic!("expected analytics calibration command");
+        };
+        assert!((threshold - 10.0).abs() < f64::EPSILON);
+        assert!(json);
     }
 
     #[test]
