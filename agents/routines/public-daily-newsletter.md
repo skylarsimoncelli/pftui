@@ -378,9 +378,14 @@ Format: `date,reviewer,usefulness_pct,overall_pct,category,severity,description`
   (2) how many data points needed correction, (3) which specific pftui data points
   were inaccurate (list them), (4) any pftui commands that returned stale or wrong data.
 
+Additionally, if you had to web_search for data that pftui SHOULD have provided (or could
+provide with a new data source), note it in the description. Format suggestions as:
+`SUGGESTED SOURCE: <what data> via <where to get it>`. These suggestions feed directly
+into the dev backlog for improving pftui's data coverage.
+
 Example:
 ```
-2026-03-30,Public Daily Report,72,78,data-accuracy,info,"pftui-sourced: 55%. Web-search: 30%. Agent-generated: 15%. 3/47 data points corrected: CPI was 7.0% (actual 2.4%), GBP/USD was 1.152 (actual 1.326), PPI was 3.2% (actual 3.4%). pftui economy --json returned stale CPI."
+2026-03-30,Public Daily Report,72,78,data-accuracy,info,"pftui-sourced: 55%. Web-search: 30%. Agent-generated: 15%. 3/47 data points corrected: CPI was 7.0% (actual 2.4%), GBP/USD was 1.152 (actual 1.326), PPI was 3.2% (actual 3.4%). pftui economy --json returned stale CPI. SUGGESTED SOURCE: prediction market probabilities via Polymarket API. SUGGESTED SOURCE: OECD forecasts via OECD Data Explorer API."
 ```
 
 Commit the FEEDBACK.csv update:
