@@ -2,6 +2,27 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F56.4): analytics debate-score — track historical bull/bear accuracy
+
+**What:** New `analytics debate-score` CLI domain completing F56 (Adversarial Debate Mechanism). Score resolved debates to track which side (bull/bear) was historically correct. Four subcommands: `add` (score a debate with winner/margin/outcome), `list` (browse scored debates with topic/winner filters), `accuracy` (aggregate bull vs bear win rates), `unscored` (find resolved debates awaiting scoring). New `debate_scores` table (SQLite + PostgreSQL) with upsert support. Feeds into system accuracy tracking.
+
+**Commands:**
+- `pftui analytics debate-score add --debate-id 1 --winner bull --margin decisive --outcome "BTC hit 185k" --json`
+- `pftui analytics debate-score list [--winner bear] [--topic gold] --json`
+- `pftui analytics debate-score accuracy [--topic BTC] --json`
+- `pftui analytics debate-score unscored --json`
+
+**Files changed:**
+- `src/db/debate_scores.rs` (new) — debate_scores table, CRUD, accuracy computation, both backends
+- `src/commands/debate_score.rs` (new) — CLI command implementations
+- `src/cli.rs` — AnalyticsDebateScoreCommand enum + DebateScore variant in AnalyticsCommand + 4 parse tests
+- `src/main.rs` — dispatch wiring
+- `src/db/mod.rs`, `src/commands/mod.rs` — module registration
+
+**Tests:** 15 new (11 DB + 4 CLI parse). Full suite: 2011 passed, 0 failed. Clippy clean.
+
+**F56 status:** COMPLETE. All 4 sub-items shipped: F56.1 (#436), F56.2 (#436), F56.3 (#442), F56.4 (#444).
+
 ### 2026-03-29 — feat(F56.3): Adversarial debate integration in evening-analysis routine
 
 **What:** Integrated the adversarial debate mechanism (F56.1/F56.2) into the evening-analysis agent routine. Evening analysis now runs mandatory structured bull/bear debates on the 1-2 most contentious topics before writing the cross-timeframe synthesis. Topics are identified from timeframe divergence (`analytics divergence`) and calibration gaps (`analytics calibration`). Each debate runs 3 rounds: opening arguments with cited evidence, rebuttals addressing opposing points, and final assessment of what would confirm each thesis. Debates resolve with honest evidence assessment that feeds into cross-timeframe synthesis, scenario updates, and conviction changes. Handles continuity by continuing active debates from prior sessions. Added Adversarial Debate section to branded PDF template. Added `agent debate history/summary --json` to canonical analytics inputs.
