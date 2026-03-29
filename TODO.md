@@ -15,9 +15,8 @@ _(none)_
 **Why:** Polymarket/Kalshi contracts represent real-money consensus on geopolitical and macro events. These are exactly the scenarios Sentinel tracks (Iran war, recession, Fed decisions). Currently agents estimate probabilities from vibes and news. Prediction market data gives them crowd-calibrated baselines backed by actual capital at risk.
 **Scope:**
 - [x] F55.4: `data predictions map --scenario "<name>"` — link a prediction market contract to a pftui scenario. When refreshed, auto-log the market probability as a data point in scenario history. *(done: PR #426)*
-- [ ] F55.5: `analytics calibration --json` — compare pftui scenario probabilities vs prediction market consensus. Flag divergences >15pp. "Your Iran War estimate: 38%. Polymarket: 22%. Divergence: +16pp."
 - [ ] F55.6: Agent routine integration — morning-brief and evening-analysis include prediction market calibration section. Agents explain divergences between their estimates and market consensus.
-**Completed:** F55.1 (#422), F55.2 (#422), F55.3 (#422).
+**Completed:** F55.1 (#422), F55.2 (#422), F55.3 (#422), F55.4 (#426), F55.5 (#428).
 **Effort:** 2-3 weeks. **Priority:** P1 — this is the single highest-value data source pftui doesn't have.
 
 ## P2 - Coverage And Agent Consumption
@@ -102,16 +101,18 @@ _(none)_
 | Morning Brief | 85% | 80% | Mar 28 | → (stable. Morning-brief #363 shipped.) |
 | Alert Investigator | 85% | 80-82% | Mar 25-26 | → (stable, consistent.) |
 | Public Daily Report | 82% | 80% | Mar 28 | → (stable. Commodity coverage shipped.) |
-| Dev Agent | 92% | 94% | Mar 29 | → (stable high. F55.1-F55.3 prediction market contracts shipped #422.) |
+| Dev Agent | 92% | 94% | Mar 29 | → (stable high. F55.5 analytics calibration shipped #428.) |
 
 **Top 3 priorities based on feedback:**
 1. **Catalyst-scenario linkage** (Evening Analysis 78/75 — lowest scorer) — synthesis catalysts show 0 linked scenarios, reducing decision support value.
 2. **Prediction lesson extraction** (Evening Analysis 78/75) — 43 wrong predictions with no structured lessons. Technical debt degrading improvement loop.
-3. **F55.4-F55.6 completion** (prediction market mapping + calibration) — enables market-consensus comparison, high value for all analyst agents.
+3. **F55.6 completion** (agent routine integration for prediction market calibration) — enables morning/evening briefs to include calibration section.
 
 **Shipped since last review (Mar 28 → Mar 29):**
 1. ✅ `data quotes` alias (#419) — addresses medium-timeframe-analyst `data quotes fails`
 2. ✅ F55.1-F55.3 prediction market contracts (#422) — Polymarket tag-based fetching, enriched schema, 24 new tests
+3. ✅ F55.4 prediction market scenario mapping (#426) — link contracts to scenarios with auto-sync
+4. ✅ F55.5 analytics calibration (#428) — compare scenario vs market probabilities, flag divergences
 
 **Release status:** v0.21.0 eligible — 37 commits since v0.20.0, no P0 bugs, 1935 tests passing, clippy clean.
 

@@ -2,6 +2,18 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F55.5): Analytics calibration — scenario probability vs prediction market consensus
+
+**What:** New `analytics calibration` command that compares pftui scenario probabilities against prediction market consensus (Polymarket contracts) for every mapped scenario↔contract pair. Flags divergences above a configurable threshold (default: 15pp). Outputs sorted by divergence magnitude with summary statistics (mean/median absolute divergence, overestimate/underestimate/aligned counts) and interpretation strings for agent consumption. Supports `--threshold` to customize the divergence significance threshold and `--json` for structured output.
+
+**Files changed:**
+- `src/commands/calibration.rs` — New module: CalibrationReport, CalibrationEntry, CalibrationSummary structs, run() with terminal + JSON output, median/round helpers. 11 unit tests.
+- `src/commands/mod.rs` — Registered calibration module.
+- `src/cli.rs` — Added Calibration variant on AnalyticsCommand with --threshold and --json. 2 CLI parse tests.
+- `src/main.rs` — Added Calibration dispatch.
+
+**Tests:** 1970 total (+13 new). 11 unit tests in calibration.rs, 2 CLI parse tests.
+
 ### 2026-03-29 — feat(F55.4): Prediction market scenario mapping — link contracts to scenarios with auto-sync
 
 **What:** New `data predictions map` and `data predictions unmap` commands that link Polymarket prediction market contracts to pftui scenarios. When contracts are refreshed via `data refresh`, each mapped contract's probability is automatically logged as a data point in the linked scenario's probability history timeline with a descriptive "Polymarket: X% — question" driver string. This creates a continuous, automated bridge between real-money market consensus and pftui's scenario tracking system.
