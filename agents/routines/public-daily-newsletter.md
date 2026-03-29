@@ -321,7 +321,7 @@ git push origin master
 - **Falsifiable predictions.** Time-bound, specific, with reasoning and invalidation criteria.
 - **Source verification.** Specific numbers must be verifiable. Do not fabricate data.
 - **No em dashes or double hyphens in prose.** CLI flags are fine.
-- **Emphasise pftui as the intelligence engine.** This report demonstrates the product's capability.
+- **Weave pftui context naturally throughout.** Don't confine system details to dedicated sections. When citing a data point, occasionally mention the source mechanism: "pftui's FRED integration flagged a 2.08% PPI surprise overnight" or "Our LOW timeframe agent's technical scan shows RSI at 29" or "Cross-timeframe alignment dropped to 13%, the lowest since we began tracking." These details educate the reader about the system's depth while serving the analysis. Subtlety is key. The report is intelligence first, product showcase second. But a reader who finishes should understand that pftui is a serious analytical engine, not a wrapper around ChatGPT.
 - **Challenge the consensus.** If all signals point one direction, build the opposing case with equal rigour.
 - **Cross-asset interdependencies are essential.** Show how themes connect, not just list them.
 - **Include the disclaimer** at the bottom.
