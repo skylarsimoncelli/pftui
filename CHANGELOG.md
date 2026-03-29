@@ -2,6 +2,19 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F55.6): Agent routine integration for prediction market calibration
+
+**What:** Integrated `pftui analytics calibration` into morning-brief and evening-analysis agent routines, completing the entire F55 Prediction Market Probability Feeds feature. Morning brief now gathers calibration data and includes a concise section showing top divergences between pftui scenario probabilities and Polymarket consensus. Evening analysis includes a detailed calibration step (section 6) with a framework for investigating divergences — what the market sees vs what we see, whether to adjust, and tracking calibration drift over time. Both PDF templates include the new section. Agents now explain divergences between their probability estimates and real-money prediction market consensus.
+
+**Files changed:**
+- `agents/routines/morning-brief.md` — Added `analytics calibration --json` to inputs, added Prediction Market Calibration section to PDF template.
+- `agents/routines/evening-analysis.md` — Added `analytics calibration --json` to inputs, added section 6 (Prediction Market Calibration) with investigation framework, added calibration section to PDF template, renumbered sections 7-10.
+- `agents/routines/README.md` — Added `analytics calibration` to canonical analytics inputs list.
+
+**Tests:** Documentation-only change. No new tests. Underlying command has 13 tests from PR #428.
+
+**F55 status:** COMPLETE. All 6 sub-items shipped: F55.1-F55.3 (#422), F55.4 (#426), F55.5 (#428), F55.6 (#437).
+
 ### 2026-03-29 — feat(F56.1+F56.2): Adversarial debate mechanism — structured bull/bear argumentation
 
 **What:** New `agent debate` CLI domain implementing structured adversarial debates. Agents can start debates on contentious topics (assets, scenarios, macro questions), add bull and bear arguments in rounds with evidence references, and resolve debates with a summary of which side prevailed. Designed for single-agent operation where the agent plays both sides with structured format, forcing explicit evidence-based argumentation on both sides of a thesis. This formalises the cross-timeframe tension that AGENTS.md identifies as "the intelligence product."

@@ -10,14 +10,7 @@ _(none)_
 
 ## P1 - Data Quality & Agent Reliability
 
-### F55: Prediction Market Probability Feeds
-**Source:** Competitive research (prediction-market-analysis, pmxt). Biggest intelligence gap.
-**Why:** Polymarket/Kalshi contracts represent real-money consensus on geopolitical and macro events. These are exactly the scenarios Sentinel tracks (Iran war, recession, Fed decisions). Currently agents estimate probabilities from vibes and news. Prediction market data gives them crowd-calibrated baselines backed by actual capital at risk.
-**Scope:**
-- [x] F55.4: `data predictions map --scenario "<name>"` — link a prediction market contract to a pftui scenario. When refreshed, auto-log the market probability as a data point in scenario history. *(done: PR #426)*
-- [ ] F55.6: Agent routine integration — morning-brief and evening-analysis include prediction market calibration section. Agents explain divergences between their estimates and market consensus.
-**Completed:** F55.1 (#422), F55.2 (#422), F55.3 (#422), F55.4 (#426), F55.5 (#428).
-**Effort:** 2-3 weeks. **Priority:** P1 — this is the single highest-value data source pftui doesn't have.
+_(F55: Prediction Market Probability Feeds — COMPLETE. All sub-items shipped: F55.1-F55.3 #422, F55.4 #426, F55.5 #428, F55.6 #437.)_
 
 ## P2 - Coverage And Agent Consumption
 
