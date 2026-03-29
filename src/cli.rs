@@ -558,7 +558,8 @@ pub enum ConsensusCommand {
 
 #[derive(Subcommand)]
 pub enum DataPredictionsCommand {
-    /// Show prediction market odds from Polymarket and Manifold (default when no subcommand)
+    /// Show prediction market contract odds from Polymarket (tag-based macro-relevant contracts)
+    #[command(after_help = "Sources: Polymarket Gamma events API (fed, economics, geopolitics, politics, bitcoin, crypto, ai tags).\n\nWhen the enriched prediction_market_contracts table is populated (via `pftui refresh`), shows contracts with exchange, event grouping, liquidity, and end dates. Falls back to legacy predictions_cache when contracts table is empty.\n\nSee also: `data predictions stats`, `data predictions scorecard`, `data predictions unanswered`, `analytics predictions`")]
     Markets {
         /// Filter by category: crypto, economics, geopolitics, ai, finance, macro
         #[arg(long)]
@@ -5171,6 +5172,40 @@ mod tests {
         assert_eq!(category.as_deref(), Some("crypto"));
         assert_eq!(search.as_deref(), Some("bitcoin"));
         assert_eq!(limit, 5);
+    }
+
+    #[test]
+    fn parse_data_predictions_markets_with_search() {
+        let cli = Cli::try_parse_from([
+            "pftui",
+            "data",
+            "predictions",
+            "markets",
+            "--search",
+            "Fed rate",
+            "--category",
+            "economics",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Command::Data { command }) = cli.command else {
+            panic!("expected data command");
+        };
+        let DataCommand::Predictions { command: subcmd, .. } = command else {
+            panic!("expected predictions command");
+        };
+        let Some(DataPredictionsCommand::Markets {
+            search,
+            category,
+            json,
+            ..
+        }) = subcmd
+        else {
+            panic!("expected markets subcommand");
+        };
+        assert_eq!(search.as_deref(), Some("Fed rate"));
+        assert_eq!(category.as_deref(), Some("economics"));
+        assert!(json);
     }
 
     #[test]

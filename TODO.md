@@ -14,9 +14,9 @@ _(none)_
 **Source:** Competitive research (prediction-market-analysis, pmxt). Biggest intelligence gap.
 **Why:** Polymarket/Kalshi contracts represent real-money consensus on geopolitical and macro events. These are exactly the scenarios Sentinel tracks (Iran war, recession, Fed decisions). Currently agents estimate probabilities from vibes and news. Prediction market data gives them crowd-calibrated baselines backed by actual capital at risk.
 **Scope:**
-- [ ] F55.1: `data predictions` source — pull live contract prices from Polymarket API (free, no key needed). Target contracts: Fed rate decisions, recession probability, geopolitical events, election outcomes. Store in `predictions_cache` table (already exists but only used for internal predictions).
-- [ ] F55.2: New table `prediction_market_contracts` — contract_id, exchange, question, category, last_price, volume_24h, liquidity, updated_at. Refresh in daemon DAG alongside other sources.
-- [ ] F55.3: `data predictions list --json` — show all tracked prediction market contracts with current probabilities.
+- [x] F55.1: `data predictions` source — pull live contract prices from Polymarket API (free, no key needed). Target contracts: Fed rate decisions, recession probability, geopolitical events, election outcomes. Store in `predictions_cache` table (already exists but only used for internal predictions).
+- [x] F55.2: New table `prediction_market_contracts` — contract_id, exchange, event_id, event_title, question, category, last_price, volume_24h, liquidity, end_date, updated_at. Tag-based Polymarket events API fetch (fed, economics, geopolitics, politics, bitcoin, crypto, ai). Refresh in daemon DAG alongside other sources.
+- [x] F55.3: `data predictions list --json` — show all tracked prediction market contracts with current probabilities (prefers enriched contracts table, falls back to legacy cache).
 - [ ] F55.4: `data predictions map --scenario "<name>"` — link a prediction market contract to a pftui scenario. When refreshed, auto-log the market probability as a data point in scenario history.
 - [ ] F55.5: `analytics calibration --json` — compare pftui scenario probabilities vs prediction market consensus. Flag divergences >15pp. "Your Iran War estimate: 38%. Polymarket: 22%. Divergence: +16pp."
 - [ ] F55.6: Agent routine integration — morning-brief and evening-analysis include prediction market calibration section. Agents explain divergences between their estimates and market consensus.

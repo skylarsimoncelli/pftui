@@ -245,6 +245,24 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_predictions_category ON predictions_cache(category);
         CREATE INDEX IF NOT EXISTS idx_predictions_volume ON predictions_cache(volume_24h);
 
+        CREATE TABLE IF NOT EXISTS prediction_market_contracts (
+            contract_id TEXT PRIMARY KEY,
+            exchange TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            event_title TEXT NOT NULL,
+            question TEXT NOT NULL,
+            category TEXT NOT NULL,
+            last_price REAL NOT NULL,
+            volume_24h REAL NOT NULL,
+            liquidity REAL NOT NULL,
+            end_date TEXT,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_pmc_category ON prediction_market_contracts(category);
+        CREATE INDEX IF NOT EXISTS idx_pmc_volume ON prediction_market_contracts(volume_24h);
+        CREATE INDEX IF NOT EXISTS idx_pmc_exchange ON prediction_market_contracts(exchange);
+        CREATE INDEX IF NOT EXISTS idx_pmc_event_id ON prediction_market_contracts(event_id);
+
         CREATE TABLE IF NOT EXISTS cot_cache (
             cftc_code TEXT NOT NULL,
             report_date TEXT NOT NULL,

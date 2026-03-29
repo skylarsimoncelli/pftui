@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::data::predictions::{MarketCategory, PredictionMarket};
 use crate::db::backend::BackendConnection;
+use crate::db::prediction_contracts;
 use crate::db::predictions_cache::get_cached_predictions_backend;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +14,9 @@ enum CategorySelector {
 }
 
 /// Run the `pftui predictions` command.
+///
+/// Prefers the enriched prediction_market_contracts table (F55.2) when populated.
+/// Falls back to the legacy predictions_cache table if contracts table is empty.
 pub fn run(
     backend: &BackendConnection,
     category: Option<&str>,
@@ -20,7 +24,27 @@ pub fn run(
     limit: usize,
     json: bool,
 ) -> Result<()> {
-    // Fetch all cached predictions up to limit
+    // Try enriched contracts table first (F55.2)
+    // Gracefully fall back if table doesn't exist yet (pre-migration DBs)
+    let cat_filter = category.and_then(resolve_category_for_contracts);
+    let contracts = prediction_contracts::get_contracts_backend(
+        backend,
+        cat_filter.as_deref(),
+        search,
+        limit,
+    )
+    .unwrap_or_default();
+
+    if !contracts.is_empty() {
+        if json {
+            print_contracts_json(&contracts)?;
+        } else {
+            print_contracts_table(&contracts);
+        }
+        return Ok(());
+    }
+
+    // Fall back to legacy predictions_cache
     let mut markets = get_cached_predictions_backend(backend, limit)?;
 
     if markets.is_empty() {
@@ -53,6 +77,20 @@ pub fn run(
     }
 
     Ok(())
+}
+
+/// Map user-facing category names to the db category stored in prediction_market_contracts.
+/// Returns None for "macro" (no filter — show all macro-relevant categories),
+/// or a specific category string for exact matches.
+fn resolve_category_for_contracts(category: &str) -> Option<String> {
+    match category.to_lowercase().as_str() {
+        "macro" | "finance" | "all" => None, // show everything (already filtered by tag at fetch time)
+        "crypto" => Some("crypto".to_string()),
+        "economics" | "econ" => Some("economics".to_string()),
+        "geopolitics" | "geo" | "politics" => Some("geopolitics".to_string()),
+        "ai" => Some("ai".to_string()),
+        other => Some(other.to_string()),
+    }
 }
 
 fn parse_category_selectors(s: &str) -> Result<Vec<CategorySelector>> {
@@ -111,6 +149,89 @@ fn market_matches_any_selector(market: &PredictionMarket, selectors: &[CategoryS
         .copied()
         .any(|selector| market_matches_selector(market, selector))
 }
+
+// ── Enriched contracts output (F55.2) ────────────────────────────────
+
+/// Print prediction contracts as a formatted table with exchange & liquidity.
+fn print_contracts_table(contracts: &[prediction_contracts::PredictionContract]) {
+    if contracts.is_empty() {
+        println!("No matching prediction market contracts found.");
+        return;
+    }
+
+    let max_q = 55;
+    let max_event = 30;
+
+    // Print header
+    println!(
+        "{:<qw$}  {:<ew$}  {:>7}  {:>8}  {:>10}  {:>6}",
+        "Question",
+        "Event",
+        "Prob%",
+        "Vol 24h",
+        "Liquidity",
+        "Cat",
+        qw = max_q,
+        ew = max_event,
+    );
+    println!("{}", "─".repeat(max_q + max_event + 7 + 8 + 10 + 6 + 10));
+
+    for c in contracts {
+        let question = if c.question.len() > max_q {
+            format!("{}...", &c.question[..max_q - 3])
+        } else {
+            c.question.clone()
+        };
+
+        let event = if c.event_title.len() > max_event {
+            format!("{}...", &c.event_title[..max_event - 3])
+        } else {
+            c.event_title.clone()
+        };
+
+        let prob_pct = c.last_price * 100.0;
+
+        println!(
+            "{:<qw$}  {:<ew$}  {:>6.1}%  {:>8}  {:>10}  {:>6}",
+            question,
+            event,
+            prob_pct,
+            format_volume(c.volume_24h),
+            format_volume(c.liquidity),
+            &c.category[..c.category.len().min(6)],
+            qw = max_q,
+            ew = max_event,
+        );
+    }
+}
+
+/// Print prediction contracts as JSON.
+fn print_contracts_json(contracts: &[prediction_contracts::PredictionContract]) -> Result<()> {
+    let json_output = json!(contracts
+        .iter()
+        .map(|c| {
+            json!({
+                "contract_id": c.contract_id,
+                "exchange": c.exchange,
+                "event_id": c.event_id,
+                "event_title": c.event_title,
+                "question": c.question,
+                "category": c.category,
+                "probability": c.last_price,
+                "probability_pct": (c.last_price * 100.0),
+                "volume_24h": c.volume_24h,
+                "liquidity": c.liquidity,
+                "end_date": c.end_date,
+                "updated_at": c.updated_at,
+            })
+        })
+        .collect::<Vec<_>>());
+
+    println!("{}", serde_json::to_string_pretty(&json_output)?);
+    Ok(())
+}
+
+// ── Legacy predictions_cache output ──────────────────────────────────
 
 /// Print prediction markets as a formatted table.
 fn print_table(markets: &[PredictionMarket]) {
@@ -413,6 +534,125 @@ mod tests {
         let backend = to_backend(conn);
 
         let result = run(&backend, None, None, 10, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_resolve_category_macro_returns_none() {
+        assert!(resolve_category_for_contracts("macro").is_none());
+        assert!(resolve_category_for_contracts("finance").is_none());
+        assert!(resolve_category_for_contracts("all").is_none());
+    }
+
+    #[test]
+    fn test_resolve_category_specific() {
+        assert_eq!(
+            resolve_category_for_contracts("crypto"),
+            Some("crypto".to_string())
+        );
+        assert_eq!(
+            resolve_category_for_contracts("economics"),
+            Some("economics".to_string())
+        );
+        assert_eq!(
+            resolve_category_for_contracts("econ"),
+            Some("economics".to_string())
+        );
+        assert_eq!(
+            resolve_category_for_contracts("geopolitics"),
+            Some("geopolitics".to_string())
+        );
+        assert_eq!(
+            resolve_category_for_contracts("geo"),
+            Some("geopolitics".to_string())
+        );
+        assert_eq!(
+            resolve_category_for_contracts("ai"),
+            Some("ai".to_string())
+        );
+    }
+
+    #[test]
+    fn test_contracts_preferred_over_legacy() {
+        // When contracts table is populated, run() should use it instead of predictions_cache
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_table(&conn).unwrap();
+
+        // Create the contracts table
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS prediction_market_contracts (
+                contract_id TEXT PRIMARY KEY,
+                exchange TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                event_title TEXT NOT NULL,
+                question TEXT NOT NULL,
+                category TEXT NOT NULL,
+                last_price REAL NOT NULL,
+                volume_24h REAL NOT NULL,
+                liquidity REAL NOT NULL,
+                end_date TEXT,
+                updated_at INTEGER NOT NULL
+            )",
+        )
+        .unwrap();
+
+        // Insert a contract
+        conn.execute(
+            "INSERT INTO prediction_market_contracts
+             (contract_id, exchange, event_id, event_title, question, category,
+              last_price, volume_24h, liquidity, end_date, updated_at)
+             VALUES ('c1', 'polymarket', 'e1', 'Fed April', 'Will Fed cut?', 'economics',
+                     0.12, 500000.0, 1000000.0, '2026-05-01', 1711670000)",
+            [],
+        )
+        .unwrap();
+
+        let backend = to_backend(conn);
+
+        // Should succeed and use contracts table (json output)
+        let result = run(&backend, None, None, 10, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_contracts_fallback_to_legacy() {
+        // When contracts table is empty, should fall back to predictions_cache
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_table(&conn).unwrap();
+
+        // Create empty contracts table
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS prediction_market_contracts (
+                contract_id TEXT PRIMARY KEY,
+                exchange TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                event_title TEXT NOT NULL,
+                question TEXT NOT NULL,
+                category TEXT NOT NULL,
+                last_price REAL NOT NULL,
+                volume_24h REAL NOT NULL,
+                liquidity REAL NOT NULL,
+                end_date TEXT,
+                updated_at INTEGER NOT NULL
+            )",
+        )
+        .unwrap();
+
+        // Insert legacy data
+        let markets = vec![PredictionMarket {
+            id: "test1".into(),
+            question: "BTC to 100k?".into(),
+            probability: 0.45,
+            volume_24h: 50000.0,
+            category: MarketCategory::Crypto,
+            updated_at: 1000000,
+        }];
+        upsert_predictions(&conn, &markets).unwrap();
+
+        let backend = to_backend(conn);
+
+        // Should succeed using legacy table
+        let result = run(&backend, None, None, 10, false);
         assert!(result.is_ok());
     }
 }

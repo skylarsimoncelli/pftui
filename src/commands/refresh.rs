@@ -32,6 +32,7 @@ use crate::db::timeframe_signals;
 use crate::db::transactions::{get_unique_symbols_backend, list_transactions_backend};
 use crate::db::watchlist::get_watchlist_symbols_backend;
 use crate::db::{bls_cache, calendar_cache, comex_cache, cot_cache, fx_cache, news_cache};
+use crate::db::prediction_contracts;
 use crate::db::{
     economic_cache, macro_events, onchain_cache, predictions_cache, sentiment_cache,
     worldbank_cache,
@@ -350,6 +351,17 @@ fn fred_needs_refresh(backend: &BackendConnection) -> Result<bool> {
     }
 
     Ok(false)
+}
+
+/// Check if prediction market contracts need refreshing
+fn contracts_need_refresh(backend: &BackendConnection) -> Result<bool> {
+    match prediction_contracts::get_last_update_backend(backend)? {
+        None => Ok(true),
+        Some(ts) => {
+            let now = chrono::Utc::now().timestamp();
+            Ok((now - ts) > PREDICTIONS_FRESHNESS_SECS)
+        }
+    }
 }
 
 /// Check if predictions need refreshing
@@ -774,6 +786,7 @@ fn run_pipeline(
     // then write results to the database sequentially.
 
     let predictions_due = plan.predictions && predictions_need_refresh(backend).unwrap_or(true);
+    let contracts_due = plan.predictions && contracts_need_refresh(backend).unwrap_or(true);
     let fedwatch_due = plan.fedwatch && fedwatch_needs_refresh(backend).unwrap_or(true);
     let rss_refresh = plan.news_rss && news_needs_refresh(backend).unwrap_or(true);
     let brave_key = config
@@ -828,6 +841,17 @@ fn run_pipeline(
             let start = Instant::now();
             Some((
                 predictions::fetch_polymarket_predictions().await,
+                start.elapsed(),
+            ))
+        };
+
+        let contracts_fut = async {
+            if !contracts_due {
+                return None;
+            }
+            let start = Instant::now();
+            Some((
+                predictions::fetch_polymarket_contracts().await,
                 start.elapsed(),
             ))
         };
@@ -942,6 +966,7 @@ fn run_pipeline(
 
         tokio::join!(
             predictions_fut,
+            contracts_fut,
             sentiment_fut,
             bls_fut,
             worldbank_fut,
@@ -955,6 +980,7 @@ fn run_pipeline(
 
     let (
         predictions_data,
+        contracts_data,
         sentiment_data,
         bls_data,
         worldbank_data,
@@ -1023,13 +1049,23 @@ fn run_pipeline(
 
     // ── Layer 0: Store async-fetched results ───────────────────────────
 
-    // Predictions
+    // Predictions (legacy predictions_cache)
     store_predictions_result(
         backend,
         verbose,
         predictions_due,
         plan.predictions,
         predictions_data,
+        &mut dag_result,
+    );
+
+    // Prediction market contracts (F55.2 — enriched, tag-based)
+    store_contracts_result(
+        backend,
+        verbose,
+        contracts_due,
+        plan.predictions,
+        contracts_data,
         &mut dag_result,
     );
 
@@ -1714,6 +1750,90 @@ fn store_predictions_result(
             name: "predictions".to_string(),
             label: "Predictions (Polymarket)".to_string(),
             status: SourceStatus::Deferred,
+            items_updated: None,
+            duration_ms: 0,
+            reason: Some("cadence deferred".to_string()),
+            age_minutes: None,
+            error: None,
+            detail: None,
+        });
+    }
+}
+
+fn store_contracts_result(
+    backend: &BackendConnection,
+    verbose: bool,
+    due: bool,
+    in_plan: bool,
+    data: Option<(
+        Result<Vec<crate::db::prediction_contracts::PredictionContract>>,
+        Duration,
+    )>,
+    dag_result: &mut RefreshResult,
+) {
+    if due {
+        if let Some((result, elapsed)) = data {
+            match result {
+                Ok(contracts) => {
+                    let count = contracts.len();
+                    match prediction_contracts::upsert_contracts_backend(backend, &contracts) {
+                        Ok(_) => {
+                            info_ln!(verbose, "✓ Prediction contracts ({} contracts)", count);
+                            dag_result.add(SourceResult {
+                                name: "prediction_contracts".to_string(),
+                                label: "Prediction Contracts (Polymarket tags)".to_string(),
+                                status: SourceStatus::Ok,
+                                items_updated: Some(count),
+                                duration_ms: elapsed.as_millis() as u64,
+                                reason: None,
+                                age_minutes: None,
+                                error: None,
+                                detail: None,
+                            });
+                        }
+                        Err(e) => {
+                            info_ln!(
+                                verbose,
+                                "⚠ Prediction contracts fetched ({}) but cache write failed: {}",
+                                count,
+                                e
+                            );
+                            dag_result.add(SourceResult {
+                                name: "prediction_contracts".to_string(),
+                                label: "Prediction Contracts (Polymarket tags)".to_string(),
+                                status: SourceStatus::Failed,
+                                items_updated: None,
+                                duration_ms: elapsed.as_millis() as u64,
+                                reason: None,
+                                age_minutes: None,
+                                error: Some(format!("cache write failed: {}", e)),
+                                detail: None,
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    info_ln!(verbose, "✗ Prediction contracts (failed: {})", e);
+                    dag_result.add(SourceResult {
+                        name: "prediction_contracts".to_string(),
+                        label: "Prediction Contracts (Polymarket tags)".to_string(),
+                        status: SourceStatus::Failed,
+                        items_updated: None,
+                        duration_ms: elapsed.as_millis() as u64,
+                        reason: None,
+                        age_minutes: None,
+                        error: Some(e.to_string()),
+                        detail: None,
+                    });
+                }
+            }
+        }
+    } else if in_plan {
+        info_ln!(verbose, "⊘ Prediction contracts (fresh, skipping)");
+        dag_result.add(SourceResult {
+            name: "prediction_contracts".to_string(),
+            label: "Prediction Contracts (Polymarket tags)".to_string(),
+            status: SourceStatus::Skipped,
             items_updated: None,
             duration_ms: 0,
             reason: Some("cadence deferred".to_string()),
