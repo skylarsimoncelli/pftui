@@ -74,6 +74,7 @@ pftui data cot --json                     # COT percentile ranks + extreme flags
 pftui data onchain --json                 # BTC exchange reserves, MVRV
 pftui data consensus list --json          # standing analyst targets for context
 pftui analytics scenario list --json      # scenario probabilities for framing
+pftui analytics calibration --json        # scenario vs prediction market divergences
 ```
 
 5. Only use web_search (1-2 searches max) for context behind specific overnight developments that pftui news flagged but didn't explain.
@@ -118,6 +119,13 @@ cat > /root/.openclaw/workspace-finance/briefs/morning-$(date +%Y-%m-%d).md << '
 
 [For each active situation: name, current phase, indicators that crossed thresholds
 overnight, and what it means. If no active situations, state that clearly.]
+
+## Prediction Market Calibration
+
+[If scenario↔contract mappings exist: show the top 2-3 divergences between pftui
+scenario probabilities and Polymarket consensus. For each divergence: scenario name,
+pftui estimate vs market price, magnitude of gap, and a one-sentence explanation of
+why the divergence exists or what it suggests. If no mappings exist, omit this section.]
 
 ## Cross-Timeframe Alignment
 

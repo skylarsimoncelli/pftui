@@ -89,6 +89,7 @@ pftui data calendar --json                # what events hit today, what's tomorr
 pftui data consensus list --json          # standing analyst calls for cross-reference
 pftui analytics alerts check --json       # alerts triggered today (RSI/SMA/MACD evaluated)
 pftui analytics scenario list --json      # scenario probabilities
+pftui analytics calibration --json        # scenario vs prediction market divergences
 ```
 
 6. DEEP web research on the 2-3 most important signals from today. Go beyond headlines:
@@ -202,7 +203,22 @@ Summarize the day's net power balance: "FIC +3 (reconstruction deal + defense st
 
 Connect the power structure analysis to portfolio implications: "FIC gaining means settlement more likely, which means [asset] benefits because [reason]."
 
-### 6. Scenario + Conviction Updates
+### 6. Prediction Market Calibration (mandatory when mappings exist)
+
+Review divergences between pftui scenario probabilities and prediction market consensus:
+```bash
+pftui analytics calibration --json
+```
+
+For each significant divergence (>15pp by default):
+- **What does the market see that we don't?** Prediction markets aggregate real-money bets from thousands of participants. When the market prices a scenario at 45% and pftui has it at 20%, either the market is wrong or we're missing something. Investigate which.
+- **What do we see that the market doesn't?** Our multi-timeframe analysis may surface structural forces, power dynamics, or historical patterns that pure crowd wisdom misses. When we're higher than the market, explain our edge.
+- **Should we update our probability?** If the market has information we lack, adjust the scenario probability. If we have a genuine analytical edge, keep it and explain why. Don't blindly follow the market, but don't ignore it either.
+- **Track calibration drift over time.** Note which direction divergences tend to resolve — toward the market or toward our estimates. This trains the system's probability intuition.
+
+If no scenario↔contract mappings exist yet, note this gap and suggest 2-3 high-value mappings to create via `data predictions map`.
+
+### 7. Scenario + Conviction Updates
 
 Update scenarios with full analytical reasoning (integrate power structure analysis into scenario reasoning):
 ```bash
@@ -227,14 +243,14 @@ pftui analytics situation update log --situation "<name>" \
   --next-decision-at "[YYYY-MM-DD]"
 ```
 
-### 7. New Predictions
+### 8. New Predictions
 
 Make 3-5 cause-and-effect predictions across MEDIUM and HIGH timeframes:
 ```bash
 pftui journal prediction add "[cause] will [effect] [timeframe]" --symbol [SYM] --target-date [YYYY-MM-DD] --conviction [level]
 ```
 
-### 8. Add Trend Evidence
+### 9. Add Trend Evidence
 
 Where today provided data on structural trends:
 ```bash
@@ -242,7 +258,7 @@ pftui analytics trends evidence-add --trend "<name>" --date $(date +%Y-%m-%d) \
   --impact <strengthens|weakens|neutral> --source "<source>" "<specific evidence>"
 ```
 
-### 9. Daily Journal Entry (mandatory)
+### 10. Daily Journal Entry (mandatory)
 
 You are the only agent that sees the full picture daily. Use the journal as your thinking tool. Write a journal entry that captures your evolving view of the world. This is not a summary of what happened. It is your analytical state of mind:
 
@@ -296,6 +312,14 @@ headlines said. Which complex profits. Portfolio implications.]
 [2-3 deep findings. Not headlines. Analysis. Historical parallels. Data patterns.
 Structural forces. Each finding gets 2-4 paragraphs of explanation from first
 principles. Explain WHY something matters, not just WHAT happened.]
+
+## Prediction Market Calibration
+
+[For each significant divergence between pftui scenario probabilities and prediction
+market consensus: scenario name, our estimate vs market price, divergence magnitude,
+analysis of why the gap exists, and whether we should adjust. If no mappings exist,
+note the gap and suggest which scenarios should be mapped to Polymarket contracts.
+Track whether past divergences resolved toward the market or toward our estimates.]
 
 ## Scenario Assessment
 
