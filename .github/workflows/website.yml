@@ -39,8 +39,9 @@ jobs:
           mkdir -p _site
           # Copy website files as the root
           cp -r website/* _site/
-          # Copy newsletter PDFs so they're served at /reports/
-          cp -r reports/ _site/reports/
+          # Copy report PDFs into the reports directory alongside index.html
+          cp reports/*.pdf _site/reports/ 2>/dev/null || true
+          cp reports/*.md _site/reports/ 2>/dev/null || true
           # Copy .nojekyll to prevent Jekyll processing
           touch _site/.nojekyll
       
