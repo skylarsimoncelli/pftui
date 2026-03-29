@@ -32,7 +32,7 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 **Source:** Competitive research insight: the best multi-agent systems make their reasoning transparent and trackable.
 **Why:** The 4 timeframe analysts (LOW/MEDIUM/HIGH/MACRO) are the architecture. But right now their outputs are opaque text blobs in `agent_messages`. The evening synthesis reads them but there's no structured way to see where each analyst stands on each asset, track how their views evolve over time, or measure which analyst is most accurate at which task. Making the analysts' reasoning structured and queryable makes the whole system smarter.
 **Scope:**
-- [x] F57.1: New table `analyst_views` — analyst (low/medium/high/macro), asset, direction (bull/bear/neutral), conviction (-5 to +5), reasoning_summary, key_evidence, blind_spots, updated_at. Each analyst writes a structured view per asset on every run. *(done: PR #TBD)*
+- [x] F57.1: New table `analyst_views` — analyst (low/medium/high/macro), asset, direction (bull/bear/neutral), conviction (-5 to +5), reasoning_summary, key_evidence, blind_spots, updated_at. Each analyst writes a structured view per asset on every run. *(done: PR #446)*
 - [ ] F57.2: `analytics views --json` — show current view from each analyst for all held/watched assets. Matrix format: rows = assets, columns = analysts, cells = direction + conviction.
 - [ ] F57.3: `analytics views history --asset <SYM> --json` — how each analyst's view on an asset has evolved over time. Track conviction drift and flip points.
 - [ ] F57.4: `analytics views divergence --json` — surface assets where analysts strongly disagree. LOW says bear -3 but HIGH says bull +4 = the interesting signal. Ranked by divergence magnitude.
@@ -84,7 +84,10 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 2. ~~**F55.6 completion**~~ — COMPLETE (#437). Morning/evening briefs include calibration section.
 3. ~~**F56: Adversarial Debate Mechanism**~~ — COMPLETE (#436, #442, #444). All 4 sub-items shipped.
 
-**Shipped since last review (Mar 28 → Mar 29):**
+**Shipped since last review (Mar 29 → Mar 29b):**
+1. ✅ F57.1 analyst views (#446) — `analytics views` CLI with set/list/matrix/delete, `analyst_views` table (SQLite + PostgreSQL), 15 new tests
+
+**Shipped (Mar 28 → Mar 29):**
 1. ✅ `data quotes` alias (#419) — addresses medium-timeframe-analyst `data quotes fails`
 2. ✅ F55.1-F55.3 prediction market contracts (#422) — Polymarket tag-based fetching, enriched schema, 24 new tests
 3. ✅ F55.4 prediction market scenario mapping (#426) — link contracts to scenarios with auto-sync
@@ -96,6 +99,6 @@ _(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration
 9. ✅ F56.3 adversarial debate evening-analysis integration (#442) — mandatory structured bull/bear debates on contentious topics before cross-timeframe synthesis
 10. ✅ F56.4 debate-score accuracy tracking (#444) — score resolved debates, track bull/bear accuracy, 15 new tests
 
-**Release status:** v0.21.0 eligible — 41 commits since v0.20.0, no P0 bugs, 2011 tests passing, clippy clean.
+**Release status:** v0.21.0 eligible — 42 commits since v0.20.0, no P0 bugs, 2026 tests passing, clippy clean.
 
 **GitHub stars:** 8 (was 7) — Homebrew Core requires 50+.
