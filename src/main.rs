@@ -2113,6 +2113,46 @@ fn main() -> Result<()> {
             cli::AnalyticsCommand::Calibration { threshold, json } => {
                 commands::calibration::run(&backend, threshold, json)
             }
+            cli::AnalyticsCommand::DebateScore { command } => match command {
+                cli::AnalyticsDebateScoreCommand::Add {
+                    debate_id,
+                    winner,
+                    margin,
+                    outcome,
+                    assessment,
+                    scored_by,
+                    json,
+                } => commands::debate_score::add(
+                    &backend,
+                    &commands::debate_score::ScoreParams {
+                        debate_id,
+                        winner: &winner,
+                        margin: &margin,
+                        actual_outcome: &outcome,
+                        argument_assessment: assessment.as_deref(),
+                        scored_by: scored_by.as_deref(),
+                        json_output: json,
+                    },
+                ),
+                cli::AnalyticsDebateScoreCommand::List {
+                    topic,
+                    winner,
+                    limit,
+                    json,
+                } => commands::debate_score::list(
+                    &backend,
+                    topic.as_deref(),
+                    winner.as_deref(),
+                    limit,
+                    json,
+                ),
+                cli::AnalyticsDebateScoreCommand::Accuracy { topic, json } => {
+                    commands::debate_score::accuracy(&backend, topic.as_deref(), json)
+                }
+                cli::AnalyticsDebateScoreCommand::Unscored { limit, json } => {
+                    commands::debate_score::unscored(&backend, limit, json)
+                }
+            },
             cli::AnalyticsCommand::Opportunities { json } => commands::analytics::run(
                 &backend,
                 "opportunities",

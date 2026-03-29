@@ -19,6 +19,7 @@ pub mod crisis;
 pub mod daily_pnl;
 pub mod daemon;
 pub mod debate;
+pub mod debate_score;
 pub mod db_info;
 pub mod demo;
 pub mod dividends;
