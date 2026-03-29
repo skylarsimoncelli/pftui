@@ -2,6 +2,18 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat: Prediction lesson extraction — agent routine integration
+
+**What:** Integrated `pftui journal prediction lessons` into the evening-analysis agent routine, completing the entire Prediction Lesson Extraction feature. Evening analysis now includes a mandatory Section 1b after the prediction review: the agent checks for wrong predictions without structured lessons, extracts up to 5 per run using `journal prediction lessons add`, and includes a Prediction Lessons section in the branded PDF report. Prioritisation is by conviction level (high-conviction wrong calls first), with a quality bar requiring specific, actionable lessons and an 80% coverage target. Also added `journal prediction lessons --json` to the canonical analytics inputs in README.md.
+
+**Files changed:**
+- `agents/routines/evening-analysis.md` — Added `journal prediction lessons --json` to inputs, new Section 1b (Prediction Lesson Extraction) with workflow/prioritisation/quality bar, new Prediction Lessons section in PDF template.
+- `agents/routines/README.md` — Added `journal prediction lessons --json` to canonical analytics inputs list.
+
+**Tests:** Documentation-only change. No new tests. Underlying command has 8 DB tests + 3 CLI parse tests from PR #432. Full suite: 1996 passed, 0 failed.
+
+**Feature status:** Prediction Lesson Extraction — COMPLETE. CLI (#432), agent routine integration (#440).
+
 ### 2026-03-29 — feat(F55.6): Agent routine integration for prediction market calibration
 
 **What:** Integrated `pftui analytics calibration` into morning-brief and evening-analysis agent routines, completing the entire F55 Prediction Market Probability Feeds feature. Morning brief now gathers calibration data and includes a concise section showing top divergences between pftui scenario probabilities and Polymarket consensus. Evening analysis includes a detailed calibration step (section 6) with a framework for investigating divergences — what the market sees vs what we see, whether to adjust, and tracking calibration drift over time. Both PDF templates include the new section. Agents now explain divergences between their probability estimates and real-money prediction market consensus.

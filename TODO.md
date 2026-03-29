@@ -14,15 +14,7 @@ _(F55: Prediction Market Probability Feeds — COMPLETE. All sub-items shipped: 
 
 ## P2 - Coverage And Agent Consumption
 
-### [Feedback] Prediction Lesson Extraction
-**Source:** Evening Analysis feedback (Mar 29, 78/75 — lowest scorer).
-**Why:** 43 wrong predictions exist with no structured lessons extracted. This is technical debt that degrades the model improvement loop. The evening analyst flagged this as a gap.
-**Scope:**
-- [x] `journal prediction lessons --json` — for each scored-wrong prediction, extract a structured lesson: what was predicted, what happened, why it was wrong (directional miss, timing miss, magnitude miss), and what signal was misread. *(done: PR #432)*
-- [x] Store lessons in a `prediction_lessons` table or as metadata on existing predictions. *(done: PR #432 — table shipped with CLI)*
-- [ ] Agent routine integration — evening-analysis reviews recent wrong predictions and generates lessons.
-**Files:** `src/commands/predictions.rs`, `src/db/` (new table or field), `src/cli.rs`.
-**Effort:** 1-2 sessions. **Priority:** P2 — closes the self-improvement feedback loop.
+_(Prediction Lesson Extraction — COMPLETE. CLI #432, agent routine integration #440.)_
 
 ### F56: Adversarial Debate Mechanism
 **Source:** Competitive research (TradingAgents bull/bear debate, ai-hedge-fund persona diversity).
@@ -88,9 +80,9 @@ _(F55: Prediction Market Probability Feeds — COMPLETE. All sub-items shipped: 
 | Dev Agent | 92% | 94% | Mar 29 | → (stable high. F55.5 analytics calibration shipped #428.) |
 
 **Top 3 priorities based on feedback:**
-1. **Prediction lesson extraction** (Evening Analysis 78/75) — 43 wrong predictions with no structured lessons. Technical debt degrading improvement loop.
-2. **F55.6 completion** (agent routine integration for prediction market calibration) — enables morning/evening briefs to include calibration section.
-3. **F56: Adversarial Debate Mechanism** — formalises bull/bear debate for contentious topics.
+1. ~~**Prediction lesson extraction**~~ — COMPLETE (#432 CLI + #440 agent routine integration). Evening analysis now extracts structured lessons from wrong predictions every run.
+2. ~~**F55.6 completion**~~ — COMPLETE (#437). Morning/evening briefs include calibration section.
+3. **F56: Adversarial Debate Mechanism** — formalises bull/bear debate for contentious topics. F56.3 (evening-analysis integration) next.
 
 **Shipped since last review (Mar 28 → Mar 29):**
 1. ✅ `data quotes` alias (#419) — addresses medium-timeframe-analyst `data quotes fails`
@@ -100,6 +92,7 @@ _(F55: Prediction Market Probability Feeds — COMPLETE. All sub-items shipped: 
 5. ✅ Catalyst-scenario linkage (#430) — category semantic matching with direction + relevance
 6. ✅ Prediction lesson extraction (#432) — structured lessons from wrong predictions with DB storage
 7. ✅ F56.1+F56.2 adversarial debate mechanism (#436) — `agent debate` CLI + `debates`/`debate_rounds` tables
+8. ✅ Prediction lesson agent routine integration (#440) — evening-analysis now extracts lessons from wrong predictions every run
 
 **Release status:** v0.21.0 eligible — 40 commits since v0.20.0, no P0 bugs, 1996 tests passing, clippy clean.
 
