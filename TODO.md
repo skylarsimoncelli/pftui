@@ -35,18 +35,17 @@ _(none)_
 **Not in scope:** Multi-agent real-time debate (requires concurrent sessions). V1 is single-agent playing both sides with structured format.
 **Effort:** 1-2 weeks. **Priority:** P2 — improves analysis quality but the current system works.
 
-### F57: Analysis Lens Framework
-**Source:** Competitive research (ai-hedge-fund's Buffett/Burry/Druckenmiller/Taleb persona agents).
-**Why:** "MACRO timeframe alignment score: 0.73" is opaque. "Druckenmiller lens: strong conviction, buying" is immediately comprehensible. Named analytical lenses make the system's reasoning more interpretable and more useful. pftui already has implicit lenses (Dalio empire cycles, transnational power structure analysis). This formalises them as a first-class concept.
+### F57: Timeframe Analyst Self-Awareness
+**Source:** Competitive research insight: the best multi-agent systems make their reasoning transparent and trackable.
+**Why:** The 4 timeframe analysts (LOW/MEDIUM/HIGH/MACRO) are the architecture. But right now their outputs are opaque text blobs in `agent_messages`. The evening synthesis reads them but there's no structured way to see where each analyst stands on each asset, track how their views evolve over time, or measure which analyst is most accurate at which task. Making the analysts' reasoning structured and queryable makes the whole system smarter.
 **Scope:**
-- [ ] F57.1: New table `analysis_lenses` — lens_id, name, description, methodology, emphasis (what this lens prioritises), blind_spots (what this lens misses).
-- [ ] F57.2: Seed 4 default lenses: "Macro Cycles" (Dalio empire transitions, reserve currency shifts), "Power Structure" (FIC/MIC/TIC, follow the money), "Momentum Trend" (Skylar's HTF approach, Donchian channels, established trends), "Tail Risk" (black swans, correlation breaks, fat tails).
-- [ ] F57.3: `analytics lens list --json` — show all configured lenses with descriptions.
-- [ ] F57.4: `analytics lens apply --lens "<name>" --asset <SYM> --json` — run a specific analytical lens against current data for an asset. Returns structured assessment: conviction, reasoning, key data points, blind spots.
-- [ ] F57.5: `analytics lens compare --asset <SYM> --json` — run all lenses and show where they agree/disagree. Agreement = high conviction signal. Disagreement = the interesting part.
-- [ ] F57.6: Agent routine integration — evening-analysis includes a "lens comparison" section for held assets. Morning-brief includes a one-line lens consensus.
-**Not in scope:** Custom user-defined lenses (v2). V1 ships 4 built-in lenses.
-**Effort:** 1-2 weeks. **Priority:** P2 — UX improvement, not a capability gap.
+- [ ] F57.1: New table `analyst_views` — analyst (low/medium/high/macro), asset, direction (bull/bear/neutral), conviction (-5 to +5), reasoning_summary, key_evidence, blind_spots, updated_at. Each analyst writes a structured view per asset on every run.
+- [ ] F57.2: `analytics views --json` — show current view from each analyst for all held/watched assets. Matrix format: rows = assets, columns = analysts, cells = direction + conviction.
+- [ ] F57.3: `analytics views history --asset <SYM> --json` — how each analyst's view on an asset has evolved over time. Track conviction drift and flip points.
+- [ ] F57.4: `analytics views divergence --json` — surface assets where analysts strongly disagree. LOW says bear -3 but HIGH says bull +4 = the interesting signal. Ranked by divergence magnitude.
+- [ ] F57.5: `analytics views accuracy --json` — per-analyst accuracy. Which timeframe is best at short-term calls? Which catches structural turns? Feed this back into the synthesis layer so evening-analysis knows which analyst to weight more.
+- [ ] F57.6: Agent routine integration — each timeframe analyst writes structured views via `analytics views set` after every run. Evening-analysis reads the view matrix before synthesis. Morning-brief includes a one-line divergence summary.
+**Effort:** 2 weeks. **Priority:** P2 — makes the existing architecture observable and self-improving.
 
 ### F58: Prediction Accuracy Backtesting
 **Source:** Competitive research (ai-hedge-fund backtester, TradingAgents paper results).
