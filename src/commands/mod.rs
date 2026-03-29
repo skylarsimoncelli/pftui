@@ -58,6 +58,7 @@ pub mod portfolio;
 pub mod power_flow;
 pub mod predict;
 pub mod predictions;
+pub mod predictions_map;
 pub mod prices;
 pub mod question;
 pub mod rebalance;

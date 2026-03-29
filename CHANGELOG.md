@@ -2,6 +2,26 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat(F55.4): Prediction market scenario mapping — link contracts to scenarios with auto-sync
+
+**What:** New `data predictions map` and `data predictions unmap` commands that link Polymarket prediction market contracts to pftui scenarios. When contracts are refreshed via `data refresh`, each mapped contract's probability is automatically logged as a data point in the linked scenario's probability history timeline with a descriptive "Polymarket: X% — question" driver string. This creates a continuous, automated bridge between real-money market consensus and pftui's scenario tracking system.
+
+New `scenario_contract_mappings` table with `UNIQUE(scenario_id, contract_id)` constraint supports many-to-many relationships (one scenario can track multiple contracts, one contract can be linked to multiple scenarios). Enriched list view shows scenario probability vs contract probability side-by-side with divergence in percentage points. Contract search with `--search` finds contracts by question/event title; when multiple contracts match, candidates are displayed for disambiguation with `--contract`.
+
+Refresh integration is graceful: sync runs after successful contract upsert, logs count when mappings exist, silently skips when none are configured, and warns (without failing the refresh) on errors. Only active/watching scenarios are synced — resolved scenarios are excluded.
+
+**Files changed:**
+- `src/db/scenario_contract_mappings.rs` — New module: ScenarioContractMapping and EnrichedMapping structs, ensure_table, add/remove/list (raw + enriched) operations, get_contract_probability, sync_mapped_probabilities (auto-logs contract probabilities to scenario_history), full SQLite + Postgres dual backend. 16 unit tests.
+- `src/db/schema.rs` — Added scenario_contract_mappings table creation + indexes (scenario, contract) in migrations.
+- `src/db/mod.rs` — Registered scenario_contract_mappings module.
+- `src/commands/predictions_map.rs` — New module: run_map (create mappings with --scenario + --search/--contract, --list for viewing), run_unmap (remove specific or all mappings), enriched terminal + JSON output with divergence display.
+- `src/commands/mod.rs` — Registered predictions_map module.
+- `src/commands/refresh.rs` — Added sync_mapped_probabilities call after successful contract upsert in store_contracts_result.
+- `src/cli.rs` — Added Map and Unmap variants on DataPredictionsCommand with after_help cross-references. 5 CLI parse tests.
+- `src/main.rs` — Added Map and Unmap dispatch in dispatch_predictions.
+
+**Tests:** 1957 total (+22 new). 17 unit tests in `db/scenario_contract_mappings.rs` (add_and_list_mapping, duplicate_mapping_ignored, remove_mapping_works, remove_nonexistent_returns_false, remove_all_for_scenario_works, enriched_shows_missing_contract, sync_mapped_probabilities_logs_history, sync_skips_inactive_scenarios, sync_with_no_mappings_returns_zero, get_contract_probability_found, get_contract_probability_not_found, enriched_mapping_serializes_to_json, truncate_str_short, truncate_str_exact, truncate_str_long, multiple_scenarios_one_contract, one_scenario_multiple_contracts), 5 CLI parse tests (parse_data_predictions_map_list, parse_data_predictions_map_with_scenario_and_search, parse_data_predictions_map_with_contract_id, parse_data_predictions_unmap, parse_data_predictions_unmap_all).
+
 ### 2026-03-29 — feat(F55.1-F55.3): Prediction market contracts — tag-based Polymarket event fetching
 
 **What:** Added `prediction_market_contracts` table with enriched schema (exchange, event_id, event_title, question, category, last_price, volume_24h, liquidity, end_date). New `fetch_polymarket_contracts()` function queries the Polymarket Gamma events API across 8 macro-relevant tag slugs (fed, economics, interest-rates, geopolitics, politics, bitcoin, crypto, ai) — replacing the previous undifferentiated top-100 markets fetch that was returning mostly low-quality crypto gossip. `data predictions` now prefers the enriched contracts table when populated, with graceful fallback to legacy `predictions_cache`. Integrated into the refresh DAG as a parallel async fetch alongside existing predictions source.

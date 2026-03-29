@@ -705,6 +705,30 @@ fn dispatch_predictions(
             lim,                           // limit
             j || json,
         ),
+        Some(cli::DataPredictionsCommand::Map {
+            scenario,
+            search,
+            contract,
+            list,
+            json: j,
+        }) => commands::predictions_map::run_map(
+            backend,
+            scenario.as_deref(),
+            search.as_deref(),
+            contract.as_deref(),
+            list,
+            j || json,
+        ),
+        Some(cli::DataPredictionsCommand::Unmap {
+            scenario,
+            contract,
+            json: j,
+        }) => commands::predictions_map::run_unmap(
+            backend,
+            &scenario,
+            contract.as_deref(),
+            j || json,
+        ),
     }
 }
 
