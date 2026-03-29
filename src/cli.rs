@@ -436,6 +436,7 @@ pub enum DataCommand {
         json: bool,
     },
     /// Consolidated closing prices for all portfolio + watchlist symbols
+    #[command(alias = "quotes", after_help = "Aliases: `data quotes` also works.\n\nFor overnight futures specifically, see: pftui data futures\nFor market overview symbols, add --market flag.")]
     Prices {
         /// Include all market overview symbols (indices, commodities, crypto, forex, bonds)
         #[arg(long)]
@@ -462,6 +463,7 @@ pub enum DataCommand {
         json: bool,
     },
     /// Overnight futures prices for pre-market positioning (ES, NQ, YM, RTY, GC, SI, CL)
+    #[command(after_help = "For portfolio/watchlist price quotes, see: pftui data prices (alias: data quotes)\nFor market overview prices, see: pftui data prices --market")]
     Futures {
         /// Output as JSON for agent/script consumption
         #[arg(long)]
@@ -5844,6 +5846,47 @@ mod tests {
         };
         assert!(!market);
         assert!(json);
+    }
+
+    #[test]
+    fn parse_data_quotes_alias_resolves_to_prices() {
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "quotes", "--json"]).unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices { market, json } = command else {
+            panic!("expected Prices via quotes alias");
+        };
+        assert!(!market);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_quotes_alias_with_market_flag() {
+        let cli =
+            Cli::try_parse_from(["pftui", "data", "quotes", "--market", "--json"]).unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices { market, json } = command else {
+            panic!("expected Prices via quotes alias");
+        };
+        assert!(market);
+        assert!(json);
+    }
+
+    #[test]
+    fn parse_data_quotes_alias_no_flags() {
+        let cli = Cli::try_parse_from(["pftui", "data", "quotes"]).unwrap();
+        let Command::Data { command, .. } = cli.command.unwrap() else {
+            panic!("expected Data");
+        };
+        let DataCommand::Prices { market, json } = command else {
+            panic!("expected Prices via quotes alias");
+        };
+        assert!(!market);
+        assert!(!json);
     }
 
     #[test]
