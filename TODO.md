@@ -66,11 +66,7 @@ _(none)_
 **Scope:** New `data flows` source pulling ETF flow data (ETF.com or similar), institutional 13F filings, and crypto exchange flow data. New table `capital_flows`. Integration into agent routines.
 **Effort:** 3-4 weeks. **Priority:** P3 — enhances analysis but agents can web_search for this.
 
-### F60: LLM Model Comparison Tracking
-**Source:** Competitive research (TradingAgents two-tier LLM, NOFX AI competition mode).
-**Why:** pftui uses Opus for evening analysis and Sonnet for everything else but doesn't systematically track which model produces better predictions. Comparing model accuracy over time would inform optimal model allocation.
-**Scope:** Add `model` column to predictions table (already has `source_agent`). Track model used per prediction. `analytics model-compare --json` shows accuracy by model. Simple metadata tracking, not A/B testing infrastructure.
-**Effort:** 1 week. **Priority:** P3 — interesting but low urgency.
+
 
 ---
 
