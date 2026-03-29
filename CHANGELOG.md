@@ -2,6 +2,16 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat: Catalyst-scenario linkage via category semantic matching
+
+**What:** Replaced the keyword-only `link_scenarios()` with a hybrid approach combining token overlap with category-based semantic scoring. Catalysts now reliably link to relevant scenarios — inflation events (Core PCE, CPI) link to inflation/stagflation scenarios, labor events (NFP, unemployment) link to recession scenarios, policy events (FOMC) link to easing/tightening scenarios, etc. New `LinkedScenario` struct provides structured output with `name`, `direction` (confirming/opposing/mixed), and `relevance` (direct/strong/thematic). Terminal output shows linked scenarios per catalyst with context.
+
+**Files changed:**
+- `src/analytics/catalysts.rs` — New `LinkedScenario` struct. `link_scenarios()` now uses hybrid keyword + category semantic scoring. New functions: `category_scenario_score()` (maps catalyst categories to scenario keywords with weighted scoring), `infer_catalyst_direction()` (determines if catalyst confirms or opposes each scenario). 6 new tests.
+- `src/commands/analytics.rs` — Terminal output for `analytics catalysts` now shows linked scenarios per catalyst with direction and relevance.
+
+**Tests:** 1976 total (+6 new). `category_semantic_matching_links_inflation_catalyst_to_inflation_scenario`, `labor_catalyst_links_to_recession_scenario`, `linked_scenario_has_direction_and_relevance`, `growth_catalyst_links_to_multiple_scenarios`, `category_scenario_score_returns_zero_for_unrelated`, `linked_scenario_serializes_to_json`.
+
 ### 2026-03-29 — feat(F55.5): Analytics calibration — scenario probability vs prediction market consensus
 
 **What:** New `analytics calibration` command that compares pftui scenario probabilities against prediction market consensus (Polymarket contracts) for every mapped scenario↔contract pair. Flags divergences above a configurable threshold (default: 15pp). Outputs sorted by divergence magnitude with summary statistics (mean/median absolute divergence, overestimate/underestimate/aligned counts) and interpretation strings for agent consumption. Supports `--threshold` to customize the divergence significance threshold and `--json` for structured output.

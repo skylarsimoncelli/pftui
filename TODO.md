@@ -21,16 +21,6 @@ _(none)_
 
 ## P2 - Coverage And Agent Consumption
 
-### [Feedback] Catalyst-Scenario Linkage
-**Source:** Evening Analysis feedback (Mar 29, 78/75 — lowest scorer).
-**Why:** `analytics synthesis` shows catalysts with 0 linked scenarios on every catalyst. Connecting upcoming catalysts (Core PCE, ISM Manufacturing, FOMC) to active scenarios would significantly improve decision support. The evening analyst explicitly called this out as "empty catalyst-scenario linkage."
-**Scope:**
-- [ ] Auto-link catalysts to scenarios by keyword/category matching in `build_catalysts_backend()`. Each catalyst should reference which active scenarios it could impact and in which direction.
-- [ ] Enrich `CatalystJson` with `linked_scenarios: Vec<{name, direction, relevance}>` field.
-- [ ] Update terminal output to show linked scenarios per catalyst.
-**Files:** `src/commands/analytics.rs` (catalysts section), `src/analytics/situation.rs` (if catalysts built there).
-**Effort:** 1 session. **Priority:** P2 — directly addresses lowest-scorer workflow friction.
-
 ### [Feedback] Prediction Lesson Extraction
 **Source:** Evening Analysis feedback (Mar 29, 78/75 — lowest scorer).
 **Why:** 43 wrong predictions exist with no structured lessons extracted. This is technical debt that degrades the model improvement loop. The evening analyst flagged this as a gap.
@@ -104,16 +94,17 @@ _(none)_
 | Dev Agent | 92% | 94% | Mar 29 | → (stable high. F55.5 analytics calibration shipped #428.) |
 
 **Top 3 priorities based on feedback:**
-1. **Catalyst-scenario linkage** (Evening Analysis 78/75 — lowest scorer) — synthesis catalysts show 0 linked scenarios, reducing decision support value.
-2. **Prediction lesson extraction** (Evening Analysis 78/75) — 43 wrong predictions with no structured lessons. Technical debt degrading improvement loop.
-3. **F55.6 completion** (agent routine integration for prediction market calibration) — enables morning/evening briefs to include calibration section.
+1. **Prediction lesson extraction** (Evening Analysis 78/75) — 43 wrong predictions with no structured lessons. Technical debt degrading improvement loop.
+2. **F55.6 completion** (agent routine integration for prediction market calibration) — enables morning/evening briefs to include calibration section.
+3. **F56: Adversarial Debate Mechanism** — formalises bull/bear debate for contentious topics.
 
 **Shipped since last review (Mar 28 → Mar 29):**
 1. ✅ `data quotes` alias (#419) — addresses medium-timeframe-analyst `data quotes fails`
 2. ✅ F55.1-F55.3 prediction market contracts (#422) — Polymarket tag-based fetching, enriched schema, 24 new tests
 3. ✅ F55.4 prediction market scenario mapping (#426) — link contracts to scenarios with auto-sync
 4. ✅ F55.5 analytics calibration (#428) — compare scenario vs market probabilities, flag divergences
+5. ✅ Catalyst-scenario linkage (#430) — category semantic matching with direction + relevance
 
-**Release status:** v0.21.0 eligible — 37 commits since v0.20.0, no P0 bugs, 1935 tests passing, clippy clean.
+**Release status:** v0.21.0 eligible — 38 commits since v0.20.0, no P0 bugs, 1976 tests passing, clippy clean.
 
 **GitHub stars:** 8 (was 7) — Homebrew Core requires 50+.
