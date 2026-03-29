@@ -2,6 +2,14 @@
 
 > Reverse chronological. Each entry: date, summary, files changed, tests.
 
+### 2026-03-29 — feat: `data quotes` alias for `data prices`
+
+- What: Added `quotes` as a clap alias for the `data prices` command. `pftui data quotes`, `pftui data quotes --market`, and `pftui data quotes --json` all resolve to `DataCommand::Prices`. Added after_help cross-references on Prices (mentions quotes alias, points to `data futures`) and Futures (points to `data prices`/`data quotes` for portfolio quotes).
+- Why: Medium-timeframe-analyst feedback (Mar 29, 75/85): `pftui data futures works but pftui data quotes fails`. `quotes` is a natural synonym for price quotes that agents expect to find.
+- Files: `src/cli.rs` (+43: `#[command(alias = "quotes", after_help = ...)]` on Prices, `after_help` on Futures, 3 new CLI parse tests)
+- Tests: 1911 passing (+3 new: `parse_data_quotes_alias_resolves_to_prices`, `parse_data_quotes_alias_with_market_flag`, `parse_data_quotes_alias_no_flags`). Clippy clean.
+- PR: #419
+
 ### 2026-03-28 — feat: consolidated evening analysis command (`analytics evening-brief`)
 
 - What: Added `pftui analytics evening-brief [--json]` that combines 15 analytics sections into a single payload for the evening analyst. Includes everything from morning-brief (situation, deltas, synthesis, scenarios, correlation breaks, catalysts, impact, alerts, news sentiment) plus 5 evening-specific deep analysis sections: narrative (structured recap, key themes, analytical memory), opportunities (identified entry points, scenario plays), conviction changes (shifts over the past 7 days), prediction stats (overall accuracy scorecard), and cross-timeframe resolution (divergent assets with stance guidance, severity classification, and resolution triggers). Terminal output shows all sections with emoji indicators and structured breakdowns. JSON output provides the complete 15-section payload for agent consumption. Cross-timeframe resolution reuses `build_alignment_rows` and `build_resolution_entry` from analytics.rs (promoted to `pub(crate)`) to compute divergent assets, regime read (clean/mixed/conflicted), and per-asset stance recommendations.
